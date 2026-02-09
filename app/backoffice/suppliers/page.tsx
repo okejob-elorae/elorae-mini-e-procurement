@@ -56,7 +56,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { SupplierType } from '@prisma/client';
+import { SupplierType } from '@/lib/constants/enums';
 import { maskBankAccount } from '@/lib/encryption';
 import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';

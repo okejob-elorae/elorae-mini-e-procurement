@@ -31,8 +31,36 @@ export interface CachedItem {
   nameEn: string;
   type: string;
   uomId: string;
+  uomCode?: string;
   isActive: boolean;
   syncAt: Date;
+}
+
+export interface CachedUOM {
+  id: string;
+  code: string;
+  nameId: string;
+  nameEn: string;
+}
+
+export interface PendingPO {
+  localId?: number;
+  supplierId: string;
+  supplierName?: string;
+  etaDate?: Date;
+  items: Array<{
+    itemId: string;
+    itemName?: string;
+    sku?: string;
+    qty: number;
+    price: number;
+    uomId: string;
+  }>;
+  totalAmount: number;
+  notes?: string;
+  status: 'DRAFT' | 'PENDING_SYNC';
+  createdAt: Date;
+  syncError?: string;
 }
 
 export interface DocumentQueue {
@@ -49,6 +77,8 @@ export class EloraeOfflineDB extends Dexie {
   suppliers!: Table<CachedSupplier, string>;
   items!: Table<CachedItem, string>;
   documentQueue!: Table<DocumentQueue, number>;
+  uoms!: Table<CachedUOM, string>;
+  pendingPOs!: Table<PendingPO, number>;
 
   constructor() {
     super('EloraeDB');
@@ -64,6 +94,15 @@ export class EloraeOfflineDB extends Dexie {
       suppliers: 'id, type, name, syncAt',
       items: 'id, sku, type, syncAt',
       documentQueue: '++id, docType, status, createdAt',
+    });
+    // Version 3: add uoms and pendingPOs stores for Phase 2
+    this.version(3).stores({
+      pendingOperations: '++id, type, timestamp',
+      suppliers: 'id, type, name, syncAt',
+      items: 'id, sku, type, syncAt',
+      documentQueue: '++id, docType, status, createdAt',
+      uoms: 'id, code',
+      pendingPOs: '++localId, status, createdAt',
     });
   }
 }
@@ -129,4 +168,45 @@ export async function cacheItems(items: CachedItem[]): Promise<void> {
 // Get cached items
 export async function getCachedItems(): Promise<CachedItem[]> {
   return await offlineDB.items.toArray();
+}
+
+// Cache UOMs
+export async function cacheUOMs(uoms: CachedUOM[]): Promise<void> {
+  await offlineDB.uoms.bulkPut(uoms);
+}
+
+// Get cached UOMs
+export async function getCachedUOMs(): Promise<CachedUOM[]> {
+  return await offlineDB.uoms.toArray();
+}
+
+// Save PO locally (offline)
+export async function savePOLocally(po: Omit<PendingPO, 'localId' | 'createdAt'>): Promise<number> {
+  return await offlineDB.pendingPOs.add({
+    ...po,
+    createdAt: new Date(),
+  });
+}
+
+// Get pending POs
+export async function getPendingPOs(): Promise<PendingPO[]> {
+  return await offlineDB.pendingPOs
+    .where('status')
+    .equals('PENDING_SYNC')
+    .toArray();
+}
+
+// Remove synced PO
+export async function removePendingPO(localId: number): Promise<void> {
+  await offlineDB.pendingPOs.delete(localId);
+}
+
+// Update pending PO error
+export async function updatePendingPOError(
+  localId: number,
+  error: string
+): Promise<void> {
+  await offlineDB.pendingPOs.update(localId, {
+    syncError: error,
+  });
 }

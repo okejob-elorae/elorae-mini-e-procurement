@@ -53,6 +53,7 @@ model User {
   sessions      Session[]
   auditLogs     AuditLog[]
   purchaseOrders PurchaseOrder[]
+  poStatusChanges POStatusHistory[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -223,6 +224,7 @@ model POStatusHistory {
   po          PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
   status      POStatus
   changedById String
+  changedBy   User          @relation(fields: [changedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   notes       String?
   createdAt   DateTime      @default(now())
   @@index([poId, createdAt])

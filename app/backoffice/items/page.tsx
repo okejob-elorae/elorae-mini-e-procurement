@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { getItems, deleteItem } from '@/app/actions/items';
-import { ItemType } from '@prisma/client';
+import { ItemType } from '@/lib/constants/enums';
 
 interface Item {
   id: string;

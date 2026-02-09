@@ -4,32 +4,11 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { ItemType } from '@prisma/client';
+import { generateSKU } from '@/lib/sku-generator';
+import { itemSchema } from '@/lib/validations';
 
-// Generate SKU based on item type
-export async function generateSKU(type: ItemType): Promise<string> {
-  const prefix = {
-    FABRIC: 'FAB',
-    ACCESSORIES: 'ACC',
-    FINISHED_GOOD: 'FG'
-  }[type];
-  
-  const count = await prisma.item.count({
-    where: { type }
-  });
-  
-  const sequence = String(count + 1).padStart(4, '0');
-  return `${prefix}-${sequence}`;
-}
-
-const itemSchema = z.object({
-  nameId: z.string().min(1, 'Name (ID) is required'),
-  nameEn: z.string().min(1, 'Name (EN) is required'),
-  type: z.nativeEnum(ItemType),
-  uomId: z.string().uuid('UOM is required'),
-  description: z.string().optional(),
-  variants: z.array(z.record(z.string())).optional(),
-  reorderPoint: z.number().min(0).optional(),
-});
+export { generateSKU };
+import { getConsumptionRules as getConsumptionRulesFromLib, saveConsumptionRules as saveConsumptionRulesFromLib } from '@/lib/production/consumption';
 
 export type ItemFormData = z.infer<typeof itemSchema>;
 
@@ -245,4 +224,23 @@ export async function getFinishedGoodsWithBOM() {
     },
     orderBy: { nameId: 'asc' }
   });
+}
+
+// Consumption Rules (BOM) - delegate to lib/production/consumption.ts
+export async function getConsumptionRules(finishedGoodId: string) {
+  return getConsumptionRulesFromLib(finishedGoodId);
+}
+
+export async function saveConsumptionRules(
+  finishedGoodId: string,
+  rules: Array<{
+    materialId: string;
+    qtyRequired: number;
+    wastePercent: number;
+    notes?: string;
+  }>
+) {
+  const result = await saveConsumptionRulesFromLib(finishedGoodId, rules);
+  revalidatePath(`/backoffice/items/${finishedGoodId}`);
+  return result;
 }

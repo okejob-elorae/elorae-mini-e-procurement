@@ -31,7 +31,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { Role } from '@prisma/client';
+import { Role } from '@/lib/constants/enums';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 
 interface NavItem {

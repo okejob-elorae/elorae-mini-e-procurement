@@ -1,27 +1,12 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { generateDocNumber } from '@/lib/docNumber';
 import { POStatus } from '@prisma/client';
-
-const poItemSchema = z.object({
-  itemId: z.string().uuid(),
-  qty: z.number().positive(),
-  price: z.number().positive(),
-  uomId: z.string(),
-  notes: z.string().optional()
-});
-
-const poSchema = z.object({
-  supplierId: z.string().uuid(),
-  etaDate: z.date().optional(),
-  notes: z.string().optional(),
-  terms: z.string().optional(),
-  items: z.array(poItemSchema).min(1, 'At least one item is required')
-});
+import { poSchema, poItemSchema } from '@/lib/validations';
+import { getETAStatus } from '@/lib/eta-alerts';
 
 export type POFormData = z.infer<typeof poSchema>;
 
@@ -67,24 +52,79 @@ export async function createPO(data: POFormData, userId: string) {
   });
 }
 
-export async function submitPO(id: string, userId: string) {
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseOrder.update({
-      where: { id },
-      data: { status: 'SUBMITTED' }
-    });
+export async function updatePO(
+  id: string, 
+  data: POFormData, 
+  userId: string
+) {
+  // Only allow update if status is DRAFT
+  const existing = await prisma.purchaseOrder.findUnique({
+    where: { id },
+    select: { status: true }
+  });
+  
+  if (existing?.status !== 'DRAFT') {
+    throw new Error('Only draft POs can be edited');
+  }
+  
+  return await prisma.$transaction(async (tx) => {
+    const totalAmount = data.items.reduce((sum, item) => {
+      return sum.plus(new Decimal(item.qty).mul(item.price));
+    }, new Decimal(0));
     
-    await tx.pOStatusHistory.create({
+    // Delete old items and create new ones
+    await tx.pOItem.deleteMany({ where: { poId: id } });
+    
+    const po = await tx.purchaseOrder.update({
+      where: { id },
       data: {
-        poId: id,
-        status: 'SUBMITTED',
-        changedById: userId,
-        notes: 'PO Submitted to supplier'
+        supplierId: data.supplierId,
+        etaDate: data.etaDate,
+        notes: data.notes,
+        terms: data.terms,
+        totalAmount: totalAmount.toNumber(),
+        grandTotal: totalAmount.toNumber(),
+        items: {
+          create: data.items
+        }
+      },
+      include: {
+        items: { include: { item: true } },
+        supplier: true
       }
     });
+    
+    return po;
+  });
+}
+
+export async function changePOStatus(
+  id: string, 
+  newStatus: 'SUBMITTED' | 'CANCELLED' | 'CLOSED',
+  userId: string,
+  notes?: string
+) {
+  const po = await prisma.purchaseOrder.update({
+    where: { id },
+    data: { status: newStatus }
+  });
+  
+  await prisma.pOStatusHistory.create({
+    data: {
+      poId: id,
+      status: newStatus,
+      changedById: userId,
+      notes: notes || `Status changed to ${newStatus}`
+    }
   });
   
   revalidatePath('/backoffice/purchase-orders');
+  revalidatePath(`/backoffice/purchase-orders/${id}`);
+  return po;
+}
+
+export async function submitPO(id: string, userId: string) {
+  return changePOStatus(id, 'SUBMITTED', userId, 'PO Submitted to supplier');
 }
 
 export async function cancelPO(id: string, userId: string, reason?: string) {
@@ -150,7 +190,7 @@ export async function getPOs(filters?: {
     where.status = { notIn: ['CLOSED', 'CANCELLED'] };
   }
   
-  return await prisma.purchaseOrder.findMany({
+  const pos = await prisma.purchaseOrder.findMany({
     where,
     include: {
       supplier: {
@@ -177,6 +217,12 @@ export async function getPOs(filters?: {
     },
     orderBy: { createdAt: 'desc' }
   });
+
+  // Add ETA status to each PO
+  return pos.map(po => ({
+    ...po,
+    etaAlert: getETAStatus(po.etaDate, po.status)
+  }));
 }
 
 export async function getPOById(id: string) {
@@ -195,6 +241,15 @@ export async function getPOById(id: string) {
       },
       grns: true,
       statusHistory: {
+        include: {
+          changedBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          }
+        },
         orderBy: { createdAt: 'desc' }
       }
     }
@@ -228,16 +283,16 @@ export async function getOverduePOs() {
   });
   
   return pos.map(po => {
-    const daysOverdue = Math.floor((today.getTime() - po.etaDate!.getTime()) / (1000 * 60 * 60 * 24));
+    const etaStatus = getETAStatus(po.etaDate, po.status);
     const totalQty = po.items.reduce((sum, item) => sum + Number(item.qty), 0);
     const receivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty), 0);
     const pendingQty = totalQty - receivedQty;
     
     return {
       ...po,
-      daysOverdue,
+      daysOverdue: Math.abs(etaStatus.daysUntil),
       pendingQty,
-      alertStatus: daysOverdue > 7 ? 'danger' : daysOverdue > 3 ? 'warning' : 'info'
+      etaAlert: etaStatus
     };
   });
 }

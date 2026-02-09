@@ -5,6 +5,10 @@ import {
   updateOperationError,
   cacheSuppliers,
   cacheItems,
+  getPendingPOs,
+  removePendingPO,
+  updatePendingPOError,
+  cacheUOMs,
 } from './db';
 
 // Check if online
@@ -53,7 +57,7 @@ export async function syncPendingOperations(): Promise<{
   return { success, failed };
 }
 
-// Sync reference data (suppliers, items)
+// Sync reference data (suppliers, items, UOMs)
 export async function syncReferenceData(): Promise<void> {
   if (!isOnline()) return;
 
@@ -71,9 +75,62 @@ export async function syncReferenceData(): Promise<void> {
       const items = await itemsResponse.json();
       await cacheItems(items);
     }
+
+    // Sync UOMs
+    const uomsResponse = await fetch('/api/uoms?sync=true');
+    if (uomsResponse.ok) {
+      const uoms = await uomsResponse.json();
+      await cacheUOMs(uoms);
+    }
   } catch (error) {
     console.error('Failed to sync reference data:', error);
   }
+}
+
+// Sync pending POs
+export async function syncPendingPOs(): Promise<{
+  success: number;
+  failed: number;
+}> {
+  if (!isOnline()) {
+    return { success: 0, failed: 0 };
+  }
+
+  const pendingPOs = await getPendingPOs();
+  let success = 0;
+  let failed = 0;
+
+  for (const po of pendingPOs) {
+    try {
+      const response = await fetch('/api/purchase-orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supplierId: po.supplierId,
+          etaDate: po.etaDate,
+          notes: po.notes,
+          items: po.items,
+        }),
+      });
+
+      if (response.ok) {
+        await removePendingPO(po.localId!);
+        success++;
+      } else {
+        const error = await response.text();
+        await updatePendingPOError(po.localId!, error);
+        failed++;
+      }
+    } catch (error) {
+      await updatePendingPOError(
+        po.localId!,
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+      failed++;
+    }
+  }
+
+  return { success, failed };
 }
 
 // Setup online/offline listeners
@@ -83,6 +140,7 @@ export function setupSyncListeners(
   const handleOnline = () => {
     onStatusChange?.(true);
     syncPendingOperations();
+    syncPendingPOs();
     syncReferenceData();
   };
 
@@ -102,16 +160,22 @@ export function setupSyncListeners(
 // Get sync status
 export async function getSyncStatus(): Promise<{
   pendingCount: number;
+  pendingPOCount: number;
   isOnline: boolean;
   lastSync?: Date;
 }> {
   const pendingCount = await offlineDB.pendingOperations.count();
+  const pendingPOCount = await offlineDB.pendingPOs
+    .where('status')
+    .equals('PENDING_SYNC')
+    .count();
   const lastDoc = await offlineDB.documentQueue
     .orderBy('createdAt')
     .last();
 
   return {
     pendingCount,
+    pendingPOCount,
     isOnline: isOnline(),
     lastSync: lastDoc?.createdAt,
   };

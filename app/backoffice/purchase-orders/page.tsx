@@ -32,7 +32,8 @@ import {
 } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { getPOs, submitPO, cancelPO } from '@/app/actions/purchase-orders';
-import { POStatus } from '@prisma/client';
+import { POStatus } from '@/lib/constants/enums';
+import { ETABadge } from '@/components/ui/ETABadge';
 
 interface PurchaseOrder {
   id: string;
@@ -56,6 +57,11 @@ interface PurchaseOrder {
   }>;
   _count: {
     grns: number;
+  };
+  etaAlert?: {
+    status: 'normal' | 'warning' | 'danger' | 'completed';
+    message: string;
+    daysUntil: number;
   };
 }
 
@@ -231,21 +237,19 @@ export default function PurchaseOrdersPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Badge className={statusColors[po.status]}>
-                            {statusIcons[po.status]}
-                            <span className="ml-1">{statusLabels[po.status]}</span>
-                          </Badge>
-                          {isOverdue(po) && (
-                            <Badge variant="destructive">Overdue</Badge>
-                          )}
-                        </div>
+                        <Badge className={statusColors[po.status]}>
+                          {statusIcons[po.status]}
+                          <span className="ml-1">{statusLabels[po.status]}</span>
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         {po.etaDate ? (
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                            {new Date(po.etaDate).toLocaleDateString('id-ID')}
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-4 w-4 text-muted-foreground" />
+                              {new Date(po.etaDate).toLocaleDateString('id-ID')}
+                            </div>
+                            <ETABadge etaDate={new Date(po.etaDate)} status={po.status} />
                           </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>

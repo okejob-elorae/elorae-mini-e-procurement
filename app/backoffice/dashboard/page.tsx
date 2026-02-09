@@ -11,7 +11,7 @@ import {
   TrendingUp,
   Clock,
 } from 'lucide-react';
-import { Role } from '@prisma/client';
+import { Role } from '@/lib/constants/enums';
 
 function getRoleLabel(role: Role): string {
   const labels: Record<Role, string> = {

@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { getWorkOrders, issueWorkOrder, cancelWorkOrder } from '@/app/actions/production';
-import { WOStatus } from '@prisma/client';
+import { WOStatus } from '@/lib/constants/enums';
 
 interface WorkOrder {
   id: string;
