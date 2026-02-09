@@ -1,0 +1,115 @@
+{
+  "app": {
+    "name": "Elorae ERP",
+    "tagline": "Manajemen Pengadaan & Produksi"
+  },
+  "auth": {
+    "login": "Masuk",
+    "logout": "Keluar",
+    "email": "Email",
+    "password": "Kata Sandi",
+    "pin": "PIN",
+    "confirmPin": "Konfirmasi PIN",
+    "enterPin": "Masukkan PIN Anda",
+    "pinRequired": "PIN diperlukan untuk tindakan ini",
+    "invalidCredentials": "Email atau kata sandi tidak valid",
+    "invalidPin": "PIN tidak valid",
+    "sessionExpired": "Sesi Anda telah berakhir",
+    "role": "Peran",
+    "roles": {
+      "ADMIN": "Administrator",
+      "PURCHASER": "Pembeli",
+      "WAREHOUSE": "Gudang",
+      "PRODUCTION": "Produksi",
+      "USER": "Pengguna"
+    }
+  },
+  "navigation": {
+    "dashboard": "Beranda",
+    "suppliers": "Pemasok",
+    "purchaseOrders": "Pesanan Pembelian",
+    "inventory": "Inventori",
+    "workOrders": "Perintah Kerja",
+    "reports": "Laporan",
+    "settings": "Pengaturan",
+    "masterData": "Data Master"
+  },
+  "supplier": {
+    "title": "Pemasok",
+    "new": "Pemasok Baru",
+    "edit": "Edit Pemasok",
+    "code": "Kode Pemasok",
+    "name": "Nama Pemasok",
+    "type": "Jenis Pemasok",
+    "category": "Kategori",
+    "address": "Alamat",
+    "phone": "Telepon",
+    "email": "Email",
+    "bankName": "Nama Bank",
+    "bankAccount": "Rekening Bank",
+    "bankAccountName": "Nama Pemilik Rekening",
+    "viewBankAccount": "Lihat Rekening Bank",
+    "bankAccountMasked": "Rekening bank disembunyikan untuk keamanan",
+    "types": {
+      "FABRIC": "Pemasok Kain",
+      "ACCESSORIES": "Pemasok Aksesoris",
+      "TAILOR": "Penjahit/Produksi",
+      "OTHER": "Lainnya"
+    }
+  },
+  "common": {
+    "save": "Simpan",
+    "cancel": "Batal",
+    "delete": "Hapus",
+    "edit": "Edit",
+    "view": "Lihat",
+    "create": "Buat",
+    "update": "Perbarui",
+    "search": "Cari",
+    "filter": "Filter",
+    "loading": "Memuat...",
+    "noData": "Tidak ada data",
+    "confirm": "Konfirmasi",
+    "close": "Tutup",
+    "back": "Kembali",
+    "next": "Selanjutnya",
+    "previous": "Sebelumnya",
+    "submit": "Kirim",
+    "status": "Status",
+    "active": "Aktif",
+    "inactive": "Tidak Aktif",
+    "createdAt": "Dibuat Pada",
+    "updatedAt": "Diperbarui Pada",
+    "actions": "Aksi",
+    "required": "Wajib",
+    "optional": "Opsional",
+    "success": "Berhasil",
+    "error": "Error",
+    "warning": "Peringatan",
+    "info": "Info"
+  },
+  "validation": {
+    "required": "Field ini wajib diisi",
+    "email": "Masukkan email yang valid",
+    "minLength": "Minimal {min} karakter",
+    "maxLength": "Maksimal {max} karakter",
+    "numeric": "Harus berupa angka",
+    "positive": "Harus positif"
+  },
+  "offline": {
+    "status": "Status Koneksi",
+    "online": "Online",
+    "offline": "Offline",
+    "syncing": "Menyinkronkan...",
+    "syncPending": "Perubahan menunggu sinkronisasi",
+    "syncError": "Error sinkronisasi",
+    "lastSync": "Terakhir sinkron: {time}"
+  },
+  "audit": {
+    "title": "Log Audit",
+    "action": "Aksi",
+    "entity": "Entitas",
+    "changes": "Perubahan",
+    "viewedBankAccount": "Melihat rekening bank"
+  }
+}

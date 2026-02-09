@@ -1,0 +1,517 @@
+generator client {
+  provider   = "prisma-client-js"
+  output     = "../generated/prisma"
+  engineType = "client"
+}
+
+datasource db {
+  provider     = "mysql"
+  relationMode = "prisma"
+}
+
+// ==========================================
+// AUTHENTICATION (Phase 1 Extended)
+// ==========================================
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  passwordHash  String?
+  pinHash       String?
+  role          Role      @default(USER)
+  fcmToken      String?
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  purchaseOrders PurchaseOrder[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+}
+
+// ==========================================
+// MASTER DATA (Phase 2)
+// ==========================================
+model SupplierCategory {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  nameId      String
+  nameEn      String
+  description String?
+  parentId    String?
+  parent      SupplierCategory? @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children    SupplierCategory[] @relation("CategoryHierarchy")
+  suppliers   Supplier[]
+  createdAt   DateTime   @default(now())
+  @@index([parentId])
+}
+
+model Supplier {
+  id              String           @id @default(cuid())
+  code            String           @unique
+  name            String
+  type            SupplierType
+  categoryId      String?
+  category        SupplierCategory? @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  address         String?
+  phone           String?
+  email           String?
+  bankName        String?
+  bankAccountEnc  String?
+  bankAccountName String?
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  purchaseOrders  PurchaseOrder[]
+  workOrders      WorkOrder[]
+  @@index([type])
+  @@index([categoryId])
+  @@index([code])
+}
+
+model UOM {
+  id              String          @id @default(cuid())
+  code            String          @unique
+  nameId          String
+  nameEn          String
+  description     String?
+  isActive        Boolean         @default(true)
+  items           Item[]
+  fromConversions UOMConversion[] @relation("FromConversions")
+  toConversions   UOMConversion[] @relation("ToConversions")
+  createdAt       DateTime        @default(now())
+}
+
+model UOMConversion {
+  id          String   @id @default(cuid())
+  fromUomId   String
+  toUomId     String
+  fromUom     UOM      @relation("FromConversions", fields: [fromUomId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  toUom       UOM      @relation("ToConversions", fields: [toUomId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  factor      Decimal  @db.Decimal(10,6)
+  isDefault   Boolean  @default(false)
+  @@unique([fromUomId, toUomId])
+  @@index([fromUomId])
+  @@index([toUomId])
+}
+
+model Item {
+  id               String            @id @default(cuid())
+  sku              String            @unique
+  nameId           String
+  nameEn           String
+  description      String?
+  type             ItemType
+  uomId            String
+  uom              UOM               @relation(fields: [uomId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  variants         Json?
+  isActive         Boolean           @default(true)
+  reorderPoint     Decimal?          @db.Decimal(10,2)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  stockMovements   StockMovement[]
+  poItems          POItem[]
+  inventoryValue   InventoryValue?
+  fgConsumptions   ConsumptionRule[] @relation("FGConsumptions")
+  materialUsages   ConsumptionRule[] @relation("MaterialUsages")
+  stockAdjustments StockAdjustment[]
+  @@index([type, isActive])
+  @@index([sku])
+  @@index([uomId])
+}
+
+model ConsumptionRule {
+  id              String   @id @default(cuid())
+  finishedGoodId  String
+  finishedGood    Item     @relation("FGConsumptions", fields: [finishedGoodId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  materialId      String
+  material        Item     @relation("MaterialUsages", fields: [materialId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  qtyRequired     Decimal  @db.Decimal(10,4)
+  wastePercent    Decimal  @default(0) @db.Decimal(5,2)
+  isActive        Boolean  @default(true)
+  notes           String?
+  createdAt       DateTime @default(now())
+  @@unique([finishedGoodId, materialId])
+  @@index([finishedGoodId])
+  @@index([materialId])
+}
+
+// ==========================================
+// PROCUREMENT (Phase 2)
+// ==========================================
+model PurchaseOrder {
+  id          String          @id @default(cuid())
+  docNumber   String          @unique
+  supplierId  String
+  supplier    Supplier        @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  status      POStatus        @default(DRAFT)
+  etaDate     DateTime?
+  currency    String          @default("IDR")
+  totalAmount Decimal         @default(0) @db.Decimal(15,2)
+  taxAmount   Decimal         @default(0) @db.Decimal(15,2)
+  grandTotal  Decimal         @default(0) @db.Decimal(15,2)
+  notes       String?         @db.Text
+  terms       String?         @db.Text
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items       POItem[]
+  grns        GRN[]
+  statusHistory POStatusHistory[]
+  syncStatus  SyncStatus      @default(SYNCED)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  @@index([supplierId])
+  @@index([status])
+  @@index([etaDate])
+  @@index([docNumber])
+}
+
+model POItem {
+  id          String        @id @default(cuid())
+  poId        String
+  po          PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  itemId      String
+  item        Item          @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  qty         Decimal       @db.Decimal(10,2)
+  price       Decimal       @db.Decimal(15,2)
+  receivedQty Decimal       @default(0) @db.Decimal(10,2)
+  uomId       String
+  notes       String?
+  createdAt   DateTime      @default(now())
+  @@index([poId])
+  @@index([itemId])
+}
+
+model POStatusHistory {
+  id          String        @id @default(cuid())
+  poId        String
+  po          PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  status      POStatus
+  changedById String
+  notes       String?
+  createdAt   DateTime      @default(now())
+  @@index([poId, createdAt])
+}
+
+// ==========================================
+// INVENTORY & COSTING (Phase 3)
+// ==========================================
+model InventoryValue {
+  id          String   @id @default(cuid())
+  itemId      String   @unique
+  item        Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  qtyOnHand   Decimal  @default(0) @db.Decimal(10,2)
+  avgCost     Decimal  @default(0) @db.Decimal(15,2)
+  totalValue  Decimal  @default(0) @db.Decimal(15,2)
+  lastUpdated DateTime @default(now())
+  @@index([itemId])
+}
+
+model GRN {
+  id            String    @id @default(cuid())
+  docNumber     String    @unique
+  poId          String?
+  po            PurchaseOrder? @relation(fields: [poId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supplierId    String
+  grnDate       DateTime  @default(now())
+  receivedBy    String
+  totalAmount   Decimal   @db.Decimal(15,2)
+  notes         String?
+  photoUrls     String?
+  items         Json      
+  syncStatus    SyncStatus @default(SYNCED)
+  localId       String?
+  createdAt     DateTime  @default(now())
+  @@index([poId])
+  @@index([grnDate])
+  @@index([docNumber])
+}
+
+model StockMovement {
+  id           String   @id @default(cuid())
+  itemId       String
+  item         Item     @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  type         MoveType
+  refType      String
+  refId        String
+  refDocNumber String
+  qty          Decimal  @db.Decimal(10,2)
+  unitCost     Decimal? @db.Decimal(15,2)
+  totalCost    Decimal? @db.Decimal(15,2)
+  balanceQty   Decimal  @db.Decimal(10,2)
+  balanceValue Decimal  @db.Decimal(15,2)
+  notes        String?
+  createdAt    DateTime @default(now())
+  @@index([itemId, createdAt])
+  @@index([refType, refId])
+}
+
+model StockAdjustment {
+  id            String   @id @default(cuid())
+  docNumber     String   @unique
+  itemId        String
+  item          Item     @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  type          AdjustmentType
+  qtyChange     Decimal  @db.Decimal(10,2)
+  reason        String
+  evidenceUrl   String?
+  prevQty       Decimal  @db.Decimal(10,2)
+  newQty        Decimal  @db.Decimal(10,2)
+  prevAvgCost   Decimal  @db.Decimal(15,2)
+  newAvgCost    Decimal  @db.Decimal(15,2)
+  approvedById  String
+  createdById   String
+  createdAt     DateTime @default(now())
+  @@index([itemId])
+  @@index([docNumber])
+}
+
+// ==========================================
+// PRODUCTION (Phase 4)
+// ==========================================
+model WorkOrder {
+  id              String    @id @default(cuid())
+  docNumber       String    @unique
+  vendorId        String
+  vendor          Supplier  @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  outputMode      OutputMode @default(GENERIC)
+  plannedQty      Decimal   @db.Decimal(10,2)
+  actualQty       Decimal?  @db.Decimal(10,2)
+  targetDate      DateTime?
+  status          WOStatus  @default(DRAFT)
+  issuedAt        DateTime?
+  completedAt     DateTime?
+  canceledAt      DateTime?
+  canceledReason  String?
+  consumptionPlan Json
+  skuBreakdown    Json?
+  notes           String?
+  syncStatus      SyncStatus @default(SYNCED)
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  issues          MaterialIssue[]
+  receipts        FGReceipt[]
+  returns         VendorReturn[]
+  @@index([vendorId])
+  @@index([status])
+  @@index([targetDate])
+  @@index([docNumber])
+}
+
+model MaterialIssue {
+  id            String    @id @default(cuid())
+  docNumber     String    @unique
+  woId          String
+  wo            WorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
+  issueType     IssueType
+  parentIssueId String?
+  isPartial     Boolean   @default(false)
+  items         Json
+  totalCost     Decimal   @db.Decimal(15,2)
+  issuedById    String
+  issuedAt      DateTime  @default(now())
+  acknowledged  Boolean   @default(false)
+  ackAt         DateTime?
+  ackPhotoUrl   String?
+  syncStatus    SyncStatus @default(SYNCED)
+  @@index([woId])
+  @@index([issuedAt])
+}
+
+model FGReceipt {
+  id             String    @id @default(cuid())
+  docNumber      String    @unique
+  woId           String
+  wo             WorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
+  receiptType    ReceiptType
+  qtyReceived    Decimal   @db.Decimal(10,2)
+  qtyRejected    Decimal   @default(0) @db.Decimal(10,2)
+  qtyAccepted    Decimal   @db.Decimal(10,2)
+  skuBreakdown   Json?
+  qcNotes        String?
+  qcPhotos       String?
+  receivedById   String
+  receivedAt     DateTime  @default(now())
+  avgCostPerUnit Decimal?  @db.Decimal(15,2)
+  totalCostValue Decimal?  @db.Decimal(15,2)
+  syncStatus     SyncStatus @default(SYNCED)
+  @@index([woId])
+  @@index([receivedAt])
+}
+
+model VendorReturn {
+  id             String       @id @default(cuid())
+  docNumber      String       @unique
+  woId           String?
+  wo             WorkOrder?   @relation(fields: [woId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendorId       String
+  lines          Json
+  totalItems     Int
+  evidenceUrls   String?
+  status         ReturnStatus @default(DRAFT)
+  processedAt    DateTime?
+  processedBy    String?
+  stockImpacted  Boolean      @default(false)
+  syncStatus     SyncStatus   @default(SYNCED)
+  createdAt      DateTime     @default(now())
+  @@index([woId])
+  @@index([vendorId])
+  @@index([status])
+}
+
+// ==========================================
+// SYSTEM & AUDIT (Phase 5)
+// ==========================================
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  action      String
+  entityType  String
+  entityId    String
+  changes     Json?
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model DocumentNumber {
+  id         String   @id @default(cuid())
+  docType    DocType
+  prefix     String
+  year       Int
+  month      Int?
+  lastNumber Int
+  format     String
+  @@unique([docType, year, month])
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+enum Role {
+  ADMIN
+  PURCHASER
+  WAREHOUSE
+  PRODUCTION
+  USER
+}
+
+enum SupplierType {
+  FABRIC
+  ACCESSORIES
+  TAILOR
+  OTHER
+}
+
+enum ItemType {
+  FABRIC
+  ACCESSORIES
+  FINISHED_GOOD
+}
+
+enum POStatus {
+  DRAFT
+  SUBMITTED
+  PARTIAL
+  CLOSED
+  CANCELLED
+}
+
+enum SyncStatus {
+  SYNCED
+  PENDING
+  ERROR
+}
+
+enum MoveType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum AdjustmentType {
+  POSITIVE
+  NEGATIVE
+}
+
+enum OutputMode {
+  GENERIC
+  SKU
+}
+
+enum WOStatus {
+  DRAFT
+  ISSUED
+  IN_PRODUCTION
+  PARTIAL
+  COMPLETED
+  CANCELLED
+}
+
+enum IssueType {
+  FABRIC
+  ACCESSORIES
+}
+
+enum ReceiptType {
+  GENERIC
+  SKU
+}
+
+enum ReturnStatus {
+  DRAFT
+  SUBMITTED
+  PROCESSED
+  CANCELLED
+}
+
+enum DocType {
+  PO
+  GRN
+  WO
+  ADJ
+  RET
+  ISSUE
+  RECEIPT
+}

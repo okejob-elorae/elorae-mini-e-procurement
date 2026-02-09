@@ -1,0 +1,115 @@
+{
+  "app": {
+    "name": "Elorae ERP",
+    "tagline": "Procurement & Production Management"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "pin": "PIN",
+    "confirmPin": "Confirm PIN",
+    "enterPin": "Enter your PIN",
+    "pinRequired": "PIN is required for this action",
+    "invalidCredentials": "Invalid email or password",
+    "invalidPin": "Invalid PIN",
+    "sessionExpired": "Your session has expired",
+    "role": "Role",
+    "roles": {
+      "ADMIN": "Administrator",
+      "PURCHASER": "Purchaser",
+      "WAREHOUSE": "Warehouse",
+      "PRODUCTION": "Production",
+      "USER": "User"
+    }
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "suppliers": "Suppliers",
+    "purchaseOrders": "Purchase Orders",
+    "inventory": "Inventory",
+    "workOrders": "Work Orders",
+    "reports": "Reports",
+    "settings": "Settings",
+    "masterData": "Master Data"
+  },
+  "supplier": {
+    "title": "Suppliers",
+    "new": "New Supplier",
+    "edit": "Edit Supplier",
+    "code": "Supplier Code",
+    "name": "Supplier Name",
+    "type": "Supplier Type",
+    "category": "Category",
+    "address": "Address",
+    "phone": "Phone",
+    "email": "Email",
+    "bankName": "Bank Name",
+    "bankAccount": "Bank Account",
+    "bankAccountName": "Account Holder Name",
+    "viewBankAccount": "View Bank Account",
+    "bankAccountMasked": "Bank account hidden for security",
+    "types": {
+      "FABRIC": "Fabric Supplier",
+      "ACCESSORIES": "Accessories Supplier",
+      "TAILOR": "Tailor/Production",
+      "OTHER": "Other"
+    }
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "view": "View",
+    "create": "Create",
+    "update": "Update",
+    "search": "Search",
+    "filter": "Filter",
+    "loading": "Loading...",
+    "noData": "No data available",
+    "confirm": "Confirm",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "submit": "Submit",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "createdAt": "Created At",
+    "updatedAt": "Updated At",
+    "actions": "Actions",
+    "required": "Required",
+    "optional": "Optional",
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info"
+  },
+  "validation": {
+    "required": "This field is required",
+    "email": "Please enter a valid email",
+    "minLength": "Must be at least {min} characters",
+    "maxLength": "Must be at most {max} characters",
+    "numeric": "Must be a number",
+    "positive": "Must be positive"
+  },
+  "offline": {
+    "status": "Connection Status",
+    "online": "Online",
+    "offline": "Offline",
+    "syncing": "Syncing...",
+    "syncPending": "Changes pending sync",
+    "syncError": "Sync error",
+    "lastSync": "Last synced: {time}"
+  },
+  "audit": {
+    "title": "Audit Log",
+    "action": "Action",
+    "entity": "Entity",
+    "changes": "Changes",
+    "viewedBankAccount": "Viewed bank account"
+  }
+}
