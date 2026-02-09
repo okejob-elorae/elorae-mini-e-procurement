@@ -1,3 +1,7 @@
+/**
+ * Seed script: upsert-only. Safe to run on every deploy (e.g. Vercel).
+ * Does not reset or truncate tables; creates or skips existing records by unique keys.
+ */
 import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient, Role, SupplierType, ItemType } from "@prisma/client";
