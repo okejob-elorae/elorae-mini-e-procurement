@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { itemSchema, consumptionRuleSchema } from '@/lib/validations';
@@ -94,6 +94,23 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       notes: r.notes
     })) || []
   );
+  const initialAttributes = useMemo(() => {
+    if (!initialData?.variants || initialData.variants.length === 0) return [];
+    const map = new Map<string, Set<string>>();
+    initialData.variants.forEach((variant) => {
+      Object.entries(variant).forEach(([key, value]) => {
+        if (!map.has(key)) map.set(key, new Set());
+        map.get(key)!.add(value);
+      });
+    });
+    return Array.from(map.entries()).map(([key, values]) => ({
+      key,
+      values: Array.from(values),
+    }));
+  }, [initialData?.variants]);
+  const [attributes, setAttributes] = useState<Array<{ key: string; values: string[] }>>(
+    initialAttributes
+  );
 
   const {
     register,
@@ -163,7 +180,67 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     setConsumptionRules(updated);
   };
 
+  const addAttribute = () => {
+    setAttributes([...attributes, { key: '', values: [] }]);
+  };
+
+  const removeAttribute = (index: number) => {
+    setAttributes(attributes.filter((_, i) => i !== index));
+  };
+
+  const updateAttributeKey = (index: number, key: string) => {
+    const updated = [...attributes];
+    updated[index] = { ...updated[index], key };
+    setAttributes(updated);
+  };
+
+  const updateAttributeValues = (index: number, value: string) => {
+    const values = value
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const updated = [...attributes];
+    updated[index] = { ...updated[index], values };
+    setAttributes(updated);
+  };
+
+  const variantCombinations = useMemo(() => {
+    if (attributes.length === 0) return [];
+    return attributes.reduce<Array<Record<string, string>>>((acc, attr) => {
+      if (!attr.key || attr.values.length === 0) return acc;
+      if (acc.length === 0) {
+        return attr.values.map((value) => ({ [attr.key]: value }));
+      }
+      const next: Array<Record<string, string>> = [];
+      acc.forEach((combo) => {
+        attr.values.forEach((value) => {
+          next.push({ ...combo, [attr.key]: value });
+        });
+      });
+      return next;
+    }, []);
+  }, [attributes]);
+
   const onFormSubmit = async (data: ItemFormData) => {
+    const dataWithSku: ItemFormData = {
+      ...data,
+      sku: sku || undefined,
+    };
+
+    const hasAttributes =
+      attributes.length > 0 &&
+      attributes.some((attr) => attr.key.trim() || attr.values.length > 0);
+
+    if (hasAttributes) {
+      const incomplete = attributes.find((attr) => !attr.key.trim() || attr.values.length === 0);
+      if (incomplete) {
+        toast.error('Please provide a name and at least one value for each attribute');
+        return;
+      }
+    }
+
+    const variants = variantCombinations.length > 0 ? variantCombinations : undefined;
+
     // Validate consumption rules if type is FINISHED_GOOD
     if (itemType === ItemType.FINISHED_GOOD && consumptionRules.length > 0) {
       const invalidRules = consumptionRules.filter(
@@ -175,7 +252,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       }
     }
 
-    await onSubmit(data, itemType === ItemType.FINISHED_GOOD ? consumptionRules : undefined);
+    await onSubmit(
+      { ...dataWithSku, variants },
+      itemType === ItemType.FINISHED_GOOD ? consumptionRules : undefined
+    );
   };
 
   return (
@@ -322,6 +402,92 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         </CardContent>
       </Card>
 
+      {/* Variants */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Variants (Optional)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              Define attributes (e.g., Color, Size) and their values to generate variant combinations.
+            </p>
+            <Button type="button" variant="outline" onClick={addAttribute}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Attribute
+            </Button>
+          </div>
+
+          {attributes.length === 0 && (
+            <p className="text-sm text-muted-foreground">No attributes added yet.</p>
+          )}
+
+          {attributes.map((attr, index) => (
+            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <div className="space-y-2">
+                <Label>Attribute Name</Label>
+                <Input
+                  value={attr.key}
+                  onChange={(e) => updateAttributeKey(index, e.target.value)}
+                  placeholder="Color"
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Values (comma separated)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={attr.values.join(', ')}
+                    onChange={(e) => updateAttributeValues(index, e.target.value)}
+                    placeholder="Red, Blue, Green"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeAttribute(index)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {variantCombinations.length > 0 && (
+            <div className="space-y-2">
+              <Label>Generated Variants</Label>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>#</TableHead>
+                      {attributes.map(
+                        (attr) =>
+                          attr.key && <TableHead key={attr.key}>{attr.key}</TableHead>
+                      )}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {variantCombinations.map((combo, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>{idx + 1}</TableCell>
+                        {attributes
+                          .filter((attr) => attr.key)
+                          .map((attr) => (
+                            <TableCell key={`${idx}-${attr.key}`}>
+                              {combo[attr.key] || '-'}
+                            </TableCell>
+                          ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Consumption Rules - Only for Finished Goods */}
       {itemType === ItemType.FINISHED_GOOD && (
         <Card>
@@ -369,7 +535,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                             updateConsumptionRule(index, 'materialId', value)
                           }
                         >
-                          <SelectTrigger>
+                          <SelectTrigger className="max-w-[16rem] min-w-0 [&_[data-slot=select-value]]:truncate">
                             <SelectValue placeholder="Select material" />
                           </SelectTrigger>
                           <SelectContent>

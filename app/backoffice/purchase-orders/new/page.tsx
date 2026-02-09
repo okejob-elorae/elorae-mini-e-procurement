@@ -6,8 +6,7 @@ import { useSession } from 'next-auth/react';
 import { POForm } from '@/components/forms/POForm';
 import { createPO } from '@/app/actions/purchase-orders';
 import { toast } from 'sonner';
-import { OfflinePOButton } from '@/components/offline/OfflinePOButton';
-import { offlineDB } from '@/lib/offline/db';
+import { offlineDB, savePOLocally } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
 
 interface Supplier {
@@ -69,9 +68,47 @@ export default function NewPOPage() {
     }
   };
 
-  const handleSaveLocally = async () => {
-    // This will be handled by the form's offline detection
-    toast.info('PO will be saved locally and synced when online');
+  const handleSaveLocally = async (
+    data: Parameters<typeof POForm>[0]['onSubmit'] extends (data: infer T) => any ? T : never,
+    context: {
+      enrichedItems: Array<{
+        itemId: string;
+        qty: number;
+        price: number;
+        uomId: string;
+        sku?: string;
+        itemName?: string;
+        uomCode?: string;
+      }>;
+      totalAmount: number;
+      supplier?: Supplier;
+    }
+  ) => {
+    setIsLoading(true);
+    try {
+      await savePOLocally({
+        supplierId: data.supplierId,
+        supplierName: context.supplier?.name,
+        etaDate: data.etaDate || undefined,
+        items: context.enrichedItems.map((item) => ({
+          itemId: item.itemId,
+          qty: item.qty,
+          price: item.price,
+          uomId: item.uomId,
+          sku: item.sku,
+          itemName: item.itemName,
+        })),
+        totalAmount: context.totalAmount,
+        notes: data.notes,
+        status: 'PENDING_SYNC',
+      });
+      toast.success('PO saved locally. It will sync when online.');
+      router.push('/backoffice/purchase-orders');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save PO locally');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (isLoadingSuppliers) {
@@ -94,6 +131,7 @@ export default function NewPOPage() {
       <POForm
         suppliers={suppliers}
         onSubmit={handleSubmit}
+        onSaveLocally={handleSaveLocally}
         isLoading={isLoading}
       />
     </div>

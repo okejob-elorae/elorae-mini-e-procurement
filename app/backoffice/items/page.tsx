@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useLocale } from 'next-intl';
 import Link from 'next/link';
 import { 
   Plus, 
@@ -35,6 +36,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 import { getItems, deleteItem } from '@/app/actions/items';
 import { ItemType } from '@/lib/constants/enums';
@@ -71,6 +79,7 @@ const itemTypeColors: Record<ItemType, string> = {
 };
 
 export default function ItemsPage() {
+  const locale = useLocale();
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -141,16 +150,20 @@ export default function ItemsPage() {
             className="pl-9"
           />
         </div>
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value as ItemType | '')}
-          className="px-3 py-2 rounded-md border bg-background"
+        <Select
+          value={typeFilter || 'all'}
+          onValueChange={(value) => setTypeFilter(value === 'all' ? '' : (value as ItemType))}
         >
-          <option value="">All Types</option>
-          <option value="FABRIC">Fabric</option>
-          <option value="ACCESSORIES">Accessories</option>
-          <option value="FINISHED_GOOD">Finished Good</option>
-        </select>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value={ItemType.FABRIC}>Fabric</SelectItem>
+            <SelectItem value={ItemType.ACCESSORIES}>Accessories</SelectItem>
+            <SelectItem value={ItemType.FINISHED_GOOD}>Finished Good</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Items Table */}
@@ -191,10 +204,9 @@ export default function ItemsPage() {
                     <TableRow key={item.id}>
                       <TableCell className="font-medium">{item.sku}</TableCell>
                       <TableCell>
-                        <div>
-                          <p className="font-medium">{item.nameId}</p>
-                          <p className="text-sm text-muted-foreground">{item.nameEn}</p>
-                        </div>
+                        <p className="font-medium">
+                          {locale === 'en' ? item.nameEn : item.nameId}
+                        </p>
                       </TableCell>
                       <TableCell>
                         <Badge className={itemTypeColors[item.type]}>

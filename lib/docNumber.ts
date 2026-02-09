@@ -7,7 +7,7 @@ interface DocConfig {
 }
 
 const docConfig: Record<DocType, DocConfig> = {
-  PO: { prefix: 'PO', resetMonthly: true },
+  PO: { prefix: 'PO', resetMonthly: false },
   GRN: { prefix: 'GRN', resetMonthly: true },
   WO: { prefix: 'WO', resetMonthly: false },
   ADJ: { prefix: 'ADJ', resetMonthly: true },

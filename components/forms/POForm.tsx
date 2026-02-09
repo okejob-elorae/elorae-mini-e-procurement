@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { poSchema, poItemSchema } from '@/lib/validations';
 import { getItems } from '@/app/actions/items';
-import { getCachedSuppliers } from '@/lib/offline/db';
+import { getCachedItems } from '@/lib/offline/db';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +31,9 @@ import { Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { z } from 'zod';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
+import { OfflinePOButton } from '@/components/offline/OfflinePOButton';
+import { isOnline } from '@/lib/offline/sync';
+import { useLocale } from 'next-intl';
 
 type POFormData = z.infer<typeof poSchema>;
 type POItemData = z.infer<typeof poItemSchema>;
@@ -73,10 +76,27 @@ interface POFormProps {
   };
   suppliers: Supplier[];
   onSubmit: (data: POFormData) => Promise<void>;
+  onSaveLocally?: (
+    data: POFormData,
+    context: {
+      enrichedItems: Array<
+        POItemData & { sku?: string; itemName?: string; uomCode?: string }
+      >;
+      totalAmount: number;
+      supplier?: Supplier;
+    }
+  ) => Promise<void>;
   isLoading?: boolean;
 }
 
-export function POForm({ initialData, suppliers, onSubmit, isLoading = false }: POFormProps) {
+export function POForm({
+  initialData,
+  suppliers,
+  onSubmit,
+  onSaveLocally,
+  isLoading = false,
+}: POFormProps) {
+  const locale = useLocale();
   const [items, setItems] = useState<Item[]>([]);
   const [lineItems, setLineItems] = useState<Array<POItemData & { id: string }>>(
     initialData?.items?.map((item, idx) => ({
@@ -114,10 +134,35 @@ export function POForm({ initialData, suppliers, onSubmit, isLoading = false }: 
   });
 
   useEffect(() => {
-    // Load items
-    getItems({ isActive: true })
-      .then((data) => setItems(data as Item[]))
-      .catch(() => toast.error('Failed to load items'));
+    const loadItems = async () => {
+      try {
+        if (!isOnline()) {
+          const cached = await getCachedItems();
+          if (cached.length > 0) {
+            setItems(
+              cached.map((item) => ({
+                id: item.id,
+                sku: item.sku,
+                nameId: item.nameId,
+                nameEn: item.nameEn,
+                uom: {
+                  id: item.uomId,
+                  code: item.uomCode || '',
+                },
+              }))
+            );
+            return;
+          }
+        }
+
+        const data = await getItems({ isActive: true });
+        setItems(data as Item[]);
+      } catch (error) {
+        toast.error('Failed to load items');
+      }
+    };
+
+    loadItems();
   }, []);
 
   const addLineItem = () => {
@@ -165,6 +210,8 @@ export function POForm({ initialData, suppliers, onSubmit, isLoading = false }: 
       item.nameEn.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const getItemDisplayName = (item: Item) => (locale === 'en' ? item.nameEn : item.nameId);
+
   const onFormSubmit = async (data: POFormData) => {
     // Validate line items
     const validItems = lineItems.filter(
@@ -188,11 +235,32 @@ export function POForm({ initialData, suppliers, onSubmit, isLoading = false }: 
     });
   };
 
+  const handleSaveLocally = handleSubmit(async (data) => {
+    if (!onSaveLocally) return;
+
+    const enrichedItems = data.items.map((line) => {
+      const source = items.find((i) => i.id === line.itemId);
+      return {
+        ...line,
+        sku: source?.sku,
+        itemName: source?.nameId,
+        uomCode: source?.uom.code,
+      };
+    });
+
+    const totalAmount = data.items.reduce((sum, line) => sum + line.qty * line.price, 0);
+    const supplier = suppliers.find((s) => s.id === data.supplierId);
+
+    await onSaveLocally(data, { enrichedItems, totalAmount, supplier });
+  });
+
+  const handleSubmitForm = handleSubmit(onFormSubmit);
+
   const etaDate = watch('etaDate');
   const isETAPast = etaDate && new Date(etaDate) < new Date();
 
   return (
-    <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmitForm} className="space-y-6">
       {/* Offline Indicator */}
       <OfflineIndicator />
 
@@ -289,13 +357,13 @@ export function POForm({ initialData, suppliers, onSubmit, isLoading = false }: 
                           value={lineItem.itemId}
                           onValueChange={(value) => updateLineItem(lineItem.id, 'itemId', value)}
                         >
-                          <SelectTrigger>
+                          <SelectTrigger className="max-w-[16rem] min-w-0 [&_[data-slot=select-value]]:truncate">
                             <SelectValue placeholder="Select item" />
                           </SelectTrigger>
                           <SelectContent>
                             {filteredItems.map((item) => (
                               <SelectItem key={item.id} value={item.id}>
-                                {item.sku} - {item.nameId}
+                                {item.sku} - {getItemDisplayName(item)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -408,10 +476,19 @@ export function POForm({ initialData, suppliers, onSubmit, isLoading = false }: 
 
       {/* Submit Button */}
       <div className="flex justify-end gap-2">
-        <Button type="submit" disabled={isLoading}>
-          {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-          {initialData ? 'Update PO' : 'Create PO'}
-        </Button>
+        {onSaveLocally ? (
+          <OfflinePOButton
+            onSaveLocally={handleSaveLocally}
+            onSubmit={handleSubmitForm}
+            disabled={isLoading}
+            isLoading={isLoading}
+          />
+        ) : (
+          <Button type="submit" disabled={isLoading}>
+            {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {initialData ? 'Update PO' : 'Create PO'}
+          </Button>
+        )}
       </div>
     </form>
   );

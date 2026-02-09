@@ -27,6 +27,7 @@
   "navigation": {
     "dashboard": "Dashboard",
     "suppliers": "Suppliers",
+    "items": "Items",
     "purchaseOrders": "Purchase Orders",
     "inventory": "Inventory",
     "workOrders": "Work Orders",

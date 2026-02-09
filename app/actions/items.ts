@@ -14,16 +14,23 @@ export type ItemFormData = z.infer<typeof itemSchema>;
 
 export async function createItem(data: ItemFormData) {
   const validated = itemSchema.parse(data);
-  const sku = await generateSKU(validated.type);
-  
+  const { sku: inputSku, ...rest } = validated;
+
+  const finalSku = inputSku?.trim() || await generateSKU(rest.type);
+
+  const existing = await prisma.item.findUnique({ where: { sku: finalSku } });
+  if (existing) {
+    throw new Error('SKU already exists');
+  }
+
   const item = await prisma.$transaction(async (tx) => {
     // Create item
     const newItem = await tx.item.create({
       data: {
-        ...validated,
-        sku,
-        variants: validated.variants || [],
-        reorderPoint: validated.reorderPoint || null,
+        ...rest,
+        sku: finalSku,
+        variants: rest.variants || [],
+        reorderPoint: rest.reorderPoint || null,
       }
     });
     
@@ -46,13 +53,14 @@ export async function createItem(data: ItemFormData) {
 
 export async function updateItem(id: string, data: ItemFormData) {
   const validated = itemSchema.parse(data);
-  
+  const { sku: _sku, ...rest } = validated;
+
   const item = await prisma.item.update({
     where: { id },
     data: {
-      ...validated,
-      variants: validated.variants || [],
-      reorderPoint: validated.reorderPoint || null,
+      ...rest,
+      variants: rest.variants || [],
+      reorderPoint: rest.reorderPoint || null,
     }
   });
   

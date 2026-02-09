@@ -27,6 +27,7 @@
   "navigation": {
     "dashboard": "Beranda",
     "suppliers": "Pemasok",
+    "items": "Item",
     "purchaseOrders": "Pesanan Pembelian",
     "inventory": "Inventori",
     "workOrders": "Perintah Kerja",

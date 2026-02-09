@@ -2,12 +2,26 @@ import "dotenv/config";
 import { defineConfig, env } from "prisma/config";
 
 /**
- * Ensure DATABASE_URL has SSL for Prisma schema engine (migrate deploy).
- * TiDB Cloud prohibits insecure transport; schema engine needs sslaccept=strict or sslcert=system.
+ * True when URL points to local MySQL (localhost / 127.0.0.1).
+ */
+function isLocalDatabaseUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url.replace(/^mysql:\/\//, "https://"));
+    const host = (parsed.hostname || "").toLowerCase();
+    return host === "localhost" || host === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ensure DATABASE_URL has SSL for Prisma schema engine (migrate deploy) when remote.
+ * TiDB Cloud prohibits insecure transport. Local MySQL (localhost): no SSL added.
  */
 function getDatasourceUrl(): string {
   const url = env("DATABASE_URL");
   if (!url) return "";
+  if (isLocalDatabaseUrl(url)) return url;
   const hasSsl =
     /[?&]sslaccept=strict/i.test(url) ||
     /[?&]ssl=true/i.test(url) ||

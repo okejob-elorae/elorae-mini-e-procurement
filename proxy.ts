@@ -18,7 +18,7 @@ function hasPermission(role: string | undefined, pathname: string): boolean {
   return permissions.some((path) => pathname.startsWith(path));
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const pathname = req.nextUrl?.pathname ?? '/';
 
   if (pathname.startsWith('/api/auth')) {

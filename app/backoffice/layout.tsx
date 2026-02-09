@@ -29,13 +29,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
+import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { useTranslations } from 'next-intl';
 
 interface NavItem {
-  label: string;
+  labelKey: string;
   href: string;
   icon: React.ElementType;
   roles: Role[];
@@ -43,65 +45,54 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   {
-    label: 'Dashboard',
+    labelKey: 'dashboard',
     href: '/backoffice/dashboard',
     icon: LayoutDashboard,
     roles: [Role.ADMIN, Role.PURCHASER, Role.WAREHOUSE, Role.PRODUCTION, Role.USER],
   },
   {
-    label: 'Suppliers',
+    labelKey: 'suppliers',
     href: '/backoffice/suppliers',
     icon: Users,
     roles: [Role.ADMIN, Role.PURCHASER],
   },
   {
-    label: 'Items',
+    labelKey: 'items',
     href: '/backoffice/items',
     icon: Package,
     roles: [Role.ADMIN, Role.PURCHASER, Role.WAREHOUSE],
   },
   {
-    label: 'Purchase Orders',
+    labelKey: 'purchaseOrders',
     href: '/backoffice/purchase-orders',
     icon: ShoppingCart,
     roles: [Role.ADMIN, Role.PURCHASER],
   },
   {
-    label: 'Inventory',
+    labelKey: 'inventory',
     href: '/backoffice/inventory',
     icon: Package,
     roles: [Role.ADMIN, Role.WAREHOUSE],
   },
   {
-    label: 'Work Orders',
+    labelKey: 'workOrders',
     href: '/backoffice/work-orders',
     icon: ClipboardList,
     roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
   },
   {
-    label: 'Reports',
+    labelKey: 'reports',
     href: '/backoffice/reports',
     icon: BarChart3,
     roles: [Role.ADMIN, Role.PURCHASER, Role.PRODUCTION],
   },
   {
-    label: 'Settings',
+    labelKey: 'settings',
     href: '/backoffice/settings',
     icon: Settings,
     roles: [Role.ADMIN],
   },
 ];
-
-function getRoleLabel(role: Role): string {
-  const labels: Record<Role, string> = {
-    ADMIN: 'Administrator',
-    PURCHASER: 'Purchaser',
-    WAREHOUSE: 'Warehouse',
-    PRODUCTION: 'Production',
-    USER: 'User',
-  };
-  return labels[role] || role;
-}
 
 function Sidebar({
   className,
@@ -113,6 +104,7 @@ function Sidebar({
   onClose?: () => void;
 }) {
   const pathname = usePathname();
+  const tNav = useTranslations('navigation');
 
   const filteredItems = navItems.filter((item) =>
     item.roles.includes(role)
@@ -148,7 +140,7 @@ function Sidebar({
               )}
             >
               <Icon className="w-5 h-5" />
-              {item.label}
+              {tNav(item.labelKey as any)}
             </Link>
           );
         })}
@@ -166,6 +158,8 @@ export default function BackofficeLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const tRole = useTranslations('auth.roles');
+  const tNav = useTranslations('navigation');
   const { data: session, status } = useSession();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -175,6 +169,11 @@ export default function BackofficeLayout({
       router.replace('/login');
     }
   }, [status, router]);
+
+  useEffect(() => {
+    setupSyncListeners();
+    syncReferenceData();
+  }, []);
 
   if (status === 'loading') {
     return (
@@ -231,11 +230,12 @@ export default function BackofficeLayout({
               </SheetContent>
             </Sheet>
             <h2 className="text-lg font-semibold hidden sm:block">
-              Welcome back, {session.user.name || session.user.email}
+              {tNav('dashboard')} - {session.user.name || session.user.email}
             </h2>
           </div>
 
           <div className="flex items-center gap-4">
+            <LanguageSwitcher />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2">
@@ -247,7 +247,7 @@ export default function BackofficeLayout({
                   <div className="hidden sm:block text-left">
                     <p className="text-sm font-medium">{session.user.name || session.user.email}</p>
                     <p className="text-xs text-muted-foreground">
-                      {getRoleLabel(userRole)}
+                      {tRole(userRole as any)}
                     </p>
                   </div>
                   <ChevronDown className="h-4 w-4 text-muted-foreground" />

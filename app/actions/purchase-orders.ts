@@ -7,6 +7,7 @@ import { generateDocNumber } from '@/lib/docNumber';
 import { POStatus } from '@prisma/client';
 import { poSchema, poItemSchema } from '@/lib/validations';
 import { getETAStatus } from '@/lib/eta-alerts';
+import { z } from 'zod';
 
 export type POFormData = z.infer<typeof poSchema>;
 

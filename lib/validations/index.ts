@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const itemSchema = z.object({
+  sku: z.string().optional(),
   nameId: z.string().min(1, 'Nama item wajib diisi'),
   nameEn: z.string().min(1, 'Item name is required'),
   type: z.enum(['FABRIC', 'ACCESSORIES', 'FINISHED_GOOD']),

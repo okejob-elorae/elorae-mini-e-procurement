@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 export function OfflineIndicator() {
   const [isOnline, setIsOnline] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingPOCount, setPendingPOCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
@@ -22,6 +23,7 @@ export function OfflineIndicator() {
       const status = await getSyncStatus();
       setIsOnline(status.isOnline);
       setPendingCount(status.pendingCount);
+      setPendingPOCount(status.pendingPOCount || 0);
     };
 
     checkStatus();
@@ -68,6 +70,7 @@ export function OfflineIndicator() {
       }
       const status = await getSyncStatus();
       setPendingCount(status.pendingCount);
+      setPendingPOCount(status.pendingPOCount || 0);
     } catch (error) {
       toast.error('Sync failed');
     } finally {
@@ -93,9 +96,9 @@ export function OfflineIndicator() {
             )}
             <span className="text-sm">
               {isOnline ? 'Online' : 'Offline'}
-              {pendingCount > 0 && ` (${pendingCount} pending)`}
+              {pendingCount + pendingPOCount > 0 && ` (${pendingCount + pendingPOCount} pending)`}
             </span>
-            {pendingCount > 0 && isOnline && (
+            {pendingCount + pendingPOCount > 0 && isOnline && (
               <RefreshCw className={`h-3 w-3 ml-auto ${isSyncing ? 'animate-spin' : ''}`} />
             )}
           </Button>
@@ -103,8 +106,8 @@ export function OfflineIndicator() {
         <TooltipContent>
           <p>
             {isOnline
-              ? pendingCount > 0
-                ? `Click to sync ${pendingCount} pending operations`
+              ? pendingCount + pendingPOCount > 0
+                ? `Click to sync ${pendingCount + pendingPOCount} pending operations`
                 : 'All changes synced'
               : 'Working offline - changes will sync when connection is restored'}
           </p>

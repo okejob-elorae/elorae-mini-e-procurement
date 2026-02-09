@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { SessionProvider } from 'next-auth/react';
 import { Toaster } from '@/components/ui/sonner';
+import { LocaleProvider } from '@/components/providers/LocaleProvider';
 import './globals.css';
 
 const geistSans = Geist({
@@ -46,7 +47,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <SessionProvider>{children}</SessionProvider>
+        <SessionProvider>
+          <LocaleProvider>{children}</LocaleProvider>
+        </SessionProvider>
         <Toaster position="top-center" richColors />
       </body>
     </html>
