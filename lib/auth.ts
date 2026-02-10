@@ -11,6 +11,7 @@ export const {
   signIn,
   signOut,
 } = NextAuth({
+  trustHost: true, // required for Vercel/serverless (trust X-Forwarded-Host)
   adapter: PrismaAdapter(prisma) as any,
   session: {
     strategy: 'jwt',
