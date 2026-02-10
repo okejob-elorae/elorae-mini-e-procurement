@@ -116,7 +116,6 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     register,
     handleSubmit,
     watch,
-    setValue,
     control,
     formState: { errors },
   } = useForm<ItemFormData>({
@@ -155,7 +154,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     try {
       const newSku = await generateSKU(itemType);
       setSku(newSku);
-    } catch (error) {
+    } catch (_error) {
       toast.error('Failed to generate SKU');
     } finally {
       setIsGeneratingSKU(false);
@@ -453,38 +452,6 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             </div>
           ))}
 
-          {variantCombinations.length > 0 && (
-            <div className="space-y-2">
-              <Label>Generated Variants</Label>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      {attributes.map(
-                        (attr) =>
-                          attr.key && <TableHead key={attr.key}>{attr.key}</TableHead>
-                      )}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {variantCombinations.map((combo, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell>{idx + 1}</TableCell>
-                        {attributes
-                          .filter((attr) => attr.key)
-                          .map((attr) => (
-                            <TableCell key={`${idx}-${attr.key}`}>
-                              {combo[attr.key] || '-'}
-                            </TableCell>
-                          ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 

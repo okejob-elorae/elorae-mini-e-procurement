@@ -126,8 +126,8 @@ export default function UOMPage() {
         getUOMConversions(),
       ]);
       setUOMs(uomsData);
-      setConversions(conversionsData);
-    } catch (error) {
+      setConversions(conversionsData.map((c) => ({ ...c, factor: Number(c.factor) })));
+    } catch (_error) {
       toast.error('Failed to load UOM data');
     } finally {
       setIsLoading(false);

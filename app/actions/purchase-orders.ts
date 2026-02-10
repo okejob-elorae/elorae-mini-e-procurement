@@ -5,7 +5,7 @@ import { Decimal } from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { generateDocNumber } from '@/lib/docNumber';
 import { POStatus } from '@prisma/client';
-import { poSchema, poItemSchema } from '@/lib/validations';
+import { poSchema } from '@/lib/validations';
 import { getETAStatus } from '@/lib/eta-alerts';
 import { z } from 'zod';
 
@@ -54,9 +54,9 @@ export async function createPO(data: POFormData, userId: string) {
 }
 
 export async function updatePO(
-  id: string, 
-  data: POFormData, 
-  userId: string
+  id: string,
+  data: POFormData,
+  _userId: string
 ) {
   // Only allow update if status is DRAFT
   const existing = await prisma.purchaseOrder.findUnique({
@@ -219,15 +219,27 @@ export async function getPOs(filters?: {
     orderBy: { createdAt: 'desc' }
   });
 
-  // Add ETA status to each PO
-  return pos.map(po => ({
+  return pos.map((po) => ({
     ...po,
-    etaAlert: getETAStatus(po.etaDate, po.status)
+    totalAmount: toNum(po.totalAmount),
+    taxAmount: toNum(po.taxAmount),
+    grandTotal: toNum(po.grandTotal),
+    items: po.items.map((i) => ({
+      ...i,
+      qty: toNum(i.qty),
+      price: toNum(i.price),
+      receivedQty: toNum(i.receivedQty),
+    })),
+    etaAlert: getETAStatus(po.etaDate, po.status),
   }));
 }
 
+function toNum(v: unknown): number | null {
+  return v == null ? null : Number(v);
+}
+
 export async function getPOById(id: string) {
-  return await prisma.purchaseOrder.findUnique({
+  const po = await prisma.purchaseOrder.findUnique({
     where: { id },
     include: {
       supplier: true,
@@ -255,6 +267,19 @@ export async function getPOById(id: string) {
       }
     }
   });
+  if (!po) return null;
+  return {
+    ...po,
+    totalAmount: toNum(po.totalAmount),
+    taxAmount: toNum(po.taxAmount),
+    grandTotal: toNum(po.grandTotal),
+    items: po.items.map((i) => ({
+      ...i,
+      qty: toNum(i.qty),
+      price: toNum(i.price),
+      receivedQty: toNum(i.receivedQty),
+    })),
+  };
 }
 
 // Get overdue POs with alert status

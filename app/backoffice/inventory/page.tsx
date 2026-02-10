@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { 
   Plus, 
@@ -10,7 +10,9 @@ import {
   ArrowUpRight,
   History,
   AlertTriangle,
-  TrendingUp
+  TrendingUp,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,7 +34,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { getInventorySnapshot } from '@/lib/inventory/costing';
-import { getGRNs, getStockAdjustments } from '@/app/actions/inventory';
+import { getGRNs } from '@/app/actions/grn';
+import { getStockAdjustments } from '@/app/actions/inventory';
 
 interface InventoryItem {
   itemId: string;
@@ -72,10 +75,13 @@ interface Adjustment {
   qtyChange: string;
   reason: string;
   createdAt: string;
+  evidenceUrl?: string | null;
   item: {
     sku: string;
     nameId: string;
   };
+  createdBy?: { name: string | null; email: string | null } | null;
+  approvedBy?: { name: string | null } | null;
 }
 
 export default function InventoryPage() {
@@ -84,6 +90,9 @@ export default function InventoryPage() {
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [grnSearchQuery, setGrnSearchQuery] = useState('');
+  const [adjustmentSearchQuery, setAdjustmentSearchQuery] = useState('');
+  const [expandedAdjustmentId, setExpandedAdjustmentId] = useState<string | null>(null);
   const [summary, setSummary] = useState({
     totalItems: 0,
     totalValue: 0,
@@ -99,15 +108,15 @@ export default function InventoryPage() {
         getStockAdjustments()
       ]);
       
-      setInventory(invData.items as InventoryItem[]);
+      setInventory(invData.items as unknown as InventoryItem[]);
       setSummary({
         totalItems: invData.totalItems,
         totalValue: invData.totalValue,
         lowStockItems: invData.lowStockItems
       });
-      setGRNs(grnData as GRN[]);
-      setAdjustments(adjData as Adjustment[]);
-    } catch (error) {
+      setGRNs(grnData as unknown as GRN[]);
+      setAdjustments(adjData as unknown as Adjustment[]);
+    } catch (_error) {
       toast.error('Failed to load inventory data');
     } finally {
       setIsLoading(false);
@@ -128,6 +137,24 @@ export default function InventoryPage() {
     item.item.nameId.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const q = (s: string) => s.toLowerCase().trim();
+  const filteredGrns = grns.filter(
+    (grn) =>
+      !grnSearchQuery ||
+      q(grn.docNumber).includes(q(grnSearchQuery)) ||
+      q(grn.supplier.name).includes(q(grnSearchQuery)) ||
+      q(grn.po?.docNumber ?? '').includes(q(grnSearchQuery))
+  );
+
+  const filteredAdjustments = adjustments.filter(
+    (adj) =>
+      !adjustmentSearchQuery ||
+      q(adj.docNumber).includes(q(adjustmentSearchQuery)) ||
+      q(adj.item.sku).includes(q(adjustmentSearchQuery)) ||
+      q(adj.item.nameId).includes(q(adjustmentSearchQuery)) ||
+      q(adj.reason).includes(q(adjustmentSearchQuery))
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -138,15 +165,21 @@ export default function InventoryPage() {
             Track stock levels, movements, and valuations
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link href="/backoffice/inventory/grn/new">
-            <Button variant="outline">
+            <Button variant="outline" className="min-h-[44px]">
               <ArrowDownLeft className="mr-2 h-4 w-4" />
               Receive Goods
             </Button>
           </Link>
+          <Link href="/backoffice/inventory/stock-card">
+            <Button variant="outline" className="min-h-[44px]">
+              <History className="mr-2 h-4 w-4" />
+              Stock Card
+            </Button>
+          </Link>
           <Link href="/backoffice/inventory/adjustment/new">
-            <Button>
+            <Button className="min-h-[44px]">
               <Plus className="mr-2 h-4 w-4" />
               Adjustment
             </Button>
@@ -185,7 +218,7 @@ export default function InventoryPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{summary.lowStockItems}</div>
@@ -241,7 +274,7 @@ export default function InventoryPage() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               {isLowStock(item) && (
-                                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
                               )}
                               <div>
                                 <p className="font-medium">{item.item.nameId}</p>
@@ -270,6 +303,15 @@ export default function InventoryPage() {
         </TabsContent>
 
         <TabsContent value="grn" className="space-y-4">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search GRN number, supplier, PO..."
+              value={grnSearchQuery}
+              onChange={(e) => setGrnSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
@@ -284,7 +326,7 @@ export default function InventoryPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {grns.map((grn) => (
+                    {filteredGrns.map((grn) => (
                       <TableRow key={grn.id}>
                         <TableCell className="font-medium">{grn.docNumber}</TableCell>
                         <TableCell>
@@ -305,43 +347,100 @@ export default function InventoryPage() {
         </TabsContent>
 
         <TabsContent value="adjustments" className="space-y-4">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search doc number, item, reason..."
+              value={adjustmentSearchQuery}
+              onChange={(e) => setAdjustmentSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10" />
                       <TableHead>Doc Number</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Item</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
                       <TableHead>Reason</TableHead>
+                      <TableHead>Created by</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {adjustments.map((adj) => (
-                      <TableRow key={adj.id}>
-                        <TableCell className="font-medium">{adj.docNumber}</TableCell>
-                        <TableCell>
-                          {new Date(adj.createdAt).toLocaleDateString('id-ID')}
-                        </TableCell>
-                        <TableCell>{adj.item.nameId}</TableCell>
-                        <TableCell>
-                          <Badge variant={adj.type === 'POSITIVE' ? 'default' : 'destructive'}>
-                            {adj.type === 'POSITIVE' ? (
-                              <ArrowDownLeft className="h-3 w-3 mr-1" />
-                            ) : (
-                              <ArrowUpRight className="h-3 w-3 mr-1" />
-                            )}
-                            {adj.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {Number(adj.qtyChange).toLocaleString()}
-                        </TableCell>
-                        <TableCell>{adj.reason}</TableCell>
-                      </TableRow>
+                    {filteredAdjustments.map((adj) => (
+                      <Fragment key={adj.id}>
+                        <TableRow>
+                          <TableCell className="w-10">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                setExpandedAdjustmentId(expandedAdjustmentId === adj.id ? null : adj.id)
+                              }
+                              aria-label="Toggle details"
+                            >
+                              {expandedAdjustmentId === adj.id ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TableCell>
+                          <TableCell className="font-medium">{adj.docNumber}</TableCell>
+                          <TableCell>
+                            {new Date(adj.createdAt).toLocaleDateString('id-ID')}
+                          </TableCell>
+                          <TableCell>{adj.item.nameId}</TableCell>
+                          <TableCell>
+                            <Badge variant={adj.type === 'POSITIVE' ? 'default' : 'destructive'}>
+                              {adj.type === 'POSITIVE' ? (
+                                <ArrowDownLeft className="h-3 w-3 mr-1" />
+                              ) : (
+                                <ArrowUpRight className="h-3 w-3 mr-1" />
+                              )}
+                              {adj.type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {Number(adj.qtyChange).toLocaleString()}
+                          </TableCell>
+                          <TableCell>{adj.reason}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {adj.createdBy?.name || adj.createdBy?.email || '—'}
+                          </TableCell>
+                        </TableRow>
+                        {expandedAdjustmentId === adj.id && (
+                          <TableRow>
+                            <TableCell colSpan={8}>
+                              <div className="grid gap-4 py-2 sm:grid-cols-2">
+                                <div className="space-y-1">
+                                  <p className="text-sm font-semibold">Reason</p>
+                                  <p className="text-sm text-muted-foreground">{adj.reason}</p>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="text-sm font-semibold">Evidence</p>
+                                  {adj.evidenceUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element -- dynamic evidence URL from storage
+                                    <img
+                                      src={adj.evidenceUrl}
+                                      alt="Adjustment evidence"
+                                      className="max-h-40 rounded-md border object-cover"
+                                    />
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">No image provided</p>
+                                  )}
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>

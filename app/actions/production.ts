@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { generateDocNumber } from '@/lib/docNumber';
-import { calculateMaterialNeeds, checkMaterialAvailability } from '@/lib/production/consumption';
+import { calculateMaterialNeeds } from '@/lib/production/consumption';
 
 const woSchema = z.object({
   vendorId: z.string().uuid(),
@@ -19,8 +19,8 @@ const woSchema = z.object({
 export type WOFormData = z.infer<typeof woSchema>;
 
 export async function createWorkOrder(data: WOFormData, userId: string) {
-  const validated = woSchema.parse(data);
-  
+  woSchema.parse(data);
+
   return await prisma.$transaction(async (tx) => {
     const docNumber = await generateDocNumber('WO', tx);
     
@@ -56,7 +56,7 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
   });
 }
 
-export async function issueWorkOrder(id: string, userId: string) {
+export async function issueWorkOrder(id: string, _userId: string) {
   const wo = await prisma.workOrder.findUnique({
     where: { id }
   });
@@ -190,8 +190,8 @@ const receiptSchema = z.object({
 export type ReceiptFormData = z.infer<typeof receiptSchema>;
 
 export async function receiveFG(data: ReceiptFormData, userId: string) {
-  const validated = receiptSchema.parse(data);
-  
+  receiptSchema.parse(data);
+
   return await prisma.$transaction(async (tx) => {
     const docNumber = await generateDocNumber('RECEIPT', tx);
     const qtyAccepted = data.qtyReceived - (data.qtyRejected || 0);

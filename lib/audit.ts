@@ -17,8 +17,8 @@ export async function logAudit(data: AuditLogData): Promise<void> {
         action: data.action,
         entityType: data.entityType,
         entityId: data.entityId,
-        changes: data.changes || null,
-        metadata: data.metadata || null,
+        changes: data.changes ?? undefined,
+        metadata: data.metadata ?? undefined,
       },
     });
   } catch (error) {

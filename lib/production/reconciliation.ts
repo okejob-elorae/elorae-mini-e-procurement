@@ -133,7 +133,7 @@ export async function getWorkOrderSummary(woId: string) {
       totalMaterialCost: totalMaterialCost.toNumber(),
       totalFGValue: totalFGValue.toNumber(),
       materialVariance: totalMaterialCost.minus(totalFGValue).toNumber(),
-      completionPercent: wo.plannedQty > 0 
+      completionPercent: Number(wo.plannedQty) > 0 
         ? new Decimal(wo.actualQty?.toString() || 0).div(wo.plannedQty.toString()).mul(100).toNumber()
         : 0
     }

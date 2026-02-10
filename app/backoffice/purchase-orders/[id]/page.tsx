@@ -17,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { POStatus } from '@/lib/constants/enums';
@@ -34,11 +34,11 @@ const statusLabels: Record<POStatus, string> = {
 };
 
 const statusColors: Record<POStatus, string> = {
-  DRAFT: 'bg-gray-100 text-gray-800',
-  SUBMITTED: 'bg-blue-100 text-blue-800',
-  PARTIAL: 'bg-amber-100 text-amber-800',
-  CLOSED: 'bg-green-100 text-green-800',
-  CANCELLED: 'bg-red-100 text-red-800',
+  DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+  SUBMITTED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  PARTIAL: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+  CLOSED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  CANCELLED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
 };
 
 export default function PODetailPage() {
@@ -142,8 +142,8 @@ export default function PODetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge className={statusColors[po.status]}>
-            {statusLabels[po.status]}
+          <Badge className={statusColors[po.status as POStatus]}>
+            {statusLabels[po.status as POStatus]}
           </Badge>
           {po.etaDate && (
             <ETABadge etaDate={po.etaDate} status={po.status} />
@@ -155,7 +155,7 @@ export default function PODetailPage() {
         <POForm
           initialData={{
             supplierId: po.supplierId,
-            etaDate: po.etaDate,
+            etaDate: po.etaDate ? new Date(po.etaDate) : null,
             notes: po.notes || undefined,
             terms: po.terms || undefined,
             items: po.items.map((item: any) => ({
@@ -274,7 +274,7 @@ export default function PODetailPage() {
                 {po.statusHistory?.map((history: any, index: number) => (
                   <div key={history.id} className="flex items-start gap-4">
                     <div className="flex flex-col items-center">
-                      <div className={`w-2 h-2 rounded-full ${
+                      <div className={`w-2 h-2 rounded-full mt-[5px] mb-[5px] text-lg ${
                         index === 0 ? 'bg-primary' : 'bg-muted'
                       }`} />
                       {index < po.statusHistory.length - 1 && (
@@ -283,8 +283,8 @@ export default function PODetailPage() {
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <Badge className={statusColors[history.status]}>
-                          {statusLabels[history.status]}
+                        <Badge className={statusColors[history.status as POStatus]}>
+                          {statusLabels[history.status as POStatus]}
                         </Badge>
                         <span className="text-sm text-muted-foreground">
                           {new Date(history.createdAt).toLocaleString('id-ID')}

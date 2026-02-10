@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import Link from 'next/link';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -54,10 +53,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { SupplierType } from '@/lib/constants/enums';
-import { maskBankAccount } from '@/lib/encryption';
 import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
 
@@ -98,7 +95,7 @@ const supplierTypeLabels: Record<SupplierType, string> = {
 };
 
 export default function SuppliersPage() {
-  const { data: session } = useSession();
+  useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,7 +112,6 @@ export default function SuppliersPage() {
     reset,
     formState: { errors, isSubmitting },
     setValue,
-    watch,
   } = useForm<SupplierForm>({
     resolver: zodResolver(supplierSchema),
     defaultValues: {
@@ -168,7 +164,7 @@ export default function SuppliersPage() {
         const error = await response.json();
         toast.error(error.error || 'Failed to create supplier');
       }
-    } catch (error) {
+    } catch (_error) {
       toast.error('An error occurred');
     }
   };
@@ -188,7 +184,7 @@ export default function SuppliersPage() {
         const error = await response.json();
         toast.error(error.error || 'Failed to delete supplier');
       }
-    } catch (error) {
+    } catch (_error) {
       toast.error('An error occurred');
     }
   };
@@ -215,7 +211,7 @@ export default function SuppliersPage() {
         const error = await response.json();
         toast.error(error.error || 'Failed to decrypt bank account');
       }
-    } catch (error) {
+    } catch (_error) {
       toast.error('An error occurred');
     } finally {
       setIsDecrypting(false);

@@ -71,7 +71,7 @@ export function OfflineIndicator() {
       const status = await getSyncStatus();
       setPendingCount(status.pendingCount);
       setPendingPOCount(status.pendingPOCount || 0);
-    } catch (error) {
+    } catch (_error) {
       toast.error('Sync failed');
     } finally {
       setIsSyncing(false);
@@ -90,7 +90,7 @@ export function OfflineIndicator() {
             disabled={isSyncing || !isOnline}
           >
             {isOnline ? (
-              <Wifi className="h-4 w-4 text-green-500" />
+              <Wifi className="h-4 w-4 text-green-500 dark:text-green-400" />
             ) : (
               <WifiOff className="h-4 w-4 text-destructive" />
             )}

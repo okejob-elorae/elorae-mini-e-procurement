@@ -90,7 +90,7 @@ export default function DashboardPage() {
               <CardContent>
                 <div className="text-2xl font-bold">{stat.value}</div>
                 <p className="text-xs text-muted-foreground">{stat.description}</p>
-                <div className="flex items-center gap-1 mt-2 text-xs text-green-600">
+                <div className="flex items-center gap-1 mt-2 text-xs text-green-600 dark:text-green-400">
                   <TrendingUp className="h-3 w-3" />
                   {stat.trend}
                 </div>

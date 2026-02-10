@@ -63,6 +63,26 @@ export interface PendingPO {
   syncError?: string;
 }
 
+export interface PendingGRN {
+  localId?: number;
+  poId?: string;
+  supplierId: string;
+  items: Array<{
+    itemId: string;
+    sku?: string;
+    name?: string;
+    qty: number;
+    unitCost: number;
+    uomId: string;
+  }>;
+  notes?: string;
+  photoBase64?: string[];
+  totalAmount: number;
+  status: 'PENDING' | 'SYNCING' | 'ERROR';
+  errorMsg?: string;
+  createdAt: Date;
+}
+
 export interface DocumentQueue {
   id?: number;
   docType: string;
@@ -79,6 +99,7 @@ export class EloraeOfflineDB extends Dexie {
   documentQueue!: Table<DocumentQueue, number>;
   uoms!: Table<CachedUOM, string>;
   pendingPOs!: Table<PendingPO, number>;
+  pendingGRNs!: Table<PendingGRN, number>;
 
   constructor() {
     super('EloraeDB');
@@ -103,6 +124,16 @@ export class EloraeOfflineDB extends Dexie {
       documentQueue: '++id, docType, status, createdAt',
       uoms: 'id, code',
       pendingPOs: '++localId, status, createdAt',
+    });
+    // Version 4: add pendingGRNs for Phase 3 offline GRN
+    this.version(4).stores({
+      pendingOperations: '++id, type, timestamp',
+      suppliers: 'id, type, name, syncAt',
+      items: 'id, sku, type, syncAt',
+      documentQueue: '++id, docType, status, createdAt',
+      uoms: 'id, code',
+      pendingPOs: '++localId, status, createdAt',
+      pendingGRNs: '++localId, status, createdAt',
     });
   }
 }
@@ -208,5 +239,46 @@ export async function updatePendingPOError(
 ): Promise<void> {
   await offlineDB.pendingPOs.update(localId, {
     syncError: error,
+  });
+}
+
+// Save GRN locally (offline)
+export async function savePendingGRN(
+  grn: Omit<PendingGRN, 'localId' | 'createdAt'>
+): Promise<number> {
+  return await offlineDB.pendingGRNs.add({
+    ...grn,
+    createdAt: new Date(),
+  });
+}
+
+// Get pending GRNs
+export async function getPendingGRNs(): Promise<PendingGRN[]> {
+  return await offlineDB.pendingGRNs
+    .orderBy('createdAt')
+    .toArray();
+}
+
+// Remove synced GRN
+export async function removePendingGRN(localId: number): Promise<void> {
+  await offlineDB.pendingGRNs.delete(localId);
+}
+
+// Update pending GRN status
+export async function updatePendingGRNStatus(
+  localId: number,
+  status: PendingGRN['status']
+): Promise<void> {
+  await offlineDB.pendingGRNs.update(localId, { status });
+}
+
+// Update pending GRN error
+export async function updatePendingGRNError(
+  localId: number,
+  errorMsg: string
+): Promise<void> {
+  await offlineDB.pendingGRNs.update(localId, {
+    status: 'ERROR',
+    errorMsg,
   });
 }

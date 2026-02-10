@@ -3,11 +3,16 @@
 import { Decimal } from 'decimal.js';
 import { prisma } from '../prisma';
 
-interface CostCalculationResult {
+export interface CostCalculationResult {
+  previousQty: Decimal;
+  previousAvgCost: Decimal;
+  previousTotalValue: Decimal;
+  incomingQty: Decimal;
+  incomingUnitCost: Decimal;
+  incomingTotalValue: Decimal;
+  newQty: Decimal;
   newAvgCost: Decimal;
   newTotalValue: Decimal;
-  previousAvgCost: Decimal;
-  previousQty: Decimal;
 }
 
 export async function calculateMovingAverage(
@@ -60,14 +65,65 @@ export async function calculateMovingAverage(
   });
   
   return {
-    newAvgCost,
-    newTotalValue,
+    previousQty,
     previousAvgCost,
-    previousQty
+    previousTotalValue,
+    incomingQty,
+    incomingUnitCost: incomingCost,
+    incomingTotalValue,
+    newQty: newTotalQty,
+    newAvgCost,
+    newTotalValue
   };
 }
 
-// Reverse calculation for returns (negative quantity)
+/**
+ * Reverse inventory value for returns/negative adjustments.
+ * Outgoing value is at current avg cost; throws if insufficient stock.
+ */
+export async function reverseInventoryValue(
+  itemId: string,
+  outgoingQty: Decimal,
+  outgoingUnitCost: Decimal,
+  tx?: any
+): Promise<{ newQty: Decimal; newAvgCost: Decimal; newTotalValue: Decimal }> {
+  const prismaClient = tx || prisma;
+
+  const current = await prismaClient.inventoryValue.findUnique({
+    where: { itemId }
+  });
+
+  if (!current) throw new Error('No inventory record found');
+
+  const currentQty = new Decimal(current.qtyOnHand.toString());
+  const currentAvgCost = new Decimal(current.avgCost.toString());
+
+  if (currentQty.lt(outgoingQty)) {
+    throw new Error('Insufficient stock');
+  }
+
+  const newQty = currentQty.minus(outgoingQty);
+  const outgoingValue = outgoingQty.mul(currentAvgCost);
+  const newTotalValue = new Decimal(current.totalValue.toString()).minus(outgoingValue);
+
+  const newAvgCost = newQty.gt(0)
+    ? newTotalValue.div(newQty)
+    : new Decimal(0);
+
+  await prismaClient.inventoryValue.update({
+    where: { itemId },
+    data: {
+      qtyOnHand: newQty.toNumber(),
+      avgCost: newAvgCost.toNumber(),
+      totalValue: newTotalValue.toNumber(),
+      lastUpdated: new Date()
+    }
+  });
+
+  return { newQty, newAvgCost, newTotalValue };
+}
+
+// Reverse calculation for returns (negative quantity) - uses passed cost
 export async function reverseMovingAverage(
   itemId: string,
   outgoingQty: Decimal,
@@ -105,16 +161,21 @@ export async function reverseMovingAverage(
   });
   
   return {
-    newAvgCost,
-    newTotalValue,
+    previousQty,
     previousAvgCost,
-    previousQty
+    previousTotalValue,
+    incomingQty: outgoingQty,
+    incomingUnitCost: outgoingCost,
+    incomingTotalValue: outgoingTotalValue,
+    newQty: newTotalQty,
+    newAvgCost,
+    newTotalValue
   };
 }
 
-// Get current inventory value for an item
+// Get current inventory value for an item (serialized for client)
 export async function getInventoryValue(itemId: string) {
-  return await prisma.inventoryValue.findUnique({
+  const v = await prisma.inventoryValue.findUnique({
     where: { itemId },
     include: {
       item: {
@@ -132,6 +193,13 @@ export async function getInventoryValue(itemId: string) {
       }
     }
   });
+  if (!v) return null;
+  return {
+    ...v,
+    qtyOnHand: Number(v.qtyOnHand),
+    avgCost: Number(v.avgCost),
+    totalValue: Number(v.totalValue),
+  };
 }
 
 // Get stock card (movement history) for an item
@@ -155,6 +223,7 @@ export async function getInventorySnapshot() {
           nameId: true,
           nameEn: true,
           type: true,
+          reorderPoint: true,
           uom: {
             select: {
               code: true,
@@ -170,15 +239,25 @@ export async function getInventorySnapshot() {
       }
     }
   });
-  
-  const totalValue = values.reduce((sum, v) => sum + Number(v.totalValue), 0);
-  
+
+  const toNum = (v: unknown) => (v == null ? null : Number(v));
+  const items = values.map((v) => ({
+    ...v,
+    qtyOnHand: toNum(v.qtyOnHand),
+    avgCost: toNum(v.avgCost),
+    totalValue: toNum(v.totalValue),
+  }));
+
+  const totalValue = items.reduce((sum, v) => sum + (v.totalValue as number), 0);
+
   return {
-    items: values,
+    items,
     totalValue,
-    totalItems: values.length,
-    lowStockItems: values.filter(v => 
-      v.item.reorderPoint && v.qtyOnHand <= v.item.reorderPoint
-    ).length
+    totalItems: items.length,
+    lowStockItems: items.filter(
+      (v) =>
+        v.item.reorderPoint != null &&
+        (v.qtyOnHand as number) <= Number(v.item.reorderPoint)
+    ).length,
   };
 }

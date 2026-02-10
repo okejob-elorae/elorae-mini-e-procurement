@@ -54,6 +54,8 @@ model User {
   auditLogs     AuditLog[]
   purchaseOrders PurchaseOrder[]
   poStatusChanges POStatusHistory[]
+  stockAdjustmentsApproved StockAdjustment[] @relation("ApprovedAdjustments")
+  stockAdjustmentsCreated  StockAdjustment[] @relation("CreatedAdjustments")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -100,6 +102,7 @@ model Supplier {
   updatedAt       DateTime         @updatedAt
   purchaseOrders  PurchaseOrder[]
   workOrders      WorkOrder[]
+  grns            GRN[]
   @@index([type])
   @@index([categoryId])
   @@index([code])
@@ -197,6 +200,7 @@ model PurchaseOrder {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   @@index([supplierId])
+  @@index([createdById])
   @@index([status])
   @@index([etaDate])
   @@index([docNumber])
@@ -228,6 +232,7 @@ model POStatusHistory {
   notes       String?
   createdAt   DateTime      @default(now())
   @@index([poId, createdAt])
+  @@index([changedById])
 }
 
 // ==========================================
@@ -250,6 +255,7 @@ model GRN {
   poId          String?
   po            PurchaseOrder? @relation(fields: [poId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   supplierId    String
+  supplier      Supplier  @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   grnDate       DateTime  @default(now())
   receivedBy    String
   totalAmount   Decimal   @db.Decimal(15,2)
@@ -260,6 +266,7 @@ model GRN {
   localId       String?
   createdAt     DateTime  @default(now())
   @@index([poId])
+  @@index([supplierId])
   @@index([grnDate])
   @@index([docNumber])
 }
@@ -297,9 +304,13 @@ model StockAdjustment {
   prevAvgCost   Decimal  @db.Decimal(15,2)
   newAvgCost    Decimal  @db.Decimal(15,2)
   approvedById  String
+  approvedBy    User     @relation("ApprovedAdjustments", fields: [approvedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdById   String
+  createdBy     User     @relation("CreatedAdjustments", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdAt     DateTime @default(now())
   @@index([itemId])
+  @@index([approvedById])
+  @@index([createdById])
   @@index([docNumber])
 }
 
@@ -331,6 +342,7 @@ model WorkOrder {
   receipts        FGReceipt[]
   returns         VendorReturn[]
   @@index([vendorId])
+  @@index([createdById])
   @@index([status])
   @@index([targetDate])
   @@index([docNumber])
@@ -353,6 +365,7 @@ model MaterialIssue {
   ackPhotoUrl   String?
   syncStatus    SyncStatus @default(SYNCED)
   @@index([woId])
+  @@index([issuedById])
   @@index([issuedAt])
 }
 
@@ -374,6 +387,7 @@ model FGReceipt {
   totalCostValue Decimal?  @db.Decimal(15,2)
   syncStatus     SyncStatus @default(SYNCED)
   @@index([woId])
+  @@index([receivedById])
   @@index([receivedAt])
 }
 

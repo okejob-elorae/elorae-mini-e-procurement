@@ -64,12 +64,12 @@ const statusLabels: Record<WOStatus, string> = {
 };
 
 const statusColors: Record<WOStatus, string> = {
-  DRAFT: 'bg-gray-100 text-gray-800',
-  ISSUED: 'bg-blue-100 text-blue-800',
-  IN_PRODUCTION: 'bg-amber-100 text-amber-800',
-  PARTIAL: 'bg-purple-100 text-purple-800',
-  COMPLETED: 'bg-green-100 text-green-800',
-  CANCELLED: 'bg-red-100 text-red-800'
+  DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+  ISSUED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  IN_PRODUCTION: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+  PARTIAL: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+  COMPLETED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  CANCELLED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
 };
 
 const statusIcons: Record<WOStatus, React.ReactNode> = {
@@ -93,8 +93,8 @@ export default function WorkOrdersPage() {
       const data = await getWorkOrders({
         status: statusFilter || undefined
       });
-      setWorkOrders(data as WorkOrder[]);
-    } catch (error) {
+      setWorkOrders(data as unknown as WorkOrder[]);
+    } catch (_error) {
       toast.error('Failed to load work orders');
     } finally {
       setIsLoading(false);
@@ -103,6 +103,7 @@ export default function WorkOrdersPage() {
 
   useEffect(() => {
     fetchWorkOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load + status filter
   }, [statusFilter]);
 
   const handleIssue = async (id: string) => {

@@ -1,4 +1,4 @@
-import { Role, SupplierType, ItemType, POStatus, WOStatus, UOM } from '@prisma/client';
+import { Role, SupplierType, ItemType, POStatus, WOStatus } from '@prisma/client';
 
 export interface SupplierFormData {
   name: string;

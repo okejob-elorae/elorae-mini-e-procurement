@@ -7,7 +7,7 @@ export const itemSchema = z.object({
   type: z.enum(['FABRIC', 'ACCESSORIES', 'FINISHED_GOOD']),
   uomId: z.string().min(1, 'Pilih satuan'),
   description: z.string().optional(),
-  variants: z.array(z.record(z.string())).optional(),
+  variants: z.array(z.record(z.string(), z.string())).optional(),
   reorderPoint: z.number().min(0).optional(),
 });
 
@@ -19,15 +19,15 @@ export const consumptionRuleSchema = z.object({
 });
 
 export const poItemSchema = z.object({
-  itemId: z.string().uuid('Pilih item'),
+  itemId: z.string().min(1, 'Pilih item'),
   qty: z.number().positive('Qty harus lebih dari 0'),
   price: z.number().nonnegative('Harga tidak boleh negatif'),
-  uomId: z.string().uuid(),
+  uomId: z.string().min(1, 'Pilih satuan'),
   notes: z.string().optional(),
 });
 
 export const poSchema = z.object({
-  supplierId: z.string().uuid('Pilih supplier'),
+  supplierId: z.string().min(1, 'Pilih supplier'),
   etaDate: z.date().optional().nullable(),
   notes: z.string().optional(),
   terms: z.string().optional(),

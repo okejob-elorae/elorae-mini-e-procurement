@@ -6,7 +6,6 @@ import { useSession } from 'next-auth/react';
 import { ItemForm } from '@/components/forms/ItemForm';
 import { getItemById, updateItem } from '@/app/actions/items';
 import { saveConsumptionRules } from '@/app/actions/items';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, ArrowLeft } from 'lucide-react';
@@ -57,7 +56,7 @@ export default function ItemDetailPage() {
       }
 
       toast.success('Item updated successfully');
-      router.refresh();
+      router.push('/backoffice/items');
     } catch (error: any) {
       toast.error(error.message || 'Failed to update item');
     } finally {
@@ -98,48 +97,9 @@ export default function ItemDetailPage() {
           </div>
         </div>
         <Badge variant={item.isActive ? 'default' : 'secondary'}>
-          {itemTypeLabels[item.type]}
+          {itemTypeLabels[item.type as ItemType]}
         </Badge>
       </div>
-
-      {/* Read-only Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Item Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-muted-foreground">SKU</p>
-              <p className="font-medium">{item.sku}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">UOM</p>
-              <p className="font-medium">{item.uom.code} - {item.uom.nameId}</p>
-            </div>
-            {item.reorderPoint && (
-              <div>
-                <p className="text-sm text-muted-foreground">Reorder Point</p>
-                <p className="font-medium">{Number(item.reorderPoint).toLocaleString()}</p>
-              </div>
-            )}
-            {item.inventoryValue && (
-              <div>
-                <p className="text-sm text-muted-foreground">Stock On Hand</p>
-                <p className="font-medium">
-                  {Number(item.inventoryValue.qtyOnHand).toLocaleString()}
-                </p>
-              </div>
-            )}
-          </div>
-          {item.description && (
-            <div>
-              <p className="text-sm text-muted-foreground">Description</p>
-              <p className="font-medium">{item.description}</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Edit Form */}
       <ItemForm

@@ -33,8 +33,12 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = (typeof window !== 'undefined' && localStorage.getItem('locale')) as Locale | null;
     if (stored && messagesMap[stored]) {
-      setLocaleState(stored);
-      setMessages(messagesMap[stored]);
+      const next = stored;
+      const t = setTimeout(() => {
+        setLocaleState(next);
+        setMessages(messagesMap[next]);
+      }, 0);
+      return () => clearTimeout(t);
     }
   }, []);
 
@@ -48,7 +52,11 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <LocaleContext.Provider value={{ locale, setLocale }}>
-      <NextIntlClientProvider locale={locale} messages={messages}>
+      <NextIntlClientProvider
+        locale={locale}
+        messages={messages}
+        timeZone="Asia/Jakarta"
+      >
         {children}
       </NextIntlClientProvider>
     </LocaleContext.Provider>

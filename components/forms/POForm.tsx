@@ -120,7 +120,7 @@ export function POForm({
     resolver: zodResolver(poSchema),
     defaultValues: {
       supplierId: initialData?.supplierId || '',
-      etaDate: initialData?.etaDate || null,
+      etaDate: initialData?.etaDate ?? null,
       notes: initialData?.notes || '',
       terms: initialData?.terms || '',
       items: initialData?.items?.map(item => ({
@@ -156,8 +156,19 @@ export function POForm({
         }
 
         const data = await getItems({ isActive: true });
-        setItems(data as Item[]);
-      } catch (error) {
+        const list = Array.isArray(data) ? data : (data as { items: unknown[] }).items;
+        const mapped: Item[] = list.map((row: unknown) => {
+          const r = row as { id: string; sku: string; nameId: string; nameEn: string; uomId?: string; uom?: { id?: string; code: string } };
+          return {
+            id: r.id,
+            sku: r.sku,
+            nameId: r.nameId,
+            nameEn: r.nameEn,
+            uom: { id: r.uomId ?? r.uom?.id ?? '', code: r.uom?.code ?? '' },
+          };
+        });
+        setItems(mapped);
+      } catch (_error) {
         toast.error('Failed to load items');
       }
     };
@@ -165,21 +176,36 @@ export function POForm({
     loadItems();
   }, []);
 
+  // Keep form state in sync with line items so validation and submit see current data
+  useEffect(() => {
+    setValue(
+      'items',
+      lineItems.map(({ id: _lineId, ...item }) => ({
+        itemId: item.itemId ?? '',
+        qty: item.qty ?? 0,
+        price: item.price ?? 0,
+        uomId: item.uomId ?? '',
+        notes: item.notes ?? '',
+      })),
+      { shouldValidate: false }
+    );
+  }, [lineItems, setValue]);
+
   const addLineItem = () => {
     setLineItems([...lineItems, { id: `line-${Date.now()}`, itemId: '', qty: 0, price: 0, uomId: '' }]);
   };
 
-  const removeLineItem = (id: string) => {
+  const removeLineItem = (idParam: string) => {
     if (lineItems.length === 1) {
       toast.error('At least one line item is required');
       return;
     }
-    setLineItems(lineItems.filter((item) => item.id !== id));
+    setLineItems(lineItems.filter((item) => item.id !== idParam));
   };
 
-  const updateLineItem = (id: string, field: keyof POItemData, value: any) => {
+  const updateLineItem = (idParam: string, field: keyof POItemData, value: any) => {
     const updated = lineItems.map((item) => {
-      if (item.id === id) {
+      if (item.id === idParam) {
         const updatedItem = { ...item, [field]: value };
         // Auto-set UOM when item is selected
         if (field === 'itemId' && value) {
@@ -224,14 +250,13 @@ export function POForm({
     }
 
     // Check ETA date
-    const etaDate = watch('etaDate');
-    if (etaDate && new Date(etaDate) < new Date()) {
+    if (data.etaDate && new Date(data.etaDate) < new Date()) {
       toast.warning('ETA date is in the past');
     }
 
     await onSubmit({
       ...data,
-      items: validItems.map(({ id, ...item }) => item),
+      items: validItems.map(({ id: _id, ...item }) => item),
     });
   };
 
@@ -254,7 +279,13 @@ export function POForm({
     await onSaveLocally(data, { enrichedItems, totalAmount, supplier });
   });
 
-  const handleSubmitForm = handleSubmit(onFormSubmit);
+  const onValidationError = (err: Record<string, { message?: string }>) => {
+    const first = Object.values(err)[0];
+    console.log(first);
+    toast.error(first?.message ?? 'Perbaiki data form');
+  };
+
+  const handleSubmitForm = handleSubmit(onFormSubmit, onValidationError);
 
   const etaDate = watch('etaDate');
   const isETAPast = etaDate && new Date(etaDate) < new Date();
@@ -275,7 +306,7 @@ export function POForm({
               <Label htmlFor="supplierId">Supplier *</Label>
               <Select
                 value={watch('supplierId')}
-                onValueChange={(value) => setValue('supplierId', value)}
+                onValueChange={(value) => setValue('supplierId', value, { shouldValidate: true })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select supplier" />
@@ -297,7 +328,20 @@ export function POForm({
               <Input
                 id="etaDate"
                 type="date"
-                {...register('etaDate', { valueAsDate: true })}
+                value={
+                  (() => {
+                    const v = watch('etaDate');
+                    if (!v) return '';
+                    const d = v instanceof Date ? v : new Date(v);
+                    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+                  })()
+                }
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setValue('etaDate', raw ? new Date(raw + 'T00:00:00') : null, {
+                    shouldValidate: true,
+                  });
+                }}
               />
               {isETAPast && (
                 <Alert variant="destructive">
@@ -357,7 +401,7 @@ export function POForm({
                           value={lineItem.itemId}
                           onValueChange={(value) => updateLineItem(lineItem.id, 'itemId', value)}
                         >
-                          <SelectTrigger className="max-w-[16rem] min-w-0 [&_[data-slot=select-value]]:truncate">
+                          <SelectTrigger className="max-w-[16rem] min-w-0 **:data-[slot=select-value]:truncate">
                             <SelectValue placeholder="Select item" />
                           </SelectTrigger>
                           <SelectContent>

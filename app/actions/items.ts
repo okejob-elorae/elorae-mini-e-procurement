@@ -1,20 +1,42 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { ItemType } from '@prisma/client';
+import { ItemType, Prisma } from '@prisma/client';
 import { generateSKU } from '@/lib/sku-generator';
-import { itemSchema } from '@/lib/validations';
 
 export { generateSKU };
 import { getConsumptionRules as getConsumptionRulesFromLib, saveConsumptionRules as saveConsumptionRulesFromLib } from '@/lib/production/consumption';
 
-export type ItemFormData = z.infer<typeof itemSchema>;
+/** Item form payload (kept in sync with lib/validations itemSchema; not using schema here to avoid _zod in server action bundle) */
+export type ItemFormData = {
+  sku?: string;
+  nameId: string;
+  nameEn: string;
+  type: 'FABRIC' | 'ACCESSORIES' | 'FINISHED_GOOD';
+  uomId: string;
+  description?: string;
+  variants?: Array<Record<string, string>>;
+  reorderPoint?: number;
+};
+
+const ITEM_TYPES = ['FABRIC', 'ACCESSORIES', 'FINISHED_GOOD'] as const;
+
+/** Validate normalized item payload without using itemSchema (avoids _zod undefined in server action bundle) */
+function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): asserts p is ItemFormData {
+  if (!p.nameId?.trim()) throw new Error('nameId: Nama item wajib diisi');
+  if (!p.nameEn?.trim()) throw new Error('nameEn: Item name is required');
+  if (!ITEM_TYPES.includes(p.type)) throw new Error('type: Invalid item type');
+  if (!p.uomId?.trim()) throw new Error('uomId: Pilih satuan');
+  if (p.reorderPoint != null && (Number.isNaN(p.reorderPoint) || p.reorderPoint < 0)) {
+    throw new Error('reorderPoint: Must be 0 or greater');
+  }
+}
 
 export async function createItem(data: ItemFormData) {
-  const validated = itemSchema.parse(data);
-  const { sku: inputSku, ...rest } = validated;
+  const normalized = normalizeItemPayload(data);
+  validateItemPayload(normalized);
+  const { sku: inputSku, ...rest } = normalized;
 
   const finalSku = inputSku?.trim() || await generateSKU(rest.type);
 
@@ -48,25 +70,82 @@ export async function createItem(data: ItemFormData) {
   });
   
   revalidatePath('/backoffice/items');
-  return item;
+  return serializeSingleItem(item);
+}
+
+/** Serialized item returned from createItem/updateItem (no Decimal) */
+export type SerializedItem = {
+  id: string;
+  sku: string;
+  nameId: string;
+  nameEn: string;
+  type: string;
+  uomId: string;
+  reorderPoint: number | null;
+  [k: string]: unknown;
+};
+
+/** Serialize a single item from create/update so return value has no Decimal (safe for client) */
+function serializeSingleItem(item: { reorderPoint?: unknown; [k: string]: unknown }): SerializedItem {
+  return {
+    ...item,
+    reorderPoint: item.reorderPoint != null ? Number(item.reorderPoint) : null,
+  } as SerializedItem;
+}
+
+/** Normalize payload from client so Zod and Prisma get plain values (avoids _zod / Decimal issues) */
+function normalizeItemPayload(data: unknown): ItemFormData {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid item data');
+  }
+  const raw = data as Record<string, unknown>;
+  const reorderPoint = raw.reorderPoint;
+  const reorderPointNum =
+    reorderPoint === undefined || reorderPoint === null || reorderPoint === ''
+      ? undefined
+      : Number(reorderPoint);
+  const variants = Array.isArray(raw.variants)
+    ? (raw.variants as Array<Record<string, unknown>>).map((record) => {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(record)) {
+          if (typeof v === 'string') out[k] = v;
+        }
+        return out;
+      })
+    : undefined;
+  return {
+    nameId: String(raw.nameId ?? ''),
+    nameEn: String(raw.nameEn ?? ''),
+    type: raw.type as 'FABRIC' | 'ACCESSORIES' | 'FINISHED_GOOD',
+    uomId: String(raw.uomId ?? ''),
+    description: raw.description != null ? String(raw.description) : undefined,
+    variants: variants && variants.length > 0 ? variants : undefined,
+    reorderPoint:
+      reorderPointNum !== undefined && !Number.isNaN(reorderPointNum) && reorderPointNum >= 0
+        ? reorderPointNum
+        : undefined,
+    sku: raw.sku != null ? String(raw.sku) : undefined,
+  };
 }
 
 export async function updateItem(id: string, data: ItemFormData) {
-  const validated = itemSchema.parse(data);
-  const { sku: _sku, ...rest } = validated;
+  const normalized = normalizeItemPayload(data);
+  validateItemPayload(normalized);
+  const { sku, ...rest } = normalized;
+  void sku; // omitted from update payload
 
   const item = await prisma.item.update({
     where: { id },
     data: {
       ...rest,
       variants: rest.variants || [],
-      reorderPoint: rest.reorderPoint || null,
+      reorderPoint: rest.reorderPoint ?? null,
     }
   });
   
   revalidatePath('/backoffice/items');
   revalidatePath(`/backoffice/items/${id}`);
-  return item;
+  return serializeSingleItem(item);
 }
 
 export async function deleteItem(id: string) {
@@ -105,11 +184,14 @@ export async function deleteItem(id: string) {
   revalidatePath('/backoffice/items');
 }
 
-export async function getItems(filters?: {
-  type?: ItemType;
-  search?: string;
-  isActive?: boolean;
-}) {
+export async function getItems(
+  filters?: {
+    type?: ItemType;
+    search?: string;
+    isActive?: boolean;
+  },
+  opts?: { page: number; pageSize: number }
+) {
   const where: any = {};
   
   if (filters?.type) {
@@ -127,8 +209,54 @@ export async function getItems(filters?: {
       { nameEn: { contains: filters.search, mode: 'insensitive' } }
     ];
   }
-  
-  return await prisma.item.findMany({
+  // Paginated mode: return { items, totalCount } with variants + BOM details
+  if (opts?.page && opts?.pageSize) {
+    const [items, totalCount] = await Promise.all([
+      prisma.item.findMany({
+        where,
+        skip: (opts.page - 1) * opts.pageSize,
+        take: opts.pageSize,
+        include: {
+          uom: {
+            select: {
+              code: true,
+              nameId: true,
+              nameEn: true
+            }
+          },
+          inventoryValue: {
+            select: {
+              qtyOnHand: true,
+              avgCost: true,
+              totalValue: true
+            }
+          },
+          fgConsumptions: {
+            where: { isActive: true },
+            include: {
+              material: {
+                select: {
+                  sku: true,
+                  nameId: true,
+                  nameEn: true,
+                }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.item.count({ where })
+    ]);
+
+    return {
+      items: items.map(serializeListItemForClientWithDetails),
+      totalCount,
+    };
+  }
+
+  // Non-paginated mode: legacy shape for dropdowns (POForm, etc.)
+  const items = await prisma.item.findMany({
     where,
     include: {
       uom: {
@@ -148,10 +276,117 @@ export async function getItems(filters?: {
     },
     orderBy: { createdAt: 'desc' }
   });
+  return items.map(serializeListItemForClient);
+}
+
+const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
+
+/** Serialize a single item from findMany (list shape) for Client Components */
+function serializeListItemForClient(item: {
+  reorderPoint?: unknown;
+  inventoryValue?: { qtyOnHand: unknown; avgCost: unknown; totalValue: unknown } | null;
+  [k: string]: unknown;
+}) {
+  return {
+    ...item,
+    reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
+    inventoryValue: item.inventoryValue
+      ? {
+          ...item.inventoryValue,
+          qtyOnHand: toNum(item.inventoryValue.qtyOnHand),
+          avgCost: toNum(item.inventoryValue.avgCost),
+          totalValue: toNum(item.inventoryValue.totalValue),
+        }
+      : null,
+  };
+}
+
+/** Serialize list item when including variants and BOM (fgConsumptions) */
+function serializeListItemForClientWithDetails(item: {
+  reorderPoint?: unknown;
+  inventoryValue?: { qtyOnHand: unknown; avgCost: unknown; totalValue: unknown } | null;
+  variants?: unknown;
+  fgConsumptions?: Array<{
+    qtyRequired: unknown;
+    wastePercent: unknown;
+    material?: { sku?: string; nameId?: string; nameEn?: string } | null;
+  }>;
+  [k: string]: unknown;
+}) {
+  return {
+    ...serializeListItemForClient(item),
+    variants: Array.isArray(item.variants)
+      ? (item.variants as Array<Record<string, string>>)
+      : undefined,
+    fgConsumptions: Array.isArray(item.fgConsumptions)
+      ? item.fgConsumptions.map((r) => ({
+          ...r,
+          qtyRequired: toNum(r.qtyRequired) ?? 0,
+          wastePercent: toNum(r.wastePercent) ?? 0,
+          material: r.material
+            ? {
+                sku: r.material.sku,
+                nameId: r.material.nameId,
+                nameEn: r.material.nameEn,
+              }
+            : null,
+        }))
+      : undefined,
+  };
+}
+
+/** Shape returned by getItemById (with include) — used so serializeItemForClient has correct types */
+type ItemWithRelations = Prisma.ItemGetPayload<{
+  include: {
+    uom: true;
+    inventoryValue: true;
+    fgConsumptions: { include: { material: { include: { uom: true } } } };
+    materialUsages: { include: { finishedGood: { include: { uom: true } } } };
+  };
+}>;
+
+/** Convert Prisma result to plain object so it can be passed to Client Components (no Decimal) */
+function serializeItemForClient(item: ItemWithRelations | null) {
+  if (!item) return null;
+  const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
+  return {
+    ...item,
+    reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
+    inventoryValue: item.inventoryValue
+      ? {
+          ...item.inventoryValue,
+          qtyOnHand: toNum(item.inventoryValue.qtyOnHand),
+          avgCost: toNum(item.inventoryValue.avgCost),
+          totalValue: toNum(item.inventoryValue.totalValue),
+        }
+      : null,
+    fgConsumptions: item.fgConsumptions?.map((r) => ({
+      ...r,
+      qtyRequired: toNum(r.qtyRequired),
+      wastePercent: toNum(r.wastePercent),
+      material: r.material
+        ? {
+            ...r.material,
+            reorderPoint: r.material.reorderPoint != null ? toNum(r.material.reorderPoint) : null,
+            uom: r.material.uom,
+          }
+        : null,
+    })),
+    materialUsages: item.materialUsages?.map((u) => ({
+      ...u,
+      finishedGood: u.finishedGood
+        ? {
+            ...u.finishedGood,
+            reorderPoint: u.finishedGood.reorderPoint != null ? toNum(u.finishedGood.reorderPoint) : null,
+            uom: u.finishedGood.uom,
+          }
+        : null,
+    })),
+  };
 }
 
 export async function getItemById(id: string) {
-  return await prisma.item.findUnique({
+  const item = await prisma.item.findUnique({
     where: { id },
     include: {
       uom: true,
@@ -176,6 +411,7 @@ export async function getItemById(id: string) {
       }
     }
   });
+  return serializeItemForClient(item);
 }
 
 // Get items by type for dropdowns

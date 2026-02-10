@@ -74,11 +74,11 @@ const statusLabels: Record<POStatus, string> = {
 };
 
 const statusColors: Record<POStatus, string> = {
-  DRAFT: 'bg-gray-100 text-gray-800',
-  SUBMITTED: 'bg-blue-100 text-blue-800',
-  PARTIAL: 'bg-amber-100 text-amber-800',
-  CLOSED: 'bg-green-100 text-green-800',
-  CANCELLED: 'bg-red-100 text-red-800'
+  DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+  SUBMITTED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  PARTIAL: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+  CLOSED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  CANCELLED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
 };
 
 const statusIcons: Record<POStatus, React.ReactNode> = {
@@ -101,8 +101,8 @@ export default function PurchaseOrdersPage() {
       const data = await getPOs({
         status: statusFilter || undefined
       });
-      setPOs(data as PurchaseOrder[]);
-    } catch (error) {
+      setPOs(data as unknown as PurchaseOrder[]);
+    } catch (_error) {
       toast.error('Failed to load purchase orders');
     } finally {
       setIsLoading(false);
@@ -111,6 +111,7 @@ export default function PurchaseOrdersPage() {
 
   useEffect(() => {
     fetchPOs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load + status filter
   }, [statusFilter]);
 
   const handleSubmit = async (id: string) => {
@@ -135,7 +136,7 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  const isOverdue = (po: PurchaseOrder) => {
+  const _isOverdue = (po: PurchaseOrder) => {
     if (!po.etaDate || po.status === 'CLOSED' || po.status === 'CANCELLED') return false;
     return new Date(po.etaDate) < new Date();
   };

@@ -26,16 +26,17 @@ const decryptSchema = z.object({
 // GET /api/suppliers/[id] - Get supplier
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await auth();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const supplier = await prisma.supplier.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         category: {
           select: {
@@ -73,9 +74,10 @@ export async function GET(
 // PUT /api/suppliers/[id] - Update supplier
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await auth();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -91,7 +93,7 @@ export async function PUT(
     }
 
     const supplier = await prisma.supplier.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         ...validated,
         bankAccountEnc,
@@ -102,7 +104,7 @@ export async function PUT(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Validation error', details: error.errors },
+        { error: 'Validation error', details: error.issues },
         { status: 400 }
       );
     }
@@ -117,9 +119,10 @@ export async function PUT(
 // DELETE /api/suppliers/[id] - Delete supplier
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await auth();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -127,7 +130,7 @@ export async function DELETE(
 
     // Check if supplier has purchase orders
     const poCount = await prisma.purchaseOrder.count({
-      where: { supplierId: params.id },
+      where: { supplierId: id },
     });
 
     if (poCount > 0) {
@@ -138,7 +141,7 @@ export async function DELETE(
     }
 
     await prisma.supplier.delete({
-      where: { id: params.id },
+      where: { id },
     });
 
     return NextResponse.json({ success: true });
@@ -154,9 +157,10 @@ export async function DELETE(
 // POST /api/suppliers/[id]/decrypt - Decrypt bank account
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const session = await auth();
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -177,7 +181,7 @@ export async function POST(
     }
 
     const supplier = await prisma.supplier.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!supplier || !supplier.bankAccountEnc) {
@@ -193,7 +197,7 @@ export async function POST(
     // Log audit
     const ip = req.headers.get('x-forwarded-for') || 'unknown';
     const userAgent = req.headers.get('user-agent') || 'unknown';
-    await logBankAccountView(session.user.id, params.id, {
+    await logBankAccountView(session.user.id, id, {
       ip,
       userAgent,
     });
@@ -202,7 +206,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Validation error', details: error.errors },
+        { error: 'Validation error', details: error.issues },
         { status: 400 }
       );
     }

@@ -21,15 +21,17 @@ export function OfflinePOButton({
   const [isOnlineState, setIsOnlineState] = useState(true);
 
   useEffect(() => {
-    setIsOnlineState(isOnline());
-    
+    const sync = () => setIsOnlineState(isOnline());
+    const t = setTimeout(sync, 0);
+
     const handleOnline = () => setIsOnlineState(true);
     const handleOffline = () => setIsOnlineState(false);
-    
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    
+
     return () => {
+      clearTimeout(t);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };

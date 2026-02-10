@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useId, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Button } from '@/components/ui/button';
 import { X, Camera } from 'lucide-react';
@@ -14,37 +14,48 @@ interface BarcodeScannerProps {
 
 export function BarcodeScanner({ onScan, onError, onClose, width = 300 }: BarcodeScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const elementId = 'barcode-scanner-' + Math.random().toString(36).substr(2, 9);
+  const id = useId();
+  const elementId = 'barcode-scanner-' + id.replace(/:/g, '-');
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasError, setHasError] = useState(false);
+
+  const stopScanner = useCallback(async () => {
+    try {
+      if (scannerRef.current) {
+        await scannerRef.current.stop();
+        scannerRef.current = null;
+      }
+    } catch (_err) {
+      // Ignore stop errors
+    }
+  }, []);
 
   useEffect(() => {
     const initScanner = async () => {
       try {
         scannerRef.current = new Html5Qrcode(elementId);
-        
+
         await scannerRef.current.start(
           { facingMode: 'environment' },
-          { 
-            fps: 10, 
+          {
+            fps: 10,
             qrbox: { width: 250, height: 250 },
             aspectRatio: 1
           },
           (decodedText) => {
             onScan(decodedText);
-            // Stop scanner after successful scan
             stopScanner();
           },
-          (errorMessage) => {
+          (_errorMessage) => {
             // Ignore continuous scanning errors (no barcode in frame)
           }
         );
-        
+
         setIsInitialized(true);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Scanner init error:', err);
         setHasError(true);
-        onError?.(err.message || 'Failed to start camera');
+        onError?.(err instanceof Error ? err.message : 'Failed to start camera');
       }
     };
 
@@ -53,18 +64,8 @@ export function BarcodeScanner({ onScan, onError, onClose, width = 300 }: Barcod
     return () => {
       stopScanner();
     };
-  }, []);
-
-  const stopScanner = async () => {
-    try {
-      if (scannerRef.current) {
-        await scannerRef.current.stop();
-        scannerRef.current = null;
-      }
-    } catch (err) {
-      // Ignore stop errors
-    }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- init once; onScan/onError are callbacks
+  }, [elementId, stopScanner]);
 
   if (hasError) {
     return (

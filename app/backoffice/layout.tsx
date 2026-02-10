@@ -13,11 +13,15 @@ import {
   BarChart3,
   Settings,
   Menu,
-  X,
   ChevronDown,
   LogOut,
   User,
+  Sun,
+  Moon,
+  Monitor,
+  Check,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import {
@@ -93,6 +97,33 @@ const navItems: NavItem[] = [
     roles: [Role.ADMIN],
   },
 ];
+
+function ThemeDropdownItems() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const current = theme ?? 'system';
+  const isLight = current === 'light' || (current === 'system' && resolvedTheme === 'light');
+  const isDark = current === 'dark' || (current === 'system' && resolvedTheme === 'dark');
+  const isSystem = current === 'system';
+  return (
+    <>
+      <DropdownMenuItem onClick={() => setTheme('light')}>
+        <Sun className="mr-2 h-4 w-4" />
+        Light
+        {isLight && <Check className="ml-auto h-4 w-4" />}
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setTheme('dark')}>
+        <Moon className="mr-2 h-4 w-4" />
+        Dark
+        {isDark && <Check className="ml-auto h-4 w-4" />}
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setTheme('system')}>
+        <Monitor className="mr-2 h-4 w-4" />
+        System
+        {isSystem && <Check className="ml-auto h-4 w-4" />}
+      </DropdownMenuItem>
+    </>
+  );
+}
 
 function Sidebar({
   className,
@@ -255,6 +286,9 @@ export default function BackofficeLayout({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Theme</DropdownMenuLabel>
+                <ThemeDropdownItems />
                 <DropdownMenuSeparator />
                 <DropdownMenuItem>
                   <User className="mr-2 h-4 w-4" />

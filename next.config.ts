@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(process.cwd()),
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config) => {
     // PWA configuration uses webpack (production build)
     return config;
   },

@@ -1,8 +1,6 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
-import { Decimal } from 'decimal.js';
-
 // Procurement Report
 export async function getProcurementReport(filters?: {
   fromDate?: Date;
@@ -78,7 +76,7 @@ export async function getInventoryReport() {
     lowStock: inventory.filter(inv => 
       inv.item.reorderPoint && inv.qtyOnHand <= inv.item.reorderPoint
     ).length,
-    zeroStock: inventory.filter(inv => inv.qtyOnHand === 0).length
+    zeroStock: inventory.filter(inv => Number(inv.qtyOnHand) === 0).length
   };
   
   // Group by item type
@@ -249,8 +247,7 @@ export async function getStockMovementReport(filters?: {
 // Dashboard Summary
 export async function getDashboardSummary() {
   const today = new Date();
-  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  
+
   const [
     poStats,
     inventoryStats,

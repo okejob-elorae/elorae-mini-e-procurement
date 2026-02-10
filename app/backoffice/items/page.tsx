@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useLocale } from 'next-intl';
 import Link from 'next/link';
 import { 
@@ -11,7 +11,9 @@ import {
   Trash2, 
   MoreHorizontal,
   Layers,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,6 +66,16 @@ interface Item {
     avgCost: string;
     totalValue: string;
   } | null;
+  variants?: Array<Record<string, string>>;
+  fgConsumptions?: Array<{
+    qtyRequired: number;
+    wastePercent: number;
+    material?: {
+      sku?: string;
+      nameId?: string;
+      nameEn?: string;
+    } | null;
+  }>;
 }
 
 const itemTypeLabels: Record<ItemType, string> = {
@@ -73,9 +85,9 @@ const itemTypeLabels: Record<ItemType, string> = {
 };
 
 const itemTypeColors: Record<ItemType, string> = {
-  FABRIC: 'bg-blue-100 text-blue-800',
-  ACCESSORIES: 'bg-purple-100 text-purple-800',
-  FINISHED_GOOD: 'bg-green-100 text-green-800'
+  FABRIC: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  ACCESSORIES: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+  FINISHED_GOOD: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
 };
 
 export default function ItemsPage() {
@@ -84,16 +96,30 @@ export default function ItemsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<ItemType | ''>('');
+  const [page, setPage] = useState(1);
+  const [pageSize, _setPageSize] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchItems = async () => {
     setIsLoading(true);
     try {
-      const data = await getItems({
-        search: searchQuery || undefined,
-        type: typeFilter || undefined
-      });
-      setItems(data as Item[]);
-    } catch (error) {
+      const data = await getItems(
+        {
+          search: searchQuery || undefined,
+          type: typeFilter || undefined
+        },
+        { page, pageSize }
+      );
+
+      if (data && 'items' in data) {
+        setItems(data.items as Item[]);
+        setTotalCount(data.totalCount || 0);
+      } else {
+        setItems((data as Item[]) || []);
+        setTotalCount((data as Item[])?.length || 0);
+      }
+    } catch (_error) {
       toast.error('Failed to load items');
     } finally {
       setIsLoading(false);
@@ -101,8 +127,13 @@ export default function ItemsPage() {
   };
 
   useEffect(() => {
-    fetchItems();
+    setPage(1);
   }, [searchQuery, typeFilter]);
+
+  useEffect(() => {
+    fetchItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchItems is stable; deps are query/page
+  }, [searchQuery, typeFilter, page, pageSize]);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this item?')) return;
@@ -189,6 +220,7 @@ export default function ItemsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10"></TableHead>
                     <TableHead>SKU</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Type</TableHead>
@@ -201,69 +233,165 @@ export default function ItemsPage() {
                 </TableHeader>
                 <TableBody>
                   {items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.sku}</TableCell>
-                      <TableCell>
-                        <p className="font-medium">
-                          {locale === 'en' ? item.nameEn : item.nameId}
-                        </p>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={itemTypeColors[item.type]}>
-                          {itemTypeLabels[item.type]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{item.uom.code}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {isLowStock(item) && (
-                            <AlertTriangle className="h-4 w-4 text-amber-500" />
-                          )}
-                          <span>
-                            {Number(item.inventoryValue?.qtyOnHand || 0).toLocaleString()}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        Rp {Number(item.inventoryValue?.totalValue || 0).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem asChild>
-                              <Link href={`/backoffice/items/${item.id}`}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Edit
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link href={`/backoffice/items/${item.id}/bom`}>
-                                <Layers className="mr-2 h-4 w-4" />
-                                BOM
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              className="text-destructive"
-                              onClick={() => handleDelete(item.id)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
+                    <Fragment key={item.id}>
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              setExpandedId(expandedId === item.id ? null : item.id)
+                            }
+                            aria-label="Toggle details"
+                          >
+                            {expandedId === item.id ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TableCell>
+                        <TableCell className="font-medium">{item.sku}</TableCell>
+                        <TableCell>
+                          <p className="font-medium">
+                            {locale === 'en' ? item.nameEn : item.nameId}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={itemTypeColors[item.type]}>
+                            {itemTypeLabels[item.type]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{item.uom.code}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {isLowStock(item) && (
+                              <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
+                            )}
+                            <span>
+                              {Number(item.inventoryValue?.qtyOnHand || 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          Rp {Number(item.inventoryValue?.totalValue || 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem asChild>
+                                <Link href={`/backoffice/items/${item.id}`}>
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Edit
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem asChild>
+                                <Link href={`/backoffice/items/${item.id}/bom`}>
+                                  <Layers className="mr-2 h-4 w-4" />
+                                  BOM
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => handleDelete(item.id)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                      {expandedId === item.id && (
+                        <TableRow>
+                          <TableCell colSpan={9}>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="space-y-1">
+                                <p className="text-sm font-semibold">Variants</p>
+                                {item.variants && item.variants.length > 0 ? (
+                                  <div className="space-y-1 text-sm">
+                                    {item.variants.map((variant, idx) => (
+                                      <div key={idx} className="flex flex-wrap gap-2">
+                                        <span className="text-muted-foreground">Variant {idx + 1}:</span>
+                                        {Object.entries(variant).map(([k, v]) => (
+                                          <span key={k} className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs">
+                                            {k}: {v}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">This item has no variants.</p>
+                                )}
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-sm font-semibold">BOM</p>
+                                {item.fgConsumptions && item.fgConsumptions.length > 0 ? (
+                                  <div className="space-y-1 text-sm">
+                                    {item.fgConsumptions.map((rule, idx) => (
+                                      <div key={idx} className="flex flex-wrap gap-2">
+                                        <span className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs">
+                                          {rule.material?.sku || '-'} {rule.material?.nameId || ''}
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                          Qty: {rule.qtyRequired}
+                                        </span>
+                                        <span className="text-muted-foreground">
+                                          Waste: {rule.wastePercent}%
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">This item has no BOM.</p>
+                                )}
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>
+
+              {/* Pagination */}
+              <div className="flex items-center justify-between mt-4">
+                <div className="text-sm text-muted-foreground">
+                  Page {page} of {Math.max(1, Math.ceil(totalCount / pageSize) || 1)}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setPage((p) =>
+                        Math.min(Math.max(1, Math.ceil(totalCount / pageSize) || 1), p + 1)
+                      )
+                    }
+                    disabled={page >= Math.max(1, Math.ceil(totalCount / pageSize) || 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>
