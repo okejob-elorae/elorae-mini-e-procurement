@@ -25,9 +25,18 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Auth.js v5 uses AUTH_SECRET (NEXTAUTH_SECRET still supported in some setups).
+  // If middleware uses the wrong secret, getToken() returns null and everything redirects to /login
+  // even though /api/auth/session works.
+  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+
   const token = await getToken({
     req,
-    secret: process.env.NEXTAUTH_SECRET,
+    secret,
+    // On Vercel/HTTPS, the cookie name is typically "__Secure-authjs.session-token"
+    // while on local dev it's usually "authjs.session-token". Let next-auth pick
+    // the right one based on environment.
+    secureCookie: process.env.NODE_ENV === 'production',
   });
 
   // If already logged in and visiting /login, redirect to backoffice
