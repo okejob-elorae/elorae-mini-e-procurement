@@ -299,12 +299,12 @@ export async function getDashboardSummary() {
   return {
     procurement: {
       totalPOs: poStats._count.id,
-      totalValue: poStats._sum.grandTotal || 0,
+      totalValue: Number(poStats._sum.grandTotal ?? 0),
       overduePOs
     },
     inventory: {
-      totalValue: inventoryStats._sum.totalValue || 0,
-      totalQty: inventoryStats._sum.qtyOnHand || 0,
+      totalValue: Number(inventoryStats._sum.totalValue ?? 0),
+      totalQty: Number(inventoryStats._sum.qtyOnHand ?? 0),
       lowStockItems
     },
     production: {

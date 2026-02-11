@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { generateDocNumber } from '@/lib/docNumber';
-import { verifyPin } from '@/lib/auth';
+import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 
 const adjustmentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -25,18 +25,18 @@ export async function createStockAdjustment(
 ) {
   adjustmentSchema.parse(data);
 
+  const pinResult = await verifyPinForAction(
+    userId,
+    userPin,
+    'STOCK_ADJUSTMENT',
+    undefined,
+    ipAddress
+  );
+  if (!pinResult.success) {
+    throw new Error(pinResult.message);
+  }
+
   return await prisma.$transaction(async (tx) => {
-    // PIN: enforce only when user has pinHash set (temporarily bypass when not configured)
-    const user = await tx.user.findUnique({
-      where: { id: userId },
-      select: { pinHash: true },
-    });
-    if (user?.pinHash) {
-      const isValid = await verifyPin(userId, userPin);
-      if (!isValid) {
-        throw new Error('Invalid PIN');
-      }
-    }
 
     // Get current inventory
     const current = await tx.inventoryValue.findUnique({

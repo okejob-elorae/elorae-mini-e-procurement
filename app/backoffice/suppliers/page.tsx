@@ -53,6 +53,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { PinAuthModal } from '@/components/security/PinAuthModal';
+import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { toast } from 'sonner';
 import { SupplierType } from '@/lib/constants/enums';
 import { queueOperation } from '@/lib/offline/db';
@@ -95,7 +97,7 @@ const supplierTypeLabels: Record<SupplierType, string> = {
 };
 
 export default function SuppliersPage() {
-  useSession();
+  const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -104,7 +106,9 @@ export default function SuppliersPage() {
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [decryptedBankAccount, setDecryptedBankAccount] = useState<string>('');
   const [isDecrypting, setIsDecrypting] = useState(false);
-  const [pin, setPin] = useState('');
+  const [bankPinModalOpen, setBankPinModalOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deletePinModalOpen, setDeletePinModalOpen] = useState(false);
 
   const {
     register,
@@ -169,35 +173,48 @@ export default function SuppliersPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteClick = (id: string) => {
     if (!confirm('Are you sure you want to delete this supplier?')) return;
+    setDeleteTargetId(id);
+    setDeletePinModalOpen(true);
+  };
+
+  const handleDeletePinConfirm = async (pin: string) => {
+    if (!session?.user?.id || !deleteTargetId) return;
+
+    const result = await verifyPinForAction(session.user.id, pin, 'DELETE_SUPPLIER');
+    if (!result.success) {
+      toast.error(result.message);
+      throw new Error(result.message);
+    }
 
     try {
-      const response = await fetch(`/api/suppliers/${id}`, {
+      const response = await fetch(`/api/suppliers/${deleteTargetId}`, {
         method: 'DELETE',
       });
 
       if (response.ok) {
         toast.success('Supplier deleted successfully');
         fetchSuppliers();
+        setDeletePinModalOpen(false);
+        setDeleteTargetId(null);
       } else {
         const error = await response.json();
         toast.error(error.error || 'Failed to delete supplier');
+        throw new Error(error.error);
       }
-    } catch (_error) {
-      toast.error('An error occurred');
+    } catch (e: any) {
+      toast.error('Failed to delete supplier');
+      throw e;
     }
   };
 
-  const handleViewBankAccount = async () => {
-    if (!pin || pin.length < 4) {
-      toast.error('Please enter a valid PIN');
-      return;
-    }
+  const handleViewBankAccountConfirm = async (pin: string) => {
+    if (!selectedSupplier?.id) return;
 
     setIsDecrypting(true);
     try {
-      const response = await fetch(`/api/suppliers/${selectedSupplier?.id}/decrypt`, {
+      const response = await fetch(`/api/suppliers/${selectedSupplier.id}/decrypt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),
@@ -207,12 +224,12 @@ export default function SuppliersPage() {
         const data = await response.json();
         setDecryptedBankAccount(data.bankAccount);
         toast.success('Bank account decrypted');
+        setBankPinModalOpen(false);
       } else {
         const error = await response.json();
         toast.error(error.error || 'Failed to decrypt bank account');
+        throw new Error(error.error || 'Failed');
       }
-    } catch (_error) {
-      toast.error('An error occurred');
     } finally {
       setIsDecrypting(false);
     }
@@ -385,7 +402,6 @@ export default function SuppliersPage() {
                         onClick={() => {
                           setSelectedSupplier(supplier);
                           setDecryptedBankAccount('');
-                          setPin('');
                           setIsViewDialogOpen(true);
                         }}
                       >
@@ -398,7 +414,7 @@ export default function SuppliersPage() {
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive"
-                        onClick={() => handleDelete(supplier.id)}
+                        onClick={() => handleDeleteClick(supplier.id)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete
@@ -499,26 +515,17 @@ export default function SuppliersPage() {
                       <span className="font-mono">{decryptedBankAccount}</span>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      <Input
-                        type="password"
-                        placeholder="Enter PIN to view account number"
-                        value={pin}
-                        onChange={(e) => setPin(e.target.value)}
-                        maxLength={6}
-                      />
-                      <Button
-                        onClick={handleViewBankAccount}
-                        disabled={isDecrypting}
-                        className="w-full"
-                      >
-                        {isDecrypting && (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        )}
-                        <Lock className="mr-2 h-4 w-4" />
-                        View Account Number
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={() => setBankPinModalOpen(true)}
+                      disabled={isDecrypting}
+                      className="w-full"
+                    >
+                      {isDecrypting && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      <Lock className="mr-2 h-4 w-4" />
+                      View Account Number
+                    </Button>
                   )}
                 </div>
               </div>
@@ -526,6 +533,22 @@ export default function SuppliersPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <PinAuthModal
+        isOpen={bankPinModalOpen}
+        onClose={() => setBankPinModalOpen(false)}
+        onConfirm={handleViewBankAccountConfirm}
+        action="melihat nomor rekening bank"
+      />
+      <PinAuthModal
+        isOpen={deletePinModalOpen}
+        onClose={() => {
+          setDeletePinModalOpen(false);
+          setDeleteTargetId(null);
+        }}
+        onConfirm={handleDeletePinConfirm}
+        action="menghapus supplier"
+      />
     </div>
   );
 }

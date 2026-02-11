@@ -7,8 +7,8 @@ import { getToken } from 'next-auth/jwt';
 const rolePermissions: Record<string, string[]> = {
   ADMIN: ['*'],
   PURCHASER: ['/backoffice/dashboard', '/backoffice/purchase-orders', '/backoffice/suppliers', '/backoffice/reports', '/api/suppliers', '/api/purchase-orders'],
-  WAREHOUSE: ['/backoffice/dashboard', '/backoffice/inventory', '/backoffice/work-orders', '/api/inventory', '/api/grn', '/api/work-orders'],
-  PRODUCTION: ['/backoffice/dashboard', '/backoffice/work-orders', '/backoffice/reports', '/api/work-orders', '/api/vendors'],
+  WAREHOUSE: ['/backoffice/dashboard', '/backoffice/inventory', '/backoffice/work-orders', '/backoffice/vendor-returns', '/api/inventory', '/api/grn', '/api/work-orders'],
+  PRODUCTION: ['/backoffice/dashboard', '/backoffice/work-orders', '/backoffice/vendor-returns', '/backoffice/reports', '/api/work-orders', '/api/vendors'],
   USER: ['/backoffice/dashboard'],
 };
 

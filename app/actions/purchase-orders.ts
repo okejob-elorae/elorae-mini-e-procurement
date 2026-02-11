@@ -7,6 +7,7 @@ import { generateDocNumber } from '@/lib/docNumber';
 import { POStatus } from '@prisma/client';
 import { poSchema } from '@/lib/validations';
 import { getETAStatus } from '@/lib/eta-alerts';
+import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { z } from 'zod';
 
 export type POFormData = z.infer<typeof poSchema>;
@@ -56,18 +57,24 @@ export async function createPO(data: POFormData, userId: string) {
 export async function updatePO(
   id: string,
   data: POFormData,
-  _userId: string
+  userId: string,
+  pin?: string
 ) {
-  // Only allow update if status is DRAFT
   const existing = await prisma.purchaseOrder.findUnique({
     where: { id },
     select: { status: true }
   });
-  
+
   if (existing?.status !== 'DRAFT') {
-    throw new Error('Only draft POs can be edited');
+    if (!pin) {
+      throw new Error('PIN required to edit a posted PO');
+    }
+    const pinResult = await verifyPinForAction(userId, pin, 'EDIT_POSTED_PO');
+    if (!pinResult.success) {
+      throw new Error(pinResult.message);
+    }
   }
-  
+
   return await prisma.$transaction(async (tx) => {
     const totalAmount = data.items.reduce((sum, item) => {
       return sum.plus(new Decimal(item.qty).mul(item.price));
@@ -100,11 +107,22 @@ export async function updatePO(
 }
 
 export async function changePOStatus(
-  id: string, 
+  id: string,
   newStatus: 'SUBMITTED' | 'CANCELLED' | 'CLOSED',
   userId: string,
-  notes?: string
+  notes?: string,
+  pin?: string
 ) {
+  if (newStatus === 'CANCELLED') {
+    if (!pin) {
+      throw new Error('PIN required to void/cancel a PO');
+    }
+    const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
+    if (!pinResult.success) {
+      throw new Error(pinResult.message);
+    }
+  }
+
   const po = await prisma.purchaseOrder.update({
     where: { id },
     data: { status: newStatus }
@@ -128,18 +146,26 @@ export async function submitPO(id: string, userId: string) {
   return changePOStatus(id, 'SUBMITTED', userId, 'PO Submitted to supplier');
 }
 
-export async function cancelPO(id: string, userId: string, reason?: string) {
+export async function cancelPO(id: string, userId: string, reason?: string, pin?: string) {
+  if (!pin) {
+    throw new Error('PIN required to cancel/void a PO');
+  }
+  const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
+  if (!pinResult.success) {
+    throw new Error(pinResult.message);
+  }
+
   const po = await prisma.purchaseOrder.findUnique({
     where: { id },
     include: { grns: true }
   });
-  
+
   if (!po) throw new Error('PO not found');
-  
+
   if (po.grns.length > 0) {
     throw new Error('Cannot cancel PO with GRNs');
   }
-  
+
   await prisma.$transaction(async (tx) => {
     await tx.purchaseOrder.update({
       where: { id },
@@ -313,12 +339,17 @@ export async function getOverduePOs() {
     const totalQty = po.items.reduce((sum, item) => sum + Number(item.qty), 0);
     const receivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty), 0);
     const pendingQty = totalQty - receivedQty;
-    
+
     return {
-      ...po,
+      id: po.id,
+      docNumber: po.docNumber,
+      etaDate: po.etaDate,
+      status: po.status,
+      grandTotal: Number(po.grandTotal),
+      supplier: po.supplier,
       daysOverdue: Math.abs(etaStatus.daysUntil),
       pendingQty,
-      etaAlert: etaStatus
+      etaAlert: etaStatus,
     };
   });
 }
@@ -354,6 +385,6 @@ export async function getPOStats() {
     submittedPOs,
     partialPOs,
     overduePOs,
-    totalValue: totalValue._sum.grandTotal || 0
+    totalValue: Number(totalValue._sum.grandTotal ?? 0),
   };
 }

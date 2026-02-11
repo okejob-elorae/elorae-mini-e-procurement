@@ -31,7 +31,9 @@
     "purchaseOrders": "Purchase Orders",
     "inventory": "Inventory",
     "workOrders": "Work Orders",
+    "vendorReturns": "Vendor Returns",
     "reports": "Reports",
+    "auditTrail": "Audit Trail",
     "settings": "Settings",
     "masterData": "Master Data"
   },

@@ -7,6 +7,7 @@ export interface ReconciliationResult {
   itemId: string;
   itemName: string;
   itemSku: string;
+  uomCode: string;
   plannedQty: Decimal;
   issuedQty: Decimal;
   returnedQty: Decimal;
@@ -14,60 +15,80 @@ export interface ReconciliationResult {
   theoreticalUsage: Decimal;
   variance: Decimal;
   variancePercent: Decimal;
+  varianceValue: Decimal;
+  issuedValue: Decimal;
+  usedValue: Decimal;
   status: 'OK' | 'OVER' | 'UNDER';
 }
 
-export async function reconcileWorkOrder(woId: string): Promise<ReconciliationResult[]> {
+export interface ReconciliationSummary {
+  totalIssuedValue: Decimal;
+  totalUsedValue: Decimal;
+  netVarianceValue: Decimal;
+}
+
+export async function reconcileWorkOrder(woId: string): Promise<{
+  lines: ReconciliationResult[];
+  summary: ReconciliationSummary;
+}> {
   const wo = await prisma.workOrder.findUnique({
     where: { id: woId },
     include: {
       issues: true,
-      returns: true,
+      returns: { where: { status: 'PROCESSED' } },
       receipts: true
     }
   });
-  
+
   if (!wo) throw new Error('Work Order not found');
-  
-  const consumptionPlan = wo.consumptionPlan as any[];
-  const actualOutput = wo.actualQty ? new Decimal(wo.actualQty.toString()) : new Decimal(0);
-  
-  return Promise.all(consumptionPlan.map(async (plan) => {
-    // Get item details
+
+  const consumptionPlan = (wo.consumptionPlan as any[]) || [];
+  const actualOutput = wo.actualQty
+    ? new Decimal(wo.actualQty.toString())
+    : new Decimal(0);
+
+  const lines: ReconciliationResult[] = [];
+
+  for (const plan of consumptionPlan) {
     const item = await prisma.item.findUnique({
       where: { id: plan.itemId },
       select: { sku: true, nameId: true }
     });
-    
-    // Sum all issues for this material
+
     const totalIssued = wo.issues.reduce((sum, issue) => {
       const items = issue.items as any[];
       const match = items.find((i: any) => i.itemId === plan.itemId);
       return sum.plus(match?.qty || 0);
     }, new Decimal(0));
-    
-    // Sum all returns for this material
+
     const totalReturned = wo.returns.reduce((sum, ret) => {
-      if (ret.status !== 'PROCESSED') return sum;
-      const lines = ret.lines as any[];
-      const match = lines.find((l: any) => l.itemId === plan.itemId && l.type !== 'FG_REJECT');
+      const retLines = ret.lines as any[];
+      const match = retLines.find(
+        (l: any) => l.itemId === plan.itemId && l.type !== 'FG_REJECT'
+      );
       return sum.plus(match?.qty || 0);
     }, new Decimal(0));
-    
+
     const actualUsed = totalIssued.minus(totalReturned);
-    
-    // Calculate theoretical usage based on actual output
+
     const qtyRequired = new Decimal(plan.qtyRequired || 0);
     const wastePercent = new Decimal(plan.wastePercent || 0);
     const wasteFactor = new Decimal(1).plus(wastePercent.div(100));
     const theoreticalUsage = actualOutput.mul(qtyRequired).mul(wasteFactor);
-    
+
     const variance = actualUsed.minus(theoreticalUsage);
-    const variancePercent = theoreticalUsage.gt(0) 
-      ? variance.div(theoreticalUsage).mul(100) 
+    const variancePercent = theoreticalUsage.gt(0)
+      ? variance.div(theoreticalUsage).mul(100)
       : new Decimal(0);
-    
-    // Determine status with tolerance of 1%
+
+    const inventory = await prisma.inventoryValue.findUnique({
+      where: { itemId: plan.itemId }
+    });
+    const avgCost = inventory
+      ? new Decimal(inventory.avgCost.toString())
+      : new Decimal(0);
+    const varianceValue = variance.mul(avgCost);
+
     const tolerance = new Decimal(0.01);
     let status: 'OK' | 'OVER' | 'UNDER';
     if (variance.abs().lte(theoreticalUsage.mul(tolerance))) {
@@ -77,11 +98,15 @@ export async function reconcileWorkOrder(woId: string): Promise<ReconciliationRe
     } else {
       status = 'UNDER';
     }
-    
-    return {
+
+    const issuedValue = totalIssued.mul(avgCost);
+    const usedValue = actualUsed.mul(avgCost);
+
+    lines.push({
       itemId: plan.itemId,
       itemName: item?.nameId || plan.itemName,
       itemSku: item?.sku || '',
+      uomCode: plan.uomCode || 'PCS',
       plannedQty: new Decimal(plan.plannedQty || 0),
       issuedQty: totalIssued,
       returnedQty: totalReturned,
@@ -89,9 +114,34 @@ export async function reconcileWorkOrder(woId: string): Promise<ReconciliationRe
       theoreticalUsage,
       variance,
       variancePercent,
+      varianceValue,
+      issuedValue,
+      usedValue,
       status
-    };
-  }));
+    });
+  }
+
+  const totalIssuedValue = lines.reduce(
+    (sum, line) => sum.plus(line.issuedValue),
+    new Decimal(0)
+  );
+  const totalUsedValue = lines.reduce(
+    (sum, line) => sum.plus(line.usedValue),
+    new Decimal(0)
+  );
+  const netVarianceValue = lines.reduce(
+    (sum, line) => sum.plus(line.varianceValue),
+    new Decimal(0)
+  );
+
+  return {
+    lines,
+    summary: {
+      totalIssuedValue,
+      totalUsedValue,
+      netVarianceValue
+    }
+  };
 }
 
 // Get work order summary with reconciliation status
@@ -112,9 +162,10 @@ export async function getWorkOrderSummary(woId: string) {
   });
   
   if (!wo) throw new Error('Work Order not found');
-  
-  const reconciliation = await reconcileWorkOrder(woId);
-  
+
+  const { lines: reconciliation, summary: reconSummary } =
+    await reconcileWorkOrder(woId);
+
   const totalMaterialCost = wo.issues.reduce((sum, issue) => {
     return sum.plus(issue.totalCost.toString());
   }, new Decimal(0));
@@ -126,16 +177,21 @@ export async function getWorkOrderSummary(woId: string) {
   return {
     workOrder: wo,
     reconciliation,
+    reconciliationSummary: reconSummary,
     summary: {
       totalIssues: wo.issues.length,
       totalReceipts: wo.receipts.length,
-      totalReturns: wo.returns.filter(r => r.status === 'PROCESSED').length,
+      totalReturns: wo.returns.filter((r) => r.status === 'PROCESSED').length,
       totalMaterialCost: totalMaterialCost.toNumber(),
       totalFGValue: totalFGValue.toNumber(),
       materialVariance: totalMaterialCost.minus(totalFGValue).toNumber(),
-      completionPercent: Number(wo.plannedQty) > 0 
-        ? new Decimal(wo.actualQty?.toString() || 0).div(wo.plannedQty.toString()).mul(100).toNumber()
-        : 0
+      completionPercent:
+        Number(wo.plannedQty) > 0
+          ? new Decimal(wo.actualQty?.toString() || 0)
+              .div(wo.plannedQty.toString())
+              .mul(100)
+              .toNumber()
+          : 0
     }
   };
 }

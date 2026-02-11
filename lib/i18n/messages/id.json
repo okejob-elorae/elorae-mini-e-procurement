@@ -31,7 +31,9 @@
     "purchaseOrders": "Pesanan Pembelian",
     "inventory": "Inventori",
     "workOrders": "Perintah Kerja",
+    "vendorReturns": "Retur Pemasok",
     "reports": "Laporan",
+    "auditTrail": "Audit Trail",
     "settings": "Pengaturan",
     "masterData": "Data Master"
   },

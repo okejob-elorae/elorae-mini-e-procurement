@@ -92,6 +92,41 @@ export interface DocumentQueue {
   createdAt: Date;
 }
 
+/** Phase 4: material issue created offline, to sync when online */
+export interface PendingMaterialIssue {
+  localId?: number;
+  woId: string;
+  issueType: 'FABRIC' | 'ACCESSORIES';
+  isPartial: boolean;
+  items: Array<{ itemId: string; qty: number; uomId: string }>;
+  notes?: string;
+  createdAt: Date;
+  status: 'PENDING' | 'SYNCED' | 'ERROR';
+  errorMsg?: string;
+}
+
+/** Phase 4: FG receipt created offline, to sync when online */
+export interface PendingFGReceipt {
+  localId?: number;
+  woId: string;
+  qtyReceived: number;
+  qtyRejected: number;
+  qcNotes?: string;
+  createdAt: Date;
+  status: 'PENDING' | 'SYNCED' | 'ERROR';
+  errorMsg?: string;
+}
+
+/** Optional: cache work order header for offline issue/receive forms */
+export interface WorkOrderCache {
+  id: string;
+  docNumber: string;
+  status: string;
+  finishedGoodId?: string;
+  consumptionPlan?: string;
+  syncedAt: Date;
+}
+
 export class EloraeOfflineDB extends Dexie {
   pendingOperations!: Table<PendingOperation, number>;
   suppliers!: Table<CachedSupplier, string>;
@@ -100,6 +135,9 @@ export class EloraeOfflineDB extends Dexie {
   uoms!: Table<CachedUOM, string>;
   pendingPOs!: Table<PendingPO, number>;
   pendingGRNs!: Table<PendingGRN, number>;
+  pendingIssues!: Table<PendingMaterialIssue, number>;
+  pendingReceipts!: Table<PendingFGReceipt, number>;
+  workOrderCache!: Table<WorkOrderCache, string>;
 
   constructor() {
     super('EloraeDB');
@@ -134,6 +172,19 @@ export class EloraeOfflineDB extends Dexie {
       uoms: 'id, code',
       pendingPOs: '++localId, status, createdAt',
       pendingGRNs: '++localId, status, createdAt',
+    });
+    // Version 5: Phase 4 – pending material issues, FG receipts, work order cache
+    this.version(5).stores({
+      pendingOperations: '++id, type, timestamp',
+      suppliers: 'id, type, name, syncAt',
+      items: 'id, sku, type, syncAt',
+      documentQueue: '++id, docType, status, createdAt',
+      uoms: 'id, code',
+      pendingPOs: '++localId, status, createdAt',
+      pendingGRNs: '++localId, status, createdAt',
+      pendingIssues: '++localId, woId, status, createdAt',
+      pendingReceipts: '++localId, woId, status, createdAt',
+      workOrderCache: 'id, syncedAt',
     });
   }
 }
@@ -281,4 +332,76 @@ export async function updatePendingGRNError(
     status: 'ERROR',
     errorMsg,
   });
+}
+
+// --- Phase 4: Pending material issues ---
+
+export async function savePendingIssue(
+  issue: Omit<PendingMaterialIssue, 'localId' | 'createdAt' | 'status'>
+): Promise<number> {
+  return await offlineDB.pendingIssues.add({
+    ...issue,
+    createdAt: new Date(),
+    status: 'PENDING',
+  });
+}
+
+export async function getPendingIssues(woId?: string): Promise<PendingMaterialIssue[]> {
+  if (woId) {
+    return await offlineDB.pendingIssues.where('woId').equals(woId).toArray();
+  }
+  return await offlineDB.pendingIssues.orderBy('createdAt').toArray();
+}
+
+export async function removePendingIssue(localId: number): Promise<void> {
+  await offlineDB.pendingIssues.delete(localId);
+}
+
+export async function updatePendingIssueStatus(
+  localId: number,
+  status: PendingMaterialIssue['status'],
+  errorMsg?: string
+): Promise<void> {
+  await offlineDB.pendingIssues.update(localId, { status, errorMsg });
+}
+
+// --- Phase 4: Pending FG receipts ---
+
+export async function savePendingReceipt(
+  receipt: Omit<PendingFGReceipt, 'localId' | 'createdAt' | 'status'>
+): Promise<number> {
+  return await offlineDB.pendingReceipts.add({
+    ...receipt,
+    createdAt: new Date(),
+    status: 'PENDING',
+  });
+}
+
+export async function getPendingReceipts(woId?: string): Promise<PendingFGReceipt[]> {
+  if (woId) {
+    return await offlineDB.pendingReceipts.where('woId').equals(woId).toArray();
+  }
+  return await offlineDB.pendingReceipts.orderBy('createdAt').toArray();
+}
+
+export async function removePendingReceipt(localId: number): Promise<void> {
+  await offlineDB.pendingReceipts.delete(localId);
+}
+
+export async function updatePendingReceiptStatus(
+  localId: number,
+  status: PendingFGReceipt['status'],
+  errorMsg?: string
+): Promise<void> {
+  await offlineDB.pendingReceipts.update(localId, { status, errorMsg });
+}
+
+// --- Phase 4: Work order cache (optional) ---
+
+export async function cacheWorkOrder(wo: WorkOrderCache): Promise<void> {
+  await offlineDB.workOrderCache.put({ ...wo, syncedAt: new Date() });
+}
+
+export async function getCachedWorkOrder(woId: string): Promise<WorkOrderCache | undefined> {
+  return await offlineDB.workOrderCache.get(woId);
 }

@@ -24,6 +24,7 @@ import { POStatus } from '@/lib/constants/enums';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { PinAuthModal } from '@/components/security/PinAuthModal';
 
 const statusLabels: Record<POStatus, string> = {
   DRAFT: 'Draft',
@@ -52,6 +53,9 @@ export default function PODetailPage() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'cancel' | 'update' | null>(null);
+  const [pendingUpdateData, setPendingUpdateData] = useState<any>(null);
 
   useEffect(() => {
     if (params.id && typeof params.id === 'string') {
@@ -75,18 +79,52 @@ export default function PODetailPage() {
   const handleStatusChange = async (newStatus: 'SUBMITTED' | 'CANCELLED' | 'CLOSED', notes?: string) => {
     if (!session?.user?.id || !po) return;
 
+    if (newStatus === 'CANCELLED') {
+      setCancelReason(notes ?? '');
+      setPendingAction('cancel');
+      setPinModalOpen(true);
+      return;
+    }
+
     setIsSaving(true);
     try {
       await changePOStatus(po.id, newStatus, session.user.id, notes);
       toast.success(`PO ${newStatus.toLowerCase()} successfully`);
       router.refresh();
-      // Reload PO data
       const updated = await getPOById(po.id);
       setPO(updated);
       setCancelDialogOpen(false);
-      setCancelReason('');
     } catch (error: any) {
       toast.error(error.message || 'Failed to update status');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePinConfirm = async (pin: string) => {
+    if (!session?.user?.id || !po) return;
+
+    setIsSaving(true);
+    try {
+      if (pendingAction === 'cancel') {
+        await changePOStatus(po.id, 'CANCELLED', session.user.id, cancelReason, pin);
+        toast.success('PO cancelled successfully');
+        setCancelDialogOpen(false);
+        setCancelReason('');
+      } else if (pendingAction === 'update' && pendingUpdateData) {
+        await updatePO(po.id, pendingUpdateData, session.user.id, pin);
+        toast.success('PO updated successfully');
+        setIsEditMode(false);
+        setPendingUpdateData(null);
+      }
+      setPinModalOpen(false);
+      setPendingAction(null);
+      router.refresh();
+      const updated = await getPOById(po.id);
+      setPO(updated);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed');
+      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -95,13 +133,19 @@ export default function PODetailPage() {
   const handleUpdate = async (data: Parameters<typeof POForm>[0]['onSubmit'] extends (data: infer T) => any ? T : never) => {
     if (!session?.user?.id || !po) return;
 
+    if (po.status !== 'DRAFT') {
+      setPendingUpdateData(data);
+      setPendingAction('update');
+      setPinModalOpen(true);
+      return;
+    }
+
     setIsSaving(true);
     try {
       await updatePO(po.id, data, session.user.id);
       toast.success('PO updated successfully');
       setIsEditMode(false);
       router.refresh();
-      // Reload PO data
       const updated = await getPOById(po.id);
       setPO(updated);
     } catch (error: any) {
@@ -373,6 +417,17 @@ export default function PODetailPage() {
           </div>
         </>
       )}
+
+      <PinAuthModal
+        isOpen={pinModalOpen}
+        onClose={() => {
+          setPinModalOpen(false);
+          setPendingAction(null);
+          setPendingUpdateData(null);
+        }}
+        onConfirm={handlePinConfirm}
+        action={pendingAction === 'cancel' ? 'membatalkan PO' : 'menyunting PO yang sudah diposting'}
+      />
     </div>
   );
 }

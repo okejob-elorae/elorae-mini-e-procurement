@@ -172,88 +172,90 @@ export default function UOMPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Unit of Measure (UOM)</h1>
-          <p className="text-muted-foreground">
-            Manage units of measure and conversions
-          </p>
-        </div>
-        <Dialog open={isUOMDialogOpen} onOpenChange={setIsUOMDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              New UOM
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create New UOM</DialogTitle>
-              <DialogDescription>
-                Add a new unit of measure to the system
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmitUOM(onSubmitUOM)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="code">Code *</Label>
-                <Input
-                  id="code"
-                  {...registerUOM('code')}
-                  placeholder="YD, PCS, MTR, KG"
-                  maxLength={10}
-                />
-                {errorsUOM.code && (
-                  <p className="text-sm text-destructive">{errorsUOM.code.message}</p>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="nameId">Name (Indonesia) *</Label>
-                  <Input id="nameId" {...registerUOM('nameId')} />
-                  {errorsUOM.nameId && (
-                    <p className="text-sm text-destructive">{errorsUOM.nameId.message}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="nameEn">Name (English) *</Label>
-                  <Input id="nameEn" {...registerUOM('nameEn')} />
-                  {errorsUOM.nameEn && (
-                    <p className="text-sm text-destructive">{errorsUOM.nameEn.message}</p>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  {...registerUOM('description')}
-                  rows={3}
-                />
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsUOMDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmittingUOM}>
-                  {isSubmittingUOM && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Create UOM
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Unit of Measure (UOM)</h1>
+        <p className="text-muted-foreground">
+          Manage units of measure and conversions
+        </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* UOM List */}
         <Card>
           <CardHeader>
-            <CardTitle>Units of Measure</CardTitle>
-            <CardDescription>All active UOMs in the system</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Units of Measure</CardTitle>
+                <CardDescription>All active UOMs in the system</CardDescription>
+              </div>
+              <Dialog open={isUOMDialogOpen} onOpenChange={setIsUOMDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    New UOM
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create New UOM</DialogTitle>
+                    <DialogDescription>
+                      Add a new unit of measure to the system
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleSubmitUOM(onSubmitUOM)} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="code">Code *</Label>
+                      <Input
+                        id="code"
+                        {...registerUOM('code')}
+                        placeholder="YD, PCS, MTR, KG"
+                        maxLength={10}
+                      />
+                      {errorsUOM.code && (
+                        <p className="text-sm text-destructive">{errorsUOM.code.message}</p>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="nameId">Name (Indonesia) *</Label>
+                        <Input id="nameId" {...registerUOM('nameId')} />
+                        {errorsUOM.nameId && (
+                          <p className="text-sm text-destructive">{errorsUOM.nameId.message}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="nameEn">Name (English) *</Label>
+                        <Input id="nameEn" {...registerUOM('nameEn')} />
+                        {errorsUOM.nameEn && (
+                          <p className="text-sm text-destructive">{errorsUOM.nameEn.message}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="description">Description</Label>
+                      <Textarea
+                        id="description"
+                        {...registerUOM('description')}
+                        rows={3}
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setIsUOMDialogOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={isSubmittingUOM}>
+                        {isSubmittingUOM && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        Create UOM
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
           </CardHeader>
           <CardContent>
             <Table>

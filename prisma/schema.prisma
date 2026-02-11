@@ -51,11 +51,14 @@ model User {
   image         String?
   accounts      Account[]
   sessions      Session[]
-  auditLogs     AuditLog[]
+  auditLogs       AuditLog[]
+  pinAttempts     PinAttempt[]
+  notificationQueue NotificationQueue[]
   purchaseOrders PurchaseOrder[]
   poStatusChanges POStatusHistory[]
   stockAdjustmentsApproved StockAdjustment[] @relation("ApprovedAdjustments")
   stockAdjustmentsCreated  StockAdjustment[] @relation("CreatedAdjustments")
+  vendorReturnsCreated    VendorReturn[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -103,6 +106,7 @@ model Supplier {
   purchaseOrders  PurchaseOrder[]
   workOrders      WorkOrder[]
   grns            GRN[]
+  vendorReturns   VendorReturn[]
   @@index([type])
   @@index([categoryId])
   @@index([code])
@@ -154,6 +158,7 @@ model Item {
   fgConsumptions   ConsumptionRule[] @relation("FGConsumptions")
   materialUsages   ConsumptionRule[] @relation("MaterialUsages")
   stockAdjustments StockAdjustment[]
+  workOrdersAsFinishedGood WorkOrder[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -322,6 +327,8 @@ model WorkOrder {
   docNumber       String    @unique
   vendorId        String
   vendor          Supplier  @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  finishedGoodId  String
+  finishedGood    Item      @relation(fields: [finishedGoodId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   outputMode      OutputMode @default(GENERIC)
   plannedQty      Decimal   @db.Decimal(10,2)
   actualQty       Decimal?  @db.Decimal(10,2)
@@ -342,6 +349,7 @@ model WorkOrder {
   receipts        FGReceipt[]
   returns         VendorReturn[]
   @@index([vendorId])
+  @@index([finishedGoodId])
   @@index([createdById])
   @@index([status])
   @@index([targetDate])
@@ -356,6 +364,7 @@ model MaterialIssue {
   issueType     IssueType
   parentIssueId String?
   isPartial     Boolean   @default(false)
+  splitSequence Int?
   items         Json
   totalCost     Decimal   @db.Decimal(15,2)
   issuedById    String
@@ -364,9 +373,11 @@ model MaterialIssue {
   ackAt         DateTime?
   ackPhotoUrl   String?
   syncStatus    SyncStatus @default(SYNCED)
+  notes         String?   @db.Text
   @@index([woId])
   @@index([issuedById])
   @@index([issuedAt])
+  @@index([docNumber])
 }
 
 model FGReceipt {
@@ -379,16 +390,19 @@ model FGReceipt {
   qtyRejected    Decimal   @default(0) @db.Decimal(10,2)
   qtyAccepted    Decimal   @db.Decimal(10,2)
   skuBreakdown   Json?
+  qcPassed       Boolean   @default(true)
   qcNotes        String?
   qcPhotos       String?
-  receivedById   String
-  receivedAt     DateTime  @default(now())
+  materialCost   Decimal?  @db.Decimal(15,2)
   avgCostPerUnit Decimal?  @db.Decimal(15,2)
   totalCostValue Decimal?  @db.Decimal(15,2)
+  receivedById   String
+  receivedAt     DateTime  @default(now())
   syncStatus     SyncStatus @default(SYNCED)
   @@index([woId])
   @@index([receivedById])
   @@index([receivedAt])
+  @@index([docNumber])
 }
 
 model VendorReturn {
@@ -397,38 +411,83 @@ model VendorReturn {
   woId           String?
   wo             WorkOrder?   @relation(fields: [woId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   vendorId       String
+  vendor         Supplier     @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   lines          Json
   totalItems     Int
+  totalValue     Decimal      @db.Decimal(15,2)
   evidenceUrls   String?
   status         ReturnStatus @default(DRAFT)
   processedAt    DateTime?
   processedBy    String?
   stockImpacted  Boolean      @default(false)
   syncStatus     SyncStatus   @default(SYNCED)
+  createdById    String
+  createdBy      User         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdAt      DateTime     @default(now())
   @@index([woId])
   @@index([vendorId])
   @@index([status])
+  @@index([createdById])
 }
 
 // ==========================================
 // SYSTEM & AUDIT (Phase 5)
 // ==========================================
 model AuditLog {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  action      String
-  entityType  String
-  entityId    String
-  changes     Json?
-  metadata    Json?
-  ipAddress   String?
-  createdAt   DateTime @default(now())
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  action                String
+  entityType            String
+  entityId              String
+  changes               Json?
+  metadata              Json?
+  sensitiveDataAccessed String?
+  reason                String?
+  ipAddress             String?
+  userAgent             String?
+  createdAt             DateTime @default(now())
   @@index([userId])
   @@index([entityType, entityId])
   @@index([action])
   @@index([createdAt])
+}
+
+model DocNumberConfig {
+  id          String   @id @default(cuid())
+  docType     DocType  @unique
+  prefix      String
+  resetPeriod String   // YEARLY, MONTHLY, NEVER
+  padding     Int      @default(4)
+  lastNumber  Int      @default(0)
+  year        Int      @default(0)
+  month       Int      @default(0)
+}
+
+model NotificationQueue {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String
+  data      Json?
+  sent      Boolean   @default(false)
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  @@index([userId, sent])
+  @@index([createdAt])
+}
+
+model PinAttempt {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  success   Boolean
+  ipAddress String?
+  createdAt DateTime @default(now())
+  @@index([userId, createdAt])
 }
 
 model DocumentNumber {
@@ -520,6 +579,12 @@ enum ReturnStatus {
   SUBMITTED
   PROCESSED
   CANCELLED
+}
+
+enum ReturnLineType {
+  FABRIC
+  ACCESSORIES
+  FG_REJECT
 }
 
 enum DocType {

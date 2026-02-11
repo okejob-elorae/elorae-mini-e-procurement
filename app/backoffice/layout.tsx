@@ -10,7 +10,9 @@ import {
   ShoppingCart,
   Package,
   ClipboardList,
+  RotateCcw,
   BarChart3,
+  FileText,
   Settings,
   Menu,
   ChevronDown,
@@ -85,10 +87,22 @@ const navItems: NavItem[] = [
     roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
   },
   {
+    labelKey: 'vendorReturns',
+    href: '/backoffice/vendor-returns',
+    icon: RotateCcw,
+    roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
+  },
+  {
     labelKey: 'reports',
     href: '/backoffice/reports',
     icon: BarChart3,
     roles: [Role.ADMIN, Role.PURCHASER, Role.PRODUCTION],
+  },
+  {
+    labelKey: 'auditTrail',
+    href: '/backoffice/audit-trail',
+    icon: FileText,
+    roles: [Role.ADMIN],
   },
   {
     labelKey: 'settings',
