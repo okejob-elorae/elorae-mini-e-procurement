@@ -6,9 +6,9 @@ import { getToken } from 'next-auth/jwt';
 // when the request is handled by the proxy). Do a minimal session check with getToken instead.
 const rolePermissions: Record<string, string[]> = {
   ADMIN: ['*'],
-  PURCHASER: ['/backoffice/dashboard', '/backoffice/purchase-orders', '/backoffice/suppliers', '/backoffice/reports', '/api/suppliers', '/api/purchase-orders'],
+  PURCHASER: ['/backoffice/dashboard', '/backoffice/purchase-orders', '/backoffice/suppliers', '/api/suppliers', '/api/purchase-orders'],
   WAREHOUSE: ['/backoffice/dashboard', '/backoffice/inventory', '/backoffice/work-orders', '/backoffice/vendor-returns', '/api/inventory', '/api/grn', '/api/work-orders'],
-  PRODUCTION: ['/backoffice/dashboard', '/backoffice/work-orders', '/backoffice/vendor-returns', '/backoffice/reports', '/api/work-orders', '/api/vendors'],
+  PRODUCTION: ['/backoffice/dashboard', '/backoffice/work-orders', '/backoffice/vendor-returns', '/api/work-orders', '/api/vendors'],
   USER: ['/backoffice/dashboard'],
 };
 
@@ -52,9 +52,14 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Exact /backoffice: let app redirect to /backoffice/dashboard (avoid redirect loop)
+  if (pathname === '/backoffice') {
+    return NextResponse.next();
+  }
+
   const role = token.role as string | undefined;
   if (!hasPermission(role, pathname)) {
-    return NextResponse.redirect(new URL('/backoffice', req.url));
+    return NextResponse.redirect(new URL('/backoffice/dashboard', req.url));
   }
 
   return NextResponse.next();

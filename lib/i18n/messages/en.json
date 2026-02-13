@@ -114,5 +114,85 @@
     "entity": "Entity",
     "changes": "Changes",
     "viewedBankAccount": "Viewed bank account"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "System and security configuration",
+    "security": {
+      "title": "Security",
+      "description": "PIN, attempt history, reset PIN (admin)"
+    },
+    "documents": {
+      "title": "Document Numbers",
+      "description": "Prefix and reset period for document numbers"
+    },
+    "uom": {
+      "title": "UOM",
+      "description": "Units of measure and conversions"
+    }
+  },
+  "documents": {
+    "pageTitle": "Document Numbering",
+    "pageDescription": "Configure prefix, reset period, and padding per document type. Changes apply to new documents only.",
+    "tableDescription": "Prefix (e.g. PO/), reset period (when the sequence resets), and number padding (e.g. 4 → 0001).",
+    "documentType": "Document Type",
+    "prefix": "Prefix",
+    "resetPeriod": "Reset Period",
+    "padding": "Padding",
+    "save": "Save",
+    "loadError": "Failed to load config"
+  },
+  "security": {
+    "title": "Security",
+    "subtitle": "PIN and sensitive action history",
+    "pinCardTitle": "PIN",
+    "pinCardDescription": "4–6 digit PIN for sensitive actions (view bank account, stock adjustment, void document, etc.).",
+    "currentPin": "Current PIN",
+    "newPin": "New PIN",
+    "confirmPin": "Confirm PIN",
+    "setPin": "Set / Update PIN",
+    "lastAccessTitle": "Last accessed (sensitive actions)",
+    "lastAccessDescription": "Time of last successful PIN verification per action type.",
+    "noLastAccess": "No sensitive actions yet",
+    "attemptsTitle": "PIN attempts",
+    "attemptsDescription": "Recent failed PIN attempts",
+    "noAttempts": "No failed attempts",
+    "resetPinTitle": "Reset user PIN (admin)",
+    "resetPinDescription": "Clear another user's PIN so they can set a new one.",
+    "selectUser": "Select user",
+    "resetPin": "Reset PIN",
+    "pinLengthError": "PIN must be 4–6 digits",
+    "pinMismatch": "New PIN and confirmation do not match",
+    "pinSaveFailed": "Failed to save PIN",
+    "currentPinLabel": "Current PIN (leave blank if not set yet)",
+    "newPinLabel": "New PIN (4–6 digits)",
+    "confirmPinLabel": "Confirm new PIN",
+    "savePin": "Save PIN",
+    "noHistory": "No history yet.",
+    "attemptsTableTime": "Time",
+    "attemptsTableAction": "Action",
+    "attemptsTableStatus": "Status",
+    "success": "Success",
+    "failed": "Failed",
+    "resetPinFailed": "Failed to reset PIN",
+    "forceResetTitle": "Force reset PIN (Admin)",
+    "actions": {
+      "VIEW_BANK_ACCOUNT": "View bank account",
+      "STOCK_ADJUSTMENT": "Stock adjustment",
+      "VOID_DOCUMENT": "Void document",
+      "EDIT_POSTED_PO": "Edit posted PO",
+      "DELETE_SUPPLIER": "Delete supplier"
+    }
+  },
+  "uom": {
+    "pageTitle": "Unit of Measure (UOM)",
+    "pageDescription": "Manage units of measure and conversions",
+    "unitsTitle": "Units of Measure",
+    "unitsDescription": "All active UOMs in the system",
+    "nameId": "Name (Indonesia)",
+    "nameEn": "Name (English)",
+    "conversionsTitle": "UOM Conversions",
+    "conversionsDescription": "Conversion factors between UOMs",
+    "noConversions": "No conversions defined"
   }
 }

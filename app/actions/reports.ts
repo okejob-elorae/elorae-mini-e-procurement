@@ -253,7 +253,7 @@ export async function getDashboardSummary() {
     inventoryStats,
     productionStats,
     overduePOs,
-    lowStockItems,
+    inventoryWithReorder,
     recentMovements
   ] = await Promise.all([
     // PO Stats
@@ -280,12 +280,10 @@ export async function getDashboardSummary() {
       }
     }),
     
-    // Low stock items
-    prisma.inventoryValue.count({
-      where: {
-        item: { reorderPoint: { not: null } },
-        qtyOnHand: { lte: prisma.inventoryValue.fields.qtyOnHand }
-      }
+    // Low stock: items where qtyOnHand <= reorderPoint (compare in JS)
+    prisma.inventoryValue.findMany({
+      where: { item: { reorderPoint: { not: null } } },
+      include: { item: { select: { reorderPoint: true } } },
     }),
     
     // Recent movements
@@ -295,6 +293,12 @@ export async function getDashboardSummary() {
       }
     })
   ]);
+
+  const lowStockItems = inventoryWithReorder.filter(
+    (r) =>
+      r.item.reorderPoint != null &&
+      Number(r.qtyOnHand) <= Number(r.item.reorderPoint)
+  ).length;
   
   return {
     procurement: {

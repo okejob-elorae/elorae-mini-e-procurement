@@ -11,7 +11,6 @@ import {
   Package,
   ClipboardList,
   RotateCcw,
-  BarChart3,
   FileText,
   Settings,
   Menu,
@@ -38,6 +37,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
+import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { useTranslations } from 'next-intl';
@@ -91,12 +91,6 @@ const navItems: NavItem[] = [
     href: '/backoffice/vendor-returns',
     icon: RotateCcw,
     roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
-  },
-  {
-    labelKey: 'reports',
-    href: '/backoffice/reports',
-    icon: BarChart3,
-    roles: [Role.ADMIN, Role.PURCHASER, Role.PRODUCTION],
   },
   {
     labelKey: 'auditTrail',
@@ -313,7 +307,7 @@ export default function BackofficeLayout({
                   Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/login' })}>
+                <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/login' })} data-testid="sign-out">
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>
@@ -324,6 +318,7 @@ export default function BackofficeLayout({
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
+        <QuickActionFAB />
       </div>
     </div>
   );

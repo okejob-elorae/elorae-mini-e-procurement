@@ -1,36 +1,24 @@
 'use client';
 
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Shield, FileDigit, Ruler } from 'lucide-react';
 
-const items = [
-  {
-    title: 'Security',
-    description: 'PIN, riwayat percobaan, reset PIN (admin)',
-    href: '/backoffice/settings/security',
-    icon: Shield,
-  },
-  {
-    title: 'Document Numbers',
-    description: 'Prefix dan reset period untuk nomor dokumen',
-    href: '/backoffice/settings/documents',
-    icon: FileDigit,
-  },
-  {
-    title: 'UOM',
-    description: 'Unit of measure dan konversi',
-    href: '/backoffice/settings/uom',
-    icon: Ruler,
-  },
-];
-
 export default function SettingsPage() {
+  const t = useTranslations('settings');
+
+  const items = [
+    { titleKey: 'security.title' as const, descriptionKey: 'security.description' as const, href: '/backoffice/settings/security', icon: Shield },
+    { titleKey: 'documents.title' as const, descriptionKey: 'documents.description' as const, href: '/backoffice/settings/documents', icon: FileDigit },
+    { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">Pengaturan sistem dan keamanan</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+        <p className="text-muted-foreground">{t('subtitle')}</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => (
@@ -39,9 +27,9 @@ export default function SettingsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <item.icon className="h-5 w-5" />
-                  {item.title}
+                  {t(item.titleKey)}
                 </CardTitle>
-                <CardDescription>{item.description}</CardDescription>
+                <CardDescription>{t(item.descriptionKey)}</CardDescription>
               </CardHeader>
             </Card>
           </Link>

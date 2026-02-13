@@ -331,7 +331,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     value={field.value}
                     onValueChange={field.onChange}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -356,7 +356,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     value={field.value}
                     onValueChange={field.onChange}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select UOM" />
                     </SelectTrigger>
                     <SelectContent>

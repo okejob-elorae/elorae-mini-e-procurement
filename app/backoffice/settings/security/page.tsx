@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { SENSITIVE_ACTIONS } from '@/app/actions/security/pin-constants';
+import { useLocale, useTranslations } from 'next-intl';
 import {
   setupPin,
   getPinAttempts,
@@ -39,17 +39,20 @@ import {
 import { Loader2, Shield, History, UserX } from 'lucide-react';
 import { toast } from 'sonner';
 
-const ACTION_LABELS: Record<string, string> = {
-  VIEW_BANK_ACCOUNT: 'View bank account',
-  STOCK_ADJUSTMENT: 'Stock adjustment',
-  VOID_DOCUMENT: 'Void document',
-  EDIT_POSTED_PO: 'Edit posted PO',
-  DELETE_SUPPLIER: 'Delete supplier',
-};
-
 export default function SecuritySettingsPage() {
+  const locale = useLocale() as 'en' | 'id';
+  const t = useTranslations('security');
   const { data: session, status } = useSession();
   const router = useRouter();
+  const dateLocale = locale === 'id' ? 'id-ID' : 'en-US';
+
+  const actionLabel = (action: string) => {
+    try {
+      return t(`actions.${action}` as any);
+    } catch {
+      return action;
+    }
+  };
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -74,11 +77,11 @@ export default function SecuritySettingsPage() {
   const handleSetPin = async () => {
     if (!session?.user?.id) return;
     if (newPin.length < 4 || newPin.length > 6) {
-      toast.error('PIN harus 4–6 digit');
+      toast.error(t('pinLengthError'));
       return;
     }
     if (newPin !== confirmPin) {
-      toast.error('PIN baru dan konfirmasi tidak sama');
+      toast.error(t('pinMismatch'));
       return;
     }
     setSaving(true);
@@ -95,7 +98,7 @@ export default function SecuritySettingsPage() {
         toast.error(result.message);
       }
     } catch (_e) {
-      toast.error('Gagal menyimpan PIN');
+      toast.error(t('pinSaveFailed'));
     } finally {
       setSaving(false);
     }
@@ -113,7 +116,7 @@ export default function SecuritySettingsPage() {
         toast.error(result.message);
       }
     } catch (_e) {
-      toast.error('Gagal reset PIN');
+      toast.error(t('resetPinFailed'));
     } finally {
       setResetting(false);
     }
@@ -132,24 +135,22 @@ export default function SecuritySettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Security</h1>
-        <p className="text-muted-foreground">PIN dan riwayat akses sensitif</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+        <p className="text-muted-foreground">{t('subtitle')}</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
-            Set / Ubah PIN
+            {t('setPin')}
           </CardTitle>
-          <CardDescription>
-            PIN 4–6 digit untuk aksi sensitif (lihat rekening bank, adjustment stok, void dokumen, dll).
-          </CardDescription>
+          <CardDescription>{t('pinCardDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-1 max-w-md">
             <div className="space-y-2">
-              <Label>PIN saat ini (kosongkan jika belum pernah set)</Label>
+              <Label>{t('currentPinLabel')}</Label>
               <Input
                 type="password"
                 inputMode="numeric"
@@ -160,7 +161,7 @@ export default function SecuritySettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>PIN baru (4–6 digit)</Label>
+              <Label>{t('newPinLabel')}</Label>
               <Input
                 type="password"
                 inputMode="numeric"
@@ -171,7 +172,7 @@ export default function SecuritySettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Konfirmasi PIN baru</Label>
+              <Label>{t('confirmPinLabel')}</Label>
               <Input
                 type="password"
                 inputMode="numeric"
@@ -182,7 +183,7 @@ export default function SecuritySettingsPage() {
               />
             </div>
             <Button onClick={handleSetPin} disabled={saving || newPin.length < 4 || newPin !== confirmPin}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Simpan PIN'}
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t('savePin')}
             </Button>
           </div>
         </CardContent>
@@ -192,20 +193,20 @@ export default function SecuritySettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <History className="h-5 w-5" />
-            Terakhir diakses (aksi sensitif)
+            {t('lastAccessTitle')}
           </CardTitle>
-          <CardDescription>Waktu verifikasi PIN berhasil per jenis aksi.</CardDescription>
+          <CardDescription>{t('lastAccessDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           {lastAccess.length === 0 ? (
-            <p className="text-muted-foreground text-sm">Belum ada riwayat.</p>
+            <p className="text-muted-foreground text-sm">{t('noHistory')}</p>
           ) : (
             <ul className="space-y-1 text-sm">
               {lastAccess.map((a) => (
                 <li key={a.action}>
-                  <span className="font-medium">{ACTION_LABELS[a.action] ?? a.action}</span>
+                  <span className="font-medium">{actionLabel(a.action)}</span>
                   {' — '}
-                  {new Date(a.at).toLocaleString('id-ID')}
+                  {new Date(a.at).toLocaleString(dateLocale)}
                 </li>
               ))}
             </ul>
@@ -215,26 +216,26 @@ export default function SecuritySettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Riwayat percobaan PIN</CardTitle>
-          <CardDescription>Percobaan verifikasi PIN (terbaru di atas).</CardDescription>
+          <CardTitle>{t('attemptsTitle')}</CardTitle>
+          <CardDescription>{t('attemptsDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="border rounded-md overflow-auto max-h-[280px]">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Waktu</TableHead>
-                  <TableHead>Aksi</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t('attemptsTableTime')}</TableHead>
+                  <TableHead>{t('attemptsTableAction')}</TableHead>
+                  <TableHead>{t('attemptsTableStatus')}</TableHead>
                   <TableHead>IP</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {attempts.map((a) => (
                   <TableRow key={a.id}>
-                    <TableCell className="text-sm">{new Date(a.createdAt).toLocaleString('id-ID')}</TableCell>
-                    <TableCell>{ACTION_LABELS[a.action] ?? a.action}</TableCell>
-                    <TableCell>{a.success ? 'Berhasil' : 'Gagal'}</TableCell>
+                    <TableCell className="text-sm">{new Date(a.createdAt).toLocaleString(dateLocale)}</TableCell>
+                    <TableCell>{actionLabel(a.action)}</TableCell>
+                    <TableCell>{a.success ? t('success') : t('failed')}</TableCell>
                     <TableCell className="text-muted-foreground">{a.ipAddress ?? '-'}</TableCell>
                   </TableRow>
                 ))}
@@ -242,7 +243,7 @@ export default function SecuritySettingsPage() {
             </Table>
           </div>
           {attempts.length === 0 && (
-            <p className="text-muted-foreground text-sm py-4">Belum ada riwayat.</p>
+            <p className="text-muted-foreground text-sm py-4">{t('noHistory')}</p>
           )}
         </CardContent>
       </Card>
@@ -252,14 +253,14 @@ export default function SecuritySettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <UserX className="h-5 w-5" />
-              Force reset PIN (Admin)
+              {t('forceResetTitle')}
             </CardTitle>
-            <CardDescription>Hapus PIN pengguna lain agar mereka dapat set PIN baru.</CardDescription>
+            <CardDescription>{t('resetPinDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2 items-end">
             <Select value={resetTargetId} onValueChange={setResetTargetId}>
               <SelectTrigger className="w-[280px]">
-                <SelectValue placeholder="Pilih pengguna" />
+                <SelectValue placeholder={t('selectUser')} />
               </SelectTrigger>
               <SelectContent>
                 {users.map((u) => (
@@ -270,7 +271,7 @@ export default function SecuritySettingsPage() {
               </SelectContent>
             </Select>
             <Button variant="destructive" onClick={handleForceReset} disabled={!resetTargetId || resetting}>
-              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reset PIN'}
+              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : t('resetPin')}
             </Button>
           </CardContent>
         </Card>

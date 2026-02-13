@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  async redirects() {
+    return [
+      { source: '/backoffice/reports', destination: '/backoffice/dashboard', permanent: false },
+    ];
+  },
   // Next.js 16 uses Turbopack by default; empty config silences webpack conflict (PWA is disabled in dev)
   turbopack: {
     root: path.resolve(process.cwd()),

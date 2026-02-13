@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
@@ -31,7 +31,10 @@ import {
   TableRow
 } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { createVendorReturn } from '@/app/actions/vendor-returns';
+import {
+  getVendorReturnById,
+  updateVendorReturn
+} from '@/app/actions/vendor-returns';
 import { getWorkOrders } from '@/app/actions/production';
 import { getItems } from '@/app/actions/items';
 import type { VendorReturnLineInput } from '@/app/actions/vendor-returns';
@@ -67,9 +70,21 @@ interface FormLine {
   referenceIssueId?: string;
 }
 
-export default function NewVendorReturnPage() {
+interface StoredLine {
+  type: string;
+  itemId: string;
+  qty: number;
+  reason: string;
+  condition: string;
+  referenceIssueId?: string;
+}
+
+export default function EditVendorReturnPage() {
+  const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
+  const id = typeof params.id === 'string' ? params.id : '';
+
   const [vendors, setVendors] = useState<Supplier[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrderOption[]>([]);
   const [items, setItems] = useState<ItemOption[]>([]);
@@ -84,13 +99,54 @@ export default function NewVendorReturnPage() {
   const [evidenceUrls, setEvidenceUrls] = useState<string>('');
 
   useEffect(() => {
+    if (!id) return;
+
     const load = async () => {
       try {
-        const [suppliersRes, woList, itemsRes] = await Promise.all([
+        const [ret, suppliersRes, woList, itemsRes] = await Promise.all([
+          getVendorReturnById(id),
           fetch('/api/suppliers'),
           getWorkOrders(),
           getItems({ isActive: true })
         ]);
+
+        if (!ret || ret.status !== 'DRAFT') {
+          toast.error('Return not found or cannot be edited');
+          router.replace('/backoffice/vendor-returns');
+          return;
+        }
+
+        setVendorId(ret.vendorId);
+        setWoId(ret.woId ?? '__none__');
+
+        const rawLines = (ret.lines as StoredLine[] | null) || [];
+        if (rawLines.length > 0) {
+          setLines(
+            rawLines.map((l) => ({
+              type: (l.type as LineType) ?? 'FABRIC',
+              itemId: l.itemId ?? '',
+              qty: String(l.qty ?? ''),
+              reason: l.reason ?? '',
+              condition: (l.condition as Condition) ?? 'GOOD',
+              referenceIssueId: l.referenceIssueId
+            }))
+          );
+        }
+
+        let urlsStr = '';
+        if (ret.evidenceUrls) {
+          try {
+            const parsed =
+              typeof ret.evidenceUrls === 'string'
+                ? JSON.parse(ret.evidenceUrls)
+                : ret.evidenceUrls;
+            urlsStr = Array.isArray(parsed) ? parsed.join('\n') : '';
+          } catch {
+            urlsStr = '';
+          }
+        }
+        setEvidenceUrls(urlsStr);
+
         if (suppliersRes.ok) {
           const data = await suppliersRes.json();
           setVendors((data as Supplier[]) || []);
@@ -119,12 +175,13 @@ export default function NewVendorReturnPage() {
         setItems(itemList);
       } catch {
         toast.error('Failed to load data');
+        router.replace('/backoffice/vendor-returns');
       } finally {
         setIsLoading(false);
       }
     };
     load();
-  }, []);
+  }, [id, router]);
 
   const addLine = () => {
     setLines((prev) => [
@@ -147,7 +204,7 @@ export default function NewVendorReturnPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.user?.id) return;
+    if (!session?.user?.id || !id) return;
 
     const parsedLines: VendorReturnLineInput[] = [];
     for (let i = 0; i < lines.length; i++) {
@@ -192,7 +249,8 @@ export default function NewVendorReturnPage() {
         return;
       }
 
-      await createVendorReturn(
+      await updateVendorReturn(
+        id,
         {
           woId: woId === '__none__' ? undefined : woId,
           vendorId,
@@ -201,10 +259,10 @@ export default function NewVendorReturnPage() {
         },
         session.user.id
       );
-      toast.success('Vendor return created');
+      toast.success('Vendor return updated');
       router.replace('/backoffice/vendor-returns');
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create');
+      toast.error(err instanceof Error ? err.message : 'Failed to update');
     } finally {
       setIsSubmitting(false);
     }
@@ -227,8 +285,10 @@ export default function NewVendorReturnPage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">New Vendor Return</h1>
-          <p className="text-muted-foreground">Create a return to vendor (fabric, accessories, or FG reject)</p>
+          <h1 className="text-2xl font-bold">Edit Vendor Return</h1>
+          <p className="text-muted-foreground">
+            Update draft return (vendor, work order, lines, evidence)
+          </p>
         </div>
       </div>
 
@@ -243,7 +303,7 @@ export default function NewVendorReturnPage() {
               <div className="space-y-2">
                 <Label>Vendor *</Label>
                 <Select value={vendorId} onValueChange={setVendorId} required>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select vendor" />
                   </SelectTrigger>
                   <SelectContent>
@@ -258,7 +318,7 @@ export default function NewVendorReturnPage() {
               <div className="space-y-2">
                 <Label>Work Order (optional)</Label>
                 <Select value={woId} onValueChange={setWoId}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent>
@@ -408,7 +468,7 @@ export default function NewVendorReturnPage() {
 
         <div className="flex gap-4">
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Creating...' : 'Create Return'}
+            {isSubmitting ? 'Saving...' : 'Save Changes'}
           </Button>
           <Link href="/backoffice/vendor-returns">
             <Button type="button" variant="outline">

@@ -75,8 +75,7 @@ export default function WorkOrderReceivePage() {
         session.user.id
       );
       toast.success('FG received');
-      router.push(`/backoffice/work-orders/${id}`);
-      router.refresh();
+      router.replace(`/backoffice/work-orders/${id}`);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to receive');
     } finally {

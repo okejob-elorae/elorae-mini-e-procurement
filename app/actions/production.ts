@@ -12,6 +12,90 @@ import { calculateMovingAverage } from '@/lib/inventory/costing';
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
 
+/** Parse consumptionPlan from DB (Json = string or object) to array for client. */
+function parseConsumptionPlan(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** Serialize WO (and optional includes) to plain object for Client Components (no Prisma Decimal). */
+function serializeWorkOrder(wo: {
+  id: string;
+  docNumber: string;
+  vendorId: string;
+  finishedGoodId: string;
+  outputMode: string;
+  plannedQty: unknown;
+  actualQty?: unknown;
+  targetDate: Date | null;
+  status: string;
+  issuedAt: Date | null;
+  completedAt: Date | null;
+  canceledAt: Date | null;
+  canceledReason: string | null;
+  consumptionPlan: unknown;
+  skuBreakdown?: unknown;
+  notes: string | null;
+  syncStatus?: string;
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+  vendor?: unknown;
+  finishedGood?: unknown;
+  issues?: Array<{ id: string; docNumber: string; issueType: string; totalCost: unknown; issuedAt: Date; [k: string]: unknown }>;
+  receipts?: Array<{ id: string; docNumber: string; qtyReceived: unknown; qtyRejected?: unknown; qtyAccepted: unknown; materialCost?: unknown; avgCostPerUnit?: unknown; totalCostValue?: unknown; receivedAt: Date; [k: string]: unknown }>;
+  returns?: unknown[];
+}) {
+  const plan = parseConsumptionPlan(wo.consumptionPlan);
+  const out: Record<string, unknown> = {
+    id: wo.id,
+    docNumber: wo.docNumber,
+    vendorId: wo.vendorId,
+    finishedGoodId: wo.finishedGoodId,
+    outputMode: wo.outputMode,
+    plannedQty: Number(wo.plannedQty),
+    actualQty: wo.actualQty != null ? Number(wo.actualQty) : null,
+    targetDate: wo.targetDate,
+    status: wo.status,
+    issuedAt: wo.issuedAt,
+    completedAt: wo.completedAt,
+    canceledAt: wo.canceledAt,
+    canceledReason: wo.canceledReason,
+    consumptionPlan: plan,
+    skuBreakdown: wo.skuBreakdown ?? null,
+    notes: wo.notes,
+    syncStatus: wo.syncStatus,
+    createdById: wo.createdById,
+    createdAt: wo.createdAt,
+    updatedAt: wo.updatedAt,
+    vendor: wo.vendor ?? undefined,
+    finishedGood: wo.finishedGood != null ? (typeof (wo.finishedGood as { reorderPoint?: unknown }).reorderPoint === 'number' ? wo.finishedGood : { ...(wo.finishedGood as object), reorderPoint: (wo.finishedGood as { reorderPoint?: unknown }).reorderPoint != null ? Number((wo.finishedGood as { reorderPoint: unknown }).reorderPoint) : null }) : undefined,
+    issues: (wo.issues ?? []).map((iss) => ({
+      ...iss,
+      totalCost: Number(iss.totalCost),
+    })),
+    receipts: (wo.receipts ?? []).map((r) => ({
+      ...r,
+      qtyReceived: Number(r.qtyReceived),
+      qtyRejected: r.qtyRejected != null ? Number(r.qtyRejected) : 0,
+      qtyAccepted: Number(r.qtyAccepted),
+      materialCost: r.materialCost != null ? Number(r.materialCost) : null,
+      avgCostPerUnit: r.avgCostPerUnit != null ? Number(r.avgCostPerUnit) : null,
+      totalCostValue: r.totalCostValue != null ? Number(r.totalCostValue) : null,
+    })),
+    returns: wo.returns ?? [],
+  };
+  return out;
+}
+
 const woSchema = z.object({
   vendorId: idStr,
   outputMode: z.enum(['GENERIC', 'SKU']),
@@ -44,7 +128,18 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
   }
 
   return await prisma.$transaction(async (tx) => {
-    const docNumber = await generateDocNumber('WO', tx);
+    const year = new Date().getFullYear();
+    const prefix = `WO/${year}/`;
+    const existing = await tx.workOrder.findMany({
+      where: { docNumber: { startsWith: prefix } },
+      select: { docNumber: true },
+      orderBy: { docNumber: 'desc' },
+      take: 1
+    });
+    const nextNum = existing.length
+      ? (parseInt(existing[0].docNumber.slice(prefix.length), 10) || 0) + 1
+      : 1;
+    const docNumber = `${prefix}${String(nextNum).padStart(4, '0')}`;
 
     const wo = await tx.workOrder.create({
       data: {
@@ -72,7 +167,7 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
       }
     });
 
-    return wo;
+    return { id: wo.id, docNumber };
   });
 }
 
@@ -229,9 +324,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       });
     }
 
-    const plan = (wo.consumptionPlan as any[]) || [];
+    const plan = parseConsumptionPlan(wo.consumptionPlan) as Array<{ itemId: string; issuedQty?: number }>;
     for (const issued of validated.items) {
-      const planItem = plan.find((p: any) => p.itemId === issued.itemId);
+      const planItem = plan.find((p) => p.itemId === issued.itemId);
       if (planItem) {
         planItem.issuedQty = (planItem.issuedQty || 0) + issued.qty;
       }
@@ -403,7 +498,7 @@ export async function getWorkOrders(filters?: {
     }
   }
   
-  return await prisma.workOrder.findMany({
+  const rows = await prisma.workOrder.findMany({
     where,
     include: {
       vendor: {
@@ -429,10 +524,32 @@ export async function getWorkOrders(filters?: {
     },
     orderBy: { createdAt: 'desc' }
   });
+  return rows.map((wo) => ({
+    id: wo.id,
+    docNumber: wo.docNumber,
+    vendorId: wo.vendorId,
+    finishedGoodId: wo.finishedGoodId,
+    outputMode: wo.outputMode,
+    plannedQty: Number(wo.plannedQty),
+    actualQty: wo.actualQty != null ? Number(wo.actualQty) : null,
+    targetDate: wo.targetDate,
+    status: wo.status,
+    issuedAt: wo.issuedAt,
+    completedAt: wo.completedAt,
+    canceledAt: wo.canceledAt,
+    canceledReason: wo.canceledReason,
+    notes: wo.notes,
+    createdById: wo.createdById,
+    createdAt: wo.createdAt,
+    updatedAt: wo.updatedAt,
+    vendor: wo.vendor,
+    finishedGood: wo.finishedGood,
+    _count: wo._count,
+  }));
 }
 
 export async function getWorkOrderById(id: string) {
-  return await prisma.workOrder.findUnique({
+  const raw = await prisma.workOrder.findUnique({
     where: { id },
     include: {
       vendor: true,
@@ -447,6 +564,14 @@ export async function getWorkOrderById(id: string) {
       },
       returns: true
     }
+  });
+  if (!raw) return null;
+  const finishedGood = raw.finishedGood as { reorderPoint?: unknown; [k: string]: unknown } | null;
+  return serializeWorkOrder({
+    ...raw,
+    finishedGood: finishedGood
+      ? { ...finishedGood, reorderPoint: finishedGood.reorderPoint != null ? Number(finishedGood.reorderPoint) : null }
+      : undefined,
   });
 }
 

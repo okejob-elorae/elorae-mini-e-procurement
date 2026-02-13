@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@/lib/prisma';
-import { generateDocNumber } from '@/lib/docNumber';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 
 const adjustmentSchema = z.object({
@@ -57,9 +56,24 @@ export async function createStockAdjustment(
     if (newQty.lt(0)) {
       throw new Error('Adjustment would result in negative stock');
     }
+
+    // Generate next ADJ doc number from max existing in same period (avoid unique constraint)
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `ADJ/${year}/${month}/`;
+    const existing = await tx.stockAdjustment.findMany({
+      where: { docNumber: { startsWith: prefix } },
+      select: { docNumber: true },
+      orderBy: { docNumber: 'desc' },
+      take: 1,
+    });
+    const nextNum = existing.length
+      ? (parseInt(existing[0].docNumber.slice(prefix.length), 10) || 0) + 1
+      : 1;
+    const docNumber = `${prefix}${String(nextNum).padStart(4, '0')}`;
     
     // Create adjustment document
-    const docNumber = await generateDocNumber('ADJ', tx);
     const adjustment = await tx.stockAdjustment.create({
       data: {
         docNumber,
@@ -214,23 +228,20 @@ export async function getStockAdjustments(itemId?: string) {
 
 // Get inventory statistics
 export async function getInventoryStats() {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
   const [
     totalItems,
-    lowStockItems,
+    inventoryWithReorder,
     totalValue,
     totalGRNs,
     todayMovements
   ] = await Promise.all([
     prisma.item.count({ where: { isActive: true } }),
-    prisma.inventoryValue.count({
-      where: {
-        item: {
-          reorderPoint: { not: null }
-        },
-        qtyOnHand: {
-          lte: prisma.inventoryValue.fields.qtyOnHand
-        }
-      }
+    prisma.inventoryValue.findMany({
+      where: { item: { reorderPoint: { not: null } } },
+      include: { item: { select: { reorderPoint: true } } },
     }),
     prisma.inventoryValue.aggregate({
       _sum: { totalValue: true }
@@ -238,12 +249,16 @@ export async function getInventoryStats() {
     prisma.gRN.count(),
     prisma.stockMovement.count({
       where: {
-        createdAt: {
-          gte: new Date(new Date().setHours(0, 0, 0, 0))
-        }
+        createdAt: { gte: todayStart }
       }
     })
   ]);
+
+  const lowStockItems = inventoryWithReorder.filter(
+    (r) =>
+      r.item.reorderPoint != null &&
+      Number(r.qtyOnHand) <= Number(r.item.reorderPoint)
+  ).length;
   
   return {
     totalItems,

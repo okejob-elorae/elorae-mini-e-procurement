@@ -70,7 +70,8 @@ export default function VendorReturnDetailPage() {
 
   const vendor = ret.vendor as { name?: string; code?: string } | null;
   const wo = ret.wo as { id: string; docNumber: string } | null;
-  const lines = (ret.lines as Array<{
+  const rawLines = ret.lines;
+  const lines: Array<{
     type: string;
     itemId: string;
     itemName?: string;
@@ -78,7 +79,18 @@ export default function VendorReturnDetailPage() {
     reason: string;
     condition: string;
     costValue?: number;
-  }>) || [];
+  }> = Array.isArray(rawLines)
+    ? rawLines
+    : typeof rawLines === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(rawLines);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
 
   return (
     <div className="space-y-6">

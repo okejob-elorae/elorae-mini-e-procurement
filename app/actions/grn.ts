@@ -3,7 +3,6 @@
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { generateDocNumber } from '@/lib/docNumber';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 
@@ -28,7 +27,21 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   const validated = grnSchema.parse(data);
 
   return await prisma.$transaction(async (tx) => {
-    const docNumber = await generateDocNumber('GRN', tx);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `GRN/${year}/${month}/`;
+    const existing = await tx.gRN.findMany({
+      where: { docNumber: { startsWith: prefix } },
+      select: { docNumber: true },
+      orderBy: { docNumber: 'desc' },
+      take: 1,
+    });
+    const nextNum = existing.length
+      ? (parseInt(existing[0].docNumber.slice(prefix.length), 10) || 0) + 1
+      : 1;
+    const docNumber = `${prefix}${String(nextNum).padStart(4, '0')}`;
+
     let totalAmount = new Decimal(0);
 
     const processedItems = await Promise.all(
@@ -124,10 +137,31 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
         where: { id: validated.poId },
         data: { status: newStatus },
       });
+
+      await tx.pOStatusHistory.create({
+        data: {
+          poId: validated.poId,
+          status: newStatus,
+          changedById: userId,
+          notes: `GRN issued: ${grn.docNumber}`,
+        },
+      });
     }
 
     revalidatePath('/backoffice/inventory');
-    return grn;
+    return {
+      id: grn.id,
+      docNumber: grn.docNumber,
+      poId: grn.poId,
+      supplierId: grn.supplierId,
+      receivedBy: grn.receivedBy,
+      totalAmount: Number(grn.totalAmount),
+      photoUrls: grn.photoUrls,
+      items: grn.items,
+      notes: grn.notes,
+      grnDate: grn.grnDate,
+      createdAt: grn.createdAt,
+    };
   });
 }
 

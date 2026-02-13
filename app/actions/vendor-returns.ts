@@ -84,6 +84,77 @@ export async function createVendorReturn(
   });
 }
 
+export async function updateVendorReturn(
+  id: string,
+  data: CreateVendorReturnInput,
+  userId: string
+) {
+  returnSchema.parse(data);
+
+  const existing = await prisma.vendorReturn.findUnique({
+    where: { id }
+  });
+  if (!existing || existing.status !== 'DRAFT') {
+    throw new Error('Can only edit draft returns');
+  }
+
+  return await prisma.$transaction(async (tx) => {
+    const linesWithValue = await Promise.all(
+      data.lines.map(async (line) => {
+        const inventory = await tx.inventoryValue.findUnique({
+          where: { itemId: line.itemId }
+        });
+        const avgCost = inventory
+          ? new Decimal(inventory.avgCost.toString())
+          : new Decimal(0);
+        const value = avgCost.mul(line.qty);
+        return {
+          ...line,
+          itemName: (await tx.item.findUnique({
+            where: { id: line.itemId },
+            select: { nameId: true }
+          }))?.nameId,
+          costValue: value.toNumber()
+        };
+      })
+    );
+
+    const totalValue = linesWithValue.reduce(
+      (sum, line) => sum.plus(line.costValue),
+      new Decimal(0)
+    );
+
+    const updated = await tx.vendorReturn.update({
+      where: { id },
+      data: {
+        woId: data.woId ?? null,
+        vendorId: data.vendorId,
+        lines: JSON.stringify(linesWithValue),
+        totalItems: data.lines.length,
+        totalValue: totalValue.toNumber(),
+        evidenceUrls: data.evidenceUrls
+          ? JSON.stringify(data.evidenceUrls)
+          : null
+      }
+    });
+
+    revalidatePath('/backoffice/vendor-returns');
+    revalidatePath(`/backoffice/vendor-returns/${id}`);
+    return updated;
+  });
+}
+
+export async function deleteVendorReturn(id: string, userId: string) {
+  const existing = await prisma.vendorReturn.findUnique({
+    where: { id }
+  });
+  if (!existing || existing.status !== 'DRAFT') {
+    throw new Error('Can only delete draft returns');
+  }
+  await prisma.vendorReturn.delete({ where: { id } });
+  revalidatePath('/backoffice/vendor-returns');
+}
+
 export async function processReturn(id: string, userId: string) {
   return await prisma.$transaction(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
@@ -148,13 +219,25 @@ export async function getVendorReturns(filters?: {
   status?: string;
   vendorId?: string;
   woId?: string;
+  search?: string;
 }) {
-  const where: any = {};
-  if (filters?.status) where.status = filters.status;
-  if (filters?.vendorId) where.vendorId = filters.vendorId;
-  if (filters?.woId) where.woId = filters.woId;
+  const andParts: Array<Record<string, unknown>> = [];
+  if (filters?.status) andParts.push({ status: filters.status });
+  if (filters?.vendorId) andParts.push({ vendorId: filters.vendorId });
+  if (filters?.woId) andParts.push({ woId: filters.woId });
+  const searchTrim = filters?.search?.trim();
+  if (searchTrim) {
+    andParts.push({
+      OR: [
+        { docNumber: { contains: searchTrim } },
+        { vendor: { name: { contains: searchTrim } } },
+        { vendor: { code: { contains: searchTrim } } }
+      ]
+    });
+  }
+  const where = andParts.length > 0 ? { AND: andParts } : {};
 
-  return await prisma.vendorReturn.findMany({
+  const rows = await prisma.vendorReturn.findMany({
     where,
     include: {
       vendor: {
@@ -166,14 +249,24 @@ export async function getVendorReturns(filters?: {
     },
     orderBy: { createdAt: 'desc' }
   });
+
+  return rows.map((r) => ({
+    ...r,
+    totalValue: Number(r.totalValue)
+  }));
 }
 
 export async function getVendorReturnById(id: string) {
-  return await prisma.vendorReturn.findUnique({
+  const ret = await prisma.vendorReturn.findUnique({
     where: { id },
     include: {
       vendor: true,
       wo: { select: { id: true, docNumber: true } }
     }
   });
+  if (!ret) return null;
+  return {
+    ...ret,
+    totalValue: Number(ret.totalValue)
+  };
 }

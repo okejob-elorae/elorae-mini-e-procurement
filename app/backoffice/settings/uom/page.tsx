@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useLocale, useTranslations } from 'next-intl';
 import { createUOM, getUOMs, createUOMConversion, getUOMConversions } from '@/app/actions/uom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,8 +52,8 @@ const uomSchema = z.object({
 });
 
 const conversionSchema = z.object({
-  fromUomId: z.string().uuid(),
-  toUomId: z.string().uuid(),
+  fromUomId: z.string().min(1, 'Select From UOM'),
+  toUomId: z.string().min(1, 'Select To UOM'),
   factor: z.number().positive(),
 });
 
@@ -88,11 +89,17 @@ interface Conversion {
 }
 
 export default function UOMPage() {
+  const locale = useLocale() as 'en' | 'id';
+  const t = useTranslations('uom');
+  const tCommon = useTranslations('common');
   const [uoms, setUOMs] = useState<UOM[]>([]);
   const [conversions, setConversions] = useState<Conversion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUOMDialogOpen, setIsUOMDialogOpen] = useState(false);
   const [isConversionDialogOpen, setIsConversionDialogOpen] = useState(false);
+
+  const displayName = (u: { nameId: string; nameEn: string }) => (locale === 'en' ? u.nameEn : u.nameId);
+  const numberLocale = locale === 'id' ? 'id-ID' : 'en-US';
 
   const {
     register: registerUOM,
@@ -173,10 +180,8 @@ export default function UOMPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Unit of Measure (UOM)</h1>
-        <p className="text-muted-foreground">
-          Manage units of measure and conversions
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
+        <p className="text-muted-foreground">{t('pageDescription')}</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -185,21 +190,21 @@ export default function UOMPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Units of Measure</CardTitle>
-                <CardDescription>All active UOMs in the system</CardDescription>
+                <CardTitle>{t('unitsTitle')}</CardTitle>
+                <CardDescription>{t('unitsDescription')}</CardDescription>
               </div>
               <Dialog open={isUOMDialogOpen} onOpenChange={setIsUOMDialogOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm">
                     <Plus className="h-4 w-4 mr-2" />
-                    New UOM
+                    {locale === 'en' ? 'New UOM' : 'UOM Baru'}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Create New UOM</DialogTitle>
+                    <DialogTitle>{locale === 'en' ? 'Create New UOM' : 'Buat UOM Baru'}</DialogTitle>
                     <DialogDescription>
-                      Add a new unit of measure to the system
+                      {locale === 'en' ? 'Add a new unit of measure to the system' : 'Tambahkan unit ukur baru ke sistem'}
                     </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleSubmitUOM(onSubmitUOM)} className="space-y-4">
@@ -217,14 +222,14 @@ export default function UOMPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="nameId">Name (Indonesia) *</Label>
+                        <Label htmlFor="nameId">{t('nameId')} *</Label>
                         <Input id="nameId" {...registerUOM('nameId')} />
                         {errorsUOM.nameId && (
                           <p className="text-sm text-destructive">{errorsUOM.nameId.message}</p>
                         )}
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="nameEn">Name (English) *</Label>
+                        <Label htmlFor="nameEn">{t('nameEn')} *</Label>
                         <Input id="nameEn" {...registerUOM('nameEn')} />
                         {errorsUOM.nameEn && (
                           <p className="text-sm text-destructive">{errorsUOM.nameEn.message}</p>
@@ -245,11 +250,11 @@ export default function UOMPage() {
                         variant="outline"
                         onClick={() => setIsUOMDialogOpen(false)}
                       >
-                        Cancel
+                        {tCommon('cancel')}
                       </Button>
                       <Button type="submit" disabled={isSubmittingUOM}>
                         {isSubmittingUOM && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        Create UOM
+                        {locale === 'en' ? 'Create UOM' : 'Buat UOM'}
                       </Button>
                     </DialogFooter>
                   </form>
@@ -262,8 +267,8 @@ export default function UOMPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Code</TableHead>
-                  <TableHead>Name (ID)</TableHead>
-                  <TableHead>Name (EN)</TableHead>
+                  <TableHead>{t('nameId')}</TableHead>
+                  <TableHead>{t('nameEn')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -284,21 +289,21 @@ export default function UOMPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>UOM Conversions</CardTitle>
-                <CardDescription>Conversion factors between UOMs</CardDescription>
+                <CardTitle>{t('conversionsTitle')}</CardTitle>
+                <CardDescription>{t('conversionsDescription')}</CardDescription>
               </div>
               <Dialog open={isConversionDialogOpen} onOpenChange={setIsConversionDialogOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm">
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Conversion
+                    {locale === 'en' ? 'Add Conversion' : 'Tambah Konversi'}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Create UOM Conversion</DialogTitle>
+                    <DialogTitle>{locale === 'en' ? 'Create UOM Conversion' : 'Buat Konversi UOM'}</DialogTitle>
                     <DialogDescription>
-                      Define conversion factor between two UOMs
+                      {locale === 'en' ? 'Define conversion factor between two UOMs' : 'Tentukan faktor konversi antara dua UOM'}
                     </DialogDescription>
                   </DialogHeader>
                   <form
@@ -313,12 +318,12 @@ export default function UOMPage() {
                           onValueChange={(value) => setValueConversion('fromUomId', value)}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select UOM" />
+                            <SelectValue placeholder={locale === 'en' ? 'Select UOM' : 'Pilih UOM'} />
                           </SelectTrigger>
                           <SelectContent>
                             {uoms.map((uom) => (
                               <SelectItem key={uom.id} value={uom.id}>
-                                {uom.code} - {uom.nameId}
+                                {uom.code} – {displayName(uom)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -336,12 +341,12 @@ export default function UOMPage() {
                           onValueChange={(value) => setValueConversion('toUomId', value)}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select UOM" />
+                            <SelectValue placeholder={locale === 'en' ? 'Select UOM' : 'Pilih UOM'} />
                           </SelectTrigger>
                           <SelectContent>
                             {uoms.map((uom) => (
                               <SelectItem key={uom.id} value={uom.id}>
-                                {uom.code} - {uom.nameId}
+                                {uom.code} – {displayName(uom)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -378,13 +383,13 @@ export default function UOMPage() {
                         variant="outline"
                         onClick={() => setIsConversionDialogOpen(false)}
                       >
-                        Cancel
+                        {tCommon('cancel')}
                       </Button>
                       <Button type="submit" disabled={isSubmittingConversion}>
                         {isSubmittingConversion && (
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         )}
-                        Create Conversion
+                        {locale === 'en' ? 'Create Conversion' : 'Buat Konversi'}
                       </Button>
                     </DialogFooter>
                   </form>
@@ -396,29 +401,29 @@ export default function UOMPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>From</TableHead>
-                  <TableHead>To</TableHead>
-                  <TableHead className="text-right">Factor</TableHead>
+                  <TableHead>{locale === 'en' ? 'From' : 'Dari'}</TableHead>
+                  <TableHead>{locale === 'en' ? 'To' : 'Ke'}</TableHead>
+                  <TableHead className="text-right">{locale === 'en' ? 'Factor' : 'Faktor'}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {conversions.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={3} className="text-center text-muted-foreground">
-                      No conversions defined
+                      {t('noConversions')}
                     </TableCell>
                   </TableRow>
                 ) : (
                   conversions.map((conv) => (
                     <TableRow key={conv.id}>
                       <TableCell>
-                        {conv.fromUom.code} - {conv.fromUom.nameId}
+                        {conv.fromUom.code} – {displayName(conv.fromUom)}
                       </TableCell>
                       <TableCell>
-                        {conv.toUom.code} - {conv.toUom.nameId}
+                        {conv.toUom.code} – {displayName(conv.toUom)}
                       </TableCell>
                       <TableCell className="text-right">
-                        {Number(conv.factor).toLocaleString('id-ID', {
+                        {Number(conv.factor).toLocaleString(numberLocale, {
                           maximumFractionDigits: 6,
                         })}
                       </TableCell>

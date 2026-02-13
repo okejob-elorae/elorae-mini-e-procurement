@@ -114,5 +114,85 @@
     "entity": "Entitas",
     "changes": "Perubahan",
     "viewedBankAccount": "Melihat rekening bank"
+  },
+  "settings": {
+    "title": "Pengaturan",
+    "subtitle": "Pengaturan sistem dan keamanan",
+    "security": {
+      "title": "Keamanan",
+      "description": "PIN, riwayat percobaan, reset PIN (admin)"
+    },
+    "documents": {
+      "title": "Nomor Dokumen",
+      "description": "Prefix dan periode reset untuk nomor dokumen"
+    },
+    "uom": {
+      "title": "UOM",
+      "description": "Unit ukur dan konversi"
+    }
+  },
+  "documents": {
+    "pageTitle": "Penomoran Dokumen",
+    "pageDescription": "Konfigurasi prefix, periode reset, dan padding per tipe dokumen. Perubahan berlaku untuk dokumen baru saja.",
+    "tableDescription": "Prefix (mis. PO/), periode reset (kapan urutan direset), dan padding nomor (mis. 4 → 0001).",
+    "documentType": "Tipe Dokumen",
+    "prefix": "Prefix",
+    "resetPeriod": "Periode Reset",
+    "padding": "Padding",
+    "save": "Simpan",
+    "loadError": "Gagal memuat konfigurasi"
+  },
+  "security": {
+    "title": "Keamanan",
+    "subtitle": "PIN dan riwayat aksi sensitif",
+    "pinCardTitle": "PIN",
+    "pinCardDescription": "PIN 4–6 digit untuk aksi sensitif (lihat rekening bank, adjustment stok, void dokumen, dll).",
+    "currentPin": "PIN saat ini",
+    "newPin": "PIN baru",
+    "confirmPin": "Konfirmasi PIN",
+    "setPin": "Set / Perbarui PIN",
+    "lastAccessTitle": "Terakhir diakses (aksi sensitif)",
+    "lastAccessDescription": "Waktu verifikasi PIN berhasil per jenis aksi.",
+    "noLastAccess": "Belum ada aksi sensitif",
+    "attemptsTitle": "Percobaan PIN",
+    "attemptsDescription": "Percobaan PIN gagal terbaru",
+    "noAttempts": "Tidak ada percobaan gagal",
+    "resetPinTitle": "Reset PIN pengguna (admin)",
+    "resetPinDescription": "Hapus PIN pengguna lain agar mereka dapat set PIN baru.",
+    "selectUser": "Pilih pengguna",
+    "resetPin": "Reset PIN",
+    "pinLengthError": "PIN harus 4–6 digit",
+    "pinMismatch": "PIN baru dan konfirmasi tidak sama",
+    "pinSaveFailed": "Gagal menyimpan PIN",
+    "currentPinLabel": "PIN saat ini (kosongkan jika belum pernah set)",
+    "newPinLabel": "PIN baru (4–6 digit)",
+    "confirmPinLabel": "Konfirmasi PIN baru",
+    "savePin": "Simpan PIN",
+    "noHistory": "Belum ada riwayat.",
+    "attemptsTableTime": "Waktu",
+    "attemptsTableAction": "Aksi",
+    "attemptsTableStatus": "Status",
+    "success": "Berhasil",
+    "failed": "Gagal",
+    "resetPinFailed": "Gagal reset PIN",
+    "forceResetTitle": "Force reset PIN (Admin)",
+    "actions": {
+      "VIEW_BANK_ACCOUNT": "Lihat rekening bank",
+      "STOCK_ADJUSTMENT": "Adjustment stok",
+      "VOID_DOCUMENT": "Void dokumen",
+      "EDIT_POSTED_PO": "Edit PO terposting",
+      "DELETE_SUPPLIER": "Hapus pemasok"
+    }
+  },
+  "uom": {
+    "pageTitle": "Unit of Measure (UOM)",
+    "pageDescription": "Kelola unit ukur dan konversi",
+    "unitsTitle": "Unit Ukur",
+    "unitsDescription": "Semua UOM aktif di sistem",
+    "nameId": "Nama (Indonesia)",
+    "nameEn": "Nama (English)",
+    "conversionsTitle": "Konversi UOM",
+    "conversionsDescription": "Faktor konversi antar UOM",
+    "noConversions": "Belum ada konversi"
   }
 }

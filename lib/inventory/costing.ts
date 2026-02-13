@@ -246,6 +246,10 @@ export async function getInventorySnapshot() {
     qtyOnHand: toNum(v.qtyOnHand),
     avgCost: toNum(v.avgCost),
     totalValue: toNum(v.totalValue),
+    item: {
+      ...v.item,
+      reorderPoint: v.item.reorderPoint != null ? toNum(v.item.reorderPoint) : null,
+    },
   }));
 
   const totalValue = items.reduce((sum, v) => sum + (v.totalValue as number), 0);

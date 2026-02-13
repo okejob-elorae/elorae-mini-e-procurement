@@ -86,10 +86,20 @@ export type SerializedItem = {
 };
 
 /** Serialize a single item from create/update so return value has no Decimal (safe for client) */
-function serializeSingleItem(item: { reorderPoint?: unknown; [k: string]: unknown }): SerializedItem {
+function serializeSingleItem(item: { id: string; sku: string; nameId: string; nameEn: string; type: string; uomId: string; description?: string | null; variants?: unknown; reorderPoint?: unknown; createdAt?: Date; updatedAt?: Date; isActive?: boolean; [k: string]: unknown }): SerializedItem {
   return {
-    ...item,
+    id: item.id,
+    sku: item.sku,
+    nameId: item.nameId,
+    nameEn: item.nameEn,
+    type: item.type,
+    uomId: item.uomId,
+    description: item.description ?? undefined,
+    variants: Array.isArray(item.variants) ? item.variants : undefined,
     reorderPoint: item.reorderPoint != null ? Number(item.reorderPoint) : null,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    isActive: item.isActive,
   } as SerializedItem;
 }
 
@@ -414,15 +424,16 @@ export async function getItemById(id: string) {
   return serializeItemForClient(item);
 }
 
-// Get items by type for dropdowns
+// Get items by type for dropdowns (serialized for client — no Prisma Decimal)
 export async function getItemsByType(type: ItemType) {
-  return await prisma.item.findMany({
+  const rows = await prisma.item.findMany({
     where: { type, isActive: true },
     select: {
       id: true,
       sku: true,
       nameId: true,
       nameEn: true,
+      uomId: true,
       uom: {
         select: {
           id: true,
@@ -437,6 +448,17 @@ export async function getItemsByType(type: ItemType) {
     },
     orderBy: { nameId: 'asc' }
   });
+  return rows.map((item) => ({
+    id: item.id,
+    sku: item.sku,
+    nameId: item.nameId,
+    nameEn: item.nameEn,
+    uomId: item.uomId,
+    uom: item.uom,
+    inventoryValue: item.inventoryValue
+      ? { qtyOnHand: Number(item.inventoryValue.qtyOnHand) }
+      : null,
+  }));
 }
 
 // Get finished goods with their consumption rules

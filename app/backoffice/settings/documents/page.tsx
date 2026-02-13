@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import {
   getDocNumberConfigs,
   updateDocNumberConfig,
@@ -49,6 +50,7 @@ const DOC_TYPE_LABELS: Record<DocType, string> = {
 };
 
 export default function DocumentNumbersSettingsPage() {
+  const t = useTranslations('documents');
   const { data: session, status } = useSession();
   const router = useRouter();
   const [configs, setConfigs] = useState<DocNumberConfigRow[]>([]);
@@ -62,7 +64,7 @@ export default function DocumentNumbersSettingsPage() {
     }
     getDocNumberConfigs()
       .then(setConfigs)
-      .catch(() => toast.error('Failed to load config'))
+      .catch(() => toast.error(t('loadError')))
       .finally(() => setIsLoading(false));
   }, [status, router]);
 
@@ -126,27 +128,23 @@ export default function DocumentNumbersSettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Document Numbering</h1>
-        <p className="text-muted-foreground">
-          Configure prefix, reset period, and padding per document type. Changes apply to new documents only.
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
+        <p className="text-muted-foreground">{t('pageDescription')}</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Config</CardTitle>
-          <CardDescription>
-            Prefix (e.g. PO/), reset period (when the sequence resets), and number padding (e.g. 4 → 0001).
-          </CardDescription>
+          <CardDescription>{t('tableDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Document Type</TableHead>
-                <TableHead>Prefix</TableHead>
-                <TableHead>Reset Period</TableHead>
-                <TableHead>Padding</TableHead>
+                <TableHead>{t('documentType')}</TableHead>
+                <TableHead>{t('prefix')}</TableHead>
+                <TableHead>{t('resetPeriod')}</TableHead>
+                <TableHead>{t('padding')}</TableHead>
                 <TableHead className="w-[100px]">Last #</TableHead>
                 <TableHead className="w-[80px]"></TableHead>
               </TableRow>
@@ -205,7 +203,7 @@ export default function DocumentNumbersSettingsPage() {
                         {savingType === docType ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                          'Save'
+                          t('save')
                         )}
                       </Button>
                     </TableCell>

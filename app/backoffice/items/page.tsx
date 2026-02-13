@@ -10,7 +10,6 @@ import {
   Edit, 
   Trash2, 
   MoreHorizontal,
-  Layers,
   AlertTriangle,
   ChevronDown,
   ChevronRight,
@@ -291,12 +290,6 @@ export default function ItemsPage() {
                                 <Link href={`/backoffice/items/${item.id}`}>
                                   <Edit className="mr-2 h-4 w-4" />
                                   Edit
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem asChild>
-                                <Link href={`/backoffice/items/${item.id}/bom`}>
-                                  <Layers className="mr-2 h-4 w-4" />
-                                  BOM
                                 </Link>
                               </DropdownMenuItem>
                               <DropdownMenuItem 
