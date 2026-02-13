@@ -308,7 +308,11 @@ export function POForm({
                 value={watch('supplierId')}
                 onValueChange={(value) => setValue('supplierId', value, { shouldValidate: true })}
               >
-                <SelectTrigger>
+                <SelectTrigger
+                  id="supplierId"
+                  aria-invalid={!!errors.supplierId}
+                  className={`w-full ${errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
+                >
                   <SelectValue placeholder="Select supplier" />
                 </SelectTrigger>
                 <SelectContent>
@@ -320,7 +324,9 @@ export function POForm({
                 </SelectContent>
               </Select>
               {errors.supplierId && (
-                <p className="text-sm text-destructive">{errors.supplierId.message}</p>
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.supplierId.message}
+                </p>
               )}
             </div>
             <div className="space-y-2">
@@ -328,6 +334,8 @@ export function POForm({
               <Input
                 id="etaDate"
                 type="date"
+                aria-invalid={!!errors.etaDate}
+                className={errors.etaDate ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                 value={
                   (() => {
                     const v = watch('etaDate');
@@ -343,6 +351,11 @@ export function POForm({
                   });
                 }}
               />
+              {errors.etaDate && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.etaDate.message}
+                </p>
+              )}
               {isETAPast && (
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
@@ -362,6 +375,11 @@ export function POForm({
           <CardTitle>Line Items</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {errors.items?.message && (
+            <p className="text-sm text-destructive" role="alert">
+              {errors.items.message}
+            </p>
+          )}
           <div className="flex justify-between items-center">
             <div className="flex-1 max-w-sm">
               <Input
@@ -504,7 +522,14 @@ export function POForm({
               {...register('notes')}
               placeholder="Additional notes..."
               rows={3}
+              aria-invalid={!!errors.notes}
+              className={errors.notes ? 'border-destructive focus-visible:ring-destructive/20' : ''}
             />
+            {errors.notes && (
+              <p className="text-sm text-destructive" role="alert">
+                {errors.notes.message}
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="terms">Payment Terms</Label>
@@ -513,7 +538,14 @@ export function POForm({
               {...register('terms')}
               placeholder="Payment terms..."
               rows={3}
+              aria-invalid={!!errors.terms}
+              className={errors.terms ? 'border-destructive focus-visible:ring-destructive/20' : ''}
             />
+            {errors.terms && (
+              <p className="text-sm text-destructive" role="alert">
+                {errors.terms.message}
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>

@@ -85,6 +85,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const [items, setItems] = useState<ItemOption[]>([]);
   const [scanOpen, setScanOpen] = useState(false);
   const [nextLineId, setNextLineId] = useState(1);
+  const [errors, setErrors] = useState<{ supplierId?: string; lines?: string }>({});
 
   const loadPOs = useCallback(async () => {
     try {
@@ -141,6 +142,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   }, [poId]);
 
   const addLine = () => {
+    setErrors((e) => ({ ...e, lines: undefined }));
     setLines((prev) => [
       ...prev,
       {
@@ -258,17 +260,18 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors({});
     if (!session?.user?.id) {
       toast.error('You must be logged in');
       return;
     }
-    if (!supplierId) {
-      toast.error('Select a supplier');
-      return;
-    }
+    const nextErrors: { supplierId?: string; lines?: string } = {};
+    if (!supplierId) nextErrors.supplierId = 'Select a supplier';
     const validLines = lines.filter((l) => l.itemId && l.qty > 0 && l.unitCost >= 0);
-    if (validLines.length === 0) {
-      toast.error('Add at least one item with qty and cost');
+    if (validLines.length === 0) nextErrors.lines = 'Add at least one item with qty and cost';
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      toast.error('Please fix the errors below');
       return;
     }
 
@@ -363,13 +366,13 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>PO Reference (optional)</Label>
+            <div className="space-y-2 w-full">
+              <Label htmlFor="poId">PO Reference (optional)</Label>
               <Select
                 value={poId || '__none__'}
                 onValueChange={(v) => setPoId(v === '__none__' ? '' : v)}
               >
-                <SelectTrigger className="min-h-[44px]">
+                <SelectTrigger id="poId" className="min-h-[44px] w-full">
                   <SelectValue placeholder="Select PO" />
                 </SelectTrigger>
                 <SelectContent>
@@ -382,10 +385,17 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Supplier *</Label>
-              <Select value={supplierId} onValueChange={setSupplierId}>
-                <SelectTrigger className="min-h-[44px]">
+            <div className="space-y-2 w-full">
+              <Label htmlFor="supplierId">Supplier *</Label>
+              <Select
+                value={supplierId}
+                onValueChange={(v) => { setSupplierId(v); setErrors((e) => ({ ...e, supplierId: undefined })); }}
+              >
+                <SelectTrigger
+                  id="supplierId"
+                  className={`min-h-[44px] w-full ${errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
+                  aria-invalid={!!errors.supplierId}
+                >
                   <SelectValue placeholder="Select supplier" />
                 </SelectTrigger>
                 <SelectContent>
@@ -396,30 +406,39 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                   ))}
                 </SelectContent>
               </Select>
+              {errors.supplierId && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.supplierId}
+                </p>
+              )}
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="default"
-              className="min-h-[44px]"
-              onClick={() => setScanOpen(true)}
-            >
-              <Barcode className="mr-2 h-4 w-4" />
-              Scan Barcode
-            </Button>
           </div>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <Label>Line items</Label>
-              <Button type="button" variant="outline" size="sm" onClick={addLine} className="min-h-[44px]">
-                <Plus className="mr-2 h-4 w-4" />
-                Add line
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-[44px]"
+                  onClick={() => setScanOpen(true)}
+                >
+                  <Barcode className="mr-2 h-4 w-4" />
+                  Scan Barcode
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={addLine} className="min-h-[44px]">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add line
+                </Button>
+              </div>
             </div>
+            {errors.lines && (
+              <p className="text-sm text-destructive" role="alert">
+                {errors.lines}
+              </p>
+            )}
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>

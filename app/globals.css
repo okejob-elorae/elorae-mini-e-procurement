@@ -124,3 +124,15 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes global-loading-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(200%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}

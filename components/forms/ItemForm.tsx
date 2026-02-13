@@ -301,9 +301,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 id="nameId"
                 {...register('nameId')}
                 placeholder="Kain Katun Merah"
+                aria-invalid={!!errors.nameId}
+                className={errors.nameId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
               />
               {errors.nameId && (
-                <p className="text-sm text-destructive">{errors.nameId.message}</p>
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.nameId.message}
+                </p>
               )}
             </div>
             <div className="space-y-2">
@@ -312,9 +316,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 id="nameEn"
                 {...register('nameEn')}
                 placeholder="Red Cotton Fabric"
+                aria-invalid={!!errors.nameEn}
+                className={errors.nameEn ? 'border-destructive focus-visible:ring-destructive/20' : ''}
               />
               {errors.nameEn && (
-                <p className="text-sm text-destructive">{errors.nameEn.message}</p>
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.nameEn.message}
+                </p>
               )}
             </div>
           </div>
@@ -331,7 +339,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     value={field.value}
                     onValueChange={field.onChange}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger
+                      id="type"
+                      className={`w-full ${errors.type ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
+                      aria-invalid={!!errors.type}
+                    >
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
@@ -343,7 +355,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 )}
               />
               {errors.type && (
-                <p className="text-sm text-destructive">{errors.type.message}</p>
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.type.message}
+                </p>
               )}
             </div>
             <div className="space-y-2">
@@ -356,7 +370,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     value={field.value}
                     onValueChange={field.onChange}
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger
+                      id="uomId"
+                      className={`w-full ${errors.uomId ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
+                      aria-invalid={!!errors.uomId}
+                    >
                       <SelectValue placeholder="Select UOM" />
                     </SelectTrigger>
                     <SelectContent>
@@ -370,7 +388,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 )}
               />
               {errors.uomId && (
-                <p className="text-sm text-destructive">{errors.uomId.message}</p>
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.uomId.message}
+                </p>
               )}
             </div>
           </div>
@@ -383,7 +403,14 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               {...register('description')}
               placeholder="Item description..."
               rows={3}
+              aria-invalid={!!errors.description}
+              className={errors.description ? 'border-destructive focus-visible:ring-destructive/20' : ''}
             />
+            {errors.description && (
+              <p className="text-sm text-destructive" role="alert">
+                {errors.description.message}
+              </p>
+            )}
           </div>
 
           {/* Reorder Point */}
@@ -396,7 +423,14 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               min="0"
               {...register('reorderPoint', { valueAsNumber: true })}
               placeholder="0.00"
+              aria-invalid={!!errors.reorderPoint}
+              className={errors.reorderPoint ? 'border-destructive focus-visible:ring-destructive/20' : ''}
             />
+            {errors.reorderPoint && (
+              <p className="text-sm text-destructive" role="alert">
+                {errors.reorderPoint.message}
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>

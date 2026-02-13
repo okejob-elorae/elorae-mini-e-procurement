@@ -4,6 +4,7 @@ import { SessionProvider } from 'next-auth/react';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
 import { LocaleProvider } from '@/components/providers/LocaleProvider';
+import { GlobalLoadingBar } from '@/components/GlobalLoadingBar';
 import './globals.css';
 
 const geistSans = Geist({
@@ -55,6 +56,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <GlobalLoadingBar />
           <SessionProvider>
             <LocaleProvider>{children}</LocaleProvider>
           </SessionProvider>

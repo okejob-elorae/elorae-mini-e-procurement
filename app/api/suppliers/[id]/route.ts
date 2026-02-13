@@ -86,18 +86,19 @@ export async function PUT(
     const body = await req.json();
     const validated = supplierSchema.parse(body);
 
-    // Encrypt bank account if provided
-    let bankAccountEnc = undefined;
-    if (validated.bankAccount) {
-      bankAccountEnc = encryptBankAccount(validated.bankAccount, 'DEFAULT_PIN');
+    const { bankAccount, ...rest } = validated;
+
+    // Encrypt bank account if provided (DB column is bankAccountEnc, not bankAccount)
+    const data: Parameters<typeof prisma.supplier.update>[0]['data'] = {
+      ...rest,
+    };
+    if (bankAccount) {
+      data.bankAccountEnc = encryptBankAccount(bankAccount, 'DEFAULT_PIN');
     }
 
     const supplier = await prisma.supplier.update({
       where: { id },
-      data: {
-        ...validated,
-        bankAccountEnc,
-      },
+      data,
     });
 
     return NextResponse.json(supplier);

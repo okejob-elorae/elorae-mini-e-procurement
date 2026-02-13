@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import * as z from 'zod';
 import {
   Plus,
@@ -101,7 +101,8 @@ export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [supplierDialogMode, setSupplierDialogMode] = useState<'create' | 'edit' | null>(null);
+  const [editSupplier, setEditSupplier] = useState<Supplier | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [decryptedBankAccount, setDecryptedBankAccount] = useState<string>('');
@@ -114,8 +115,10 @@ export default function SuppliersPage() {
     register,
     handleSubmit,
     reset,
+    clearErrors,
+    setError,
+    control,
     formState: { errors, isSubmitting },
-    setValue,
   } = useForm<SupplierForm>({
     resolver: zodResolver(supplierSchema),
     defaultValues: {
@@ -142,31 +145,89 @@ export default function SuppliersPage() {
     fetchSuppliers();
   }, []);
 
+  const isSupplierFormOpen = supplierDialogMode !== null;
+
+  useEffect(() => {
+    if (supplierDialogMode === 'create') {
+      reset({
+        name: '',
+        type: SupplierType.FABRIC,
+        categoryId: undefined,
+        address: '',
+        phone: '',
+        email: '',
+        bankName: '',
+        bankAccount: '',
+        bankAccountName: '',
+      });
+      clearErrors();
+    } else if (supplierDialogMode === 'edit' && editSupplier) {
+      reset({
+        name: editSupplier.name,
+        type: editSupplier.type,
+        categoryId: editSupplier.category?.id ?? undefined,
+        address: editSupplier.address ?? '',
+        phone: editSupplier.phone ?? '',
+        email: editSupplier.email ?? '',
+        bankName: editSupplier.bankName ?? '',
+        bankAccount: '', // Encrypted; leave blank or user re-enters to change
+        bankAccountName: editSupplier.bankAccountName ?? '',
+      });
+      clearErrors();
+    }
+  }, [supplierDialogMode, editSupplier, reset, clearErrors]);
+
   const onSubmit = async (data: SupplierForm) => {
+    const isEdit = !!editSupplier;
     try {
       if (!isOnline()) {
-        // Queue for offline sync
+        if (isEdit) {
+          toast.error('Editing is not available offline');
+          return;
+        }
         await queueOperation('SUPPLIER_CREATE', data);
         toast.success('Supplier queued for sync (offline mode)');
-        setIsCreateDialogOpen(false);
+        setSupplierDialogMode(null);
+        setEditSupplier(null);
         reset();
         return;
       }
 
-      const response = await fetch('/api/suppliers', {
-        method: 'POST',
+      const url = isEdit ? `/api/suppliers/${editSupplier!.id}` : '/api/suppliers';
+      const method = isEdit ? 'PUT' : 'POST';
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
 
       if (response.ok) {
-        toast.success('Supplier created successfully');
-        setIsCreateDialogOpen(false);
+        toast.success(isEdit ? 'Supplier updated successfully' : 'Supplier created successfully');
+        setSupplierDialogMode(null);
+        setEditSupplier(null);
         reset();
         fetchSuppliers();
       } else {
         const error = await response.json();
-        toast.error(error.error || 'Failed to create supplier');
+        const details = error?.details as Array<{ path: (string | number)[]; message: string }> | undefined;
+        const formKeys: (keyof SupplierForm)[] = [
+          'name', 'type', 'categoryId', 'address', 'phone', 'email',
+          'bankName', 'bankAccount', 'bankAccountName',
+        ];
+        if (Array.isArray(details) && details.length > 0) {
+          details.forEach((issue) => {
+            const field = issue.path[0];
+            if (typeof field === 'string' && formKeys.includes(field as keyof SupplierForm)) {
+              setError(field as keyof SupplierForm, {
+                type: 'server',
+                message: issue.message,
+              });
+            }
+          });
+          toast.error('Please fix the errors below');
+        } else {
+          toast.error(error.error || (isEdit ? 'Failed to update supplier' : 'Failed to create supplier'));
+        }
       }
     } catch (_error) {
       toast.error('An error occurred');
@@ -251,63 +312,132 @@ export default function SuppliersPage() {
             Manage your fabric, accessories, and production vendors
           </p>
         </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <Dialog
+          open={isSupplierFormOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSupplierDialogMode(null);
+              setEditSupplier(null);
+            }
+          }}
+        >
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={() => setSupplierDialogMode('create')}>
               <Plus className="mr-2 h-4 w-4" />
               New Supplier
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Create New Supplier</DialogTitle>
+              <DialogTitle>
+                {supplierDialogMode === 'edit' ? 'Edit Supplier' : 'Create New Supplier'}
+              </DialogTitle>
               <DialogDescription>
-                Add a new supplier to your database
+                {supplierDialogMode === 'edit'
+                  ? 'Update supplier details'
+                  : 'Add a new supplier to your database'}
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <form
+              onSubmit={(e) => {
+                clearErrors();
+                handleSubmit(onSubmit)(e);
+              }}
+              className="space-y-4"
+            >
               <div className="space-y-2">
                 <Label htmlFor="name">Supplier Name *</Label>
-                <Input id="name" {...register('name')} />
+                <Input
+                  id="name"
+                  {...register('name')}
+                  aria-invalid={!!errors.name}
+                  className={errors.name ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                />
                 {errors.name && (
-                  <p className="text-sm text-destructive">{errors.name.message}</p>
+                  <p className="text-sm text-destructive" role="alert">
+                    {errors.name.message}
+                  </p>
                 )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="type">Supplier Type *</Label>
-                <Select
-                  onValueChange={(value) => setValue('type', value as SupplierType)}
+                <Controller
+                  name="type"
+                  control={control}
                   defaultValue={SupplierType.FABRIC}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(supplierTypeLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <SelectTrigger
+                        id="type"
+                        aria-invalid={!!errors.type}
+                        className={errors.type ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      >
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(supplierTypeLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {errors.type && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {errors.type.message}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="address">Address</Label>
-                <Input id="address" {...register('address')} />
+                <Input
+                  id="address"
+                  {...register('address')}
+                  aria-invalid={!!errors.address}
+                  className={errors.address ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                />
+                {errors.address && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {errors.address.message}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" {...register('phone')} />
+                  <Input
+                    id="phone"
+                    {...register('phone')}
+                    aria-invalid={!!errors.phone}
+                    className={errors.phone ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
+                  {errors.phone && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.phone.message}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" {...register('email')} />
+                  <Input
+                    id="email"
+                    type="email"
+                    {...register('email')}
+                    aria-invalid={!!errors.email}
+                    className={errors.email ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
                   {errors.email && (
-                    <p className="text-sm text-destructive">{errors.email.message}</p>
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.email.message}
+                    </p>
                   )}
                 </div>
               </div>
@@ -317,15 +447,45 @@ export default function SuppliersPage() {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="bankName">Bank Name</Label>
-                    <Input id="bankName" {...register('bankName')} />
+                    <Input
+                      id="bankName"
+                      {...register('bankName')}
+                      aria-invalid={!!errors.bankName}
+                      className={errors.bankName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                    />
+                    {errors.bankName && (
+                      <p className="text-sm text-destructive" role="alert">
+                        {errors.bankName.message}
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="bankAccount">Account Number</Label>
-                    <Input id="bankAccount" {...register('bankAccount')} />
+                    <Input
+                      id="bankAccount"
+                      {...register('bankAccount')}
+                      aria-invalid={!!errors.bankAccount}
+                      className={errors.bankAccount ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                    />
+                    {errors.bankAccount && (
+                      <p className="text-sm text-destructive" role="alert">
+                        {errors.bankAccount.message}
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="bankAccountName">Account Holder Name</Label>
-                    <Input id="bankAccountName" {...register('bankAccountName')} />
+                    <Input
+                      id="bankAccountName"
+                      {...register('bankAccountName')}
+                      aria-invalid={!!errors.bankAccountName}
+                      className={errors.bankAccountName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                    />
+                    {errors.bankAccountName && (
+                      <p className="text-sm text-destructive" role="alert">
+                        {errors.bankAccountName.message}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -334,13 +494,16 @@ export default function SuppliersPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setIsCreateDialogOpen(false)}
+                  onClick={() => {
+                    setSupplierDialogMode(null);
+                    setEditSupplier(null);
+                  }}
                 >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Create Supplier
+                  {supplierDialogMode === 'edit' ? 'Update Supplier' : 'Create Supplier'}
                 </Button>
               </DialogFooter>
             </form>
@@ -374,7 +537,7 @@ export default function SuppliersPage() {
             <Button
               variant="outline"
               className="mt-4"
-              onClick={() => setIsCreateDialogOpen(true)}
+              onClick={() => setSupplierDialogMode('create')}
             >
               <Plus className="mr-2 h-4 w-4" />
               Add your first supplier
@@ -408,7 +571,12 @@ export default function SuppliersPage() {
                         <Eye className="mr-2 h-4 w-4" />
                         View Details
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditSupplier(supplier);
+                          setSupplierDialogMode('edit');
+                        }}
+                      >
                         <Edit className="mr-2 h-4 w-4" />
                         Edit
                       </DropdownMenuItem>

@@ -32,6 +32,12 @@ export default function NewAdjustmentPage() {
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<{
+    itemId?: string;
+    qty?: string;
+    reason?: string;
+    evidence?: string;
+  }>({});
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof getCurrentStockSummary>>>([]);
   const [currentStock, setCurrentStock] = useState<{
     qtyOnHand: number;
@@ -61,25 +67,20 @@ export default function NewAdjustmentPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setErrors({});
     if (!session?.user?.id) {
       toast.error('You must be logged in');
       return;
     }
-    if (!itemId) {
-      toast.error('Select an item');
-      return;
-    }
+    const nextErrors: typeof errors = {};
+    if (!itemId) nextErrors.itemId = 'Select an item';
     const qtyNum = parseFloat(qty);
-    if (isNaN(qtyNum) || qtyNum <= 0) {
-      toast.error('Enter a valid quantity');
-      return;
-    }
-    if (reason.trim().length < 5) {
-      toast.error('Alasan minimal 5 karakter');
-      return;
-    }
-    if (type === 'NEGATIVE' && !evidenceFile) {
-      toast.error('Photo evidence is required for negative adjustments');
+    if (isNaN(qtyNum) || qtyNum <= 0) nextErrors.qty = 'Enter a valid quantity';
+    if (reason.trim().length < 5) nextErrors.reason = 'Alasan minimal 5 karakter';
+    if (type === 'NEGATIVE' && !evidenceFile) nextErrors.evidence = 'Photo evidence is required for negative adjustments';
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      toast.error('Please fix the errors below');
       return;
     }
     setPinOpen(true);
@@ -150,9 +151,13 @@ export default function NewAdjustmentPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label>Item *</Label>
-              <Select value={itemId} onValueChange={setItemId}>
-                <SelectTrigger className="min-h-[44px]">
+              <Label htmlFor="itemId">Item *</Label>
+              <Select value={itemId} onValueChange={(v) => { setItemId(v); setErrors((e) => ({ ...e, itemId: undefined })); }}>
+                <SelectTrigger
+                  id="itemId"
+                  className={`min-h-[44px] ${errors.itemId ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
+                  aria-invalid={!!errors.itemId}
+                >
                   <SelectValue placeholder="Select item" />
                 </SelectTrigger>
                 <SelectContent>
@@ -163,6 +168,11 @@ export default function NewAdjustmentPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {errors.itemId && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.itemId}
+                </p>
+              )}
             </div>
 
             {currentStock != null && (
@@ -177,12 +187,12 @@ export default function NewAdjustmentPage() {
             )}
 
             <div className="space-y-2">
-              <Label>Type *</Label>
+              <Label htmlFor="type">Type *</Label>
               <Select
                 value={type}
                 onValueChange={(v) => setType(v as 'POSITIVE' | 'NEGATIVE')}
               >
-                <SelectTrigger className="min-h-[44px]">
+                <SelectTrigger id="type" className="min-h-[44px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -193,37 +203,58 @@ export default function NewAdjustmentPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Quantity *</Label>
+              <Label htmlFor="qty">Quantity *</Label>
               <Input
+                id="qty"
                 type="number"
                 min={0}
                 step="any"
                 inputMode="decimal"
-                className="min-h-[44px]"
+                className={`min-h-[44px] ${errors.qty ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
+                aria-invalid={!!errors.qty}
                 value={qty}
-                onChange={(e) => setQty(e.target.value)}
+                onChange={(e) => { setQty(e.target.value); setErrors((err) => ({ ...err, qty: undefined })); }}
                 placeholder="0"
               />
+              {errors.qty && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.qty}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
-              <Label>Reason * (min 5 characters)</Label>
+              <Label htmlFor="reason">Reason * (min 5 characters)</Label>
               <Input
+                id="reason"
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) => { setReason(e.target.value); setErrors((err) => ({ ...err, reason: undefined })); }}
                 placeholder="Alasan penyesuaian"
-                className="min-h-[44px]"
+                className={`min-h-[44px] ${errors.reason ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
+                aria-invalid={!!errors.reason}
               />
+              {errors.reason && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.reason}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
-              <Label>Photo evidence {type === 'NEGATIVE' && '*'}</Label>
+              <Label htmlFor="evidence">Photo evidence {type === 'NEGATIVE' && '*'}</Label>
               <Input
+                id="evidence"
                 type="file"
                 accept="image/*"
-                className="min-h-[44px]"
-                onChange={(e) => setEvidenceFile(e.target.files?.[0] ?? null)}
+                className={`min-h-[44px] ${errors.evidence ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
+                aria-invalid={!!errors.evidence}
+                onChange={(e) => { setEvidenceFile(e.target.files?.[0] ?? null); setErrors((err) => ({ ...err, evidence: undefined })); }}
               />
+              {errors.evidence && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.evidence}
+                </p>
+              )}
             </div>
 
             <Button type="submit" className="min-h-[44px]" disabled={submitting}>
