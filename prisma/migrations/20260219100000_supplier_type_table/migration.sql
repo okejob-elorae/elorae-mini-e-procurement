@@ -27,5 +27,8 @@ UPDATE `Supplier` s
 INNER JOIN `SupplierType` st ON st.`code` = s.`type`
 SET s.`typeId` = st.`id`;
 
--- Drop old type column and index, make typeId required, add index
-ALTER TABLE `Supplier` DROP INDEX `Supplier_type_idx`, DROP COLUMN `type`, MODIFY COLUMN `typeId` VARCHAR(191) NOT NULL, ADD INDEX `Supplier_typeId_idx`(`typeId`);
+-- Drop old type column and index (TiDB 8200: avoid multiple ops on same column in one ALTER)
+ALTER TABLE `Supplier` DROP INDEX `Supplier_type_idx`;
+ALTER TABLE `Supplier` DROP COLUMN `type`;
+ALTER TABLE `Supplier` MODIFY COLUMN `typeId` VARCHAR(191) NOT NULL;
+ALTER TABLE `Supplier` ADD INDEX `Supplier_typeId_idx`(`typeId`);
