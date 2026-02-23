@@ -90,6 +90,7 @@ export default function NewPOPage() {
         supplierId: data.supplierId,
         supplierName: context.supplier?.name,
         etaDate: data.etaDate || undefined,
+        paymentDueDate: data.paymentDueDate || undefined,
         items: context.enrichedItems.map((item) => ({
           itemId: item.itemId,
           qty: item.qty,

@@ -125,12 +125,15 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
       const allFullyReceived = poItems.every((poItem) =>
         new Decimal(poItem.receivedQty.toString()).gte(poItem.qty.toString())
       );
+      const anyOverReceived = poItems.some((poItem) =>
+        new Decimal(poItem.receivedQty.toString()).gt(poItem.qty.toString())
+      );
       const anyReceived = poItems.some((poItem) =>
         new Decimal(poItem.receivedQty.toString()).gt(0)
       );
 
-      let newStatus: 'SUBMITTED' | 'PARTIAL' | 'CLOSED' = 'SUBMITTED';
-      if (allFullyReceived) newStatus = 'CLOSED';
+      let newStatus: 'SUBMITTED' | 'PARTIAL' | 'CLOSED' | 'OVER' = 'SUBMITTED';
+      if (allFullyReceived) newStatus = anyOverReceived ? 'OVER' : 'CLOSED';
       else if (anyReceived) newStatus = 'PARTIAL';
 
       await tx.purchaseOrder.update({

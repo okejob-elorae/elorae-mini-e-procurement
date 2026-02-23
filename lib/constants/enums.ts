@@ -25,6 +25,7 @@ export const POStatus = {
   SUBMITTED: 'SUBMITTED',
   PARTIAL: 'PARTIAL',
   CLOSED: 'CLOSED',
+  OVER: 'OVER',
   CANCELLED: 'CANCELLED',
 } as const;
 export type POStatus = (typeof POStatus)[keyof typeof POStatus];
@@ -38,3 +39,12 @@ export const WOStatus = {
   CANCELLED: 'CANCELLED',
 } as const;
 export type WOStatus = (typeof WOStatus)[keyof typeof WOStatus];
+
+export const ReturnStatus = {
+  DRAFT: 'DRAFT',
+  SUBMITTED: 'SUBMITTED',
+  PROCESSED: 'PROCESSED',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+} as const;
+export type ReturnStatus = (typeof ReturnStatus)[keyof typeof ReturnStatus];

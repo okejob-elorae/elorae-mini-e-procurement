@@ -43,6 +43,7 @@ function serializeWorkOrder(wo: {
   canceledReason: string | null;
   consumptionPlan: unknown;
   skuBreakdown?: unknown;
+  rollBreakdown?: unknown;
   notes: string | null;
   syncStatus?: string;
   createdById: string;
@@ -71,6 +72,7 @@ function serializeWorkOrder(wo: {
     canceledReason: wo.canceledReason,
     consumptionPlan: plan,
     skuBreakdown: wo.skuBreakdown ?? null,
+    rollBreakdown: Array.isArray(wo.rollBreakdown) ? wo.rollBreakdown : (wo.rollBreakdown ? [wo.rollBreakdown] : null),
     notes: wo.notes,
     syncStatus: wo.syncStatus,
     createdById: wo.createdById,
@@ -83,27 +85,50 @@ function serializeWorkOrder(wo: {
       totalCost: Number(iss.totalCost),
     })),
     receipts: (wo.receipts ?? []).map((r) => ({
-      ...r,
+      id: r.id,
+      docNumber: r.docNumber,
+      woId: r.woId,
+      receiptType: r.receiptType,
       qtyReceived: Number(r.qtyReceived),
       qtyRejected: r.qtyRejected != null ? Number(r.qtyRejected) : 0,
       qtyAccepted: Number(r.qtyAccepted),
+      skuBreakdown: r.skuBreakdown ?? null,
+      qcPassed: r.qcPassed ?? null,
+      qcNotes: r.qcNotes ?? null,
+      qcPhotos: r.qcPhotos ?? null,
       materialCost: r.materialCost != null ? Number(r.materialCost) : null,
       avgCostPerUnit: r.avgCostPerUnit != null ? Number(r.avgCostPerUnit) : null,
       totalCostValue: r.totalCostValue != null ? Number(r.totalCostValue) : null,
+      receivedById: r.receivedById,
+      receivedAt: r.receivedAt,
+      syncStatus: r.syncStatus ?? null,
     })),
     returns: wo.returns ?? [],
   };
   return out;
 }
 
+const rollBreakdownItemSchema = z.object({
+  rollRef: z.string(),
+  qty: z.number().nonnegative(),
+  notes: z.string().optional(),
+});
 const woSchema = z.object({
   vendorId: idStr,
   outputMode: z.enum(['GENERIC', 'SKU']),
   plannedQty: z.number().positive(),
   targetDate: z.date().optional(),
   finishedGoodId: idStr,
-  notes: z.string().optional()
-});
+  notes: z.string().optional(),
+  rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
+}).refine(
+  (data) => {
+    if (!data.rollBreakdown || data.rollBreakdown.length === 0) return true;
+    const sum = data.rollBreakdown.reduce((s, r) => s + r.qty, 0);
+    return Math.abs(sum - data.plannedQty) < 1e-6;
+  },
+  { message: 'Roll breakdown total must equal planned qty', path: ['rollBreakdown'] }
+);
 
 export type WOFormData = z.infer<typeof woSchema>;
 
@@ -141,30 +166,34 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
       : 1;
     const docNumber = `${prefix}${String(nextNum).padStart(4, '0')}`;
 
+    const createData: Record<string, unknown> = {
+      docNumber,
+      vendorId: data.vendorId,
+      finishedGoodId: data.finishedGoodId,
+      outputMode: data.outputMode,
+      plannedQty: data.plannedQty,
+      targetDate: data.targetDate,
+      notes: data.notes,
+      createdById: userId,
+      consumptionPlan: JSON.stringify(
+        materialPlan.map((m) => ({
+          itemId: m.itemId,
+          itemName: m.itemName,
+          uomId: m.uomId,
+          uomCode: m.uomCode,
+          qtyRequired: m.qtyRequired.toNumber(),
+          wastePercent: m.wastePercent.toNumber(),
+          plannedQty: m.plannedQty.toNumber(),
+          issuedQty: 0,
+          returnedQty: 0
+        }))
+      ),
+    };
+    if (data.rollBreakdown && data.rollBreakdown.length > 0) {
+      createData.rollBreakdown = JSON.stringify(data.rollBreakdown);
+    }
     const wo = await tx.workOrder.create({
-      data: {
-        docNumber,
-        vendorId: data.vendorId,
-        finishedGoodId: data.finishedGoodId,
-        outputMode: data.outputMode,
-        plannedQty: data.plannedQty,
-        targetDate: data.targetDate,
-        notes: data.notes,
-        createdById: userId,
-        consumptionPlan: JSON.stringify(
-          materialPlan.map((m) => ({
-            itemId: m.itemId,
-            itemName: m.itemName,
-            uomId: m.uomId,
-            uomCode: m.uomCode,
-            qtyRequired: m.qtyRequired.toNumber(),
-            wastePercent: m.wastePercent.toNumber(),
-            plannedQty: m.plannedQty.toNumber(),
-            issuedQty: 0,
-            returnedQty: 0
-          }))
-        )
-      }
+      data: createData as any,
     });
 
     return { id: wo.id, docNumber };
@@ -623,6 +652,105 @@ export async function getReconciliation(woId: string) {
       totalUsedValue: summary.totalUsedValue.toNumber(),
       netVarianceValue: summary.netVarianceValue.toNumber()
     }
+  };
+}
+
+/** Get material issues for CMT register (filter by vendor and/or date). */
+export async function getMaterialIssuesForCMTRegister(filters?: {
+  vendorId?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  issueType?: 'FABRIC' | 'ACCESSORIES';
+}) {
+  const where: any = {};
+  if (filters?.vendorId) {
+    where.wo = { vendorId: filters.vendorId };
+  }
+  if (filters?.dateFrom || filters?.dateTo) {
+    where.issuedAt = {};
+    if (filters.dateFrom) where.issuedAt.gte = filters.dateFrom;
+    if (filters.dateTo) where.issuedAt.lte = filters.dateTo;
+  }
+  if (filters?.issueType) {
+    where.issueType = filters.issueType as 'FABRIC' | 'ACCESSORIES';
+  }
+  const issues = await prisma.materialIssue.findMany({
+    where,
+    include: {
+      wo: {
+        select: {
+          docNumber: true,
+          vendorId: true,
+          vendor: { select: { name: true, code: true } },
+        },
+      },
+    },
+    orderBy: { issuedAt: 'desc' },
+    take: 500,
+  });
+  return issues.map((i) => {
+    const wo = (i as any).wo;
+    return {
+      id: i.id,
+      docNumber: i.docNumber,
+      issueType: i.issueType,
+      issuedAt: i.issuedAt,
+      totalCost: Number(i.totalCost),
+      woDocNumber: wo?.docNumber ?? '',
+      vendorName: wo?.vendor?.name ?? wo?.vendor?.code ?? '',
+    };
+  });
+}
+
+/** Get a single material issue with full details for print (Nota ke CMT). */
+export async function getMaterialIssueForPrint(issueId: string) {
+  const issue = await prisma.materialIssue.findUnique({
+    where: { id: issueId },
+    include: {
+      wo: {
+        select: {
+          docNumber: true,
+          vendor: { select: { name: true, code: true } },
+        },
+      },
+    },
+  });
+  if (!issue) return null;
+  let rawItems: unknown = issue.items;
+  if (typeof rawItems === 'string') {
+    try {
+      rawItems = JSON.parse(rawItems);
+    } catch {
+      rawItems = null;
+    }
+  }
+  const items: Array<{ itemId: string; qty: number; uomId: string }> = Array.isArray(rawItems)
+    ? rawItems.filter((i): i is { itemId: string; qty: number; uomId: string } => i != null && typeof i === 'object' && typeof (i as { itemId?: unknown }).itemId === 'string')
+    : rawItems && typeof rawItems === 'object'
+      ? (Object.values(rawItems) as unknown[]).filter((i): i is { itemId: string; qty: number; uomId: string } => i != null && typeof i === 'object' && typeof (i as { itemId?: unknown }).itemId === 'string')
+      : [];
+  const itemIds = [...new Set(items.map((i) => i.itemId).filter(Boolean))];
+  const uomIds = [...new Set(items.map((i) => i?.uomId).filter(Boolean))];
+  const [itemRows, uomRows] = await Promise.all([
+    itemIds.length ? prisma.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, nameId: true, sku: true } }) : [],
+    uomIds.length ? prisma.uOM.findMany({ where: { id: { in: uomIds } }, select: { id: true, code: true } }) : [],
+  ]);
+  const itemMap = new Map(itemRows.map((i) => [i.id, i]));
+  const uomMap = new Map(uomRows.map((u) => [u.id, u]));
+  const lines = items.map((line) => ({
+    itemName: itemMap.get(line.itemId)?.nameId ?? itemMap.get(line.itemId)?.sku ?? line.itemId,
+    itemSku: itemMap.get(line.itemId)?.sku ?? '',
+    qty: Number(line.qty ?? 0),
+    uomCode: line.uomId ? uomMap.get(line.uomId)?.code ?? '' : '',
+  }));
+  return {
+    docNumber: issue.docNumber,
+    issueType: issue.issueType,
+    issuedAt: issue.issuedAt,
+    totalCost: Number(issue.totalCost),
+    woDocNumber: issue.wo.docNumber,
+    vendorName: issue.wo.vendor?.name ?? issue.wo.vendor?.code ?? '',
+    lines,
   };
 }
 

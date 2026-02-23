@@ -40,6 +40,8 @@ interface PurchaseOrder {
   docNumber: string;
   status: POStatus;
   etaDate: string | null;
+  paymentDueDate?: string | null;
+  paidAt?: string | null;
   totalAmount: string;
   grandTotal: string;
   createdAt: string;
@@ -70,6 +72,7 @@ const statusLabels: Record<POStatus, string> = {
   SUBMITTED: 'Submitted',
   PARTIAL: 'Partial',
   CLOSED: 'Closed',
+  OVER: 'Over-received',
   CANCELLED: 'Cancelled'
 };
 
@@ -78,6 +81,7 @@ const statusColors: Record<POStatus, string> = {
   SUBMITTED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
   PARTIAL: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
   CLOSED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  OVER: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
   CANCELLED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
 };
 
@@ -86,6 +90,7 @@ const statusIcons: Record<POStatus, React.ReactNode> = {
   SUBMITTED: <CheckCircle className="h-4 w-4" />,
   PARTIAL: <AlertCircle className="h-4 w-4" />,
   CLOSED: <CheckCircle className="h-4 w-4" />,
+  OVER: <AlertCircle className="h-4 w-4" />,
   CANCELLED: <XCircle className="h-4 w-4" />
 };
 
@@ -137,7 +142,7 @@ export default function PurchaseOrdersPage() {
   };
 
   const _isOverdue = (po: PurchaseOrder) => {
-    if (!po.etaDate || po.status === 'CLOSED' || po.status === 'CANCELLED') return false;
+    if (!po.etaDate || po.status === 'CLOSED' || po.status === 'OVER' || po.status === 'CANCELLED') return false;
     return new Date(po.etaDate) < new Date();
   };
 
@@ -191,6 +196,7 @@ export default function PurchaseOrdersPage() {
           <option value="SUBMITTED">Submitted</option>
           <option value="PARTIAL">Partial</option>
           <option value="CLOSED">Closed</option>
+          <option value="OVER">Over-received</option>
           <option value="CANCELLED">Cancelled</option>
         </select>
       </div>
@@ -222,6 +228,7 @@ export default function PurchaseOrdersPage() {
                     <TableHead>Supplier</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>ETA</TableHead>
+                    <TableHead>Payment</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Pending</TableHead>
                     <TableHead className="w-12"></TableHead>
@@ -254,6 +261,13 @@ export default function PurchaseOrdersPage() {
                           </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {po.paidAt ? (
+                          <Badge variant="default" className="bg-green-600">Paid</Badge>
+                        ) : (
+                          <Badge variant="secondary">Unpaid</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-right">

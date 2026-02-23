@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -32,12 +32,21 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Printer } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 import {
   getWorkOrderById,
   issueWorkOrder,
-  cancelWorkOrder
+  cancelWorkOrder,
+  getMaterialIssueForPrint
 } from '@/app/actions/production';
 import { WOStatus } from '@/lib/constants/enums';
 
@@ -64,9 +73,12 @@ export default function WorkOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
+  const t = useTranslations('production');
   const id = typeof params.id === 'string' ? params.id : '';
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [printIssueId, setPrintIssueId] = useState<string | null>(null);
+  const [printData, setPrintData] = useState<Awaited<ReturnType<typeof getMaterialIssueForPrint>>>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -82,7 +94,7 @@ export default function WorkOrderDetailPage() {
   const handleIssue = async () => {
     if (!session?.user?.id || !wo) return;
     try {
-      await issueWorkOrder(wo.id, session.user.id);
+      await issueWorkOrder(String(wo.id), session.user.id);
       toast.success('Work Order issued');
       const updated = await getWorkOrderById(id);
       setWO(updated);
@@ -94,7 +106,7 @@ export default function WorkOrderDetailPage() {
   const handleCancel = async () => {
     if (!session?.user?.id || !wo || !confirm('Cancel this Work Order?')) return;
     try {
-      await cancelWorkOrder(wo.id, session.user.id);
+      await cancelWorkOrder(String(wo.id), session.user.id);
       toast.success('Work Order cancelled');
       const updated = await getWorkOrderById(id);
       setWO(updated);
@@ -102,6 +114,22 @@ export default function WorkOrderDetailPage() {
       toast.error(err instanceof Error ? err.message : 'Failed to cancel');
     }
   };
+
+  const openPrintNota = (issueId: string) => {
+    setPrintIssueId(issueId);
+    setPrintData(null);
+  };
+  const closePrintNota = () => {
+    setPrintIssueId(null);
+    setPrintData(null);
+  };
+  useEffect(() => {
+    if (!printIssueId) return;
+    getMaterialIssueForPrint(printIssueId)
+      .then(setPrintData)
+      .catch(() => toast.error('Failed to load issue for print'));
+  }, [printIssueId]);
+  const handlePrintNota = () => window.print();
 
   if (isLoading || !wo) {
     return (
@@ -115,6 +143,9 @@ export default function WorkOrderDetailPage() {
   const actual = Number(wo.actualQty ?? 0);
   const progressPct = planned > 0 ? Math.min(100, Math.round((actual / planned) * 100)) : 0;
   const consumptionPlan = (wo.consumptionPlan as any[]) || [];
+  const rollBreakdown: Array<{ rollRef: string; qty: number; notes?: string }> | null = Array.isArray((wo as any).rollBreakdown)
+    ? (wo as any).rollBreakdown
+    : null;
 
   return (
     <div className="space-y-6">
@@ -127,10 +158,10 @@ export default function WorkOrderDetailPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              {wo.docNumber}
+              {String(wo.docNumber ?? '')}
             </h1>
             <p className="text-muted-foreground">
-              {wo.vendor?.name} · {(wo.finishedGood as any)?.nameId ?? '—'}
+              {String((wo as any).vendor?.name ?? '')} · {String((wo as any).finishedGood?.nameId ?? '—')}
             </p>
           </div>
         </div>
@@ -166,7 +197,7 @@ export default function WorkOrderDetailPage() {
             Progress
           </CardTitle>
           <CardDescription>
-            Target: {planned.toLocaleString()} pcs · Actual: {actual.toLocaleString()}
+            {t('progressTarget')}: {planned.toLocaleString()} pcs · {t('progressActual')}: {actual.toLocaleString()}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -179,14 +210,86 @@ export default function WorkOrderDetailPage() {
             </div>
             <Progress value={progressPct} className="h-2" />
           </div>
-          {wo.targetDate && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            {actual < planned
+              ? t('setoranSummary', {
+                  target: planned.toLocaleString(),
+                  actual: actual.toLocaleString(),
+                  shortfall: (planned - actual).toLocaleString(),
+                })
+              : t('setoranSummaryExact', {
+                  target: planned.toLocaleString(),
+                  actual: actual.toLocaleString(),
+                })}
+          </p>
+          {(wo as any).targetDate && (
             <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
               <Calendar className="h-4 w-4" />
-              Target: {new Date(wo.targetDate).toLocaleDateString('id-ID')}
+              {t('progressTarget')}: {new Date((wo as any).targetDate).toLocaleDateString('id-ID')}
             </div>
           )}
         </CardContent>
       </Card>
+
+      {rollBreakdown && rollBreakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Alokasi per roll</CardTitle>
+            <CardDescription>Nota kain per roll</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Roll / Ref</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead>Notes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rollBreakdown.map((r, i) => (
+                  <TableRow key={i}>
+                    <TableCell>{r.rollRef ?? '-'}</TableCell>
+                    <TableCell className="text-right">{Number(r.qty ?? 0).toLocaleString()}</TableCell>
+                    <TableCell>{r.notes ?? '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => {
+                const win = window.open('', '_blank', 'width=800,height=600');
+                if (!win) return;
+                win.document.write(`
+                  <html><head><title>Nota Kain per Roll - ${wo.docNumber}</title></head><body>
+                  <h2>Nota Kain per Roll</h2>
+                  <p><strong>WO:</strong> ${wo.docNumber}</p>
+                  <p><strong>Vendor:</strong> ${(wo.vendor as any)?.name ?? ''}</p>
+                  <p><strong>FG:</strong> ${(wo.finishedGood as any)?.nameId ?? ''}</p>
+                  <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
+                  <tr><th>Roll / Ref</th><th>Qty</th><th>Notes</th></tr>
+                  ${rollBreakdown.map((r) => `<tr><td>${r.rollRef ?? ''}</td><td>${Number(r.qty ?? 0)}</td><td>${r.notes ?? ''}</td></tr>`).join('')}
+                  </table>
+                  <p style="margin-top:16px"><strong>Materials (consumption plan):</strong></p>
+                  <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
+                  <tr><th>Material</th><th>Planned</th><th>UOM</th></tr>
+                  ${consumptionPlan.map((p: any) => `<tr><td>${p.itemName ?? p.itemId}</td><td>${Number(p.plannedQty ?? 0)}</td><td>${p.uomCode ?? ''}</td></tr>`).join('')}
+                  </table>
+                  </body></html>`);
+                win.document.close();
+                win.focus();
+                setTimeout(() => { win.print(); win.close(); }, 250);
+              }}
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              Print Nota Kain per Roll
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs defaultValue="details">
         <TabsList className="grid w-full grid-cols-4">
@@ -199,15 +302,15 @@ export default function WorkOrderDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>Consumption Plan</CardTitle>
-              <CardDescription>Planned vs issued per material</CardDescription>
+              <CardDescription>{t('cuttingPlanned')} vs {t('issuedToCmt')} per material</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Material</TableHead>
-                    <TableHead className="text-right">Planned</TableHead>
-                    <TableHead className="text-right">Issued</TableHead>
+                    <TableHead className="text-right" title={t('cuttingPlanned')}>{t('targetCutting')}</TableHead>
+                    <TableHead className="text-right" title={t('issuedToCmt')}>{t('issuedToCmt')}</TableHead>
                     <TableHead className="text-right">Returned</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -239,11 +342,11 @@ export default function WorkOrderDetailPage() {
                 Material Issues
               </CardTitle>
               <CardDescription>
-                {wo.issues?.length ?? 0} issue(s)
+                {(wo as any).issues?.length ?? 0} issue(s)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {!wo.issues?.length ? (
+              {!(wo as any).issues?.length ? (
                 <p className="text-muted-foreground">No issues yet.</p>
               ) : (
                 <Table>
@@ -253,10 +356,11 @@ export default function WorkOrderDetailPage() {
                       <TableHead>Type</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead className="text-right">Total Cost</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(wo.issues as any[]).map((iss: any) => (
+                    {((wo as any).issues as any[]).map((iss: any) => (
                       <TableRow key={iss.id}>
                         <TableCell className="font-medium">
                           {iss.docNumber}
@@ -267,6 +371,15 @@ export default function WorkOrderDetailPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           {Number(iss.totalCost).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openPrintNota(iss.id)}
+                          >
+                            <Printer className="h-4 w-4" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -284,11 +397,11 @@ export default function WorkOrderDetailPage() {
                 FG Receipts
               </CardTitle>
               <CardDescription>
-                {wo.receipts?.length ?? 0} receipt(s)
+                {(wo as any).receipts?.length ?? 0} receipt(s)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {!wo.receipts?.length ? (
+              {!(wo as any).receipts?.length ? (
                 <p className="text-muted-foreground">No receipts yet.</p>
               ) : (
                 <Table>
@@ -302,7 +415,7 @@ export default function WorkOrderDetailPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(wo.receipts as any[]).map((r: any) => (
+                    {((wo as any).receipts as any[]).map((r: any) => (
                       <TableRow key={r.id}>
                         <TableCell className="font-medium">
                           {r.docNumber}
@@ -346,6 +459,55 @@ export default function WorkOrderDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!printIssueId} onOpenChange={(open) => !open && closePrintNota()}>
+        <DialogContent className="max-w-lg no-print">
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `@media print { .no-print { display: none !important; } }`,
+            }}
+          />
+          <DialogHeader>
+            <DialogTitle>Nota ke CMT</DialogTitle>
+          </DialogHeader>
+          {printData ? (
+            <div className="space-y-4">
+              <div className="text-sm space-y-1">
+                <p><span className="text-muted-foreground">Doc:</span> {printData.docNumber}</p>
+                <p><span className="text-muted-foreground">WO:</span> {printData.woDocNumber}</p>
+                <p><span className="text-muted-foreground">Vendor:</span> {printData.vendorName}</p>
+                <p><span className="text-muted-foreground">Date:</span> {new Date(printData.issuedAt).toLocaleDateString('id-ID')}</p>
+                <p><span className="text-muted-foreground">Type:</span> {printData.issueType}</p>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Item</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead>UOM</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {printData.lines.map((line, i) => (
+                    <TableRow key={i}>
+                      <TableCell>{line.itemName}</TableCell>
+                      <TableCell className="text-right">{Number(line.qty ?? 0).toLocaleString()}</TableCell>
+                      <TableCell>{line.uomCode}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <p className="font-semibold">Total cost: {Number(printData.totalCost ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <div className="flex gap-2 no-print">
+                <Button variant="outline" onClick={closePrintNota}>Close</Button>
+                <Button onClick={handlePrintNota}><Printer className="mr-2 h-4 w-4" />Print</Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">Loading...</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

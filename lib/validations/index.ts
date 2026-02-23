@@ -29,6 +29,7 @@ export const poItemSchema = z.object({
 export const poSchema = z.object({
   supplierId: z.string().min(1, 'Pilih supplier'),
   etaDate: z.date().optional().nullable(),
+  paymentDueDate: z.date().optional().nullable(),
   notes: z.string().optional(),
   terms: z.string().optional(),
   items: z.array(poItemSchema).min(1, 'Minimal 1 item'),

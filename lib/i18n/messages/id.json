@@ -30,9 +30,15 @@
     "masterSuppliers": "Master Pemasok",
     "supplierType": "Jenis Pemasok",
     "items": "Item",
+    "navItemsAll": "Semua Item",
+    "navItemsRaw": "Barang Mentah",
+    "navItemsFinished": "Barang Jadi",
     "purchaseOrders": "Pesanan Pembelian",
+    "supplierPayment": "Pembayaran Pemasok",
     "inventory": "Inventori",
     "workOrders": "Perintah Kerja",
+    "navWorkOrdersList": "Daftar Perintah Kerja",
+    "registerNotaCmt": "Register Nota CMT",
     "vendorReturns": "Retur Pemasok",
     "reports": "Laporan",
     "auditTrail": "Audit Trail",
@@ -196,5 +202,39 @@
     "conversionsTitle": "Konversi UOM",
     "conversionsDescription": "Faktor konversi antar UOM",
     "noConversions": "Belum ada konversi"
+  },
+  "vendorReturn": {
+    "printNotaRetur": "Cetak Nota Retur",
+    "completeReturn": "Selesaikan retur",
+    "trackingNumber": "Nomor resi",
+    "receiptUpload": "Resi (unggah)",
+    "completed": "Selesai",
+    "viewReceipt": "Lihat resi",
+    "notaReturTitle": "Nota Retur",
+    "nilaiReturCmtNote": "Nilai retur dapat digunakan untuk offset pembayaran CMT / pengembalian uang",
+    "nilaiRetur": "Nilai retur"
+  },
+  "adjustment": {
+    "notaBarangKeluar": "Nota Barang Keluar",
+    "printNotaBarangKeluar": "Cetak Nota Barang Keluar",
+    "adjustmentDetails": "Detail adjustment",
+    "nota": "Nota"
+  },
+  "dashboard": {
+    "setoranCmtTitle": "Laporan setoran per CMT per bulan",
+    "setoranCmtDescription": "Work order per vendor (CMT): efisiensi, biaya material, waktu penyelesaian.",
+    "reportsSetoranCmt": "Setoran per CMT"
+  },
+  "production": {
+    "targetCutting": "Target cutting",
+    "setoran": "Setoran",
+    "selisih": "Selisih",
+    "issuedToCmt": "Dikirim ke CMT",
+    "cuttingPlanned": "Cutting (rencana)",
+    "selisihFromEstimate": "Selisih dari estimasi",
+    "setoranSummary": "Target {target}, Setoran {actual}, Kurang {shortfall}",
+    "setoranSummaryExact": "Target {target}, Setoran {actual}",
+    "progressTarget": "Target",
+    "progressActual": "Setoran"
   }
 }

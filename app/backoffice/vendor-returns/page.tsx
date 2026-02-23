@@ -176,6 +176,7 @@ export default function VendorReturnsPage() {
             <SelectItem value="__all__">All Status</SelectItem>
             <SelectItem value="DRAFT">Draft</SelectItem>
             <SelectItem value="PROCESSED">Processed</SelectItem>
+            <SelectItem value="COMPLETED">Completed</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -238,9 +239,15 @@ export default function VendorReturnsPage() {
                           </TableCell>
                           <TableCell>
                             <Badge
-                              variant={r.status === 'PROCESSED' ? 'default' : 'secondary'}
+                              variant={
+                                r.status === 'COMPLETED'
+                                  ? 'default'
+                                  : r.status === 'PROCESSED'
+                                    ? 'secondary'
+                                    : 'outline'
+                              }
                             >
-                              {r.status === 'PROCESSED' ? (
+                              {r.status === 'COMPLETED' || r.status === 'PROCESSED' ? (
                                 <CheckCircle className="mr-1 h-3 w-3" />
                               ) : (
                                 <Clock className="mr-1 h-3 w-3" />

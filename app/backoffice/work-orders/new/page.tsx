@@ -79,6 +79,7 @@ export default function NewWorkOrderPage() {
   const [plannedQty, setPlannedQty] = useState<string>('');
   const [targetDate, setTargetDate] = useState('');
   const [notes, setNotes] = useState('');
+  const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -130,14 +131,32 @@ export default function NewWorkOrderPage() {
   }, [finishedGoodId, plannedQty]);
 
   const hasShortage = materialPlan.some((m) => m.shortage > 0);
+  const plannedNum = Number(plannedQty) || 0;
+  const rollSum = rollBreakdown.reduce((s, r) => s + r.qty, 0);
+  const rollValid = rollBreakdown.length === 0 || Math.abs(rollSum - plannedNum) < 1e-6;
   const canSubmit =
     session?.user?.id &&
     vendorId &&
     finishedGoodId &&
     plannedQty &&
-    Number(plannedQty) > 0 &&
+    plannedNum > 0 &&
     !hasShortage &&
+    rollValid &&
     !isSubmitting;
+
+  const addRollRow = () => {
+    setRollBreakdown((prev) => [...prev, { rollRef: `Roll ${prev.length + 1}`, qty: 0 }]);
+  };
+  const updateRollRow = (i: number, field: 'rollRef' | 'qty' | 'notes', value: string | number) => {
+    setRollBreakdown((prev) => {
+      const next = [...prev];
+      next[i] = { ...next[i], [field]: value };
+      return next;
+    });
+  };
+  const removeRollRow = (i: number) => {
+    setRollBreakdown((prev) => prev.filter((_, idx) => idx !== i));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,9 +168,10 @@ export default function NewWorkOrderPage() {
           vendorId,
           finishedGoodId,
           outputMode,
-          plannedQty: Number(plannedQty),
+          plannedQty: plannedNum,
           targetDate: targetDate ? new Date(targetDate) : undefined,
-          notes: notes.trim() || undefined
+          notes: notes.trim() || undefined,
+          rollBreakdown: rollBreakdown.length > 0 ? rollBreakdown : undefined,
         },
         session.user.id
       );
@@ -278,6 +298,77 @@ export default function NewWorkOrderPage() {
                 rows={2}
               />
             </div>
+
+            {plannedNum > 0 && (
+              <div className="space-y-2 border-t pt-4">
+                <Label>Alokasi per roll (opsional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Total qty per roll harus sama dengan Planned Qty ({plannedNum}).
+                </p>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Roll / Ref</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead>Notes</TableHead>
+                        <TableHead className="w-12" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rollBreakdown.map((row, i) => (
+                        <TableRow key={i}>
+                          <TableCell>
+                            <Input
+                              value={row.rollRef}
+                              onChange={(e) => updateRollRow(i, 'rollRef', e.target.value)}
+                              placeholder="Roll 1"
+                              className="h-8"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={row.qty || ''}
+                              onChange={(e) => updateRollRow(i, 'qty', Number(e.target.value) || 0)}
+                              className="h-8 text-right"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              value={row.notes ?? ''}
+                              onChange={(e) => updateRollRow(i, 'notes', e.target.value)}
+                              placeholder="Optional"
+                              className="h-8"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => removeRollRow(i)}
+                            >
+                              ×
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={addRollRow}>
+                  + Tambah roll
+                </Button>
+                {rollBreakdown.length > 0 && !rollValid && (
+                  <p className="text-sm text-destructive">
+                    Total roll ({rollSum}) harus sama dengan Planned Qty ({plannedNum}).
+                  </p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 

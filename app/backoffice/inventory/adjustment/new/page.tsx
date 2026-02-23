@@ -109,7 +109,7 @@ export default function NewAdjustmentPage() {
     }
     setSubmitting(true);
     try {
-      await createStockAdjustment(
+      const adjustment = await createStockAdjustment(
         {
           itemId,
           type,
@@ -121,7 +121,7 @@ export default function NewAdjustmentPage() {
         session.user.id
       );
       toast.success('Adjustment created');
-      router.push('/backoffice/inventory');
+      router.push(`/backoffice/inventory/adjustment/${adjustment.id}`);
       router.refresh();
     } finally {
       setSubmitting(false);

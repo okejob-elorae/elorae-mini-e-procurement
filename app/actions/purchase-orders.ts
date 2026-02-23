@@ -28,6 +28,7 @@ export async function createPO(data: POFormData, userId: string) {
         docNumber,
         supplierId: validated.supplierId,
         etaDate: validated.etaDate,
+        paymentDueDate: validated.paymentDueDate ?? undefined,
         notes: validated.notes,
         terms: validated.terms,
         totalAmount: totalAmount.toNumber(),
@@ -88,6 +89,7 @@ export async function updatePO(
       data: {
         supplierId: data.supplierId,
         etaDate: data.etaDate,
+        paymentDueDate: data.paymentDueDate ?? undefined,
         notes: data.notes,
         terms: data.terms,
         totalAmount: totalAmount.toNumber(),
@@ -187,15 +189,22 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
 
 export async function getPOs(filters?: {
   status?: POStatus;
+  statusIn?: POStatus[];
   supplierId?: string;
   fromDate?: Date;
   toDate?: Date;
   overdue?: boolean;
+  paymentDueFrom?: Date;
+  paymentDueTo?: Date;
+  paid?: boolean;
 }) {
   const where: any = {};
   
   if (filters?.status) {
     where.status = filters.status;
+  }
+  if (filters?.statusIn?.length) {
+    where.status = { in: filters.statusIn };
   }
   
   if (filters?.supplierId) {
@@ -211,10 +220,25 @@ export async function getPOs(filters?: {
       where.createdAt.lte = filters.toDate;
     }
   }
+  if (filters?.paymentDueFrom || filters?.paymentDueTo) {
+    where.paymentDueDate = {};
+    if (filters.paymentDueFrom) {
+      where.paymentDueDate.gte = filters.paymentDueFrom;
+    }
+    if (filters.paymentDueTo) {
+      where.paymentDueDate.lte = filters.paymentDueTo;
+    }
+  }
+  if (filters?.paid === true) {
+    where.paidAt = { not: null };
+  }
+  if (filters?.paid === false) {
+    where.paidAt = null;
+  }
   
   if (filters?.overdue) {
     where.etaDate = { lt: new Date() };
-    where.status = { notIn: ['CLOSED', 'CANCELLED'] };
+    where.status = { notIn: ['CLOSED', 'OVER', 'CANCELLED'] };
   }
   
   const pos = await prisma.purchaseOrder.findMany({
@@ -315,7 +339,7 @@ export async function getOverduePOs() {
   const pos = await prisma.purchaseOrder.findMany({
     where: {
       etaDate: { lt: today },
-      status: { notIn: ['CLOSED', 'CANCELLED'] }
+      status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] }
     },
     include: {
       supplier: {
@@ -371,7 +395,7 @@ export async function getPOStats() {
     prisma.purchaseOrder.count({
       where: {
         etaDate: { lt: new Date() },
-        status: { notIn: ['CLOSED', 'CANCELLED'] }
+        status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] }
       }
     }),
     prisma.purchaseOrder.aggregate({
@@ -387,4 +411,15 @@ export async function getPOStats() {
     overduePOs,
     totalValue: Number(totalValue._sum.grandTotal ?? 0),
   };
+}
+
+/** Mark a PO as paid (or unmark by passing paidAt: null). */
+export async function setPOPaidAt(poId: string, paidAt: Date | null) {
+  await prisma.purchaseOrder.update({
+    where: { id: poId },
+    data: { paidAt },
+  });
+  revalidatePath('/backoffice/purchase-orders');
+  revalidatePath('/backoffice/purchase-orders/[id]');
+  revalidatePath('/backoffice/supplier-payments');
 }

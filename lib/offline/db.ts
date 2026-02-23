@@ -49,6 +49,7 @@ export interface PendingPO {
   supplierId: string;
   supplierName?: string;
   etaDate?: Date;
+  paymentDueDate?: Date;
   items: Array<{
     itemId: string;
     itemName?: string;

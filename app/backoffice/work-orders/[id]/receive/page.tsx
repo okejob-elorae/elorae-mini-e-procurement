@@ -47,8 +47,9 @@ export default function WorkOrderReceivePage() {
   const received = Number(qtyReceived) || 0;
   const rejected = Number(qtyRejected) || 0;
   const accepted = Math.max(0, received - rejected);
-  const totalMaterialCost = wo?.issues?.length
-    ? (wo.issues as any[]).reduce(
+  const issuesArr = Array.isArray(wo?.issues) ? wo.issues : [];
+  const totalMaterialCost = issuesArr.length
+    ? (issuesArr as any[]).reduce(
         (sum: number, i: any) => sum + Number(i.totalCost ?? 0),
         0
       )
@@ -66,7 +67,7 @@ export default function WorkOrderReceivePage() {
     try {
       await receiveFG(
         {
-          woId: wo.id,
+          woId: String(wo.id),
           qtyReceived: received,
           qtyRejected: rejected,
           qcNotes: qcNotes.trim() || undefined,
@@ -101,7 +102,7 @@ export default function WorkOrderReceivePage() {
         </Link>
         <div>
           <h1 className="text-2xl font-bold">Receive Finished Goods</h1>
-          <p className="text-muted-foreground">{wo.docNumber}</p>
+          <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
         </div>
       </div>
 

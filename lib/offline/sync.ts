@@ -113,6 +113,7 @@ export async function syncPendingPOs(): Promise<{
         body: JSON.stringify({
           supplierId: po.supplierId,
           etaDate: po.etaDate,
+          paymentDueDate: po.paymentDueDate,
           notes: po.notes,
           items: po.items,
         }),

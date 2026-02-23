@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { getPOById, changePOStatus, updatePO } from '@/app/actions/purchase-orders';
+import { getPOById, changePOStatus, updatePO, setPOPaidAt } from '@/app/actions/purchase-orders';
 import { POForm } from '@/components/forms/POForm';
 import { ETABadge } from '@/components/ui/ETABadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,6 +31,7 @@ const statusLabels: Record<POStatus, string> = {
   SUBMITTED: 'Submitted',
   PARTIAL: 'Partial',
   CLOSED: 'Closed',
+  OVER: 'Over-received',
   CANCELLED: 'Cancelled',
 };
 
@@ -39,6 +40,7 @@ const statusColors: Record<POStatus, string> = {
   SUBMITTED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
   PARTIAL: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
   CLOSED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  OVER: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
   CANCELLED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
 };
 
@@ -189,6 +191,11 @@ export default function PODetailPage() {
           <Badge className={statusColors[po.status as POStatus]}>
             {statusLabels[po.status as POStatus]}
           </Badge>
+          {po.paidAt ? (
+            <Badge variant="default" className="bg-green-600">Paid</Badge>
+          ) : (
+            <Badge variant="secondary">Unpaid</Badge>
+          )}
           {po.etaDate && (
             <ETABadge etaDate={po.etaDate} status={po.status} />
           )}
@@ -200,6 +207,7 @@ export default function PODetailPage() {
           initialData={{
             supplierId: po.supplierId,
             etaDate: po.etaDate ? new Date(po.etaDate) : null,
+            paymentDueDate: po.paymentDueDate ? new Date(po.paymentDueDate) : null,
             notes: po.notes || undefined,
             terms: po.terms || undefined,
             items: po.items.map((item: any) => ({
@@ -239,6 +247,20 @@ export default function PODetailPage() {
                   </p>
                 </div>
                 <div>
+                  <p className="text-sm text-muted-foreground">Payment due date</p>
+                  <p className="font-medium">
+                    {po.paymentDueDate ? new Date(po.paymentDueDate).toLocaleDateString('id-ID') : '-'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Payment status</p>
+                  <p className="font-medium">
+                    {po.paidAt
+                      ? `Paid on ${new Date(po.paidAt).toLocaleDateString('id-ID')}`
+                      : 'Unpaid'}
+                  </p>
+                </div>
+                <div>
                   <p className="text-sm text-muted-foreground">Total Amount</p>
                   <p className="font-medium">Rp {Number(po.grandTotal).toLocaleString('id-ID')}</p>
                 </div>
@@ -259,6 +281,45 @@ export default function PODetailPage() {
                 <div>
                   <p className="text-sm text-muted-foreground">Payment Terms</p>
                   <p className="font-medium">{po.terms}</p>
+                </div>
+              )}
+              {po.status !== 'DRAFT' && po.status !== 'CANCELLED' && (
+                <div className="pt-2 flex gap-2">
+                  {po.paidAt ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await setPOPaidAt(po.id, null);
+                          toast.success('Marked as unpaid');
+                          const updated = await getPOById(po.id);
+                          setPO(updated);
+                        } catch (e: any) {
+                          toast.error(e.message || 'Failed');
+                        }
+                      }}
+                    >
+                      Unmark paid
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await setPOPaidAt(po.id, new Date());
+                          toast.success('Marked as paid');
+                          const updated = await getPOById(po.id);
+                          setPO(updated);
+                        } catch (e: any) {
+                          toast.error(e.message || 'Failed');
+                        }
+                      }}
+                    >
+                      Mark as paid
+                    </Button>
+                  )}
                 </div>
               )}
             </CardContent>

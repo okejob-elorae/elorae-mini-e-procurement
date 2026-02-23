@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 import { getWorkOrderById, getReconciliation } from '@/app/actions/production';
 
 type ReconLine = {
@@ -50,6 +51,7 @@ type ReconSummary = {
 
 export default function WorkOrderReconciliationPage() {
   const params = useParams();
+  const t = useTranslations('production');
   const id = typeof params.id === 'string' ? params.id : '';
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
   const [recon, setRecon] = useState<{
@@ -75,7 +77,7 @@ export default function WorkOrderReconciliationPage() {
       : 0;
 
   const handleExportPDF = () => {
-    toast.info('PDF export can be added later');
+    window.print();
   };
 
   if (isLoading || !wo || !recon) {
@@ -88,7 +90,12 @@ export default function WorkOrderReconciliationPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `@media print { .no-print { display: none !important; } }`,
+        }}
+      />
+      <div className="flex items-center justify-between gap-4 no-print">
         <div className="flex items-center gap-4">
           <Link href={`/backoffice/work-orders/${id}`}>
             <Button variant="ghost" size="icon">
@@ -97,12 +104,26 @@ export default function WorkOrderReconciliationPage() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold">Reconciliation</h1>
-            <p className="text-muted-foreground">{wo.docNumber}</p>
+            <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {String(
+                Number(wo.actualQty ?? 0) < Number(wo.plannedQty)
+                  ? t('setoranSummary', {
+                      target: Number(wo.plannedQty).toLocaleString(),
+                      actual: Number(wo.actualQty ?? 0).toLocaleString(),
+                      shortfall: (Number(wo.plannedQty) - Number(wo.actualQty ?? 0)).toLocaleString(),
+                    })
+                  : t('setoranSummaryExact', {
+                      target: Number(wo.plannedQty).toLocaleString(),
+                      actual: Number(wo.actualQty ?? 0).toLocaleString(),
+                    })
+              )}
+            </p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={handleExportPDF}>
           <FileDown className="mr-2 h-4 w-4" />
-          Export PDF
+          Print / Export PDF
         </Button>
       </div>
 
@@ -163,9 +184,9 @@ export default function WorkOrderReconciliationPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Variance by material</CardTitle>
+          <CardTitle>{t('selisih')} by material</CardTitle>
           <CardDescription>
-            Planned vs issued vs actual used; value impact per line.
+            {t('cuttingPlanned')} vs {t('issuedToCmt')} vs {t('setoran')}; {t('selisihFromEstimate')} per line.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -174,13 +195,13 @@ export default function WorkOrderReconciliationPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Material</TableHead>
-                  <TableHead className="text-right">Planned</TableHead>
-                  <TableHead className="text-right">Issued</TableHead>
+                  <TableHead className="text-right" title={t('cuttingPlanned')}>{t('targetCutting')}</TableHead>
+                  <TableHead className="text-right" title={t('issuedToCmt')}>{t('issuedToCmt')}</TableHead>
                   <TableHead className="text-right">Returned</TableHead>
-                  <TableHead className="text-right">Actual Used</TableHead>
+                  <TableHead className="text-right">{t('setoran')}</TableHead>
                   <TableHead className="text-right">Theoretical</TableHead>
-                  <TableHead className="text-right">Variance</TableHead>
-                  <TableHead className="text-right">Variance %</TableHead>
+                  <TableHead className="text-right" title={t('selisihFromEstimate')}>{t('selisih')}</TableHead>
+                  <TableHead className="text-right">{t('selisih')} %</TableHead>
                   <TableHead className="text-right">Value Impact</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>

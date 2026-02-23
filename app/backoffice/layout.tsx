@@ -6,8 +6,9 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard,
-  Users,
+  Building2,
   ShoppingCart,
+  DollarSign,
   Package,
   ClipboardList,
   RotateCcw,
@@ -39,6 +40,7 @@ import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { QuickActionFAB } from '@/components/QuickActionFAB';
+import { FcmRegistration } from '@/components/notifications/FcmRegistration';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { useTranslations } from 'next-intl';
@@ -71,7 +73,7 @@ const navItems: NavItem[] = [
   {
     labelKey: 'suppliers',
     href: '/backoffice/suppliers',
-    icon: Users,
+    icon: Building2,
     roles: [Role.ADMIN, Role.PURCHASER],
     children: [
       { labelKey: 'masterSuppliers', href: '/backoffice/suppliers' },
@@ -83,11 +85,21 @@ const navItems: NavItem[] = [
     href: '/backoffice/items',
     icon: Package,
     roles: [Role.ADMIN, Role.PURCHASER, Role.WAREHOUSE],
+    children: [
+      { labelKey: 'navItemsRaw', href: '/backoffice/items?type=raw' },
+      { labelKey: 'navItemsFinished', href: '/backoffice/items?type=FINISHED_GOOD' },
+    ],
   },
   {
     labelKey: 'purchaseOrders',
     href: '/backoffice/purchase-orders',
     icon: ShoppingCart,
+    roles: [Role.ADMIN, Role.PURCHASER],
+  },
+  {
+    labelKey: 'supplierPayment',
+    href: '/backoffice/supplier-payments',
+    icon: DollarSign,
     roles: [Role.ADMIN, Role.PURCHASER],
   },
   {
@@ -101,6 +113,10 @@ const navItems: NavItem[] = [
     href: '/backoffice/work-orders',
     icon: ClipboardList,
     roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
+    children: [
+      { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders' },
+      { labelKey: 'registerNotaCmt', href: '/backoffice/work-orders/nota-register' },
+    ],
   },
   {
     labelKey: 'vendorReturns',
@@ -394,6 +410,7 @@ export default function BackofficeLayout({
         {/* Page Content */}
         <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
         <QuickActionFAB />
+        <FcmRegistration />
       </div>
     </div>
   );

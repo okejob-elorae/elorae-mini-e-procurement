@@ -165,16 +165,72 @@ export async function processReturn(id: string, userId: string) {
       throw new Error('Return tidak valid atau sudah diproses');
     }
 
+    await tx.vendorReturn.update({
+      where: { id },
+      data: {
+        status: 'PROCESSED',
+        processedAt: new Date(),
+        processedBy: userId,
+        stockImpacted: false
+      }
+    });
+
+    revalidatePath('/backoffice/vendor-returns');
+    revalidatePath(`/backoffice/vendor-returns/${id}`);
+    return ret;
+  });
+}
+
+const completeReturnSchema = z.object({
+  trackingNumber: z.string().min(1, 'Tracking number is required'),
+  receiptFileUrl: z.string().url('Receipt file URL is required')
+});
+
+export type CompleteReturnInput = z.infer<typeof completeReturnSchema>;
+
+export async function completeReturn(
+  id: string,
+  userId: string,
+  data: CompleteReturnInput
+) {
+  completeReturnSchema.parse(data);
+
+  return await prisma.$transaction(async (tx) => {
+    const ret = await tx.vendorReturn.findUnique({
+      where: { id }
+    });
+
+    if (!ret || ret.status !== 'PROCESSED') {
+      throw new Error('Return must be in PROCESSED status to complete');
+    }
+
     const lines = (ret.lines as any[]) || [];
 
     for (const line of lines) {
       if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
-        await calculateMovingAverage(
+        const unitCost = new Decimal(line.costValue).div(line.qty);
+        const costResult = await calculateMovingAverage(
           line.itemId,
           new Decimal(line.qty),
-          new Decimal(line.costValue).div(line.qty),
+          unitCost,
           tx
         );
+
+        await tx.stockMovement.create({
+          data: {
+            itemId: line.itemId,
+            type: 'IN',
+            refType: 'RETURN',
+            refId: ret.id,
+            refDocNumber: ret.docNumber,
+            qty: line.qty,
+            unitCost: unitCost.toNumber(),
+            totalCost: line.costValue,
+            balanceQty: costResult.newQty.toNumber(),
+            balanceValue: costResult.newTotalValue.toNumber(),
+            notes: ret.woId ? `Retur ${ret.docNumber} (WO)` : `Retur ${ret.docNumber}`,
+          },
+        });
 
         if (ret.woId) {
           const wo = await tx.workOrder.findUnique({
@@ -200,14 +256,17 @@ export async function processReturn(id: string, userId: string) {
     await tx.vendorReturn.update({
       where: { id },
       data: {
-        status: 'PROCESSED',
-        processedAt: new Date(),
-        processedBy: userId,
+        status: 'COMPLETED',
+        completedAt: new Date(),
+        completedById: userId,
+        trackingNumber: data.trackingNumber,
+        receiptFileUrl: data.receiptFileUrl,
         stockImpacted: true
       }
     });
 
     revalidatePath('/backoffice/vendor-returns');
+    revalidatePath(`/backoffice/vendor-returns/${id}`);
     if (ret.woId) {
       revalidatePath(`/backoffice/work-orders/${ret.woId}`);
     }

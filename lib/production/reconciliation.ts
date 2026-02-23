@@ -42,37 +42,50 @@ export async function reconcileWorkOrder(woId: string): Promise<{
 
   if (!wo) throw new Error('Work Order not found');
 
-  const consumptionPlan = (wo.consumptionPlan as any[]) || [];
-  const actualOutput = wo.actualQty
-    ? new Decimal(wo.actualQty.toString())
-    : new Decimal(0);
+  const consumptionPlanRaw = wo.consumptionPlan;
+  const consumptionPlan = Array.isArray(consumptionPlanRaw)
+    ? consumptionPlanRaw.filter((p: any) => p && (p.itemId != null || p.item_id != null))
+    : [];
+  const actualQtyRaw = wo.actualQty;
+  const actualOutput =
+    actualQtyRaw != null && actualQtyRaw !== ''
+      ? new Decimal(String(actualQtyRaw))
+      : new Decimal(0);
 
   const lines: ReconciliationResult[] = [];
 
   for (const plan of consumptionPlan) {
+    const planItemId = plan.itemId ?? plan.item_id;
+    if (!planItemId) continue;
+
     const item = await prisma.item.findUnique({
-      where: { id: plan.itemId },
+      where: { id: planItemId },
       select: { sku: true, nameId: true }
     });
 
     const totalIssued = wo.issues.reduce((sum, issue) => {
-      const items = issue.items as any[];
-      const match = items.find((i: any) => i.itemId === plan.itemId);
-      return sum.plus(match?.qty || 0);
+      const raw = issue.items;
+      const items = Array.isArray(raw) ? raw : [];
+      const match = items.find((i: any) => (i.itemId ?? i.item_id) === planItemId);
+      const qty = match?.qty ?? match?.quantity ?? 0;
+      return sum.plus(new Decimal(Number(qty) || 0));
     }, new Decimal(0));
 
     const totalReturned = wo.returns.reduce((sum, ret) => {
-      const retLines = ret.lines as any[];
+      const raw = ret.lines;
+      const retLines = Array.isArray(raw) ? raw : [];
       const match = retLines.find(
-        (l: any) => l.itemId === plan.itemId && l.type !== 'FG_REJECT'
+        (l: any) =>
+          (l.itemId ?? l.item_id) === planItemId && (l.type ?? l.itemType) !== 'FG_REJECT'
       );
-      return sum.plus(match?.qty || 0);
+      const qty = match?.qty ?? match?.quantity ?? 0;
+      return sum.plus(new Decimal(Number(qty) || 0));
     }, new Decimal(0));
 
     const actualUsed = totalIssued.minus(totalReturned);
 
-    const qtyRequired = new Decimal(plan.qtyRequired || 0);
-    const wastePercent = new Decimal(plan.wastePercent || 0);
+    const qtyRequired = new Decimal(plan.qtyRequired ?? plan.qty_required ?? 0);
+    const wastePercent = new Decimal(plan.wastePercent ?? plan.waste_percent ?? 0);
     const wasteFactor = new Decimal(1).plus(wastePercent.div(100));
     const theoreticalUsage = actualOutput.mul(qtyRequired).mul(wasteFactor);
 
@@ -82,11 +95,12 @@ export async function reconcileWorkOrder(woId: string): Promise<{
       : new Decimal(0);
 
     const inventory = await prisma.inventoryValue.findUnique({
-      where: { itemId: plan.itemId }
+      where: { itemId: planItemId }
     });
-    const avgCost = inventory
-      ? new Decimal(inventory.avgCost.toString())
-      : new Decimal(0);
+    const avgCost =
+      inventory != null && inventory.avgCost != null
+        ? new Decimal(String(inventory.avgCost))
+        : new Decimal(0);
     const varianceValue = variance.mul(avgCost);
 
     const tolerance = new Decimal(0.01);
@@ -103,11 +117,11 @@ export async function reconcileWorkOrder(woId: string): Promise<{
     const usedValue = actualUsed.mul(avgCost);
 
     lines.push({
-      itemId: plan.itemId,
-      itemName: item?.nameId || plan.itemName,
-      itemSku: item?.sku || '',
-      uomCode: plan.uomCode || 'PCS',
-      plannedQty: new Decimal(plan.plannedQty || 0),
+      itemId: planItemId,
+      itemName: item?.nameId ?? plan.itemName ?? plan.item_name ?? '',
+      itemSku: item?.sku ?? '',
+      uomCode: plan.uomCode ?? plan.uom_code ?? 'PCS',
+      plannedQty: new Decimal(plan.plannedQty ?? plan.planned_qty ?? 0),
       issuedQty: totalIssued,
       returnedQty: totalReturned,
       actualUsed,
@@ -167,11 +181,13 @@ export async function getWorkOrderSummary(woId: string) {
     await reconcileWorkOrder(woId);
 
   const totalMaterialCost = wo.issues.reduce((sum, issue) => {
-    return sum.plus(issue.totalCost.toString());
+    const v = issue.totalCost;
+    return sum.plus(v != null ? new Decimal(String(v)) : 0);
   }, new Decimal(0));
-  
+
   const totalFGValue = wo.receipts.reduce((sum, receipt) => {
-    return sum.plus(receipt.totalCostValue?.toString() || 0);
+    const v = receipt.totalCostValue;
+    return sum.plus(v != null ? new Decimal(String(v)) : 0);
   }, new Decimal(0));
   
   return {

@@ -226,6 +226,27 @@ export async function getStockAdjustments(itemId?: string) {
   }));
 }
 
+export async function getStockAdjustmentById(id: string) {
+  const row = await prisma.stockAdjustment.findUnique({
+    where: { id },
+    include: {
+      item: true,
+      approvedBy: { select: { name: true } },
+      createdBy: { select: { name: true, email: true } },
+    },
+  });
+  if (!row) return null;
+  return {
+    ...row,
+    qtyChange: toNum(row.qtyChange),
+    prevQty: toNum(row.prevQty),
+    newQty: toNum(row.newQty),
+    prevAvgCost: toNum(row.prevAvgCost),
+    newAvgCost: toNum(row.newAvgCost),
+    item: serializeItemForClient(row.item as { reorderPoint?: unknown; [k: string]: unknown }),
+  };
+}
+
 // Get inventory statistics
 export async function getInventoryStats() {
   const todayStart = new Date();

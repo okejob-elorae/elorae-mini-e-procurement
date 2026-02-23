@@ -59,6 +59,7 @@ interface POFormProps {
   initialData?: {
     supplierId?: string;
     etaDate?: Date | null;
+    paymentDueDate?: Date | null;
     notes?: string;
     terms?: string;
     items?: Array<{
@@ -121,6 +122,7 @@ export function POForm({
     defaultValues: {
       supplierId: initialData?.supplierId || '',
       etaDate: initialData?.etaDate ?? null,
+      paymentDueDate: initialData?.paymentDueDate ?? null,
       notes: initialData?.notes || '',
       terms: initialData?.terms || '',
       items: initialData?.items?.map(item => ({
@@ -341,7 +343,11 @@ export function POForm({
                     const v = watch('etaDate');
                     if (!v) return '';
                     const d = v instanceof Date ? v : new Date(v);
-                    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+                    if (isNaN(d.getTime())) return '';
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${y}-${m}-${day}`;
                   })()
                 }
                 onChange={(e) => {
@@ -363,6 +369,38 @@ export function POForm({
                     ETA date is in the past. Please verify.
                   </AlertDescription>
                 </Alert>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="paymentDueDate">Payment due date</Label>
+              <Input
+                id="paymentDueDate"
+                type="date"
+                aria-invalid={!!errors.paymentDueDate}
+                className={errors.paymentDueDate ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                value={
+                  (() => {
+                    const v = watch('paymentDueDate');
+                    if (!v) return '';
+                    const d = v instanceof Date ? v : new Date(v);
+                    if (isNaN(d.getTime())) return '';
+                    const y = d.getFullYear();
+                    const m = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${y}-${m}-${day}`;
+                  })()
+                }
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setValue('paymentDueDate', raw ? new Date(raw + 'T00:00:00') : null, {
+                    shouldValidate: true,
+                  });
+                }}
+              />
+              {errors.paymentDueDate && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.paymentDueDate.message}
+                </p>
               )}
             </div>
           </div>

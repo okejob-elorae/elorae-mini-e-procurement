@@ -13,6 +13,7 @@ import {
   TrendingUp,
   ChevronDown,
   ChevronRight,
+  Printer,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -370,6 +371,7 @@ export default function InventoryPage() {
                       <TableHead className="text-right">Qty</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead>Created by</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -414,10 +416,18 @@ export default function InventoryPage() {
                           <TableCell className="text-sm text-muted-foreground">
                             {adj.createdBy?.name || adj.createdBy?.email || '—'}
                           </TableCell>
+                          <TableCell>
+                            <Link href={`/backoffice/inventory/adjustment/${adj.id}`}>
+                              <Button variant="ghost" size="sm">
+                                <Printer className="mr-1 h-3 w-3" />
+                                Nota
+                              </Button>
+                            </Link>
+                          </TableCell>
                         </TableRow>
                         {expandedAdjustmentId === adj.id && (
                           <TableRow>
-                            <TableCell colSpan={8}>
+                            <TableCell colSpan={9}>
                               <div className="grid gap-4 py-2 sm:grid-cols-2">
                                 <div className="space-y-1">
                                   <p className="text-sm font-semibold">Reason</p>

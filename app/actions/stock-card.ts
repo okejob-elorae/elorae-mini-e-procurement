@@ -32,6 +32,7 @@ function formatMovementDescription(refType: string): string {
     case 'WO_ISSUE':
       return 'Pengeluaran untuk Produksi';
     case 'WO_RECEIPT':
+    case 'FG_RECEIPT':
       return 'Penerimaan Hasil Produksi';
     case 'ADJUSTMENT':
       return 'Penyesuaian Stok';

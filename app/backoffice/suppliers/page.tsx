@@ -84,6 +84,7 @@ interface Supplier {
 }
 
 const supplierSchema = z.object({
+  code: z.string().optional(),
   name: z.string().min(1, 'Name is required'),
   typeId: z.string().min(1, 'Supplier type is required'),
   categoryId: z.string().optional(),
@@ -165,6 +166,7 @@ export default function SuppliersPage() {
   useEffect(() => {
     if (supplierDialogMode === 'create') {
       reset({
+        code: '',
         name: '',
         typeId: supplierTypes[0]?.id ?? '',
         categoryId: undefined,
@@ -178,6 +180,7 @@ export default function SuppliersPage() {
       clearErrors();
     } else if (supplierDialogMode === 'edit' && editSupplier) {
       reset({
+        code: editSupplier.code,
         name: editSupplier.name,
         typeId: editSupplier.typeId,
         categoryId: editSupplier.category?.id ?? undefined,
@@ -226,7 +229,7 @@ export default function SuppliersPage() {
         const error = await response.json();
         const details = error?.details as Array<{ path: (string | number)[]; message: string }> | undefined;
         const formKeys: (keyof SupplierForm)[] = [
-          'name', 'typeId', 'categoryId', 'address', 'phone', 'email',
+          'code', 'name', 'typeId', 'categoryId', 'address', 'phone', 'email',
           'bankName', 'bankAccount', 'bankAccountName',
         ];
         if (Array.isArray(details) && details.length > 0) {
@@ -360,6 +363,22 @@ export default function SuppliersPage() {
               }}
               className="space-y-4"
             >
+              <div className="space-y-2">
+                <Label htmlFor="code">Supplier Code (optional)</Label>
+                <Input
+                  id="code"
+                  {...register('code')}
+                  placeholder="Leave blank to auto-generate"
+                  aria-invalid={!!errors.code}
+                  className={errors.code ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                />
+                {errors.code && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {errors.code.message}
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="name">Supplier Name *</Label>
                 <Input

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import { useLocale } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { 
   Plus, 
@@ -37,15 +38,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { toast } from 'sonner';
-import { getItems, deleteItem } from '@/app/actions/items';
+import { getItems, deleteItem, getItemCounts } from '@/app/actions/items';
 import { ItemType } from '@/lib/constants/enums';
 
 interface Item {
@@ -91,14 +85,28 @@ const itemTypeColors: Record<ItemType, string> = {
 
 export default function ItemsPage() {
   const locale = useLocale();
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<ItemType | ''>('');
+  const [typeFilter, setTypeFilter] = useState<ItemType | 'raw' | ''>('');
   const [page, setPage] = useState(1);
+
+  // Sync type filter from URL (e.g. /items?type=raw or ?type=FINISHED_GOOD)
+  useEffect(() => {
+    const t = searchParams.get('type');
+    if (t === 'raw' || t === 'FABRIC' || t === 'ACCESSORIES' || t === 'FINISHED_GOOD') {
+      setTypeFilter(t as ItemType | 'raw');
+    }
+  }, [searchParams]);
   const [pageSize, _setPageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [counts, setCounts] = useState<{ total: number; byType: Record<ItemType, number>; active: number } | null>(null);
+
+  useEffect(() => {
+    getItemCounts().then(setCounts).catch(() => setCounts(null));
+  }, []);
 
   const fetchItems = async () => {
     setIsLoading(true);
@@ -169,6 +177,52 @@ export default function ItemsPage() {
         </Link>
       </div>
 
+      {/* Mini dashboard counts */}
+      {counts && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Items</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{counts.total}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Fabric</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{counts.byType.FABRIC}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Accessories</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{counts.byType.ACCESSORIES}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Finished Good</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{counts.byType.FINISHED_GOOD}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Active</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{counts.active}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1 max-w-sm">
@@ -180,20 +234,6 @@ export default function ItemsPage() {
             className="pl-9"
           />
         </div>
-        <Select
-          value={typeFilter || 'all'}
-          onValueChange={(value) => setTypeFilter(value === 'all' ? '' : (value as ItemType))}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All Types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value={ItemType.FABRIC}>Fabric</SelectItem>
-            <SelectItem value={ItemType.ACCESSORIES}>Accessories</SelectItem>
-            <SelectItem value={ItemType.FINISHED_GOOD}>Finished Good</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
       {/* Items Table */}

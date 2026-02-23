@@ -196,7 +196,7 @@ export async function deleteItem(id: string) {
 
 export async function getItems(
   filters?: {
-    type?: ItemType;
+    type?: ItemType | 'raw';
     search?: string;
     isActive?: boolean;
   },
@@ -205,7 +205,11 @@ export async function getItems(
   const where: any = {};
   
   if (filters?.type) {
-    where.type = filters.type;
+    if (filters.type === 'raw') {
+      where.type = { in: ['FABRIC', 'ACCESSORIES'] };
+    } else {
+      where.type = filters.type;
+    }
   }
   
   if (filters?.isActive !== undefined) {
@@ -287,6 +291,29 @@ export async function getItems(
     orderBy: { createdAt: 'desc' }
   });
   return items.map(serializeListItemForClient);
+}
+
+/** Counts for items mini dashboard: total, by type, active. */
+export async function getItemCounts() {
+  const [total, byTypeRows, activeCount] = await Promise.all([
+    prisma.item.count(),
+    prisma.item.groupBy({
+      by: ['type'],
+      _count: { id: true },
+    }),
+    prisma.item.count({ where: { isActive: true } }),
+  ]);
+  const byType: Record<ItemType, number> = {
+    FABRIC: 0,
+    ACCESSORIES: 0,
+    FINISHED_GOOD: 0,
+  };
+  byTypeRows.forEach((row) => {
+    if (row.type in byType) {
+      byType[row.type as ItemType] = row._count.id;
+    }
+  });
+  return { total, byType, active: activeCount };
 }
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));

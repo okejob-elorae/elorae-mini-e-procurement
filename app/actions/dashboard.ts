@@ -104,7 +104,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.purchaseOrder.count({
       where: {
         etaDate: { lt: now },
-        status: { notIn: ['CLOSED', 'CANCELLED'] },
+        status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] },
       },
     }),
     prisma.purchaseOrder.aggregate({ _sum: { grandTotal: true } }),

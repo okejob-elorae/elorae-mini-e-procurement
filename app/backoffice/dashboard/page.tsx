@@ -52,9 +52,21 @@ import {
 import {
   getInventoryValueSnapshot,
   exportInventorySnapshotReport,
+  getCOGSRawVsFinished,
 } from '@/app/actions/reports/inventory';
 import { getSuppliersForReportFilter } from '@/app/actions/reports/index';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
+
+function getCurrentMonthDateRange(): { from: string; to: string } {
+  const d = new Date();
+  const first = new Date(d.getFullYear(), d.getMonth(), 1);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return {
+    from: first.toISOString().slice(0, 10),
+    to: last.toISOString().slice(0, 10),
+  };
+}
 
 function getRoleLabel(role: Role): string {
   const labels: Record<Role, string> = {
@@ -99,11 +111,13 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export default function DashboardPage() {
   const { data: session } = useSession();
+  const tDashboard = useTranslations('dashboard');
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overduePOs, setOverduePOs] = useState<Awaited<ReturnType<typeof getOverduePOs>>>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [cogsRawVsFinished, setCogsRawVsFinished] = useState<Awaited<ReturnType<typeof getCOGSRawVsFinished>> | null>(null);
 
   const [rp1Filters, setRp1Filters] = useState<{
     fromDate: string;
@@ -116,8 +130,9 @@ export default function DashboardPage() {
   const [rp1Exporting, setRp1Exporting] = useState<'csv' | 'excel' | null>(null);
 
   const [rp2VendorId, setRp2VendorId] = useState('');
-  const [rp2From, setRp2From] = useState('');
-  const [rp2To, setRp2To] = useState('');
+  const currentMonth = getCurrentMonthDateRange();
+  const [rp2From, setRp2From] = useState(currentMonth.from);
+  const [rp2To, setRp2To] = useState(currentMonth.to);
   const [rp2Data, setRp2Data] = useState<Awaited<ReturnType<typeof getVendorPerformanceReport>> | null>(null);
   const [rp2Loading, setRp2Loading] = useState(false);
   const [rp2Exporting, setRp2Exporting] = useState<'csv' | 'excel' | null>(null);
@@ -132,15 +147,17 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const [dashboardData, overdueData, suppliersList] = await Promise.all([
+        const [dashboardData, overdueData, suppliersList, cogsData] = await Promise.all([
           getDashboardStats(),
           getOverduePOs(),
           getSuppliersForReportFilter(),
+          getCOGSRawVsFinished(),
         ]);
         if (!cancelled) {
           setStats(dashboardData);
           setOverduePOs(overdueData);
           setSuppliers(suppliersList);
+          setCogsRawVsFinished(cogsData);
         }
       } catch (e) {
         if (!cancelled) {
@@ -470,13 +487,37 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {/* COGS: Raw vs Finished */}
+      {cogsRawVsFinished && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">COGS – Raw materials</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">{formatIdr(cogsRawVsFinished.rawValue)}</div>
+              <p className="text-xs text-muted-foreground">{cogsRawVsFinished.rawCount} SKU(s) – Fabric & accessories</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">COGS – Finished goods</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold">{formatIdr(cogsRawVsFinished.finishedValue)}</div>
+              <p className="text-xs text-muted-foreground">{cogsRawVsFinished.finishedCount} SKU(s)</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Tabs: Overview + Reports */}
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="flex flex-wrap gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="overdue">Overdue POs</TabsTrigger>
           <TabsTrigger value="rp1">Procurement (RP1)</TabsTrigger>
-          <TabsTrigger value="rp2">Production (RP2)</TabsTrigger>
+          <TabsTrigger value="rp2">{tDashboard('reportsSetoranCmt')}</TabsTrigger>
           <TabsTrigger value="rp3">Inventory (RP3)</TabsTrigger>
         </TabsList>
 
@@ -624,6 +665,7 @@ export default function DashboardPage() {
                       <SelectItem value="PARTIAL">PARTIAL</SelectItem>
                       <SelectItem value="DRAFT">DRAFT</SelectItem>
                       <SelectItem value="CLOSED">CLOSED</SelectItem>
+                      <SelectItem value="OVER">OVER</SelectItem>
                       <SelectItem value="CANCELLED">CANCELLED</SelectItem>
                     </SelectContent>
                   </Select>
@@ -710,9 +752,9 @@ export default function DashboardPage() {
         <TabsContent value="rp2" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Vendor Performance (RP2)</CardTitle>
+              <CardTitle>{tDashboard('setoranCmtTitle')}</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Work orders by vendor: efficiency, material cost, completion time.
+                {tDashboard('setoranCmtDescription')}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">

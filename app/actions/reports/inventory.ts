@@ -105,6 +105,36 @@ export async function getInventoryValueSnapshot(
   };
 }
 
+/** COGS / inventory value split: raw materials (FABRIC + ACCESSORIES) vs finished goods. */
+export async function getCOGSRawVsFinished(): Promise<{
+  rawValue: number;
+  finishedValue: number;
+  rawCount: number;
+  finishedCount: number;
+}> {
+  const rows = await prisma.inventoryValue.findMany({
+    where: { qtyOnHand: { gt: 0 } },
+    include: {
+      item: { select: { type: true } },
+    },
+  });
+  let rawValue = 0;
+  let finishedValue = 0;
+  let rawCount = 0;
+  let finishedCount = 0;
+  for (const r of rows) {
+    const val = Number(r.totalValue);
+    if (r.item.type === 'FINISHED_GOOD') {
+      finishedValue += val;
+      finishedCount += 1;
+    } else {
+      rawValue += val;
+      rawCount += 1;
+    }
+  }
+  return { rawValue, finishedValue, rawCount, finishedCount };
+}
+
 export async function exportInventorySnapshotReport(
   format: 'csv' | 'excel'
 ): Promise<{ data: string; filename: string } | { base64: string; filename: string }> {

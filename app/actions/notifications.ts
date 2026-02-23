@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { messaging } from '@/lib/firebase/admin';
 
 const PO_OVERDUE_TYPE = 'PO_OVERDUE';
+const ACCESSORIES_PENDING_CMT_TYPE = 'ACCESSORIES_PENDING_CMT';
 
 /** Start of today in local TZ (for dedup). */
 function startOfToday(): Date {
@@ -22,7 +23,7 @@ export async function checkAndSendOverdueNotifications(): Promise<{ sent: number
   const overduePOs = await prisma.purchaseOrder.findMany({
     where: {
       etaDate: { lt: today },
-      status: { notIn: ['CLOSED', 'CANCELLED'] },
+      status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] },
     },
     include: {
       createdBy: { select: { id: true, fcmToken: true } },
@@ -83,6 +84,107 @@ export async function checkAndSendOverdueNotifications(): Promise<{ sent: number
   }
 
   return { sent };
+}
+
+/**
+ * Find WOs in ISSUED/IN_PRODUCTION that have ACCESSORIES in consumption plan with issued < planned.
+ * Notify PRODUCTION and WAREHOUSE users (with fcmToken) via FCM and NotificationQueue.
+ * Dedup: at most one notification per user per day for this type.
+ */
+export async function checkAndSendAccessoriesPendingCMTNotifications(): Promise<{ sent: number; woCount: number }> {
+  const today = startOfToday();
+
+  const wos = await prisma.workOrder.findMany({
+    where: { status: { in: ['ISSUED', 'IN_PRODUCTION'] } },
+    include: { issues: true },
+  });
+
+  const accessoriesItemIds = new Set(
+    (await prisma.item.findMany({
+      where: { type: 'ACCESSORIES' },
+      select: { id: true },
+    })).map((i) => i.id)
+  );
+
+  const woIdsNeedingAccessories: string[] = [];
+  for (const wo of wos) {
+    const plan = (Array.isArray(wo.consumptionPlan) ? wo.consumptionPlan : []) as Array<{ itemId: string; plannedQty?: number; issuedQty?: number }>;
+    const issuedByItem = new Map<string, number>();
+    for (const issue of wo.issues) {
+      const items = (issue.items as Array<{ itemId: string; qty: number }>) ?? [];
+      for (const line of items) {
+        issuedByItem.set(line.itemId, (issuedByItem.get(line.itemId) ?? 0) + line.qty);
+      }
+    }
+    const hasPending = plan.some(
+      (p) =>
+        accessoriesItemIds.has(p.itemId) &&
+        (issuedByItem.get(p.itemId) ?? 0) < (p.plannedQty ?? 0)
+    );
+    if (hasPending) woIdsNeedingAccessories.push(wo.id);
+  }
+
+  if (woIdsNeedingAccessories.length === 0) {
+    return { sent: 0, woCount: 0 };
+  }
+
+  const targetUsers = await prisma.user.findMany({
+    where: {
+      role: { in: ['PRODUCTION', 'WAREHOUSE'] },
+      fcmToken: { not: null },
+    },
+    select: { id: true, fcmToken: true },
+  });
+
+  const sentToday = await prisma.notificationQueue.findMany({
+    where: { type: ACCESSORIES_PENDING_CMT_TYPE, createdAt: { gte: today } },
+    select: { userId: true },
+  });
+  const sentUserIds = new Set(sentToday.map((r) => r.userId));
+
+  const title = 'Aksesoris belum dikirim ke CMT';
+  const body =
+    woIdsNeedingAccessories.length === 1
+      ? '1 Work Order membutuhkan pengiriman aksesoris ke CMT.'
+      : `${woIdsNeedingAccessories.length} Work Order membutuhkan pengiriman aksesoris ke CMT.`;
+  const dataPayload: Record<string, string> = {
+    type: ACCESSORIES_PENDING_CMT_TYPE,
+    woCount: String(woIdsNeedingAccessories.length),
+    woIds: JSON.stringify(woIdsNeedingAccessories),
+  };
+
+  let sent = 0;
+  for (const user of targetUsers) {
+    if (sentUserIds.has(user.id)) continue;
+    let sentThis = false;
+    if (user.fcmToken && messaging) {
+      try {
+        await messaging.send({
+          token: user.fcmToken,
+          notification: { title, body },
+          data: dataPayload,
+        });
+        sentThis = true;
+        sent += 1;
+      } catch (err) {
+        console.error('FCM send failed for ACCESSORIES_PENDING_CMT', user.id, err);
+      }
+    }
+    await prisma.notificationQueue.create({
+      data: {
+        userId: user.id,
+        type: ACCESSORIES_PENDING_CMT_TYPE,
+        title,
+        body,
+        data: { type: ACCESSORIES_PENDING_CMT_TYPE, woCount: woIdsNeedingAccessories.length, woIds: woIdsNeedingAccessories },
+        sent: sentThis,
+        sentAt: sentThis ? new Date() : null,
+      },
+    });
+    sentUserIds.add(user.id);
+  }
+
+  return { sent, woCount: woIdsNeedingAccessories.length };
 }
 
 /**

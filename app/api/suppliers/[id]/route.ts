@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
 import { logBankAccountView } from '@/lib/audit';
 const supplierSchema = z.object({
+  code: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
   typeId: z.string().min(1).optional(),
   categoryId: z.string().optional().nullable(),
@@ -85,12 +86,24 @@ export async function PUT(
     const body = await req.json();
     const validated = supplierSchema.parse(body);
 
-    const { bankAccount, ...rest } = validated;
+    const { bankAccount, code: codeInput, ...rest } = validated;
 
-    // Encrypt bank account if provided (DB column is bankAccountEnc, not bankAccount)
     const data: Parameters<typeof prisma.supplier.update>[0]['data'] = {
       ...rest,
     };
+    if (codeInput?.trim()) {
+      const code = codeInput.trim();
+      const existing = await prisma.supplier.findFirst({
+        where: { code, id: { not: id } },
+      });
+      if (existing) {
+        return NextResponse.json(
+          { error: 'Supplier code already exists' },
+          { status: 400 }
+        );
+      }
+      data.code = code;
+    }
     if (bankAccount) {
       data.bankAccountEnc = encryptBankAccount(bankAccount, 'DEFAULT_PIN');
     }

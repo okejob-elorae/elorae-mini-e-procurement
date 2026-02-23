@@ -59,6 +59,7 @@ model User {
   stockAdjustmentsApproved StockAdjustment[] @relation("ApprovedAdjustments")
   stockAdjustmentsCreated  StockAdjustment[] @relation("CreatedAdjustments")
   vendorReturnsCreated    VendorReturn[]
+  vendorReturnsCompleted  VendorReturn[] @relation("VendorReturnCompleted")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -200,15 +201,17 @@ model PurchaseOrder {
   docNumber   String          @unique
   supplierId  String
   supplier    Supplier        @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  status      POStatus        @default(DRAFT)
-  etaDate     DateTime?
-  currency    String          @default("IDR")
-  totalAmount Decimal         @default(0) @db.Decimal(15,2)
-  taxAmount   Decimal         @default(0) @db.Decimal(15,2)
-  grandTotal  Decimal         @default(0) @db.Decimal(15,2)
-  notes       String?         @db.Text
-  terms       String?         @db.Text
-  createdById String
+  status           POStatus        @default(DRAFT)
+  etaDate          DateTime?
+  paymentDueDate   DateTime?
+  paidAt           DateTime?
+  currency         String          @default("IDR")
+  totalAmount      Decimal         @default(0) @db.Decimal(15,2)
+  taxAmount        Decimal         @default(0) @db.Decimal(15,2)
+  grandTotal       Decimal         @default(0) @db.Decimal(15,2)
+  notes            String?        @db.Text
+  terms            String?        @db.Text
+  createdById      String
   createdBy   User            @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   items       POItem[]
   grns        GRN[]
@@ -352,6 +355,7 @@ model WorkOrder {
   canceledReason  String?
   consumptionPlan Json
   skuBreakdown    Json?
+  rollBreakdown   Json?     // Optional: [{ rollRef: string, qty: number, notes?: string }], sum qty = plannedQty
   notes           String?
   syncStatus      SyncStatus @default(SYNCED)
   createdById     String
@@ -418,28 +422,34 @@ model FGReceipt {
 }
 
 model VendorReturn {
-  id             String       @id @default(cuid())
-  docNumber      String       @unique
-  woId           String?
-  wo             WorkOrder?   @relation(fields: [woId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  vendorId       String
-  vendor         Supplier     @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  lines          Json
-  totalItems     Int
-  totalValue     Decimal      @db.Decimal(15,2)
-  evidenceUrls   String?
-  status         ReturnStatus @default(DRAFT)
-  processedAt    DateTime?
-  processedBy    String?
-  stockImpacted  Boolean      @default(false)
-  syncStatus     SyncStatus   @default(SYNCED)
-  createdById    String
-  createdBy      User         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  createdAt      DateTime     @default(now())
+  id               String       @id @default(cuid())
+  docNumber        String       @unique
+  woId             String?
+  wo               WorkOrder?   @relation(fields: [woId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendorId         String
+  vendor           Supplier     @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lines            Json
+  totalItems       Int
+  totalValue       Decimal      @db.Decimal(15,2)
+  evidenceUrls     String?
+  status           ReturnStatus @default(DRAFT)
+  processedAt      DateTime?
+  processedBy      String?
+  stockImpacted    Boolean      @default(false)
+  trackingNumber   String?
+  receiptFileUrl   String?
+  completedAt      DateTime?
+  completedById    String?
+  completedBy      User?        @relation("VendorReturnCompleted", fields: [completedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  syncStatus       SyncStatus   @default(SYNCED)
+  createdById      String
+  createdBy        User         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt        DateTime     @default(now())
   @@index([woId])
   @@index([vendorId])
   @@index([status])
   @@index([createdById])
+  @@index([completedById])
 }
 
 // ==========================================
@@ -535,6 +545,7 @@ enum POStatus {
   SUBMITTED
   PARTIAL
   CLOSED
+  OVER
   CANCELLED
 }
 
@@ -583,6 +594,7 @@ enum ReturnStatus {
   DRAFT
   SUBMITTED
   PROCESSED
+  COMPLETED
   CANCELLED
 }
 

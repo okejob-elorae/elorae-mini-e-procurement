@@ -6,6 +6,7 @@ import { encryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
 
 const supplierSchema = z.object({
+  code: z.string().min(1).optional(),
   name: z.string().min(1),
   typeId: z.string().min(1),
   categoryId: z.string().optional(),
@@ -104,8 +105,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const validated = supplierSchema.parse(body);
 
-    // Generate supplier code
-    const code = await generateSupplierCode();
+    let code: string;
+    if (validated.code?.trim()) {
+      code = validated.code.trim();
+      const existing = await prisma.supplier.findUnique({ where: { code } });
+      if (existing) {
+        return NextResponse.json(
+          { error: 'Supplier code already exists' },
+          { status: 400 }
+        );
+      }
+    } else {
+      code = await generateSupplierCode();
+    }
 
     // Encrypt bank account if provided
     let bankAccountEnc = null;

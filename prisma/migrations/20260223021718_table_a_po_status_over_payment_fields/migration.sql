@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE `postatushistory` MODIFY `status` ENUM('DRAFT', 'SUBMITTED', 'PARTIAL', 'CLOSED', 'OVER', 'CANCELLED') NOT NULL;
+
+-- AlterTable
+ALTER TABLE `purchaseorder` ADD COLUMN `paidAt` DATETIME(3) NULL,
+    ADD COLUMN `paymentDueDate` DATETIME(3) NULL,
+    MODIFY `status` ENUM('DRAFT', 'SUBMITTED', 'PARTIAL', 'CLOSED', 'OVER', 'CANCELLED') NOT NULL DEFAULT 'DRAFT';

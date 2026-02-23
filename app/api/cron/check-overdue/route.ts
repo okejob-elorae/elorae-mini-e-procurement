@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkAndSendOverdueNotifications } from '@/app/actions/notifications';
+import {
+  checkAndSendOverdueNotifications,
+  checkAndSendAccessoriesPendingCMTNotifications,
+} from '@/app/actions/notifications';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -13,8 +16,15 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { sent } = await checkAndSendOverdueNotifications();
-    return NextResponse.json({ ok: true, sent });
+    const [overdue, accessories] = await Promise.all([
+      checkAndSendOverdueNotifications(),
+      checkAndSendAccessoriesPendingCMTNotifications(),
+    ]);
+    return NextResponse.json({
+      ok: true,
+      overdue: { sent: overdue.sent },
+      accessoriesCmt: { sent: accessories.sent, woCount: accessories.woCount },
+    });
   } catch (err) {
     console.error('Cron check-overdue failed:', err);
     return NextResponse.json(

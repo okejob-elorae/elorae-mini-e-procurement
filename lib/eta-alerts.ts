@@ -7,7 +7,7 @@ export function getETAStatus(
   status: POStatus
 ): { status: ETAStatus; message: string; daysUntil: number } {
   // If closed or cancelled, no alert
-  if (status === 'CLOSED' || status === 'CANCELLED') {
+  if (status === 'CLOSED' || status === 'OVER' || status === 'CANCELLED') {
     return { status: 'completed', message: 'Selesai', daysUntil: 0 };
   }
   

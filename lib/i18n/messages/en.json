@@ -30,9 +30,15 @@
     "masterSuppliers": "Master Suppliers",
     "supplierType": "Supplier Type",
     "items": "Items",
+    "navItemsAll": "All Items",
+    "navItemsRaw": "Raw Materials",
+    "navItemsFinished": "Finished Goods",
     "purchaseOrders": "Purchase Orders",
+    "supplierPayment": "Supplier Payment",
     "inventory": "Inventory",
     "workOrders": "Work Orders",
+    "navWorkOrdersList": "Work Orders List",
+    "registerNotaCmt": "Register Nota CMT",
     "vendorReturns": "Vendor Returns",
     "reports": "Reports",
     "auditTrail": "Audit Trail",
@@ -196,5 +202,39 @@
     "conversionsTitle": "UOM Conversions",
     "conversionsDescription": "Conversion factors between UOMs",
     "noConversions": "No conversions defined"
+  },
+  "vendorReturn": {
+    "printNotaRetur": "Print Nota Retur",
+    "completeReturn": "Complete return",
+    "trackingNumber": "Tracking number",
+    "receiptUpload": "Receipt (upload)",
+    "completed": "Completed",
+    "viewReceipt": "View receipt",
+    "notaReturTitle": "Nota Retur",
+    "nilaiReturCmtNote": "Return value can be used for CMT payment offset / refund.",
+    "nilaiRetur": "Return value"
+  },
+  "adjustment": {
+    "notaBarangKeluar": "Nota Barang Keluar",
+    "printNotaBarangKeluar": "Print Nota Barang Keluar",
+    "adjustmentDetails": "Adjustment details",
+    "nota": "Nota"
+  },
+  "dashboard": {
+    "setoranCmtTitle": "Setoran per CMT (monthly)",
+    "setoranCmtDescription": "Work orders by vendor (CMT): efficiency, material cost, completion time.",
+    "reportsSetoranCmt": "Setoran per CMT"
+  },
+  "production": {
+    "targetCutting": "Target cutting",
+    "setoran": "Setoran",
+    "selisih": "Variance",
+    "issuedToCmt": "Issued to CMT",
+    "cuttingPlanned": "Cutting (planned)",
+    "selisihFromEstimate": "Variance from estimate",
+    "setoranSummary": "Target {target}, Setoran {actual}, Shortfall {shortfall}",
+    "setoranSummaryExact": "Target {target}, Setoran {actual}",
+    "progressTarget": "Target",
+    "progressActual": "Setoran"
   }
 }

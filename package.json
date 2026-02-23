@@ -15,7 +15,8 @@
     "db:test": "tsx prisma/test-connection.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test:e2e-reconciliation": "tsx scripts/e2e-reconciliation.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

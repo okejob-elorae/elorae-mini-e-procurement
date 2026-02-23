@@ -47,6 +47,7 @@ export async function getProcurementReport(filters?: {
       submitted: pos.filter(p => p.status === 'SUBMITTED').length,
       partial: pos.filter(p => p.status === 'PARTIAL').length,
       closed: pos.filter(p => p.status === 'CLOSED').length,
+      over: pos.filter(p => p.status === 'OVER').length,
       cancelled: pos.filter(p => p.status === 'CANCELLED').length
     }
   };
@@ -153,7 +154,7 @@ export async function getETAReport() {
   const overduePOs = await prisma.purchaseOrder.findMany({
     where: {
       etaDate: { lt: today },
-      status: { notIn: ['CLOSED', 'CANCELLED'] }
+      status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] }
     },
     include: {
       supplier: {
@@ -173,7 +174,7 @@ export async function getETAReport() {
   const upcomingPOs = await prisma.purchaseOrder.findMany({
     where: {
       etaDate: { gte: today, lte: new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000) },
-      status: { notIn: ['CLOSED', 'CANCELLED'] }
+      status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] }
     },
     include: {
       supplier: {
@@ -276,7 +277,7 @@ export async function getDashboardSummary() {
     prisma.purchaseOrder.count({
       where: {
         etaDate: { lt: today },
-        status: { notIn: ['CLOSED', 'CANCELLED'] }
+        status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] }
       }
     }),
     

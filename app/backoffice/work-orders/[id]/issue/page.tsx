@@ -155,7 +155,7 @@ export default function WorkOrderIssuePage() {
     try {
       await issueMaterials(
         {
-          woId: wo.id,
+          woId: String(wo.id),
           issueType,
           isPartial,
           items: valid.map((l) => ({ itemId: l.itemId, qty: l.qty, uomId: l.uomId }))
@@ -190,7 +190,7 @@ export default function WorkOrderIssuePage() {
         </Link>
         <div>
           <h1 className="text-2xl font-bold">Issue Materials</h1>
-          <p className="text-muted-foreground">{wo.docNumber}</p>
+          <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
         </div>
       </div>
 
