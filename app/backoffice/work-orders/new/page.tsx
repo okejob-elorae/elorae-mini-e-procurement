@@ -40,7 +40,7 @@ interface TailorSupplier {
   id: string;
   code: string;
   name: string;
-  type: string;
+  type?: { id: string; code: string; name: string } | null;
 }
 
 interface FinishedGood {
@@ -90,7 +90,7 @@ export default function NewWorkOrderPage() {
         if (suppliersRes.ok) {
           const data = await suppliersRes.json();
           setTailors(
-            (data as TailorSupplier[]).filter((s: TailorSupplier) => s.type === 'TAILOR')
+            (data as TailorSupplier[]).filter((s: TailorSupplier) => s.type?.code === 'TAILOR')
           );
         }
         setFinishedGoods((fgList as FinishedGood[]) || []);

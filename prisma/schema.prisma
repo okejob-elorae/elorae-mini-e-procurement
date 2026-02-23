@@ -87,11 +87,23 @@ model SupplierCategory {
   @@index([parentId])
 }
 
+model SupplierType {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String
+  isActive  Boolean    @default(true)
+  sortOrder Int?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  suppliers Supplier[]
+}
+
 model Supplier {
   id              String           @id @default(cuid())
   code            String           @unique
   name            String
-  type            SupplierType
+  typeId          String
+  type            SupplierType    @relation(fields: [typeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   categoryId      String?
   category        SupplierCategory? @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   address         String?
@@ -107,7 +119,7 @@ model Supplier {
   workOrders      WorkOrder[]
   grns            GRN[]
   vendorReturns   VendorReturn[]
-  @@index([type])
+  @@index([typeId])
   @@index([categoryId])
   @@index([code])
 }
@@ -510,13 +522,6 @@ enum Role {
   WAREHOUSE
   PRODUCTION
   USER
-}
-
-enum SupplierType {
-  FABRIC
-  ACCESSORIES
-  TAILOR
-  OTHER
 }
 
 enum ItemType {

@@ -13,14 +13,6 @@ export const Role = {
 } as const;
 export type Role = (typeof Role)[keyof typeof Role];
 
-export const SupplierType = {
-  FABRIC: 'FABRIC',
-  ACCESSORIES: 'ACCESSORIES',
-  TAILOR: 'TAILOR',
-  OTHER: 'OTHER',
-} as const;
-export type SupplierType = (typeof SupplierType)[keyof typeof SupplierType];
-
 export const ItemType = {
   FABRIC: 'FABRIC',
   ACCESSORIES: 'ACCESSORIES',

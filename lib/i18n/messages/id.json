@@ -27,6 +27,8 @@
   "navigation": {
     "dashboard": "Beranda",
     "suppliers": "Pemasok",
+    "masterSuppliers": "Master Pemasok",
+    "supplierType": "Jenis Pemasok",
     "items": "Item",
     "purchaseOrders": "Pesanan Pembelian",
     "inventory": "Inventori",

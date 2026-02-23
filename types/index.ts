@@ -1,8 +1,8 @@
-import { Role, SupplierType, ItemType, POStatus, WOStatus } from '@prisma/client';
+import { Role, ItemType, POStatus, WOStatus } from '@prisma/client';
 
 export interface SupplierFormData {
   name: string;
-  type: SupplierType;
+  typeId: string;
   categoryId?: string;
   address?: string;
   phone?: string;
@@ -16,7 +16,8 @@ export interface SupplierWithCategory {
   id: string;
   code: string;
   name: string;
-  type: SupplierType;
+  typeId: string;
+  type?: { id: string; code: string; name: string } | null;
   category?: {
     id: string;
     nameId: string;
@@ -78,4 +79,4 @@ export interface SyncStatus {
   lastSync?: Date;
 }
 
-export { Role, SupplierType, ItemType, POStatus, WOStatus };
+export { Role, ItemType, POStatus, WOStatus };

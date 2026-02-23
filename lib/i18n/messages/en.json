@@ -27,6 +27,8 @@
   "navigation": {
     "dashboard": "Dashboard",
     "suppliers": "Suppliers",
+    "masterSuppliers": "Master Suppliers",
+    "supplierType": "Supplier Type",
     "items": "Items",
     "purchaseOrders": "Purchase Orders",
     "inventory": "Inventory",

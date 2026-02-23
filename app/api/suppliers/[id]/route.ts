@@ -4,11 +4,9 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
 import { logBankAccountView } from '@/lib/audit';
-import { SupplierType } from '@prisma/client';
-
 const supplierSchema = z.object({
   name: z.string().min(1).optional(),
-  type: z.nativeEnum(SupplierType).optional(),
+  typeId: z.string().min(1).optional(),
   categoryId: z.string().optional().nullable(),
   address: z.string().optional(),
   phone: z.string().optional(),
@@ -38,6 +36,7 @@ export async function GET(
     const supplier = await prisma.supplier.findUnique({
       where: { id },
       include: {
+        type: { select: { id: true, code: true, name: true } },
         category: {
           select: {
             id: true,

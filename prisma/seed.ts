@@ -8,7 +8,6 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import {
   PrismaClient,
   Role,
-  SupplierType,
   ItemType,
   DocType,
   POStatus,
@@ -118,6 +117,29 @@ async function main() {
   });
   console.log("Supplier categories OK");
 
+  // ---------- 2b. Supplier types ----------
+  const typeFabric = await prisma.supplierType.upsert({
+    where: { id: "st-fabric" },
+    update: {},
+    create: { id: "st-fabric", code: "FABRIC", name: "Fabric", sortOrder: 1 },
+  });
+  const typeAccessories = await prisma.supplierType.upsert({
+    where: { id: "st-accessories" },
+    update: {},
+    create: { id: "st-accessories", code: "ACCESSORIES", name: "Accessories", sortOrder: 2 },
+  });
+  const typeTailor = await prisma.supplierType.upsert({
+    where: { id: "st-tailor" },
+    update: {},
+    create: { id: "st-tailor", code: "TAILOR", name: "Tailor/Production", sortOrder: 3 },
+  });
+  const typeOther = await prisma.supplierType.upsert({
+    where: { id: "st-other" },
+    update: {},
+    create: { id: "st-other", code: "OTHER", name: "Other", sortOrder: 4 },
+  });
+  console.log("Supplier types OK");
+
   // ---------- 3. UOM + UOMConversion ----------
   const uomMeter = await prisma.uOM.upsert({
     where: { code: "MTR" },
@@ -192,7 +214,7 @@ async function main() {
     create: {
       code: "SUP0001",
       name: "PT Kain Indah",
-      type: SupplierType.FABRIC,
+      typeId: typeFabric.id,
       categoryId: fabricCategory.id,
       address: "Jl. Textile No. 123, Bandung",
       phone: "+62 22 1234567",
@@ -208,7 +230,7 @@ async function main() {
     create: {
       code: "SUP0002",
       name: "Aksesoris Jaya",
-      type: SupplierType.ACCESSORIES,
+      typeId: typeAccessories.id,
       categoryId: accessoriesCategory.id,
       address: "Jl. Accessories No. 45, Jakarta",
       phone: "+62 21 9876543",
@@ -224,7 +246,7 @@ async function main() {
     create: {
       code: "SUP0003",
       name: "Penjahit Pak Budi",
-      type: SupplierType.TAILOR,
+      typeId: typeTailor.id,
       categoryId: tailorCategory.id,
       address: "Jl. Produksi No. 78, Bandung",
       phone: "+62 812 34567890",
@@ -240,7 +262,7 @@ async function main() {
     create: {
       code: "SUP0004",
       name: "PT Kain Sutra",
-      type: SupplierType.FABRIC,
+      typeId: typeFabric.id,
       categoryId: fabricCategory.id,
       address: "Jl. Sutra 10, Solo",
       isActive: false,
@@ -252,7 +274,7 @@ async function main() {
     create: {
       code: "SUP0005",
       name: "CV Lainnya",
-      type: SupplierType.OTHER,
+      typeId: typeOther.id,
       isActive: true,
     },
   });

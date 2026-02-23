@@ -4,11 +4,10 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { encryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
-import { SupplierType } from '@prisma/client';
 
 const supplierSchema = z.object({
   name: z.string().min(1),
-  type: z.nativeEnum(SupplierType),
+  typeId: z.string().min(1),
   categoryId: z.string().optional(),
   address: z.string().optional(),
   phone: z.string().optional(),
@@ -33,7 +32,8 @@ export async function GET(req: NextRequest) {
     const sync = searchParams.get('sync') === 'true';
 
     const where: any = {};
-    if (type) where.type = type;
+    const typeId = searchParams.get('typeId');
+    if (typeId) where.typeId = typeId;
     if (categoryId) where.categoryId = categoryId;
     if (search) {
       where.OR = [
@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
     const suppliers = await prisma.supplier.findMany({
       where,
       include: {
+        type: { select: { id: true, code: true, name: true } },
         category: {
           select: {
             id: true,
@@ -63,7 +64,8 @@ export async function GET(req: NextRequest) {
           id: s.id,
           code: s.code,
           name: s.name,
-          type: s.type,
+          typeId: s.typeId,
+          type: s.type ? { id: s.type.id, code: s.type.code, name: s.type.name } : null,
           categoryId: s.categoryId,
           address: s.address,
           phone: s.phone,
@@ -115,7 +117,7 @@ export async function POST(req: NextRequest) {
       data: {
         code,
         name: validated.name,
-        type: validated.type,
+        typeId: validated.typeId,
         categoryId: validated.categoryId,
         address: validated.address,
         phone: validated.phone,

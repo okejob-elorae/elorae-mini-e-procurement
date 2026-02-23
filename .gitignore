@@ -1,6 +1,6 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-/agent-insctruction
+/agent-instruction
 
 # dependencies
 /node_modules

@@ -13,7 +13,8 @@ export interface CachedSupplier {
   id: string;
   code: string;
   name: string;
-  type: string;
+  typeId: string;
+  type?: string; // display name (from type.name)
   categoryId?: string;
   address?: string;
   phone?: string;

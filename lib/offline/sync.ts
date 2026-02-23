@@ -66,7 +66,12 @@ export async function syncReferenceData(): Promise<void> {
     const suppliersResponse = await fetch('/api/suppliers?sync=true');
     if (suppliersResponse.ok) {
       const suppliers = await suppliersResponse.json();
-      await cacheSuppliers(suppliers);
+      await cacheSuppliers(
+        suppliers.map((s: { typeId: string; type?: { name: string } | null }) => ({
+          ...s,
+          type: s.type?.name ?? '',
+        }))
+      );
     }
 
     // Sync items

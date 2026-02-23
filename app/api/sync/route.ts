@@ -49,7 +49,7 @@ async function handleSupplierCreate(payload: any) {
       data: {
         code,
         name: payload.name,
-        type: payload.type,
+        typeId: payload.typeId,
         categoryId: payload.categoryId,
         address: payload.address,
         phone: payload.phone,

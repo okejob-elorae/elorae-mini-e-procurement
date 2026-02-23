@@ -15,6 +15,7 @@ import {
   Settings,
   Menu,
   ChevronDown,
+  ChevronRight,
   LogOut,
   User,
   Sun,
@@ -41,12 +42,23 @@ import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { useTranslations } from 'next-intl';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+
+interface NavChild {
+  labelKey: string;
+  href: string;
+}
 
 interface NavItem {
   labelKey: string;
   href: string;
   icon: React.ElementType;
   roles: Role[];
+  children?: NavChild[];
 }
 
 const navItems: NavItem[] = [
@@ -61,6 +73,10 @@ const navItems: NavItem[] = [
     href: '/backoffice/suppliers',
     icon: Users,
     roles: [Role.ADMIN, Role.PURCHASER],
+    children: [
+      { labelKey: 'masterSuppliers', href: '/backoffice/suppliers' },
+      { labelKey: 'supplierType', href: '/backoffice/suppliers/types' },
+    ],
   },
   {
     labelKey: 'items',
@@ -144,6 +160,15 @@ function Sidebar({
 }) {
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
+  const [suppliersOpen, setSuppliersOpen] = useState(
+    () => pathname.startsWith('/backoffice/suppliers')
+  );
+
+  useEffect(() => {
+    if (pathname.startsWith('/backoffice/suppliers')) {
+      setSuppliersOpen(true);
+    }
+  }, [pathname]);
 
   const filteredItems = navItems.filter((item) =>
     item.roles.includes(role)
@@ -164,8 +189,58 @@ function Sidebar({
       <nav className="flex-1 overflow-auto py-4 px-3 space-y-1">
         {filteredItems.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const hasChildren = item.children && item.children.length > 0;
+          const isParentActive =
+            pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
 
+          if (hasChildren) {
+            return (
+              <Collapsible
+                key={item.href}
+                open={suppliersOpen}
+                onOpenChange={setSuppliersOpen}
+                className="group/collapsible"
+              >
+                <CollapsibleTrigger
+                  className={cn(
+                    'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg]:rotate-90',
+                    isParentActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  )}
+                >
+                  <Icon className="w-5 h-5 shrink-0" />
+                  <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="ml-4 mt-1 space-y-0.5 border-l border-border pl-3">
+                    {item.children!.map((child) => {
+                      const isChildActive =
+                        pathname === child.href || pathname.startsWith(`${child.href}/`);
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={onClose}
+                          className={cn(
+                            'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+                            isChildActive
+                              ? 'font-medium text-primary'
+                              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                          )}
+                        >
+                          {tNav(child.labelKey as any)}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            );
+          }
+
+          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}

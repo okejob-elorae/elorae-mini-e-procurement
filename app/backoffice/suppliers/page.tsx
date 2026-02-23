@@ -56,15 +56,23 @@ import { Badge } from '@/components/ui/badge';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { toast } from 'sonner';
-import { SupplierType } from '@/lib/constants/enums';
 import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
+
+interface SupplierTypeOption {
+  id: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  sortOrder: number | null;
+}
 
 interface Supplier {
   id: string;
   code: string;
   name: string;
-  type: SupplierType;
+  typeId: string;
+  type?: { id: string; code: string; name: string } | null;
   category?: { id: string; nameId: string; nameEn: string } | null;
   address: string | null;
   phone: string | null;
@@ -77,7 +85,7 @@ interface Supplier {
 
 const supplierSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  type: z.nativeEnum(SupplierType),
+  typeId: z.string().min(1, 'Supplier type is required'),
   categoryId: z.string().optional(),
   address: z.string().optional(),
   phone: z.string().optional(),
@@ -89,16 +97,10 @@ const supplierSchema = z.object({
 
 type SupplierForm = z.infer<typeof supplierSchema>;
 
-const supplierTypeLabels: Record<SupplierType, string> = {
-  FABRIC: 'Fabric Supplier',
-  ACCESSORIES: 'Accessories Supplier',
-  TAILOR: 'Tailor/Production',
-  OTHER: 'Other',
-};
-
 export default function SuppliersPage() {
   const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierTypes, setSupplierTypes] = useState<SupplierTypeOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [supplierDialogMode, setSupplierDialogMode] = useState<'create' | 'edit' | null>(null);
@@ -122,7 +124,7 @@ export default function SuppliersPage() {
   } = useForm<SupplierForm>({
     resolver: zodResolver(supplierSchema),
     defaultValues: {
-      type: SupplierType.FABRIC,
+      typeId: '',
     },
   });
 
@@ -141,8 +143,21 @@ export default function SuppliersPage() {
     }
   };
 
+  const fetchSupplierTypes = async () => {
+    try {
+      const res = await fetch('/api/supplier-types?activeOnly=true');
+      if (res.ok) {
+        const data = await res.json();
+        setSupplierTypes(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch supplier types:', e);
+    }
+  };
+
   useEffect(() => {
     fetchSuppliers();
+    fetchSupplierTypes();
   }, []);
 
   const isSupplierFormOpen = supplierDialogMode !== null;
@@ -151,7 +166,7 @@ export default function SuppliersPage() {
     if (supplierDialogMode === 'create') {
       reset({
         name: '',
-        type: SupplierType.FABRIC,
+        typeId: supplierTypes[0]?.id ?? '',
         categoryId: undefined,
         address: '',
         phone: '',
@@ -164,7 +179,7 @@ export default function SuppliersPage() {
     } else if (supplierDialogMode === 'edit' && editSupplier) {
       reset({
         name: editSupplier.name,
-        type: editSupplier.type,
+        typeId: editSupplier.typeId,
         categoryId: editSupplier.category?.id ?? undefined,
         address: editSupplier.address ?? '',
         phone: editSupplier.phone ?? '',
@@ -175,7 +190,7 @@ export default function SuppliersPage() {
       });
       clearErrors();
     }
-  }, [supplierDialogMode, editSupplier, reset, clearErrors]);
+  }, [supplierDialogMode, editSupplier, supplierTypes, reset, clearErrors]);
 
   const onSubmit = async (data: SupplierForm) => {
     const isEdit = !!editSupplier;
@@ -211,7 +226,7 @@ export default function SuppliersPage() {
         const error = await response.json();
         const details = error?.details as Array<{ path: (string | number)[]; message: string }> | undefined;
         const formKeys: (keyof SupplierForm)[] = [
-          'name', 'type', 'categoryId', 'address', 'phone', 'email',
+          'name', 'typeId', 'categoryId', 'address', 'phone', 'email',
           'bankName', 'bankAccount', 'bankAccountName',
         ];
         if (Array.isArray(details) && details.length > 0) {
@@ -361,36 +376,35 @@ export default function SuppliersPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="type">Supplier Type *</Label>
+                <Label htmlFor="typeId">Supplier Type *</Label>
                 <Controller
-                  name="type"
+                  name="typeId"
                   control={control}
-                  defaultValue={SupplierType.FABRIC}
                   render={({ field }) => (
                     <Select
                       value={field.value}
                       onValueChange={field.onChange}
                     >
                       <SelectTrigger
-                        id="type"
-                        aria-invalid={!!errors.type}
-                        className={errors.type ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                        id="typeId"
+                        aria-invalid={!!errors.typeId}
+                        className={errors.typeId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                       >
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {Object.entries(supplierTypeLabels).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
+                        {supplierTypes.map((st) => (
+                          <SelectItem key={st.id} value={st.id}>
+                            {st.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   )}
                 />
-                {errors.type && (
+                {errors.typeId && (
                   <p className="text-sm text-destructive" role="alert">
-                    {errors.type.message}
+                    {errors.typeId.message}
                   </p>
                 )}
               </div>
@@ -591,7 +605,7 @@ export default function SuppliersPage() {
                   </DropdownMenu>
                 </div>
                 <Badge variant={supplier.isActive ? 'default' : 'secondary'}>
-                  {supplierTypeLabels[supplier.type]}
+                  {supplier.type?.name ?? '—'}
                 </Badge>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -638,7 +652,7 @@ export default function SuppliersPage() {
               <div>
                 <Label className="text-muted-foreground">Type</Label>
                 <p className="font-medium">
-                  {selectedSupplier?.type && supplierTypeLabels[selectedSupplier.type]}
+                  {selectedSupplier?.type?.name ?? '—'}
                 </p>
               </div>
               <div>
