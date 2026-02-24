@@ -18,7 +18,6 @@ import {
   ChevronDown,
   ChevronRight,
   LogOut,
-  User,
   Sun,
   Moon,
   Monitor,
@@ -41,6 +40,7 @@ import { Role } from '@/lib/constants/enums';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { FcmRegistration } from '@/components/notifications/FcmRegistration';
+import { NotificationIcon } from '@/components/notifications/NotificationIcon';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { useTranslations } from 'next-intl';
@@ -176,14 +176,17 @@ function Sidebar({
 }) {
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
-  const [suppliersOpen, setSuppliersOpen] = useState(
-    () => pathname.startsWith('/backoffice/suppliers')
-  );
+  const getOpenKeyFromPath = (path: string) => {
+    if (path.startsWith('/backoffice/suppliers')) return '/backoffice/suppliers';
+    if (path.startsWith('/backoffice/items')) return '/backoffice/items';
+    if (path.startsWith('/backoffice/work-orders')) return '/backoffice/work-orders';
+    return null;
+  };
+  const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
 
   useEffect(() => {
-    if (pathname.startsWith('/backoffice/suppliers')) {
-      setSuppliersOpen(true);
-    }
+    const key = getOpenKeyFromPath(pathname);
+    if (key) setOpenNavKey(key);
   }, [pathname]);
 
   const filteredItems = navItems.filter((item) =>
@@ -213,13 +216,13 @@ function Sidebar({
             return (
               <Collapsible
                 key={item.href}
-                open={suppliersOpen}
-                onOpenChange={setSuppliersOpen}
+                open={openNavKey === item.href}
+                onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
                 className="group/collapsible"
               >
                 <CollapsibleTrigger
                   className={cn(
-                    'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg]:rotate-90',
+                    'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg:last-of-type]:rotate-90',
                     isParentActive
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -365,6 +368,7 @@ export default function BackofficeLayout({
           </div>
 
           <div className="flex items-center gap-4">
+            <NotificationIcon />
             <LanguageSwitcher />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -389,13 +393,11 @@ export default function BackofficeLayout({
                 <DropdownMenuLabel>Theme</DropdownMenuLabel>
                 <ThemeDropdownItems />
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
+                <DropdownMenuItem asChild>
+                  <Link href="/backoffice/settings" className="flex items-center">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/login' })} data-testid="sign-out">

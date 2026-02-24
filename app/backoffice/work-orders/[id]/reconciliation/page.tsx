@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { getWorkOrderById, getReconciliation } from '@/app/actions/production';
+import { buildReconciliationPrintHtml } from '@/lib/print/reconciliation-html';
 
 type ReconLine = {
   itemId: string;
@@ -77,7 +78,76 @@ export default function WorkOrderReconciliationPage() {
       : 0;
 
   const handleExportPDF = () => {
-    window.print();
+    if (!wo || !recon) return;
+    const printDate =
+      wo.updatedAt instanceof Date
+        ? wo.updatedAt.toLocaleDateString()
+        : wo.updatedAt
+          ? new Date(wo.updatedAt as string).toLocaleDateString()
+          : new Date().toLocaleDateString();
+    const subtitle =
+      wo.finishedGood && typeof wo.finishedGood === 'object' && 'nameEn' in wo.finishedGood
+        ? (wo.finishedGood as { nameEn?: string; nameId?: string }).nameEn ??
+          (wo.finishedGood as { nameId?: string }).nameId
+        : undefined;
+
+    const html = buildReconciliationPrintHtml({
+      docNumber: typeof wo.docNumber === 'string' ? wo.docNumber : '',
+      printDate,
+      subtitle: subtitle ?? undefined,
+      summary: recon.summary,
+      efficiencyPercent,
+      lines: recon.lines,
+      labels: {
+        title: 'Work Order Reconciliation',
+        targetCutting: t('targetCutting'),
+        issuedToCmt: t('issuedToCmt'),
+        returned: 'Returned',
+        setoran: t('setoran'),
+        theoretical: 'Theoretical',
+        selisih: t('selisih'),
+        value: 'Value',
+        status: 'Status',
+        varianceByMaterial: `${t('selisih')} by material`,
+        varianceByMaterialDesc: `${t('cuttingPlanned')} vs ${t('issuedToCmt')} vs ${t('setoran')}; ${t('selisihFromEstimate')} per line.`,
+        totalMaterialCost: 'Total Material Cost (Used)',
+        efficiencyPct: 'Efficiency %',
+        costVariance: 'Cost Variance',
+        usedVsIssued: 'Used vs issued value',
+      },
+    });
+
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute(
+      'style',
+      'position:absolute;width:0;height:0;border:0;visibility:hidden;'
+    );
+    iframe.setAttribute('title', 'Print reconciliation');
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+    if (!doc) {
+      toast.error('Unable to create print view.');
+      iframe.remove();
+      return;
+    }
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const removeIframe = () => {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    };
+
+    // Delay so the iframe document is fully parsed and laid out before print
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.print();
+      } catch {
+        toast.error('Print failed.');
+      }
+      setTimeout(removeIframe, 500);
+    }, 350);
   };
 
   if (isLoading || !wo || !recon) {
@@ -90,12 +160,7 @@ export default function WorkOrderReconciliationPage() {
 
   return (
     <div className="space-y-6">
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `@media print { .no-print { display: none !important; } }`,
-        }}
-      />
-      <div className="flex items-center justify-between gap-4 no-print">
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href={`/backoffice/work-orders/${id}`}>
             <Button variant="ghost" size="icon">

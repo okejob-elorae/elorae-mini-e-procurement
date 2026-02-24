@@ -31,6 +31,11 @@ export async function GET(req: NextRequest) {
     const categoryId = searchParams.get('categoryId');
     const search = searchParams.get('search');
     const sync = searchParams.get('sync') === 'true';
+    const pageParam = searchParams.get('page');
+    const pageSizeParam = searchParams.get('pageSize');
+    const usePagination = pageParam != null && pageSizeParam != null;
+    const page = usePagination ? Math.max(1, parseInt(pageParam, 10) || 1) : 1;
+    const pageSize = usePagination ? Math.max(1, Math.min(100, parseInt(pageSizeParam, 10) || 20)) : 0;
 
     const where: any = {};
     const typeId = searchParams.get('typeId');
@@ -43,23 +48,22 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    const suppliers = await prisma.supplier.findMany({
-      where,
-      include: {
-        type: { select: { id: true, code: true, name: true } },
-        category: {
-          select: {
-            id: true,
-            nameId: true,
-            nameEn: true,
+    // For sync requests, return simplified data (no pagination)
+    if (sync) {
+      const suppliers = await prisma.supplier.findMany({
+        where,
+        include: {
+          type: { select: { id: true, code: true, name: true } },
+          category: {
+            select: {
+              id: true,
+              nameId: true,
+              nameEn: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // For sync requests, return simplified data
-    if (sync) {
+        orderBy: { createdAt: 'desc' },
+      });
       return NextResponse.json(
         suppliers.map((s) => ({
           id: s.id,
@@ -78,7 +82,48 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Mask bank accounts for regular requests
+    if (usePagination && pageSize > 0) {
+      const [suppliers, totalCount] = await Promise.all([
+        prisma.supplier.findMany({
+          where,
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: {
+            type: { select: { id: true, code: true, name: true } },
+            category: {
+              select: {
+                id: true,
+                nameId: true,
+                nameEn: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        prisma.supplier.count({ where }),
+      ]);
+      const maskedSuppliers = suppliers.map((s) => ({
+        ...s,
+        bankAccountEnc: s.bankAccountEnc ? '***ENCRYPTED***' : null,
+      }));
+      return NextResponse.json({ data: maskedSuppliers, totalCount });
+    }
+
+    const suppliers = await prisma.supplier.findMany({
+      where,
+      include: {
+        type: { select: { id: true, code: true, name: true } },
+        category: {
+          select: {
+            id: true,
+            nameId: true,
+            nameEn: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     const maskedSuppliers = suppliers.map((s) => ({
       ...s,
       bankAccountEnc: s.bankAccountEnc ? '***ENCRYPTED***' : null,

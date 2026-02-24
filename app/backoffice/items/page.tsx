@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, Fragment } from 'react';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { 
@@ -41,6 +41,8 @@ import {
 import { toast } from 'sonner';
 import { getItems, deleteItem, getItemCounts } from '@/app/actions/items';
 import { ItemType } from '@/lib/constants/enums';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 interface Item {
   id: string;
@@ -71,11 +73,6 @@ interface Item {
   }>;
 }
 
-const itemTypeLabels: Record<ItemType, string> = {
-  FABRIC: 'Kain',
-  ACCESSORIES: 'Aksesoris',
-  FINISHED_GOOD: 'Barang Jadi'
-};
 
 const itemTypeColors: Record<ItemType, string> = {
   FABRIC: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -85,6 +82,14 @@ const itemTypeColors: Record<ItemType, string> = {
 
 export default function ItemsPage() {
   const locale = useLocale();
+  const t = useTranslations('toasts');
+  const tItems = useTranslations('items');
+  const tPlaceholders = useTranslations('placeholders');
+  const itemTypeLabels: Record<ItemType, string> = {
+    FABRIC: tItems('fabric'),
+    ACCESSORIES: tItems('accessories'),
+    FINISHED_GOOD: tItems('finishedGood'),
+  };
   const searchParams = useSearchParams();
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -99,7 +104,7 @@ export default function ItemsPage() {
       setTypeFilter(t as ItemType | 'raw');
     }
   }, [searchParams]);
-  const [pageSize, _setPageSize] = useState(10);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [counts, setCounts] = useState<{ total: number; byType: Record<ItemType, number>; active: number } | null>(null);
@@ -127,7 +132,7 @@ export default function ItemsPage() {
         setTotalCount((data as Item[])?.length || 0);
       }
     } catch (_error) {
-      toast.error('Failed to load items');
+      toast.error(t('failedToLoadItems'));
     } finally {
       setIsLoading(false);
     }
@@ -143,14 +148,14 @@ export default function ItemsPage() {
   }, [searchQuery, typeFilter, page, pageSize]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
+    if (!confirm(tItems('confirmDeleteItem'))) return;
     
     try {
       await deleteItem(id);
-      toast.success('Item deleted successfully');
+      toast.success(t('itemDeletedSuccessfully'));
       fetchItems();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to delete item');
+      toast.error(error.message || t('failedToDeleteItem'));
     }
   };
 
@@ -164,7 +169,7 @@ export default function ItemsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Items</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{tItems('title')}</h1>
           <p className="text-muted-foreground">
             Manage fabric, accessories, and finished goods
           </p>
@@ -228,7 +233,7 @@ export default function ItemsPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by SKU or name..."
+            placeholder={tPlaceholders('searchBySkuOrName')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -353,7 +358,7 @@ export default function ItemsPage() {
                                   <div className="space-y-1 text-sm">
                                     {item.variants.map((variant, idx) => (
                                       <div key={idx} className="flex flex-wrap gap-2">
-                                        <span className="text-muted-foreground">Variant {idx + 1}:</span>
+                                        <span className="text-muted-foreground">{tItems('variantLabel', { index: idx + 1 })}</span>
                                         {Object.entries(variant).map(([k, v]) => (
                                           <span key={k} className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs">
                                             {k}: {v}
@@ -363,7 +368,7 @@ export default function ItemsPage() {
                                     ))}
                                   </div>
                                 ) : (
-                                  <p className="text-sm text-muted-foreground">This item has no variants.</p>
+                                  <p className="text-sm text-muted-foreground">{tItems('noVariants')}</p>
                                 )}
                               </div>
                               <div className="space-y-1">
@@ -385,7 +390,7 @@ export default function ItemsPage() {
                                     ))}
                                   </div>
                                 ) : (
-                                  <p className="text-sm text-muted-foreground">This item has no BOM.</p>
+                                  <p className="text-sm text-muted-foreground">{tItems('noBOM')}</p>
                                 )}
                               </div>
                             </div>
@@ -397,34 +402,13 @@ export default function ItemsPage() {
                 </TableBody>
               </Table>
 
-              {/* Pagination */}
-              <div className="flex items-center justify-between mt-4">
-                <div className="text-sm text-muted-foreground">
-                  Page {page} of {Math.max(1, Math.ceil(totalCount / pageSize) || 1)}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setPage((p) =>
-                        Math.min(Math.max(1, Math.ceil(totalCount / pageSize) || 1), p + 1)
-                      )
-                    }
-                    disabled={page >= Math.max(1, Math.ceil(totalCount / pageSize) || 1)}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
+              <Pagination
+                page={page}
+                totalPages={Math.max(1, Math.ceil(totalCount / pageSize) || 1)}
+                onPageChange={setPage}
+                totalCount={totalCount}
+                pageSize={pageSize}
+              />
             </div>
           )}
         </CardContent>

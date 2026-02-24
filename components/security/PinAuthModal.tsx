@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -14,13 +15,16 @@ interface PinAuthModalProps {
 }
 
 export function PinAuthModal({ isOpen, onClose, onConfirm, action }: PinAuthModalProps) {
+  const t = useTranslations('security');
+  const tCommon = useTranslations('common');
+  const tPlaceholders = useTranslations('placeholders');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
     if (pin.length < 4) {
-      setError('PIN minimal 4 digit');
+      setError(t('pinMinLength'));
       return;
     }
     
@@ -32,7 +36,7 @@ export function PinAuthModal({ isOpen, onClose, onConfirm, action }: PinAuthModa
       setPin('');
       onClose();
     } catch (err: any) {
-      setError(err.message || 'PIN tidak valid');
+      setError(err.message || t('pinInvalid'));
     } finally {
       setLoading(false);
     }
@@ -54,11 +58,11 @@ export function PinAuthModal({ isOpen, onClose, onConfirm, action }: PinAuthModa
     }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Autentikasi Diperlukan</DialogTitle>
+          <DialogTitle>{t('authRequired')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <p className="text-sm text-muted-foreground">
-            Masukkan PIN Anda untuk {action}
+            {t('enterPinForAction', { action })}
           </p>
           <Input
             type="password"
@@ -67,7 +71,7 @@ export function PinAuthModal({ isOpen, onClose, onConfirm, action }: PinAuthModa
             value={pin}
             onChange={(e) => setPin((e.target?.value ?? '').replace(/\D/g, ''))}
             onKeyDown={handleKeyDown}
-            placeholder="****"
+            placeholder={tPlaceholders('pinMask')}
             className="text-center text-2xl tracking-widest"
             autoFocus
           />
@@ -85,7 +89,7 @@ export function PinAuthModal({ isOpen, onClose, onConfirm, action }: PinAuthModa
               className="flex-1"
               disabled={loading}
             >
-              Batal
+              {tCommon('cancel')}
             </Button>
             <Button 
               onClick={handleSubmit} 
@@ -95,10 +99,10 @@ export function PinAuthModal({ isOpen, onClose, onConfirm, action }: PinAuthModa
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Memverifikasi...
+                  {t('verifying')}
                 </>
               ) : (
-                'Konfirmasi'
+                t('confirm')
               )}
             </Button>
           </div>

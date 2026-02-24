@@ -35,7 +35,7 @@ export async function POST(
     );
     if (!pinResult.success) {
       return NextResponse.json(
-        { error: pinResult.message },
+        { error: pinResult.messageKey ?? pinResult.message },
         { status: 403 }
       );
     }

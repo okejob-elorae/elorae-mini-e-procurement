@@ -32,9 +32,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 import { getWorkOrders, issueWorkOrder, cancelWorkOrder } from '@/app/actions/production';
 import { WOStatus } from '@/lib/constants/enums';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 interface WorkOrder {
   id: string;
@@ -86,14 +95,25 @@ export default function WorkOrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<WOStatus | ''>('');
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [totalCount, setTotalCount] = useState(0);
 
   const fetchWorkOrders = async () => {
     setIsLoading(true);
     try {
-      const data = await getWorkOrders({
-        status: statusFilter || undefined
-      });
-      setWorkOrders(data as unknown as WorkOrder[]);
+      const result = await getWorkOrders(
+        { status: statusFilter || undefined },
+        { page, pageSize }
+      );
+      if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
+        setWorkOrders((result as { items: WorkOrder[] }).items);
+        setTotalCount((result as { totalCount: number }).totalCount);
+      } else {
+        const list = (result as WorkOrder[]) ?? [];
+        setWorkOrders(list);
+        setTotalCount(list.length);
+      }
     } catch (_error) {
       toast.error('Failed to load work orders');
     } finally {
@@ -102,9 +122,12 @@ export default function WorkOrdersPage() {
   };
 
   useEffect(() => {
-    fetchWorkOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load + status filter
+    setPage(1);
   }, [statusFilter]);
+
+  useEffect(() => {
+    fetchWorkOrders();
+  }, [statusFilter, page, pageSize]);
 
   const handleIssue = async (id: string) => {
     try {
@@ -167,19 +190,22 @@ export default function WorkOrdersPage() {
             className="pl-9"
           />
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as WOStatus | '')}
-          className="px-3 py-2 rounded-md border bg-background"
+        <Select
+          value={statusFilter || '__all__'}
+          onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : (v as WOStatus))}
         >
-          <option value="">All Status</option>
-          <option value="DRAFT">Draft</option>
-          <option value="ISSUED">Issued</option>
-          <option value="IN_PRODUCTION">In Production</option>
-          <option value="PARTIAL">Partial</option>
-          <option value="COMPLETED">Completed</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Status</SelectItem>
+            {(Object.entries(statusLabels) as [WOStatus, string][]).map(([status, label]) => (
+              <SelectItem key={status} value={status}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Work Orders Table */}
@@ -201,6 +227,7 @@ export default function WorkOrdersPage() {
               <p className="text-muted-foreground">No work orders found</p>
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -287,6 +314,14 @@ export default function WorkOrdersPage() {
                 </TableBody>
               </Table>
             </div>
+            <Pagination
+              page={page}
+              totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
+              onPageChange={setPage}
+              totalCount={totalCount}
+              pageSize={pageSize}
+            />
+            </>
           )}
         </CardContent>
       </Card>

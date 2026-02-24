@@ -38,6 +38,7 @@ import {
   processReturn,
   completeReturn
 } from '@/app/actions/vendor-returns';
+import { buildVendorReturnPrintHtml } from '@/lib/print/vendor-return-html';
 
 export default function VendorReturnDetailPage() {
   const params = useParams();
@@ -86,7 +87,65 @@ export default function VendorReturnDetailPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    if (!ret) return;
+    const vendor = ret.vendor as { name?: string; code?: string } | null;
+    const wo = ret.wo as { id: string; docNumber: string } | null;
+    const rawLines = ret.lines;
+    const printLines = Array.isArray(rawLines)
+      ? rawLines
+      : typeof rawLines === 'string'
+        ? (() => {
+            try {
+              const parsed = JSON.parse(rawLines);
+              return Array.isArray(parsed) ? parsed : [];
+            } catch {
+              return [];
+            }
+          })()
+        : [];
+    const html = buildVendorReturnPrintHtml({
+      docNumber: ret.docNumber,
+      vendorName: vendor?.name ?? vendor?.code ?? ret.vendorId ?? '',
+      totalValue: Number(ret.totalValue),
+      status: ret.status,
+      woDocNumber: wo?.docNumber,
+      processedAt: ret.processedAt,
+      completedAt: ret.completedAt,
+      trackingNumber: ret.trackingNumber ?? undefined,
+      lines: printLines,
+      labels: {
+        title: t('notaReturTitle'),
+        doc: 'Doc',
+        vendor: 'Vendor',
+        totalValue: t('nilaiRetur'),
+        workOrder: t('workOrderLabel'),
+        processed: 'Processed',
+        completed: t('completed'),
+        tracking: t('trackingLabel'),
+        type: 'Type',
+        item: 'Item',
+        qty: 'Qty',
+        condition: 'Condition',
+        reason: 'Reason',
+        value: 'Value',
+      },
+    });
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
+    iframe.setAttribute('title', t('printNotaRetur'));
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(html);
+      doc.close();
+      setTimeout(() => {
+        iframe.contentWindow?.print();
+      }, 350);
+    }
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+    }, 500);
   };
 
   const handleCompleteSubmit = async (e: React.FormEvent) => {

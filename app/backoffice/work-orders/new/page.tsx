@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { createWorkOrder, getMaterialPlan } from '@/app/actions/production';
 import { getItemsByType } from '@/app/actions/items';
@@ -63,6 +64,7 @@ interface MaterialPlanRow {
 }
 
 export default function NewWorkOrderPage() {
+  const t = useTranslations('toasts');
   const router = useRouter();
   const { data: session } = useSession();
   const [tailors, setTailors] = useState<TailorSupplier[]>([]);
@@ -96,7 +98,7 @@ export default function NewWorkOrderPage() {
         }
         setFinishedGoods((fgList as FinishedGood[]) || []);
       } catch (e) {
-        toast.error('Failed to load data');
+        toast.error(t('failedToLoadData'));
       } finally {
         setIsLoadingSuppliers(false);
         setIsLoadingFG(false);
@@ -119,7 +121,7 @@ export default function NewWorkOrderPage() {
       .catch(() => {
         if (!cancelled) {
           setMaterialPlan([]);
-          toast.error('Failed to load material plan');
+          toast.error(t('failedToLoadMaterialPlan'));
         }
       })
       .finally(() => {
@@ -175,10 +177,10 @@ export default function NewWorkOrderPage() {
         },
         session.user.id
       );
-      toast.success('Work Order created');
+      toast.success(t('workOrderCreated'));
       router.push(`/backoffice/work-orders/${wo.id}`);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create WO');
+      toast.error(err instanceof Error ? err.message : t('failedToCreateWO'));
     } finally {
       setIsSubmitting(false);
     }
@@ -218,7 +220,7 @@ export default function NewWorkOrderPage() {
                   onValueChange={setVendorId}
                   disabled={isLoadingSuppliers}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select vendor" />
                   </SelectTrigger>
                   <SelectContent>
@@ -237,7 +239,7 @@ export default function NewWorkOrderPage() {
                   onValueChange={setFinishedGoodId}
                   disabled={isLoadingFG}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select finished good" />
                   </SelectTrigger>
                   <SelectContent>
@@ -258,7 +260,7 @@ export default function NewWorkOrderPage() {
                   value={outputMode}
                   onValueChange={(v) => setOutputMode(v as 'GENERIC' | 'SKU')}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

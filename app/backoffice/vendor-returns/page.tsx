@@ -36,6 +36,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { getVendorReturns, processReturn, deleteVendorReturn } from '@/app/actions/vendor-returns';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 interface SupplierOption {
   id: string;
@@ -55,16 +57,29 @@ export default function VendorReturnsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [totalCount, setTotalCount] = useState(0);
 
   const fetchReturns = async () => {
     setIsLoading(true);
     try {
-      const data = await getVendorReturns({
-        status: statusFilter === '__all__' ? undefined : statusFilter,
-        vendorId: vendorFilter === '__all__' ? undefined : vendorFilter,
-        search: searchQuery.trim() || undefined
-      });
-      setReturns(data);
+      const result = await getVendorReturns(
+        {
+          status: statusFilter === '__all__' ? undefined : statusFilter,
+          vendorId: vendorFilter === '__all__' ? undefined : vendorFilter,
+          search: searchQuery.trim() || undefined
+        },
+        { page, pageSize }
+      );
+      if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
+        setReturns((result as { items: VendorReturnRow[] }).items);
+        setTotalCount((result as { totalCount: number }).totalCount);
+      } else {
+        const list = (result as VendorReturnRow[]) ?? [];
+        setReturns(list);
+        setTotalCount(list.length);
+      }
     } catch {
       toast.error('Failed to load vendor returns');
     } finally {
@@ -88,8 +103,12 @@ export default function VendorReturnsPage() {
   }, []);
 
   useEffect(() => {
-    fetchReturns();
+    setPage(1);
   }, [statusFilter, vendorFilter, searchQuery]);
+
+  useEffect(() => {
+    fetchReturns();
+  }, [statusFilter, vendorFilter, searchQuery, page, pageSize]);
 
   const handleProcess = async (id: string) => {
     if (!session?.user?.id) return;
@@ -200,6 +219,7 @@ export default function VendorReturnsPage() {
                 <p className="text-muted-foreground">No vendor returns found</p>
               </div>
             ) : (
+              <>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -313,6 +333,14 @@ export default function VendorReturnsPage() {
                   </TableBody>
                 </Table>
               </div>
+              <Pagination
+                page={page}
+                totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
+                onPageChange={setPage}
+                totalCount={totalCount}
+                pageSize={pageSize}
+              />
+            </>
             )}
         </CardContent>
       </Card>

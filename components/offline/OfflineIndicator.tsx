@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +14,8 @@ import { getSyncStatus, syncPendingOperations } from '@/lib/offline/sync';
 import { toast } from 'sonner';
 
 export function OfflineIndicator() {
+  const tToasts = useTranslations('toasts');
+  const tOffline = useTranslations('offline');
   const [isOnline, setIsOnline] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingPOCount, setPendingPOCount] = useState(0);
@@ -30,12 +33,12 @@ export function OfflineIndicator() {
 
     const handleOnline = () => {
       setIsOnline(true);
-      toast.success('Back online');
+      toast.success(tToasts('backOnline'));
     };
 
     const handleOffline = () => {
       setIsOnline(false);
-      toast.warning('You are offline');
+      toast.warning(tToasts('youAreOffline'));
     };
 
     window.addEventListener('online', handleOnline);
@@ -52,7 +55,7 @@ export function OfflineIndicator() {
 
   const handleSync = async () => {
     if (!isOnline) {
-      toast.error('Cannot sync while offline');
+      toast.error(tToasts('cannotSyncWhileOffline'));
       return;
     }
 
@@ -60,19 +63,19 @@ export function OfflineIndicator() {
     try {
       const result = await syncPendingOperations();
       if (result.success > 0) {
-        toast.success(`Synced ${result.success} operations`);
+        toast.success(tToasts('syncedOperations', { count: result.success }));
       }
       if (result.failed > 0) {
-        toast.error(`Failed to sync ${result.failed} operations`);
+        toast.error(tToasts('failedToSyncOperations', { count: result.failed }));
       }
       if (result.success === 0 && result.failed === 0) {
-        toast.info('Nothing to sync');
+        toast.info(tToasts('nothingToSync'));
       }
       const status = await getSyncStatus();
       setPendingCount(status.pendingCount);
       setPendingPOCount(status.pendingPOCount || 0);
     } catch (_error) {
-      toast.error('Sync failed');
+      toast.error(tToasts('syncFailed'));
     } finally {
       setIsSyncing(false);
     }
@@ -95,8 +98,8 @@ export function OfflineIndicator() {
               <WifiOff className="h-4 w-4 text-destructive" />
             )}
             <span className="text-sm">
-              {isOnline ? 'Online' : 'Offline'}
-              {pendingCount + pendingPOCount > 0 && ` (${pendingCount + pendingPOCount} pending)`}
+              {isOnline ? tOffline('online') : tOffline('offline')}
+              {pendingCount + pendingPOCount > 0 && ` (${pendingCount + pendingPOCount} ${tOffline('pending')})`}
             </span>
             {pendingCount + pendingPOCount > 0 && isOnline && (
               <RefreshCw className={`h-3 w-3 ml-auto ${isSyncing ? 'animate-spin' : ''}`} />
@@ -107,9 +110,9 @@ export function OfflineIndicator() {
           <p>
             {isOnline
               ? pendingCount + pendingPOCount > 0
-                ? `Click to sync ${pendingCount + pendingPOCount} pending operations`
-                : 'All changes synced'
-              : 'Working offline - changes will sync when connection is restored'}
+                ? tOffline('clickToSyncPending', { count: pendingCount + pendingPOCount })
+                : tOffline('allChangesSynced')
+              : tOffline('workingOfflineMessage')}
           </p>
         </TooltipContent>
       </Tooltip>

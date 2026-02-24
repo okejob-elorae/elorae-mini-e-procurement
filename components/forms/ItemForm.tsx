@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { itemSchema, consumptionRuleSchema } from '@/lib/validations';
+import { createItemSchema, itemSchema, consumptionRuleSchema } from '@/lib/validations';
 import { ItemType } from '@/lib/constants/enums';
 import { generateSKU } from '@/app/actions/items';
 import { getUOMs } from '@/app/actions/uom';
@@ -30,6 +30,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 import type { z } from 'zod';
 
 type ItemFormData = z.infer<typeof itemSchema>;
@@ -82,6 +83,9 @@ interface ItemFormProps {
 }
 
 export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormProps) {
+  const tValidation = useTranslations('validation');
+  const tToasts = useTranslations('toasts');
+  const itemSchemaT = useMemo(() => createItemSchema((k) => tValidation(k)), [tValidation]);
   const [uoms, setUOMs] = useState<UOM[]>([]);
   const [materials, setMaterials] = useState<Item[]>([]);
   const [sku, setSku] = useState(initialData?.sku || '');
@@ -119,7 +123,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     control,
     formState: { errors },
   } = useForm<ItemFormData>({
-    resolver: zodResolver(itemSchema),
+    resolver: zodResolver(itemSchemaT),
     defaultValues: {
       nameId: initialData?.nameId || '',
       nameEn: initialData?.nameEn || '',
@@ -135,19 +139,19 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
   useEffect(() => {
     // Load UOMs
-    getUOMs().then(setUOMs).catch(() => toast.error('Failed to load UOMs'));
+    getUOMs().then(setUOMs).catch(() => toast.error(tToasts('failedToLoadUOMs')));
 
     // Load materials if type is FINISHED_GOOD
     if (itemType === ItemType.FINISHED_GOOD) {
       getItemsByType(ItemType.FABRIC)
         .then(items => setMaterials(items as Item[]))
-        .catch(() => toast.error('Failed to load materials'));
+        .catch(() => toast.error(tToasts('failedToLoadMaterials')));
     }
   }, [itemType]);
 
   const handleGenerateSKU = async () => {
     if (!itemType) {
-      toast.error('Please select item type first');
+      toast.error(tToasts('pleaseSelectItemTypeFirst'));
       return;
     }
     setIsGeneratingSKU(true);
@@ -155,7 +159,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       const newSku = await generateSKU(itemType);
       setSku(newSku);
     } catch (_error) {
-      toast.error('Failed to generate SKU');
+      toast.error(tToasts('failedToGenerateSKU'));
     } finally {
       setIsGeneratingSKU(false);
     }
@@ -233,7 +237,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     if (hasAttributes) {
       const incomplete = attributes.find((attr) => !attr.key.trim() || attr.values.length === 0);
       if (incomplete) {
-        toast.error('Please provide a name and at least one value for each attribute');
+        toast.error(tToasts('provideNameAndAttributeValues'));
         return;
       }
     }
@@ -246,7 +250,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         r => !r.materialId || r.qtyRequired <= 0
       );
       if (invalidRules.length > 0) {
-        toast.error('Please fill all consumption rule fields');
+        toast.error(tToasts('fillConsumptionRuleFields'));
         return;
       }
     }

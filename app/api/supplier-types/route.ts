@@ -20,8 +20,26 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const activeOnly = searchParams.get('activeOnly') === 'true';
+    const pageParam = searchParams.get('page');
+    const pageSizeParam = searchParams.get('pageSize');
+    const usePagination = pageParam != null && pageSizeParam != null;
+    const page = usePagination ? Math.max(1, parseInt(pageParam, 10) || 1) : 1;
+    const pageSize = usePagination ? Math.max(1, Math.min(100, parseInt(pageSizeParam, 10) || 20)) : 0;
 
     const where = activeOnly ? { isActive: true } : {};
+
+    if (usePagination && pageSize > 0) {
+      const [types, totalCount] = await Promise.all([
+        prisma.supplierType.findMany({
+          where,
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+        }),
+        prisma.supplierType.count({ where }),
+      ]);
+      return NextResponse.json({ data: types, totalCount });
+    }
 
     const types = await prisma.supplierType.findMany({
       where,

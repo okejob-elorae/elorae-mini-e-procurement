@@ -92,6 +92,8 @@ export default function UOMPage() {
   const locale = useLocale() as 'en' | 'id';
   const t = useTranslations('uom');
   const tCommon = useTranslations('common');
+  const tPlaceholders = useTranslations('placeholders');
+  const tToasts = useTranslations('toasts');
   const [uoms, setUOMs] = useState<UOM[]>([]);
   const [conversions, setConversions] = useState<Conversion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -135,7 +137,7 @@ export default function UOMPage() {
       setUOMs(uomsData);
       setConversions(conversionsData.map((c) => ({ ...c, factor: Number(c.factor) })));
     } catch (_error) {
-      toast.error('Failed to load UOM data');
+      toast.error(tToasts('failedToLoadUOMData'));
     } finally {
       setIsLoading(false);
     }
@@ -144,28 +146,28 @@ export default function UOMPage() {
   const onSubmitUOM = async (data: UOMFormData) => {
     try {
       await createUOM(data);
-      toast.success('UOM created successfully');
+      toast.success(tToasts('uomCreatedSuccessfully'));
       setIsUOMDialogOpen(false);
       resetUOM();
       fetchData();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to create UOM');
+      toast.error(error.message || tToasts('failedToCreateUOM'));
     }
   };
 
   const onSubmitConversion = async (data: ConversionFormData) => {
     try {
       if (data.fromUomId === data.toUomId) {
-        toast.error('From and To UOM cannot be the same');
+        toast.error(tToasts('fromAndToUOMCannotBeSame'));
         return;
       }
       await createUOMConversion(data);
-      toast.success('Conversion created successfully');
+      toast.success(tToasts('conversionCreatedSuccessfully'));
       setIsConversionDialogOpen(false);
       resetConversion();
       fetchData();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to create conversion');
+      toast.error(error.message || tToasts('failedToCreateConversion'));
     }
   };
 
@@ -318,7 +320,7 @@ export default function UOMPage() {
                           onValueChange={(value) => setValueConversion('fromUomId', value)}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder={locale === 'en' ? 'Select UOM' : 'Pilih UOM'} />
+                            <SelectValue placeholder={tPlaceholders('selectUOM')} />
                           </SelectTrigger>
                           <SelectContent>
                             {uoms.map((uom) => (
@@ -341,7 +343,7 @@ export default function UOMPage() {
                           onValueChange={(value) => setValueConversion('toUomId', value)}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder={locale === 'en' ? 'Select UOM' : 'Pilih UOM'} />
+                            <SelectValue placeholder={tPlaceholders('selectUOM')} />
                           </SelectTrigger>
                           <SelectContent>
                             {uoms.map((uom) => (

@@ -136,3 +136,127 @@
     transform: translateX(-100%);
   }
 }
+
+/* ========== Print styles ========== */
+@media print {
+  /* Hide app chrome: sidebar, main header, FAB, dialogs, no-print elements */
+  aside,
+  header.h-16,
+  .no-print,
+  [data-slot="sheet-overlay"],
+  [data-slot="sheet-content"] {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt;
+  }
+
+  /* Ensure print content uses full width and doesn't inherit layout padding */
+  main {
+    padding: 0 !important;
+  }
+
+  /* Print typography: clear hierarchy and readable section labels */
+  .print\:section-title {
+    font-size: 12pt;
+    font-weight: 600;
+    color: black;
+    margin-bottom: 0.25rem;
+  }
+
+  .print\:section-desc {
+    font-size: 10pt;
+    color: #444;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Page setup: margins and page numbers (Chrome, Edge, Firefox) */
+  @page {
+    size: A4;
+    margin: 15mm 10mm 20mm;
+  }
+
+  @page {
+    @bottom-center {
+      content: "Page " counter(page) " of " counter(pages);
+      font-size: 9pt;
+      color: #666;
+    }
+  }
+
+  /* Tables: allow thead to repeat on each page; avoid breaking rows */
+  table {
+    page-break-inside: auto;
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 10pt;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  thead th {
+    padding: 6px 8px;
+    border: 1px solid #333;
+    background: #e5e5e5;
+    font-weight: 700;
+    font-size: 10pt;
+    color: black;
+    text-align: left;
+  }
+
+  thead th.text-right {
+    text-align: right;
+  }
+
+  tbody td {
+    padding: 5px 8px;
+    border: 1px solid #ccc;
+    font-size: 10pt;
+    color: black;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #f5f5f5;
+  }
+
+  /* Table container: no overflow in print so thead repeats on each page */
+  [data-slot="table-container"] {
+    overflow: visible !important;
+  }
+
+  /* Cards: flat look on paper */
+  .print\:card-flat {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    background: white !important;
+  }
+
+  /* Status badges: readable when printed */
+  .print\:badge-ok {
+    background: #f0f0f0 !important;
+    border: 1px solid #999 !important;
+    color: #333 !important;
+  }
+
+  .print\:badge-over {
+    background: #fef2f2 !important;
+    border: 1px solid #b91c1c !important;
+    color: #991b1b !important;
+  }
+
+  .print\:badge-under {
+    background: #f0fdf4 !important;
+    border: 1px solid #15803d !important;
+    color: #166534 !important;
+  }
+}

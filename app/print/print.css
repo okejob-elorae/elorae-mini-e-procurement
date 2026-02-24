@@ -1,0 +1,36 @@
+/* Print-specific styles for /print/* routes. Landscape for wide tables. */
+
+/* Screen preview: constrain width to approximate A4 landscape for WYSIWYG */
+@media screen {
+  .print-reconciliation {
+    max-width: 297mm;
+    margin: 0 auto;
+  }
+  .print-reconciliation-table {
+    min-width: 100%;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm 10mm 18mm;
+  }
+
+  /* Prevent table from overflowing page */
+  .print-reconciliation-table {
+    width: 100% !important;
+    table-layout: fixed;
+  }
+
+  /* Ensure status badges remain readable with sufficient contrast */
+  .print-reconciliation-badge {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide scrollbars and show full content */
+  .print-reconciliation .overflow-x-auto {
+    overflow: visible !important;
+  }
+}

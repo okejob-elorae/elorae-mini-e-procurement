@@ -39,6 +39,7 @@ import {
   DialogTrigger
 } from '@/components/ui/dialog';
 import { BarcodeScanner } from '@/components/scanners/BarcodeScanner';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { getWorkOrderById, issueMaterials } from '@/app/actions/production';
 import { getItemsByType } from '@/app/actions/items';
@@ -63,6 +64,8 @@ interface IssueLine {
 }
 
 export default function WorkOrderIssuePage() {
+  const t = useTranslations('toasts');
+  const tWO = useTranslations('workOrders');
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
@@ -84,7 +87,7 @@ export default function WorkOrderIssuePage() {
         setMaterials((fabricItems as any) || []);
       })
       .catch(() => {
-        toast.error('Failed to load data');
+        toast.error(t('failedToLoadData'));
         router.push('/backoffice/work-orders');
       })
       .finally(() => setIsLoading(false));
@@ -148,7 +151,7 @@ export default function WorkOrderIssuePage() {
     if (!session?.user?.id || !wo || lines.length === 0) return;
     const valid = lines.filter((l) => l.qty > 0);
     if (valid.length === 0) {
-      toast.error('Add at least one line with qty > 0');
+      toast.error(t('addAtLeastOneLine'));
       return;
     }
     setIsSubmitting(true);
@@ -162,11 +165,11 @@ export default function WorkOrderIssuePage() {
         },
         session.user.id
       );
-      toast.success('Materials issued');
+      toast.success(t('materialsIssued'));
       router.push(`/backoffice/work-orders/${id}`);
       router.refresh();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to issue');
+      toast.error(err instanceof Error ? err.message : t('failedToIssue'));
     } finally {
       setIsSubmitting(false);
     }
@@ -198,7 +201,7 @@ export default function WorkOrderIssuePage() {
         <Card>
           <CardHeader>
             <CardTitle>Material Plan</CardTitle>
-            <CardDescription>Planned vs issued (remaining to issue)</CardDescription>
+            <CardDescription>{tWO('plannedVsIssued')}</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>

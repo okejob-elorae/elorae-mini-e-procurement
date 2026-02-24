@@ -53,11 +53,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { useTranslations } from 'next-intl';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { toast } from 'sonner';
 import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 interface SupplierTypeOption {
   id: string;
@@ -99,6 +102,10 @@ const supplierSchema = z.object({
 type SupplierForm = z.infer<typeof supplierSchema>;
 
 export default function SuppliersPage() {
+  const t = useTranslations('toasts');
+  const tSecurity = useTranslations('security');
+  const tSupplier = useTranslations('supplier');
+  const tCommon = useTranslations('common');
   const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierTypes, setSupplierTypes] = useState<SupplierTypeOption[]>([]);
@@ -113,6 +120,9 @@ export default function SuppliersPage() {
   const [bankPinModalOpen, setBankPinModalOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deletePinModalOpen, setDeletePinModalOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [totalCount, setTotalCount] = useState(0);
 
   const {
     register,
@@ -130,15 +140,27 @@ export default function SuppliersPage() {
   });
 
   const fetchSuppliers = async () => {
+    setIsLoading(true);
     try {
-      const response = await fetch('/api/suppliers');
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      params.set('pageSize', String(pageSize));
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      const response = await fetch(`/api/suppliers?${params.toString()}`);
       if (response.ok) {
-        const data = await response.json();
-        setSuppliers(data);
+        const json = await response.json();
+        if (json != null && typeof json === 'object' && 'data' in json && 'totalCount' in json) {
+          setSuppliers(Array.isArray(json.data) ? json.data : []);
+          setTotalCount(Number(json.totalCount) || 0);
+        } else {
+          const list = Array.isArray(json) ? json : [];
+          setSuppliers(list);
+          setTotalCount(list.length);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch suppliers:', error);
-      toast.error('Failed to load suppliers');
+      toast.error(t('failedToLoadSuppliers'));
     } finally {
       setIsLoading(false);
     }
@@ -157,9 +179,16 @@ export default function SuppliersPage() {
   };
 
   useEffect(() => {
-    fetchSuppliers();
     fetchSupplierTypes();
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    fetchSuppliers();
+  }, [page, pageSize, searchQuery]);
 
   const isSupplierFormOpen = supplierDialogMode !== null;
 
@@ -200,11 +229,11 @@ export default function SuppliersPage() {
     try {
       if (!isOnline()) {
         if (isEdit) {
-          toast.error('Editing is not available offline');
+          toast.error(t('editingNotAvailableOffline'));
           return;
         }
         await queueOperation('SUPPLIER_CREATE', data);
-        toast.success('Supplier queued for sync (offline mode)');
+        toast.success(t('supplierQueuedForSync'));
         setSupplierDialogMode(null);
         setEditSupplier(null);
         reset();
@@ -220,7 +249,7 @@ export default function SuppliersPage() {
       });
 
       if (response.ok) {
-        toast.success(isEdit ? 'Supplier updated successfully' : 'Supplier created successfully');
+        toast.success(isEdit ? t('supplierUpdatedSuccessfully') : t('supplierCreatedSuccessfully'));
         setSupplierDialogMode(null);
         setEditSupplier(null);
         reset();
@@ -242,13 +271,13 @@ export default function SuppliersPage() {
               });
             }
           });
-          toast.error('Please fix the errors below');
+          toast.error(t('pleaseFixErrorsBelow'));
         } else {
-          toast.error(error.error || (isEdit ? 'Failed to update supplier' : 'Failed to create supplier'));
+          toast.error(error.error || (isEdit ? t('failedToUpdateSupplier') : t('failedToCreateSupplier')));
         }
       }
     } catch (_error) {
-      toast.error('An error occurred');
+      toast.error(t('anErrorOccurred'));
     }
   };
 
@@ -263,8 +292,9 @@ export default function SuppliersPage() {
 
     const result = await verifyPinForAction(session.user.id, pin, 'DELETE_SUPPLIER');
     if (!result.success) {
-      toast.error(result.message);
-      throw new Error(result.message);
+      const msg = result.messageKey ? tSecurity(result.messageKey) : result.message;
+      toast.error(msg);
+      throw new Error(msg);
     }
 
     try {
@@ -273,17 +303,17 @@ export default function SuppliersPage() {
       });
 
       if (response.ok) {
-        toast.success('Supplier deleted successfully');
+        toast.success(t('supplierDeletedSuccessfully'));
         fetchSuppliers();
         setDeletePinModalOpen(false);
         setDeleteTargetId(null);
       } else {
         const error = await response.json();
-        toast.error(error.error || 'Failed to delete supplier');
+        toast.error(error.error || t('failedToDeleteSupplier'));
         throw new Error(error.error);
       }
     } catch (e: any) {
-      toast.error('Failed to delete supplier');
+      toast.error(t('failedToDeleteSupplier'));
       throw e;
     }
   };
@@ -302,23 +332,19 @@ export default function SuppliersPage() {
       if (response.ok) {
         const data = await response.json();
         setDecryptedBankAccount(data.bankAccount);
-        toast.success('Bank account decrypted');
+        toast.success(t('bankAccountDecrypted'));
         setBankPinModalOpen(false);
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to decrypt bank account');
-        throw new Error(error.error || 'Failed');
+        const err = await response.json();
+        const errMsg = err?.error;
+        const display = errMsg && ['userNotFound','pinNotSet','tooManyAttempts','pinIncorrect'].includes(errMsg) ? tSecurity(errMsg) : (errMsg || t('failedToDecryptBankAccount'));
+        toast.error(display);
+        throw new Error(display);
       }
     } finally {
       setIsDecrypting(false);
     }
   };
-
-  const filteredSuppliers = suppliers.filter(
-    (s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.code.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   return (
     <div className="space-y-6">
@@ -562,7 +588,7 @@ export default function SuppliersPage() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : filteredSuppliers.length === 0 ? (
+      ) : suppliers.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Building2 className="h-12 w-12 text-muted-foreground mb-4" />
@@ -578,8 +604,9 @@ export default function SuppliersPage() {
           </CardContent>
         </Card>
       ) : (
+        <>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredSuppliers.map((supplier) => (
+          {suppliers.map((supplier) => (
             <Card key={supplier.id} className="group">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
@@ -657,6 +684,14 @@ export default function SuppliersPage() {
             </Card>
           ))}
         </div>
+        <Pagination
+          page={page}
+          totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
+          onPageChange={setPage}
+          totalCount={totalCount}
+          pageSize={pageSize}
+        />
+        </>
       )}
 
       {/* View Supplier Dialog */}

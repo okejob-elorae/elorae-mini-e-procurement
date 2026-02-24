@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,18 +15,20 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Factory, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const loginSchema = z.object({
-  email: z.string().email('Please enter a valid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-type LoginForm = z.infer<typeof loginSchema>;
-
 export default function LoginPage() {
+  const t = useTranslations('auth');
+  const tApp = useTranslations('app');
+  const tValidation = useTranslations('validation');
   const router = useRouter();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const loginSchema = z.object({
+    email: z.string().email(tValidation('email')),
+    password: z.string().min(6, tValidation('passwordMinLength')),
+  });
+  type LoginForm = z.infer<typeof loginSchema>;
 
   const {
     register,
@@ -47,13 +50,13 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError('Invalid email or password');
+        setError(t('invalidCredentials'));
       } else {
         router.push('/backoffice');
         router.refresh();
       }
     } catch (_error) {
-      setError('An error occurred. Please try again.');
+      setError(t('errorOccurred'));
     } finally {
       setIsLoading(false);
     }
@@ -69,9 +72,9 @@ export default function LoginPage() {
             </div>
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">Elorae ERP</CardTitle>
+            <CardTitle className="text-2xl font-bold">{tApp('name')}</CardTitle>
             <CardDescription>
-              Procurement & Production Management
+              {tApp('tagline')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -83,11 +86,11 @@ export default function LoginPage() {
               </Alert>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('email')}</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="name@company.com"
+                placeholder={t('emailPlaceholder')}
                 {...register('email')}
                 disabled={isLoading}
               />
@@ -96,12 +99,12 @@ export default function LoginPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('password')}</Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
+                  placeholder={t('passwordPlaceholder')}
                   className="pr-10"
                   {...register('password')}
                   disabled={isLoading}
@@ -113,7 +116,7 @@ export default function LoginPage() {
                   className="absolute right-0 top-0 h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
                   onClick={() => setShowPassword((p) => !p)}
                   disabled={isLoading}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? t('hidePassword') : t('showPassword')}
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4" />
@@ -134,10 +137,10 @@ export default function LoginPage() {
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
+                  {t('signingIn')}
                 </>
               ) : (
-                'Sign In'
+                t('signIn')
               )}
             </Button>
           </CardFooter>

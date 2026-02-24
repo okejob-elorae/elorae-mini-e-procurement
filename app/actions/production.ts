@@ -501,22 +501,25 @@ export async function cancelWorkOrder(id: string, userId: string, reason?: strin
   revalidatePath('/backoffice/work-orders');
 }
 
-export async function getWorkOrders(filters?: {
-  status?: string;
-  vendorId?: string;
-  fromDate?: Date;
-  toDate?: Date;
-}) {
+export async function getWorkOrders(
+  filters?: {
+    status?: string;
+    vendorId?: string;
+    fromDate?: Date;
+    toDate?: Date;
+  },
+  opts?: { page: number; pageSize: number }
+) {
   const where: any = {};
-  
+
   if (filters?.status) {
     where.status = filters.status;
   }
-  
+
   if (filters?.vendorId) {
     where.vendorId = filters.vendorId;
   }
-  
+
   if (filters?.fromDate || filters?.toDate) {
     where.createdAt = {};
     if (filters.fromDate) {
@@ -526,32 +529,70 @@ export async function getWorkOrders(filters?: {
       where.createdAt.lte = filters.toDate;
     }
   }
-  
+
+  const include = {
+    vendor: {
+      select: {
+        name: true,
+        code: true,
+      },
+    },
+    finishedGood: {
+      select: {
+        id: true,
+        sku: true,
+        nameId: true,
+        nameEn: true,
+      },
+    },
+    _count: {
+      select: {
+        issues: true,
+        receipts: true,
+      },
+    },
+  };
+
+  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
+    const [rows, totalCount] = await Promise.all([
+      prisma.workOrder.findMany({
+        where,
+        skip: (opts.page - 1) * opts.pageSize,
+        take: opts.pageSize,
+        include,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.workOrder.count({ where }),
+    ]);
+    const items = rows.map((wo) => ({
+      id: wo.id,
+      docNumber: wo.docNumber,
+      vendorId: wo.vendorId,
+      finishedGoodId: wo.finishedGoodId,
+      outputMode: wo.outputMode,
+      plannedQty: Number(wo.plannedQty),
+      actualQty: wo.actualQty != null ? Number(wo.actualQty) : null,
+      targetDate: wo.targetDate,
+      status: wo.status,
+      issuedAt: wo.issuedAt,
+      completedAt: wo.completedAt,
+      canceledAt: wo.canceledAt,
+      canceledReason: wo.canceledReason,
+      notes: wo.notes,
+      createdById: wo.createdById,
+      createdAt: wo.createdAt,
+      updatedAt: wo.updatedAt,
+      vendor: wo.vendor,
+      finishedGood: wo.finishedGood,
+      _count: wo._count,
+    }));
+    return { items, totalCount };
+  }
+
   const rows = await prisma.workOrder.findMany({
     where,
-    include: {
-      vendor: {
-        select: {
-          name: true,
-          code: true
-        }
-      },
-      finishedGood: {
-        select: {
-          id: true,
-          sku: true,
-          nameId: true,
-          nameEn: true
-        }
-      },
-      _count: {
-        select: {
-          issues: true,
-          receipts: true
-        }
-      }
-    },
-    orderBy: { createdAt: 'desc' }
+    include,
+    orderBy: { createdAt: 'desc' },
   });
   return rows.map((wo) => ({
     id: wo.id,
@@ -656,12 +697,15 @@ export async function getReconciliation(woId: string) {
 }
 
 /** Get material issues for CMT register (filter by vendor and/or date). */
-export async function getMaterialIssuesForCMTRegister(filters?: {
-  vendorId?: string;
-  dateFrom?: Date;
-  dateTo?: Date;
-  issueType?: 'FABRIC' | 'ACCESSORIES';
-}) {
+export async function getMaterialIssuesForCMTRegister(
+  filters?: {
+    vendorId?: string;
+    dateFrom?: Date;
+    dateTo?: Date;
+    issueType?: 'FABRIC' | 'ACCESSORIES';
+  },
+  opts?: { page: number; pageSize: number }
+) {
   const where: any = {};
   if (filters?.vendorId) {
     where.wo = { vendorId: filters.vendorId };
@@ -674,6 +718,42 @@ export async function getMaterialIssuesForCMTRegister(filters?: {
   if (filters?.issueType) {
     where.issueType = filters.issueType as 'FABRIC' | 'ACCESSORIES';
   }
+
+  const mapIssue = (i: { id: string; docNumber: string; issueType: string; issuedAt: Date; totalCost: unknown; wo?: { docNumber?: string; vendor?: { name?: string; code?: string } } }) => {
+    const wo = i.wo;
+    return {
+      id: i.id,
+      docNumber: i.docNumber,
+      issueType: i.issueType,
+      issuedAt: i.issuedAt,
+      totalCost: Number(i.totalCost),
+      woDocNumber: wo?.docNumber ?? '',
+      vendorName: wo?.vendor?.name ?? wo?.vendor?.code ?? '',
+    };
+  };
+
+  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
+    const [issues, totalCount] = await Promise.all([
+      prisma.materialIssue.findMany({
+        where,
+        skip: (opts.page - 1) * opts.pageSize,
+        take: opts.pageSize,
+        include: {
+          wo: {
+            select: {
+              docNumber: true,
+              vendorId: true,
+              vendor: { select: { name: true, code: true } },
+            },
+          },
+        },
+        orderBy: { issuedAt: 'desc' },
+      }),
+      prisma.materialIssue.count({ where }),
+    ]);
+    return { items: issues.map((i) => mapIssue(i as any)), totalCount };
+  }
+
   const issues = await prisma.materialIssue.findMany({
     where,
     include: {
@@ -688,18 +768,7 @@ export async function getMaterialIssuesForCMTRegister(filters?: {
     orderBy: { issuedAt: 'desc' },
     take: 500,
   });
-  return issues.map((i) => {
-    const wo = (i as any).wo;
-    return {
-      id: i.id,
-      docNumber: i.docNumber,
-      issueType: i.issueType,
-      issuedAt: i.issuedAt,
-      totalCost: Number(i.totalCost),
-      woDocNumber: wo?.docNumber ?? '',
-      vendorName: wo?.vendor?.name ?? wo?.vendor?.code ?? '',
-    };
-  });
+  return issues.map((i) => mapIssue(i as any));
 }
 
 /** Get a single material issue with full details for print (Nota ke CMT). */

@@ -243,7 +243,7 @@ export default function NewVendorReturnPage() {
               <div className="space-y-2">
                 <Label>Vendor *</Label>
                 <Select value={vendorId} onValueChange={setVendorId} required>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select vendor" />
                   </SelectTrigger>
                   <SelectContent>
@@ -258,7 +258,7 @@ export default function NewVendorReturnPage() {
               <div className="space-y-2">
                 <Label>Work Order (optional)</Label>
                 <Select value={woId} onValueChange={setWoId}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent>

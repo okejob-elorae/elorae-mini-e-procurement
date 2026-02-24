@@ -30,10 +30,19 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 import { getPOs, submitPO, cancelPO } from '@/app/actions/purchase-orders';
 import { POStatus } from '@/lib/constants/enums';
 import { ETABadge } from '@/components/ui/ETABadge';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 interface PurchaseOrder {
   id: string;
@@ -99,14 +108,25 @@ export default function PurchaseOrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<POStatus | ''>('');
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [totalCount, setTotalCount] = useState(0);
 
   const fetchPOs = async () => {
     setIsLoading(true);
     try {
-      const data = await getPOs({
-        status: statusFilter || undefined
-      });
-      setPOs(data as unknown as PurchaseOrder[]);
+      const result = await getPOs(
+        { status: statusFilter || undefined },
+        { page, pageSize }
+      );
+      if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
+        setPOs((result as { items: PurchaseOrder[]; totalCount: number }).items);
+        setTotalCount((result as { items: PurchaseOrder[]; totalCount: number }).totalCount);
+      } else {
+        const list = (result as PurchaseOrder[]) ?? [];
+        setPOs(list);
+        setTotalCount(list.length);
+      }
     } catch (_error) {
       toast.error('Failed to load purchase orders');
     } finally {
@@ -115,9 +135,12 @@ export default function PurchaseOrdersPage() {
   };
 
   useEffect(() => {
-    fetchPOs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load + status filter
+    setPage(1);
   }, [statusFilter]);
+
+  useEffect(() => {
+    fetchPOs();
+  }, [statusFilter, page, pageSize]);
 
   const handleSubmit = async (id: string) => {
     try {
@@ -186,19 +209,22 @@ export default function PurchaseOrdersPage() {
             className="pl-9"
           />
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as POStatus | '')}
-          className="px-3 py-2 rounded-md border bg-background"
+        <Select
+          value={statusFilter || '__all__'}
+          onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : (v as POStatus))}
         >
-          <option value="">All Status</option>
-          <option value="DRAFT">Draft</option>
-          <option value="SUBMITTED">Submitted</option>
-          <option value="PARTIAL">Partial</option>
-          <option value="CLOSED">Closed</option>
-          <option value="OVER">Over-received</option>
-          <option value="CANCELLED">Cancelled</option>
-        </select>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Status</SelectItem>
+            {(Object.entries(statusLabels) as [POStatus, string][]).map(([status, label]) => (
+              <SelectItem key={status} value={status}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* POs Table */}
@@ -220,6 +246,7 @@ export default function PurchaseOrdersPage() {
               <p className="text-muted-foreground">No purchase orders found</p>
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -309,6 +336,14 @@ export default function PurchaseOrdersPage() {
                 </TableBody>
               </Table>
             </div>
+            <Pagination
+              page={page}
+              totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
+              onPageChange={setPage}
+              totalCount={totalCount}
+              pageSize={pageSize}
+            />
+            </>
           )}
         </CardContent>
       </Card>

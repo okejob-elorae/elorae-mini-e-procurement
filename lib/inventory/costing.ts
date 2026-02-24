@@ -213,34 +213,78 @@ export async function getStockCard(itemId: string, limit: number = 100) {
   return movements;
 }
 
-// Get inventory snapshot (all items with their values)
-export async function getInventorySnapshot() {
-  const values = await prisma.inventoryValue.findMany({
-    include: {
-      item: {
+const inventorySnapshotInclude = {
+  item: {
+    select: {
+      sku: true,
+      nameId: true,
+      nameEn: true,
+      type: true,
+      reorderPoint: true,
+      uom: {
         select: {
-          sku: true,
-          nameId: true,
-          nameEn: true,
-          type: true,
-          reorderPoint: true,
-          uom: {
-            select: {
-              code: true,
-              nameId: true
-            }
-          }
+          code: true,
+          nameId: true
         }
       }
-    },
-    orderBy: {
-      item: {
-        sku: 'asc'
-      }
     }
+  }
+};
+
+const inventorySnapshotOrderBy = {
+  item: {
+    sku: 'asc' as const
+  }
+};
+
+// Get inventory snapshot (all items with their values)
+export async function getInventorySnapshot(opts?: { page: number; pageSize: number }) {
+  const toNum = (v: unknown) => (v == null ? null : Number(v));
+
+  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
+    const [values, totalCount, totalValueAgg, lowStockResult] = await Promise.all([
+      prisma.inventoryValue.findMany({
+        skip: (opts.page - 1) * opts.pageSize,
+        take: opts.pageSize,
+        include: inventorySnapshotInclude,
+        orderBy: inventorySnapshotOrderBy,
+      }),
+      prisma.inventoryValue.count(),
+      prisma.inventoryValue.aggregate({
+        _sum: { totalValue: true },
+      }),
+      prisma.$queryRaw<[{ count: number }]>`
+        SELECT COUNT(*) as count FROM \`InventoryValue\` iv
+        INNER JOIN \`Item\` i ON i.id = iv.\`itemId\`
+        WHERE i.\`reorderPoint\` IS NOT NULL AND iv.\`qtyOnHand\` <= i.\`reorderPoint\`
+      `,
+    ]);
+    const items = values.map((v) => ({
+      ...v,
+      qtyOnHand: toNum(v.qtyOnHand),
+      avgCost: toNum(v.avgCost),
+      totalValue: toNum(v.totalValue),
+      item: {
+        ...v.item,
+        reorderPoint: v.item.reorderPoint != null ? toNum(v.item.reorderPoint) : null,
+      },
+    }));
+    const totalValue = Number(totalValueAgg._sum.totalValue ?? 0);
+    const lowStockItems = Number(lowStockResult[0]?.count ?? 0) || 0;
+    return {
+      items,
+      totalCount,
+      totalValue,
+      totalItems: totalCount,
+      lowStockItems,
+    };
+  }
+
+  const values = await prisma.inventoryValue.findMany({
+    include: inventorySnapshotInclude,
+    orderBy: inventorySnapshotOrderBy,
   });
 
-  const toNum = (v: unknown) => (v == null ? null : Number(v));
   const items = values.map((v) => ({
     ...v,
     qtyOnHand: toNum(v.qtyOnHand),

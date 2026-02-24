@@ -274,12 +274,15 @@ export async function completeReturn(
   });
 }
 
-export async function getVendorReturns(filters?: {
-  status?: string;
-  vendorId?: string;
-  woId?: string;
-  search?: string;
-}) {
+export async function getVendorReturns(
+  filters?: {
+    status?: string;
+    vendorId?: string;
+    woId?: string;
+    search?: string;
+  },
+  opts?: { page: number; pageSize: number }
+) {
   const andParts: Array<Record<string, unknown>> = [];
   if (filters?.status) andParts.push({ status: filters.status });
   if (filters?.vendorId) andParts.push({ vendorId: filters.vendorId });
@@ -296,16 +299,36 @@ export async function getVendorReturns(filters?: {
   }
   const where = andParts.length > 0 ? { AND: andParts } : {};
 
+  const include = {
+    vendor: {
+      select: { id: true, name: true, code: true }
+    },
+    wo: {
+      select: { id: true, docNumber: true }
+    }
+  };
+
+  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
+    const [rows, totalCount] = await Promise.all([
+      prisma.vendorReturn.findMany({
+        where,
+        skip: (opts.page - 1) * opts.pageSize,
+        take: opts.pageSize,
+        include,
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.vendorReturn.count({ where }),
+    ]);
+    const items = rows.map((r) => ({
+      ...r,
+      totalValue: Number(r.totalValue)
+    }));
+    return { items, totalCount };
+  }
+
   const rows = await prisma.vendorReturn.findMany({
     where,
-    include: {
-      vendor: {
-        select: { id: true, name: true, code: true }
-      },
-      wo: {
-        select: { id: true, docNumber: true }
-      }
-    },
+    include,
     orderBy: { createdAt: 'desc' }
   });
 

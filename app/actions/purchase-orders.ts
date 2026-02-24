@@ -72,7 +72,7 @@ export async function updatePO(
     }
     const pinResult = await verifyPinForAction(userId, pin, 'EDIT_POSTED_PO');
     if (!pinResult.success) {
-      throw new Error(pinResult.message);
+      throw new Error(pinResult.messageKey ?? pinResult.message);
     }
   }
 
@@ -121,7 +121,7 @@ export async function changePOStatus(
     }
     const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
     if (!pinResult.success) {
-      throw new Error(pinResult.message);
+      throw new Error(pinResult.messageKey ?? pinResult.message);
     }
   }
 
@@ -154,7 +154,7 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
   }
   const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
   if (!pinResult.success) {
-    throw new Error(pinResult.message);
+    throw new Error(pinResult.messageKey ?? pinResult.message);
   }
 
   const po = await prisma.purchaseOrder.findUnique({
@@ -187,30 +187,33 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
   revalidatePath('/backoffice/purchase-orders');
 }
 
-export async function getPOs(filters?: {
-  status?: POStatus;
-  statusIn?: POStatus[];
-  supplierId?: string;
-  fromDate?: Date;
-  toDate?: Date;
-  overdue?: boolean;
-  paymentDueFrom?: Date;
-  paymentDueTo?: Date;
-  paid?: boolean;
-}) {
+export async function getPOs(
+  filters?: {
+    status?: POStatus;
+    statusIn?: POStatus[];
+    supplierId?: string;
+    fromDate?: Date;
+    toDate?: Date;
+    overdue?: boolean;
+    paymentDueFrom?: Date;
+    paymentDueTo?: Date;
+    paid?: boolean;
+  },
+  opts?: { page: number; pageSize: number }
+) {
   const where: any = {};
-  
+
   if (filters?.status) {
     where.status = filters.status;
   }
   if (filters?.statusIn?.length) {
     where.status = { in: filters.statusIn };
   }
-  
+
   if (filters?.supplierId) {
     where.supplierId = filters.supplierId;
   }
-  
+
   if (filters?.fromDate || filters?.toDate) {
     where.createdAt = {};
     if (filters.fromDate) {
@@ -235,38 +238,67 @@ export async function getPOs(filters?: {
   if (filters?.paid === false) {
     where.paidAt = null;
   }
-  
+
   if (filters?.overdue) {
     where.etaDate = { lt: new Date() };
     where.status = { notIn: ['CLOSED', 'OVER', 'CANCELLED'] };
   }
-  
+
+  const include = {
+    supplier: {
+      select: {
+        name: true,
+        code: true,
+      },
+    },
+    items: {
+      include: {
+        item: {
+          select: {
+            sku: true,
+            nameId: true,
+          },
+        },
+      },
+    },
+    _count: {
+      select: {
+        grns: true,
+      },
+    },
+  };
+
+  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
+    const [pos, totalCount] = await Promise.all([
+      prisma.purchaseOrder.findMany({
+        where,
+        skip: (opts.page - 1) * opts.pageSize,
+        take: opts.pageSize,
+        include,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.purchaseOrder.count({ where }),
+    ]);
+    const items = pos.map((po) => ({
+      ...po,
+      totalAmount: toNum(po.totalAmount),
+      taxAmount: toNum(po.taxAmount),
+      grandTotal: toNum(po.grandTotal),
+      items: po.items.map((i) => ({
+        ...i,
+        qty: toNum(i.qty),
+        price: toNum(i.price),
+        receivedQty: toNum(i.receivedQty),
+      })),
+      etaAlert: getETAStatus(po.etaDate, po.status),
+    }));
+    return { items, totalCount };
+  }
+
   const pos = await prisma.purchaseOrder.findMany({
     where,
-    include: {
-      supplier: {
-        select: {
-          name: true,
-          code: true
-        }
-      },
-      items: {
-        include: {
-          item: {
-            select: {
-              sku: true,
-              nameId: true
-            }
-          }
-        }
-      },
-      _count: {
-        select: {
-          grns: true
-        }
-      }
-    },
-    orderBy: { createdAt: 'desc' }
+    include,
+    orderBy: { createdAt: 'desc' },
   });
 
   return pos.map((po) => ({

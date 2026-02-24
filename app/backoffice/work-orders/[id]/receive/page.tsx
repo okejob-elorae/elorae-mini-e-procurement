@@ -16,10 +16,12 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { getWorkOrderById, receiveFG } from '@/app/actions/production';
 
 export default function WorkOrderReceivePage() {
+  const t = useTranslations('toasts');
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
@@ -38,7 +40,7 @@ export default function WorkOrderReceivePage() {
     getWorkOrderById(id)
       .then(setWO)
       .catch(() => {
-        toast.error('Failed to load work order');
+        toast.error(t('failedToLoadWorkOrder'));
         router.push('/backoffice/work-orders');
       })
       .finally(() => setIsLoading(false));
@@ -60,7 +62,7 @@ export default function WorkOrderReceivePage() {
     e.preventDefault();
     if (!session?.user?.id || !wo) return;
     if (received <= 0) {
-      toast.error('Qty received must be > 0');
+      toast.error(t('qtyReceivedMustBePositive'));
       return;
     }
     setIsSubmitting(true);
@@ -75,10 +77,10 @@ export default function WorkOrderReceivePage() {
         },
         session.user.id
       );
-      toast.success('FG received');
+      toast.success(t('fgReceived'));
       router.replace(`/backoffice/work-orders/${id}`);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to receive');
+      toast.error(err instanceof Error ? err.message : t('failedToReceive'));
     } finally {
       setIsSubmitting(false);
     }

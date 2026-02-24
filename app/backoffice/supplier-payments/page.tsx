@@ -31,6 +31,8 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
 import { POStatus } from '@/lib/constants/enums';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 interface POForPayment {
   id: string;
@@ -52,6 +54,9 @@ export default function SupplierPaymentsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [totalCount, setTotalCount] = useState(0);
 
   const fetchSuppliers = async () => {
     try {
@@ -70,14 +75,17 @@ export default function SupplierPaymentsPage() {
     try {
       const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : undefined;
       const to = dateTo ? new Date(dateTo + 'T23:59:59') : undefined;
-      const data = await getPOs({
-        statusIn: ['SUBMITTED', 'PARTIAL', 'CLOSED', 'OVER'],
-        supplierId: supplierId || undefined,
-        paymentDueFrom: from,
-        paymentDueTo: to,
-        paid: paymentFilter === 'all' ? undefined : paymentFilter === 'paid',
-      });
-      setPOs((data as any[]).map((po) => ({
+      const result = await getPOs(
+        {
+          statusIn: ['SUBMITTED', 'PARTIAL', 'CLOSED', 'OVER'],
+          supplierId: supplierId || undefined,
+          paymentDueFrom: from,
+          paymentDueTo: to,
+          paid: paymentFilter === 'all' ? undefined : paymentFilter === 'paid',
+        },
+        { page, pageSize }
+      );
+      const mapPo = (po: any) => ({
         id: po.id,
         docNumber: po.docNumber,
         status: po.status,
@@ -85,10 +93,20 @@ export default function SupplierPaymentsPage() {
         paidAt: po.paidAt ? new Date(po.paidAt) : null,
         grandTotal: Number(po.grandTotal),
         supplier: po.supplier,
-      })));
+      });
+      if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
+        const r = result as { items: any[]; totalCount: number };
+        setPOs(r.items.map(mapPo));
+        setTotalCount(r.totalCount);
+      } else {
+        const list = (result as any[]) ?? [];
+        setPOs(list.map(mapPo));
+        setTotalCount(list.length);
+      }
     } catch {
       toast.error('Failed to load POs');
       setPOs([]);
+      setTotalCount(0);
     } finally {
       setIsLoading(false);
     }
@@ -99,8 +117,12 @@ export default function SupplierPaymentsPage() {
   }, []);
 
   useEffect(() => {
-    fetchPOs();
+    setPage(1);
   }, [supplierId, dateFrom, dateTo, paymentFilter]);
+
+  useEffect(() => {
+    fetchPOs();
+  }, [supplierId, dateFrom, dateTo, paymentFilter, page, pageSize]);
 
   const unpaidTotal = pos.filter((p) => !p.paidAt).reduce((sum, p) => sum + p.grandTotal, 0);
   const paidCount = pos.filter((p) => p.paidAt).length;
@@ -227,6 +249,7 @@ export default function SupplierPaymentsPage() {
           ) : pos.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">No POs match the filters.</p>
           ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -289,6 +312,14 @@ export default function SupplierPaymentsPage() {
                 ))}
               </TableBody>
             </Table>
+            <Pagination
+              page={page}
+              totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
+              onPageChange={setPage}
+              totalCount={totalCount}
+              pageSize={pageSize}
+            />
+            </>
           )}
         </CardContent>
       </Card>

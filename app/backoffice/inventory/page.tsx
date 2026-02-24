@@ -37,6 +37,8 @@ import { toast } from 'sonner';
 import { getInventorySnapshot } from '@/lib/inventory/costing';
 import { getGRNs } from '@/app/actions/grn';
 import { getStockAdjustments } from '@/app/actions/inventory';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 interface InventoryItem {
   itemId: string;
@@ -99,24 +101,50 @@ export default function InventoryPage() {
     totalValue: 0,
     lowStockItems: 0
   });
+  const [stockPage, setStockPage] = useState(1);
+  const [stockPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [stockTotalCount, setStockTotalCount] = useState(0);
+  const [grnPage, setGrnPage] = useState(1);
+  const [grnPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [grnTotalCount, setGrnTotalCount] = useState(0);
+  const [adjPage, setAdjPage] = useState(1);
+  const [adjPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [adjTotalCount, setAdjTotalCount] = useState(0);
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
       const [invData, grnData, adjData] = await Promise.all([
-        getInventorySnapshot(),
-        getGRNs(),
-        getStockAdjustments()
+        getInventorySnapshot({ page: stockPage, pageSize: stockPageSize }),
+        getGRNs(undefined, { page: grnPage, pageSize: grnPageSize }),
+        getStockAdjustments(undefined, { page: adjPage, pageSize: adjPageSize })
       ]);
-      
-      setInventory(invData.items as unknown as InventoryItem[]);
-      setSummary({
-        totalItems: invData.totalItems,
-        totalValue: invData.totalValue,
-        lowStockItems: invData.lowStockItems
-      });
-      setGRNs(grnData as unknown as GRN[]);
-      setAdjustments(adjData as unknown as Adjustment[]);
+
+      if (invData != null && typeof invData === 'object' && 'items' in invData) {
+        setInventory((invData.items ?? []) as unknown as InventoryItem[]);
+        setSummary({
+          totalItems: (invData as { totalItems?: number }).totalItems ?? 0,
+          totalValue: (invData as { totalValue?: number }).totalValue ?? 0,
+          lowStockItems: (invData as { lowStockItems?: number }).lowStockItems ?? 0
+        });
+        setStockTotalCount((invData as { totalCount?: number }).totalCount ?? invData.items.length);
+      }
+      if (grnData != null && typeof grnData === 'object' && 'items' in grnData && 'totalCount' in grnData) {
+        setGRNs((grnData as { items: GRN[] }).items);
+        setGrnTotalCount((grnData as { totalCount: number }).totalCount);
+      } else {
+        const grnList = (grnData as GRN[]) ?? [];
+        setGRNs(grnList);
+        setGrnTotalCount(grnList.length);
+      }
+      if (adjData != null && typeof adjData === 'object' && 'items' in adjData && 'totalCount' in adjData) {
+        setAdjustments((adjData as { items: Adjustment[] }).items);
+        setAdjTotalCount((adjData as { totalCount: number }).totalCount);
+      } else {
+        const adjList = (adjData as Adjustment[]) ?? [];
+        setAdjustments(adjList);
+        setAdjTotalCount(adjList.length);
+      }
     } catch (_error) {
       toast.error('Failed to load inventory data');
     } finally {
@@ -126,7 +154,7 @@ export default function InventoryPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [stockPage, grnPage, adjPage]);
 
   const isLowStock = (item: InventoryItem) => {
     if (!item.item.reorderPoint) return false;
@@ -299,6 +327,13 @@ export default function InventoryPage() {
                   </Table>
                 </div>
               )}
+              <Pagination
+                page={stockPage}
+                totalPages={Math.max(1, Math.ceil(stockTotalCount / stockPageSize))}
+                onPageChange={setStockPage}
+                totalCount={stockTotalCount}
+                pageSize={stockPageSize}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -343,6 +378,13 @@ export default function InventoryPage() {
                   </TableBody>
                 </Table>
               </div>
+              <Pagination
+                page={grnPage}
+                totalPages={Math.max(1, Math.ceil(grnTotalCount / grnPageSize))}
+                onPageChange={setGrnPage}
+                totalCount={grnTotalCount}
+                pageSize={grnPageSize}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -455,6 +497,13 @@ export default function InventoryPage() {
                   </TableBody>
                 </Table>
               </div>
+              <Pagination
+                page={adjPage}
+                totalPages={Math.max(1, Math.ceil(adjTotalCount / adjPageSize))}
+                onPageChange={setAdjPage}
+                totalCount={adjTotalCount}
+                pageSize={adjPageSize}
+              />
             </CardContent>
           </Card>
         </TabsContent>

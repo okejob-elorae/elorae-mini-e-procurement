@@ -2,11 +2,13 @@
 
 import { useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
+import { NOTIFICATION_RECEIVED_EVENT } from '@/components/notifications/NotificationIcon';
 
 /**
  * Registers the current device for Firebase Cloud Messaging (FCM) when the user is logged in.
  * Requests notification permission, gets the FCM token, and sends it to the backend so the server
- * can send push notifications via Firebase Admin. Renders nothing.
+ * can send push notifications via Firebase Admin. Listens for foreground messages and dispatches
+ * an event so the notification inbox can refetch. Renders nothing.
  */
 export function FcmRegistration() {
   const { data: session, status } = useSession();
@@ -26,11 +28,12 @@ export function FcmRegistration() {
     if (!vapidKey || !apiKey || !projectId || !appId) return;
 
     let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
 
     async function register() {
       try {
         const { getApp, getApps, initializeApp } = await import('firebase/app');
-        const { getMessaging, getToken, isSupported } = await import('firebase/messaging');
+        const { getMessaging, getToken, onMessage, isSupported } = await import('firebase/messaging');
 
         const supported = await isSupported();
         if (!supported || cancelled) return;
@@ -48,6 +51,12 @@ export function FcmRegistration() {
               });
 
         const messaging = getMessaging(app);
+
+        // When a message is received in foreground, notify the notification inbox to refetch
+        unsubscribe = onMessage(messaging, () => {
+          window.dispatchEvent(new Event(NOTIFICATION_RECEIVED_EVENT));
+        });
+
         const token = await getToken(messaging, { vapidKey });
         if (!token || cancelled) return;
 
@@ -67,6 +76,7 @@ export function FcmRegistration() {
     register();
     return () => {
       cancelled = true;
+      unsubscribe?.();
     };
   }, [status, session?.user]);
 

@@ -31,7 +31,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ChevronDown, ChevronRight, Loader2, FileDown, Filter, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 type AuditLogRow = Awaited<ReturnType<typeof getAuditLogs>>['logs'][number];
 
@@ -75,6 +78,7 @@ function exportToCSV(logs: AuditLogRow[]): string {
 }
 
 export default function AuditTrailPage() {
+  const tAudit = useTranslations('audit');
   const { data: session, status } = useSession();
   const router = useRouter();
   const [logs, setLogs] = useState<AuditLogRow[]>([]);
@@ -82,7 +86,7 @@ export default function AuditTrailPage() {
   const [users, setUsers] = useState<{ id: string; name: string | null; email: string | null }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filters, setFilters] = useState<GetAuditLogsFilters>({
-    limit: 50,
+    limit: DEFAULT_PAGE_SIZE,
     offset: 0,
   });
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -153,7 +157,7 @@ export default function AuditTrailPage() {
             <div>
               <CardTitle className="text-lg">Filters</CardTitle>
               <CardDescription className="mt-0.5">
-                Filter by user, action, date range, or entity (e.g. doc number).
+                {tAudit('filterDescription')}
               </CardDescription>
             </div>
           </div>
@@ -267,7 +271,7 @@ export default function AuditTrailPage() {
               className="text-muted-foreground hover:text-foreground"
               onClick={() =>
                 setFilters({
-                  limit: 50,
+                  limit: DEFAULT_PAGE_SIZE,
                   offset: 0,
                   userId: undefined,
                   action: undefined,
@@ -406,38 +410,18 @@ export default function AuditTrailPage() {
               </Table>
             </div>
           )}
-          {total > (filters.limit ?? 50) && (
-            <div className="flex justify-between items-center mt-4">
-              <p className="text-sm text-muted-foreground">
-                Showing {(filters.offset ?? 0) + 1}–{Math.min((filters.offset ?? 0) + (filters.limit ?? 50), total)} of {total}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={(filters.offset ?? 0) === 0}
-                  onClick={() =>
-                    setFilters((f) => ({
-                      ...f,
-                      offset: Math.max(0, (f.offset ?? 0) - (f.limit ?? 50)),
-                    }))
-                  }
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={(filters.offset ?? 0) + (filters.limit ?? 50) >= total}
-                  onClick={() =>
-                    setFilters((f) => ({ ...f, offset: (f.offset ?? 0) + (f.limit ?? 50) }))
-                  }
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
+          <Pagination
+            page={Math.floor((filters.offset ?? 0) / (filters.limit ?? DEFAULT_PAGE_SIZE)) + 1}
+            totalPages={Math.max(1, Math.ceil(total / (filters.limit ?? DEFAULT_PAGE_SIZE)))}
+            onPageChange={(newPage) =>
+              setFilters((f) => ({
+                ...f,
+                offset: (newPage - 1) * (f.limit ?? DEFAULT_PAGE_SIZE),
+              }))
+            }
+            totalCount={total}
+            pageSize={filters.limit ?? DEFAULT_PAGE_SIZE}
+          />
         </CardContent>
       </Card>
     </div>

@@ -496,6 +496,7 @@ model NotificationQueue {
   data      Json?
   sent      Boolean   @default(false)
   sentAt    DateTime?
+  readAt    DateTime?
   createdAt DateTime  @default(now())
   @@index([userId, sent])
   @@index([createdAt])

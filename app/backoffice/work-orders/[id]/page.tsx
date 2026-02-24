@@ -48,16 +48,9 @@ import {
   cancelWorkOrder,
   getMaterialIssueForPrint
 } from '@/app/actions/production';
+import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { WOStatus } from '@/lib/constants/enums';
 
-const statusLabels: Record<WOStatus, string> = {
-  DRAFT: 'Draft',
-  ISSUED: 'Issued',
-  IN_PRODUCTION: 'In Production',
-  PARTIAL: 'Partial',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled'
-};
 
 const statusColors: Record<WOStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
@@ -74,6 +67,16 @@ export default function WorkOrderDetailPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const t = useTranslations('production');
+  const tToasts = useTranslations('toasts');
+  const tWO = useTranslations('workOrders');
+  const statusLabels: Record<WOStatus, string> = {
+    DRAFT: tWO('draft'),
+    ISSUED: tWO('issued'),
+    IN_PRODUCTION: tWO('inProduction'),
+    PARTIAL: tWO('partial'),
+    COMPLETED: tWO('completed'),
+    CANCELLED: tWO('cancelled'),
+  };
   const id = typeof params.id === 'string' ? params.id : '';
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -85,7 +88,7 @@ export default function WorkOrderDetailPage() {
     getWorkOrderById(id)
       .then(setWO)
       .catch(() => {
-        toast.error('Failed to load work order');
+        toast.error(tToasts('failedToLoadWorkOrder'));
         router.push('/backoffice/work-orders');
       })
       .finally(() => setIsLoading(false));
@@ -95,23 +98,23 @@ export default function WorkOrderDetailPage() {
     if (!session?.user?.id || !wo) return;
     try {
       await issueWorkOrder(String(wo.id), session.user.id);
-      toast.success('Work Order issued');
+      toast.success(tToasts('workOrderIssued'));
       const updated = await getWorkOrderById(id);
       setWO(updated);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to issue');
+      toast.error(err instanceof Error ? err.message : tToasts('failedToIssue'));
     }
   };
 
   const handleCancel = async () => {
-    if (!session?.user?.id || !wo || !confirm('Cancel this Work Order?')) return;
+    if (!session?.user?.id || !wo || !confirm(tWO('confirmCancelWO'))) return;
     try {
       await cancelWorkOrder(String(wo.id), session.user.id);
-      toast.success('Work Order cancelled');
+      toast.success(tToasts('workOrderCancelled'));
       const updated = await getWorkOrderById(id);
       setWO(updated);
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to cancel');
+      toast.error(err instanceof Error ? err.message : tToasts('failedToCancel'));
     }
   };
 
@@ -127,9 +130,56 @@ export default function WorkOrderDetailPage() {
     if (!printIssueId) return;
     getMaterialIssueForPrint(printIssueId)
       .then(setPrintData)
-      .catch(() => toast.error('Failed to load issue for print'));
+      .catch(() => toast.error(tToasts('failedToLoadIssueForPrint')));
   }, [printIssueId]);
-  const handlePrintNota = () => window.print();
+  const handlePrintNota = () => {
+    if (!printData) return;
+    const html = buildMaterialIssuePrintHtml({
+      docNumber: printData.docNumber,
+      woDocNumber: printData.woDocNumber,
+      vendorName: printData.vendorName,
+      issuedAt: printData.issuedAt,
+      issueType: printData.issueType,
+      totalCost: printData.totalCost,
+      lines: printData.lines,
+      labels: {
+        title: 'Nota ke CMT',
+        doc: 'Doc',
+        wo: 'WO',
+        vendor: 'Vendor',
+        date: 'Date',
+        type: 'Type',
+        item: 'Item',
+        qty: 'Qty',
+        uom: 'UOM',
+        totalCost: 'Total cost',
+      },
+    });
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
+    iframe.setAttribute('title', 'Print Nota ke CMT');
+    document.body.appendChild(iframe);
+    const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+    if (!doc) {
+      toast.error(tToasts('failedToLoadIssueForPrint'));
+      iframe.remove();
+      return;
+    }
+    doc.open();
+    doc.write(html);
+    doc.close();
+    const removeIframe = () => {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    };
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.print();
+      } catch {
+        toast.error(tToasts('failedToLoadIssueForPrint'));
+      }
+      setTimeout(removeIframe, 500);
+    }, 350);
+  };
 
   if (isLoading || !wo) {
     return (
@@ -235,7 +285,7 @@ export default function WorkOrderDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Alokasi per roll</CardTitle>
-            <CardDescription>Nota kain per roll</CardDescription>
+            <CardDescription>{tWO('notaKainPerRollDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -347,7 +397,7 @@ export default function WorkOrderDetailPage() {
             </CardHeader>
             <CardContent>
               {!(wo as any).issues?.length ? (
-                <p className="text-muted-foreground">No issues yet.</p>
+                <p className="text-muted-foreground">{tWO('noIssuesYet')}</p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -402,7 +452,7 @@ export default function WorkOrderDetailPage() {
             </CardHeader>
             <CardContent>
               {!(wo as any).receipts?.length ? (
-                <p className="text-muted-foreground">No receipts yet.</p>
+                <p className="text-muted-foreground">{tWO('noReceiptsYet')}</p>
               ) : (
                 <Table>
                   <TableHeader>

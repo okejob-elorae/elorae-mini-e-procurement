@@ -32,7 +32,7 @@ export async function createStockAdjustment(
     ipAddress
   );
   if (!pinResult.success) {
-    throw new Error(pinResult.message);
+    throw new Error(pinResult.messageKey ?? pinResult.message);
   }
 
   return await prisma.$transaction(async (tx) => {
@@ -199,20 +199,48 @@ function serializeItemForClient(item: { reorderPoint?: unknown; [k: string]: unk
   };
 }
 
-export async function getStockAdjustments(itemId?: string) {
+export async function getStockAdjustments(
+  itemId?: string,
+  opts?: { page: number; pageSize: number }
+) {
   const where: any = {};
 
   if (itemId) {
     where.itemId = itemId;
   }
 
+  const include = {
+    item: true,
+    approvedBy: { select: { name: true } },
+    createdBy: { select: { name: true, email: true } },
+  };
+
+  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
+    const [rows, totalCount] = await Promise.all([
+      prisma.stockAdjustment.findMany({
+        where,
+        skip: (opts.page - 1) * opts.pageSize,
+        take: opts.pageSize,
+        include,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.stockAdjustment.count({ where }),
+    ]);
+    const items = rows.map((r) => ({
+      ...r,
+      qtyChange: toNum(r.qtyChange),
+      prevQty: toNum(r.prevQty),
+      newQty: toNum(r.newQty),
+      prevAvgCost: toNum(r.prevAvgCost),
+      newAvgCost: toNum(r.newAvgCost),
+      item: serializeItemForClient(r.item as { reorderPoint?: unknown; [k: string]: unknown }),
+    }));
+    return { items, totalCount };
+  }
+
   const rows = await prisma.stockAdjustment.findMany({
     where,
-    include: {
-      item: true,
-      approvedBy: { select: { name: true } },
-      createdBy: { select: { name: true, email: true } },
-    },
+    include,
     orderBy: { createdAt: 'desc' },
   });
   return rows.map((r) => ({

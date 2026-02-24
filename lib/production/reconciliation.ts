@@ -43,9 +43,21 @@ export async function reconcileWorkOrder(woId: string): Promise<{
   if (!wo) throw new Error('Work Order not found');
 
   const consumptionPlanRaw = wo.consumptionPlan;
-  const consumptionPlan = Array.isArray(consumptionPlanRaw)
-    ? consumptionPlanRaw.filter((p: any) => p && (p.itemId != null || p.item_id != null))
-    : [];
+  let consumptionPlan: any[];
+  if (Array.isArray(consumptionPlanRaw)) {
+    consumptionPlan = consumptionPlanRaw.filter((p: any) => p && (p.itemId != null || p.item_id != null));
+  } else if (typeof consumptionPlanRaw === 'string') {
+    try {
+      const parsed = JSON.parse(consumptionPlanRaw) as unknown;
+      consumptionPlan = Array.isArray(parsed)
+        ? parsed.filter((p: any) => p && (p.itemId != null || p.item_id != null))
+        : [];
+    } catch {
+      consumptionPlan = [];
+    }
+  } else {
+    consumptionPlan = [];
+  }
   const actualQtyRaw = wo.actualQty;
   const actualOutput =
     actualQtyRaw != null && actualQtyRaw !== ''
@@ -55,8 +67,9 @@ export async function reconcileWorkOrder(woId: string): Promise<{
   const lines: ReconciliationResult[] = [];
 
   for (const plan of consumptionPlan) {
-    const planItemId = plan.itemId ?? plan.item_id;
-    if (!planItemId) continue;
+    const planItemIdRaw = plan.itemId ?? plan.item_id;
+    if (planItemIdRaw == null || planItemIdRaw === '') continue;
+    const planItemId = String(planItemIdRaw);
 
     const item = await prisma.item.findUnique({
       where: { id: planItemId },
@@ -64,9 +77,18 @@ export async function reconcileWorkOrder(woId: string): Promise<{
     });
 
     const totalIssued = wo.issues.reduce((sum, issue) => {
-      const raw = issue.items;
+      let raw: unknown = issue.items;
+      if (typeof raw === 'string') {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          raw = [];
+        }
+      }
       const items = Array.isArray(raw) ? raw : [];
-      const match = items.find((i: any) => (i.itemId ?? i.item_id) === planItemId);
+      const match = items.find(
+        (i: any) => String(i.itemId ?? i.item_id) === planItemId
+      );
       const qty = match?.qty ?? match?.quantity ?? 0;
       return sum.plus(new Decimal(Number(qty) || 0));
     }, new Decimal(0));
@@ -76,7 +98,8 @@ export async function reconcileWorkOrder(woId: string): Promise<{
       const retLines = Array.isArray(raw) ? raw : [];
       const match = retLines.find(
         (l: any) =>
-          (l.itemId ?? l.item_id) === planItemId && (l.type ?? l.itemType) !== 'FG_REJECT'
+          String(l.itemId ?? l.item_id) === planItemId &&
+          (l.type ?? l.itemType) !== 'FG_REJECT'
       );
       const qty = match?.qty ?? match?.quantity ?? 0;
       return sum.plus(new Decimal(Number(qty) || 0));

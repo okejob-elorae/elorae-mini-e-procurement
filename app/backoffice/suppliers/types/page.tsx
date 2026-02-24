@@ -49,7 +49,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 const schema = z.object({
   code: z.string().min(1, 'Code is required').max(50),
@@ -75,12 +78,16 @@ interface SupplierTypeRecord {
 }
 
 export default function SupplierTypesPage() {
+  const tSupplierTypes = useTranslations('supplierTypes');
   const [types, setTypes] = useState<SupplierTypeRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [totalCount, setTotalCount] = useState(0);
 
   const {
     register,
@@ -97,11 +104,22 @@ export default function SupplierTypesPage() {
   const isActive = watch('isActive');
 
   const fetchTypes = async () => {
+    setIsLoading(true);
     try {
-      const res = await fetch('/api/supplier-types');
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      params.set('pageSize', String(pageSize));
+      const res = await fetch(`/api/supplier-types?${params.toString()}`);
       if (!res.ok) throw new Error('Failed to fetch');
-      const data = await res.json();
-      setTypes(data);
+      const json = await res.json();
+      if (json != null && typeof json === 'object' && 'data' in json && 'totalCount' in json) {
+        setTypes(Array.isArray(json.data) ? json.data : []);
+        setTotalCount(Number(json.totalCount) || 0);
+      } else {
+        const list = Array.isArray(json) ? json : [];
+        setTypes(list);
+        setTotalCount(list.length);
+      }
     } catch (e) {
       console.error(e);
       toast.error('Failed to load supplier types');
@@ -112,7 +130,7 @@ export default function SupplierTypesPage() {
 
   useEffect(() => {
     fetchTypes();
-  }, []);
+  }, [page, pageSize]);
 
   const openCreate = () => {
     setEditingId(null);
@@ -206,7 +224,7 @@ export default function SupplierTypesPage() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>Types</CardTitle>
-              <CardDescription>Add, edit, or remove supplier types. Types in use cannot be deleted.</CardDescription>
+              <CardDescription>{tSupplierTypes('cardDescription')}</CardDescription>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <Button variant="outline" size="sm" onClick={openCreate}>
@@ -335,6 +353,13 @@ export default function SupplierTypesPage() {
               )}
             </TableBody>
           </Table>
+          <Pagination
+            page={page}
+            totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
+            onPageChange={setPage}
+            totalCount={totalCount}
+            pageSize={pageSize}
+          />
         </CardContent>
       </Card>
 

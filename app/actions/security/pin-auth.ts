@@ -7,22 +7,24 @@ import { SENSITIVE_ACTIONS } from '@/app/actions/security/pin-constants';
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_FAILED_ATTEMPTS = 3;
 
+export type PinAuthResult = { success: boolean; message?: string; messageKey?: string };
+
 export async function verifyPinForAction(
   userId: string,
   pin: string,
   action: string,
   reason?: string,
   ipAddress?: string
-): Promise<{ success: boolean; message: string }> {
+): Promise<PinAuthResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { pinHash: true },
   });
   if (!user) {
-    return { success: false, message: 'User tidak ditemukan' };
+    return { success: false, messageKey: 'userNotFound' };
   }
   if (!user.pinHash) {
-    return { success: false, message: 'PIN belum diatur' };
+    return { success: false, messageKey: 'pinNotSet' };
   }
 
   const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
@@ -34,10 +36,7 @@ export async function verifyPinForAction(
     },
   });
   if (failedCount >= MAX_FAILED_ATTEMPTS) {
-    return {
-      success: false,
-      message: 'Terlalu banyak percobaan gagal. Coba lagi dalam 15 menit.',
-    };
+    return { success: false, messageKey: 'tooManyAttempts' };
   }
 
   const match = await bcrypt.compare(pin, user.pinHash);
@@ -51,9 +50,9 @@ export async function verifyPinForAction(
   });
 
   if (!match) {
-    return { success: false, message: 'PIN salah' };
+    return { success: false, messageKey: 'pinIncorrect' };
   }
-  return { success: true, message: 'OK' };
+  return { success: true, messageKey: 'ok' };
 }
 
 const PIN_REGEX = /^\d{4,6}$/;
@@ -62,9 +61,9 @@ export async function setupPin(
   userId: string,
   newPin: string,
   currentPin?: string
-): Promise<{ success: boolean; message: string }> {
+): Promise<PinAuthResult> {
   if (!PIN_REGEX.test(newPin)) {
-    return { success: false, message: 'PIN harus 4–6 digit angka' };
+    return { success: false, messageKey: 'pinFormatError' };
   }
 
   const user = await prisma.user.findUnique({
@@ -72,16 +71,16 @@ export async function setupPin(
     select: { pinHash: true },
   });
   if (!user) {
-    return { success: false, message: 'User tidak ditemukan' };
+    return { success: false, messageKey: 'userNotFound' };
   }
 
   if (user.pinHash) {
     if (!currentPin) {
-      return { success: false, message: 'Masukkan PIN saat ini' };
+      return { success: false, messageKey: 'enterCurrentPin' };
     }
     const match = await bcrypt.compare(currentPin, user.pinHash);
     if (!match) {
-      return { success: false, message: 'PIN saat ini salah' };
+      return { success: false, messageKey: 'currentPinIncorrect' };
     }
   }
 
@@ -90,7 +89,7 @@ export async function setupPin(
     where: { id: userId },
     data: { pinHash },
   });
-  return { success: true, message: 'PIN berhasil disimpan' };
+  return { success: true, messageKey: 'pinSaved' };
 }
 
 export async function getPinAttempts(
@@ -147,17 +146,17 @@ export async function getUsersForAdmin(
 export async function adminForcePinReset(
   adminUserId: string,
   targetUserId: string
-): Promise<{ success: boolean; message: string }> {
+): Promise<PinAuthResult> {
   const admin = await prisma.user.findUnique({
     where: { id: adminUserId },
     select: { role: true },
   });
   if (!admin || admin.role !== 'ADMIN') {
-    return { success: false, message: 'Hanya admin yang dapat mereset PIN' };
+    return { success: false, messageKey: 'adminOnlyReset' };
   }
   await prisma.user.update({
     where: { id: targetUserId },
     data: { pinHash: null },
   });
-  return { success: true, message: 'PIN pengguna telah direset' };
+  return { success: true, messageKey: 'userPinReset' };
 }

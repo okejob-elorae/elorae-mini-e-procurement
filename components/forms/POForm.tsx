@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { poSchema, poItemSchema } from '@/lib/validations';
+import { createPoSchema, poSchema, poItemSchema } from '@/lib/validations';
 import { getItems } from '@/app/actions/items';
 import { getCachedItems } from '@/lib/offline/db';
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,7 @@ import type { z } from 'zod';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { OfflinePOButton } from '@/components/offline/OfflinePOButton';
 import { isOnline } from '@/lib/offline/sync';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 type POFormData = z.infer<typeof poSchema>;
 type POItemData = z.infer<typeof poItemSchema>;
@@ -98,6 +98,11 @@ export function POForm({
   isLoading = false,
 }: POFormProps) {
   const locale = useLocale();
+  const tToasts = useTranslations('toasts');
+  const tSecurity = useTranslations('security');
+  const tPlaceholders = useTranslations('placeholders');
+  const tValidation = useTranslations('validation');
+  const poSchemaT = useMemo(() => createPoSchema((k) => tValidation(k)), [tValidation]);
   const [items, setItems] = useState<Item[]>([]);
   const [lineItems, setLineItems] = useState<Array<POItemData & { id: string }>>(
     initialData?.items?.map((item, idx) => ({
@@ -118,7 +123,7 @@ export function POForm({
     setValue,
     formState: { errors },
   } = useForm<POFormData>({
-    resolver: zodResolver(poSchema),
+    resolver: zodResolver(poSchemaT),
     defaultValues: {
       supplierId: initialData?.supplierId || '',
       etaDate: initialData?.etaDate ?? null,
@@ -171,7 +176,7 @@ export function POForm({
         });
         setItems(mapped);
       } catch (_error) {
-        toast.error('Failed to load items');
+        toast.error(tToasts('failedToLoadItems'));
       }
     };
 
@@ -199,7 +204,7 @@ export function POForm({
 
   const removeLineItem = (idParam: string) => {
     if (lineItems.length === 1) {
-      toast.error('At least one line item is required');
+      toast.error(tToasts('atLeastOneLineItemRequired'));
       return;
     }
     setLineItems(lineItems.filter((item) => item.id !== idParam));
@@ -247,13 +252,13 @@ export function POForm({
     );
 
     if (validItems.length === 0) {
-      toast.error('Please add at least one valid line item');
+      toast.error(tToasts('addAtLeastOneValidLineItem'));
       return;
     }
 
     // Check ETA date
     if (data.etaDate && new Date(data.etaDate) < new Date()) {
-      toast.warning('ETA date is in the past');
+      toast.warning(tToasts('etaDateInPast'));
     }
 
     await onSubmit({
@@ -283,8 +288,10 @@ export function POForm({
 
   const onValidationError = (err: Record<string, { message?: string }>) => {
     const first = Object.values(err)[0];
-    console.log(first);
-    toast.error(first?.message ?? 'Perbaiki data form');
+    const msg = first?.message ?? '';
+    const securityKeys = ['userNotFound','pinNotSet','tooManyAttempts','pinIncorrect','enterCurrentPin','currentPinIncorrect','pinFormatError','adminOnlyReset'];
+    const display = msg && securityKeys.includes(msg) ? tSecurity(msg) : (msg || tToasts('fixFormData'));
+    toast.error(display);
   };
 
   const handleSubmitForm = handleSubmit(onFormSubmit, onValidationError);
@@ -315,7 +322,7 @@ export function POForm({
                   aria-invalid={!!errors.supplierId}
                   className={`w-full ${errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
                 >
-                  <SelectValue placeholder="Select supplier" />
+                  <SelectValue placeholder={tPlaceholders('selectSupplier')} />
                 </SelectTrigger>
                 <SelectContent>
                   {suppliers.map((supplier) => (
@@ -421,7 +428,7 @@ export function POForm({
           <div className="flex justify-between items-center">
             <div className="flex-1 max-w-sm">
               <Input
-                placeholder="Search items by SKU or name..."
+                placeholder={tPlaceholders('searchItemsBySkuOrName')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -458,7 +465,7 @@ export function POForm({
                           onValueChange={(value) => updateLineItem(lineItem.id, 'itemId', value)}
                         >
                           <SelectTrigger className="max-w-[16rem] min-w-0 **:data-[slot=select-value]:truncate">
-                            <SelectValue placeholder="Select item" />
+                            <SelectValue placeholder={tPlaceholders('selectItem')} />
                           </SelectTrigger>
                           <SelectContent>
                             {filteredItems.map((item) => (
@@ -515,7 +522,7 @@ export function POForm({
                           onChange={(e) =>
                             updateLineItem(lineItem.id, 'notes', e.target.value)
                           }
-                          placeholder="Optional"
+                          placeholder={tPlaceholders('optional')}
                         />
                       </TableCell>
                       <TableCell>
@@ -558,7 +565,7 @@ export function POForm({
             <Textarea
               id="notes"
               {...register('notes')}
-              placeholder="Additional notes..."
+              placeholder={tPlaceholders('additionalNotes')}
               rows={3}
               aria-invalid={!!errors.notes}
               className={errors.notes ? 'border-destructive focus-visible:ring-destructive/20' : ''}
@@ -574,7 +581,7 @@ export function POForm({
             <Textarea
               id="terms"
               {...register('terms')}
-              placeholder="Payment terms..."
+              placeholder={tPlaceholders('paymentTerms')}
               rows={3}
               aria-invalid={!!errors.terms}
               className={errors.terms ? 'border-destructive focus-visible:ring-destructive/20' : ''}

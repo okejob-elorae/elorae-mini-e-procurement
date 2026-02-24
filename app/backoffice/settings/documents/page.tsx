@@ -51,6 +51,7 @@ const DOC_TYPE_LABELS: Record<DocType, string> = {
 
 export default function DocumentNumbersSettingsPage() {
   const t = useTranslations('documents');
+  const tToasts = useTranslations('toasts');
   const { data: session, status } = useSession();
   const router = useRouter();
   const [configs, setConfigs] = useState<DocNumberConfigRow[]>([]);
@@ -92,7 +93,7 @@ export default function DocumentNumbersSettingsPage() {
     const e = getEdit(docType);
     const padding = parseInt(e.padding, 10);
     if (isNaN(padding) || padding < 1 || padding > 8) {
-      toast.error('Padding must be 1–8');
+      toast.error(tToasts('paddingMustBe1To8'));
       return;
     }
     setSavingType(docType);
@@ -102,7 +103,7 @@ export default function DocumentNumbersSettingsPage() {
         resetPeriod: e.resetPeriod as 'YEARLY' | 'MONTHLY' | 'NEVER',
         padding,
       });
-      toast.success('Saved');
+      toast.success(tToasts('saved'));
       const next = await getDocNumberConfigs();
       setConfigs(next);
       setEdits((prev) => {
@@ -111,7 +112,7 @@ export default function DocumentNumbersSettingsPage() {
         return u;
       });
     } catch {
-      toast.error('Failed to save');
+      toast.error(tToasts('failedToSave'));
     } finally {
       setSavingType(null);
     }

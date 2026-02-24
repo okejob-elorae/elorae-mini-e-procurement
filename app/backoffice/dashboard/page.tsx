@@ -321,7 +321,7 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground">Loading...</p>
+            <p className="text-muted-foreground">{tDashboard('loading')}</p>
           </div>
           <Badge variant="secondary" className="w-fit">
             {getRoleLabel(session.user.role as Role)}
@@ -366,7 +366,7 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground">Something went wrong.</p>
+            <p className="text-muted-foreground">{tDashboard('somethingWentWrong')}</p>
           </div>
           <Badge variant="secondary" className="w-fit">
             {getRoleLabel(session.user.role as Role)}
@@ -390,46 +390,46 @@ export default function DashboardPage() {
   const s = stats!;
   const statsCards = [
     {
-      title: 'Purchase Orders',
+      title: tDashboard('purchaseOrders'),
       value: formatNumber(s.po.submitted),
-      description: 'Pending approval',
+      description: tDashboard('pendingApproval'),
       icon: ShoppingCart,
       trend:
         s.po.overdue > 0
-          ? `${s.po.overdue} overdue`
+          ? tDashboard('overdue', { count: s.po.overdue })
           : s.po.thisWeek > 0
-            ? `${s.po.thisWeek} this week`
-            : 'No new this week',
+            ? tDashboard('thisWeek', { count: s.po.thisWeek })
+            : tDashboard('noNewThisWeek'),
       trendWarning: s.po.overdue > 0,
     },
     {
-      title: 'Inventory Items',
+      title: tDashboard('inventoryItems'),
       value: formatNumber(s.items.activeCount),
-      description: 'Active SKUs',
+      description: tDashboard('activeSkus'),
       icon: Package,
       trend:
         s.items.lowStockCount > 0
-          ? `${s.items.lowStockCount} low stock`
-          : 'All stocked',
+          ? tDashboard('lowStock', { count: s.items.lowStockCount })
+          : tDashboard('allStocked'),
       trendWarning: s.items.lowStockCount > 0,
     },
     {
-      title: 'Work Orders',
+      title: tDashboard('workOrders'),
       value: formatNumber(s.workOrders.inProduction),
-      description: 'In production',
+      description: tDashboard('inProduction'),
       icon: ClipboardList,
       trend:
         s.workOrders.completedToday > 0
-          ? `${s.workOrders.completedToday} completed today`
-          : 'None completed today',
+          ? tDashboard('completedToday', { count: s.workOrders.completedToday })
+          : tDashboard('noneCompletedToday'),
       trendWarning: false,
     },
     {
-      title: 'Suppliers',
+      title: tDashboard('suppliers'),
       value: formatNumber(s.suppliers.activeCount),
-      description: 'Active vendors',
+      description: tDashboard('activeVendors'),
       icon: Users,
-      trend: `${s.grnsThisWeek} GRNs this week`,
+      trend: tDashboard('grnsThisWeek', { count: s.grnsThisWeek }),
       trendWarning: false,
     },
   ];
@@ -439,9 +439,9 @@ export default function DashboardPage() {
       {/* Welcome Section */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{tDashboard('title')}</h1>
           <p className="text-muted-foreground">
-            Welcome to Elorae ERP. Here&apos;s what&apos;s happening today.
+            {tDashboard('welcomeSubtitle')}
           </p>
         </div>
         <Badge variant="secondary" className="w-fit">
@@ -474,14 +474,14 @@ export default function DashboardPage() {
         })}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Inventory Value</CardTitle>
+            <CardTitle className="text-sm font-medium">{tDashboard('inventoryValue')}</CardTitle>
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-xl font-bold">{formatIdr(s.inventory.totalValue)}</div>
-            <p className="text-xs text-muted-foreground">Total on hand</p>
+            <p className="text-xs text-muted-foreground">{tDashboard('totalOnHand')}</p>
             <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-              {s.movementsToday} movements today
+              {tDashboard('movementsToday', { count: s.movementsToday })}
             </div>
           </CardContent>
         </Card>
@@ -492,20 +492,20 @@ export default function DashboardPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">COGS – Raw materials</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">{tDashboard('cogsRawMaterials')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-xl font-bold">{formatIdr(cogsRawVsFinished.rawValue)}</div>
-              <p className="text-xs text-muted-foreground">{cogsRawVsFinished.rawCount} SKU(s) – Fabric & accessories</p>
+              <p className="text-xs text-muted-foreground">{tDashboard('skuCountFabricAccessories', { count: cogsRawVsFinished.rawCount })}</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">COGS – Finished goods</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">{tDashboard('cogsFinishedGoods')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-xl font-bold">{formatIdr(cogsRawVsFinished.finishedValue)}</div>
-              <p className="text-xs text-muted-foreground">{cogsRawVsFinished.finishedCount} SKU(s)</p>
+              <p className="text-xs text-muted-foreground">{tDashboard('skuCountSkus', { count: cogsRawVsFinished.finishedCount })}</p>
             </CardContent>
           </Card>
         </div>
@@ -514,11 +514,11 @@ export default function DashboardPage() {
       {/* Tabs: Overview + Reports */}
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="flex flex-wrap gap-1">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="overdue">Overdue POs</TabsTrigger>
-          <TabsTrigger value="rp1">Procurement (RP1)</TabsTrigger>
+          <TabsTrigger value="overview">{tDashboard('overview')}</TabsTrigger>
+          <TabsTrigger value="overdue">{tDashboard('overduePOs')}</TabsTrigger>
+          <TabsTrigger value="rp1">{tDashboard('procurementRp1')}</TabsTrigger>
           <TabsTrigger value="rp2">{tDashboard('reportsSetoranCmt')}</TabsTrigger>
-          <TabsTrigger value="rp3">Inventory (RP3)</TabsTrigger>
+          <TabsTrigger value="rp3">{tDashboard('inventoryRp3')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -527,14 +527,14 @@ export default function DashboardPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Clock className="h-5 w-5" />
-                  Recent Activity
+                  {tDashboard('recentActivity')}
                 </CardTitle>
-                <CardDescription>Latest actions in the system</CardDescription>
+                <CardDescription>{tDashboard('latestActionsInSystem')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {s.recentActivity.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-4">No recent activity.</p>
+                    <p className="text-sm text-muted-foreground py-4">{tDashboard('noRecentActivity')}</p>
                   ) : (
                     s.recentActivity.map((item) => (
                       <div
@@ -544,7 +544,7 @@ export default function DashboardPage() {
                         <div>
                           <p className="text-sm font-medium">{item.label}</p>
                           <p className="text-xs text-muted-foreground">
-                            by {item.userName ?? 'System'}
+                            {tDashboard('byUser', { name: item.userName ?? tDashboard('system') })}
                           </p>
                         </div>
                         <span className="text-xs text-muted-foreground shrink-0 ml-2">
@@ -569,7 +569,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               {overduePOs.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">No overdue purchase orders</p>
+                <p className="text-muted-foreground text-center py-8">{tDashboard('noOverduePOs')}</p>
               ) : (
                 <div className="space-y-4">
                   {overduePOs.map((po) => (
@@ -841,7 +841,7 @@ export default function DashboardPage() {
                 </div>
               )}
               {rp2Data && rp2Data.length === 0 && (
-                <p className="text-muted-foreground text-center py-8">No work orders in range</p>
+                <p className="text-muted-foreground text-center py-8">{tDashboard('noWorkOrdersInRange')}</p>
               )}
             </CardContent>
           </Card>

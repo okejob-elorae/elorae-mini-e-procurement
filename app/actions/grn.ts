@@ -168,12 +168,15 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   });
 }
 
-export async function getGRNs(filters?: {
-  supplierId?: string;
-  dateFrom?: Date;
-  dateTo?: Date;
-  poId?: string;
-}) {
+export async function getGRNs(
+  filters?: {
+    supplierId?: string;
+    dateFrom?: Date;
+    dateTo?: Date;
+    poId?: string;
+  },
+  opts?: { page: number; pageSize: number }
+) {
   const where: Record<string, unknown> = {};
   if (filters?.supplierId) where.supplierId = filters.supplierId;
   if (filters?.poId) where.poId = filters.poId;
@@ -183,12 +186,32 @@ export async function getGRNs(filters?: {
     if (filters.dateTo) (where.grnDate as Record<string, Date>).lte = filters.dateTo;
   }
 
+  const include = {
+    supplier: true,
+    po: { select: { docNumber: true } },
+  };
+
+  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
+    const [rows, totalCount] = await Promise.all([
+      prisma.gRN.findMany({
+        where,
+        skip: (opts.page - 1) * opts.pageSize,
+        take: opts.pageSize,
+        include,
+        orderBy: { grnDate: 'desc' },
+      }),
+      prisma.gRN.count({ where }),
+    ]);
+    const items = rows.map((r) => ({
+      ...r,
+      totalAmount: Number(r.totalAmount),
+    }));
+    return { items, totalCount };
+  }
+
   const rows = await prisma.gRN.findMany({
     where,
-    include: {
-      supplier: true,
-      po: { select: { docNumber: true } },
-    },
+    include,
     orderBy: { grnDate: 'desc' },
   });
   return rows.map((r) => ({
