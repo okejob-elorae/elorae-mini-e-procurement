@@ -64,4 +64,5 @@ Cloudflare R2 is used for file uploads (e.g. GRN photos). It is S3-compatible; a
 - Endpoint format: `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`
 - Region: `auto`
 - `R2_ACCESS_KEY_ID` must be 32 characters; `R2_SECRET_ACCESS_KEY` must be 64 characters. If you get `InvalidArgument: Credential access key has length N, should be 32`, the credentials need to be regenerated in Cloudflare Dashboard > R2 > Manage R2 API Tokens.
-- The only upload endpoint is `app/api/upload/grn-photo/route.ts` (GRN photo upload). It was originally a stub returning placeholder URLs.
+- The upload endpoint is `app/api/upload/grn-photo/route.ts` (POST to upload, DELETE to remove). It uploads to R2 and returns public URLs. Used by GRN photos, stock adjustment evidence, and vendor return receipts.
+- `lib/r2.ts` contains the shared R2 client and `uploadToR2` / `deleteFromR2` / `keyFromUrl` helpers.
