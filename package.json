@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
+    "@aws-sdk/client-s3": "^3.997.0",
     "@hookform/resolvers": "^5.2.2",
     "@prisma/adapter-mariadb": "^7.3.0",
     "@tanstack/react-query": "^5.90.20",
