@@ -53,4 +53,15 @@ See `package.json` scripts for the full list. Most useful:
 - Prisma migrations require the user to have `GRANT ALL ON *.*` (for shadow database creation).
 - `prisma.config.ts` uses `dotenv/config` so it reads `.env` file, but shell environment variables take precedence. Always pass `DATABASE_URL` explicitly on the command line for Prisma commands.
 - Type-check (`tsc --noEmit`) has pre-existing errors; `next.config.ts` sets `ignoreBuildErrors: true` so the app builds and runs regardless.
-- Firebase/FCM and R2 storage are optional; the app gracefully handles missing config for both.
+- Firebase/FCM is optional; the app gracefully handles missing Firebase config.
+
+### R2 Object Storage
+
+Cloudflare R2 is used for file uploads (e.g. GRN photos). It is S3-compatible; access it via `@aws-sdk/client-s3`.
+
+**Required env vars:** `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL`.
+
+- Endpoint format: `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`
+- Region: `auto`
+- `R2_ACCESS_KEY_ID` must be 32 characters; `R2_SECRET_ACCESS_KEY` must be 64 characters. If you get `InvalidArgument: Credential access key has length N, should be 32`, the credentials need to be regenerated in Cloudflare Dashboard > R2 > Manage R2 API Tokens.
+- The only upload endpoint is `app/api/upload/grn-photo/route.ts` (GRN photo upload). It was originally a stub returning placeholder URLs.
