@@ -38,6 +38,7 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { FcmRegistration } from '@/components/notifications/FcmRegistration';
@@ -60,7 +61,7 @@ interface NavItem {
   labelKey: string;
   href: string;
   icon: React.ElementType;
-  roles: Role[];
+  permission: string; // Permission code required to view this nav item
   children?: NavChild[];
 }
 
@@ -69,13 +70,13 @@ const navItems: NavItem[] = [
     labelKey: 'dashboard',
     href: '/backoffice/dashboard',
     icon: LayoutDashboard,
-    roles: [Role.ADMIN, Role.PURCHASER, Role.WAREHOUSE, Role.PRODUCTION, Role.USER],
+    permission: PERMISSIONS.DASHBOARD_VIEW,
   },
   {
     labelKey: 'suppliers',
     href: '/backoffice/suppliers',
     icon: Building2,
-    roles: [Role.ADMIN, Role.PURCHASER],
+    permission: PERMISSIONS.SUPPLIERS_VIEW,
     children: [
       { labelKey: 'masterSuppliers', href: '/backoffice/suppliers' },
       { labelKey: 'supplierType', href: '/backoffice/suppliers/types' },
@@ -85,7 +86,7 @@ const navItems: NavItem[] = [
     labelKey: 'items',
     href: '/backoffice/items',
     icon: Package,
-    roles: [Role.ADMIN, Role.PURCHASER, Role.WAREHOUSE],
+    permission: PERMISSIONS.ITEMS_VIEW,
     children: [
       { labelKey: 'navItemsRaw', href: '/backoffice/items?type=raw' },
       { labelKey: 'navItemsFinished', href: '/backoffice/items?type=FINISHED_GOOD' },
@@ -95,25 +96,25 @@ const navItems: NavItem[] = [
     labelKey: 'purchaseOrders',
     href: '/backoffice/purchase-orders',
     icon: ShoppingCart,
-    roles: [Role.ADMIN, Role.PURCHASER],
+    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
   },
   {
     labelKey: 'supplierPayment',
     href: '/backoffice/supplier-payments',
     icon: DollarSign,
-    roles: [Role.ADMIN, Role.PURCHASER],
+    permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
   },
   {
     labelKey: 'inventory',
     href: '/backoffice/inventory',
     icon: Package,
-    roles: [Role.ADMIN, Role.WAREHOUSE],
+    permission: PERMISSIONS.INVENTORY_VIEW,
   },
   {
     labelKey: 'workOrders',
     href: '/backoffice/work-orders',
     icon: ClipboardList,
-    roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
+    permission: PERMISSIONS.WORK_ORDERS_VIEW,
     children: [
       { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders' },
       { labelKey: 'registerNotaCmt', href: '/backoffice/work-orders/nota-register' },
@@ -123,13 +124,13 @@ const navItems: NavItem[] = [
     labelKey: 'vendorReturns',
     href: '/backoffice/vendor-returns',
     icon: RotateCcw,
-    roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
+    permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
   },
   {
     labelKey: 'reports',
     href: '/backoffice/reports/hpp',
     icon: BarChart2,
-    roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
+    permission: PERMISSIONS.REPORTS_HPP_VIEW,
     children: [
       { labelKey: 'hppReport', href: '/backoffice/reports/hpp' },
     ],
@@ -138,13 +139,13 @@ const navItems: NavItem[] = [
     labelKey: 'auditTrail',
     href: '/backoffice/audit-trail',
     icon: FileText,
-    roles: [Role.ADMIN],
+    permission: PERMISSIONS.AUDIT_TRAIL_VIEW,
   },
   {
     labelKey: 'settings',
     href: '/backoffice/settings',
     icon: Settings,
-    roles: [Role.ADMIN],
+    permission: PERMISSIONS.SETTINGS_SECURITY_VIEW, // Settings hub - check any settings permission
   },
 ];
 
@@ -177,11 +178,11 @@ function ThemeDropdownItems() {
 
 function Sidebar({
   className,
-  role,
+  permissions,
   onClose,
 }: {
   className?: string;
-  role: Role;
+  permissions: string[];
   onClose?: () => void;
 }) {
   const pathname = usePathname();
@@ -200,7 +201,7 @@ function Sidebar({
   }, [pathname]);
 
   const filteredItems = navItems.filter((item) =>
-    item.roles.includes(role)
+    hasPermission(permissions, item.permission)
   );
 
   return (
@@ -347,13 +348,13 @@ export default function BackofficeLayout({
     <div className="min-h-screen flex">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:block w-64 border-r bg-card">
-        <Sidebar role={userRole} />
+        <Sidebar permissions={session.user.permissions} />
       </aside>
 
       {/* Mobile Sidebar */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
         <SheetContent side="left" className="p-0 w-64">
-          <Sidebar role={userRole} onClose={() => setMobileMenuOpen(false)} />
+          <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
         </SheetContent>
       </Sheet>
 
@@ -369,7 +370,7 @@ export default function BackofficeLayout({
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="p-0 w-64">
-                <Sidebar role={userRole} onClose={() => setMobileMenuOpen(false)} />
+                <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
               </SheetContent>
             </Sheet>
             <h2 className="text-lg font-semibold hidden sm:block">

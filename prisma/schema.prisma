@@ -46,6 +46,8 @@ model User {
   passwordHash  String?
   pinHash       String?
   role          Role      @default(USER)
+  roleId        String?
+  roleDefinition RoleDefinition? @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   fcmToken      String?
   emailVerified DateTime?
   image         String?
@@ -63,6 +65,7 @@ model User {
   suppliersApproved       Supplier[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  @@index([roleId])
 }
 
 model VerificationToken {
@@ -70,6 +73,41 @@ model VerificationToken {
   token      String   @unique
   expires    DateTime
   @@unique([identifier, token])
+}
+
+// ==========================================
+// RBAC (Role-Based Access Control)
+// ==========================================
+model RoleDefinition {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false)
+  permissionsVersion Int @default(1)
+  permissions RolePermission[]
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique    // e.g. "suppliers:create"
+  module      String              // e.g. "suppliers"
+  action      String              // e.g. "create"
+  description String?
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  id           String         @id @default(cuid())
+  roleId       String
+  permissionId String
+  role         RoleDefinition @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission     @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
 }
 
 // ==========================================

@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@/lib/prisma';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { auth } from '@/lib/auth';
 
 const adjustmentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -23,6 +25,10 @@ export async function createStockAdjustment(
   userId: string,
   ipAddress?: string
 ) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
+  
   adjustmentSchema.parse(data);
 
   const pinResult = await verifyPinForAction(

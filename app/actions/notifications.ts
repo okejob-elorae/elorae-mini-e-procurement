@@ -16,6 +16,7 @@ function startOfToday(): Date {
 /**
  * Find overdue POs (etaDate < today, status not CLOSED/CANCELLED).
  * Send FCM and enqueue NotificationQueue once per PO per day (dedup).
+ * Notifies users with purchase_orders:view permission (or admin with wildcard).
  */
 export async function checkAndSendOverdueNotifications(): Promise<{ sent: number }> {
   const today = startOfToday();
@@ -31,56 +32,112 @@ export async function checkAndSendOverdueNotifications(): Promise<{ sent: number
     },
   });
 
+  if (overduePOs.length === 0) {
+    return { sent: 0 };
+  }
+
+  // Get users with purchase_orders:view permission (or admin with wildcard)
+  const permission = await prisma.permission.findUnique({
+    where: { code: 'purchase_orders:view' },
+  });
+
+  if (!permission) {
+    console.error('Permission purchase_orders:view not found');
+    return { sent: 0 };
+  }
+
+  // Get users with this permission or system role (admin)
+  const targetUsers = await prisma.user.findMany({
+    where: {
+      OR: [
+        {
+          roleDefinition: {
+            isSystem: true, // Admin gets all notifications
+          },
+        },
+        {
+          roleDefinition: {
+            permissions: {
+              some: {
+                permissionId: permission.id,
+              },
+            },
+          },
+        },
+      ],
+      fcmToken: { not: null },
+    },
+    select: { id: true, fcmToken: true },
+  });
+
+  const userIds = new Set(targetUsers.map(u => u.id));
+  const userMap = new Map(targetUsers.map(u => [u.id, u]));
+
   let sent = 0;
 
   const sentTodayForPOs = await prisma.notificationQueue.findMany({
     where: { type: PO_OVERDUE_TYPE, createdAt: { gte: today } },
-    select: { data: true },
+    select: { data: true, userId: true },
   });
-  const sentPoIds = new Set(
+  const sentPoUserPairs = new Set(
     sentTodayForPOs
-      .map((r) => (typeof r.data === 'object' && r.data !== null && 'poId' in r.data ? (r.data as { poId: string }).poId : null))
+      .map((r) => {
+        const poId = typeof r.data === 'object' && r.data !== null && 'poId' in r.data ? (r.data as { poId: string }).poId : null;
+        return poId ? `${poId}:${r.userId}` : null;
+      })
       .filter(Boolean) as string[]
   );
 
   for (const po of overduePOs) {
     const poId = po.id;
     const docNumber = po.docNumber;
-    if (sentPoIds.has(poId)) continue;
-
-    const userId = po.createdById;
     const title = 'PO Overdue';
     const body = `${docNumber} (${po.supplier?.name ?? 'Supplier'}) – ETA has passed`;
     const data = { type: PO_OVERDUE_TYPE, poId, docNumber };
 
-    const user = po.createdBy;
-    let sentThis = false;
-    if (user?.fcmToken && messaging) {
-      try {
-        await messaging.send({
-          token: user.fcmToken,
-          notification: { title, body },
-          data: { type: PO_OVERDUE_TYPE, poId, docNumber },
-        });
-        sentThis = true;
-        sent += 1;
-      } catch (err) {
-        console.error('FCM send failed for PO', poId, err);
-      }
+    // Send to all users with permission, plus the PO creator if they have permission
+    const recipients = new Set<string>();
+    for (const user of targetUsers) {
+      recipients.add(user.id);
+    }
+    // Also include creator if they have permission
+    if (userIds.has(po.createdById)) {
+      recipients.add(po.createdById);
     }
 
-    await prisma.notificationQueue.create({
-      data: {
-        userId,
-        type: PO_OVERDUE_TYPE,
-        title,
-        body,
-        data: { type: PO_OVERDUE_TYPE, poId, docNumber },
-        sent: sentThis,
-        sentAt: sentThis ? new Date() : null,
-      },
-    });
-    sentPoIds.add(poId);
+    for (const userId of recipients) {
+      const key = `${poId}:${userId}`;
+      if (sentPoUserPairs.has(key)) continue;
+
+      const user = userMap.get(userId) || po.createdBy;
+      let sentThis = false;
+      if (user?.fcmToken && messaging) {
+        try {
+          await messaging.send({
+            token: user.fcmToken,
+            notification: { title, body },
+            data: { type: PO_OVERDUE_TYPE, poId, docNumber },
+          });
+          sentThis = true;
+          sent += 1;
+        } catch (err) {
+          console.error('FCM send failed for PO', poId, userId, err);
+        }
+      }
+
+      await prisma.notificationQueue.create({
+        data: {
+          userId,
+          type: PO_OVERDUE_TYPE,
+          title,
+          body,
+          data: { type: PO_OVERDUE_TYPE, poId, docNumber },
+          sent: sentThis,
+          sentAt: sentThis ? new Date() : null,
+        },
+      });
+      sentPoUserPairs.add(key);
+    }
   }
 
   return { sent };
@@ -128,9 +185,34 @@ export async function checkAndSendAccessoriesPendingCMTNotifications(): Promise<
     return { sent: 0, woCount: 0 };
   }
 
+  // Get users with work_orders:view permission (or admin with wildcard)
+  const permission = await prisma.permission.findUnique({
+    where: { code: 'work_orders:view' },
+  });
+
+  if (!permission) {
+    console.error('Permission work_orders:view not found');
+    return { sent: 0, woCount: 0 };
+  }
+
   const targetUsers = await prisma.user.findMany({
     where: {
-      role: { in: ['PRODUCTION', 'WAREHOUSE'] },
+      OR: [
+        {
+          roleDefinition: {
+            isSystem: true, // Admin gets all notifications
+          },
+        },
+        {
+          roleDefinition: {
+            permissions: {
+              some: {
+                permissionId: permission.id,
+              },
+            },
+          },
+        },
+      ],
       fcmToken: { not: null },
     },
     select: { id: true, fcmToken: true },
@@ -188,7 +270,8 @@ export async function checkAndSendAccessoriesPendingCMTNotifications(): Promise<
 }
 
 /**
- * Notify PO creator when a work order is completed (optional in-app / push).
+ * Notify users with work_orders:view permission when a work order is completed.
+ * Also notifies the WO creator if they have the permission.
  */
 export async function notifyWOCompleted(woId: string): Promise<void> {
   const wo = await prisma.workOrder.findUnique({
@@ -199,41 +282,82 @@ export async function notifyWOCompleted(woId: string): Promise<void> {
   });
   if (!wo) return;
 
-  const creator = await prisma.user.findUnique({
-    where: { id: wo.createdById },
+  // Get users with work_orders:view permission (or admin with wildcard)
+  const permission = await prisma.permission.findUnique({
+    where: { code: 'work_orders:view' },
+  });
+
+  if (!permission) {
+    console.error('Permission work_orders:view not found');
+    return;
+  }
+
+  const targetUsers = await prisma.user.findMany({
+    where: {
+      OR: [
+        {
+          roleDefinition: {
+            isSystem: true, // Admin gets all notifications
+          },
+        },
+        {
+          roleDefinition: {
+            permissions: {
+              some: {
+                permissionId: permission.id,
+              },
+            },
+          },
+        },
+      ],
+      fcmToken: { not: null },
+    },
     select: { id: true, fcmToken: true },
   });
-  if (!creator) return;
 
   const fgName = wo.finishedGood?.nameEn ?? wo.finishedGood?.nameId ?? 'FG';
   const title = 'Work Order Completed';
   const body = `${wo.docNumber} – ${fgName} completed`;
   const data = { type: 'WO_COMPLETED', woId, docNumber: wo.docNumber };
 
-  const queueRow = await prisma.notificationQueue.create({
-    data: {
-      userId: wo.createdById,
-      type: 'WO_COMPLETED',
-      title,
-      body,
-      data,
-      sent: false,
-    },
-  });
+  // Send to all users with permission, plus the creator if they have permission
+  const recipients = new Set<string>();
+  for (const user of targetUsers) {
+    recipients.add(user.id);
+  }
+  // Also include creator if they have permission
+  const creatorHasPermission = targetUsers.some(u => u.id === wo.createdById);
+  if (creatorHasPermission) {
+    recipients.add(wo.createdById);
+  }
 
-  if (creator.fcmToken && messaging) {
-    try {
-      await messaging.send({
-        token: creator.fcmToken,
-        notification: { title, body },
-        data: { type: 'WO_COMPLETED', woId, docNumber: wo.docNumber },
-      });
-      await prisma.notificationQueue.update({
-        where: { id: queueRow.id },
-        data: { sent: true, sentAt: new Date() },
-      });
-    } catch (err) {
-      console.error('FCM send failed for WO', woId, err);
+  for (const userId of recipients) {
+    const user = targetUsers.find(u => u.id === userId);
+    const queueRow = await prisma.notificationQueue.create({
+      data: {
+        userId,
+        type: 'WO_COMPLETED',
+        title,
+        body,
+        data,
+        sent: false,
+      },
+    });
+
+    if (user?.fcmToken && messaging) {
+      try {
+        await messaging.send({
+          token: user.fcmToken,
+          notification: { title, body },
+          data: { type: 'WO_COMPLETED', woId, docNumber: wo.docNumber },
+        });
+        await prisma.notificationQueue.update({
+          where: { id: queueRow.id },
+          data: { sent: true, sentAt: new Date() },
+        });
+      } catch (err) {
+        console.error('FCM send failed for WO', woId, userId, err);
+      }
     }
   }
 }

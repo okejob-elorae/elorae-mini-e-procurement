@@ -8,11 +8,17 @@ import { POStatus } from '@prisma/client';
 import { poSchema } from '@/lib/validations';
 import { getETAStatus } from '@/lib/eta-alerts';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { auth } from '@/lib/auth';
 import { z } from 'zod';
 
 export type POFormData = z.infer<typeof poSchema>;
 
 export async function createPO(data: POFormData, userId: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_CREATE);
+  
   const validated = poSchema.parse(data);
   
   return await prisma.$transaction(async (tx) => {
@@ -61,6 +67,10 @@ export async function updatePO(
   userId: string,
   pin?: string
 ) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+  
   const existing = await prisma.purchaseOrder.findUnique({
     where: { id },
     select: { status: true }

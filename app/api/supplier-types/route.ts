@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 
 const createSchema = z.object({
   code: z.string().min(1).max(50),
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIER_TYPES_CREATE);
 
     const body = await req.json();
     const validated = createSchema.parse(body);

@@ -3,6 +3,8 @@
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { auth } from '@/lib/auth';
 
 const uomSchema = z.object({
   code: z.string().min(1).max(10),
@@ -12,6 +14,10 @@ const uomSchema = z.object({
 });
 
 export async function createUOM(data: z.infer<typeof uomSchema>) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_UOM_MANAGE);
+  
   const validated = uomSchema.parse(data);
   const uom = await prisma.uOM.create({ 
     data: validated 
