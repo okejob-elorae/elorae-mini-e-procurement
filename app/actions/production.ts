@@ -30,6 +30,7 @@ function parseConsumptionPlan(raw: unknown): unknown[] {
 function serializeWorkOrder(wo: {
   id: string;
   docNumber: string;
+  poId?: string | null;
   vendorId: string;
   finishedGoodId: string;
   outputMode: string;
@@ -50,6 +51,7 @@ function serializeWorkOrder(wo: {
   createdById: string;
   createdAt: Date;
   updatedAt: Date;
+  po?: { id: string; docNumber: string } | null;
   vendor?: unknown;
   finishedGood?: unknown;
   issues?: Array<{ id: string; docNumber: string; issueType: string; totalCost: unknown; issuedAt: Date; [k: string]: unknown }>;
@@ -60,6 +62,8 @@ function serializeWorkOrder(wo: {
   const out: Record<string, unknown> = {
     id: wo.id,
     docNumber: wo.docNumber,
+    poId: wo.poId ?? null,
+    po: wo.po ?? null,
     vendorId: wo.vendorId,
     finishedGoodId: wo.finishedGoodId,
     outputMode: wo.outputMode,
@@ -122,6 +126,7 @@ const woSchema = z.object({
   expectedConsumption: z.number().positive().optional(),
   targetDate: z.date().optional(),
   finishedGoodId: idStr,
+  poId: idStr.optional(),
   notes: z.string().optional(),
   rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
 }).refine(
@@ -177,6 +182,7 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
       plannedQty: data.plannedQty,
       expectedConsumption: data.expectedConsumption ?? undefined,
       targetDate: data.targetDate,
+      poId: data.poId ?? null,
       notes: data.notes,
       createdById: userId,
       consumptionPlan: JSON.stringify(
@@ -645,6 +651,7 @@ export async function getWorkOrderById(id: string) {
   const raw = await prisma.workOrder.findUnique({
     where: { id },
     include: {
+      po: { select: { id: true, docNumber: true } },
       vendor: true,
       finishedGood: {
         include: { uom: true }

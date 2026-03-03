@@ -5,9 +5,7 @@ import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateDocNumber } from '@/lib/docNumber';
-import {
-  calculateMovingAverage
-} from '@/lib/inventory/costing';
+import { reverseInventoryValue } from '@/lib/inventory/costing';
 
 // Prisma uses CUID, not UUID
 const idStr = z.string().min(1);
@@ -156,7 +154,7 @@ export async function deleteVendorReturn(id: string, userId: string) {
 }
 
 export async function processReturn(id: string, userId: string) {
-  return await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
       where: { id }
     });
@@ -165,20 +163,81 @@ export async function processReturn(id: string, userId: string) {
       throw new Error('Return tidak valid atau sudah diproses');
     }
 
+    const lines = (ret.lines as Array<{ type: string; itemId: string; qty: number; costValue: number }>) || [];
+
+    for (const line of lines) {
+      if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
+        const qty = new Decimal(line.qty);
+        const unitCost = new Decimal(line.costValue).div(line.qty);
+        const costResult = await reverseInventoryValue(
+          line.itemId,
+          qty,
+          unitCost,
+          tx
+        );
+        const outgoingValue = qty.mul(unitCost);
+        await tx.stockMovement.create({
+          data: {
+            itemId: line.itemId,
+            type: 'OUT',
+            refType: 'VENDOR_RETURN',
+            refId: ret.id,
+            refDocNumber: ret.docNumber,
+            qty: -line.qty,
+            unitCost: unitCost.toNumber(),
+            totalCost: outgoingValue.toNumber(),
+            balanceQty: costResult.newQty.toNumber(),
+            balanceValue: costResult.newTotalValue.toNumber(),
+            notes: ret.woId ? `Vendor return ${ret.docNumber} (WO)` : `Vendor return ${ret.docNumber}`,
+          },
+        });
+      }
+    }
+
+    let poIdToRevalidate: string | null = null;
+    if (ret.woId) {
+      const wo = await tx.workOrder.findUnique({
+        where: { id: ret.woId },
+        select: { poId: true, docNumber: true },
+      });
+      if (wo?.poId) {
+        const po = await tx.purchaseOrder.findUnique({
+          where: { id: wo.poId },
+          select: { status: true },
+        });
+        if (po) {
+          await tx.pOStatusHistory.create({
+            data: {
+              poId: wo.poId,
+              status: po.status,
+              changedById: userId,
+              notes: `Vendor return ${ret.docNumber} processed (WO ${wo.docNumber})`,
+            },
+          });
+          poIdToRevalidate = wo.poId;
+        }
+      }
+    }
+
     await tx.vendorReturn.update({
       where: { id },
       data: {
         status: 'PROCESSED',
         processedAt: new Date(),
         processedBy: userId,
-        stockImpacted: false
-      }
+        stockImpacted: true,
+      },
     });
 
-    revalidatePath('/backoffice/vendor-returns');
-    revalidatePath(`/backoffice/vendor-returns/${id}`);
-    return ret;
+    return { ret, poIdToRevalidate };
   });
+
+  revalidatePath('/backoffice/vendor-returns');
+  revalidatePath(`/backoffice/vendor-returns/${result.ret.id}`);
+  if (result.poIdToRevalidate) {
+    revalidatePath(`/backoffice/purchase-orders/${result.poIdToRevalidate}`);
+  }
+  return result.ret;
 }
 
 const completeReturnSchema = z.object({
@@ -207,48 +266,22 @@ export async function completeReturn(
     const lines = (ret.lines as any[]) || [];
 
     for (const line of lines) {
-      if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
-        const unitCost = new Decimal(line.costValue).div(line.qty);
-        const costResult = await calculateMovingAverage(
-          line.itemId,
-          new Decimal(line.qty),
-          unitCost,
-          tx
-        );
-
-        await tx.stockMovement.create({
-          data: {
-            itemId: line.itemId,
-            type: 'IN',
-            refType: 'RETURN',
-            refId: ret.id,
-            refDocNumber: ret.docNumber,
-            qty: line.qty,
-            unitCost: unitCost.toNumber(),
-            totalCost: line.costValue,
-            balanceQty: costResult.newQty.toNumber(),
-            balanceValue: costResult.newTotalValue.toNumber(),
-            notes: ret.woId ? `Retur ${ret.docNumber} (WO)` : `Retur ${ret.docNumber}`,
-          },
+      if ((line.type === 'FABRIC' || line.type === 'ACCESSORIES') && ret.woId) {
+        const wo = await tx.workOrder.findUnique({
+          where: { id: ret.woId },
+          select: { consumptionPlan: true }
         });
 
-        if (ret.woId) {
-          const wo = await tx.workOrder.findUnique({
-            where: { id: ret.woId },
-            select: { consumptionPlan: true }
-          });
-
-          if (wo) {
-            const plan = (wo.consumptionPlan as any[]) || [];
-            const planItem = plan.find((p: any) => p.itemId === line.itemId);
-            if (planItem) {
-              planItem.returnedQty = (planItem.returnedQty || 0) + line.qty;
-            }
-            await tx.workOrder.update({
-              where: { id: ret.woId },
-              data: { consumptionPlan: JSON.stringify(plan) }
-            });
+        if (wo) {
+          const plan = (wo.consumptionPlan as any[]) || [];
+          const planItem = plan.find((p: any) => p.itemId === line.itemId);
+          if (planItem) {
+            planItem.returnedQty = (planItem.returnedQty || 0) + line.qty;
           }
+          await tx.workOrder.update({
+            where: { id: ret.woId },
+            data: { consumptionPlan: JSON.stringify(plan) }
+          });
         }
       }
     }
@@ -261,7 +294,7 @@ export async function completeReturn(
         completedById: userId,
         trackingNumber: data.trackingNumber,
         receiptFileUrl: data.receiptFileUrl,
-        stockImpacted: true
+        stockImpacted: ret.stockImpacted
       }
     });
 

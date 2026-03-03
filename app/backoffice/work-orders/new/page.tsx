@@ -35,6 +35,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { createWorkOrder, getMaterialPlan } from '@/app/actions/production';
 import { getItemsByType } from '@/app/actions/items';
+import { getPOs } from '@/app/actions/purchase-orders';
 import { ItemType } from '@prisma/client';
 
 interface TailorSupplier {
@@ -84,13 +85,17 @@ export default function NewWorkOrderPage() {
   const [targetDate, setTargetDate] = useState('');
   const [notes, setNotes] = useState('');
   const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
+  const [poId, setPoId] = useState('');
+  const [purchaseOrders, setPurchaseOrders] = useState<Array<{ id: string; docNumber: string }>>([]);
+  const [isLoadingPOs, setIsLoadingPOs] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [suppliersRes, fgList] = await Promise.all([
+        const [suppliersRes, fgList, posResult] = await Promise.all([
           fetch('/api/suppliers'),
-          getItemsByType(ItemType.FINISHED_GOOD)
+          getItemsByType(ItemType.FINISHED_GOOD),
+          getPOs({ statusIn: ['SUBMITTED', 'PARTIAL'] }, { page: 1, pageSize: 200 }),
         ]);
         if (suppliersRes.ok) {
           const data = await suppliersRes.json();
@@ -99,11 +104,14 @@ export default function NewWorkOrderPage() {
           );
         }
         setFinishedGoods((fgList as FinishedGood[]) || []);
+        const pos = (posResult as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
+        setPurchaseOrders(pos);
       } catch (e) {
         toast.error(t('failedToLoadData'));
       } finally {
         setIsLoadingSuppliers(false);
         setIsLoadingFG(false);
+        setIsLoadingPOs(false);
       }
     };
     load();
@@ -175,6 +183,7 @@ export default function NewWorkOrderPage() {
           plannedQty: plannedNum,
           expectedConsumption: expectedConsumption.trim() ? Number(expectedConsumption) : undefined,
           targetDate: targetDate ? new Date(targetDate) : undefined,
+          poId: poId.trim() || undefined,
           notes: notes.trim() || undefined,
           rollBreakdown: rollBreakdown.length > 0 ? rollBreakdown : undefined,
         },
@@ -304,6 +313,27 @@ export default function NewWorkOrderPage() {
                   value={targetDate}
                   onChange={(e) => setTargetDate(e.target.value)}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>PO Reference (optional)</Label>
+                <Select
+                  value={poId || '__none__'}
+                  onValueChange={(v) => setPoId(v === '__none__' ? '' : v)}
+                  disabled={isLoadingPOs}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {purchaseOrders.map((po) => (
+                      <SelectItem key={po.id} value={po.id}>
+                        {po.docNumber}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Link this WO to a purchase order for vendor return tracking</p>
               </div>
             </div>
             <div className="space-y-2">

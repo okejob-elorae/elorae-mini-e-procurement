@@ -226,6 +226,7 @@ model PurchaseOrder {
   items       POItem[]
   grns        GRN[]
   statusHistory POStatusHistory[]
+  workOrders  WorkOrder[]
   syncStatus  SyncStatus      @default(SYNCED)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
@@ -350,6 +351,8 @@ model StockAdjustment {
 model WorkOrder {
   id              String    @id @default(cuid())
   docNumber       String    @unique
+  poId            String?
+  po              PurchaseOrder? @relation(fields: [poId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   vendorId        String
   vendor          Supplier  @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   finishedGoodId  String
@@ -375,6 +378,7 @@ model WorkOrder {
   issues          MaterialIssue[]
   receipts        FGReceipt[]
   returns         VendorReturn[]
+  @@index([poId])
   @@index([vendorId])
   @@index([finishedGoodId])
   @@index([createdById])

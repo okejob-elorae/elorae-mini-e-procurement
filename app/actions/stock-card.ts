@@ -39,6 +39,8 @@ function formatMovementDescription(refType: string): string {
       return 'Penyesuaian Stok';
     case 'RETURN':
       return 'Retur';
+    case 'VENDOR_RETURN':
+      return 'Pengembalian Vendor';
     default:
       return refType;
   }

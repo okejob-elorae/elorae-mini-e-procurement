@@ -29,6 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TagsInput } from '@/components/ui/tags-input';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
@@ -201,16 +202,6 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const updateAttributeKey = (index: number, key: string) => {
     const updated = [...attributes];
     updated[index] = { ...updated[index], key };
-    setAttributes(updated);
-  };
-
-  const updateAttributeValues = (index: number, value: string) => {
-    const values = value
-      .split(',')
-      .map((v) => v.trim())
-      .filter(Boolean);
-    const updated = [...attributes];
-    updated[index] = { ...updated[index], values };
     setAttributes(updated);
   };
 
@@ -544,10 +535,15 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               <div className="space-y-2 md:col-span-2">
                 <Label>Values (comma separated)</Label>
                 <div className="flex gap-2">
-                  <Input
-                    value={attr.values.join(', ')}
-                    onChange={(e) => updateAttributeValues(index, e.target.value)}
+                  <TagsInput
+                    value={attr.values}
+                    onChange={(values) => {
+                      const updated = [...attributes];
+                      updated[index] = { ...updated[index], values };
+                      setAttributes(updated);
+                    }}
                     placeholder="Red, Blue, Green"
+                    separator={[',', ' ', '\n']}
                   />
                   <Button
                     type="button"
