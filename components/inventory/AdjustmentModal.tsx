@@ -21,6 +21,7 @@ import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { createStockAdjustment } from '@/app/actions/inventory';
 import { getCurrentStockSummary } from '@/app/actions/stock-card';
 import { getInventoryValue } from '@/lib/inventory/costing';
+import { getItemUomAndConversions } from '@/app/actions/uom';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
@@ -50,6 +51,8 @@ export function AdjustmentModal({
     avgCost: number;
     totalValue: number;
   } | null>(null);
+  const [uomData, setUomData] = useState<Awaited<ReturnType<typeof getItemUomAndConversions>>>(null);
+  const [selectedUomId, setSelectedUomId] = useState<string>('');
 
   useEffect(() => {
     if (open) {
@@ -60,9 +63,14 @@ export function AdjustmentModal({
   useEffect(() => {
     if (!itemId || !open) {
       setCurrentStock(null);
+      setUomData(null);
+      setSelectedUomId('');
       return;
     }
-    getInventoryValue(itemId).then((v) => {
+    Promise.all([
+      getInventoryValue(itemId),
+      getItemUomAndConversions(itemId),
+    ]).then(([v, uom]) => {
       if (v)
         setCurrentStock({
           qtyOnHand: Number(v.qtyOnHand),
@@ -70,6 +78,8 @@ export function AdjustmentModal({
           totalValue: Number(v.totalValue),
         });
       else setCurrentStock(null);
+      setUomData(uom ?? null);
+      setSelectedUomId(uom?.baseUom?.id ?? '');
     });
   }, [itemId, open]);
 
@@ -127,6 +137,7 @@ export function AdjustmentModal({
           itemId,
           type,
           qty: qtyNum,
+          uomId: selectedUomId || undefined,
           reason: reason.trim(),
           evidenceUrl,
         },
@@ -152,6 +163,8 @@ export function AdjustmentModal({
     setQty('');
     setReason('');
     setEvidenceFile(null);
+    setUomData(null);
+    setSelectedUomId('');
     setPinOpen(false);
   };
 
@@ -218,8 +231,32 @@ export function AdjustmentModal({
               </Select>
             </div>
 
+            {uomData && (
+              <div className="space-y-2">
+                <Label>UOM</Label>
+                <Select value={selectedUomId} onValueChange={setSelectedUomId}>
+                  <SelectTrigger className="min-h-[44px]">
+                    <SelectValue placeholder="UOM" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={uomData.baseUom.id}>
+                      {uomData.baseUom.code} (base)
+                    </SelectItem>
+                    {uomData.conversions.map((c) => {
+                      const other = c.fromUomId === uomData.baseUom.id ? c.toUom : c.fromUom;
+                      return (
+                        <SelectItem key={other.id} value={other.id}>
+                          {other.code} ({other.nameId})
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label>Quantity *</Label>
+              <Label>Quantity * (in selected UOM)</Label>
               <Input
                 type="number"
                 min={0}

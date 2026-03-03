@@ -272,6 +272,7 @@ export default function ItemsPage() {
                     <TableHead className="text-right">Stock</TableHead>
                     <TableHead className="text-right">Avg Cost</TableHead>
                     <TableHead className="text-right">Value</TableHead>
+                    <TableHead className="text-right">Harga Jual</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -323,6 +324,11 @@ export default function ItemsPage() {
                         <TableCell className="text-right">
                           Rp {Number(item.inventoryValue?.totalValue || 0).toLocaleString()}
                         </TableCell>
+                        <TableCell className="text-right">
+                          {item.type === 'FINISHED_GOOD' && item.sellingPrice != null
+                            ? `Rp ${Number(item.sellingPrice).toLocaleString()}`
+                            : '—'}
+                        </TableCell>
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -350,20 +356,27 @@ export default function ItemsPage() {
                       </TableRow>
                       {expandedId === item.id && (
                         <TableRow>
-                          <TableCell colSpan={9}>
+                          <TableCell colSpan={10}>
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="space-y-1">
                                 <p className="text-sm font-semibold">Variants</p>
                                 {item.variants && item.variants.length > 0 ? (
                                   <div className="space-y-1 text-sm">
                                     {item.variants.map((variant, idx) => (
-                                      <div key={idx} className="flex flex-wrap gap-2">
+                                      <div key={idx} className="flex flex-wrap gap-2 items-center">
                                         <span className="text-muted-foreground">{tItems('variantLabel', { index: idx + 1 })}</span>
-                                        {Object.entries(variant).map(([k, v]) => (
-                                          <span key={k} className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs">
-                                            {k}: {v}
+                                        {variant.sku && (
+                                          <span className="px-2 py-1 rounded bg-primary/10 text-primary text-xs font-medium">
+                                            {variant.sku}
                                           </span>
-                                        ))}
+                                        )}
+                                        {Object.entries(variant)
+                                          .filter(([k]) => k !== 'sku')
+                                          .map(([k, v]) => (
+                                            <span key={k} className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs">
+                                              {k}: {v}
+                                            </span>
+                                          ))}
                                       </div>
                                     ))}
                                   </div>

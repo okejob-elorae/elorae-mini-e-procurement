@@ -53,6 +53,7 @@ type ReconSummary = {
 export default function WorkOrderReconciliationPage() {
   const params = useParams();
   const t = useTranslations('production');
+  const tWO = useTranslations('workOrders');
   const id = typeof params.id === 'string' ? params.id : '';
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
   const [recon, setRecon] = useState<{
@@ -260,7 +261,7 @@ export default function WorkOrderReconciliationPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Material</TableHead>
-                  <TableHead className="text-right" title={t('cuttingPlanned')}>{t('targetCutting')}</TableHead>
+                  <TableHead className="text-right" title={t('cuttingPlanned')}>{tWO('estimatedConsumptionPerPcs')}</TableHead>
                   <TableHead className="text-right" title={t('issuedToCmt')}>{t('issuedToCmt')}</TableHead>
                   <TableHead className="text-right">Returned</TableHead>
                   <TableHead className="text-right">{t('setoran')}</TableHead>

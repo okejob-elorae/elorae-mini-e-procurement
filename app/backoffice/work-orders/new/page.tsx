@@ -65,6 +65,7 @@ interface MaterialPlanRow {
 
 export default function NewWorkOrderPage() {
   const t = useTranslations('toasts');
+  const tWO = useTranslations('workOrders');
   const router = useRouter();
   const { data: session } = useSession();
   const [tailors, setTailors] = useState<TailorSupplier[]>([]);
@@ -79,6 +80,7 @@ export default function NewWorkOrderPage() {
   const [finishedGoodId, setFinishedGoodId] = useState('');
   const [outputMode, setOutputMode] = useState<'GENERIC' | 'SKU'>('GENERIC');
   const [plannedQty, setPlannedQty] = useState<string>('');
+  const [expectedConsumption, setExpectedConsumption] = useState<string>('');
   const [targetDate, setTargetDate] = useState('');
   const [notes, setNotes] = useState('');
   const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
@@ -171,6 +173,7 @@ export default function NewWorkOrderPage() {
           finishedGoodId,
           outputMode,
           plannedQty: plannedNum,
+          expectedConsumption: expectedConsumption.trim() ? Number(expectedConsumption) : undefined,
           targetDate: targetDate ? new Date(targetDate) : undefined,
           notes: notes.trim() || undefined,
           rollBreakdown: rollBreakdown.length > 0 ? rollBreakdown : undefined,
@@ -278,6 +281,18 @@ export default function NewWorkOrderPage() {
                   onChange={(e) => setPlannedQty(e.target.value)}
                   placeholder="0"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Expected Consumption (optional)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={expectedConsumption}
+                  onChange={(e) => setExpectedConsumption(e.target.value)}
+                  placeholder="e.g. total yards"
+                />
+                <p className="text-xs text-muted-foreground">Total expected raw material consumption (e.g. 10,000 yards)</p>
               </div>
             </div>
 
@@ -394,7 +409,7 @@ export default function NewWorkOrderPage() {
                       <TableRow>
                         <TableHead>Material</TableHead>
                         <TableHead className="text-right">
-                          Qty Required (waste %)
+                          {tWO('estimatedConsumptionPerPcs')} (waste %)
                         </TableHead>
                         <TableHead className="text-right">Available</TableHead>
                         <TableHead className="text-right">Shortage</TableHead>

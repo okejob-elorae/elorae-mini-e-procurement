@@ -48,6 +48,7 @@
     "registerNotaCmt": "Register Nota CMT",
     "vendorReturns": "Vendor Returns",
     "reports": "Reports",
+    "hppReport": "HPP (Cost of Goods)",
     "auditTrail": "Audit Trail",
     "settings": "Settings",
     "masterData": "Master Data"
@@ -577,6 +578,7 @@
     "consumptionPlan": "Consumption Plan",
     "material": "Material",
     "planned": "Planned",
+    "estimatedConsumptionPerPcs": "Estimated Consumption per Pcs",
     "returned": "Returned",
     "type": "Type",
     "date": "Date",
@@ -646,5 +648,26 @@
   },
   "vendorReturnsList": {
     "noVendorReturnsFound": "No vendor returns found"
+  },
+  "hpp": {
+    "title": "HPP (Harga Pokok Produksi)",
+    "subtitle": "Cost of goods for finished goods — material cost and avg cost per unit from FG receipts",
+    "cardTitle": "Finished goods — HPP view",
+    "cardDescription": "Last receipt cost and material cost per finished good. Data comes from FG receipt records.",
+    "sku": "SKU",
+    "name": "Name",
+    "receiptCount": "Receipt count",
+    "lastAvgCostPerUnit": "Last avg cost/unit",
+    "lastMaterialCost": "Last material cost",
+    "lastReceipt": "Last receipt",
+    "noFinishedGoods": "No finished goods found.",
+    "helpAriaLabel": "How is HPP calculated?",
+    "helpTitle": "How HPP is calculated",
+    "helpIntro": "HPP (Harga Pokok Produksi) is the cost of producing finished goods. This report shows values derived from FG (Finished Goods) receipt records.",
+    "helpWhenStored": "When production receives finished goods (via Work Order receipt), the system stores on each receipt:",
+    "helpMaterialCost": "Material cost — total cost of materials issued for that production",
+    "helpAvgCostPerUnit": "Avg cost per unit — total cost (e.g. material + CMT if applicable) divided by quantity received",
+    "helpTableExplanation": "The table shows for each finished good: Receipt count, the last avg cost/unit and last material cost from the most recent FG receipt, and the last receipt date. If there are no receipts yet, those columns show —.",
+    "helpFuture": "Labor/CMT and overhead can be included in future updates via WO or allocation rules."
   }
 }

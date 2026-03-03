@@ -10,6 +10,7 @@ const adjustmentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
   type: z.enum(['POSITIVE', 'NEGATIVE']),
   qty: z.number().positive(),
+  uomId: z.string().min(1).optional(),
   reason: z.string().min(5, 'Alasan minimal 5 karakter'),
   evidenceUrl: z.string().url().optional(),
 });
@@ -37,18 +38,54 @@ export async function createStockAdjustment(
 
   return await prisma.$transaction(async (tx) => {
 
-    // Get current inventory
-    const current = await tx.inventoryValue.findUnique({
-      where: { itemId: data.itemId }
-    });
+    // Get item (for base UOM) and current inventory
+    const [item, current] = await Promise.all([
+      tx.item.findUnique({
+        where: { id: data.itemId },
+        select: { uomId: true },
+      }),
+      tx.inventoryValue.findUnique({
+        where: { itemId: data.itemId },
+      }),
+    ]);
 
+    if (!item) throw new Error('Item not found');
     if (!current) {
       throw new Error('Item tidak memiliki record inventory');
     }
 
+    let qtyInBaseUom = new Decimal(data.qty);
+    if (data.uomId && data.uomId !== item.uomId) {
+      const conv = await tx.uOMConversion.findUnique({
+        where: {
+          fromUomId_toUomId: {
+            fromUomId: data.uomId,
+            toUomId: item.uomId,
+          },
+        },
+      });
+      if (conv) {
+        qtyInBaseUom = new Decimal(data.qty).mul(conv.factor.toString());
+      } else {
+        const convReverse = await tx.uOMConversion.findUnique({
+          where: {
+            fromUomId_toUomId: {
+              fromUomId: item.uomId,
+              toUomId: data.uomId,
+            },
+          },
+        });
+        if (convReverse) {
+          qtyInBaseUom = new Decimal(data.qty).div(convReverse.factor.toString());
+        } else {
+          throw new Error(`No UOM conversion defined between selected UOM and item base UOM`);
+        }
+      }
+    }
+
     const prevQty = new Decimal(current.qtyOnHand.toString());
     const prevAvgCost = new Decimal(current.avgCost.toString());
-    const qtyChange = new Decimal(data.qty);
+    const qtyChange = qtyInBaseUom;
     const newQty = data.type === 'POSITIVE' 
       ? prevQty.plus(qtyChange)
       : prevQty.minus(qtyChange);
@@ -79,7 +116,7 @@ export async function createStockAdjustment(
         docNumber,
         itemId: data.itemId,
         type: data.type,
-        qtyChange: data.qty,
+        qtyChange: qtyChange.toNumber(),
         reason: data.reason,
         evidenceUrl: data.evidenceUrl,
         prevQty: prevQty.toNumber(),
@@ -103,8 +140,9 @@ export async function createStockAdjustment(
       },
     });
 
-    // Create stock movement
-    const adjQty = data.type === 'POSITIVE' ? data.qty : -data.qty;
+    // Create stock movement (in base UOM)
+    const adjQtyNum = qtyChange.toNumber();
+    const adjQty = data.type === 'POSITIVE' ? adjQtyNum : -adjQtyNum;
     const totalCostAdj =
       data.type === 'POSITIVE'
         ? qtyChange.mul(prevAvgCost).toNumber()
@@ -273,6 +311,83 @@ export async function getStockAdjustmentById(id: string) {
     newAvgCost: toNum(row.newAvgCost),
     item: serializeItemForClient(row.item as { reorderPoint?: unknown; [k: string]: unknown }),
   };
+}
+
+/** Get average cost per item for given item IDs (for Material Issue form prefill). */
+export async function getItemAvgCosts(
+  itemIds: string[]
+): Promise<Record<string, number>> {
+  if (itemIds.length === 0) return {};
+  const rows = await prisma.inventoryValue.findMany({
+    where: { itemId: { in: itemIds } },
+    select: { itemId: true, avgCost: true },
+  });
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    out[r.itemId] = Number(r.avgCost);
+  }
+  return out;
+}
+
+export type RejectedGoodsRecapRow = {
+  id: string;
+  itemId: string;
+  qty: number;
+  refType: string;
+  refDocNumber: string;
+  woId: string | null;
+  receivedAt: Date;
+  notes: string | null;
+  createdAt: Date;
+  item: { sku: string; nameId: string; nameEn: string | null };
+};
+
+/** Get rejected goods recap (for report page). */
+export async function getRejectedGoodsRecap(filters?: {
+  itemId?: string;
+  woId?: string;
+  fromDate?: Date;
+  toDate?: Date;
+  page?: number;
+  pageSize?: number;
+}): Promise<{ items: RejectedGoodsRecapRow[]; totalCount: number }> {
+  const where: Record<string, unknown> = {};
+  if (filters?.itemId) where.itemId = filters.itemId;
+  if (filters?.woId) where.woId = filters.woId;
+  if (filters?.fromDate || filters?.toDate) {
+    where.receivedAt = {};
+    if (filters.fromDate) (where.receivedAt as Record<string, Date>).gte = filters.fromDate;
+    if (filters.toDate) (where.receivedAt as Record<string, Date>).lte = filters.toDate;
+  }
+
+  const [rows, totalCount] = await Promise.all([
+    prisma.rejectedGoodsLedger.findMany({
+      where,
+      include: {
+        item: { select: { sku: true, nameId: true, nameEn: true } },
+      },
+      orderBy: { receivedAt: 'desc' },
+      ...(filters?.page != null && filters?.pageSize != null && filters.pageSize > 0
+        ? { skip: (filters.page - 1) * filters.pageSize, take: filters.pageSize }
+        : {}),
+    }),
+    prisma.rejectedGoodsLedger.count({ where }),
+  ]);
+
+  const items = rows.map((r) => ({
+    id: r.id,
+    itemId: r.itemId,
+    qty: Number(r.qty),
+    refType: r.refType,
+    refDocNumber: r.refDocNumber,
+    woId: r.woId,
+    receivedAt: r.receivedAt,
+    notes: r.notes,
+    createdAt: r.createdAt,
+    item: r.item,
+  }));
+
+  return { items, totalCount };
 }
 
 // Get inventory statistics

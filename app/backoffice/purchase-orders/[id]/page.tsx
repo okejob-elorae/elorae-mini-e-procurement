@@ -17,7 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer } from 'lucide-react';
+import { buildPOPrintHtml } from '@/lib/print/po-html';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { POStatus } from '@/lib/constants/enums';
@@ -173,6 +174,68 @@ export default function PODetailPage() {
   const canSubmit = po.status === 'DRAFT';
   const canCancel = po.status === 'DRAFT' || po.status === 'SUBMITTED';
 
+  const handlePrint = () => {
+    const supplier = po.supplier as { name: string; code?: string; address?: string | null };
+    const lines = (po.items as any[]).map((item: any) => ({
+      itemName: item.item?.nameId ?? item.item?.nameEn ?? item.item?.sku ?? '',
+      itemSku: item.item?.sku,
+      qty: Number(item.qty ?? 0),
+      uomCode: item.item?.uom?.code ?? '',
+      price: Number(item.price ?? 0),
+      amount: Number(item.qty ?? 0) * Number(item.price ?? 0),
+    }));
+    const html = buildPOPrintHtml({
+      docNumber: po.docNumber,
+      supplierName: supplier.name,
+      supplierAddress: supplier.address ?? null,
+      status: statusLabels[po.status as POStatus],
+      etaDate: po.etaDate,
+      paymentDueDate: po.paymentDueDate,
+      currency: po.currency ?? 'IDR',
+      subtotal: Number(po.totalAmount ?? 0),
+      taxAmount: Number(po.taxAmount ?? 0),
+      grandTotal: Number(po.grandTotal ?? 0),
+      notes: po.notes ?? null,
+      terms: po.terms ?? null,
+      lines,
+      labels: {
+        title: 'Purchase Order',
+        doc: 'PO Number',
+        supplier: 'Supplier',
+        address: 'Address',
+        status: 'Status',
+        etaDate: 'ETA Date',
+        paymentDue: 'Payment Due',
+        item: 'Item',
+        qty: 'Qty',
+        uom: 'UOM',
+        price: 'Unit Price',
+        amount: 'Amount',
+        subtotal: 'Subtotal',
+        tax: 'Tax',
+        grandTotal: 'Grand Total',
+        notes: 'Notes',
+        terms: 'Terms',
+      },
+    });
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
+    iframe.setAttribute('title', 'Print PO');
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(html);
+      doc.close();
+      setTimeout(() => {
+        iframe.contentWindow?.print();
+      }, 350);
+    }
+    setTimeout(() => {
+      document.body.removeChild(iframe);
+    }, 1000);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -188,6 +251,10 @@ export default function PODetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print PO
+          </Button>
           <Badge className={statusColors[po.status as POStatus]}>
             {statusLabels[po.status as POStatus]}
           </Badge>

@@ -34,6 +34,7 @@ function serializeWorkOrder(wo: {
   finishedGoodId: string;
   outputMode: string;
   plannedQty: unknown;
+  expectedConsumption?: unknown;
   actualQty?: unknown;
   targetDate: Date | null;
   status: string;
@@ -63,6 +64,7 @@ function serializeWorkOrder(wo: {
     finishedGoodId: wo.finishedGoodId,
     outputMode: wo.outputMode,
     plannedQty: Number(wo.plannedQty),
+    expectedConsumption: wo.expectedConsumption != null ? Number(wo.expectedConsumption) : null,
     actualQty: wo.actualQty != null ? Number(wo.actualQty) : null,
     targetDate: wo.targetDate,
     status: wo.status,
@@ -117,6 +119,7 @@ const woSchema = z.object({
   vendorId: idStr,
   outputMode: z.enum(['GENERIC', 'SKU']),
   plannedQty: z.number().positive(),
+  expectedConsumption: z.number().positive().optional(),
   targetDate: z.date().optional(),
   finishedGoodId: idStr,
   notes: z.string().optional(),
@@ -172,6 +175,7 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
       finishedGoodId: data.finishedGoodId,
       outputMode: data.outputMode,
       plannedQty: data.plannedQty,
+      expectedConsumption: data.expectedConsumption ?? undefined,
       targetDate: data.targetDate,
       notes: data.notes,
       createdById: userId,
@@ -226,7 +230,8 @@ const issueSchema = z.object({
       z.object({
         itemId: idStr,
         qty: z.number().positive(),
-        uomId: idStr
+        uomId: idStr,
+        unitPrice: z.number().positive().optional()
       })
     )
     .min(1),
@@ -267,6 +272,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       qty: number;
       uomId: string;
       avgCostAtIssue: number;
+      unitPrice?: number;
       totalCost: number;
     }> = [];
 
@@ -289,7 +295,8 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       }
 
       const avgCostNum = Number(inventory.avgCost);
-      const cost = new Decimal(avgCostNum).mul(item.qty);
+      const unitCost = item.unitPrice ?? avgCostNum;
+      const cost = new Decimal(unitCost).mul(item.qty);
       totalCost = totalCost.plus(cost);
 
       const newQty = new Decimal(inventory.qtyOnHand.toString()).minus(item.qty);
@@ -306,7 +313,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       movementData.push({
         itemId: item.itemId,
         qty: -item.qty,
-        unitCost: avgCostNum,
+        unitCost,
         totalCost: cost.toNumber(),
         balanceQty: newQty.toNumber(),
         balanceValue: newValue.toNumber()
@@ -317,6 +324,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         qty: item.qty,
         uomId: item.uomId,
         avgCostAtIssue: avgCostNum,
+        unitPrice: unitCost,
         totalCost: cost.toNumber()
       });
     }
@@ -470,6 +478,21 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           balanceValue: costResult.newTotalValue.toNumber(),
           notes: `FG receipt ${docNumber}`
         }
+      });
+    }
+
+    if (data.qtyRejected > 0 && wo.finishedGoodId) {
+      await tx.rejectedGoodsLedger.create({
+        data: {
+          itemId: wo.finishedGoodId,
+          qty: data.qtyRejected,
+          refType: 'FG_RECEIPT',
+          refId: receipt.id,
+          refDocNumber: docNumber,
+          woId: data.woId,
+          receivedAt: receipt.receivedAt,
+          notes: data.qcNotes ?? null,
+        },
       });
     }
 
@@ -793,10 +816,11 @@ export async function getMaterialIssueForPrint(issueId: string) {
       rawItems = null;
     }
   }
-  const items: Array<{ itemId: string; qty: number; uomId: string }> = Array.isArray(rawItems)
-    ? rawItems.filter((i): i is { itemId: string; qty: number; uomId: string } => i != null && typeof i === 'object' && typeof (i as { itemId?: unknown }).itemId === 'string')
+  type ItemLine = { itemId: string; qty: number; uomId: string; unitPrice?: number; totalCost?: number };
+  const items: ItemLine[] = Array.isArray(rawItems)
+    ? rawItems.filter((i): i is ItemLine => i != null && typeof i === 'object' && typeof (i as { itemId?: unknown }).itemId === 'string')
     : rawItems && typeof rawItems === 'object'
-      ? (Object.values(rawItems) as unknown[]).filter((i): i is { itemId: string; qty: number; uomId: string } => i != null && typeof i === 'object' && typeof (i as { itemId?: unknown }).itemId === 'string')
+      ? (Object.values(rawItems) as unknown[]).filter((i): i is ItemLine => i != null && typeof i === 'object' && typeof (i as { itemId?: unknown }).itemId === 'string')
       : [];
   const itemIds = [...new Set(items.map((i) => i.itemId).filter(Boolean))];
   const uomIds = [...new Set(items.map((i) => i?.uomId).filter(Boolean))];
@@ -811,6 +835,8 @@ export async function getMaterialIssueForPrint(issueId: string) {
     itemSku: itemMap.get(line.itemId)?.sku ?? '',
     qty: Number(line.qty ?? 0),
     uomCode: line.uomId ? uomMap.get(line.uomId)?.code ?? '' : '',
+    unitPrice: line.unitPrice != null ? Number(line.unitPrice) : undefined,
+    lineTotal: line.totalCost != null ? Number(line.totalCost) : undefined,
   }));
   return {
     docNumber: issue.docNumber,

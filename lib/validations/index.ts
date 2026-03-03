@@ -14,6 +14,7 @@ export function createItemSchema(t: ValidationTranslate = defaultT) {
     description: z.string().optional(),
     variants: z.array(z.record(z.string(), z.string())).optional(),
     reorderPoint: z.number().min(0).optional(),
+    sellingPrice: z.number().min(0).optional(),
   });
 }
 

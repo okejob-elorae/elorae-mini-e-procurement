@@ -19,10 +19,14 @@ import {
   CreditCard,
   Lock,
   Loader2,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
+import { Role } from '@/lib/constants/enums';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Card,
   CardContent,
@@ -70,6 +74,15 @@ interface SupplierTypeOption {
   sortOrder: number | null;
 }
 
+interface SupplierCategoryOption {
+  id: string;
+  code: string;
+  nameId: string;
+  nameEn: string;
+}
+
+type SupplierStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED';
+
 interface Supplier {
   id: string;
   code: string;
@@ -84,6 +97,7 @@ interface Supplier {
   bankAccountEnc: string | null;
   bankAccountName: string | null;
   isActive: boolean;
+  status?: SupplierStatus;
 }
 
 const supplierSchema = z.object({
@@ -109,6 +123,9 @@ export default function SuppliersPage() {
   const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierTypes, setSupplierTypes] = useState<SupplierTypeOption[]>([]);
+  const [supplierCategories, setSupplierCategories] = useState<SupplierCategoryOption[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [supplierDialogMode, setSupplierDialogMode] = useState<'create' | 'edit' | null>(null);
@@ -120,6 +137,9 @@ export default function SuppliersPage() {
   const [bankPinModalOpen, setBankPinModalOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deletePinModalOpen, setDeletePinModalOpen] = useState(false);
+  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [isApproving, setIsApproving] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
@@ -146,6 +166,8 @@ export default function SuppliersPage() {
       params.set('page', String(page));
       params.set('pageSize', String(pageSize));
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      if (categoryFilter) params.set('categoryId', categoryFilter);
+      if (statusFilter) params.set('status', statusFilter);
       const response = await fetch(`/api/suppliers?${params.toString()}`);
       if (response.ok) {
         const json = await response.json();
@@ -178,17 +200,30 @@ export default function SuppliersPage() {
     }
   };
 
+  const fetchSupplierCategories = async () => {
+    try {
+      const res = await fetch('/api/supplier-categories');
+      if (res.ok) {
+        const data = await res.json();
+        setSupplierCategories(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch supplier categories:', e);
+    }
+  };
+
   useEffect(() => {
     fetchSupplierTypes();
+    fetchSupplierCategories();
   }, []);
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, categoryFilter, statusFilter]);
 
   useEffect(() => {
     fetchSuppliers();
-  }, [page, pageSize, searchQuery]);
+  }, [page, pageSize, searchQuery, categoryFilter, statusFilter]);
 
   const isSupplierFormOpen = supplierDialogMode !== null;
 
@@ -570,9 +605,9 @@ export default function SuppliersPage() {
         </Dialog>
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-4">
-        <div className="relative flex-1 max-w-sm">
+      {/* Search and filters */}
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search suppliers..."
@@ -581,6 +616,36 @@ export default function SuppliersPage() {
             className="pl-9"
           />
         </div>
+        <Select
+          value={categoryFilter ?? 'all'}
+          onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
+        >
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {supplierCategories.map((cat) => (
+              <SelectItem key={cat.id} value={cat.id}>
+                {cat.nameEn || cat.nameId}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={statusFilter ?? 'all'}
+          onValueChange={(v) => setStatusFilter(v === 'all' ? null : v)}
+        >
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="PENDING_APPROVAL">Pending approval</SelectItem>
+            <SelectItem value="ACTIVE">Active</SelectItem>
+            <SelectItem value="REJECTED">Rejected</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Suppliers List */}
@@ -640,6 +705,44 @@ export default function SuppliersPage() {
                         <Edit className="mr-2 h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
+                      {supplier.status === 'PENDING_APPROVAL' &&
+                        (session?.user as { role?: string })?.role === Role.ADMIN && (
+                          <>
+                            <DropdownMenuItem
+                              onClick={async () => {
+                                setIsApproving(true);
+                                try {
+                                  const res = await fetch(`/api/suppliers/${supplier.id}/approve`, {
+                                    method: 'POST',
+                                  });
+                                  if (res.ok) {
+                                    toast.success('Supplier approved');
+                                    fetchSuppliers();
+                                  } else {
+                                    const data = await res.json();
+                                    toast.error(data.error ?? 'Failed to approve');
+                                  }
+                                } finally {
+                                  setIsApproving(false);
+                                }
+                              }}
+                              disabled={isApproving}
+                            >
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              Approve
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => {
+                                setRejectTargetId(supplier.id);
+                                setRejectReason('');
+                              }}
+                            >
+                              <XCircle className="mr-2 h-4 w-4" />
+                              Reject
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       <DropdownMenuItem
                         className="text-destructive"
                         onClick={() => handleDeleteClick(supplier.id)}
@@ -650,9 +753,28 @@ export default function SuppliersPage() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <Badge variant={supplier.isActive ? 'default' : 'secondary'}>
-                  {supplier.type?.name ?? '—'}
-                </Badge>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  <Badge variant={supplier.isActive ? 'default' : 'secondary'}>
+                    {supplier.type?.name ?? '—'}
+                  </Badge>
+                  {supplier.status && (
+                    <Badge
+                      variant={
+                        supplier.status === 'ACTIVE'
+                          ? 'default'
+                          : supplier.status === 'PENDING_APPROVAL'
+                            ? 'secondary'
+                            : 'destructive'
+                      }
+                    >
+                      {supplier.status === 'PENDING_APPROVAL'
+                        ? 'Pending'
+                        : supplier.status === 'ACTIVE'
+                          ? 'Active'
+                          : 'Rejected'}
+                    </Badge>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 {supplier.phone && (
@@ -785,6 +907,74 @@ export default function SuppliersPage() {
         onConfirm={handleDeletePinConfirm}
         action="menghapus supplier"
       />
+
+      <Dialog
+        open={rejectTargetId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectTargetId(null);
+            setRejectReason('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject supplier</DialogTitle>
+            <DialogDescription>Provide a reason for rejection. The supplier status will be set to Rejected.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="reject-reason">Reason *</Label>
+              <Textarea
+                id="reject-reason"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Reason for rejection..."
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRejectTargetId(null);
+                setRejectReason('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectReason.trim() || isApproving}
+              onClick={async () => {
+                if (!rejectTargetId || !rejectReason.trim()) return;
+                setIsApproving(true);
+                try {
+                  const res = await fetch(`/api/suppliers/${rejectTargetId}/reject`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason: rejectReason.trim() }),
+                  });
+                  if (res.ok) {
+                    toast.success('Supplier rejected');
+                    setRejectTargetId(null);
+                    setRejectReason('');
+                    fetchSuppliers();
+                  } else {
+                    const data = await res.json();
+                    toast.error(data.error ?? 'Failed to reject');
+                  }
+                } finally {
+                  setIsApproving(false);
+                }
+              }}
+            >
+              Reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

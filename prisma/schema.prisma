@@ -60,6 +60,7 @@ model User {
   stockAdjustmentsCreated  StockAdjustment[] @relation("CreatedAdjustments")
   vendorReturnsCreated    VendorReturn[]
   vendorReturnsCompleted  VendorReturn[] @relation("VendorReturnCompleted")
+  suppliersApproved       Supplier[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -100,29 +101,36 @@ model SupplierType {
 }
 
 model Supplier {
-  id              String           @id @default(cuid())
-  code            String           @unique
-  name            String
-  typeId          String
-  type            SupplierType    @relation(fields: [typeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  categoryId      String?
-  category        SupplierCategory? @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  address         String?
-  phone           String?
-  email           String?
-  bankName        String?
-  bankAccountEnc  String?
-  bankAccountName String?
-  isActive        Boolean          @default(true)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  purchaseOrders  PurchaseOrder[]
-  workOrders      WorkOrder[]
-  grns            GRN[]
-  vendorReturns   VendorReturn[]
+  id               String           @id @default(cuid())
+  code             String           @unique
+  name             String
+  typeId           String
+  type             SupplierType    @relation(fields: [typeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  categoryId       String?
+  category         SupplierCategory? @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  address          String?
+  phone            String?
+  email            String?
+  bankName         String?
+  bankAccountEnc   String?
+  bankAccountName  String?
+  isActive         Boolean          @default(true)
+  status           SupplierStatus  @default(PENDING_APPROVAL)
+  approvedById     String?
+  approvedBy       User?           @relation(fields: [approvedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  approvedAt       DateTime?
+  rejectionReason  String?          @db.Text
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  purchaseOrders   PurchaseOrder[]
+  workOrders       WorkOrder[]
+  grns             GRN[]
+  vendorReturns    VendorReturn[]
   @@index([typeId])
   @@index([categoryId])
   @@index([code])
+  @@index([status])
+  @@index([approvedById])
 }
 
 model UOM {
@@ -163,6 +171,7 @@ model Item {
   variants         Json?
   isActive         Boolean           @default(true)
   reorderPoint     Decimal?          @db.Decimal(10,2)
+  sellingPrice     Decimal?          @db.Decimal(14,2)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   stockMovements   StockMovement[]
@@ -172,6 +181,7 @@ model Item {
   materialUsages   ConsumptionRule[] @relation("MaterialUsages")
   stockAdjustments StockAdjustment[]
   workOrdersAsFinishedGood WorkOrder[]
+  rejectedGoodsLedger RejectedGoodsLedger[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -346,6 +356,7 @@ model WorkOrder {
   finishedGood    Item      @relation(fields: [finishedGoodId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   outputMode      OutputMode @default(GENERIC)
   plannedQty      Decimal   @db.Decimal(10,2)
+  expectedConsumption Decimal? @db.Decimal(10,2)
   actualQty       Decimal?  @db.Decimal(10,2)
   targetDate      DateTime?
   status          WOStatus  @default(DRAFT)
@@ -419,6 +430,24 @@ model FGReceipt {
   @@index([receivedById])
   @@index([receivedAt])
   @@index([docNumber])
+}
+
+model RejectedGoodsLedger {
+  id          String    @id @default(cuid())
+  itemId      String
+  item        Item      @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  qty         Decimal   @db.Decimal(10,2)
+  refType     String    // FG_RECEIPT
+  refId       String
+  refDocNumber String
+  woId        String?
+  receivedAt  DateTime
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+  @@index([itemId])
+  @@index([refType, refId])
+  @@index([woId])
+  @@index([receivedAt])
 }
 
 model VendorReturn {
@@ -535,10 +564,32 @@ enum Role {
   USER
 }
 
+enum SupplierStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  REJECTED
+}
+
 enum ItemType {
   FABRIC
   ACCESSORIES
   FINISHED_GOOD
+}
+
+enum ItemTypeGroup {
+  RAW
+  FINISHED
+}
+
+model ItemTypeMaster {
+  id        String        @id @default(cuid())
+  code      String        @unique
+  nameId    String
+  nameEn    String
+  group     ItemTypeGroup
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 }
 
 enum POStatus {

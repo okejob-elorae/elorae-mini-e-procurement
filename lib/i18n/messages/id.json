@@ -48,6 +48,7 @@
     "registerNotaCmt": "Register Nota CMT",
     "vendorReturns": "Retur Pemasok",
     "reports": "Laporan",
+    "hppReport": "HPP (Harga Pokok Produksi)",
     "auditTrail": "Audit Trail",
     "settings": "Pengaturan",
     "masterData": "Data Master"
@@ -577,6 +578,7 @@
     "consumptionPlan": "Rencana Konsumsi",
     "material": "Material",
     "planned": "Rencana",
+    "estimatedConsumptionPerPcs": "Taksiran konsumsi per pcs",
     "returned": "Dikembalikan",
     "type": "Tipe",
     "date": "Tanggal",
@@ -646,5 +648,26 @@
   },
   "vendorReturnsList": {
     "noVendorReturnsFound": "Tidak ada retur pemasok ditemukan"
+  },
+  "hpp": {
+    "title": "HPP (Harga Pokok Produksi)",
+    "subtitle": "Harga pokok barang jadi — biaya material dan rata-rata biaya per unit dari penerimaan FG",
+    "cardTitle": "Barang jadi — tampilan HPP",
+    "cardDescription": "Biaya penerimaan terakhir dan biaya material per barang jadi. Data dari catatan penerimaan FG.",
+    "sku": "SKU",
+    "name": "Nama",
+    "receiptCount": "Jumlah penerimaan",
+    "lastAvgCostPerUnit": "Rata-rata biaya/unit terakhir",
+    "lastMaterialCost": "Biaya material terakhir",
+    "lastReceipt": "Penerimaan terakhir",
+    "noFinishedGoods": "Tidak ada barang jadi ditemukan.",
+    "helpAriaLabel": "Bagaimana HPP dihitung?",
+    "helpTitle": "Cara perhitungan HPP",
+    "helpIntro": "HPP (Harga Pokok Produksi) adalah biaya memproduksi barang jadi. Laporan ini menampilkan nilai yang diambil dari catatan penerimaan FG (Finished Goods / Barang Jadi).",
+    "helpWhenStored": "Saat produksi menerima barang jadi (melalui penerimaan Work Order), sistem menyimpan pada setiap penerimaan:",
+    "helpMaterialCost": "Biaya material — total biaya material yang dikeluarkan untuk produksi tersebut",
+    "helpAvgCostPerUnit": "Rata-rata biaya per unit — total biaya (mis. material + CMT jika ada) dibagi kuantitas diterima",
+    "helpTableExplanation": "Tabel menampilkan untuk setiap barang jadi: Jumlah penerimaan, rata-rata biaya/unit terakhir dan biaya material terakhir dari penerimaan FG terbaru, serta tanggal penerimaan terakhir. Jika belum ada penerimaan, kolom tersebut menampilkan —.",
+    "helpFuture": "Tenaga kerja/CMT dan overhead dapat ditambahkan di pembaruan mendatang melalui WO atau aturan alokasi."
   }
 }

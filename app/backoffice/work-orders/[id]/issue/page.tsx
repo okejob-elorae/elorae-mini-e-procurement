@@ -43,6 +43,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { getWorkOrderById, issueMaterials } from '@/app/actions/production';
 import { getItemsByType } from '@/app/actions/items';
+import { getItemAvgCosts } from '@/app/actions/inventory';
 import { ItemType } from '@prisma/client';
 
 interface PlanRow {
@@ -61,6 +62,7 @@ interface IssueLine {
   uomId: string;
   qty: number;
   maxQty: number;
+  unitPrice?: number;
 }
 
 export default function WorkOrderIssuePage() {
@@ -78,6 +80,7 @@ export default function WorkOrderIssuePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [itemAvgCosts, setItemAvgCosts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!id) return;
@@ -85,6 +88,11 @@ export default function WorkOrderIssuePage() {
       .then(([woData, fabricItems]) => {
         setWO(woData);
         setMaterials((fabricItems as any) || []);
+        const plan = (woData?.consumptionPlan as any[]) || [];
+        const ids = [...new Set((plan as { itemId?: string }[]).map((p) => p.itemId).filter(Boolean))];
+        if (ids.length > 0) {
+          getItemAvgCosts(ids).then(setItemAvgCosts);
+        }
       })
       .catch(() => {
         toast.error(t('failedToLoadData'));
@@ -112,6 +120,7 @@ export default function WorkOrderIssuePage() {
     const existing = lines.find((l) => l.itemId === p.itemId);
     if (existing) return;
     const maxQty = p.plannedQty - p.issuedQty;
+    const defaultPrice = itemAvgCosts[p.itemId];
     setLines((prev) => [
       ...prev,
       {
@@ -119,7 +128,8 @@ export default function WorkOrderIssuePage() {
         itemName: p.itemName,
         uomId: p.uomId,
         qty: Math.min(1, maxQty),
-        maxQty
+        maxQty,
+        unitPrice: defaultPrice != null && defaultPrice > 0 ? defaultPrice : undefined,
       }
     ]);
   };
@@ -136,6 +146,16 @@ export default function WorkOrderIssuePage() {
 
   const removeLine = (itemId: string) => {
     setLines((prev) => prev.filter((l) => l.itemId !== itemId));
+  };
+
+  const updateLinePrice = (itemId: string, unitPrice: number | '') => {
+    setLines((prev) =>
+      prev.map((l) =>
+        l.itemId === itemId
+          ? { ...l, unitPrice: unitPrice === '' ? undefined : unitPrice }
+          : l
+      )
+    );
   };
 
   const handleScan = (skuOrId: string) => {
@@ -161,7 +181,12 @@ export default function WorkOrderIssuePage() {
           woId: String(wo.id),
           issueType,
           isPartial,
-          items: valid.map((l) => ({ itemId: l.itemId, qty: l.qty, uomId: l.uomId }))
+          items: valid.map((l) => ({
+            itemId: l.itemId,
+            qty: l.qty,
+            uomId: l.uomId,
+            ...(l.unitPrice != null && l.unitPrice > 0 ? { unitPrice: l.unitPrice } : {}),
+          }))
         },
         session.user.id
       );
@@ -208,7 +233,7 @@ export default function WorkOrderIssuePage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Material</TableHead>
-                  <TableHead className="text-right">Planned</TableHead>
+                  <TableHead className="text-right">{tWO('estimatedConsumptionPerPcs')}</TableHead>
                   <TableHead className="text-right">Issued</TableHead>
                   <TableHead className="text-right">Remaining</TableHead>
                 </TableRow>
@@ -308,6 +333,7 @@ export default function WorkOrderIssuePage() {
                     <TableRow>
                       <TableHead>Material</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Unit Price (optional)</TableHead>
                       <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -325,6 +351,20 @@ export default function WorkOrderIssuePage() {
                               updateLineQty(l.itemId, Number(e.target.value))
                             }
                             className="w-24 text-right"
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            placeholder={itemAvgCosts[l.itemId] != null ? String(itemAvgCosts[l.itemId]) : 'Avg cost'}
+                            value={l.unitPrice ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              updateLinePrice(l.itemId, v === '' ? '' : Number(v));
+                            }}
+                            className="w-28 text-right"
                           />
                         </TableCell>
                         <TableCell>

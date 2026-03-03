@@ -16,6 +16,8 @@ export type MaterialIssuePrintLine = {
   itemSku?: string;
   qty: number;
   uomCode: string;
+  unitPrice?: number;
+  lineTotal?: number;
 };
 
 export interface BuildMaterialIssuePrintHtmlOptions {
@@ -36,6 +38,8 @@ export interface BuildMaterialIssuePrintHtmlOptions {
     item: string;
     qty: string;
     uom: string;
+    unitPrice?: string;
+    lineTotal?: string;
     totalCost: string;
   };
 }
@@ -59,16 +63,39 @@ export function buildMaterialIssuePrintHtml(
       ? issuedAt.toLocaleDateString('id-ID')
       : new Date(issuedAt).toLocaleDateString('id-ID');
 
+  const hasPrice = lines.some((l) => l.unitPrice != null || l.lineTotal != null);
+  const priceLabel = labels.unitPrice ?? 'Unit Price';
+  const lineTotalLabel = labels.lineTotal ?? 'Line Total';
+
   const rows = lines
     .map(
-      (line) =>
-        `<tr>
+      (line) => {
+        const priceCells = hasPrice
+          ? `<td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${line.unitPrice != null ? Number(line.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}</td>
+          <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${line.lineTotal != null ? Number(line.lineTotal).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}</td>`
+          : '';
+        return `<tr>
           <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.itemName)}${line.itemSku ? ` <span style="color:#6b7280">(${esc(line.itemSku)})</span>` : ''}</td>
           <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(line.qty).toLocaleString()}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.uomCode)}</td>
-        </tr>`
+          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.uomCode)}</td>${priceCells}
+        </tr>`;
+      }
     )
     .join('');
+
+  const tableHeader = hasPrice
+    ? `<tr>
+        <th>${esc(labels.item)}</th>
+        <th class="right">${esc(labels.qty)}</th>
+        <th>${esc(labels.uom)}</th>
+        <th class="right">${esc(priceLabel)}</th>
+        <th class="right">${esc(lineTotalLabel)}</th>
+      </tr>`
+    : `<tr>
+        <th>${esc(labels.item)}</th>
+        <th class="right">${esc(labels.qty)}</th>
+        <th>${esc(labels.uom)}</th>
+      </tr>`;
 
   return `<!DOCTYPE html>
 <html lang="id">
@@ -107,11 +134,7 @@ export function buildMaterialIssuePrintHtml(
   </header>
   <table>
     <thead>
-      <tr>
-        <th>${esc(labels.item)}</th>
-        <th class="right">${esc(labels.qty)}</th>
-        <th>${esc(labels.uom)}</th>
-      </tr>
+      ${tableHeader}
     </thead>
     <tbody>
       ${rows}

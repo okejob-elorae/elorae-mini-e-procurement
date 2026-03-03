@@ -6,7 +6,11 @@ import { encryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
 
 const supplierSchema = z.object({
-  code: z.string().min(1).optional(),
+  // When blank or omitted, backend will auto-generate code
+  code: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : val),
+    z.string().min(1).optional()
+  ),
   name: z.string().min(1),
   typeId: z.string().min(1),
   categoryId: z.string().optional(),
@@ -39,8 +43,12 @@ export async function GET(req: NextRequest) {
 
     const where: any = {};
     const typeId = searchParams.get('typeId');
+    const statusParam = searchParams.get('status');
     if (typeId) where.typeId = typeId;
     if (categoryId) where.categoryId = categoryId;
+    if (statusParam && ['PENDING_APPROVAL', 'ACTIVE', 'REJECTED'].includes(statusParam)) {
+      where.status = statusParam;
+    }
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
@@ -182,6 +190,7 @@ export async function POST(req: NextRequest) {
         bankName: validated.bankName,
         bankAccountEnc,
         bankAccountName: validated.bankAccountName,
+        status: 'PENDING_APPROVAL',
       },
     });
 

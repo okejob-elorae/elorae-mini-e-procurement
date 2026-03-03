@@ -8,6 +8,7 @@ import { ItemType } from '@/lib/constants/enums';
 import { generateSKU } from '@/app/actions/items';
 import { getUOMs } from '@/app/actions/uom';
 import { getItemsByType } from '@/app/actions/items';
+import { getItemTypeMasters } from '@/app/actions/item-type-master';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -65,6 +66,7 @@ interface ItemFormProps {
     description?: string;
     variants?: Array<Record<string, string>>;
     reorderPoint?: number;
+    sellingPrice?: number;
     consumptionRules?: Array<{
       materialId: string;
       material: {
@@ -115,6 +117,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const [attributes, setAttributes] = useState<Array<{ key: string; values: string[] }>>(
     initialAttributes
   );
+  const [variantSkus, setVariantSkus] = useState<string[]>([]);
+  const [itemTypeMasters, setItemTypeMasters] = useState<Awaited<ReturnType<typeof getItemTypeMasters>>>([]);
 
   const {
     register,
@@ -132,6 +136,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       description: initialData?.description || '',
       variants: initialData?.variants || [],
       reorderPoint: initialData?.reorderPoint,
+      sellingPrice: initialData?.sellingPrice,
     },
   });
 
@@ -140,8 +145,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   useEffect(() => {
     // Load UOMs
     getUOMs().then(setUOMs).catch(() => toast.error(tToasts('failedToLoadUOMs')));
+    getItemTypeMasters().then(setItemTypeMasters).catch(() => {});
+  }, []);
 
-    // Load materials if type is FINISHED_GOOD
+  useEffect(() => {
     if (itemType === ItemType.FINISHED_GOOD) {
       getItemsByType(ItemType.FABRIC)
         .then(items => setMaterials(items as Item[]))
@@ -224,6 +231,33 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     }, []);
   }, [attributes]);
 
+  const parentSku = (initialData?.sku ?? sku) || '';
+
+  const variantCombinationsKey = useMemo(
+    () => variantCombinations.map((c) => JSON.stringify(c)).join('|'),
+    [variantCombinations]
+  );
+  useEffect(() => {
+    if (variantCombinations.length === 0) {
+      setVariantSkus([]);
+      return;
+    }
+    setVariantSkus((prev) => {
+      const next = [...prev];
+      while (next.length < variantCombinations.length) next.push('');
+      const trimmed = next.slice(0, variantCombinations.length);
+      if (!initialData?.variants?.length) return trimmed;
+      return trimmed.map((current, idx) => {
+        const combo = variantCombinations[idx];
+        const match = initialData!.variants!.find((v) => {
+          const { sku: _s, ...rest } = v;
+          return Object.keys(combo).every((k) => rest[k] === combo[k]);
+        });
+        return match?.sku?.trim() ?? current;
+      });
+    });
+  }, [variantCombinationsKey, variantCombinations, initialData?.variants]);
+
   const onFormSubmit = async (data: ItemFormData) => {
     const dataWithSku: ItemFormData = {
       ...data,
@@ -242,7 +276,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       }
     }
 
-    const variants = variantCombinations.length > 0 ? variantCombinations : undefined;
+    const variants =
+      variantCombinations.length > 0
+        ? variantCombinations.map((combo, i) => ({
+            ...combo,
+            ...(variantSkus[i]?.trim() ? { sku: variantSkus[i].trim() } : {}),
+          }))
+        : undefined;
 
     // Validate consumption rules if type is FINISHED_GOOD
     if (itemType === ItemType.FINISHED_GOOD && consumptionRules.length > 0) {
@@ -351,9 +391,19 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ItemType.FABRIC}>Fabric</SelectItem>
-                      <SelectItem value={ItemType.ACCESSORIES}>Accessories</SelectItem>
-                      <SelectItem value={ItemType.FINISHED_GOOD}>Finished Good</SelectItem>
+                      {itemTypeMasters.length > 0
+                        ? itemTypeMasters.map((m) => (
+                            <SelectItem key={m.id} value={m.code}>
+                              {m.nameEn}
+                            </SelectItem>
+                          ))
+                        : (
+                          <>
+                            <SelectItem value={ItemType.FABRIC}>Fabric</SelectItem>
+                            <SelectItem value={ItemType.ACCESSORIES}>Accessories</SelectItem>
+                            <SelectItem value={ItemType.FINISHED_GOOD}>Finished Good</SelectItem>
+                          </>
+                          )}
                     </SelectContent>
                   </Select>
                 )}
@@ -436,6 +486,28 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               </p>
             )}
           </div>
+
+          {/* Selling Price (Finished goods only) */}
+          {itemType === ItemType.FINISHED_GOOD && (
+            <div className="space-y-2">
+              <Label htmlFor="sellingPrice">Harga Jual (Selling price)</Label>
+              <Input
+                id="sellingPrice"
+                type="number"
+                step="0.01"
+                min="0"
+                {...register('sellingPrice', { valueAsNumber: true })}
+                placeholder="0.00"
+                aria-invalid={!!errors.sellingPrice}
+                className={errors.sellingPrice ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+              />
+              {errors.sellingPrice && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.sellingPrice.message}
+                </p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -489,6 +561,45 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               </div>
             </div>
           ))}
+
+          {variantCombinations.length > 0 && (
+            <div className="space-y-2 pt-2 border-t">
+              <p className="text-sm text-muted-foreground">
+                Variant SKU must start with parent SKU{parentSku ? ` (${parentSku})` : ''}. Leave empty to auto-generate.
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {attributes.map((attr) => (
+                      <TableHead key={attr.key}>{attr.key}</TableHead>
+                    ))}
+                    <TableHead>Variant SKU</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {variantCombinations.map((combo, idx) => (
+                    <TableRow key={idx}>
+                      {attributes.map((attr) => (
+                        <TableCell key={attr.key}>{combo[attr.key] ?? '—'}</TableCell>
+                      ))}
+                      <TableCell>
+                        <Input
+                          value={variantSkus[idx] ?? ''}
+                          onChange={(e) => {
+                            const next = [...variantSkus];
+                            while (next.length <= idx) next.push('');
+                            next[idx] = e.target.value;
+                            setVariantSkus(next);
+                          }}
+                          placeholder={parentSku ? `${parentSku}-…` : 'e.g. FB-001-RED'}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
 
         </CardContent>
       </Card>

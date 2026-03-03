@@ -278,6 +278,11 @@ export default function WorkOrderDetailPage() {
               {t('progressTarget')}: {new Date((wo as any).targetDate).toLocaleDateString('id-ID')}
             </div>
           )}
+          {(wo as any).expectedConsumption != null && Number((wo as any).expectedConsumption) > 0 && (
+            <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+              Expected consumption: {(wo as any).expectedConsumption.toLocaleString()}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -325,7 +330,7 @@ export default function WorkOrderDetailPage() {
                   </table>
                   <p style="margin-top:16px"><strong>Materials (consumption plan):</strong></p>
                   <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
-                  <tr><th>Material</th><th>Planned</th><th>UOM</th></tr>
+                  <tr><th>Material</th><th>${tWO('estimatedConsumptionPerPcs')}</th><th>UOM</th></tr>
                   ${consumptionPlan.map((p: any) => `<tr><td>${p.itemName ?? p.itemId}</td><td>${Number(p.plannedQty ?? 0)}</td><td>${p.uomCode ?? ''}</td></tr>`).join('')}
                   </table>
                   </body></html>`);
@@ -359,7 +364,7 @@ export default function WorkOrderDetailPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Material</TableHead>
-                    <TableHead className="text-right" title={t('cuttingPlanned')}>{t('targetCutting')}</TableHead>
+                    <TableHead className="text-right" title={t('cuttingPlanned')}>{tWO('estimatedConsumptionPerPcs')}</TableHead>
                     <TableHead className="text-right" title={t('issuedToCmt')}>{t('issuedToCmt')}</TableHead>
                     <TableHead className="text-right">Returned</TableHead>
                   </TableRow>

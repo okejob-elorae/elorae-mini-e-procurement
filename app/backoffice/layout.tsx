@@ -22,6 +22,7 @@ import {
   Moon,
   Monitor,
   Check,
+  BarChart2,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -123,6 +124,15 @@ const navItems: NavItem[] = [
     href: '/backoffice/vendor-returns',
     icon: RotateCcw,
     roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
+  },
+  {
+    labelKey: 'reports',
+    href: '/backoffice/reports/hpp',
+    icon: BarChart2,
+    roles: [Role.ADMIN, Role.WAREHOUSE, Role.PRODUCTION],
+    children: [
+      { labelKey: 'hppReport', href: '/backoffice/reports/hpp' },
+    ],
   },
   {
     labelKey: 'auditTrail',

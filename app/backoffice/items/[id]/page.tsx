@@ -113,6 +113,7 @@ export default function ItemDetailPage() {
           description: item.description || undefined,
           variants: item.variants as Array<Record<string, string>> | undefined,
           reorderPoint: item.reorderPoint ? Number(item.reorderPoint) : undefined,
+          sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : undefined,
           consumptionRules: item.fgConsumptions?.map((rule: any) => ({
             materialId: rule.materialId,
             material: {

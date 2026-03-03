@@ -9,6 +9,7 @@ import {
   PrismaClient,
   Role,
   ItemType,
+  ItemTypeGroup,
   DocType,
   POStatus,
   WOStatus,
@@ -139,6 +140,45 @@ async function main() {
     create: { id: "st-other", code: "OTHER", name: "Other", sortOrder: 4 },
   });
   console.log("Supplier types OK");
+
+  // ---------- 2c. Item type master (display names + group) ----------
+  await prisma.itemTypeMaster.upsert({
+    where: { code: "FABRIC" },
+    update: {},
+    create: {
+      id: "itemtype_fabric_001",
+      code: "FABRIC",
+      nameId: "Kain / Fabric",
+      nameEn: "Fabric",
+      group: ItemTypeGroup.RAW,
+      sortOrder: 1,
+    },
+  });
+  await prisma.itemTypeMaster.upsert({
+    where: { code: "ACCESSORIES" },
+    update: {},
+    create: {
+      id: "itemtype_accessories_002",
+      code: "ACCESSORIES",
+      nameId: "Aksesoris",
+      nameEn: "Accessories",
+      group: ItemTypeGroup.RAW,
+      sortOrder: 2,
+    },
+  });
+  await prisma.itemTypeMaster.upsert({
+    where: { code: "FINISHED_GOOD" },
+    update: {},
+    create: {
+      id: "itemtype_fg_003",
+      code: "FINISHED_GOOD",
+      nameId: "Barang Jadi",
+      nameEn: "Finished Good",
+      group: ItemTypeGroup.FINISHED,
+      sortOrder: 3,
+    },
+  });
+  console.log("Item type master OK");
 
   // ---------- 3. UOM + UOMConversion ----------
   const uomMeter = await prisma.uOM.upsert({

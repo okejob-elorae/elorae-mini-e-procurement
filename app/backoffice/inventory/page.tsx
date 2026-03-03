@@ -33,10 +33,20 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from 'sonner';
 import { getInventorySnapshot } from '@/lib/inventory/costing';
 import { getGRNs } from '@/app/actions/grn';
 import { getStockAdjustments } from '@/app/actions/inventory';
+import { getCurrentStockSummary } from '@/app/actions/stock-card';
+import { getInventoryValueSnapshot } from '@/app/actions/reports/inventory';
+import { buildInventoryReportPrintHtml } from '@/lib/print/inventory-report-html';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
@@ -110,6 +120,9 @@ export default function InventoryPage() {
   const [adjPage, setAdjPage] = useState(1);
   const [adjPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [adjTotalCount, setAdjTotalCount] = useState(0);
+  const ADJ_FILTER_ALL = '__all__';
+  const [adjItemFilter, setAdjItemFilter] = useState<string>('__all__');
+  const [adjustmentItemList, setAdjustmentItemList] = useState<Array<{ itemId: string; item: { sku: string; nameId: string } }>>([]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -117,7 +130,7 @@ export default function InventoryPage() {
       const [invData, grnData, adjData] = await Promise.all([
         getInventorySnapshot({ page: stockPage, pageSize: stockPageSize }),
         getGRNs(undefined, { page: grnPage, pageSize: grnPageSize }),
-        getStockAdjustments(undefined, { page: adjPage, pageSize: adjPageSize })
+        getStockAdjustments(adjItemFilter === ADJ_FILTER_ALL ? undefined : adjItemFilter, { page: adjPage, pageSize: adjPageSize })
       ]);
 
       if (invData != null && typeof invData === 'object' && 'items' in invData) {
@@ -154,7 +167,13 @@ export default function InventoryPage() {
 
   useEffect(() => {
     fetchData();
-  }, [stockPage, grnPage, adjPage]);
+  }, [stockPage, grnPage, adjPage, adjItemFilter]);
+
+  useEffect(() => {
+    getCurrentStockSummary()
+      .then((rows) => setAdjustmentItemList(rows as Array<{ itemId: string; item: { sku: string; nameId: string } }>))
+      .catch(() => {});
+  }, []);
 
   const isLowStock = (item: InventoryItem) => {
     if (!item.item.reorderPoint) return false;
@@ -213,6 +232,48 @@ export default function InventoryPage() {
               Adjustment
             </Button>
           </Link>
+          <Link href="/backoffice/inventory/rejected-goods">
+            <Button variant="outline" className="min-h-[44px]">
+              Rejected Goods
+            </Button>
+          </Link>
+          <Button
+            variant="outline"
+            className="min-h-[44px]"
+            onClick={async () => {
+              try {
+                const snap = await getInventoryValueSnapshot();
+                const html = buildInventoryReportPrintHtml({
+                  generatedAt: snap.generatedAt,
+                  asOfDate: snap.asOfDate,
+                  summary: snap.summary,
+                  details: snap.details,
+                  lowStockAlerts: snap.lowStockAlerts,
+                });
+                const iframe = document.createElement('iframe');
+                iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
+                iframe.setAttribute('title', 'Print Inventory Report');
+                document.body.appendChild(iframe);
+                const doc = iframe.contentWindow?.document;
+                if (doc) {
+                  doc.open();
+                  doc.write(html);
+                  doc.close();
+                  setTimeout(() => {
+                    iframe.contentWindow?.print();
+                  }, 350);
+                }
+                setTimeout(() => {
+                  document.body.removeChild(iframe);
+                }, 1000);
+              } catch {
+                toast.error('Failed to load inventory report for print');
+              }
+            }}
+          >
+            <Printer className="mr-2 h-4 w-4" />
+            Print Report
+          </Button>
         </div>
       </div>
 
@@ -390,14 +451,38 @@ export default function InventoryPage() {
         </TabsContent>
 
         <TabsContent value="adjustments" className="space-y-4">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search doc number, item, reason..."
-              value={adjustmentSearchQuery}
-              onChange={(e) => setAdjustmentSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search doc number, item, reason..."
+                value={adjustmentSearchQuery}
+                onChange={(e) => setAdjustmentSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Filter by item</span>
+              <Select
+                value={adjItemFilter}
+                onValueChange={(value) => {
+                  setAdjItemFilter(value);
+                  setAdjPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="All items" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ADJ_FILTER_ALL}>All items</SelectItem>
+                  {adjustmentItemList.map((row) => (
+                    <SelectItem key={row.itemId} value={row.itemId}>
+                      {row.item?.sku ?? row.itemId} – {row.item?.nameId ?? ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <Card>
             <CardContent className="p-0">

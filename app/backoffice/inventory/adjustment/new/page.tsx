@@ -18,6 +18,7 @@ import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { createStockAdjustment } from '@/app/actions/inventory';
 import { getCurrentStockSummary } from '@/app/actions/stock-card';
 import { getInventoryValue } from '@/lib/inventory/costing';
+import { getItemUomAndConversions } from '@/app/actions/uom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
@@ -44,6 +45,8 @@ export default function NewAdjustmentPage() {
     avgCost: number;
     totalValue: number;
   } | null>(null);
+  const [uomData, setUomData] = useState<Awaited<ReturnType<typeof getItemUomAndConversions>>>(null);
+  const [selectedUomId, setSelectedUomId] = useState<string>('');
 
   useEffect(() => {
     getCurrentStockSummary().then(setSummary);
@@ -52,9 +55,14 @@ export default function NewAdjustmentPage() {
   useEffect(() => {
     if (!itemId) {
       setCurrentStock(null);
+      setUomData(null);
+      setSelectedUomId('');
       return;
     }
-    getInventoryValue(itemId).then((v) => {
+    Promise.all([
+      getInventoryValue(itemId),
+      getItemUomAndConversions(itemId),
+    ]).then(([v, uom]) => {
       if (v)
         setCurrentStock({
           qtyOnHand: Number(v.qtyOnHand),
@@ -62,6 +70,8 @@ export default function NewAdjustmentPage() {
           totalValue: Number(v.totalValue),
         });
       else setCurrentStock(null);
+      setUomData(uom ?? null);
+      setSelectedUomId(uom?.baseUom?.id ?? '');
     });
   }, [itemId]);
 
@@ -114,6 +124,7 @@ export default function NewAdjustmentPage() {
           itemId,
           type,
           qty: qtyNum,
+          uomId: selectedUomId || undefined,
           reason: reason.trim(),
           evidenceUrl,
         },
@@ -202,8 +213,36 @@ export default function NewAdjustmentPage() {
               </Select>
             </div>
 
+            {uomData && (
+              <div className="space-y-2">
+                <Label htmlFor="uomId">UOM (quantity will be converted to base if different)</Label>
+                <Select
+                  value={selectedUomId}
+                  onValueChange={setSelectedUomId}
+                >
+                  <SelectTrigger id="uomId" className="min-h-[44px]">
+                    <SelectValue placeholder="UOM" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={uomData.baseUom.id}>
+                      {uomData.baseUom.code} ({uomData.baseUom.nameId}) — base
+                    </SelectItem>
+                    {uomData.conversions.map((c) => {
+                      const other = c.fromUomId === uomData.baseUom.id ? c.toUom : c.fromUom;
+                      const isToBase = c.toUomId === uomData.baseUom.id;
+                      return (
+                        <SelectItem key={other.id} value={other.id}>
+                          {other.code} ({other.nameId}) — 1 = {isToBase ? c.factor : (1 / c.factor).toFixed(4)} base
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="qty">Quantity *</Label>
+              <Label htmlFor="qty">Quantity * (in selected UOM)</Label>
               <Input
                 id="qty"
                 type="number"
@@ -216,6 +255,21 @@ export default function NewAdjustmentPage() {
                 onChange={(e) => { setQty(e.target.value); setErrors((err) => ({ ...err, qty: undefined })); }}
                 placeholder="0"
               />
+              {uomData && selectedUomId && selectedUomId !== uomData.baseUom.id && qty.trim() && !isNaN(parseFloat(qty)) && (
+                <p className="text-sm text-muted-foreground">
+                  = {(() => {
+                    const conv = uomData.conversions.find(
+                      (c) =>
+                        (c.fromUomId === selectedUomId && c.toUomId === uomData.baseUom.id) ||
+                        (c.toUomId === selectedUomId && c.fromUomId === uomData.baseUom.id)
+                    );
+                    if (!conv) return '—';
+                    const q = parseFloat(qty);
+                    const toBase = conv.toUomId === uomData.baseUom.id ? q * conv.factor : q / conv.factor;
+                    return `${toBase.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${uomData.baseUom.code} (base)`;
+                  })()}
+                </p>
+              )}
               {errors.qty && (
                 <p className="text-sm text-destructive" role="alert">
                   {errors.qty}

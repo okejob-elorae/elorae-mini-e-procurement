@@ -18,6 +18,7 @@ export type ItemFormData = {
   description?: string;
   variants?: Array<Record<string, string>>;
   reorderPoint?: number;
+  sellingPrice?: number;
 };
 
 const ITEM_TYPES = ['FABRIC', 'ACCESSORIES', 'FINISHED_GOOD'] as const;
@@ -31,6 +32,29 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   if (p.reorderPoint != null && (Number.isNaN(p.reorderPoint) || p.reorderPoint < 0)) {
     throw new Error('reorderPoint: Must be 0 or greater');
   }
+  if (p.sellingPrice != null && (Number.isNaN(p.sellingPrice) || p.sellingPrice < 0)) {
+    throw new Error('sellingPrice: Must be 0 or greater');
+  }
+}
+
+/** Ensure each variant has sku prefixed with parent SKU; auto-generate if missing. */
+function validateAndNormalizeVariants(
+  parentSku: string,
+  variants: Array<Record<string, string>> | undefined
+): Array<Record<string, string>> {
+  if (!variants?.length) return [];
+  const prefix = parentSku.trim();
+  return variants.map((v, idx) => {
+    let sku = (v.sku ?? '').trim();
+    if (sku && !sku.startsWith(prefix)) {
+      throw new Error(`Variant SKU "${sku}" must start with parent SKU "${prefix}"`);
+    }
+    if (!sku) {
+      const suffix = (v.color || v.name || v.nameId || `V${idx + 1}`).trim().replace(/\s+/g, '-') || `V${idx + 1}`;
+      sku = `${prefix}-${suffix}`;
+    }
+    return { ...v, sku };
+  });
 }
 
 export async function createItem(data: ItemFormData) {
@@ -45,14 +69,17 @@ export async function createItem(data: ItemFormData) {
     throw new Error('SKU already exists');
   }
 
+  const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants);
+
   const item = await prisma.$transaction(async (tx) => {
     // Create item
     const newItem = await tx.item.create({
       data: {
         ...rest,
         sku: finalSku,
-        variants: rest.variants || [],
+        variants: normalizedVariants.length ? normalizedVariants : [],
         reorderPoint: rest.reorderPoint || null,
+        sellingPrice: rest.sellingPrice ?? null,
       }
     });
     
@@ -82,11 +109,12 @@ export type SerializedItem = {
   type: string;
   uomId: string;
   reorderPoint: number | null;
+  sellingPrice: number | null;
   [k: string]: unknown;
 };
 
 /** Serialize a single item from create/update so return value has no Decimal (safe for client) */
-function serializeSingleItem(item: { id: string; sku: string; nameId: string; nameEn: string; type: string; uomId: string; description?: string | null; variants?: unknown; reorderPoint?: unknown; createdAt?: Date; updatedAt?: Date; isActive?: boolean; [k: string]: unknown }): SerializedItem {
+function serializeSingleItem(item: { id: string; sku: string; nameId: string; nameEn: string; type: string; uomId: string; description?: string | null; variants?: unknown; reorderPoint?: unknown; sellingPrice?: unknown; createdAt?: Date; updatedAt?: Date; isActive?: boolean; [k: string]: unknown }): SerializedItem {
   return {
     id: item.id,
     sku: item.sku,
@@ -97,6 +125,7 @@ function serializeSingleItem(item: { id: string; sku: string; nameId: string; na
     description: item.description ?? undefined,
     variants: Array.isArray(item.variants) ? item.variants : undefined,
     reorderPoint: item.reorderPoint != null ? Number(item.reorderPoint) : null,
+    sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     isActive: item.isActive,
@@ -114,6 +143,11 @@ function normalizeItemPayload(data: unknown): ItemFormData {
     reorderPoint === undefined || reorderPoint === null || reorderPoint === ''
       ? undefined
       : Number(reorderPoint);
+  const sellingPrice = raw.sellingPrice;
+  const sellingPriceNum =
+    sellingPrice === undefined || sellingPrice === null || sellingPrice === ''
+      ? undefined
+      : Number(sellingPrice);
   const variants = Array.isArray(raw.variants)
     ? (raw.variants as Array<Record<string, unknown>>).map((record) => {
         const out: Record<string, string> = {};
@@ -134,6 +168,10 @@ function normalizeItemPayload(data: unknown): ItemFormData {
       reorderPointNum !== undefined && !Number.isNaN(reorderPointNum) && reorderPointNum >= 0
         ? reorderPointNum
         : undefined,
+    sellingPrice:
+      sellingPriceNum !== undefined && !Number.isNaN(sellingPriceNum) && sellingPriceNum >= 0
+        ? sellingPriceNum
+        : undefined,
     sku: raw.sku != null ? String(raw.sku) : undefined,
   };
 }
@@ -144,15 +182,20 @@ export async function updateItem(id: string, data: ItemFormData) {
   const { sku, ...rest } = normalized;
   void sku; // omitted from update payload
 
+  const existing = await prisma.item.findUnique({ where: { id }, select: { sku: true } });
+  if (!existing) throw new Error('Item not found');
+  const normalizedVariants = validateAndNormalizeVariants(existing.sku, rest.variants);
+
   const item = await prisma.item.update({
     where: { id },
     data: {
       ...rest,
-      variants: rest.variants || [],
+      variants: normalizedVariants.length ? normalizedVariants : [],
       reorderPoint: rest.reorderPoint ?? null,
+      sellingPrice: rest.sellingPrice ?? null,
     }
   });
-  
+
   revalidatePath('/backoffice/items');
   revalidatePath(`/backoffice/items/${id}`);
   return serializeSingleItem(item);
@@ -321,12 +364,14 @@ const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 /** Serialize a single item from findMany (list shape) for Client Components */
 function serializeListItemForClient(item: {
   reorderPoint?: unknown;
+  sellingPrice?: unknown;
   inventoryValue?: { qtyOnHand: unknown; avgCost: unknown; totalValue: unknown } | null;
   [k: string]: unknown;
 }) {
   return {
     ...item,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
+    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
     inventoryValue: item.inventoryValue
       ? {
           ...item.inventoryValue,
@@ -389,6 +434,7 @@ function serializeItemForClient(item: ItemWithRelations | null) {
   return {
     ...item,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
+    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
     inventoryValue: item.inventoryValue
       ? {
           ...item.inventoryValue,

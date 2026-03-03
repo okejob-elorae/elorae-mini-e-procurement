@@ -70,3 +70,34 @@ export async function getUOMConversions() {
     ]
   });
 }
+
+/** Get item's base UOM and all conversions that involve it (for stock adjustment UOM selector). */
+export async function getItemUomAndConversions(itemId: string) {
+  const item = await prisma.item.findUnique({
+    where: { id: itemId },
+    select: { uomId: true, uom: { select: { id: true, code: true, nameId: true, nameEn: true } } },
+  });
+  if (!item) return null;
+  const conversions = await prisma.uOMConversion.findMany({
+    where: {
+      OR: [
+        { fromUomId: item.uomId },
+        { toUomId: item.uomId },
+      ],
+    },
+    include: {
+      fromUom: { select: { id: true, code: true, nameId: true, nameEn: true } },
+      toUom: { select: { id: true, code: true, nameId: true, nameEn: true } },
+    },
+  });
+  return {
+    baseUom: item.uom,
+    conversions: conversions.map((c) => ({
+      fromUomId: c.fromUomId,
+      toUomId: c.toUomId,
+      factor: Number(c.factor),
+      fromUom: c.fromUom,
+      toUom: c.toUom,
+    })),
+  };
+}
