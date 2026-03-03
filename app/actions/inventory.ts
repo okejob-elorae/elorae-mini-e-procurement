@@ -7,6 +7,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
+import { getActorName, notifyStockAdjustmentCreated } from '@/app/actions/notifications';
 
 const adjustmentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -42,7 +43,7 @@ export async function createStockAdjustment(
     throw new Error(pinResult.messageKey ?? pinResult.message);
   }
 
-  return await prisma.$transaction(async (tx) => {
+  const adjustmentResult = await prisma.$transaction(async (tx) => {
 
     // Get item (for base UOM) and current inventory
     const [item, current] = await Promise.all([
@@ -191,7 +192,15 @@ export async function createStockAdjustment(
     revalidatePath('/backoffice/inventory');
     return adjustment;
   });
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyStockAdjustmentCreated(adjustmentResult.id, adjustmentResult.docNumber, triggeredByName)
+    )
+    .catch(() => {});
+  return adjustmentResult;
 }
+
 
 export async function getGRNs(filters?: {
   supplierId?: string;

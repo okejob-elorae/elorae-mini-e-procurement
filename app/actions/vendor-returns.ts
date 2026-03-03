@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { generateDocNumber } from '@/lib/docNumber';
 import { reverseInventoryValue } from '@/lib/inventory/costing';
+import { getActorName, notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/app/actions/notifications';
 
 // Prisma uses CUID, not UUID
 const idStr = z.string().min(1);
@@ -35,7 +36,7 @@ export async function createVendorReturn(
 ) {
   returnSchema.parse(data);
 
-  return await prisma.$transaction(async (tx) => {
+  const ret = await prisma.$transaction(async (tx) => {
     const docNumber = await generateDocNumber('RET', tx);
 
     const linesWithValue = await Promise.all(
@@ -80,6 +81,13 @@ export async function createVendorReturn(
 
     return ret;
   });
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyVendorReturnCreated(ret.id, ret.docNumber, triggeredByName)
+    )
+    .catch(() => {});
+  return ret;
 }
 
 export async function updateVendorReturn(
@@ -232,6 +240,18 @@ export async function processReturn(id: string, userId: string) {
     return { ret, poIdToRevalidate };
   });
 
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyVendorReturnStatusUpdated(
+        id,
+        result.ret.docNumber,
+        'DRAFT',
+        'PROCESSED',
+        triggeredByName
+      )
+    )
+    .catch(() => {});
+
   revalidatePath('/backoffice/vendor-returns');
   revalidatePath(`/backoffice/vendor-returns/${result.ret.id}`);
   if (result.poIdToRevalidate) {
@@ -254,7 +274,7 @@ export async function completeReturn(
 ) {
   completeReturnSchema.parse(data);
 
-  return await prisma.$transaction(async (tx) => {
+  const completeResult = await prisma.$transaction(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
       where: { id }
     });
@@ -305,6 +325,19 @@ export async function completeReturn(
     }
     return ret;
   });
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyVendorReturnStatusUpdated(
+        id,
+        completeResult.docNumber,
+        'PROCESSED',
+        'COMPLETED',
+        triggeredByName
+      )
+    )
+    .catch(() => {});
+  return completeResult;
 }
 
 export async function getVendorReturns(

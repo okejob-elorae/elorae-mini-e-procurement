@@ -45,7 +45,10 @@ interface SupplierOption {
   name: string;
 }
 
-type VendorReturnRow = Awaited<ReturnType<typeof getVendorReturns>>[number];
+type VendorReturnRow = Extract<
+  Awaited<ReturnType<typeof getVendorReturns>>,
+  { items: unknown[] }
+>['items'][number];
 
 export default function VendorReturnsPage() {
   const { data: session } = useSession();

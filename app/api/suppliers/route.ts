@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { encryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { getActorName, notifySupplierCreated } from '@/app/actions/notifications';
 
 const supplierSchema = z.object({
   // When blank or omitted, backend will auto-generate code
@@ -195,6 +196,10 @@ export async function POST(req: NextRequest) {
         status: 'PENDING_APPROVAL',
       },
     });
+
+    getActorName(session.user.id)
+      .then((triggeredByName) => notifySupplierCreated(supplier.id, supplier.name, triggeredByName))
+      .catch(() => {});
 
     return NextResponse.json(supplier, { status: 201 });
   } catch (error) {

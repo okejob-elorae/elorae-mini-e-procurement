@@ -52,6 +52,7 @@ interface Item {
   type: ItemType;
   isActive: boolean;
   reorderPoint: string | null;
+  sellingPrice?: number | null;
   uom: {
     code: string;
     nameId: string;
@@ -125,11 +126,11 @@ export default function ItemsPage() {
       );
 
       if (data && 'items' in data) {
-        setItems(data.items as Item[]);
+        setItems((data as unknown as { items: Item[] }).items);
         setTotalCount(data.totalCount || 0);
       } else {
-        setItems((data as Item[]) || []);
-        setTotalCount((data as Item[])?.length || 0);
+        setItems((data as unknown as Item[]) || []);
+        setTotalCount((data as unknown as Item[])?.length || 0);
       }
     } catch (_error) {
       toast.error(t('failedToLoadItems'));

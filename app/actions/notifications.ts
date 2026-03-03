@@ -6,6 +6,97 @@ import { messaging } from '@/lib/firebase/admin';
 const PO_OVERDUE_TYPE = 'PO_OVERDUE';
 const ACCESSORIES_PENDING_CMT_TYPE = 'ACCESSORIES_PENDING_CMT';
 
+// ----- Shared helpers for RBAC-filtered push notifications -----
+
+export type NotificationUser = { id: string; fcmToken: string | null };
+
+/**
+ * Get users who have the given permission (via role or system role).
+ * Used to determine who receives a notification; excludes no one by fcmToken so queue rows exist for all.
+ */
+export async function getUsersWithPermission(permissionCode: string): Promise<NotificationUser[]> {
+  const permission = await prisma.permission.findUnique({
+    where: { code: permissionCode },
+  });
+  if (!permission) {
+    return [];
+  }
+  const users = await prisma.user.findMany({
+    where: {
+      OR: [
+        { roleDefinition: { isSystem: true } },
+        {
+          roleDefinition: {
+            permissions: {
+              some: { permissionId: permission.id },
+            },
+          },
+        },
+      ],
+    },
+    select: { id: true, fcmToken: true },
+  });
+  return users;
+}
+
+export type NotificationPayload = {
+  type: string;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+};
+
+/**
+ * Create NotificationQueue rows for each user and send FCM to those with fcmToken.
+ * FCM data must be string key-value; we pass type + entity ids for navigation.
+ */
+export async function sendNotificationToUsers(
+  users: NotificationUser[],
+  payload: NotificationPayload
+): Promise<void> {
+  const { type, title, body, data } = payload;
+  const fcmData: Record<string, string> = { type, ...data };
+  for (const user of users) {
+    const queueRow = await prisma.notificationQueue.create({
+      data: {
+        userId: user.id,
+        type,
+        title,
+        body,
+        data: fcmData as object,
+        sent: false,
+      },
+    });
+    if (user.fcmToken && messaging) {
+      try {
+        await messaging.send({
+          token: user.fcmToken,
+          notification: { title, body },
+          data: fcmData,
+        });
+        await prisma.notificationQueue.update({
+          where: { id: queueRow.id },
+          data: { sent: true, sentAt: new Date() },
+        });
+      } catch (err) {
+        console.error('FCM send failed', type, user.id, err);
+      }
+    }
+  }
+}
+
+/**
+ * Resolve display name for the actor (for "by X" in notification body).
+ */
+export async function getActorName(userId: string): Promise<string> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true },
+  });
+  if (!user) return 'Unknown';
+  return (user.name?.trim() || user.email) ?? 'Unknown';
+}
+
 /** Start of today in local TZ (for dedup). */
 function startOfToday(): Date {
   const d = new Date();
@@ -273,7 +364,7 @@ export async function checkAndSendAccessoriesPendingCMTNotifications(): Promise<
  * Notify users with work_orders:view permission when a work order is completed.
  * Also notifies the WO creator if they have the permission.
  */
-export async function notifyWOCompleted(woId: string): Promise<void> {
+export async function notifyWOCompleted(woId: string, triggeredByUserId?: string): Promise<void> {
   const wo = await prisma.workOrder.findUnique({
     where: { id: woId },
     include: {
@@ -310,14 +401,14 @@ export async function notifyWOCompleted(woId: string): Promise<void> {
           },
         },
       ],
-      fcmToken: { not: null },
     },
     select: { id: true, fcmToken: true },
   });
 
   const fgName = wo.finishedGood?.nameEn ?? wo.finishedGood?.nameId ?? 'FG';
   const title = 'Work Order Completed';
-  const body = `${wo.docNumber} – ${fgName} completed`;
+  const byLine = triggeredByUserId ? ` by ${await getActorName(triggeredByUserId)}` : '';
+  const body = `${wo.docNumber} – ${fgName} completed${byLine}`;
   const data = { type: 'WO_COMPLETED', woId, docNumber: wo.docNumber };
 
   // Send to all users with permission, plus the creator if they have permission
@@ -360,4 +451,191 @@ export async function notifyWOCompleted(woId: string): Promise<void> {
       }
     }
   }
+}
+
+// ----- Event-specific notifications (RBAC-filtered, with actor) -----
+
+export async function notifySupplierCreated(supplierId: string, supplierName: string, triggeredByName: string): Promise<void> {
+  const users = await getUsersWithPermission('suppliers:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'SUPPLIER_CREATED',
+    title: 'Supplier created',
+    body: `${supplierName} created by ${triggeredByName}`,
+    data: { supplierId },
+  });
+}
+
+export async function notifySupplierApproved(supplierId: string, supplierName: string, triggeredByName: string): Promise<void> {
+  const users = await getUsersWithPermission('suppliers:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'SUPPLIER_APPROVED',
+    title: 'Supplier approved',
+    body: `${supplierName} approved by ${triggeredByName}`,
+    data: { supplierId },
+  });
+}
+
+export async function notifyItemCreated(itemId: string, itemName: string, triggeredByName: string): Promise<void> {
+  const users = await getUsersWithPermission('items:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'ITEM_CREATED',
+    title: 'New item added',
+    body: `${itemName} added by ${triggeredByName}`,
+    data: { itemId },
+  });
+}
+
+export async function notifyPOCreated(poId: string, docNumber: string, triggeredByName: string): Promise<void> {
+  const users = await getUsersWithPermission('purchase_orders:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'PO_CREATED',
+    title: 'New PO issued',
+    body: `PO ${docNumber} created by ${triggeredByName}`,
+    data: { poId, docNumber },
+  });
+}
+
+export async function notifyPOStatusUpdated(
+  poId: string,
+  docNumber: string,
+  fromStatus: string,
+  toStatus: string,
+  triggeredByName: string
+): Promise<void> {
+  const users = await getUsersWithPermission('purchase_orders:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'PO_STATUS_UPDATED',
+    title: 'PO status updated',
+    body: `PO ${docNumber} status changed from ${fromStatus} to ${toStatus} by ${triggeredByName}`,
+    data: { poId, docNumber },
+  });
+}
+
+export async function notifyPOPaymentToggled(
+  poId: string,
+  docNumber: string,
+  paid: boolean,
+  triggeredByName: string
+): Promise<void> {
+  const users = await getUsersWithPermission('supplier_payments:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'PO_PAYMENT_TOGGLED',
+    title: 'PO payment status updated',
+    body: `PO ${docNumber} marked ${paid ? 'paid' : 'unpaid'} by ${triggeredByName}`,
+    data: { poId, docNumber },
+  });
+}
+
+export async function notifyGRNCreated(grnId: string, docNumber: string, triggeredByName: string): Promise<void> {
+  const users = await getUsersWithPermission('inventory:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'GRN_CREATED',
+    title: 'GRN created',
+    body: `GRN ${docNumber} created by ${triggeredByName}`,
+    data: { grnId, docNumber },
+  });
+}
+
+export async function notifyStockAdjustmentCreated(
+  adjustmentId: string,
+  docNumber: string,
+  triggeredByName: string
+): Promise<void> {
+  const users = await getUsersWithPermission('inventory:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'STOCK_ADJUSTMENT_CREATED',
+    title: 'Stock adjustment created',
+    body: `Stock adjustment ${docNumber} created by ${triggeredByName}`,
+    data: { adjustmentId, docNumber },
+  });
+}
+
+export async function notifyWOCreated(woId: string, docNumber: string, triggeredByName: string): Promise<void> {
+  const users = await getUsersWithPermission('work_orders:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'WO_CREATED',
+    title: 'Work Order created',
+    body: `WO ${docNumber} created by ${triggeredByName}`,
+    data: { woId, docNumber },
+  });
+}
+
+export async function notifyWOStatusUpdated(
+  woId: string,
+  docNumber: string,
+  fromStatus: string,
+  toStatus: string,
+  triggeredByName: string
+): Promise<void> {
+  const users = await getUsersWithPermission('work_orders:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'WO_STATUS_UPDATED',
+    title: 'Work Order status updated',
+    body: `WO ${docNumber} status changed from ${fromStatus} to ${toStatus} by ${triggeredByName}`,
+    data: { woId, docNumber },
+  });
+}
+
+export async function notifyWOMaterialsIssued(woId: string, docNumber: string, triggeredByName: string): Promise<void> {
+  const users = await getUsersWithPermission('work_orders:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'WO_MATERIALS_ISSUED',
+    title: 'Work Order materials issued',
+    body: `Materials issued for WO ${docNumber} by ${triggeredByName}`,
+    data: { woId, docNumber },
+  });
+}
+
+export async function notifyVendorReturnCreated(
+  vendorReturnId: string,
+  docNumber: string,
+  triggeredByName: string
+): Promise<void> {
+  const users = await getUsersWithPermission('vendor_returns:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'VENDOR_RETURN_CREATED',
+    title: 'Vendor return created',
+    body: `Vendor return ${docNumber} created by ${triggeredByName}`,
+    data: { vendorReturnId, docNumber },
+  });
+}
+
+export async function notifyVendorReturnStatusUpdated(
+  vendorReturnId: string,
+  docNumber: string,
+  fromStatus: string,
+  toStatus: string,
+  triggeredByName: string
+): Promise<void> {
+  const users = await getUsersWithPermission('vendor_returns:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'VENDOR_RETURN_STATUS_UPDATED',
+    title: 'Vendor return status updated',
+    body: `Vendor return ${docNumber} status changed from ${fromStatus} to ${toStatus} by ${triggeredByName}`,
+    data: { vendorReturnId, docNumber },
+  });
+}
+
+export async function notifyDocNumberAltered(docType: string, triggeredByName: string): Promise<void> {
+  const users = await getUsersWithPermission('settings_documents:view');
+  if (users.length === 0) return;
+  await sendNotificationToUsers(users, {
+    type: 'DOC_NUMBER_ALTERED',
+    title: 'Doc number config updated',
+    body: `Doc number config for ${docType} updated by ${triggeredByName}`,
+    data: { docType },
+  });
 }

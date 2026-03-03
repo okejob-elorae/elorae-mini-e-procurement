@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { ItemType, Prisma } from '@prisma/client';
 import { generateSKU } from '@/lib/sku-generator';
+import { auth } from '@/lib/auth';
+import { getActorName, notifyItemCreated } from '@/app/actions/notifications';
 
 export { generateSKU };
 import { getConsumptionRules as getConsumptionRulesFromLib, saveConsumptionRules as saveConsumptionRulesFromLib } from '@/lib/production/consumption';
@@ -95,6 +97,14 @@ export async function createItem(data: ItemFormData) {
     
     return newItem;
   });
+
+  const session = await auth();
+  if (session?.user?.id) {
+    const itemName = item.nameEn || item.nameId || item.sku;
+    getActorName(session.user.id)
+      .then((triggeredByName) => notifyItemCreated(item.id, itemName, triggeredByName))
+      .catch(() => {});
+  }
   
   revalidatePath('/backoffice/items');
   return serializeSingleItem(item);

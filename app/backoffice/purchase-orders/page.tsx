@@ -120,10 +120,10 @@ export default function PurchaseOrdersPage() {
         { page, pageSize }
       );
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
-        setPOs((result as { items: PurchaseOrder[]; totalCount: number }).items);
-        setTotalCount((result as { items: PurchaseOrder[]; totalCount: number }).totalCount);
+        setPOs((result as unknown as { items: PurchaseOrder[]; totalCount: number }).items);
+        setTotalCount((result as unknown as { items: PurchaseOrder[]; totalCount: number }).totalCount);
       } else {
-        const list = (result as PurchaseOrder[]) ?? [];
+        const list = (result as unknown as PurchaseOrder[]) ?? [];
         setPOs(list);
         setTotalCount(list.length);
       }

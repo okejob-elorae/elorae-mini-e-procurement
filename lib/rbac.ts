@@ -44,7 +44,7 @@ export function requirePermission(permissions: string[], code: string): void {
 }
 
 /**
- * Route-to-permission mapping for middleware
+ * Route-to-permission mapping for proxy (auth/redirect layer)
  * Maps URL paths to required permission codes
  */
 export const ROUTE_PERMISSIONS: Record<string, string> = {

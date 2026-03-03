@@ -107,10 +107,10 @@ export default function WorkOrdersPage() {
         { page, pageSize }
       );
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
-        setWorkOrders((result as { items: WorkOrder[] }).items);
-        setTotalCount((result as { totalCount: number }).totalCount);
+        setWorkOrders((result as unknown as { items: WorkOrder[] }).items);
+        setTotalCount((result as unknown as { totalCount: number }).totalCount);
       } else {
-        const list = (result as WorkOrder[]) ?? [];
+        const list = (result as unknown as WorkOrder[]) ?? [];
         setWorkOrders(list);
         setTotalCount(list.length);
       }

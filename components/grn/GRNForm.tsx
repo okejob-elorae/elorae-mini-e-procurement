@@ -91,11 +91,20 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
     try {
       const list = await getPOs({ status: 'SUBMITTED' });
       const part = await getPOs({ status: 'PARTIAL' });
-      const combined = [...(list || []), ...(part || [])].map((p: { id: string; docNumber: string; supplierId: string }) => ({
-        id: p.id,
-        docNumber: p.docNumber,
-        supplierId: p.supplierId,
-      }));
+      const listArr = Array.isArray(list)
+        ? list
+        : list && typeof list === 'object' && 'items' in list
+          ? (list as { items: unknown[] }).items
+          : [];
+      const partArr = Array.isArray(part)
+        ? part
+        : part && typeof part === 'object' && 'items' in part
+          ? (part as { items: unknown[] }).items
+          : [];
+      const combined = [...listArr, ...partArr].map((p: unknown) => {
+        const po = p as { id: string; docNumber: string; supplierId: string };
+        return { id: po.id, docNumber: po.docNumber, supplierId: po.supplierId };
+      });
       setPoList(combined);
     } catch {
       setPoList([]);

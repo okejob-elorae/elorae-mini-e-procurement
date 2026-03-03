@@ -11,6 +11,7 @@ import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
+import { getActorName, notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/app/actions/notifications';
 
 export type POFormData = z.infer<typeof poSchema>;
 
@@ -21,7 +22,7 @@ export async function createPO(data: POFormData, userId: string) {
   
   const validated = poSchema.parse(data);
   
-  return await prisma.$transaction(async (tx) => {
+  const po = await prisma.$transaction(async (tx) => {
     const docNumber = await generateDocNumber('PO', tx);
     
     // Calculate totals
@@ -29,7 +30,7 @@ export async function createPO(data: POFormData, userId: string) {
       return sum.plus(new Decimal(item.qty).mul(item.price));
     }, new Decimal(0));
     
-    const po = await tx.purchaseOrder.create({
+    const created = await tx.purchaseOrder.create({
       data: {
         docNumber,
         supplierId: validated.supplierId,
@@ -50,15 +51,21 @@ export async function createPO(data: POFormData, userId: string) {
     // Create initial status history
     await tx.pOStatusHistory.create({
       data: {
-        poId: po.id,
+        poId: created.id,
         status: 'DRAFT',
         changedById: userId,
         notes: 'PO Created'
       }
     });
     
-    return po;
+    return created;
   });
+
+  getActorName(userId)
+    .then((triggeredByName) => notifyPOCreated(po.id, po.docNumber, triggeredByName))
+    .catch(() => {});
+
+  return po;
 }
 
 export async function updatePO(
@@ -135,6 +142,12 @@ export async function changePOStatus(
     }
   }
 
+  const existing = await prisma.purchaseOrder.findUnique({
+    where: { id },
+    select: { status: true, docNumber: true },
+  });
+  if (!existing) throw new Error('PO not found');
+
   const po = await prisma.purchaseOrder.update({
     where: { id },
     data: { status: newStatus }
@@ -148,6 +161,12 @@ export async function changePOStatus(
       notes: notes || `Status changed to ${newStatus}`
     }
   });
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyPOStatusUpdated(id, existing.docNumber, existing.status, newStatus, triggeredByName)
+    )
+    .catch(() => {});
   
   revalidatePath('/backoffice/purchase-orders');
   revalidatePath(`/backoffice/purchase-orders/${id}`);
@@ -457,10 +476,26 @@ export async function getPOStats() {
 
 /** Mark a PO as paid (or unmark by passing paidAt: null). */
 export async function setPOPaidAt(poId: string, paidAt: Date | null) {
+  const session = await auth();
+  const po = await prisma.purchaseOrder.findUnique({
+    where: { id: poId },
+    select: { docNumber: true },
+  });
+  if (!po) throw new Error('PO not found');
+
   await prisma.purchaseOrder.update({
     where: { id: poId },
     data: { paidAt },
   });
+
+  if (session?.user?.id) {
+    getActorName(session.user.id)
+      .then((triggeredByName) =>
+        notifyPOPaymentToggled(poId, po.docNumber, paidAt != null, triggeredByName)
+      )
+      .catch(() => {});
+  }
+
   revalidatePath('/backoffice/purchase-orders');
   revalidatePath('/backoffice/purchase-orders/[id]');
   revalidatePath('/backoffice/supplier-payments');

@@ -8,6 +8,7 @@ import { generateDocNumber } from '@/lib/docNumber';
 import { generateMaterialPlan } from '@/lib/production/planning';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
+import { getActorName, notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterialsIssued, notifyWOCompleted } from '@/app/actions/notifications';
 
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
@@ -160,7 +161,7 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
     throw new Error(`Stok tidak mencukupi: ${msg}`);
   }
 
-  return await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const year = new Date().getFullYear();
     const prefix = `WO/${year}/`;
     const existing = await tx.workOrder.findMany({
@@ -208,9 +209,14 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
 
     return { id: wo.id, docNumber };
   });
+
+  getActorName(userId)
+    .then((triggeredByName) => notifyWOCreated(result.id, result.docNumber, triggeredByName))
+    .catch(() => {});
+  return result;
 }
 
-export async function issueWorkOrder(id: string, _userId: string) {
+export async function issueWorkOrder(id: string, userId: string) {
   const wo = await prisma.workOrder.findUnique({
     where: { id }
   });
@@ -225,6 +231,12 @@ export async function issueWorkOrder(id: string, _userId: string) {
       issuedAt: new Date()
     }
   });
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyWOStatusUpdated(id, wo.docNumber, 'DRAFT', 'ISSUED', triggeredByName)
+    )
+    .catch(() => {});
   
   revalidatePath('/backoffice/work-orders');
 }
@@ -252,7 +264,7 @@ export type IssueFormData = z.infer<typeof issueSchema>;
 export async function issueMaterials(data: IssueFormData, userId: string) {
   const validated = issueSchema.parse(data);
 
-  return await prisma.$transaction(async (tx) => {
+  const issueResult = await prisma.$transaction(async (tx) => {
     const wo = await tx.workOrder.findUnique({
       where: { id: data.woId },
       select: { status: true, consumptionPlan: true, docNumber: true }
@@ -386,6 +398,19 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
     revalidatePath(`/backoffice/work-orders/${data.woId}`);
     return issue;
   });
+
+  const wo = await prisma.workOrder.findUnique({
+    where: { id: data.woId },
+    select: { docNumber: true },
+  });
+  if (wo) {
+    getActorName(userId)
+      .then((triggeredByName) =>
+        notifyWOMaterialsIssued(data.woId, wo.docNumber, triggeredByName)
+      )
+      .catch(() => {});
+  }
+  return issueResult;
 }
 
 /** Split allocation (PD6): create child issues linked to parent. Minimal stub. */
@@ -413,7 +438,7 @@ export type ReceiptFormData = z.infer<typeof receiptSchema>;
 export async function receiveFG(data: ReceiptFormData, userId: string) {
   receiptSchema.parse(data);
 
-  return await prisma.$transaction(async (tx) => {
+  const receiveResult = await prisma.$transaction(async (tx) => {
     const docNumber = await generateDocNumber('RECEIPT', tx);
     const qtyAccepted = data.qtyReceived - (data.qtyRejected || 0);
     
@@ -502,8 +527,14 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
       });
     }
 
-    return receipt;
+    const woCompleted = newActualQty >= Number(wo.plannedQty);
+    return { receipt, woCompleted };
   });
+
+  if (receiveResult.woCompleted) {
+    notifyWOCompleted(data.woId, userId).catch(() => {});
+  }
+  return receiveResult.receipt;
 }
 
 export async function cancelWorkOrder(id: string, userId: string, reason?: string) {
@@ -526,6 +557,12 @@ export async function cancelWorkOrder(id: string, userId: string, reason?: strin
       canceledReason: reason
     }
   });
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyWOStatusUpdated(id, wo.docNumber, wo.status, 'CANCELLED', triggeredByName)
+    )
+    .catch(() => {});
   
   revalidatePath('/backoffice/work-orders');
 }

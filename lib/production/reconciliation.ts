@@ -60,9 +60,7 @@ export async function reconcileWorkOrder(woId: string): Promise<{
   }
   const actualQtyRaw = wo.actualQty;
   const actualOutput =
-    actualQtyRaw != null && actualQtyRaw !== ''
-      ? new Decimal(String(actualQtyRaw))
-      : new Decimal(0);
+    actualQtyRaw != null ? new Decimal(String(actualQtyRaw)) : new Decimal(0);
 
   const lines: ReconciliationResult[] = [];
 
@@ -88,7 +86,7 @@ export async function reconcileWorkOrder(woId: string): Promise<{
       const items = Array.isArray(raw) ? raw : [];
       const match = items.find(
         (i: any) => String(i.itemId ?? i.item_id) === planItemId
-      );
+      ) as { qty?: number; quantity?: number } | undefined;
       const qty = match?.qty ?? match?.quantity ?? 0;
       return sum.plus(new Decimal(Number(qty) || 0));
     }, new Decimal(0));
@@ -100,7 +98,7 @@ export async function reconcileWorkOrder(woId: string): Promise<{
         (l: any) =>
           String(l.itemId ?? l.item_id) === planItemId &&
           (l.type ?? l.itemType) !== 'FG_REJECT'
-      );
+      ) as { qty?: number; quantity?: number } | undefined;
       const qty = match?.qty ?? match?.quantity ?? 0;
       return sum.plus(new Decimal(Number(qty) || 0));
     }, new Decimal(0));

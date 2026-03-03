@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
+import { getActorName, notifyGRNCreated } from '@/app/actions/notifications';
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -26,7 +27,7 @@ export type GRNFormData = z.infer<typeof grnSchema>;
 export async function createGRN(data: z.infer<typeof grnSchema>, userId: string) {
   const validated = grnSchema.parse(data);
 
-  return await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -166,6 +167,11 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
       createdAt: grn.createdAt,
     };
   });
+
+  getActorName(userId)
+    .then((triggeredByName) => notifyGRNCreated(result.id, result.docNumber, triggeredByName))
+    .catch(() => {});
+  return result;
 }
 
 export async function getGRNs(

@@ -89,7 +89,13 @@ export default function WorkOrderIssuePage() {
         setWO(woData);
         setMaterials((fabricItems as any) || []);
         const plan = (woData?.consumptionPlan as any[]) || [];
-        const ids = [...new Set((plan as { itemId?: string }[]).map((p) => p.itemId).filter(Boolean))];
+        const ids = [
+          ...new Set(
+            (plan as { itemId?: string }[])
+              .map((p) => p.itemId)
+              .filter((id): id is string => typeof id === 'string')
+          )
+        ];
         if (ids.length > 0) {
           getItemAvgCosts(ids).then(setItemAvgCosts);
         }

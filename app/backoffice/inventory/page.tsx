@@ -143,18 +143,18 @@ export default function InventoryPage() {
         setStockTotalCount((invData as { totalCount?: number }).totalCount ?? invData.items.length);
       }
       if (grnData != null && typeof grnData === 'object' && 'items' in grnData && 'totalCount' in grnData) {
-        setGRNs((grnData as { items: GRN[] }).items);
-        setGrnTotalCount((grnData as { totalCount: number }).totalCount);
+        setGRNs((grnData as unknown as { items: GRN[] }).items);
+        setGrnTotalCount((grnData as unknown as { totalCount: number }).totalCount);
       } else {
-        const grnList = (grnData as GRN[]) ?? [];
+        const grnList = (grnData as unknown as GRN[]) ?? [];
         setGRNs(grnList);
         setGrnTotalCount(grnList.length);
       }
       if (adjData != null && typeof adjData === 'object' && 'items' in adjData && 'totalCount' in adjData) {
-        setAdjustments((adjData as { items: Adjustment[] }).items);
-        setAdjTotalCount((adjData as { totalCount: number }).totalCount);
+        setAdjustments((adjData as unknown as { items: Adjustment[] }).items);
+        setAdjTotalCount((adjData as unknown as { totalCount: number }).totalCount);
       } else {
-        const adjList = (adjData as Adjustment[]) ?? [];
+        const adjList = (adjData as unknown as Adjustment[]) ?? [];
         setAdjustments(adjList);
         setAdjTotalCount(adjList.length);
       }

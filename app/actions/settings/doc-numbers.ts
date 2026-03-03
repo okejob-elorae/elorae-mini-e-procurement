@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import type { DocNumberConfig, DocType } from '@prisma/client';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
+import { getActorName, notifyDocNumberAltered } from '@/app/actions/notifications';
 
 export type DocNumberConfigRow = {
   id: string;
@@ -100,5 +101,10 @@ export async function updateDocNumberConfig(
       padding: config.padding,
     },
   });
+
+  getActorName(session.user.id)
+    .then((triggeredByName) => notifyDocNumberAltered(docType, triggeredByName))
+    .catch(() => {});
+
   revalidatePath('/backoffice/settings/documents');
 }

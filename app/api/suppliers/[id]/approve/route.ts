@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { getActorName, notifySupplierApproved } from '@/app/actions/notifications';
 
 // POST /api/suppliers/[id]/approve - Approve a pending supplier
 export async function POST(
@@ -36,6 +37,10 @@ export async function POST(
         rejectionReason: null,
       },
     });
+
+    getActorName(session.user.id)
+      .then((triggeredByName) => notifySupplierApproved(id, supplier.name, triggeredByName))
+      .catch(() => {});
 
     return NextResponse.json({ success: true, status: 'ACTIVE' });
   } catch (error) {
