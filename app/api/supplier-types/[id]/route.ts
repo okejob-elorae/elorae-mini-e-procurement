@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 
 const updateSchema = z.object({
   code: z.string().min(1).max(50).optional(),
@@ -54,6 +55,7 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIER_TYPES_EDIT);
 
     const body = await req.json();
     const validated = updateSchema.parse(body);
@@ -102,6 +104,7 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIER_TYPES_DELETE);
 
     const inUse = await prisma.supplier.count({
       where: { typeId: id },

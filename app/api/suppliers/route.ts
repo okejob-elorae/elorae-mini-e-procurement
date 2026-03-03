@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { encryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 
 const supplierSchema = z.object({
   // When blank or omitted, backend will auto-generate code
@@ -154,6 +155,7 @@ export async function POST(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_CREATE);
 
     const body = await req.json();
     const validated = supplierSchema.parse(body);

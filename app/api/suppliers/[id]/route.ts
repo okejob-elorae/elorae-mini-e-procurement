@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
 import { logBankAccountView } from '@/lib/audit';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 const supplierSchema = z.object({
   code: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
@@ -82,6 +83,7 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_EDIT);
 
     const body = await req.json();
     const validated = supplierSchema.parse(body);
@@ -140,6 +142,7 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
 
     // Check if supplier has purchase orders
     const poCount = await prisma.purchaseOrder.count({

@@ -11,7 +11,7 @@ export const {
   signIn,
   signOut,
 } = NextAuth({
-  trustHost: true, // required for Vercel/serverless (trust X-Forwarded-Host)
+  trustHost: process.env.NODE_ENV === 'production', // Only trust host in production (Vercel)
   adapter: PrismaAdapter(prisma) as any,
   session: {
     strategy: 'jwt',
@@ -35,6 +35,17 @@ export const {
 
         const user = await prisma.user.findUnique({
           where: { email: credentials.email as string },
+          include: {
+            roleDefinition: {
+              include: {
+                permissions: {
+                  include: {
+                    permission: true,
+                  },
+                },
+              },
+            },
+          },
         });
 
         if (!user || !user.passwordHash) {
@@ -47,20 +58,71 @@ export const {
           return null;
         }
 
+        // Get permissions from role
+        let permissions: string[] = [];
+        let roleId: string | null = null;
+        let roleName: string = user.role;
+
+        if (user.roleDefinition) {
+          roleId = user.roleDefinition.id;
+          roleName = user.roleDefinition.name;
+          // If system role (ADMIN), grant wildcard
+          if (user.roleDefinition.isSystem) {
+            permissions = ['*'];
+          } else {
+            permissions = user.roleDefinition.permissions.map(rp => rp.permission.code);
+          }
+        }
+
         return {
           id: user.id,
           email: user.email,
           name: user.name,
           role: user.role,
+          roleId,
+          roleName,
+          permissions,
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
-        token.role = user.role;
+        token.role = (user as any).role as Role;
+        token.roleId = (user as any).roleId as string | null;
+        token.roleName = (user as any).roleName as string;
+        token.permissions = (user as any).permissions as string[];
+        token.permissionsVersion = (user as any).permissionsVersion as number | undefined;
+      }
+      // Refresh permissions if permissionsVersion changed (triggered by session update)
+      if (trigger === 'update' && token.id) {
+        const user = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          include: {
+            roleDefinition: {
+              include: {
+                permissions: {
+                  include: {
+                    permission: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+        if (user?.roleDefinition) {
+          const currentVersion = user.roleDefinition.permissionsVersion;
+          if (token.permissionsVersion !== currentVersion) {
+            if (user.roleDefinition.isSystem) {
+              token.permissions = ['*'];
+            } else {
+              token.permissions = user.roleDefinition.permissions.map(rp => rp.permission.code);
+            }
+            token.permissionsVersion = currentVersion;
+          }
+        }
       }
       return token;
     },
@@ -68,6 +130,9 @@ export const {
       if (token) {
         session.user.id = token.id as string;
         session.user.role = token.role as Role;
+        session.user.roleId = token.roleId as string | null;
+        session.user.roleName = token.roleName as string;
+        session.user.permissions = (token.permissions || []) as string[];
       }
       return session;
     },

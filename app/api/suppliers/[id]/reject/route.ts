@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { Role } from '@/lib/constants/enums';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { z } from 'zod';
 
 const rejectSchema = z.object({
   reason: z.string().min(1, 'Reason is required'),
 });
 
-// POST /api/suppliers/[id]/reject - Reject a pending supplier (ADMIN only)
+// POST /api/suppliers/[id]/reject - Reject a pending supplier
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -18,12 +18,7 @@ export async function POST(
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (session.user.role !== Role.ADMIN) {
-      return NextResponse.json(
-        { error: 'Only admins can reject suppliers' },
-        { status: 403 }
-      );
-    }
+    requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_APPROVE);
 
     const { id } = await params;
     const body = await req.json().catch(() => ({}));

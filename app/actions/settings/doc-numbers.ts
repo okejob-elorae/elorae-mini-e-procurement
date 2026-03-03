@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import type { DocNumberConfig, DocType } from '@prisma/client';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { auth } from '@/lib/auth';
 
 export type DocNumberConfigRow = {
   id: string;
@@ -77,6 +79,10 @@ export async function updateDocNumberConfig(
     padding: number;
   }
 ) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_DOCUMENTS_MANAGE);
+  
   await prisma.docNumberConfig.upsert({
     where: { docType },
     create: {

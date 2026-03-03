@@ -82,6 +82,237 @@ async function main() {
   });
   console.log("Users OK");
 
+  // ---------- 1.5. RBAC: Permissions and Roles ----------
+  // Define all permissions based on the matrix
+  const permissions = [
+    // Dashboard
+    { code: 'dashboard:view', module: 'dashboard', action: 'view', description: 'View dashboard' },
+    // Suppliers
+    { code: 'suppliers:view', module: 'suppliers', action: 'view', description: 'View suppliers' },
+    { code: 'suppliers:create', module: 'suppliers', action: 'create', description: 'Create suppliers' },
+    { code: 'suppliers:edit', module: 'suppliers', action: 'edit', description: 'Edit suppliers' },
+    { code: 'suppliers:delete', module: 'suppliers', action: 'delete', description: 'Delete suppliers' },
+    { code: 'suppliers:approve', module: 'suppliers', action: 'approve', description: 'Approve suppliers' },
+    // Supplier Types
+    { code: 'supplier_types:view', module: 'supplier_types', action: 'view', description: 'View supplier types' },
+    { code: 'supplier_types:create', module: 'supplier_types', action: 'create', description: 'Create supplier types' },
+    { code: 'supplier_types:edit', module: 'supplier_types', action: 'edit', description: 'Edit supplier types' },
+    { code: 'supplier_types:delete', module: 'supplier_types', action: 'delete', description: 'Delete supplier types' },
+    // Items
+    { code: 'items:view', module: 'items', action: 'view', description: 'View items' },
+    { code: 'items:create', module: 'items', action: 'create', description: 'Create items' },
+    { code: 'items:edit', module: 'items', action: 'edit', description: 'Edit items' },
+    { code: 'items:delete', module: 'items', action: 'delete', description: 'Delete items' },
+    // Purchase Orders
+    { code: 'purchase_orders:view', module: 'purchase_orders', action: 'view', description: 'View purchase orders' },
+    { code: 'purchase_orders:create', module: 'purchase_orders', action: 'create', description: 'Create purchase orders' },
+    { code: 'purchase_orders:edit', module: 'purchase_orders', action: 'edit', description: 'Edit purchase orders' },
+    { code: 'purchase_orders:approve', module: 'purchase_orders', action: 'approve', description: 'Approve purchase orders' },
+    // Supplier Payments
+    { code: 'supplier_payments:view', module: 'supplier_payments', action: 'view', description: 'View supplier payments' },
+    { code: 'supplier_payments:create', module: 'supplier_payments', action: 'create', description: 'Create supplier payments' },
+    { code: 'supplier_payments:edit', module: 'supplier_payments', action: 'edit', description: 'Edit supplier payments' },
+    // Inventory
+    { code: 'inventory:view', module: 'inventory', action: 'view', description: 'View inventory' },
+    { code: 'inventory:manage', module: 'inventory', action: 'manage', description: 'Manage inventory' },
+    // Work Orders
+    { code: 'work_orders:view', module: 'work_orders', action: 'view', description: 'View work orders' },
+    { code: 'work_orders:create', module: 'work_orders', action: 'create', description: 'Create work orders' },
+    { code: 'work_orders:manage', module: 'work_orders', action: 'manage', description: 'Manage work orders' },
+    // Nota Register
+    { code: 'nota_register:view', module: 'nota_register', action: 'view', description: 'View nota register' },
+    // Vendor Returns
+    { code: 'vendor_returns:view', module: 'vendor_returns', action: 'view', description: 'View vendor returns' },
+    { code: 'vendor_returns:create', module: 'vendor_returns', action: 'create', description: 'Create vendor returns' },
+    { code: 'vendor_returns:manage', module: 'vendor_returns', action: 'manage', description: 'Manage vendor returns' },
+    // Reports
+    { code: 'reports_hpp:view', module: 'reports', action: 'hpp_view', description: 'View HPP reports' },
+    // Audit Trail
+    { code: 'audit_trail:view', module: 'audit_trail', action: 'view', description: 'View audit trail' },
+    // Settings
+    { code: 'settings_documents:view', module: 'settings', action: 'documents_view', description: 'View document settings' },
+    { code: 'settings_documents:manage', module: 'settings', action: 'documents_manage', description: 'Manage document settings' },
+    { code: 'settings_uom:view', module: 'settings', action: 'uom_view', description: 'View UOM settings' },
+    { code: 'settings_uom:manage', module: 'settings', action: 'uom_manage', description: 'Manage UOM settings' },
+    { code: 'settings_security:view', module: 'settings', action: 'security_view', description: 'View security settings' },
+    { code: 'settings_security:manage', module: 'settings', action: 'security_manage', description: 'Manage security settings' },
+    { code: 'settings_rbac:view', module: 'settings', action: 'rbac_view', description: 'View RBAC settings' },
+    { code: 'settings_rbac:manage', module: 'settings', action: 'rbac_manage', description: 'Manage RBAC settings' },
+  ];
+
+  // Upsert all permissions
+  const permissionMap = new Map<string, { id: string; code: string }>();
+  for (const perm of permissions) {
+    const created = await prisma.permission.upsert({
+      where: { code: perm.code },
+      update: {},
+      create: perm,
+    });
+    permissionMap.set(perm.code, created);
+  }
+  console.log(`Permissions OK (${permissionMap.size} permissions)`);
+
+  // Create default roles
+  const adminRole = await prisma.roleDefinition.upsert({
+    where: { name: 'ADMIN' },
+    update: {},
+    create: {
+      name: 'ADMIN',
+      description: 'System administrator with full access',
+      isSystem: true,
+    },
+  });
+
+  const purchaserRole = await prisma.roleDefinition.upsert({
+    where: { name: 'PURCHASER' },
+    update: {},
+    create: {
+      name: 'PURCHASER',
+      description: 'Purchasing staff - manages suppliers, POs, and payments',
+      isSystem: false,
+    },
+  });
+
+  const warehouseRole = await prisma.roleDefinition.upsert({
+    where: { name: 'WAREHOUSE' },
+    update: {},
+    create: {
+      name: 'WAREHOUSE',
+      description: 'Warehouse staff - manages inventory',
+      isSystem: false,
+    },
+  });
+
+  const productionRole = await prisma.roleDefinition.upsert({
+    where: { name: 'PRODUCTION' },
+    update: {},
+    create: {
+      name: 'PRODUCTION',
+      description: 'Production staff - manages work orders',
+      isSystem: false,
+    },
+  });
+  console.log('Roles OK');
+
+  // Assign permissions to roles based on matrix
+  // ADMIN gets all permissions (wildcard handled in code, but assign all for clarity)
+  const adminPermissionIds = Array.from(permissionMap.values()).map(p => p.id);
+  for (const permId of adminPermissionIds) {
+    await prisma.rolePermission.upsert({
+      where: {
+        roleId_permissionId: {
+          roleId: adminRole.id,
+          permissionId: permId,
+        },
+      },
+      update: {},
+      create: {
+        roleId: adminRole.id,
+        permissionId: permId,
+      },
+    });
+  }
+
+  // PURCHASER permissions
+  const purchaserPermissions = [
+    'dashboard:view',
+    'suppliers:view', 'suppliers:create',
+    'supplier_types:view', 'supplier_types:create', 'supplier_types:edit',
+    'items:view',
+    'purchase_orders:view', 'purchase_orders:create', 'purchase_orders:edit',
+    'supplier_payments:view', 'supplier_payments:create', 'supplier_payments:edit',
+    'vendor_returns:view', 'vendor_returns:create', 'vendor_returns:manage',
+  ];
+  for (const code of purchaserPermissions) {
+    const perm = permissionMap.get(code);
+    if (perm) {
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: purchaserRole.id,
+            permissionId: perm.id,
+          },
+        },
+        update: {},
+        create: {
+          roleId: purchaserRole.id,
+          permissionId: perm.id,
+        },
+      });
+    }
+  }
+
+  // WAREHOUSE permissions
+  const warehousePermissions = [
+    'dashboard:view',
+    'items:view',
+    'inventory:view', 'inventory:manage',
+  ];
+  for (const code of warehousePermissions) {
+    const perm = permissionMap.get(code);
+    if (perm) {
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: warehouseRole.id,
+            permissionId: perm.id,
+          },
+        },
+        update: {},
+        create: {
+          roleId: warehouseRole.id,
+          permissionId: perm.id,
+        },
+      });
+    }
+  }
+
+  // PRODUCTION permissions
+  const productionPermissions = [
+    'dashboard:view',
+    'items:view',
+    'work_orders:view', 'work_orders:create', 'work_orders:manage',
+    'nota_register:view',
+  ];
+  for (const code of productionPermissions) {
+    const perm = permissionMap.get(code);
+    if (perm) {
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: productionRole.id,
+            permissionId: perm.id,
+          },
+        },
+        update: {},
+        create: {
+          roleId: productionRole.id,
+          permissionId: perm.id,
+        },
+      });
+    }
+  }
+  console.log('Role permissions assigned');
+
+  // Migrate existing users to use roleId
+  await prisma.user.update({
+    where: { id: admin.id },
+    data: { roleId: adminRole.id },
+  });
+  await prisma.user.update({
+    where: { id: purchaser.id },
+    data: { roleId: purchaserRole.id },
+  });
+  await prisma.user.update({
+    where: { id: warehouse.id },
+    data: { roleId: warehouseRole.id },
+  });
+  await prisma.user.update({
+    where: { id: production.id },
+    data: { roleId: productionRole.id },
+  });
+  console.log('Users migrated to roleId');
+
   // ---------- 2. Supplier categories ----------
   const fabricCategory = await prisma.supplierCategory.upsert({
     where: { id: "cat-fabric" },
