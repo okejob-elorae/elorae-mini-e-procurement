@@ -74,8 +74,11 @@ export default function NotaRegisterPage() {
   useEffect(() => {
     fetch('/api/suppliers?sync=true')
       .then((r) => r.json())
-      .then((data: { id: string; name: string; code: string }[]) => setSuppliers(data ?? []))
-      .catch(() => toast.error('Failed to load suppliers'));
+      .then((data: unknown) => setSuppliers(Array.isArray(data) ? data : []))
+      .catch(() => {
+        setSuppliers([]);
+        toast.error('Failed to load suppliers');
+      });
   }, []);
 
   const loadIssues = async () => {

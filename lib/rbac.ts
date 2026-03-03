@@ -50,6 +50,7 @@ export function requirePermission(permissions: string[], code: string): void {
 export const ROUTE_PERMISSIONS: Record<string, string> = {
   // Frontend routes
   '/backoffice/dashboard': 'dashboard:view',
+  '/backoffice/items': 'items:view',
   '/backoffice/suppliers': 'suppliers:view',
   '/backoffice/suppliers/types': 'supplier_types:view',
   '/backoffice/purchase-orders': 'purchase_orders:view',
@@ -76,6 +77,38 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/api/vendor-returns': 'vendor_returns:view',
   '/api/notifications': 'dashboard:view', // All authenticated users can view their notifications
 };
+
+/**
+ * Backoffice UI routes in preferred order (for redirect when user has no dashboard:view)
+ */
+const BACKOFFICE_ROUTES_ORDER: string[] = [
+  '/backoffice/dashboard',
+  '/backoffice/items',
+  '/backoffice/suppliers',
+  '/backoffice/purchase-orders',
+  '/backoffice/supplier-payments',
+  '/backoffice/inventory',
+  '/backoffice/work-orders',
+  '/backoffice/vendor-returns',
+  '/backoffice/reports/hpp',
+  '/backoffice/audit-trail',
+  '/backoffice/settings/documents',
+  '/backoffice/settings/uom',
+  '/backoffice/settings/security',
+  '/backoffice/settings/rbac',
+];
+
+/**
+ * First backoffice route the user is allowed to access, or null
+ */
+export function getFirstAllowedBackofficeRoute(permissions: string[]): string | null {
+  if (!permissions?.length) return null;
+  for (const route of BACKOFFICE_ROUTES_ORDER) {
+    const perm = ROUTE_PERMISSIONS[route];
+    if (perm && hasPermission(permissions, perm)) return route;
+  }
+  return null;
+}
 
 /**
  * Get required permission for a route path

@@ -73,8 +73,8 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
-    // For pages, redirect to dashboard
-    return NextResponse.redirect(new URL('/backoffice/dashboard', request.url));
+    // For pages, redirect to backoffice root (avoid redirect loop when user lacks dashboard:view)
+    return NextResponse.redirect(new URL('/backoffice', request.url));
   }
 
   return NextResponse.next();

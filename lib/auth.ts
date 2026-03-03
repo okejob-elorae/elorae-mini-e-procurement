@@ -11,7 +11,7 @@ export const {
   signIn,
   signOut,
 } = NextAuth({
-  trustHost: process.env.NODE_ENV === 'production', // Only trust host in production (Vercel)
+  trustHost: true,
   adapter: PrismaAdapter(prisma) as any,
   session: {
     strategy: 'jwt',
