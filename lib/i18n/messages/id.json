@@ -604,7 +604,21 @@
     "woLabel": "WO:",
     "vendorLabel": "Vendor:",
     "dateLabel": "Tanggal:",
-    "typeLabel": "Tipe:"
+    "typeLabel": "Tipe:",
+    "outputMode": "Mode Output",
+    "genericPieces": "Generic (pieces)",
+    "skuByVariant": "SKU (per varian)",
+    "variantSku": "Varian (SKU)",
+    "selectVariant": "Pilih varian",
+    "noVariantsDefineFirst": "Definisikan varian untuk barang jadi ini terlebih dahulu",
+    "materialConsumptionDriver": "Material (penggerak konsumsi)",
+    "selectMaterial": "Pilih material",
+    "consumption": "Konsumsi",
+    "plannedQtyCalculated": "Planned Qty (dihitung)",
+    "actualConsumption": "Konsumsi aktual",
+    "remainder": "Sisa",
+    "increaseConsumptionOrMaterial": "Tambah konsumsi atau pilih material lain",
+    "defineBomFirst": "Definisikan BOM untuk barang jadi ini terlebih dahulu"
   },
   "supplierTypes": {
     "cardDescription": "Tambah, edit, atau hapus tipe pemasok. Tipe yang masih dipakai tidak dapat dihapus."

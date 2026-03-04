@@ -34,6 +34,7 @@ function serializeWorkOrder(wo: {
   poId?: string | null;
   vendorId: string;
   finishedGoodId: string;
+  consumptionMaterialId?: string | null;
   outputMode: string;
   plannedQty: unknown;
   expectedConsumption?: unknown;
@@ -67,6 +68,7 @@ function serializeWorkOrder(wo: {
     po: wo.po ?? null,
     vendorId: wo.vendorId,
     finishedGoodId: wo.finishedGoodId,
+    consumptionMaterialId: (wo as { consumptionMaterialId?: string | null }).consumptionMaterialId ?? null,
     outputMode: wo.outputMode,
     plannedQty: Number(wo.plannedQty),
     expectedConsumption: wo.expectedConsumption != null ? Number(wo.expectedConsumption) : null,
@@ -120,24 +122,39 @@ const rollBreakdownItemSchema = z.object({
   qty: z.number().nonnegative(),
   notes: z.string().optional(),
 });
-const woSchema = z.object({
-  vendorId: idStr,
-  outputMode: z.enum(['GENERIC', 'SKU']),
-  plannedQty: z.number().positive(),
-  expectedConsumption: z.number().positive().optional(),
-  targetDate: z.date().optional(),
-  finishedGoodId: idStr,
-  poId: idStr.optional(),
-  notes: z.string().optional(),
-  rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
-}).refine(
-  (data) => {
-    if (!data.rollBreakdown || data.rollBreakdown.length === 0) return true;
-    const sum = data.rollBreakdown.reduce((s, r) => s + r.qty, 0);
-    return Math.abs(sum - data.plannedQty) < 1e-6;
-  },
-  { message: 'Roll breakdown total must equal planned qty', path: ['rollBreakdown'] }
-);
+const skuBreakdownSchema = z.object({
+  variantSku: z.string().min(1),
+  attributes: z.record(z.string(), z.string()).optional(),
+});
+const woSchema = z
+  .object({
+    vendorId: idStr,
+    outputMode: z.enum(['GENERIC', 'SKU']),
+    plannedQty: z.number().positive(),
+    expectedConsumption: z.number().positive().optional(),
+    consumptionMaterialId: idStr.optional(),
+    targetDate: z.date().optional(),
+    finishedGoodId: idStr,
+    poId: idStr.optional(),
+    notes: z.string().optional(),
+    rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
+    skuBreakdown: skuBreakdownSchema.optional(),
+  })
+  .refine(
+    (data) => {
+      if (!data.rollBreakdown || data.rollBreakdown.length === 0) return true;
+      const sum = data.rollBreakdown.reduce((s, r) => s + r.qty, 0);
+      return Math.abs(sum - data.plannedQty) < 1e-6;
+    },
+    { message: 'Roll breakdown total must equal planned qty', path: ['rollBreakdown'] }
+  )
+  .refine(
+    (data) => {
+      if (data.outputMode !== 'SKU') return true;
+      return data.skuBreakdown?.variantSku != null && data.skuBreakdown.variantSku.length > 0;
+    },
+    { message: 'Variant (SKU) is required when Output Mode is SKU', path: ['skuBreakdown'] }
+  );
 
 export type WOFormData = z.infer<typeof woSchema>;
 
@@ -179,6 +196,7 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
       docNumber,
       vendorId: data.vendorId,
       finishedGoodId: data.finishedGoodId,
+      consumptionMaterialId: data.consumptionMaterialId ?? null,
       outputMode: data.outputMode,
       plannedQty: data.plannedQty,
       expectedConsumption: data.expectedConsumption ?? undefined,
@@ -202,6 +220,9 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
     };
     if (data.rollBreakdown && data.rollBreakdown.length > 0) {
       createData.rollBreakdown = JSON.stringify(data.rollBreakdown);
+    }
+    if (data.outputMode === 'SKU' && data.skuBreakdown) {
+      createData.skuBreakdown = JSON.stringify(data.skuBreakdown);
     }
     const wo = await tx.workOrder.create({
       data: createData as any,
@@ -710,6 +731,48 @@ export async function getWorkOrderById(id: string) {
       ? { ...finishedGood, reorderPoint: finishedGood.reorderPoint != null ? Number(finishedGood.reorderPoint) : null }
       : undefined,
   });
+}
+
+/**
+ * Compute planned qty (pieces) from consumption of one material.
+ * plannedQty = floor(consumptionAmount / consumptionPerPiece), with remainder.
+ */
+export async function computePlannedQtyFromConsumption(
+  finishedGoodId: string,
+  materialId: string,
+  consumptionAmount: number
+): Promise<{
+  plannedQty: number;
+  remainder: number;
+  actualConsumption: number;
+  consumptionPerPiece: number;
+  uomCode: string;
+}> {
+  const rule = await prisma.consumptionRule.findUnique({
+    where: {
+      finishedGoodId_materialId: { finishedGoodId, materialId },
+      isActive: true,
+    },
+    include: { material: { include: { uom: true } } },
+  });
+  if (!rule) {
+    throw new Error('Consumption rule not found for this finished good and material');
+  }
+  const qtyRequired = new Decimal(rule.qtyRequired.toString());
+  const wastePercent = new Decimal(rule.wastePercent.toString());
+  const consumptionPerPiece = qtyRequired.mul(new Decimal(1).plus(wastePercent.div(100)));
+  const amount = new Decimal(consumptionAmount);
+  const plannedQtyDecimal = amount.div(consumptionPerPiece).floor();
+  const plannedQty = plannedQtyDecimal.toNumber();
+  const actualConsumption = plannedQtyDecimal.mul(consumptionPerPiece).toNumber();
+  const remainder = amount.minus(actualConsumption).toNumber();
+  return {
+    plannedQty,
+    remainder,
+    actualConsumption,
+    consumptionPerPiece: consumptionPerPiece.toNumber(),
+    uomCode: rule.material.uom.code,
+  };
 }
 
 /** Get material plan for a finished good and planned qty (for WO create form). */

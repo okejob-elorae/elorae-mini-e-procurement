@@ -604,7 +604,21 @@
     "woLabel": "WO:",
     "vendorLabel": "Vendor:",
     "dateLabel": "Date:",
-    "typeLabel": "Type:"
+    "typeLabel": "Type:",
+    "outputMode": "Output Mode",
+    "genericPieces": "Generic (pieces)",
+    "skuByVariant": "SKU (by variant)",
+    "variantSku": "Variant (SKU)",
+    "selectVariant": "Select variant",
+    "noVariantsDefineFirst": "Define variants for this finished good first",
+    "materialConsumptionDriver": "Material (consumption driver)",
+    "selectMaterial": "Select material",
+    "consumption": "Consumption",
+    "plannedQtyCalculated": "Planned Qty (calculated)",
+    "actualConsumption": "Actual consumption",
+    "remainder": "Remainder",
+    "increaseConsumptionOrMaterial": "Increase consumption or choose a different material",
+    "defineBomFirst": "Define BOM for this finished good first"
   },
   "supplierTypes": {
     "cardDescription": "Add, edit, or remove supplier types. Types in use cannot be deleted."

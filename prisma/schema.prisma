@@ -219,6 +219,7 @@ model Item {
   materialUsages   ConsumptionRule[] @relation("MaterialUsages")
   stockAdjustments StockAdjustment[]
   workOrdersAsFinishedGood WorkOrder[]
+  workOrdersAsConsumptionMaterial WorkOrder[] @relation("WorkOrderConsumptionMaterial")
   rejectedGoodsLedger RejectedGoodsLedger[]
   @@index([type, isActive])
   @@index([sku])
@@ -395,6 +396,8 @@ model WorkOrder {
   vendor          Supplier  @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   finishedGoodId  String
   finishedGood    Item      @relation(fields: [finishedGoodId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  consumptionMaterialId String?
+  consumptionMaterial   Item?     @relation("WorkOrderConsumptionMaterial", fields: [consumptionMaterialId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   outputMode      OutputMode @default(GENERIC)
   plannedQty      Decimal   @db.Decimal(10,2)
   expectedConsumption Decimal? @db.Decimal(10,2)
@@ -419,6 +422,7 @@ model WorkOrder {
   @@index([poId])
   @@index([vendorId])
   @@index([finishedGoodId])
+  @@index([consumptionMaterialId])
   @@index([createdById])
   @@index([status])
   @@index([targetDate])

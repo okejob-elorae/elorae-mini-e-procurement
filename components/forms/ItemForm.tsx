@@ -7,7 +7,7 @@ import { createItemSchema, itemSchema, consumptionRuleSchema } from '@/lib/valid
 import { ItemType } from '@/lib/constants/enums';
 import { generateSKU } from '@/app/actions/items';
 import { getUOMs } from '@/app/actions/uom';
-import { getItemsByType } from '@/app/actions/items';
+import { getItemsByType, getItems } from '@/app/actions/items';
 import { getItemTypeMasters } from '@/app/actions/item-type-master';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,11 +101,28 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       notes: r.notes
     })) || []
   );
+
+  const normalizedVariants = useMemo((): Array<Record<string, string>> => {
+    const raw = initialData?.variants;
+    if (Array.isArray(raw)) return raw as Array<Record<string, string>>;
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        return Array.isArray(parsed) ? (parsed as Array<Record<string, string>>) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }, [initialData?.variants]);
+
   const initialAttributes = useMemo(() => {
-    if (!initialData?.variants || initialData.variants.length === 0) return [];
+    if (normalizedVariants.length === 0) return [];
     const map = new Map<string, Set<string>>();
-    initialData.variants.forEach((variant) => {
+    normalizedVariants.forEach((variant) => {
       Object.entries(variant).forEach(([key, value]) => {
+        // Exclude 'sku' — it is the variant SKU code, not an attribute name
+        if (key === 'sku') return;
         if (!map.has(key)) map.set(key, new Set());
         map.get(key)!.add(value);
       });
@@ -114,7 +131,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       key,
       values: Array.from(values),
     }));
-  }, [initialData?.variants]);
+  }, [normalizedVariants]);
   const [attributes, setAttributes] = useState<Array<{ key: string; values: string[] }>>(
     initialAttributes
   );
@@ -135,7 +152,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       type: initialData?.type || ItemType.FABRIC,
       uomId: initialData?.uomId || '',
       description: initialData?.description || '',
-      variants: initialData?.variants || [],
+      variants: normalizedVariants,
       reorderPoint: initialData?.reorderPoint,
       sellingPrice: initialData?.sellingPrice,
     },
@@ -151,8 +168,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
   useEffect(() => {
     if (itemType === ItemType.FINISHED_GOOD) {
-      getItemsByType(ItemType.FABRIC)
-        .then(items => setMaterials(items as Item[]))
+      getItems({ type: 'raw', isActive: true })
+        .then((result) => setMaterials(Array.isArray(result) ? (result as unknown as Item[]) : []))
         .catch(() => toast.error(tToasts('failedToLoadMaterials')));
     }
   }, [itemType]);
@@ -237,17 +254,17 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       const next = [...prev];
       while (next.length < variantCombinations.length) next.push('');
       const trimmed = next.slice(0, variantCombinations.length);
-      if (!initialData?.variants?.length) return trimmed;
+      if (!normalizedVariants.length) return trimmed;
       return trimmed.map((current, idx) => {
         const combo = variantCombinations[idx];
-        const match = initialData!.variants!.find((v) => {
+        const match = normalizedVariants.find((v) => {
           const { sku: _s, ...rest } = v;
           return Object.keys(combo).every((k) => rest[k] === combo[k]);
         });
         return match?.sku?.trim() ?? current;
       });
     });
-  }, [variantCombinationsKey, variantCombinations, initialData?.variants]);
+  }, [variantCombinationsKey, variantCombinations, normalizedVariants]);
 
   const onFormSubmit = async (data: ItemFormData) => {
     const dataWithSku: ItemFormData = {

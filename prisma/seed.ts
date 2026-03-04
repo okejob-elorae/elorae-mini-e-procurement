@@ -639,6 +639,54 @@ async function main() {
       uomId: uomKg.id,
     },
   });
+  // Jeans Trousers BOM materials
+  const rivets = await prisma.item.upsert({
+    where: { sku: "ACC-RIV-001" },
+    update: {},
+    create: {
+      sku: "ACC-RIV-001",
+      nameId: "Rivets",
+      nameEn: "Rivets",
+      type: ItemType.ACCESSORIES,
+      uomId: uomPcs.id,
+      description: "5 pieces per unit",
+    },
+  });
+  const shankButton = await prisma.item.upsert({
+    where: { sku: "ACC-SHB-001" },
+    update: {},
+    create: {
+      sku: "ACC-SHB-001",
+      nameId: "Shank button (17mm)",
+      nameEn: "Shank Button 17mm",
+      type: ItemType.ACCESSORIES,
+      uomId: uomPcs.id,
+      description: "1 piece, 17mm",
+    },
+  });
+  const zipper = await prisma.item.upsert({
+    where: { sku: "ACC-ZIP-002" },
+    update: {},
+    create: {
+      sku: "ACC-ZIP-002",
+      nameId: "Zipper",
+      nameEn: "Zipper",
+      type: ItemType.ACCESSORIES,
+      uomId: uomPcs.id,
+    },
+  });
+  const pocketFabric = await prisma.item.upsert({
+    where: { sku: "FAB-COT-DRILL-001" },
+    update: {},
+    create: {
+      sku: "FAB-COT-DRILL-001",
+      nameId: "Lightweight cotton drill",
+      nameEn: "Lightweight Cotton Drill",
+      type: ItemType.FABRIC,
+      uomId: uomMeter.id,
+      description: "Pocket bag fabric",
+    },
+  });
   const fg1 = await prisma.item.upsert({
     where: { sku: "FG-SHIRT-001" },
     update: {},
@@ -673,6 +721,24 @@ async function main() {
       uomId: uomPcs.id,
     },
   });
+  const jeansTrousers = await prisma.item.upsert({
+    where: { sku: "FG-JEANS-001" },
+    update: {},
+    create: {
+      sku: "FG-JEANS-001",
+      nameId: "Jeans Trousers",
+      nameEn: "Jeans Trousers",
+      type: ItemType.FINISHED_GOOD,
+      uomId: uomPcs.id,
+      description: "Jeans trousers with size variants",
+      variants: JSON.stringify([
+        { Size: "30", sku: "FG-JEANS-001-30" },
+        { Size: "32", sku: "FG-JEANS-001-32" },
+        { Size: "34", sku: "FG-JEANS-001-34" },
+        { Size: "36", sku: "FG-JEANS-001-36" },
+      ]),
+    },
+  });
   console.log("Items OK");
 
   // ---------- 7. ConsumptionRule (BOM) ----------
@@ -684,6 +750,10 @@ async function main() {
     { finishedGoodId: fg2.id, materialId: acc2.id, qtyRequired: 1, wastePercent: 0 },
     { finishedGoodId: fg3.id, materialId: fabric1.id, qtyRequired: 1.2, wastePercent: 3 },
     { finishedGoodId: fg3.id, materialId: acc1.id, qtyRequired: 4, wastePercent: 0 },
+    { finishedGoodId: jeansTrousers.id, materialId: rivets.id, qtyRequired: 5, wastePercent: 0 },
+    { finishedGoodId: jeansTrousers.id, materialId: shankButton.id, qtyRequired: 1, wastePercent: 0 },
+    { finishedGoodId: jeansTrousers.id, materialId: zipper.id, qtyRequired: 1, wastePercent: 0 },
+    { finishedGoodId: jeansTrousers.id, materialId: pocketFabric.id, qtyRequired: 0.5, wastePercent: 3 },
   ];
   for (const b of bomData) {
     await prisma.consumptionRule.upsert({
@@ -713,9 +783,14 @@ async function main() {
     { itemId: acc1.id, qtyOnHand: 5000, avgCost: 200, totalValue: 1_000_000 },
     { itemId: acc2.id, qtyOnHand: 800, avgCost: 3500, totalValue: 2_800_000 },
     { itemId: acc3.id, qtyOnHand: 50, avgCost: 80000, totalValue: 4_000_000 },
+    { itemId: rivets.id, qtyOnHand: 10000, avgCost: 50, totalValue: 500_000 },
+    { itemId: shankButton.id, qtyOnHand: 5000, avgCost: 300, totalValue: 1_500_000 },
+    { itemId: zipper.id, qtyOnHand: 2000, avgCost: 2500, totalValue: 5_000_000 },
+    { itemId: pocketFabric.id, qtyOnHand: 500, avgCost: 15000, totalValue: 7_500_000 },
     { itemId: fg1.id, qtyOnHand: 120, avgCost: 85000, totalValue: 10_200_000 },
     { itemId: fg2.id, qtyOnHand: 45, avgCost: 120000, totalValue: 5_400_000 },
     { itemId: fg3.id, qtyOnHand: 200, avgCost: 45000, totalValue: 9_000_000 },
+    { itemId: jeansTrousers.id, qtyOnHand: 0, avgCost: 0, totalValue: 0 },
   ];
   for (const inv of invData) {
     await prisma.inventoryValue.upsert({
@@ -1097,6 +1172,31 @@ async function main() {
         canceledAt: new Date(year, month - 1, 3),
         canceledReason: "Customer order cancelled",
         consumptionPlan: JSON.stringify([{ itemId: fabric2.id, itemName: "Kain Polyester", uomId: uomMeter.id, uomCode: "MTR", qtyRequired: 3, wastePercent: 8, plannedQty: 60, issuedQty: 0, returnedQty: 0 }]),
+        createdById: production.id,
+      },
+    });
+
+    // Jeans Trousers: consumption-first sample (100 MTR pocket fabric -> 194 pcs)
+    const jeansPlannedQty = 194;
+    const consumptionPlanJeans = [
+      { itemId: rivets.id, itemName: "Rivets", uomId: uomPcs.id, uomCode: "PCS", qtyRequired: 5, wastePercent: 0, plannedQty: jeansPlannedQty * 5, issuedQty: 0, returnedQty: 0 },
+      { itemId: shankButton.id, itemName: "Shank button (17mm)", uomId: uomPcs.id, uomCode: "PCS", qtyRequired: 1, wastePercent: 0, plannedQty: jeansPlannedQty, issuedQty: 0, returnedQty: 0 },
+      { itemId: zipper.id, itemName: "Zipper", uomId: uomPcs.id, uomCode: "PCS", qtyRequired: 1, wastePercent: 0, plannedQty: jeansPlannedQty, issuedQty: 0, returnedQty: 0 },
+      { itemId: pocketFabric.id, itemName: "Lightweight cotton drill", uomId: uomMeter.id, uomCode: "MTR", qtyRequired: 0.5, wastePercent: 3, plannedQty: 99.91, issuedQty: 0, returnedQty: 0 },
+    ];
+    await prisma.workOrder.create({
+      data: {
+        docNumber: `WO/${year}/0007`,
+        vendorId: supplier3.id,
+        finishedGoodId: jeansTrousers.id,
+        consumptionMaterialId: pocketFabric.id,
+        outputMode: OutputMode.SKU,
+        plannedQty: jeansPlannedQty,
+        expectedConsumption: 100,
+        targetDate: new Date(year, month, 25),
+        status: WOStatus.DRAFT,
+        consumptionPlan: JSON.stringify(consumptionPlanJeans),
+        skuBreakdown: JSON.stringify({ variantSku: "FG-JEANS-001-32", attributes: { Size: "32" } }),
         createdById: production.id,
       },
     });

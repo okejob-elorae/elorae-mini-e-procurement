@@ -454,23 +454,43 @@ function serializeItemForClient(item: ItemWithRelations | null) {
         }
       : null,
     fgConsumptions: item.fgConsumptions?.map((r) => ({
-      ...r,
-      qtyRequired: toNum(r.qtyRequired),
-      wastePercent: toNum(r.wastePercent),
+      id: r.id,
+      finishedGoodId: r.finishedGoodId,
+      materialId: r.materialId,
+      qtyRequired: toNum(r.qtyRequired) ?? 0,
+      wastePercent: toNum(r.wastePercent) ?? 0,
+      isActive: r.isActive,
+      notes: r.notes ?? null,
+      createdAt: r.createdAt,
       material: r.material
         ? {
-            ...r.material,
+            id: r.material.id,
+            sku: r.material.sku,
+            nameId: r.material.nameId,
+            nameEn: r.material.nameEn,
             reorderPoint: r.material.reorderPoint != null ? toNum(r.material.reorderPoint) : null,
+            sellingPrice: r.material.sellingPrice != null ? toNum(r.material.sellingPrice) : null,
             uom: r.material.uom,
           }
         : null,
     })),
     materialUsages: item.materialUsages?.map((u) => ({
-      ...u,
+      id: u.id,
+      finishedGoodId: u.finishedGoodId,
+      materialId: u.materialId,
+      qtyRequired: toNum(u.qtyRequired) ?? 0,
+      wastePercent: toNum(u.wastePercent) ?? 0,
+      isActive: u.isActive,
+      notes: u.notes ?? null,
+      createdAt: u.createdAt,
       finishedGood: u.finishedGood
         ? {
-            ...u.finishedGood,
+            id: u.finishedGood.id,
+            sku: u.finishedGood.sku,
+            nameId: u.finishedGood.nameId,
+            nameEn: u.finishedGood.nameEn,
             reorderPoint: u.finishedGood.reorderPoint != null ? toNum(u.finishedGood.reorderPoint) : null,
+            sellingPrice: u.finishedGood.sellingPrice != null ? toNum(u.finishedGood.sellingPrice) : null,
             uom: u.finishedGood.uom,
           }
         : null,

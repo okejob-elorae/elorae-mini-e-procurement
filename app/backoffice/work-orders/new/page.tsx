@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,8 +33,8 @@ import {
 } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { createWorkOrder, getMaterialPlan } from '@/app/actions/production';
-import { getItemsByType } from '@/app/actions/items';
+import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption } from '@/app/actions/production';
+import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
 import { getPOs } from '@/app/actions/purchase-orders';
 import { ItemType } from '@prisma/client';
 
@@ -51,6 +51,20 @@ interface FinishedGood {
   nameId: string;
   nameEn: string;
   uom: { id: string; code: string };
+  variants?: Array<Record<string, string>>;
+}
+
+interface ConsumptionRuleOption {
+  materialId: string;
+  materialName: string;
+  uomCode: string;
+}
+
+interface ConsumptionResult {
+  plannedQty: number;
+  remainder: number;
+  actualConsumption: number;
+  uomCode: string;
 }
 
 interface MaterialPlanRow {
@@ -80,14 +94,27 @@ export default function NewWorkOrderPage() {
   const [vendorId, setVendorId] = useState('');
   const [finishedGoodId, setFinishedGoodId] = useState('');
   const [outputMode, setOutputMode] = useState<'GENERIC' | 'SKU'>('GENERIC');
-  const [plannedQty, setPlannedQty] = useState<string>('');
-  const [expectedConsumption, setExpectedConsumption] = useState<string>('');
+  const [consumptionRules, setConsumptionRules] = useState<ConsumptionRuleOption[]>([]);
+  const [consumptionMaterialId, setConsumptionMaterialId] = useState('');
+  const [consumptionInput, setConsumptionInput] = useState('');
+  const [consumptionInputDebounced, setConsumptionInputDebounced] = useState('');
+  const [consumptionResult, setConsumptionResult] = useState<ConsumptionResult | null>(null);
+  const [isComputingConsumption, setIsComputingConsumption] = useState(false);
+  const consumptionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const DEBOUNCE_MS = 400;
   const [targetDate, setTargetDate] = useState('');
   const [notes, setNotes] = useState('');
   const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
   const [poId, setPoId] = useState('');
   const [purchaseOrders, setPurchaseOrders] = useState<Array<{ id: string; docNumber: string }>>([]);
   const [isLoadingPOs, setIsLoadingPOs] = useState(true);
+  const [selectedVariantSku, setSelectedVariantSku] = useState('');
+  const [selectedVariantAttributes, setSelectedVariantAttributes] = useState<Record<string, string> | null>(null);
+  const [finishedGoodVariants, setFinishedGoodVariants] = useState<Array<{ sku?: string; attributes: Record<string, string> }>>([]);
+  const [isLoadingVariants, setIsLoadingVariants] = useState(false);
+
+  const plannedNum = consumptionResult?.plannedQty ?? 0;
 
   useEffect(() => {
     const load = async () => {
@@ -118,13 +145,106 @@ export default function NewWorkOrderPage() {
   }, []);
 
   useEffect(() => {
-    if (!finishedGoodId || !plannedQty || Number(plannedQty) <= 0) {
+    if (!finishedGoodId) {
+      setConsumptionRules([]);
+      setConsumptionMaterialId('');
+      setConsumptionInput('');
+      setConsumptionResult(null);
+      return;
+    }
+    getConsumptionRules(finishedGoodId)
+      .then((rules) => {
+        setConsumptionRules(
+          rules.map((r: { materialId: string; material: { nameId: string; uom: { code: string } } }) => ({
+            materialId: r.materialId,
+            materialName: r.material.nameId,
+            uomCode: r.material.uom.code,
+          }))
+        );
+        setConsumptionMaterialId('');
+        setConsumptionInput('');
+        setConsumptionInputDebounced('');
+        setConsumptionResult(null);
+      })
+      .catch(() => {
+        setConsumptionRules([]);
+        toast.error(t('failedToLoadData'));
+      });
+  }, [finishedGoodId, t]);
+
+  useEffect(() => {
+    if (consumptionDebounceRef.current) clearTimeout(consumptionDebounceRef.current);
+    consumptionDebounceRef.current = setTimeout(() => {
+      setConsumptionInputDebounced(consumptionInput);
+      consumptionDebounceRef.current = null;
+    }, DEBOUNCE_MS);
+    return () => {
+      if (consumptionDebounceRef.current) clearTimeout(consumptionDebounceRef.current);
+    };
+  }, [consumptionInput]);
+
+  useEffect(() => {
+    if (!finishedGoodId || !consumptionMaterialId || consumptionInputDebounced === '') {
+      setConsumptionResult(null);
+      return;
+    }
+    const amount = Number(consumptionInputDebounced);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setConsumptionResult(null);
+      return;
+    }
+    let cancelled = false;
+    setIsComputingConsumption(true);
+    computePlannedQtyFromConsumption(finishedGoodId, consumptionMaterialId, amount)
+      .then((res) => {
+        if (!cancelled) setConsumptionResult(res);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setConsumptionResult(null);
+          toast.error(t('failedToLoadMaterialPlan'));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsComputingConsumption(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, t]);
+
+  useEffect(() => {
+    if (!finishedGoodId || outputMode !== 'SKU') {
+      setFinishedGoodVariants([]);
+      setSelectedVariantSku('');
+      setSelectedVariantAttributes(null);
+      return;
+    }
+    setIsLoadingVariants(true);
+    getItemById(finishedGoodId)
+      .then((item: { variants?: unknown } | null) => {
+        const raw = item?.variants;
+        const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? (() => { try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; } })() : [];
+        const variants = list.map((v: Record<string, string>) => {
+          const { sku: vs, ...attrs } = v;
+          return { sku: vs, attributes: attrs };
+        });
+        setFinishedGoodVariants(variants);
+        setSelectedVariantSku('');
+        setSelectedVariantAttributes(null);
+      })
+      .catch(() => setFinishedGoodVariants([]))
+      .finally(() => setIsLoadingVariants(false));
+  }, [finishedGoodId, outputMode]);
+
+  useEffect(() => {
+    if (!finishedGoodId || plannedNum <= 0) {
       setMaterialPlan([]);
       return;
     }
     let cancelled = false;
     setIsLoadingPlan(true);
-    getMaterialPlan(finishedGoodId, Number(plannedQty))
+    getMaterialPlan(finishedGoodId, plannedNum)
       .then((plan) => {
         if (!cancelled) setMaterialPlan(plan);
       })
@@ -140,20 +260,23 @@ export default function NewWorkOrderPage() {
     return () => {
       cancelled = true;
     };
-  }, [finishedGoodId, plannedQty]);
+  }, [finishedGoodId, plannedNum, t]);
 
   const hasShortage = materialPlan.some((m) => m.shortage > 0);
-  const plannedNum = Number(plannedQty) || 0;
   const rollSum = rollBreakdown.reduce((s, r) => s + r.qty, 0);
   const rollValid = rollBreakdown.length === 0 || Math.abs(rollSum - plannedNum) < 1e-6;
+  const skuVariantValid = outputMode !== 'SKU' || (outputMode === 'SKU' && selectedVariantSku.length > 0);
+  const noVariantsForSku = outputMode === 'SKU' && finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
   const canSubmit =
     session?.user?.id &&
     vendorId &&
     finishedGoodId &&
-    plannedQty &&
+    consumptionResult &&
     plannedNum > 0 &&
     !hasShortage &&
     rollValid &&
+    skuVariantValid &&
+    !noVariantsForSku &&
     !isSubmitting;
 
   const addRollRow = () => {
@@ -181,11 +304,16 @@ export default function NewWorkOrderPage() {
           finishedGoodId,
           outputMode,
           plannedQty: plannedNum,
-          expectedConsumption: expectedConsumption.trim() ? Number(expectedConsumption) : undefined,
+          expectedConsumption: consumptionInput.trim() ? Number(consumptionInput) : undefined,
+          consumptionMaterialId: consumptionMaterialId || undefined,
           targetDate: targetDate ? new Date(targetDate) : undefined,
           poId: poId.trim() || undefined,
           notes: notes.trim() || undefined,
           rollBreakdown: rollBreakdown.length > 0 ? rollBreakdown : undefined,
+          skuBreakdown:
+            outputMode === 'SKU' && selectedVariantSku
+              ? { variantSku: selectedVariantSku, attributes: selectedVariantAttributes ?? undefined }
+              : undefined,
         },
         session.user.id
       );
@@ -267,7 +395,7 @@ export default function NewWorkOrderPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Output Mode</Label>
+                <Label>{tWO('outputMode')}</Label>
                 <Select
                   value={outputMode}
                   onValueChange={(v) => setOutputMode(v as 'GENERIC' | 'SKU')}
@@ -276,33 +404,48 @@ export default function NewWorkOrderPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="GENERIC">Generic (pieces)</SelectItem>
-                    <SelectItem value="SKU">SKU (by variant)</SelectItem>
+                    <SelectItem value="GENERIC">{tWO('genericPieces')}</SelectItem>
+                    <SelectItem value="SKU">{tWO('skuByVariant')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Planned Qty</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={plannedQty}
-                  onChange={(e) => setPlannedQty(e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Expected Consumption (optional)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={expectedConsumption}
-                  onChange={(e) => setExpectedConsumption(e.target.value)}
-                  placeholder="e.g. total yards"
-                />
-                <p className="text-xs text-muted-foreground">Total expected raw material consumption (e.g. 10,000 yards)</p>
-              </div>
+              {outputMode === 'SKU' && (
+                <div className="space-y-2">
+                  <Label>{tWO('variantSku')}</Label>
+                  <Select
+                    value={selectedVariantSku}
+                    onValueChange={(val) => {
+                      const v = finishedGoodVariants.find((x, i) => {
+                        const valueForVariant = x.sku ?? `variant-${i}`;
+                        return valueForVariant === val;
+                      });
+                      if (v) {
+                        setSelectedVariantSku(v.sku ?? `variant-${finishedGoodVariants.indexOf(v)}`);
+                        setSelectedVariantAttributes(v.attributes ?? null);
+                      }
+                    }}
+                    disabled={isLoadingVariants || finishedGoodVariants.length === 0}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={noVariantsForSku ? tWO('noVariantsDefineFirst') : tWO('selectVariant')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {finishedGoodVariants.map((v, idx) => {
+                        const label = v.sku ? `${v.sku} (${Object.entries(v.attributes ?? {}).map(([k, val]) => `${k}: ${val}`).join(', ')})` : Object.entries(v.attributes ?? {}).map(([k, val]) => `${k}: ${val}`).join(', ');
+                        const value = v.sku ?? `variant-${idx}`;
+                        return (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  {noVariantsForSku && (
+                    <p className="text-xs text-muted-foreground">{tWO('noVariantsDefineFirst')}</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -345,81 +488,10 @@ export default function NewWorkOrderPage() {
                 rows={2}
               />
             </div>
-
-            {plannedNum > 0 && (
-              <div className="space-y-2 border-t pt-4">
-                <Label>Alokasi per roll (opsional)</Label>
-                <p className="text-xs text-muted-foreground">
-                  Total qty per roll harus sama dengan Planned Qty ({plannedNum}).
-                </p>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Roll / Ref</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
-                        <TableHead>Notes</TableHead>
-                        <TableHead className="w-12" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {rollBreakdown.map((row, i) => (
-                        <TableRow key={i}>
-                          <TableCell>
-                            <Input
-                              value={row.rollRef}
-                              onChange={(e) => updateRollRow(i, 'rollRef', e.target.value)}
-                              placeholder="Roll 1"
-                              className="h-8"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={row.qty || ''}
-                              onChange={(e) => updateRollRow(i, 'qty', Number(e.target.value) || 0)}
-                              className="h-8 text-right"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              value={row.notes ?? ''}
-                              onChange={(e) => updateRollRow(i, 'notes', e.target.value)}
-                              placeholder="Optional"
-                              className="h-8"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => removeRollRow(i)}
-                            >
-                              ×
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                <Button type="button" variant="outline" size="sm" onClick={addRollRow}>
-                  + Tambah roll
-                </Button>
-                {rollBreakdown.length > 0 && !rollValid && (
-                  <p className="text-sm text-destructive">
-                    Total roll ({rollSum}) harus sama dengan Planned Qty ({plannedNum}).
-                  </p>
-                )}
-              </div>
-            )}
           </CardContent>
         </Card>
 
-        {materialPlan.length > 0 && (
+        {finishedGoodId && (
           <Card>
             <CardHeader>
               <CardTitle>Material Plan</CardTitle>
@@ -427,61 +499,214 @@ export default function NewWorkOrderPage() {
                 Required materials from BOM. Creation is blocked if any shortage.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              {isLoadingPlan ? (
-                <div className="py-8 text-center text-muted-foreground">
-                  Loading plan...
-                </div>
+            <CardContent className="space-y-6">
+              {consumptionRules.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{tWO('defineBomFirst')}</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Material</TableHead>
-                        <TableHead className="text-right">
-                          {tWO('estimatedConsumptionPerPcs')} (waste %)
-                        </TableHead>
-                        <TableHead className="text-right">Available</TableHead>
-                        <TableHead className="text-right">Shortage</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {materialPlan.map((m) => (
-                        <TableRow
-                          key={m.itemId}
-                          className={
-                            m.shortage > 0 ? 'bg-destructive/10' : undefined
-                          }
-                        >
-                          <TableCell className="font-medium">
-                            {m.itemName}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {m.plannedQty.toLocaleString()} {m.uomCode} (
-                            {m.wastePercent}%)
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {m.availableStock.toLocaleString()} {m.uomCode}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {m.shortage > 0 ? (
-                              <span className="text-destructive font-medium">
-                                -{m.shortage.toLocaleString()} {m.uomCode}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>{tWO('materialConsumptionDriver')}</Label>
+                      <Select
+                        value={consumptionMaterialId}
+                        onValueChange={(v) => {
+                          setConsumptionMaterialId(v);
+                          setConsumptionInput('');
+                          setConsumptionInputDebounced('');
+                          setConsumptionResult(null);
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder={tWO('selectMaterial')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {consumptionRules.map((r) => (
+                            <SelectItem key={r.materialId} value={r.materialId}>
+                              {r.materialName} ({r.uomCode})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{tWO('consumption')}</Label>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={consumptionInput}
+                          onChange={(e) => setConsumptionInput(e.target.value)}
+                          placeholder={consumptionMaterialId ? consumptionRules.find((r) => r.materialId === consumptionMaterialId)?.uomCode : ''}
+                          disabled={!consumptionMaterialId}
+                          className={isComputingConsumption ? 'pr-9' : ''}
+                        />
+                        {isComputingConsumption && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {(isComputingConsumption || consumptionResult) && (
+                      <div className="sm:col-span-2 space-y-1 text-sm">
+                        <p className="flex items-center gap-2">
+                          <span className="font-medium">{tWO('plannedQtyCalculated')}:</span>
+                          {isComputingConsumption ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
+                              <span className="text-muted-foreground">Calculating…</span>
+                            </>
+                          ) : (
+                              <span>{plannedNum} pcs</span>
                             )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-              {hasShortage && (
-                <p className="mt-4 text-sm text-destructive">
-                  Stok tidak mencukupi. Tambah stok atau kurangi qty rencana.
-                </p>
+                        </p>
+                        {consumptionResult && (
+                          <>
+                            <p className="text-muted-foreground">
+                              {tWO('actualConsumption')}: {consumptionResult.actualConsumption.toLocaleString(undefined, { maximumFractionDigits: 4 })} {consumptionResult.uomCode}
+                            </p>
+                            <p className="text-muted-foreground">
+                              {tWO('remainder')}: {consumptionResult.remainder.toLocaleString(undefined, { maximumFractionDigits: 4 })} {consumptionResult.uomCode}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {consumptionMaterialId && consumptionInput && !consumptionResult && plannedNum === 0 && Number(consumptionInput) > 0 && !isComputingConsumption && (
+                      <p className="sm:col-span-2 text-sm text-destructive">{tWO('increaseConsumptionOrMaterial')}</p>
+                    )}
+                  </div>
+
+                  {plannedNum > 0 && (
+                    <>
+                      {isLoadingPlan ? (
+                        <div className="py-8 text-center text-muted-foreground">
+                          Loading plan...
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Material</TableHead>
+                                <TableHead className="text-right">
+                                  {tWO('estimatedConsumptionPerPcs')} (waste %)
+                                </TableHead>
+                                <TableHead className="text-right">Available</TableHead>
+                                <TableHead className="text-right">Shortage</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {materialPlan.map((m) => (
+                                <TableRow
+                                  key={m.itemId}
+                                  className={
+                                    m.shortage > 0 ? 'bg-destructive/10' : undefined
+                                  }
+                                >
+                                  <TableCell className="font-medium">
+                                    {m.itemName}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {m.plannedQty.toLocaleString()} {m.uomCode} (
+                                    {m.wastePercent}%)
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {m.availableStock.toLocaleString()} {m.uomCode}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {m.shortage > 0 ? (
+                                      <span className="text-destructive font-medium">
+                                        -{m.shortage.toLocaleString()} {m.uomCode}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                      {hasShortage && (
+                        <p className="text-sm text-destructive">
+                          Stok tidak mencukupi. Tambah stok atau kurangi qty rencana.
+                        </p>
+                      )}
+
+                      <div className="space-y-2 border-t pt-4">
+                        <Label>Alokasi per roll (opsional)</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Total qty per roll harus sama dengan Planned Qty ({plannedNum}).
+                        </p>
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Roll / Ref</TableHead>
+                                <TableHead className="text-right">Qty</TableHead>
+                                <TableHead>Notes</TableHead>
+                                <TableHead className="w-12" />
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {rollBreakdown.map((row, i) => (
+                                <TableRow key={i}>
+                                  <TableCell>
+                                    <Input
+                                      value={row.rollRef}
+                                      onChange={(e) => updateRollRow(i, 'rollRef', e.target.value)}
+                                      placeholder="Roll 1"
+                                      className="h-8"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={row.qty || ''}
+                                      onChange={(e) => updateRollRow(i, 'qty', Number(e.target.value) || 0)}
+                                      className="h-8 text-right"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input
+                                      value={row.notes ?? ''}
+                                      onChange={(e) => updateRollRow(i, 'notes', e.target.value)}
+                                      placeholder="Optional"
+                                      className="h-8"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => removeRollRow(i)}
+                                    >
+                                      ×
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        <Button type="button" variant="outline" size="sm" onClick={addRollRow}>
+                          + Tambah roll
+                        </Button>
+                        {rollBreakdown.length > 0 && !rollValid && (
+                          <p className="text-sm text-destructive">
+                            Total roll ({rollSum}) harus sama dengan Planned Qty ({plannedNum}).
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
