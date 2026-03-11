@@ -17,9 +17,11 @@ export type ItemFormData = {
   nameEn: string;
   type: 'FABRIC' | 'ACCESSORIES' | 'FINISHED_GOOD';
   uomId: string;
+  categoryId?: string;
   description?: string;
   variants?: Array<Record<string, string>>;
   reorderPoint?: number;
+  overReceiveThreshold?: number;
   sellingPrice?: number;
 };
 
@@ -31,8 +33,12 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   if (!p.nameEn?.trim()) throw new Error('nameEn: Item name is required');
   if (!ITEM_TYPES.includes(p.type)) throw new Error('type: Invalid item type');
   if (!p.uomId?.trim()) throw new Error('uomId: Pilih satuan');
+  if (p.categoryId != null && p.categoryId.trim() === '') throw new Error('categoryId: Invalid category');
   if (p.reorderPoint != null && (Number.isNaN(p.reorderPoint) || p.reorderPoint < 0)) {
     throw new Error('reorderPoint: Must be 0 or greater');
+  }
+  if (p.overReceiveThreshold != null && (Number.isNaN(p.overReceiveThreshold) || p.overReceiveThreshold < 0)) {
+    throw new Error('overReceiveThreshold: Must be 0 or greater');
   }
   if (p.sellingPrice != null && (Number.isNaN(p.sellingPrice) || p.sellingPrice < 0)) {
     throw new Error('sellingPrice: Must be 0 or greater');
@@ -79,20 +85,23 @@ export async function createItem(data: ItemFormData) {
       data: {
         ...rest,
         sku: finalSku,
+        categoryId: rest.categoryId ?? null,
         variants: normalizedVariants.length ? normalizedVariants : [],
         reorderPoint: rest.reorderPoint || null,
+        overReceiveThreshold: rest.overReceiveThreshold ?? null,
         sellingPrice: rest.sellingPrice ?? null,
       }
     });
     
-    // Initialize inventory value record
+    // Initialize inventory value record (one row per item with variantSku null)
     await tx.inventoryValue.create({
       data: {
         itemId: newItem.id,
+        variantSku: null,
         qtyOnHand: 0,
         avgCost: 0,
-        totalValue: 0
-      }
+        totalValue: 0,
+      },
     });
     
     return newItem;
@@ -118,13 +127,15 @@ export type SerializedItem = {
   nameEn: string;
   type: string;
   uomId: string;
+  categoryId: string | null;
   reorderPoint: number | null;
+  overReceiveThreshold: number | null;
   sellingPrice: number | null;
   [k: string]: unknown;
 };
 
 /** Serialize a single item from create/update so return value has no Decimal (safe for client) */
-function serializeSingleItem(item: { id: string; sku: string; nameId: string; nameEn: string; type: string; uomId: string; description?: string | null; variants?: unknown; reorderPoint?: unknown; sellingPrice?: unknown; createdAt?: Date; updatedAt?: Date; isActive?: boolean; [k: string]: unknown }): SerializedItem {
+function serializeSingleItem(item: { id: string; sku: string; nameId: string; nameEn: string; type: string; uomId: string; categoryId?: string | null; description?: string | null; variants?: unknown; reorderPoint?: unknown; overReceiveThreshold?: unknown; sellingPrice?: unknown; createdAt?: Date; updatedAt?: Date; isActive?: boolean; [k: string]: unknown }): SerializedItem {
   return {
     id: item.id,
     sku: item.sku,
@@ -132,9 +143,11 @@ function serializeSingleItem(item: { id: string; sku: string; nameId: string; na
     nameEn: item.nameEn,
     type: item.type,
     uomId: item.uomId,
+    categoryId: item.categoryId ?? null,
     description: item.description ?? undefined,
     variants: Array.isArray(item.variants) ? item.variants : undefined,
     reorderPoint: item.reorderPoint != null ? Number(item.reorderPoint) : null,
+    overReceiveThreshold: item.overReceiveThreshold != null ? Number(item.overReceiveThreshold) : null,
     sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
@@ -154,6 +167,13 @@ function normalizeItemPayload(data: unknown): ItemFormData {
       ? undefined
       : Number(reorderPoint);
   const sellingPrice = raw.sellingPrice;
+  const overReceiveThreshold = raw.overReceiveThreshold;
+  const overReceiveThresholdNum =
+    overReceiveThreshold === undefined || overReceiveThreshold === null || overReceiveThreshold === ''
+      ? undefined
+      : Number(overReceiveThreshold);
+  const categoryIdRaw = raw.categoryId;
+
   const sellingPriceNum =
     sellingPrice === undefined || sellingPrice === null || sellingPrice === ''
       ? undefined
@@ -172,11 +192,21 @@ function normalizeItemPayload(data: unknown): ItemFormData {
     nameEn: String(raw.nameEn ?? ''),
     type: raw.type as 'FABRIC' | 'ACCESSORIES' | 'FINISHED_GOOD',
     uomId: String(raw.uomId ?? ''),
+    categoryId:
+      categoryIdRaw === undefined || categoryIdRaw === null || String(categoryIdRaw).trim() === ''
+        ? undefined
+        : String(categoryIdRaw),
     description: raw.description != null ? String(raw.description) : undefined,
     variants: variants && variants.length > 0 ? variants : undefined,
     reorderPoint:
       reorderPointNum !== undefined && !Number.isNaN(reorderPointNum) && reorderPointNum >= 0
         ? reorderPointNum
+        : undefined,
+    overReceiveThreshold:
+      overReceiveThresholdNum !== undefined &&
+      !Number.isNaN(overReceiveThresholdNum) &&
+      overReceiveThresholdNum >= 0
+        ? overReceiveThresholdNum
         : undefined,
     sellingPrice:
       sellingPriceNum !== undefined && !Number.isNaN(sellingPriceNum) && sellingPriceNum >= 0
@@ -200,8 +230,10 @@ export async function updateItem(id: string, data: ItemFormData) {
     where: { id },
     data: {
       ...rest,
+      categoryId: rest.categoryId ?? null,
       variants: normalizedVariants.length ? normalizedVariants : [],
       reorderPoint: rest.reorderPoint ?? null,
+      overReceiveThreshold: rest.overReceiveThreshold ?? null,
       sellingPrice: rest.sellingPrice ?? null,
     }
   });
@@ -250,6 +282,7 @@ export async function deleteItem(id: string) {
 export async function getItems(
   filters?: {
     type?: ItemType | 'raw';
+    categoryId?: string;
     search?: string;
     isActive?: boolean;
   },
@@ -268,12 +301,16 @@ export async function getItems(
   if (filters?.isActive !== undefined) {
     where.isActive = filters.isActive;
   }
+  if (filters?.categoryId) {
+    where.categoryId = filters.categoryId;
+  }
   
   if (filters?.search) {
+    // MySQL/MariaDB do not support mode: 'insensitive'; collation handles case.
     where.OR = [
-      { sku: { contains: filters.search, mode: 'insensitive' } },
-      { nameId: { contains: filters.search, mode: 'insensitive' } },
-      { nameEn: { contains: filters.search, mode: 'insensitive' } }
+      { sku: { contains: filters.search } },
+      { nameId: { contains: filters.search } },
+      { nameEn: { contains: filters.search } }
     ];
   }
   // Paginated mode: return { items, totalCount } with variants + BOM details
@@ -291,12 +328,18 @@ export async function getItems(
               nameEn: true
             }
           },
-          inventoryValue: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+          inventoryValues: {
             select: {
               qtyOnHand: true,
-              avgCost: true,
-              totalValue: true
-            }
+              totalValue: true,
+            },
           },
           fgConsumptions: {
             where: { isActive: true },
@@ -333,13 +376,19 @@ export async function getItems(
           nameEn: true
         }
       },
-      inventoryValue: {
+      inventoryValues: {
         select: {
           qtyOnHand: true,
-          avgCost: true,
-          totalValue: true
-        }
-      }
+          totalValue: true,
+        },
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+        },
+      },
     },
     orderBy: { createdAt: 'desc' }
   });
@@ -371,32 +420,50 @@ export async function getItemCounts() {
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
-/** Serialize a single item from findMany (list shape) for Client Components */
+/** Aggregate variant-level inventory rows to one item-level { qtyOnHand, avgCost, totalValue }. */
+function aggregateInventoryValues(
+  rows: Array<{ qtyOnHand: unknown; totalValue: unknown }> | null | undefined
+): { qtyOnHand: number; avgCost: number; totalValue: number } | null {
+  if (!rows?.length) return null;
+  let qty = 0;
+  let totalValue = 0;
+  for (const r of rows) {
+    qty += toNum(r.qtyOnHand) ?? 0;
+    totalValue += toNum(r.totalValue) ?? 0;
+  }
+  return {
+    qtyOnHand: qty,
+    avgCost: qty > 0 ? totalValue / qty : 0,
+    totalValue,
+  };
+}
+
+/** Serialize a single item from findMany (list shape) for Client Components (no Decimal) */
 function serializeListItemForClient(item: {
   reorderPoint?: unknown;
+  overReceiveThreshold?: unknown;
   sellingPrice?: unknown;
-  inventoryValue?: { qtyOnHand: unknown; avgCost: unknown; totalValue: unknown } | null;
+  inventoryValues?: Array<{ qtyOnHand: unknown; avgCost: unknown; totalValue: unknown }>;
   [k: string]: unknown;
 }) {
+  const inv = aggregateInventoryValues(
+    item.inventoryValues as Array<{ qtyOnHand: unknown; totalValue: unknown }> | undefined
+  );
+  const { inventoryValues: _invVals, ...rest } = item;
   return {
-    ...item,
+    ...rest,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
+    overReceiveThreshold:
+      item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
     sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
-    inventoryValue: item.inventoryValue
-      ? {
-          ...item.inventoryValue,
-          qtyOnHand: toNum(item.inventoryValue.qtyOnHand),
-          avgCost: toNum(item.inventoryValue.avgCost),
-          totalValue: toNum(item.inventoryValue.totalValue),
-        }
-      : null,
+    inventoryValue: inv,
   };
 }
 
 /** Serialize list item when including variants and BOM (fgConsumptions) */
 function serializeListItemForClientWithDetails(item: {
   reorderPoint?: unknown;
-  inventoryValue?: { qtyOnHand: unknown; avgCost: unknown; totalValue: unknown } | null;
+  inventoryValues?: Array<{ qtyOnHand: unknown; avgCost: unknown; totalValue: unknown }>;
   variants?: unknown;
   fgConsumptions?: Array<{
     qtyRequired: unknown;
@@ -431,7 +498,8 @@ function serializeListItemForClientWithDetails(item: {
 type ItemWithRelations = Prisma.ItemGetPayload<{
   include: {
     uom: true;
-    inventoryValue: true;
+    category: true;
+    inventoryValues: true;
     fgConsumptions: { include: { material: { include: { uom: true } } } };
     materialUsages: { include: { finishedGood: { include: { uom: true } } } };
   };
@@ -441,18 +509,14 @@ type ItemWithRelations = Prisma.ItemGetPayload<{
 function serializeItemForClient(item: ItemWithRelations | null) {
   if (!item) return null;
   const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
+  const inv = aggregateInventoryValues(item.inventoryValues);
   return {
     ...item,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
+    overReceiveThreshold:
+      item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
     sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
-    inventoryValue: item.inventoryValue
-      ? {
-          ...item.inventoryValue,
-          qtyOnHand: toNum(item.inventoryValue.qtyOnHand),
-          avgCost: toNum(item.inventoryValue.avgCost),
-          totalValue: toNum(item.inventoryValue.totalValue),
-        }
-      : null,
+    inventoryValue: inv,
     fgConsumptions: item.fgConsumptions?.map((r) => ({
       id: r.id,
       finishedGoodId: r.finishedGoodId,
@@ -503,7 +567,8 @@ export async function getItemById(id: string) {
     where: { id },
     include: {
       uom: true,
-      inventoryValue: true,
+      category: true,
+      inventoryValues: true,
       fgConsumptions: {
         include: {
           material: {
@@ -543,25 +608,29 @@ export async function getItemsByType(type: ItemType) {
           code: true
         }
       },
-      inventoryValue: {
+      inventoryValues: {
         select: {
-          qtyOnHand: true
-        }
-      }
+          qtyOnHand: true,
+        },
+      },
     },
     orderBy: { nameId: 'asc' }
   });
-  return rows.map((item) => ({
-    id: item.id,
-    sku: item.sku,
-    nameId: item.nameId,
-    nameEn: item.nameEn,
-    uomId: item.uomId,
-    uom: item.uom,
-    inventoryValue: item.inventoryValue
-      ? { qtyOnHand: Number(item.inventoryValue.qtyOnHand) }
-      : null,
-  }));
+  return rows.map((item) => {
+    const qty = (item.inventoryValues ?? []).reduce(
+      (sum, r) => sum + Number(r.qtyOnHand),
+      0
+    );
+    return {
+      id: item.id,
+      sku: item.sku,
+      nameId: item.nameId,
+      nameEn: item.nameEn,
+      uomId: item.uomId,
+      uom: item.uom,
+      inventoryValue: { qtyOnHand: qty },
+    };
+  });
 }
 
 // Get finished goods with their consumption rules
@@ -581,12 +650,12 @@ export async function getFinishedGoodsWithBOM() {
           material: {
             include: {
               uom: true,
-              inventoryValue: {
+              inventoryValues: {
                 select: {
-                  qtyOnHand: true
-                }
-              }
-            }
+                  qtyOnHand: true,
+                },
+              },
+            },
           }
         }
       }

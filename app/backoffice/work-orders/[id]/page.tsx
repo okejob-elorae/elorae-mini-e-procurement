@@ -17,6 +17,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
@@ -44,9 +46,11 @@ import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import {
   getWorkOrderById,
+  getWorkOrderRollAllocationStatus,
   issueWorkOrder,
   cancelWorkOrder,
-  getMaterialIssueForPrint
+  getMaterialIssueForPrint,
+  updateWOHppAdjustments
 } from '@/app/actions/production';
 import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { WOStatus } from '@/lib/constants/enums';
@@ -82,17 +86,41 @@ export default function WorkOrderDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [printIssueId, setPrintIssueId] = useState<string | null>(null);
   const [printData, setPrintData] = useState<Awaited<ReturnType<typeof getMaterialIssueForPrint>>>(null);
+  const [hppMarginPercent, setHppMarginPercent] = useState('');
+  const [hppAdditionalCost, setHppAdditionalCost] = useState('');
+  const [rollAllocationStatus, setRollAllocationStatus] = useState<Awaited<ReturnType<typeof getWorkOrderRollAllocationStatus>> | null>(null);
 
   useEffect(() => {
     if (!id) return;
     getWorkOrderById(id)
-      .then(setWO)
+      .then((data) => {
+        setWO(data);
+        setHppMarginPercent(
+          data?.hppMarginPercent != null ? String(data.hppMarginPercent) : ''
+        );
+        setHppAdditionalCost(
+          data?.hppAdditionalCost != null ? String(data.hppAdditionalCost) : ''
+        );
+      })
       .catch(() => {
         toast.error(tToasts('failedToLoadWorkOrder'));
         router.push('/backoffice/work-orders');
       })
       .finally(() => setIsLoading(false));
   }, [id, router]);
+
+  useEffect(() => {
+    if (!id || !wo) return;
+    const rb = (wo as { rollBreakdown?: unknown }).rollBreakdown;
+    const hasBreakdown = Array.isArray(rb) && rb.length > 0;
+    if (!hasBreakdown) {
+      setRollAllocationStatus(null);
+      return;
+    }
+    getWorkOrderRollAllocationStatus(id)
+      .then(setRollAllocationStatus)
+      .catch(() => setRollAllocationStatus(null));
+  }, [id, wo]);
 
   const handleIssue = async () => {
     if (!session?.user?.id || !wo) return;
@@ -179,6 +207,20 @@ export default function WorkOrderDetailPage() {
       }
       setTimeout(removeIframe, 500);
     }, 350);
+  };
+
+  const handleSaveHpp = async () => {
+    if (!wo) return;
+    try {
+      const updated = await updateWOHppAdjustments(String(wo.id), {
+        hppMarginPercent: hppMarginPercent.trim() ? Number(hppMarginPercent) : undefined,
+        hppAdditionalCost: hppAdditionalCost.trim() ? Number(hppAdditionalCost) : undefined,
+      });
+      setWO(updated as any);
+      toast.success('HPP adjustments updated');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update HPP');
+    }
   };
 
   if (isLoading || !wo) {
@@ -290,25 +332,55 @@ export default function WorkOrderDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Alokasi per roll</CardTitle>
-            <CardDescription>{tWO('notaKainPerRollDesc')}</CardDescription>
+            <CardDescription>
+              {tWO('notaKainPerRollDesc')}
+              {rollAllocationStatus != null && (
+                <span className="block mt-1 text-muted-foreground">
+                  Initial / Remaining / Used = qty on roll when created; qty left after issues; qty already issued from this roll.
+                </span>
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Roll / Ref</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Allocated</TableHead>
+                  {rollAllocationStatus != null && (
+                    <>
+                      <TableHead className="text-right">Initial</TableHead>
+                      <TableHead className="text-right">Remaining</TableHead>
+                      <TableHead className="text-right">Used</TableHead>
+                    </>
+                  )}
                   <TableHead>Notes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rollBreakdown.map((r, i) => (
-                  <TableRow key={i}>
-                    <TableCell>{r.rollRef ?? '-'}</TableCell>
-                    <TableCell className="text-right">{Number(r.qty ?? 0).toLocaleString()}</TableCell>
-                    <TableCell>{r.notes ?? '-'}</TableCell>
-                  </TableRow>
-                ))}
+                {rollBreakdown.map((r, i) => {
+                  const status = rollAllocationStatus?.[i];
+                  return (
+                    <TableRow key={i}>
+                      <TableCell>{r.rollRef ?? '-'}</TableCell>
+                      <TableCell className="text-right">{Number(r.qty ?? 0).toLocaleString()}</TableCell>
+                      {rollAllocationStatus != null && (
+                        <>
+                          <TableCell className="text-right">
+                            {status?.initialLength != null ? status.initialLength.toLocaleString() : '–'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {status?.remainingLength != null ? status.remainingLength.toLocaleString() : '–'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {status?.used != null ? status.used.toLocaleString() : '–'}
+                          </TableCell>
+                        </>
+                      )}
+                      <TableCell>{r.notes ?? '-'}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
             <Button
@@ -346,6 +418,41 @@ export default function WorkOrderDetailPage() {
         </Card>
       )}
 
+      {session?.user?.role === 'ADMIN' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>HPP Adjustment</CardTitle>
+            <CardDescription>Owner/Admin only: margin and additional costs.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Margin %</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                value={hppMarginPercent}
+                onChange={(e) => setHppMarginPercent(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Additional cost</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={hppAdditionalCost}
+                onChange={(e) => setHppAdditionalCost(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button onClick={handleSaveHpp}>Save HPP</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs defaultValue="details">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="details">Details</TabsTrigger>
@@ -354,6 +461,43 @@ export default function WorkOrderDetailPage() {
           <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
         </TabsList>
         <TabsContent value="details" className="space-y-4">
+          {Array.isArray((wo as any).steps) && (wo as any).steps.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Production Steps</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Step</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead className="text-right">Service price</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(wo as any).steps.map((step: any) => (
+                      <TableRow key={step.id}>
+                        <TableCell>{step.stepName || `Step ${step.sequence}`}</TableCell>
+                        <TableCell>{step.supplier?.name || step.supplier?.code || '-'}</TableCell>
+                        <TableCell className="text-right">
+                          {Number(step.servicePrice || 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {step.qty != null ? Number(step.qty).toLocaleString() : '-'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {step.totalCost != null ? Number(step.totalCost).toLocaleString() : '-'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle>Consumption Plan</CardTitle>

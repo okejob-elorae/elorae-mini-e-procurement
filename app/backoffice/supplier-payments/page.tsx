@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -60,10 +61,11 @@ export default function SupplierPaymentsPage() {
 
   const fetchSuppliers = async () => {
     try {
-      const res = await fetch('/api/suppliers?sync=true');
+      const res = await fetch('/api/suppliers?sync=true&approvedOnly=true');
       if (res.ok) {
         const data = await res.json();
-        setSuppliers(data.map((s: { id: string; name: string; code: string }) => ({ id: s.id, name: s.name, code: s.code })));
+        const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
+        setSuppliers(list.map((s: { id: string; name: string; code: string }) => ({ id: s.id, name: s.name, code: s.code })));
       }
     } catch {
       // ignore
@@ -155,17 +157,16 @@ export default function SupplierPaymentsPage() {
         <CardContent className="flex flex-wrap gap-4">
           <div className="space-y-2">
             <Label>Supplier</Label>
-            <Select value={supplierId || 'all'} onValueChange={(v) => setSupplierId(v === 'all' ? '' : v)}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="All suppliers" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All suppliers</SelectItem>
-                {suppliers.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name} ({s.code})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableCombobox
+              options={[
+                { value: 'all', label: 'All suppliers' },
+                ...suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })),
+              ]}
+              value={supplierId || 'all'}
+              onValueChange={(v) => setSupplierId(v === 'all' ? '' : v)}
+              placeholder="All suppliers"
+              triggerClassName="w-[200px]"
+            />
           </div>
           <div className="space-y-2">
             <Label>Payment due from</Label>

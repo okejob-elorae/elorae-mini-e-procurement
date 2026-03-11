@@ -55,9 +55,9 @@ export async function getProcurementReport(filters?: {
   return { pos, summary };
 }
 
-// Inventory Report
+// Inventory Report (one row per item, aggregated from variant-level InventoryValue)
 export async function getInventoryReport() {
-  const inventory = await prisma.inventoryValue.findMany({
+  const rows = await prisma.inventoryValue.findMany({
     include: {
       item: {
         include: {
@@ -69,24 +69,45 @@ export async function getInventoryReport() {
     },
     orderBy: { item: { sku: 'asc' } }
   });
-  
+
+  const byItem = new Map<string, { qtyOnHand: number; totalValue: number; item: (typeof rows)[0]['item'] }>();
+  for (const r of rows) {
+    const qty = Number(r.qtyOnHand);
+    const val = Number(r.totalValue);
+    const existing = byItem.get(r.itemId);
+    if (existing) {
+      existing.qtyOnHand += qty;
+      existing.totalValue += val;
+    } else {
+      byItem.set(r.itemId, { qtyOnHand: qty, totalValue: val, item: r.item });
+    }
+  }
+  const inventory = Array.from(byItem.entries()).map(([itemId, agg]) => ({
+    itemId,
+    qtyOnHand: agg.qtyOnHand,
+    totalValue: agg.totalValue,
+    avgCost: agg.qtyOnHand > 0 ? agg.totalValue / agg.qtyOnHand : 0,
+    item: agg.item,
+  }));
+
+  const totalValue = inventory.reduce((sum, inv) => sum + inv.totalValue, 0);
+  const totalQty = inventory.reduce((sum, inv) => sum + inv.qtyOnHand, 0);
   const summary = {
     totalItems: inventory.length,
-    totalValue: inventory.reduce((sum, inv) => sum + Number(inv.totalValue), 0),
-    totalQty: inventory.reduce((sum, inv) => sum + Number(inv.qtyOnHand), 0),
-    lowStock: inventory.filter(inv => 
-      inv.item.reorderPoint && inv.qtyOnHand <= inv.item.reorderPoint
+    totalValue,
+    totalQty,
+    lowStock: inventory.filter(inv =>
+      inv.item.reorderPoint != null && inv.qtyOnHand <= Number(inv.item.reorderPoint)
     ).length,
-    zeroStock: inventory.filter(inv => Number(inv.qtyOnHand) === 0).length
+    zeroStock: inventory.filter(inv => inv.qtyOnHand === 0).length
   };
-  
-  // Group by item type
+
   const byType = {
     fabric: inventory.filter(i => i.item.type === 'FABRIC'),
     accessories: inventory.filter(i => i.item.type === 'ACCESSORIES'),
     finishedGood: inventory.filter(i => i.item.type === 'FINISHED_GOOD')
   };
-  
+
   return { inventory, summary, byType };
 }
 
@@ -295,10 +316,18 @@ export async function getDashboardSummary() {
     })
   ]);
 
-  const lowStockItems = inventoryWithReorder.filter(
-    (r) =>
-      r.item.reorderPoint != null &&
-      Number(r.qtyOnHand) <= Number(r.item.reorderPoint)
+  const inventoryByItem = new Map<string, { qtyOnHand: number; reorderPoint: number | null }>();
+  for (const r of inventoryWithReorder) {
+    const rp = r.item.reorderPoint != null ? Number(r.item.reorderPoint) : null;
+    const existing = inventoryByItem.get(r.itemId);
+    if (existing) {
+      existing.qtyOnHand += Number(r.qtyOnHand);
+    } else {
+      inventoryByItem.set(r.itemId, { qtyOnHand: Number(r.qtyOnHand), reorderPoint: rp });
+    }
+  }
+  const lowStockItems = Array.from(inventoryByItem.values()).filter(
+    (a) => a.reorderPoint != null && a.qtyOnHand <= a.reorderPoint
   ).length;
   
   return {

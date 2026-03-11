@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -19,7 +20,7 @@ import {
 } from '@/components/ui/select';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { createStockAdjustment } from '@/app/actions/inventory';
-import { getCurrentStockSummary } from '@/app/actions/stock-card';
+import { getCurrentStockSummary, getItemVariantOptions } from '@/app/actions/stock-card';
 import { getInventoryValue } from '@/lib/inventory/costing';
 import { getItemUomAndConversions } from '@/app/actions/uom';
 import { Loader2 } from 'lucide-react';
@@ -39,6 +40,8 @@ export function AdjustmentModal({
 }: AdjustmentModalProps) {
   const { data: session } = useSession();
   const [itemId, setItemId] = useState('');
+  const [variantSku, setVariantSku] = useState('');
+  const [variantOptions, setVariantOptions] = useState<string[]>([]);
   const [type, setType] = useState<'POSITIVE' | 'NEGATIVE'>('POSITIVE');
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState('');
@@ -62,13 +65,30 @@ export function AdjustmentModal({
 
   useEffect(() => {
     if (!itemId || !open) {
+      setVariantOptions([]);
+      setVariantSku('');
+      return;
+    }
+    getItemVariantOptions(itemId).then(setVariantOptions);
+  }, [itemId, open]);
+
+  useEffect(() => {
+    if (!itemId || !open) {
+      setCurrentStock(null);
+      setUomData(null);
+      setSelectedUomId('');
+      return;
+    }
+    const needsVariant = variantOptions.length > 0;
+    const effectiveVariant = needsVariant ? (variantSku || undefined) : undefined;
+    if (needsVariant && !variantSku) {
       setCurrentStock(null);
       setUomData(null);
       setSelectedUomId('');
       return;
     }
     Promise.all([
-      getInventoryValue(itemId),
+      getInventoryValue(itemId, effectiveVariant ?? null),
       getItemUomAndConversions(itemId),
     ]).then(([v, uom]) => {
       if (v)
@@ -81,7 +101,7 @@ export function AdjustmentModal({
       setUomData(uom ?? null);
       setSelectedUomId(uom?.baseUom?.id ?? '');
     });
-  }, [itemId, open]);
+  }, [itemId, variantSku, variantOptions.length, open]);
 
   const handleOpenPin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,6 +111,10 @@ export function AdjustmentModal({
     }
     if (!itemId) {
       toast.error('Select an item');
+      return;
+    }
+    if (variantOptions.length > 0 && !variantSku) {
+      toast.error('Select a variant');
       return;
     }
     const qtyNum = parseFloat(qty);
@@ -135,6 +159,7 @@ export function AdjustmentModal({
       await createStockAdjustment(
         {
           itemId,
+          variantSku: variantSku || undefined,
           type,
           qty: qtyNum,
           uomId: selectedUomId || undefined,
@@ -148,6 +173,8 @@ export function AdjustmentModal({
       onClose();
       onSuccess?.();
       setItemId('');
+      setVariantSku('');
+      setVariantOptions([]);
       setType('POSITIVE');
       setQty('');
       setReason('');
@@ -159,6 +186,8 @@ export function AdjustmentModal({
 
   const reset = () => {
     setItemId('');
+    setVariantSku('');
+    setVariantOptions([]);
     setType('POSITIVE');
     setQty('');
     setReason('');
@@ -186,19 +215,38 @@ export function AdjustmentModal({
           <form onSubmit={handleOpenPin} className="space-y-4">
             <div className="space-y-2">
               <Label>Item *</Label>
-              <Select value={itemId} onValueChange={setItemId}>
-                <SelectTrigger className="min-h-[44px]">
-                  <SelectValue placeholder="Select item" />
-                </SelectTrigger>
-                <SelectContent>
-                  {summary.map((s) => (
-                    <SelectItem key={s.itemId} value={s.itemId}>
-                      {s.item?.sku ?? '-'} – {s.item?.nameId ?? '-'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableCombobox
+                options={summary.map((s) => ({
+                  value: s.itemId,
+                  label: `${s.item?.sku ?? '-'} – ${s.item?.nameId ?? '-'}`,
+                }))}
+                value={itemId}
+                onValueChange={setItemId}
+                placeholder="Select item"
+                triggerClassName="min-h-[44px]"
+              />
             </div>
+
+            {variantOptions.length > 0 && (
+              <div className="space-y-2">
+                <Label>Variant *</Label>
+                <Select
+                  value={variantSku}
+                  onValueChange={setVariantSku}
+                >
+                  <SelectTrigger className="min-h-[44px]">
+                    <SelectValue placeholder="Select variant" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {variantOptions.map((sku) => (
+                      <SelectItem key={sku} value={sku}>
+                        {sku}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {currentStock != null && (
               <div className="rounded-md border p-3 text-sm">
@@ -234,24 +282,19 @@ export function AdjustmentModal({
             {uomData && (
               <div className="space-y-2">
                 <Label>UOM</Label>
-                <Select value={selectedUomId} onValueChange={setSelectedUomId}>
-                  <SelectTrigger className="min-h-[44px]">
-                    <SelectValue placeholder="UOM" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={uomData.baseUom.id}>
-                      {uomData.baseUom.code} (base)
-                    </SelectItem>
-                    {uomData.conversions.map((c) => {
+                <SearchableCombobox
+                  options={[
+                    { value: uomData.baseUom.id, label: `${uomData.baseUom.code} (base)` },
+                    ...uomData.conversions.map((c) => {
                       const other = c.fromUomId === uomData.baseUom.id ? c.toUom : c.fromUom;
-                      return (
-                        <SelectItem key={other.id} value={other.id}>
-                          {other.code} ({other.nameId})
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                      return { value: other.id, label: `${other.code} (${other.nameId})` };
+                    }),
+                  ]}
+                  value={selectedUomId}
+                  onValueChange={setSelectedUomId}
+                  placeholder="UOM"
+                  triggerClassName="min-h-[44px]"
+                />
               </div>
             )}
 

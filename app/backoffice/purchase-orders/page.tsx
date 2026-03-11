@@ -41,8 +41,10 @@ import { toast } from 'sonner';
 import { getPOs, submitPO, cancelPO } from '@/app/actions/purchase-orders';
 import { POStatus } from '@/lib/constants/enums';
 import { ETABadge } from '@/components/ui/ETABadge';
+import { Progress } from '@/components/ui/progress';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { cn } from '@/lib/utils';
 
 interface PurchaseOrder {
   id: string;
@@ -175,6 +177,19 @@ export default function PurchaseOrdersPage() {
     );
   };
 
+  const getReceivedProgress = (po: PurchaseOrder) => {
+    const totalOrdered = po.items.reduce((sum, item) => sum + Number(item.qty), 0);
+    const totalReceived = po.items.reduce((sum, item) => sum + Number(item.receivedQty), 0);
+    if (totalOrdered <= 0) return { ratio: 0, totalOrdered: 0, totalReceived: 0, overReceived: false };
+    const ratio = totalReceived / totalOrdered;
+    return {
+      ratio,
+      totalOrdered,
+      totalReceived,
+      overReceived: ratio > 1,
+    };
+  };
+
   const filteredPOs = pos.filter(po => 
     po.docNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
     po.supplier.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -257,6 +272,7 @@ export default function PurchaseOrdersPage() {
                     <TableHead>ETA</TableHead>
                     <TableHead>Payment</TableHead>
                     <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="min-w-[120px]">Progress</TableHead>
                     <TableHead className="text-right">Pending</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
@@ -299,6 +315,30 @@ export default function PurchaseOrdersPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         Rp {Number(po.grandTotal).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const { ratio, totalOrdered, totalReceived, overReceived } = getReceivedProgress(po);
+                          if (totalOrdered <= 0) return <span className="text-muted-foreground text-sm">—</span>;
+                          const percent = Math.min(100, ratio * 100);
+                          return (
+                            <div className="space-y-1 min-w-[100px]">
+                              <Progress
+                                value={percent}
+                                className={cn(
+                                  overReceived && 'bg-amber-100 dark:bg-amber-900/30 [&_[data-slot=progress-indicator]]:bg-amber-500'
+                                )}
+                              />
+                              <p className={cn(
+                                'text-xs tabular-nums',
+                                overReceived ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'
+                              )}>
+                                {totalReceived.toLocaleString()} / {totalOrdered.toLocaleString()}
+                                {overReceived && <span className="ml-1">(over)</span>}
+                              </p>
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
                         {getPendingQty(po).toLocaleString()}

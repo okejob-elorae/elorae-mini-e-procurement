@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -93,10 +94,11 @@ export default function VendorReturnsPage() {
   useEffect(() => {
     const loadVendors = async () => {
       try {
-        const res = await fetch('/api/suppliers');
+        const res = await fetch('/api/suppliers?approvedOnly=true');
         if (res.ok) {
           const data = await res.json();
-          setVendors((data as SupplierOption[]) || []);
+          const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
+          setVendors((list as SupplierOption[]) || []);
         }
       } catch {
         // non-blocking
@@ -171,22 +173,16 @@ export default function VendorReturnsPage() {
             className="pl-9"
           />
         </div>
-        <Select
+        <SearchableCombobox
+          options={[
+            { value: '__all__', label: 'All vendors' },
+            ...vendors.map((v) => ({ value: v.id, label: `${v.code} – ${v.name}` })),
+          ]}
           value={vendorFilter}
           onValueChange={setVendorFilter}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Vendor" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All vendors</SelectItem>
-            {vendors.map((v) => (
-              <SelectItem key={v.id} value={v.id}>
-                {v.code} – {v.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          placeholder="Vendor"
+          triggerClassName="w-[180px]"
+        />
         <Select
           value={statusFilter}
           onValueChange={setStatusFilter}

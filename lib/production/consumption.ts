@@ -22,21 +22,26 @@ export async function calculateMaterialNeeds(
 ): Promise<MaterialRequirement[]> {
   const rules = await prisma.consumptionRule.findMany({
     where: { finishedGoodId, isActive: true },
-    include: { 
-      material: { 
-        include: { 
+    include: {
+      material: {
+        include: {
           uom: true,
-          inventoryValue: true
-        } 
-      } 
-    }
+          inventoryValues: { select: { qtyOnHand: true } },
+        },
+      },
+    },
   });
-  
-  return rules.map(rule => {
+
+  return rules.map((rule) => {
     const baseQty = plannedOutput.mul(rule.qtyRequired.toString());
     const wasteMultiplier = new Decimal(1).plus(new Decimal(rule.wastePercent.toString()).div(100));
     const totalNeeded = baseQty.mul(wasteMultiplier);
-    const availableStock = new Decimal(rule.material.inventoryValue?.qtyOnHand?.toString() || 0);
+    const availableStock = new Decimal(
+      (rule.material.inventoryValues ?? []).reduce(
+        (sum, r) => sum + Number(r.qtyOnHand),
+        0
+      )
+    );
     
     return {
       itemId: rule.materialId,
@@ -108,17 +113,15 @@ export async function getConsumptionRules(finishedGoodId: string) {
           uom: {
             select: {
               code: true,
-              nameId: true
-            }
+              nameId: true,
+            },
           },
-          inventoryValue: {
-            select: {
-              qtyOnHand: true
-            }
-          }
-        }
-      }
-    }
+          inventoryValues: {
+            select: { qtyOnHand: true },
+          },
+        },
+      },
+    },
   });
 }
 

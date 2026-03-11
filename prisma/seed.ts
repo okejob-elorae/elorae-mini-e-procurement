@@ -132,6 +132,8 @@ async function main() {
     // Settings
     { code: 'settings_documents:view', module: 'settings', action: 'documents_view', description: 'View document settings' },
     { code: 'settings_documents:manage', module: 'settings', action: 'documents_manage', description: 'Manage document settings' },
+    { code: 'settings_tax:view', module: 'settings', action: 'tax_view', description: 'View tax (PPN) settings' },
+    { code: 'settings_tax:manage', module: 'settings', action: 'tax_manage', description: 'Manage tax (PPN) settings' },
     { code: 'settings_uom:view', module: 'settings', action: 'uom_view', description: 'View UOM settings' },
     { code: 'settings_uom:manage', module: 'settings', action: 'uom_manage', description: 'Manage UOM settings' },
     { code: 'settings_security:view', module: 'settings', action: 'security_view', description: 'View security settings' },
@@ -793,16 +795,29 @@ async function main() {
     { itemId: jeansTrousers.id, qtyOnHand: 0, avgCost: 0, totalValue: 0 },
   ];
   for (const inv of invData) {
-    await prisma.inventoryValue.upsert({
-      where: { itemId: inv.itemId },
-      update: {},
-      create: {
-        itemId: inv.itemId,
-        qtyOnHand: inv.qtyOnHand,
-        avgCost: inv.avgCost,
-        totalValue: inv.totalValue,
-      },
+    const existing = await prisma.inventoryValue.findFirst({
+      where: { itemId: inv.itemId, variantSku: null },
     });
+    if (existing) {
+      await prisma.inventoryValue.update({
+        where: { id: existing.id },
+        data: {
+          qtyOnHand: inv.qtyOnHand,
+          avgCost: inv.avgCost,
+          totalValue: inv.totalValue,
+        },
+      });
+    } else {
+      await prisma.inventoryValue.create({
+        data: {
+          itemId: inv.itemId,
+          variantSku: null,
+          qtyOnHand: inv.qtyOnHand,
+          avgCost: inv.avgCost,
+          totalValue: inv.totalValue,
+        },
+      });
+    }
   }
   console.log("InventoryValue OK");
 
@@ -944,6 +959,7 @@ async function main() {
     await prisma.stockMovement.create({
       data: {
         itemId: fabric1.id,
+        variantSku: null,
         type: MoveType.IN,
         refType: "GRN",
         refId: grn1.id,
@@ -972,6 +988,7 @@ async function main() {
     await prisma.stockMovement.create({
       data: {
         itemId: acc2.id,
+        variantSku: null,
         type: MoveType.IN,
         refType: "GRN",
         refId: grn2.id,
@@ -1007,6 +1024,7 @@ async function main() {
     await prisma.stockMovement.create({
       data: {
         itemId: fabric2.id,
+        variantSku: null,
         type: MoveType.ADJUSTMENT,
         refType: "ADJUSTMENT",
         refId: adj1.id,
@@ -1112,6 +1130,7 @@ async function main() {
     await prisma.stockMovement.create({
       data: {
         itemId: fabric1.id,
+        variantSku: null,
         type: MoveType.OUT,
         refType: "WO_ISSUE",
         refId: issue1.id,
@@ -1311,6 +1330,198 @@ async function main() {
     await prisma.docNumberConfig.update({ where: { docType: "RET" }, data: { lastNumber: 2, year, month } });
   }
   console.log("DocNumberConfig lastNumber bumped (where applicable)");
+
+  // ---------- HPP test case: Article 2700001 ----------
+  const itemKain = await prisma.item.upsert({
+    where: { sku: "FB-001" },
+    update: {},
+    create: {
+      sku: "FB-001",
+      nameId: "Kain Utama",
+      nameEn: "Main Fabric",
+      type: ItemType.FABRIC,
+      uomId: uomYard.id,
+    },
+  });
+  const itemKancing = await prisma.item.upsert({
+    where: { sku: "AC-001" },
+    update: { defaultPpnIncluded: false },
+    create: {
+      sku: "AC-001",
+      nameId: "Kancing",
+      nameEn: "Button",
+      type: ItemType.ACCESSORIES,
+      uomId: uomPcs.id,
+      defaultPpnIncluded: false,
+    },
+  });
+  const itemZipper = await prisma.item.upsert({
+    where: { sku: "AC-002" },
+    update: {},
+    create: {
+      sku: "AC-002",
+      nameId: "Zipper",
+      nameEn: "Zipper",
+      type: ItemType.ACCESSORIES,
+      uomId: uomPcs.id,
+    },
+  });
+  const itemTali = await prisma.item.upsert({
+    where: { sku: "AC-003" },
+    update: {},
+    create: {
+      sku: "AC-003",
+      nameId: "Tali",
+      nameEn: "Cord",
+      type: ItemType.ACCESSORIES,
+      uomId: uomPcs.id,
+    },
+  });
+  const itemKaret = await prisma.item.upsert({
+    where: { sku: "AC-004" },
+    update: {},
+    create: {
+      sku: "AC-004",
+      nameId: "Karet",
+      nameEn: "Elastic",
+      type: ItemType.ACCESSORIES,
+      uomId: uomMeter.id,
+    },
+  });
+  const itemKantong = await prisma.item.upsert({
+    where: { sku: "AC-005" },
+    update: {},
+    create: {
+      sku: "AC-005",
+      nameId: "Kain Kantong",
+      nameEn: "Pocket Lining Fabric",
+      type: ItemType.ACCESSORIES,
+      uomId: uomPcs.id,
+    },
+  });
+  const fg2700001 = await prisma.item.upsert({
+    where: { sku: "2700001" },
+    update: {},
+    create: {
+      sku: "2700001",
+      nameId: "Artikel 2700001",
+      nameEn: "Article 2700001",
+      type: ItemType.FINISHED_GOOD,
+      uomId: uomPcs.id,
+    },
+  });
+  const hppBomData = [
+    { finishedGoodId: fg2700001.id, materialId: itemKain.id, qtyRequired: 1.6, wastePercent: 0 },
+    { finishedGoodId: fg2700001.id, materialId: itemKancing.id, qtyRequired: 8, wastePercent: 0 },
+    { finishedGoodId: fg2700001.id, materialId: itemZipper.id, qtyRequired: 1, wastePercent: 0 },
+    { finishedGoodId: fg2700001.id, materialId: itemTali.id, qtyRequired: 1, wastePercent: 0 },
+    { finishedGoodId: fg2700001.id, materialId: itemKaret.id, qtyRequired: 1, wastePercent: 0 },
+    { finishedGoodId: fg2700001.id, materialId: itemKantong.id, qtyRequired: 1, wastePercent: 0 },
+  ];
+  for (const b of hppBomData) {
+    await prisma.consumptionRule.upsert({
+      where: {
+        finishedGoodId_materialId: { finishedGoodId: b.finishedGoodId, materialId: b.materialId },
+      },
+      update: {},
+      create: {
+        finishedGoodId: b.finishedGoodId,
+        materialId: b.materialId,
+        qtyRequired: b.qtyRequired,
+        wastePercent: b.wastePercent,
+      },
+    });
+  }
+  const hppInvData = [
+    { itemId: itemKain.id, qtyOnHand: 2000, avgCost: 37000, totalValue: 74_000_000 },
+    { itemId: itemKancing.id, qtyOnHand: 10000, avgCost: 100, totalValue: 1_000_000 },
+    { itemId: itemZipper.id, qtyOnHand: 2000, avgCost: 1000, totalValue: 2_000_000 },
+    { itemId: itemTali.id, qtyOnHand: 2000, avgCost: 1000, totalValue: 2_000_000 },
+    { itemId: itemKaret.id, qtyOnHand: 2000, avgCost: 1000, totalValue: 2_000_000 },
+    { itemId: itemKantong.id, qtyOnHand: 2000, avgCost: 6250, totalValue: 12_500_000 },
+  ];
+  for (const inv of hppInvData) {
+    const existing = await prisma.inventoryValue.findFirst({
+      where: { itemId: inv.itemId, variantSku: null },
+    });
+    const payload = { qtyOnHand: inv.qtyOnHand, avgCost: inv.avgCost, totalValue: inv.totalValue };
+    if (existing) {
+      await prisma.inventoryValue.update({ where: { id: existing.id }, data: payload });
+    } else {
+      await prisma.inventoryValue.create({
+        data: { ...payload, itemId: inv.itemId, variantSku: null },
+      });
+    }
+  }
+  const existingHppWo = await prisma.workOrder.findFirst({
+    where: { docNumber: "WO/2026/HPP01" },
+  });
+  if (!existingHppWo) {
+    const consumptionPlan2700001 = [
+      { itemId: itemKain.id, itemName: "Kain Utama", uomId: uomYard.id, uomCode: "YD", qtyRequired: 1.6, wastePercent: 0, plannedQty: 1600, issuedQty: 1600, returnedQty: 0 },
+      { itemId: itemKancing.id, itemName: "Kancing", uomId: uomPcs.id, uomCode: "PCS", qtyRequired: 8, wastePercent: 0, plannedQty: 8000, issuedQty: 8000, returnedQty: 0 },
+      { itemId: itemZipper.id, itemName: "Zipper", uomId: uomPcs.id, uomCode: "PCS", qtyRequired: 1, wastePercent: 0, plannedQty: 1000, issuedQty: 1000, returnedQty: 0 },
+      { itemId: itemTali.id, itemName: "Tali", uomId: uomPcs.id, uomCode: "PCS", qtyRequired: 1, wastePercent: 0, plannedQty: 1000, issuedQty: 1000, returnedQty: 0 },
+      { itemId: itemKaret.id, itemName: "Karet", uomId: uomMeter.id, uomCode: "MTR", qtyRequired: 1, wastePercent: 0, plannedQty: 1000, issuedQty: 1000, returnedQty: 0 },
+      { itemId: itemKantong.id, itemName: "Kain Kantong", uomId: uomPcs.id, uomCode: "PCS", qtyRequired: 1, wastePercent: 0, plannedQty: 1000, issuedQty: 1000, returnedQty: 0 },
+    ];
+    const woHpp = await prisma.workOrder.create({
+      data: {
+        docNumber: "WO/2026/HPP01",
+        vendorId: supplier3.id,
+        finishedGoodId: fg2700001.id,
+        outputMode: OutputMode.GENERIC,
+        plannedQty: 1000,
+        status: WOStatus.IN_PRODUCTION,
+        issuedAt: new Date(),
+        consumptionPlan: JSON.stringify(consumptionPlan2700001),
+        hppMarginPercent: 100,
+        hppAdditionalCost: 3000,
+        createdById: production.id,
+      },
+    });
+    await prisma.workOrderStep.createMany({
+      data: [
+        { woId: woHpp.id, sequence: 1, supplierId: supplier3.id, stepName: "Jahit (Sewing)", servicePrice: 25000, servicePpnIncluded: false },
+        { woId: woHpp.id, sequence: 2, supplierId: supplier3.id, stepName: "Washing", servicePrice: 1750, servicePpnIncluded: true },
+      ],
+    });
+    const fabricIssueItems = [
+      { itemId: itemKain.id, qty: 1600, uomId: uomYard.id, avgCostAtIssue: 37000, ppnIncluded: true, totalCost: 37000 * 1600 },
+    ];
+    const accIssueItems = [
+      { itemId: itemKancing.id, qty: 8000, uomId: uomPcs.id, avgCostAtIssue: 100, ppnIncluded: false, totalCost: 100 * 8000 },
+      { itemId: itemZipper.id, qty: 1000, uomId: uomPcs.id, avgCostAtIssue: 1000, ppnIncluded: true, totalCost: 1000 * 1000 },
+      { itemId: itemTali.id, qty: 1000, uomId: uomPcs.id, avgCostAtIssue: 1000, ppnIncluded: true, totalCost: 1000 * 1000 },
+      { itemId: itemKaret.id, qty: 1000, uomId: uomMeter.id, avgCostAtIssue: 1000, ppnIncluded: true, totalCost: 1000 * 1000 },
+      { itemId: itemKantong.id, qty: 1000, uomId: uomPcs.id, avgCostAtIssue: 6250, ppnIncluded: true, totalCost: 6250 * 1000 },
+    ];
+    await prisma.materialIssue.create({
+      data: {
+        docNumber: `ISS/${year}/${monthStr}/HPP01-F`,
+        woId: woHpp.id,
+        issueType: IssueType.FABRIC,
+        isPartial: false,
+        items: JSON.stringify(fabricIssueItems),
+        totalCost: 37000 * 1600,
+        issuedById: warehouse.id,
+        syncStatus: SyncStatus.SYNCED,
+      },
+    });
+    await prisma.materialIssue.create({
+      data: {
+        docNumber: `ISS/${year}/${monthStr}/HPP01-A`,
+        woId: woHpp.id,
+        issueType: IssueType.ACCESSORIES,
+        isPartial: false,
+        items: JSON.stringify(accIssueItems),
+        totalCost: 800000 + 1000000 + 1000000 + 1000000 + 6250000,
+        issuedById: warehouse.id,
+        syncStatus: SyncStatus.SYNCED,
+      },
+    });
+    console.log("HPP test WO (Article 2700001) seeded: WO/2026/HPP01");
+  }
 
   console.log("\nSeeding completed!");
   console.log("Login: admin@elorae.com / admin123 (PIN: 123456)");

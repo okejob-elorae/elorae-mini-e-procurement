@@ -1,10 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
-import { ArrowLeft, Loader2, Calculator, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, Calculator, HelpCircle, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Popover,
   PopoverContent,
@@ -25,19 +28,121 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { getHPPList } from '@/app/actions/hpp';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { getHPPList, type HPPBreakdown } from '@/app/actions/hpp';
+import { updateWOHppAdjustments } from '@/app/actions/production';
+import { getItemsByType } from '@/app/actions/items';
+import { ItemType } from '@prisma/client';
+import { toast } from 'sonner';
+
+const fmt = (n: number | null | undefined) =>
+  n != null ? `Rp ${n.toLocaleString('id-ID', { minimumFractionDigits: 2 })}` : '—';
+const fmtNum = (n: number | null | undefined) =>
+  n != null ? n.toLocaleString('id-ID', { minimumFractionDigits: 2 }) : '—';
 
 export default function HPPPage() {
   const t = useTranslations('hpp');
-  const [rows, setRows] = useState<Awaited<ReturnType<typeof getHPPList>>>([]);
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === 'ADMIN';
+
+  const [rows, setRows] = useState<HPPBreakdown[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [finishedGoods, setFinishedGoods] = useState<Array<{ value: string; label: string }>>([]);
+  const [vendors, setVendors] = useState<Array<{ value: string; label: string }>>([]);
+
+  const [filterFg, setFilterFg] = useState('');
+  const [filterDateFrom, setFilterDateFrom] = useState('');
+  const [filterDateTo, setFilterDateTo] = useState('');
+  const [filterVendor, setFilterVendor] = useState('');
+
+  const [detailRow, setDetailRow] = useState<HPPBreakdown | null>(null);
+  const [editMargin, setEditMargin] = useState<string>('');
+  const [editAdditional, setEditAdditional] = useState<string>('');
+  const [savingAdjustments, setSavingAdjustments] = useState(false);
+
+  const loadData = useCallback(() => {
+    setIsLoading(true);
+    const dateFrom = filterDateFrom ? new Date(filterDateFrom + 'T00:00:00') : undefined;
+    const dateTo = filterDateTo
+      ? new Date(filterDateTo + 'T23:59:59.999')
+      : undefined;
+    getHPPList({
+      finishedGoodId: filterFg || undefined,
+      dateFrom,
+      dateTo,
+      vendorId: filterVendor || undefined,
+    })
+      .then(setRows)
+      .catch((err) => {
+        setRows([]);
+        toast.error(err instanceof Error ? err.message : t('failedToLoadData'));
+      })
+      .finally(() => setIsLoading(false));
+  }, [filterFg, filterDateFrom, filterDateTo, filterVendor, t]);
 
   useEffect(() => {
-    getHPPList()
-      .then(setRows)
-      .catch(() => setRows([]))
-      .finally(() => setIsLoading(false));
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    Promise.all([
+      getItemsByType(ItemType.FINISHED_GOOD),
+      fetch('/api/suppliers?approvedOnly=true').then((r) => r.ok ? r.json() : []),
+    ]).then(([fgList, supList]) => {
+      const fg = (fgList as Array<{ id: string; sku: string; nameId: string }>) ?? [];
+      setFinishedGoods(fg.map((x) => ({ value: x.id, label: `${x.nameId} (${x.sku})` })));
+      const list = Array.isArray(supList) ? supList : (supList?.data ?? []);
+      setVendors(list.map((x: { id: string; name: string; code?: string }) => ({ value: x.id, label: `${x.name} (${x.code ?? ''})` })));
+    }).catch(() => {});
   }, []);
+
+  const openDetail = (row: HPPBreakdown) => {
+    setDetailRow(row);
+    setEditMargin(row.marginPercent != null ? String(row.marginPercent) : '');
+    setEditAdditional(row.additionalCost != null ? String(row.additionalCost) : '');
+  };
+
+  const handleSaveAdjustments = async () => {
+    if (!detailRow || !isAdmin) return;
+    setSavingAdjustments(true);
+    try {
+      const margin = editMargin === '' ? undefined : parseFloat(editMargin);
+      const additional = editAdditional === '' ? undefined : parseFloat(editAdditional);
+      if (margin !== undefined && (Number.isNaN(margin) || margin < 0 || margin > 100)) {
+        toast.error('Margin must be between 0 and 100');
+        return;
+      }
+      if (additional !== undefined && (Number.isNaN(additional) || additional < 0)) {
+        toast.error('Additional cost must be ≥ 0');
+        return;
+      }
+      await updateWOHppAdjustments(detailRow.woId, {
+        hppMarginPercent: margin,
+        hppAdditionalCost: additional,
+      });
+      toast.success('HPP adjustments saved');
+      const updated = await getHPPList({
+        finishedGoodId: filterFg || undefined,
+        dateFrom: filterDateFrom ? new Date(filterDateFrom) : undefined,
+        dateTo: filterDateTo ? new Date(filterDateTo) : undefined,
+        vendorId: filterVendor || undefined,
+      });
+      const found = updated.find((r) => r.woId === detailRow.woId);
+      if (found) setDetailRow(found);
+      setRows(updated);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setSavingAdjustments(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -62,13 +167,7 @@ export default function HPPPage() {
               <h3 className="font-semibold mb-2">{t('helpTitle')}</h3>
               <div className="text-sm text-muted-foreground space-y-2">
                 <p>{t('helpIntro')}</p>
-                <p>{t('helpWhenStored')}</p>
-                <ul className="list-disc pl-4 space-y-1">
-                  <li>{t('helpMaterialCost')}</li>
-                  <li>{t('helpAvgCostPerUnit')}</li>
-                </ul>
                 <p>{t('helpTableExplanation')}</p>
-                <p>{t('helpFuture')}</p>
               </div>
             </PopoverContent>
           </Popover>
@@ -77,7 +176,46 @@ export default function HPPPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('cardTitle')}</CardTitle>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-2">
+              <Label>{t('finishedGood')}</Label>
+              <SearchableCombobox
+                options={[{ value: '', label: '—' }, ...finishedGoods]}
+                value={filterFg}
+                onValueChange={setFilterFg}
+                placeholder={t('finishedGood')}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('dateFrom')}</Label>
+              <Input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('dateTo')}</Label>
+              <Input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('vendor')}</Label>
+              <SearchableCombobox
+                options={[{ value: '', label: '—' }, ...vendors]}
+                value={filterVendor}
+                onValueChange={setFilterVendor}
+                placeholder={t('vendor')}
+              />
+            </div>
+            <Button onClick={loadData} disabled={isLoading}>
+              {t('applyFilters')}
+            </Button>
+          </div>
+          <CardTitle className="pt-2">{t('cardTitle')}</CardTitle>
           <CardDescription>{t('cardDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -88,41 +226,54 @@ export default function HPPPage() {
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Calculator className="h-12 w-12 mb-4" />
-              <p>{t('noFinishedGoods')}</p>
+              <p>{t('noRows')}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t('sku')}</TableHead>
-                    <TableHead>{t('name')}</TableHead>
-                    <TableHead className="text-right">{t('receiptCount')}</TableHead>
-                    <TableHead className="text-right">{t('lastAvgCostPerUnit')}</TableHead>
-                    <TableHead className="text-right">{t('lastMaterialCost')}</TableHead>
-                    <TableHead>{t('lastReceipt')}</TableHead>
+                    <TableHead>{t('woDocNumber')}</TableHead>
+                    <TableHead>{t('articleFg')}</TableHead>
+                    <TableHead className="text-right">{t('plannedQty')}</TableHead>
+                    <TableHead className="text-right">{t('fabricCostPcs')}</TableHead>
+                    <TableHead className="text-right">{t('accessoriesCostPcs')}</TableHead>
+                    <TableHead className="text-right">{t('serviceCostPcs')}</TableHead>
+                    <TableHead className="text-right">{t('hppPcs')}</TableHead>
+                    <TableHead>{t('ppnStatus')}</TableHead>
+                    <TableHead className="text-right">{t('marginPercent')}</TableHead>
+                    <TableHead className="text-right">{t('sellingPrice')}</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={row.itemId}>
-                      <TableCell className="font-medium">{row.sku}</TableCell>
-                      <TableCell>{row.nameId}</TableCell>
-                      <TableCell className="text-right">{row.receiptCount}</TableCell>
-                      <TableCell className="text-right">
-                        {row.lastAvgCostPerUnit != null
-                          ? `Rp ${row.lastAvgCostPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
-                          : '—'}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.lastMaterialCost != null
-                          ? `Rp ${row.lastMaterialCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
-                          : '—'}
-                      </TableCell>
+                    <TableRow key={row.woId}>
+                      <TableCell className="font-medium">{row.woDocNumber}</TableCell>
+                      <TableCell>{row.finishedGoodSku} — {row.finishedGoodName}</TableCell>
+                      <TableCell className="text-right">{fmtNum(row.plannedQty)}</TableCell>
+                      <TableCell className="text-right">{fmt(row.fabricCostPerPcs)}</TableCell>
+                      <TableCell className="text-right">{fmt(row.accessoriesCostPerPcs)}</TableCell>
+                      <TableCell className="text-right">{fmt(row.serviceCostPerPcs)}</TableCell>
+                      <TableCell className="text-right font-medium">{fmt(row.subtotal)}</TableCell>
                       <TableCell>
-                        {row.lastReceiptAt
-                          ? new Date(row.lastReceiptAt).toLocaleDateString('id-ID')
-                          : '—'}
+                        <Badge variant={row.hasMixedPPN ? 'secondary' : 'outline'}>
+                          {row.hasMixedPPN ? t('ppnMixed') : t('ppnOk')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">{row.marginPercent != null ? `${fmtNum(row.marginPercent)}%` : '—'}</TableCell>
+                      <TableCell className="text-right">{fmt(row.sellingPrice)}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openDetail(row)}
+                          className="border-muted-foreground/25 hover:border-muted-foreground/50"
+                          aria-label={`${t('detail')} — ${row.woDocNumber}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                          {t('detail')}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -132,6 +283,81 @@ export default function HPPPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!detailRow} onOpenChange={(open) => !open && setDetailRow(null)}>
+        <DialogContent className="max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('detailTitle')} — {detailRow?.woDocNumber}</DialogTitle>
+          </DialogHeader>
+          {detailRow && (
+            <div className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('category')}</TableHead>
+                    <TableHead>{t('itemName')}</TableHead>
+                    <TableHead className="text-right">{t('unitCost')}</TableHead>
+                    <TableHead className="text-right">{t('qtyPerPcs')}</TableHead>
+                    <TableHead className="text-right">{t('costPerPcs')}</TableHead>
+                    <TableHead>{t('ppnIncluded')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {detailRow.lines.map((line, i) => (
+                    <TableRow key={i}>
+                      <TableCell>{line.category}</TableCell>
+                      <TableCell>{line.itemName}</TableCell>
+                      <TableCell className="text-right">{fmt(line.unitCost)}</TableCell>
+                      <TableCell className="text-right">{fmtNum(line.qtyPerPcs)}</TableCell>
+                      <TableCell className="text-right">{fmt(line.costPerPcs)}</TableCell>
+                      <TableCell>{line.ppnIncluded ? 'Yes' : 'No'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="flex flex-wrap gap-4 pt-2 border-t">
+                <div className="font-medium">Subtotal (HPP/pcs): {fmt(detailRow.subtotal)}</div>
+                {detailRow.hasMixedPPN && (
+                  <Badge variant="secondary">{t('ppnMixed')}</Badge>
+                )}
+              </div>
+              {isAdmin && (
+                <div className="grid gap-4 sm:grid-cols-2 pt-4 border-t">
+                  <div className="space-y-2">
+                    <Label>{t('marginPercentEdit')}</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.01}
+                      value={editMargin}
+                      onChange={(e) => setEditMargin(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('additionalCostEdit')}</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={editAdditional}
+                      onChange={(e) => setEditAdditional(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Button onClick={handleSaveAdjustments} disabled={savingAdjustments}>
+                      {savingAdjustments ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      {t('saveAdjustments')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -7,19 +7,14 @@ import { createItemSchema, itemSchema, consumptionRuleSchema } from '@/lib/valid
 import { ItemType } from '@/lib/constants/enums';
 import { generateSKU } from '@/app/actions/items';
 import { getUOMs } from '@/app/actions/uom';
-import { getItemsByType, getItems } from '@/app/actions/items';
+import { getItems } from '@/app/actions/items';
 import { getItemTypeMasters } from '@/app/actions/item-type-master';
+import { getItemCategories } from '@/app/actions/item-categories';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Table,
   TableBody,
@@ -56,6 +51,13 @@ interface Item {
   };
 }
 
+interface ItemCategoryOption {
+  id: string;
+  name: string;
+  code?: string | null;
+  isActive: boolean;
+}
+
 interface ItemFormProps {
   initialData?: {
     id?: string;
@@ -64,9 +66,11 @@ interface ItemFormProps {
     nameEn?: string;
     type?: ItemType;
     uomId?: string;
+    categoryId?: string | null;
     description?: string;
     variants?: Array<Record<string, string>>;
     reorderPoint?: number;
+    overReceiveThreshold?: number;
     sellingPrice?: number;
     consumptionRules?: Array<{
       materialId: string;
@@ -91,6 +95,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const itemSchemaT = useMemo(() => createItemSchema((k) => tValidation(k)), [tValidation]);
   const [uoms, setUOMs] = useState<UOM[]>([]);
   const [materials, setMaterials] = useState<Item[]>([]);
+  const [itemCategories, setItemCategories] = useState<ItemCategoryOption[]>([]);
   const [sku, setSku] = useState(initialData?.sku || '');
   const [isGeneratingSKU, setIsGeneratingSKU] = useState(false);
   const [consumptionRules, setConsumptionRules] = useState<ConsumptionRuleData[]>(
@@ -151,9 +156,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       nameEn: initialData?.nameEn || '',
       type: initialData?.type || ItemType.FABRIC,
       uomId: initialData?.uomId || '',
+      categoryId: initialData?.categoryId || '',
       description: initialData?.description || '',
       variants: normalizedVariants,
       reorderPoint: initialData?.reorderPoint,
+      overReceiveThreshold: initialData?.overReceiveThreshold,
       sellingPrice: initialData?.sellingPrice,
     },
   });
@@ -164,6 +171,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     // Load UOMs
     getUOMs().then(setUOMs).catch(() => toast.error(tToasts('failedToLoadUOMs')));
     getItemTypeMasters().then(setItemTypeMasters).catch(() => {});
+    getItemCategories(true).then((rows) => setItemCategories(rows as ItemCategoryOption[])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -387,33 +395,23 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 name="type"
                 control={control}
                 render={({ field }) => (
-                  <Select
+                  <SearchableCombobox
+                    id="type"
+                    options={
+                      itemTypeMasters.length > 0
+                        ? itemTypeMasters.map((m) => ({ value: m.code, label: m.nameEn }))
+                        : [
+                            { value: ItemType.FABRIC, label: 'Fabric' },
+                            { value: ItemType.ACCESSORIES, label: 'Accessories' },
+                            { value: ItemType.FINISHED_GOOD, label: 'Finished Good' },
+                          ]
+                    }
                     value={field.value}
                     onValueChange={field.onChange}
-                  >
-                    <SelectTrigger
-                      id="type"
-                      className={`w-full ${errors.type ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
-                      aria-invalid={!!errors.type}
-                    >
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {itemTypeMasters.length > 0
-                        ? itemTypeMasters.map((m) => (
-                            <SelectItem key={m.id} value={m.code}>
-                              {m.nameEn}
-                            </SelectItem>
-                          ))
-                        : (
-                          <>
-                            <SelectItem value={ItemType.FABRIC}>Fabric</SelectItem>
-                            <SelectItem value={ItemType.ACCESSORIES}>Accessories</SelectItem>
-                            <SelectItem value={ItemType.FINISHED_GOOD}>Finished Good</SelectItem>
-                          </>
-                          )}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select type"
+                    aria-invalid={!!errors.type}
+                    className={errors.type ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
                 )}
               />
               {errors.type && (
@@ -428,30 +426,66 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 name="uomId"
                 control={control}
                 render={({ field }) => (
-                  <Select
+                  <SearchableCombobox
+                    id="uomId"
+                    options={uoms.map((uom) => ({
+                      value: uom.id,
+                      label: `${uom.code} - ${uom.nameId}`,
+                    }))}
                     value={field.value}
                     onValueChange={field.onChange}
-                  >
-                    <SelectTrigger
-                      id="uomId"
-                      className={`w-full ${errors.uomId ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
-                      aria-invalid={!!errors.uomId}
-                    >
-                      <SelectValue placeholder="Select UOM" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {uoms.map((uom) => (
-                        <SelectItem key={uom.id} value={uom.id}>
-                          {uom.code} - {uom.nameId}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Select UOM"
+                    aria-invalid={!!errors.uomId}
+                    className={errors.uomId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
                 )}
               />
               {errors.uomId && (
                 <p className="text-sm text-destructive" role="alert">
                   {errors.uomId.message}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="categoryId">Category</Label>
+              <Controller
+                name="categoryId"
+                control={control}
+                render={({ field }) => (
+                  <SearchableCombobox
+                    id="categoryId"
+                    options={[
+                      { value: '__none__', label: 'No category' },
+                      ...itemCategories.map((category) => ({
+                        value: category.id,
+                        label: (category.code ? `${category.code} - ` : '') + category.name,
+                      })),
+                    ]}
+                    value={field.value || '__none__'}
+                    onValueChange={(value) => field.onChange(value === '__none__' ? '' : value)}
+                    placeholder="Select category"
+                  />
+                )}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="overReceiveThreshold">Over-receive threshold</Label>
+              <Input
+                id="overReceiveThreshold"
+                type="number"
+                step="0.01"
+                min="0"
+                {...register('overReceiveThreshold', { valueAsNumber: true })}
+                placeholder="0.00"
+                aria-invalid={!!errors.overReceiveThreshold}
+                className={errors.overReceiveThreshold ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+              />
+              {errors.overReceiveThreshold && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.overReceiveThreshold.message}
                 </p>
               )}
             </div>
@@ -658,23 +692,18 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   {consumptionRules.map((rule, index) => (
                     <TableRow key={index}>
                       <TableCell>
-                        <Select
+                        <SearchableCombobox
+                          options={materials.map((material) => ({
+                            value: material.id,
+                            label: `${material.sku} - ${material.nameId}`,
+                          }))}
                           value={rule.materialId}
                           onValueChange={(value) =>
                             updateConsumptionRule(index, 'materialId', value)
                           }
-                        >
-                          <SelectTrigger className="max-w-[16rem] min-w-0 [&_[data-slot=select-value]]:truncate">
-                            <SelectValue placeholder="Select material" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {materials.map((material) => (
-                              <SelectItem key={material.id} value={material.id}>
-                                {material.sku} - {material.nameId}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          placeholder="Select material"
+                          triggerClassName="max-w-[16rem] min-w-0"
+                        />
                       </TableCell>
                       <TableCell>
                         <Input

@@ -66,9 +66,12 @@ export default function PODetailPage() {
         .then((data) => {
           setPO(data);
           // Load suppliers for edit mode
-          fetch('/api/suppliers?sync=true')
+          fetch('/api/suppliers?sync=true&approvedOnly=true')
             .then(res => res.json())
-            .then(data => setSuppliers(data.map((s: any) => ({ id: s.id, code: s.code, name: s.name }))))
+            .then((data: unknown) => {
+              const list = Array.isArray(data) ? data : (data as { data?: unknown[] })?.data ?? [];
+              setSuppliers(Array.isArray(list) ? list.map((s: any) => ({ id: s.id, code: s.code, name: s.name })) : []);
+            })
             .catch(() => {});
         })
         .catch(() => {
@@ -286,6 +289,7 @@ export default function PODetailPage() {
               },
               qty: Number(item.qty),
               price: Number(item.price),
+              ppnIncluded: item.ppnIncluded ?? true,
               uomId: item.uomId,
               notes: item.notes || undefined,
             })),
@@ -443,36 +447,51 @@ export default function PODetailPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {po.statusHistory?.map((history: any, index: number) => (
-                  <div key={history.id} className="flex items-start gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className={`w-2 h-2 rounded-full mt-[5px] mb-[5px] text-lg ${
-                        index === 0 ? 'bg-primary' : 'bg-muted'
-                      }`} />
-                      {index < po.statusHistory.length - 1 && (
-                        <div className="w-px h-8 bg-muted" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Badge className={statusColors[history.status as POStatus]}>
-                          {statusLabels[history.status as POStatus]}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(history.createdAt).toLocaleString('id-ID')}
-                        </span>
+                {po.statusHistory?.map((history: any, index: number) => {
+                  const isPaymentMarked = history.paymentEvent === 'MARKED';
+                  const isPaymentUnmarked = history.paymentEvent === 'UNMARKED';
+                  const isPaymentEvent = isPaymentMarked || isPaymentUnmarked;
+                  const badgeLabel = isPaymentMarked
+                    ? 'Supplier payment marked'
+                    : isPaymentUnmarked
+                      ? 'Supplier payment unmarked'
+                      : statusLabels[history.status as POStatus];
+                  const badgeClass = isPaymentMarked
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                    : isPaymentUnmarked
+                      ? 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                      : statusColors[history.status as POStatus];
+                  return (
+                    <div key={history.id} className="flex items-start gap-4">
+                      <div className="flex flex-col items-center">
+                        <div className={`w-2 h-2 rounded-full mt-[5px] mb-[5px] text-lg ${
+                          index === 0 ? 'bg-primary' : 'bg-muted'
+                        }`} />
+                        {index < po.statusHistory.length - 1 && (
+                          <div className="w-px h-8 bg-muted" />
+                        )}
                       </div>
-                      {history.changedBy && (
-                        <p className="text-sm text-muted-foreground mt-1">
-                          by {history.changedBy.name || history.changedBy.email}
-                        </p>
-                      )}
-                      {history.notes && (
-                        <p className="text-sm mt-1">{history.notes}</p>
-                      )}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Badge className={badgeClass}>
+                            {badgeLabel}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground">
+                            {new Date(history.createdAt).toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        {history.changedBy && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            by {history.changedBy.name || history.changedBy.email}
+                          </p>
+                        )}
+                        {history.notes && !isPaymentEvent && (
+                          <p className="text-sm mt-1">{history.notes}</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

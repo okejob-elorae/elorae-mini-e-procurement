@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -33,7 +34,7 @@ import {
 } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption } from '@/app/actions/production';
+import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption, suggestFabricRollAllocation } from '@/app/actions/production';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
 import { getPOs } from '@/app/actions/purchase-orders';
 import { ItemType } from '@prisma/client';
@@ -78,6 +79,16 @@ interface MaterialPlanRow {
   shortage: number;
 }
 
+interface WorkOrderStepForm {
+  sequence: number;
+  supplierId: string;
+  stepName: string;
+  servicePrice: number;
+  servicePpnIncluded: boolean;
+  qty: number;
+  notes?: string;
+}
+
 export default function NewWorkOrderPage() {
   const t = useTranslations('toasts');
   const tWO = useTranslations('workOrders');
@@ -90,6 +101,7 @@ export default function NewWorkOrderPage() {
   const [isLoadingFG, setIsLoadingFG] = useState(true);
   const [isLoadingPlan, setIsLoadingPlan] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuggestingRolls, setIsSuggestingRolls] = useState(false);
 
   const [vendorId, setVendorId] = useState('');
   const [finishedGoodId, setFinishedGoodId] = useState('');
@@ -102,7 +114,7 @@ export default function NewWorkOrderPage() {
   const [isComputingConsumption, setIsComputingConsumption] = useState(false);
   const consumptionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const DEBOUNCE_MS = 400;
+  const DEBOUNCE_MS = 1500;
   const [targetDate, setTargetDate] = useState('');
   const [notes, setNotes] = useState('');
   const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
@@ -113,6 +125,7 @@ export default function NewWorkOrderPage() {
   const [selectedVariantAttributes, setSelectedVariantAttributes] = useState<Record<string, string> | null>(null);
   const [finishedGoodVariants, setFinishedGoodVariants] = useState<Array<{ sku?: string; attributes: Record<string, string> }>>([]);
   const [isLoadingVariants, setIsLoadingVariants] = useState(false);
+  const [steps, setSteps] = useState<WorkOrderStepForm[]>([]);
 
   const plannedNum = consumptionResult?.plannedQty ?? 0;
 
@@ -120,20 +133,21 @@ export default function NewWorkOrderPage() {
     const load = async () => {
       try {
         const [suppliersRes, fgList, posResult] = await Promise.all([
-          fetch('/api/suppliers'),
+          fetch('/api/suppliers?approvedOnly=true'),
           getItemsByType(ItemType.FINISHED_GOOD),
           getPOs({ statusIn: ['SUBMITTED', 'PARTIAL'] }, { page: 1, pageSize: 200 }),
         ]);
         if (suppliersRes.ok) {
           const data = await suppliersRes.json();
+          const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
           setTailors(
-            (data as TailorSupplier[]).filter((s: TailorSupplier) => s.type?.code === 'TAILOR')
+            list as TailorSupplier[]
           );
         }
         setFinishedGoods((fgList as FinishedGood[]) || []);
         const pos = (posResult as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
         setPurchaseOrders(pos);
-      } catch (e) {
+      } catch {
         toast.error(t('failedToLoadData'));
       } finally {
         setIsLoadingSuppliers(false);
@@ -264,7 +278,9 @@ export default function NewWorkOrderPage() {
 
   const hasShortage = materialPlan.some((m) => m.shortage > 0);
   const rollSum = rollBreakdown.reduce((s, r) => s + r.qty, 0);
-  const rollValid = rollBreakdown.length === 0 || Math.abs(rollSum - plannedNum) < 1e-6;
+  /** Material qty (consumption UOM); roll total must be at least this (excess allowed) */
+  const materialPlannedQtyForRolls = consumptionResult?.actualConsumption ?? 0;
+  const rollValid = rollBreakdown.length === 0 || rollSum >= materialPlannedQtyForRolls - 1e-6;
   const skuVariantValid = outputMode !== 'SKU' || (outputMode === 'SKU' && selectedVariantSku.length > 0);
   const noVariantsForSku = outputMode === 'SKU' && finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
   const canSubmit =
@@ -293,6 +309,36 @@ export default function NewWorkOrderPage() {
     setRollBreakdown((prev) => prev.filter((_, idx) => idx !== i));
   };
 
+  const handleSuggestRolls = async () => {
+    if (!consumptionMaterialId || !consumptionResult?.actualConsumption) return;
+    setIsSuggestingRolls(true);
+    try {
+      const suggestion = await suggestFabricRollAllocation(
+        consumptionMaterialId,
+        consumptionResult.actualConsumption
+      );
+      if (suggestion.selected.length === 0) {
+        toast.error('No available fabric rolls found');
+        return;
+      }
+      setRollBreakdown(
+        suggestion.selected.map((row) => ({
+          rollRef: row.rollCode ?? row.rollRef,
+          qty: row.qty,
+        }))
+      );
+      if (suggestion.unallocated > 0) {
+        toast.error(`Insufficient roll stock, unallocated: ${suggestion.unallocated.toFixed(2)}`);
+      } else {
+        toast.success('Best-fit roll suggestion applied');
+      }
+    } catch {
+      toast.error('Failed to suggest roll allocation');
+    } finally {
+      setIsSuggestingRolls(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || !session?.user?.id) return;
@@ -313,6 +359,20 @@ export default function NewWorkOrderPage() {
           skuBreakdown:
             outputMode === 'SKU' && selectedVariantSku
               ? { variantSku: selectedVariantSku, attributes: selectedVariantAttributes ?? undefined }
+              : undefined,
+          steps:
+            steps.length > 0
+              ? steps
+                  .filter((step) => step.supplierId)
+                  .map((step, idx) => ({
+                    sequence: idx + 1,
+                    supplierId: step.supplierId,
+                    stepName: step.stepName || undefined,
+                    servicePrice: Number(step.servicePrice || 0),
+                    servicePpnIncluded: step.servicePpnIncluded ?? false,
+                    qty: Number(step.qty || 0) || undefined,
+                    notes: step.notes?.trim() || undefined,
+                  }))
               : undefined,
         },
         session.user.id
@@ -355,41 +415,23 @@ export default function NewWorkOrderPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Vendor (Tailor)</Label>
-                <Select
+                <SearchableCombobox
+                  options={tailors.map((t) => ({ value: t.id, label: `${t.name} (${t.code})` }))}
                   value={vendorId}
                   onValueChange={setVendorId}
+                  placeholder="Select vendor"
                   disabled={isLoadingSuppliers}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select vendor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tailors.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name} ({t.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </div>
               <div className="space-y-2">
                 <Label>Finished Good</Label>
-                <Select
+                <SearchableCombobox
+                  options={finishedGoods.map((fg) => ({ value: fg.id, label: `${fg.nameId} (${fg.sku})` }))}
                   value={finishedGoodId}
                   onValueChange={setFinishedGoodId}
+                  placeholder="Select finished good"
                   disabled={isLoadingFG}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select finished good" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {finishedGoods.map((fg) => (
-                      <SelectItem key={fg.id} value={fg.id}>
-                        {fg.nameId} ({fg.sku})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </div>
             </div>
 
@@ -412,7 +454,12 @@ export default function NewWorkOrderPage() {
               {outputMode === 'SKU' && (
                 <div className="space-y-2">
                   <Label>{tWO('variantSku')}</Label>
-                  <Select
+                  <SearchableCombobox
+                    options={finishedGoodVariants.map((v, idx) => {
+                      const label = v.sku ? `${v.sku} (${Object.entries(v.attributes ?? {}).map(([k, val]) => `${k}: ${val}`).join(', ')})` : Object.entries(v.attributes ?? {}).map(([k, val]) => `${k}: ${val}`).join(', ');
+                      const value = v.sku ?? `variant-${idx}`;
+                      return { value, label };
+                    })}
                     value={selectedVariantSku}
                     onValueChange={(val) => {
                       const v = finishedGoodVariants.find((x, i) => {
@@ -424,23 +471,9 @@ export default function NewWorkOrderPage() {
                         setSelectedVariantAttributes(v.attributes ?? null);
                       }
                     }}
+                    placeholder={noVariantsForSku ? tWO('noVariantsDefineFirst') : tWO('selectVariant')}
                     disabled={isLoadingVariants || finishedGoodVariants.length === 0}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={noVariantsForSku ? tWO('noVariantsDefineFirst') : tWO('selectVariant')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {finishedGoodVariants.map((v, idx) => {
-                        const label = v.sku ? `${v.sku} (${Object.entries(v.attributes ?? {}).map(([k, val]) => `${k}: ${val}`).join(', ')})` : Object.entries(v.attributes ?? {}).map(([k, val]) => `${k}: ${val}`).join(', ');
-                        const value = v.sku ?? `variant-${idx}`;
-                        return (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
+                  />
                   {noVariantsForSku && (
                     <p className="text-xs text-muted-foreground">{tWO('noVariantsDefineFirst')}</p>
                   )}
@@ -459,23 +492,16 @@ export default function NewWorkOrderPage() {
               </div>
               <div className="space-y-2">
                 <Label>PO Reference (optional)</Label>
-                <Select
+                <SearchableCombobox
+                  options={[
+                    { value: '__none__', label: 'None' },
+                    ...purchaseOrders.map((po) => ({ value: po.id, label: po.docNumber })),
+                  ]}
                   value={poId || '__none__'}
                   onValueChange={(v) => setPoId(v === '__none__' ? '' : v)}
+                  placeholder="None"
                   disabled={isLoadingPOs}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {purchaseOrders.map((po) => (
-                      <SelectItem key={po.id} value={po.id}>
-                        {po.docNumber}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
                 <p className="text-xs text-muted-foreground">Link this WO to a purchase order for vendor return tracking</p>
               </div>
             </div>
@@ -487,6 +513,107 @@ export default function NewWorkOrderPage() {
                 placeholder="Optional notes"
                 rows={2}
               />
+            </div>
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <Label>Production Steps (optional)</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setSteps((prev) => [
+                      ...prev,
+                      {
+                        sequence: prev.length + 1,
+                        supplierId: '',
+                        stepName: '',
+                        servicePrice: 0,
+                        servicePpnIncluded: false,
+                        qty: 0,
+                        notes: '',
+                      },
+                    ])
+                  }
+                >
+                  + Add step
+                </Button>
+              </div>
+              {steps.map((step, index) => (
+                <div key={index} className="grid gap-2 rounded border p-2 sm:grid-cols-6">
+                  <Input
+                    placeholder="Step name"
+                    value={step.stepName}
+                    onChange={(e) =>
+                      setSteps((prev) =>
+                        prev.map((s, i) => (i === index ? { ...s, stepName: e.target.value } : s))
+                      )
+                    }
+                  />
+                  <SearchableCombobox
+                    options={[
+                      { value: '__none__', label: 'Select supplier' },
+                      ...tailors.map((supplier) => ({ value: supplier.id, label: `${supplier.name} (${supplier.code})` })),
+                    ]}
+                    value={step.supplierId || '__none__'}
+                    onValueChange={(v) =>
+                      setSteps((prev) =>
+                        prev.map((s, i) => (i === index ? { ...s, supplierId: v === '__none__' ? '' : v } : s))
+                      )
+                    }
+                    placeholder="Select supplier"
+                  />
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Service price"
+                    value={step.servicePrice || ''}
+                    onChange={(e) =>
+                      setSteps((prev) =>
+                        prev.map((s, i) =>
+                          i === index ? { ...s, servicePrice: Number(e.target.value) || 0 } : s
+                        )
+                      )
+                    }
+                  />
+                  <Select
+                    value={step.servicePpnIncluded ? 'include' : 'exclude'}
+                    onValueChange={(v) =>
+                      setSteps((prev) =>
+                        prev.map((s, i) =>
+                          i === index ? { ...s, servicePpnIncluded: v === 'include' } : s
+                        )
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="PPN" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="exclude">Exclude PPN</SelectItem>
+                      <SelectItem value="include">Include PPN</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Qty (optional)"
+                    value={step.qty || ''}
+                    onChange={(e) =>
+                      setSteps((prev) =>
+                        prev.map((s, i) => (i === index ? { ...s, qty: Number(e.target.value) || 0 } : s))
+                      )
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setSteps((prev) => prev.filter((_, i) => i !== index))}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -507,7 +634,11 @@ export default function NewWorkOrderPage() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>{tWO('materialConsumptionDriver')}</Label>
-                      <Select
+                      <SearchableCombobox
+                        options={consumptionRules.map((r) => ({
+                          value: r.materialId,
+                          label: `${r.materialName} (${r.uomCode})`,
+                        }))}
                         value={consumptionMaterialId}
                         onValueChange={(v) => {
                           setConsumptionMaterialId(v);
@@ -515,18 +646,8 @@ export default function NewWorkOrderPage() {
                           setConsumptionInputDebounced('');
                           setConsumptionResult(null);
                         }}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder={tWO('selectMaterial')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {consumptionRules.map((r) => (
-                            <SelectItem key={r.materialId} value={r.materialId}>
-                              {r.materialName} ({r.uomCode})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder={tWO('selectMaterial')}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>{tWO('consumption')}</Label>
@@ -639,7 +760,7 @@ export default function NewWorkOrderPage() {
                       <div className="space-y-2 border-t pt-4">
                         <Label>Alokasi per roll (opsional)</Label>
                         <p className="text-xs text-muted-foreground">
-                          Total qty per roll harus sama dengan Planned Qty ({plannedNum}).
+                          Total qty per roll minimal sama dengan kebutuhan material ({consumptionResult ? `${materialPlannedQtyForRolls.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${consumptionResult.uomCode}` : '—'}). Boleh melebihi.
                         </p>
                         <div className="overflow-x-auto">
                           <Table>
@@ -666,8 +787,9 @@ export default function NewWorkOrderPage() {
                                     <Input
                                       type="number"
                                       min={0}
-                                      value={row.qty || ''}
-                                      onChange={(e) => updateRollRow(i, 'qty', Number(e.target.value) || 0)}
+                                      step="any"
+                                      value={row.qty === 0 ? '' : row.qty}
+                                      onChange={(e) => updateRollRow(i, 'qty', e.target.value === '' ? 0 : Number(e.target.value))}
                                       className="h-8 text-right"
                                     />
                                   </TableCell>
@@ -698,9 +820,18 @@ export default function NewWorkOrderPage() {
                         <Button type="button" variant="outline" size="sm" onClick={addRollRow}>
                           + Tambah roll
                         </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSuggestRolls}
+                          disabled={!consumptionMaterialId || isSuggestingRolls}
+                        >
+                          {isSuggestingRolls ? 'Suggesting...' : 'Suggest best-fit'}
+                        </Button>
                         {rollBreakdown.length > 0 && !rollValid && (
                           <p className="text-sm text-destructive">
-                            Total roll ({rollSum}) harus sama dengan Planned Qty ({plannedNum}).
+                            Total roll ({rollSum.toLocaleString(undefined, { maximumFractionDigits: 4 })}{consumptionResult ? ` ${consumptionResult.uomCode}` : ''}) kurang dari kebutuhan material ({consumptionResult ? `${materialPlannedQtyForRolls.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${consumptionResult.uomCode}` : '—'}).
                           </p>
                         )}
                       </div>

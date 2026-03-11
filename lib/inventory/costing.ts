@@ -15,28 +15,37 @@ export interface CostCalculationResult {
   newTotalValue: Decimal;
 }
 
+// Prisma compound unique keys don't accept null; use '' for non-variant items.
+const normalizeVariantSku = (variantSku?: string | null) => variantSku ?? '';
+
+const compositeKey = (itemId: string, variantSku?: string | null) => ({
+  itemId_variantSku: { itemId, variantSku: normalizeVariantSku(variantSku) },
+});
+
 export async function calculateMovingAverage(
   itemId: string,
   incomingQty: Decimal,
   incomingCost: Decimal,
-  tx?: any
+  tx?: any,
+  variantSku?: string | null
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
-  
+  const where = compositeKey(itemId, variantSku);
+
   // Get current inventory state
   const current = await prismaClient.inventoryValue.findUnique({
-    where: { itemId }
+    where,
   });
-  
+
   const previousQty = current?.qtyOnHand ? new Decimal(current.qtyOnHand.toString()) : new Decimal(0);
   const previousAvgCost = current?.avgCost ? new Decimal(current.avgCost.toString()) : new Decimal(0);
   const previousTotalValue = previousQty.mul(previousAvgCost);
-  
+
   // Calculate new totals
   const newTotalQty = previousQty.plus(incomingQty);
   const incomingTotalValue = incomingQty.mul(incomingCost);
   const newTotalValue = previousTotalValue.plus(incomingTotalValue);
-  
+
   // Calculate new average cost
   // Formula: (PreviousTotalValue + IncomingTotalValue) / (PreviousQty + IncomingQty)
   let newAvgCost: Decimal;
@@ -45,25 +54,26 @@ export async function calculateMovingAverage(
   } else {
     newAvgCost = new Decimal(0);
   }
-  
+
   // Update or create inventory record
   await prismaClient.inventoryValue.upsert({
-    where: { itemId },
+    where,
     create: {
       itemId,
+      variantSku: normalizeVariantSku(variantSku),
       qtyOnHand: newTotalQty.toNumber(),
       avgCost: newAvgCost.toNumber(),
       totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date()
+      lastUpdated: new Date(),
     },
     update: {
       qtyOnHand: newTotalQty.toNumber(),
       avgCost: newAvgCost.toNumber(),
       totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date()
-    }
+      lastUpdated: new Date(),
+    },
   });
-  
+
   return {
     previousQty,
     previousAvgCost,
@@ -73,7 +83,7 @@ export async function calculateMovingAverage(
     incomingTotalValue,
     newQty: newTotalQty,
     newAvgCost,
-    newTotalValue
+    newTotalValue,
   };
 }
 
@@ -85,12 +95,14 @@ export async function reverseInventoryValue(
   itemId: string,
   outgoingQty: Decimal,
   outgoingUnitCost: Decimal,
-  tx?: any
+  tx?: any,
+  variantSku?: string | null
 ): Promise<{ newQty: Decimal; newAvgCost: Decimal; newTotalValue: Decimal }> {
   const prismaClient = tx || prisma;
+  const where = compositeKey(itemId, variantSku);
 
   const current = await prismaClient.inventoryValue.findUnique({
-    where: { itemId }
+    where,
   });
 
   if (!current) throw new Error('No inventory record found');
@@ -111,13 +123,13 @@ export async function reverseInventoryValue(
     : new Decimal(0);
 
   await prismaClient.inventoryValue.update({
-    where: { itemId },
+    where,
     data: {
       qtyOnHand: newQty.toNumber(),
       avgCost: newAvgCost.toNumber(),
       totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date()
-    }
+      lastUpdated: new Date(),
+    },
   });
 
   return { newQty, newAvgCost, newTotalValue };
@@ -128,38 +140,40 @@ export async function reverseMovingAverage(
   itemId: string,
   outgoingQty: Decimal,
   outgoingCost: Decimal,
-  tx?: any
+  tx?: any,
+  variantSku?: string | null
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
-  
+  const where = compositeKey(itemId, variantSku);
+
   // Get current inventory state
   const current = await prismaClient.inventoryValue.findUnique({
-    where: { itemId }
+    where,
   });
-  
+
   const previousQty = current?.qtyOnHand ? new Decimal(current.qtyOnHand.toString()) : new Decimal(0);
   const previousAvgCost = current?.avgCost ? new Decimal(current.avgCost.toString()) : new Decimal(0);
   const previousTotalValue = previousQty.mul(previousAvgCost);
-  
+
   // Calculate new totals (subtracting)
   const newTotalQty = previousQty.minus(outgoingQty);
   const outgoingTotalValue = outgoingQty.mul(outgoingCost);
   const newTotalValue = previousTotalValue.minus(outgoingTotalValue);
-  
+
   // Average cost remains the same for outgoing (FIFO-like behavior)
   const newAvgCost = previousAvgCost;
-  
+
   // Update inventory record
   await prismaClient.inventoryValue.update({
-    where: { itemId },
+    where,
     data: {
       qtyOnHand: newTotalQty.toNumber(),
       avgCost: newAvgCost.toNumber(),
       totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date()
-    }
+      lastUpdated: new Date(),
+    },
   });
-  
+
   return {
     previousQty,
     previousAvgCost,
@@ -169,14 +183,14 @@ export async function reverseMovingAverage(
     incomingTotalValue: outgoingTotalValue,
     newQty: newTotalQty,
     newAvgCost,
-    newTotalValue
+    newTotalValue,
   };
 }
 
-// Get current inventory value for an item (serialized for client)
-export async function getInventoryValue(itemId: string) {
+// Get current inventory value for an item (or item+variant). Serialized for client.
+export async function getInventoryValue(itemId: string, variantSku?: string | null) {
   const v = await prisma.inventoryValue.findUnique({
-    where: { itemId },
+    where: compositeKey(itemId, variantSku),
     include: {
       item: {
         select: {
@@ -186,12 +200,12 @@ export async function getInventoryValue(itemId: string) {
           uom: {
             select: {
               code: true,
-              nameId: true
-            }
-          }
-        }
-      }
-    }
+              nameId: true,
+            },
+          },
+        },
+      },
+    },
   });
   if (!v) return null;
   return {
@@ -237,75 +251,71 @@ const inventorySnapshotOrderBy = {
   }
 };
 
-// Get inventory snapshot (all items with their values)
+// Aggregate InventoryValue rows by itemId (one row per item; sum qty/value, weighted avg cost)
+function aggregateSnapshotByItemId(
+  values: Awaited<ReturnType<typeof prisma.inventoryValue.findMany>> & { item: NonNullable<Awaited<ReturnType<typeof prisma.inventoryValue.findMany>>[0]['item']> }[],
+  toNum: (v: unknown) => number | null
+) {
+  const byItem = new Map<string, { qtyOnHand: number; totalValue: number; item: typeof values[0]['item'] }>();
+  for (const v of values) {
+    const qty = toNum(v.qtyOnHand) ?? 0;
+    const val = toNum(v.totalValue) ?? 0;
+    const existing = byItem.get(v.itemId);
+    if (existing) {
+      existing.qtyOnHand += qty;
+      existing.totalValue += val;
+    } else {
+      byItem.set(v.itemId, { qtyOnHand: qty, totalValue: val, item: v.item });
+    }
+  }
+  const rows = Array.from(byItem.entries()).map(([itemId, agg]) => ({
+    itemId,
+    qtyOnHand: agg.qtyOnHand,
+    totalValue: agg.totalValue,
+    avgCost: agg.qtyOnHand > 0 ? agg.totalValue / agg.qtyOnHand : 0,
+    item: {
+      ...agg.item,
+      reorderPoint: agg.item.reorderPoint != null ? toNum(agg.item.reorderPoint) : null,
+    },
+  }));
+  rows.sort((a, b) => (a.item.sku ?? '').localeCompare(b.item.sku ?? ''));
+  return rows;
+}
+
+// Get inventory snapshot (one row per item, aggregated from variant-level rows)
 export async function getInventorySnapshot(opts?: { page: number; pageSize: number }) {
   const toNum = (v: unknown) => (v == null ? null : Number(v));
-
-  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
-    const [values, totalCount, totalValueAgg, lowStockResult] = await Promise.all([
-      prisma.inventoryValue.findMany({
-        skip: (opts.page - 1) * opts.pageSize,
-        take: opts.pageSize,
-        include: inventorySnapshotInclude,
-        orderBy: inventorySnapshotOrderBy,
-      }),
-      prisma.inventoryValue.count(),
-      prisma.inventoryValue.aggregate({
-        _sum: { totalValue: true },
-      }),
-      prisma.$queryRaw<[{ count: number }]>`
-        SELECT COUNT(*) as count FROM \`InventoryValue\` iv
-        INNER JOIN \`Item\` i ON i.id = iv.\`itemId\`
-        WHERE i.\`reorderPoint\` IS NOT NULL AND iv.\`qtyOnHand\` <= i.\`reorderPoint\`
-      `,
-    ]);
-    const items = values.map((v) => ({
-      ...v,
-      qtyOnHand: toNum(v.qtyOnHand),
-      avgCost: toNum(v.avgCost),
-      totalValue: toNum(v.totalValue),
-      item: {
-        ...v.item,
-        reorderPoint: v.item.reorderPoint != null ? toNum(v.item.reorderPoint) : null,
-      },
-    }));
-    const totalValue = Number(totalValueAgg._sum.totalValue ?? 0);
-    const lowStockItems = Number(lowStockResult[0]?.count ?? 0) || 0;
-    return {
-      items,
-      totalCount,
-      totalValue,
-      totalItems: totalCount,
-      lowStockItems,
-    };
-  }
 
   const values = await prisma.inventoryValue.findMany({
     include: inventorySnapshotInclude,
     orderBy: inventorySnapshotOrderBy,
   });
 
-  const items = values.map((v) => ({
-    ...v,
-    qtyOnHand: toNum(v.qtyOnHand),
-    avgCost: toNum(v.avgCost),
-    totalValue: toNum(v.totalValue),
-    item: {
-      ...v.item,
-      reorderPoint: v.item.reorderPoint != null ? toNum(v.item.reorderPoint) : null,
-    },
-  }));
+  const allItems = aggregateSnapshotByItemId(
+    values as (typeof values & { item: NonNullable<(typeof values)[0]['item']> })[],
+    toNum
+  );
+  const totalValue = allItems.reduce((sum, v) => sum + v.totalValue, 0);
+  const lowStockItems = allItems.filter(
+    (v) => v.item.reorderPoint != null && v.qtyOnHand <= Number(v.item.reorderPoint)
+  ).length;
 
-  const totalValue = items.reduce((sum, v) => sum + (v.totalValue as number), 0);
+  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
+    const start = (opts.page - 1) * opts.pageSize;
+    const items = allItems.slice(start, start + opts.pageSize);
+    return {
+      items,
+      totalCount: allItems.length,
+      totalValue,
+      totalItems: allItems.length,
+      lowStockItems,
+    };
+  }
 
   return {
-    items,
+    items: allItems,
     totalValue,
-    totalItems: items.length,
-    lowStockItems: items.filter(
-      (v) =>
-        v.item.reorderPoint != null &&
-        (v.qtyOnHand as number) <= Number(v.item.reorderPoint)
-    ).length,
+    totalItems: allItems.length,
+    lowStockItems,
   };
 }

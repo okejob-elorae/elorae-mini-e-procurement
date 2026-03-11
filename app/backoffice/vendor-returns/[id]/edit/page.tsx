@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -37,6 +38,7 @@ import {
 } from '@/app/actions/vendor-returns';
 import { getWorkOrders } from '@/app/actions/production';
 import { getItems } from '@/app/actions/items';
+import { getGRNs } from '@/app/actions/grn';
 import type { VendorReturnLineInput } from '@/app/actions/vendor-returns';
 
 interface Supplier {
@@ -47,6 +49,11 @@ interface Supplier {
 }
 
 interface WorkOrderOption {
+  id: string;
+  docNumber: string;
+}
+
+interface GRNOption {
   id: string;
   docNumber: string;
 }
@@ -87,11 +94,13 @@ export default function EditVendorReturnPage() {
 
   const [vendors, setVendors] = useState<Supplier[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrderOption[]>([]);
+  const [grns, setGrns] = useState<GRNOption[]>([]);
   const [items, setItems] = useState<ItemOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [woId, setWoId] = useState<string>('__none__');
+  const [grnId, setGrnId] = useState<string>('__none__');
   const [vendorId, setVendorId] = useState<string>('');
   const [lines, setLines] = useState<FormLine[]>([
     { type: 'FABRIC', itemId: '', qty: '', reason: '', condition: 'GOOD' }
@@ -103,11 +112,12 @@ export default function EditVendorReturnPage() {
 
     const load = async () => {
       try {
-        const [ret, suppliersRes, woList, itemsRes] = await Promise.all([
+        const [ret, suppliersRes, woList, itemsRes, grnList] = await Promise.all([
           getVendorReturnById(id),
-          fetch('/api/suppliers'),
+          fetch('/api/suppliers?approvedOnly=true'),
           getWorkOrders(),
-          getItems({ isActive: true })
+          getItems({ isActive: true }),
+          getGRNs()
         ]);
 
         if (!ret || ret.status !== 'DRAFT') {
@@ -118,6 +128,7 @@ export default function EditVendorReturnPage() {
 
         setVendorId(ret.vendorId);
         setWoId(ret.woId ?? '__none__');
+        setGrnId((ret as { grnId?: string | null }).grnId ?? '__none__');
 
         const rawLines = (ret.lines as StoredLine[] | null) || [];
         if (rawLines.length > 0) {
@@ -149,12 +160,19 @@ export default function EditVendorReturnPage() {
 
         if (suppliersRes.ok) {
           const data = await suppliersRes.json();
-          setVendors((data as Supplier[]) || []);
+          const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
+          setVendors((list as Supplier[]) || []);
         }
         setWorkOrders(
           (woList as { id: string; docNumber: string }[]).map((w) => ({
             id: w.id,
             docNumber: w.docNumber
+          }))
+        );
+        setGrns(
+          (grnList as { id: string; docNumber: string }[]).map((g) => ({
+            id: g.id,
+            docNumber: g.docNumber,
           }))
         );
         const raw =
@@ -253,6 +271,7 @@ export default function EditVendorReturnPage() {
         id,
         {
           woId: woId === '__none__' ? undefined : woId,
+          grnId: grnId === '__none__' ? undefined : grnId,
           vendorId,
           lines: parsedLines,
           evidenceUrls: urls.length > 0 ? urls : undefined
@@ -302,35 +321,37 @@ export default function EditVendorReturnPage() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Vendor *</Label>
-                <Select value={vendorId} onValueChange={setVendorId} required>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select vendor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vendors.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.code} – {v.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableCombobox
+                  options={vendors.map((v) => ({ value: v.id, label: `${v.code} – ${v.name}` }))}
+                  value={vendorId}
+                  onValueChange={setVendorId}
+                  placeholder="Select vendor"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Work Order (optional)</Label>
-                <Select value={woId} onValueChange={setWoId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {workOrders.map((w) => (
-                      <SelectItem key={w.id} value={w.id}>
-                        {w.docNumber}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableCombobox
+                  options={[
+                    { value: '__none__', label: 'None' },
+                    ...workOrders.map((w) => ({ value: w.id, label: w.docNumber })),
+                  ]}
+                  value={woId}
+                  onValueChange={setWoId}
+                  placeholder="None"
+                />
               </div>
+            <div className="space-y-2">
+              <Label>GRN (optional)</Label>
+              <SearchableCombobox
+                options={[
+                  { value: '__none__', label: 'None' },
+                  ...grns.map((grn) => ({ value: grn.id, label: grn.docNumber })),
+                ]}
+                value={grnId}
+                onValueChange={setGrnId}
+                placeholder="Select GRN"
+              />
+            </div>
             </div>
           </CardContent>
         </Card>
@@ -380,21 +401,16 @@ export default function EditVendorReturnPage() {
                         </Select>
                       </TableCell>
                       <TableCell>
-                        <Select
+                        <SearchableCombobox
+                          options={items.map((it) => ({
+                            value: it.id,
+                            label: `${it.sku} – ${it.nameId || it.nameEn}`,
+                          }))}
                           value={line.itemId}
                           onValueChange={(v) => updateLine(i, 'itemId', v)}
-                        >
-                          <SelectTrigger className="min-w-[180px]">
-                            <SelectValue placeholder="Select item" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {items.map((it) => (
-                              <SelectItem key={it.id} value={it.id}>
-                                {it.sku} – {it.nameId || it.nameEn}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          placeholder="Select item"
+                          triggerClassName="min-w-[180px]"
+                        />
                       </TableCell>
                       <TableCell>
                         <Input

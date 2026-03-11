@@ -47,10 +47,9 @@ function NotificationInbox({
   }
 
   return (
-    <ScrollArea className="flex-1">
+    <ScrollArea className="h-full min-h-0">
       <ul className="flex flex-col gap-0">
         {items.map((item) => {
-          const href = getNotificationHref(item.type, item.data);
           const isUnread = !item.readAt;
           return (
             <li key={item.id}>
@@ -128,7 +127,7 @@ export function NotificationIcon() {
             }
           : null
       );
-    } catch (_) {
+    } catch {
       // ignore
     }
     setOpen(false);
@@ -169,21 +168,23 @@ export function NotificationIcon() {
           <span className="sr-only">{t('notifications.title')}</span>
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-sm">
+      <SheetContent side="right" className="flex h-full w-full flex-col sm:max-w-sm">
         <SheetHeader>
           <SheetTitle>{t('notifications.title')}</SheetTitle>
         </SheetHeader>
-        {loading ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-            {t('common.loading')}
-          </div>
-        ) : (
-          <NotificationInbox
-            items={data?.items ?? []}
-            onItemClick={handleItemClick}
-            t={(key) => t(key)}
-          />
-        )}
+        <div className="min-h-0 flex-1">
+          {loading ? (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              {t('common.loading')}
+            </div>
+          ) : (
+            <NotificationInbox
+              items={data?.items ?? []}
+              onItemClick={handleItemClick}
+              t={(key) => t(key)}
+            />
+          )}
+        </div>
         <div className="border-t p-4">
           <Button
             variant="outline"

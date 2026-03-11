@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import Link from 'next/link';
 import { 
   Plus, 
@@ -33,16 +33,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { toast } from 'sonner';
 import { getInventorySnapshot } from '@/lib/inventory/costing';
-import { getGRNs } from '@/app/actions/grn';
+import { getGRNs, getRollsByGrnId, getFabricRolls, getFabricRollFilterOptions } from '@/app/actions/grn';
 import { getStockAdjustments } from '@/app/actions/inventory';
 import { getCurrentStockSummary } from '@/app/actions/stock-card';
 import { getInventoryValueSnapshot } from '@/app/actions/reports/inventory';
@@ -106,6 +100,22 @@ export default function InventoryPage() {
   const [grnSearchQuery, setGrnSearchQuery] = useState('');
   const [adjustmentSearchQuery, setAdjustmentSearchQuery] = useState('');
   const [expandedAdjustmentId, setExpandedAdjustmentId] = useState<string | null>(null);
+  const [expandedGrnId, setExpandedGrnId] = useState<string | null>(null);
+  const [grnRolls, setGrnRolls] = useState<Array<{ id: string; rollCode: string; rollRef: string; initialLength: number; remainingLength: number; isClosed: boolean; item: { sku: string; nameId: string }; uom: { code: string } }>>([]);
+  const [rolls, setRolls] = useState<Array<{ id: string; rollCode: string; rollRef: string; initialLength: number; remainingLength: number; isClosed: boolean; item: { sku: string; nameId: string }; uom: { code: string }; grn?: { docNumber: string; grnDate: Date } }>>([]);
+  const [rollsPage, setRollsPage] = useState(1);
+  const [rollsPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [rollsTotalCount, setRollsTotalCount] = useState(0);
+  const [rollsLoading, setRollsLoading] = useState(false);
+  const ROLLS_FILTER_ALL = '';
+  const [rollsFilterGrnId, setRollsFilterGrnId] = useState(ROLLS_FILTER_ALL);
+  const [rollsFilterItemId, setRollsFilterItemId] = useState(ROLLS_FILTER_ALL);
+  const [rollGrnOptions, setRollGrnOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [rollItemOptions, setRollItemOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [rollsSearchQuery, setRollsSearchQuery] = useState('');
+  const [rollsSearchDebounced, setRollsSearchDebounced] = useState('');
+  const rollsSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeTab, setActiveTab] = useState('stock');
   const [summary, setSummary] = useState({
     totalItems: 0,
     totalValue: 0,
@@ -168,6 +178,67 @@ export default function InventoryPage() {
   useEffect(() => {
     fetchData();
   }, [stockPage, grnPage, adjPage, adjItemFilter]);
+
+  useEffect(() => {
+    if (!expandedGrnId) {
+      setGrnRolls([]);
+      return;
+    }
+    getRollsByGrnId(expandedGrnId)
+      .then(setGrnRolls)
+      .catch(() => setGrnRolls([]));
+  }, [expandedGrnId]);
+
+  useEffect(() => {
+    if (activeTab !== 'rolls') return;
+    getFabricRollFilterOptions()
+      .then(({ grnOptions, itemOptions }) => {
+        setRollGrnOptions(grnOptions);
+        setRollItemOptions(itemOptions);
+      })
+      .catch(() => {
+        setRollGrnOptions([]);
+        setRollItemOptions([]);
+      });
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (rollsSearchDebounceRef.current) clearTimeout(rollsSearchDebounceRef.current);
+    rollsSearchDebounceRef.current = setTimeout(() => {
+      setRollsSearchDebounced(rollsSearchQuery);
+      setRollsPage(1);
+      rollsSearchDebounceRef.current = null;
+    }, 400);
+    return () => {
+      if (rollsSearchDebounceRef.current) clearTimeout(rollsSearchDebounceRef.current);
+    };
+  }, [rollsSearchQuery]);
+
+  useEffect(() => {
+    if (activeTab !== 'rolls') return;
+    setRollsLoading(true);
+    getFabricRolls({
+      page: rollsPage,
+      pageSize: rollsPageSize,
+      ...(rollsFilterGrnId ? { grnId: rollsFilterGrnId } : {}),
+      ...(rollsFilterItemId ? { itemId: rollsFilterItemId } : {}),
+      ...(rollsSearchDebounced.trim() ? { search: rollsSearchDebounced.trim() } : {}),
+    })
+      .then((res) => {
+        if (Array.isArray(res)) {
+          setRolls(res);
+          setRollsTotalCount(res.length);
+        } else {
+          setRolls(res.items);
+          setRollsTotalCount(res.totalCount);
+        }
+      })
+      .catch(() => {
+        setRolls([]);
+        setRollsTotalCount(0);
+      })
+      .finally(() => setRollsLoading(false));
+  }, [activeTab, rollsPage, rollsPageSize, rollsFilterGrnId, rollsFilterItemId, rollsSearchDebounced]);
 
   useEffect(() => {
     getCurrentStockSummary()
@@ -320,10 +391,11 @@ export default function InventoryPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="stock" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="stock">Stock Levels</TabsTrigger>
           <TabsTrigger value="grn">Goods Receipts</TabsTrigger>
+          <TabsTrigger value="rolls">By Roll</TabsTrigger>
           <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
         </TabsList>
 
@@ -415,6 +487,7 @@ export default function InventoryPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10" />
                       <TableHead>GRN Number</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Supplier</TableHead>
@@ -424,17 +497,72 @@ export default function InventoryPage() {
                   </TableHeader>
                   <TableBody>
                     {filteredGrns.map((grn) => (
-                      <TableRow key={grn.id}>
-                        <TableCell className="font-medium">{grn.docNumber}</TableCell>
-                        <TableCell>
-                          {new Date(grn.grnDate).toLocaleDateString('id-ID')}
-                        </TableCell>
-                        <TableCell>{grn.supplier.name}</TableCell>
-                        <TableCell>{grn.po?.docNumber || '-'}</TableCell>
-                        <TableCell className="text-right">
-                          Rp {Number(grn.totalAmount).toLocaleString()}
-                        </TableCell>
-                      </TableRow>
+                      <Fragment key={grn.id}>
+                        <TableRow>
+                          <TableCell className="w-10">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                setExpandedGrnId(expandedGrnId === grn.id ? null : grn.id)
+                              }
+                              aria-label="Toggle rolls"
+                            >
+                              {expandedGrnId === grn.id ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TableCell>
+                          <TableCell className="font-medium">{grn.docNumber}</TableCell>
+                          <TableCell>
+                            {new Date(grn.grnDate).toLocaleDateString('id-ID')}
+                          </TableCell>
+                          <TableCell>{grn.supplier.name}</TableCell>
+                          <TableCell>{grn.po?.docNumber || '-'}</TableCell>
+                          <TableCell className="text-right">
+                            Rp {Number(grn.totalAmount).toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                        {expandedGrnId === grn.id && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="bg-muted/30 p-4">
+                              <p className="text-sm font-medium mb-2">Fabric rolls in this GRN</p>
+                              {grnRolls.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No rolls</p>
+                              ) : (
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Roll code</TableHead>
+                                      <TableHead>Ref</TableHead>
+                                      <TableHead>Item</TableHead>
+                                      <TableHead className="text-right">Initial</TableHead>
+                                      <TableHead className="text-right">Remaining</TableHead>
+                                      <TableHead>UOM</TableHead>
+                                      <TableHead>Status</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {grnRolls.map((r) => (
+                                      <TableRow key={r.id}>
+                                        <TableCell className="font-mono text-sm">{r.rollCode}</TableCell>
+                                        <TableCell>{r.rollRef}</TableCell>
+                                        <TableCell>{r.item.sku} – {r.item.nameId}</TableCell>
+                                        <TableCell className="text-right">{r.initialLength.toLocaleString()}</TableCell>
+                                        <TableCell className="text-right">{r.remainingLength.toLocaleString()}</TableCell>
+                                        <TableCell>{r.uom.code}</TableCell>
+                                        <TableCell>{r.isClosed ? <Badge variant="secondary">Closed</Badge> : <Badge variant="default">Open</Badge>}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>
@@ -446,6 +574,105 @@ export default function InventoryPage() {
                 totalCount={grnTotalCount}
                 pageSize={grnPageSize}
               />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="rolls" className="space-y-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search roll code, ref, item, GRN..."
+                value={rollsSearchQuery}
+                onChange={(e) => setRollsSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Filter by GRN</span>
+              <SearchableCombobox
+                options={[{ value: ROLLS_FILTER_ALL, label: 'All GRNs' }, ...rollGrnOptions]}
+                value={rollsFilterGrnId}
+                onValueChange={(value) => {
+                  setRollsFilterGrnId(value);
+                  setRollsPage(1);
+                }}
+                placeholder="All GRNs"
+                searchPlaceholder="Search GRN..."
+                triggerClassName="w-[220px]"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Filter by item</span>
+              <SearchableCombobox
+                options={[{ value: ROLLS_FILTER_ALL, label: 'All items' }, ...rollItemOptions]}
+                value={rollsFilterItemId}
+                onValueChange={(value) => {
+                  setRollsFilterItemId(value);
+                  setRollsPage(1);
+                }}
+                placeholder="All items"
+                searchPlaceholder="Search item..."
+                triggerClassName="w-[260px]"
+              />
+            </div>
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              {rollsLoading ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Roll code</TableHead>
+                          <TableHead>Ref</TableHead>
+                          <TableHead>Item</TableHead>
+                          <TableHead className="text-right">Initial</TableHead>
+                          <TableHead className="text-right">Remaining</TableHead>
+                          <TableHead>UOM</TableHead>
+                          <TableHead>GRN</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rolls.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                              No fabric rolls found.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          rolls.map((r) => (
+                            <TableRow key={r.id}>
+                              <TableCell className="font-mono text-sm">{r.rollCode}</TableCell>
+                              <TableCell>{r.rollRef}</TableCell>
+                              <TableCell>{r.item.sku} – {r.item.nameId}</TableCell>
+                              <TableCell className="text-right">{r.initialLength.toLocaleString()}</TableCell>
+                              <TableCell className="text-right">{r.remainingLength.toLocaleString()}</TableCell>
+                              <TableCell>{r.uom.code}</TableCell>
+                              <TableCell>{r.grn ? `${r.grn.docNumber} (${new Date(r.grn.grnDate).toLocaleDateString('id-ID')})` : '-'}</TableCell>
+                              <TableCell>{r.isClosed ? <Badge variant="secondary">Closed</Badge> : <Badge variant="default">Open</Badge>}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <Pagination
+                    page={rollsPage}
+                    totalPages={Math.max(1, Math.ceil(rollsTotalCount / rollsPageSize))}
+                    onPageChange={setRollsPage}
+                    totalCount={rollsTotalCount}
+                    pageSize={rollsPageSize}
+                  />
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -463,25 +690,22 @@ export default function InventoryPage() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground whitespace-nowrap">Filter by item</span>
-              <Select
+              <SearchableCombobox
+                options={[
+                  { value: ADJ_FILTER_ALL, label: 'All items' },
+                  ...adjustmentItemList.map((row) => ({
+                    value: row.itemId,
+                    label: `${row.item?.sku ?? row.itemId} – ${row.item?.nameId ?? ''}`,
+                  })),
+                ]}
                 value={adjItemFilter}
                 onValueChange={(value) => {
                   setAdjItemFilter(value);
                   setAdjPage(1);
                 }}
-              >
-                <SelectTrigger className="w-[220px]">
-                  <SelectValue placeholder="All items" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ADJ_FILTER_ALL}>All items</SelectItem>
-                  {adjustmentItemList.map((row) => (
-                    <SelectItem key={row.itemId} value={row.itemId}>
-                      {row.item?.sku ?? row.itemId} – {row.item?.nameId ?? ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="All items"
+                triggerClassName="w-[220px]"
+              />
             </div>
           </div>
           <Card>

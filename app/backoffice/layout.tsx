@@ -88,6 +88,8 @@ const navItems: NavItem[] = [
     icon: Package,
     permission: PERMISSIONS.ITEMS_VIEW,
     children: [
+      { labelKey: 'navItemsAll', href: '/backoffice/items' },
+      { labelKey: 'navItemsCategory', href: '/backoffice/items/categories' },
       { labelKey: 'navItemsRaw', href: '/backoffice/items?type=raw' },
       { labelKey: 'navItemsFinished', href: '/backoffice/items?type=FINISHED_GOOD' },
     ],

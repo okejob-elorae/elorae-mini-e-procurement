@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `Item` ADD COLUMN `defaultPpnIncluded` BOOLEAN NOT NULL DEFAULT true;

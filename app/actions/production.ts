@@ -9,6 +9,8 @@ import { generateMaterialPlan } from '@/lib/production/planning';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
 import { getActorName, notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterialsIssued, notifyWOCompleted } from '@/app/actions/notifications';
+import { getPpnRatePercent } from '@/app/actions/settings/ppn';
+import { auth } from '@/lib/auth';
 
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
@@ -59,6 +61,21 @@ function serializeWorkOrder(wo: {
   issues?: Array<{ id: string; docNumber: string; issueType: string; totalCost: unknown; issuedAt: Date; [k: string]: unknown }>;
   receipts?: Array<{ id: string; docNumber: string; qtyReceived: unknown; qtyRejected?: unknown; qtyAccepted: unknown; materialCost?: unknown; avgCostPerUnit?: unknown; totalCostValue?: unknown; receivedAt: Date; [k: string]: unknown }>;
   returns?: unknown[];
+  steps?: Array<{
+    id: string;
+    sequence: number;
+    supplierId: string;
+    stepName: string | null;
+    servicePrice: unknown;
+    qty: unknown;
+    totalCost: unknown;
+    issueDocNumber: string | null;
+    receiptDocNumber: string | null;
+    issuedAt: Date | null;
+    receivedAt: Date | null;
+    notes: string | null;
+    supplier?: { id: string; name: string; code: string } | null;
+  }>;
 }) {
   const plan = parseConsumptionPlan(wo.consumptionPlan);
   const out: Record<string, unknown> = {
@@ -80,8 +97,18 @@ function serializeWorkOrder(wo: {
     canceledAt: wo.canceledAt,
     canceledReason: wo.canceledReason,
     consumptionPlan: plan,
-    skuBreakdown: wo.skuBreakdown ?? null,
-    rollBreakdown: Array.isArray(wo.rollBreakdown) ? wo.rollBreakdown : (wo.rollBreakdown ? [wo.rollBreakdown] : null),
+    skuBreakdown: (() => {
+      const raw = wo.skuBreakdown;
+      if (raw == null) return null;
+      const parsed = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    })(),
+    rollBreakdown: (() => {
+      const raw = wo.rollBreakdown;
+      if (raw == null) return null;
+      const parsed = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+      return Array.isArray(parsed) ? parsed : null;
+    })(),
     notes: wo.notes,
     syncStatus: wo.syncStatus,
     createdById: wo.createdById,
@@ -113,6 +140,12 @@ function serializeWorkOrder(wo: {
       syncStatus: r.syncStatus ?? null,
     })),
     returns: wo.returns ?? [],
+    steps: (wo.steps ?? []).map((s) => ({
+      ...s,
+      servicePrice: Number(s.servicePrice),
+      qty: s.qty != null ? Number(s.qty) : null,
+      totalCost: s.totalCost != null ? Number(s.totalCost) : null,
+    })),
   };
   return out;
 }
@@ -125,6 +158,15 @@ const rollBreakdownItemSchema = z.object({
 const skuBreakdownSchema = z.object({
   variantSku: z.string().min(1),
   attributes: z.record(z.string(), z.string()).optional(),
+});
+const woStepSchema = z.object({
+  sequence: z.number().int().positive(),
+  supplierId: idStr,
+  stepName: z.string().optional(),
+  servicePrice: z.number().min(0).default(0),
+  servicePpnIncluded: z.boolean().default(false),
+  qty: z.number().positive().optional(),
+  notes: z.string().optional(),
 });
 const woSchema = z
   .object({
@@ -139,15 +181,10 @@ const woSchema = z
     notes: z.string().optional(),
     rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
     skuBreakdown: skuBreakdownSchema.optional(),
+    steps: z.array(woStepSchema).optional(),
+    hppMarginPercent: z.number().min(0).max(100).optional(),
+    hppAdditionalCost: z.number().min(0).optional(),
   })
-  .refine(
-    (data) => {
-      if (!data.rollBreakdown || data.rollBreakdown.length === 0) return true;
-      const sum = data.rollBreakdown.reduce((s, r) => s + r.qty, 0);
-      return Math.abs(sum - data.plannedQty) < 1e-6;
-    },
-    { message: 'Roll breakdown total must equal planned qty', path: ['rollBreakdown'] }
-  )
   .refine(
     (data) => {
       if (data.outputMode !== 'SKU') return true;
@@ -203,6 +240,8 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
       targetDate: data.targetDate,
       poId: data.poId ?? null,
       notes: data.notes,
+      hppMarginPercent: data.hppMarginPercent ?? null,
+      hppAdditionalCost: data.hppAdditionalCost ?? null,
       createdById: userId,
       consumptionPlan: JSON.stringify(
         materialPlan.map((m) => ({
@@ -228,6 +267,22 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
       data: createData as any,
     });
 
+    if (data.steps?.length) {
+      await tx.workOrderStep.createMany({
+        data: data.steps.map((step) => ({
+          woId: wo.id,
+          sequence: step.sequence,
+          supplierId: step.supplierId,
+          stepName: step.stepName ?? null,
+          servicePrice: step.servicePrice,
+          servicePpnIncluded: step.servicePpnIncluded ?? false,
+          qty: step.qty ?? null,
+          totalCost: step.qty != null ? step.qty * step.servicePrice : null,
+          notes: step.notes ?? null,
+        })),
+      });
+    }
+
     return { id: wo.id, docNumber };
   });
 
@@ -235,6 +290,120 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
     .then((triggeredByName) => notifyWOCreated(result.id, result.docNumber, triggeredByName))
     .catch(() => {});
   return result;
+}
+
+/** Update a work order. Only allowed when status is DRAFT. */
+export async function updateWorkOrder(woId: string, data: WOFormData, userId: string) {
+  woSchema.parse(data);
+
+  const existing = await prisma.workOrder.findUnique({
+    where: { id: woId },
+    select: { id: true, status: true, docNumber: true },
+  });
+  if (!existing) throw new Error('Work order not found');
+  if (existing.status !== 'DRAFT') {
+    throw new Error('Only draft work orders can be updated');
+  }
+
+  const plannedOutput = new Decimal(data.plannedQty);
+  const materialPlan = await generateMaterialPlan(
+    data.finishedGoodId,
+    plannedOutput
+  );
+
+  const shortages = materialPlan.filter((m) => m.shortage.gt(0));
+  if (shortages.length > 0) {
+    const msg = shortages
+      .map(
+        (s) =>
+          `${s.itemName} (kurang ${s.shortage.toFixed(2)} ${s.uomCode})`
+      )
+      .join(', ');
+    throw new Error(`Stok tidak mencukupi: ${msg}`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const updateData: Record<string, unknown> = {
+      vendorId: data.vendorId,
+      finishedGoodId: data.finishedGoodId,
+      consumptionMaterialId: data.consumptionMaterialId ?? null,
+      outputMode: data.outputMode,
+      plannedQty: data.plannedQty,
+      expectedConsumption: data.expectedConsumption ?? undefined,
+      targetDate: data.targetDate ?? null,
+      poId: data.poId ?? null,
+      notes: data.notes ?? null,
+      consumptionPlan: JSON.stringify(
+        materialPlan.map((m) => ({
+          itemId: m.itemId,
+          itemName: m.itemName,
+          uomId: m.uomId,
+          uomCode: m.uomCode,
+          qtyRequired: m.qtyRequired.toNumber(),
+          wastePercent: m.wastePercent.toNumber(),
+          plannedQty: m.plannedQty.toNumber(),
+          issuedQty: 0,
+          returnedQty: 0
+        }))
+      ),
+    };
+    if (data.rollBreakdown && data.rollBreakdown.length > 0) {
+      updateData.rollBreakdown = JSON.stringify(data.rollBreakdown);
+    } else {
+      updateData.rollBreakdown = null;
+    }
+    if (data.outputMode === 'SKU' && data.skuBreakdown) {
+      updateData.skuBreakdown = JSON.stringify(data.skuBreakdown);
+    } else {
+      updateData.skuBreakdown = null;
+    }
+
+    await tx.workOrder.update({
+      where: { id: woId },
+      data: updateData as any,
+    });
+
+    await tx.workOrderStep.deleteMany({ where: { woId } });
+    if (data.steps?.length) {
+      await tx.workOrderStep.createMany({
+        data: data.steps.map((step) => ({
+          woId,
+          sequence: step.sequence,
+          supplierId: step.supplierId,
+          stepName: step.stepName ?? null,
+          servicePrice: step.servicePrice,
+          servicePpnIncluded: step.servicePpnIncluded ?? false,
+          qty: step.qty ?? null,
+          totalCost: step.qty != null ? step.qty * step.servicePrice : null,
+          notes: step.notes ?? null,
+        })),
+      });
+    }
+  });
+
+  revalidatePath('/backoffice/work-orders');
+  revalidatePath(`/backoffice/work-orders/${woId}`);
+  return { id: woId, docNumber: existing.docNumber };
+}
+
+export async function updateWOHppAdjustments(
+  woId: string,
+  data: { hppMarginPercent?: number; hppAdditionalCost?: number }
+) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  if (session.user.role !== 'ADMIN') {
+    throw new Error('Only owner/admin can update HPP adjustments');
+  }
+  const updated = await prisma.workOrder.update({
+    where: { id: woId },
+    data: {
+      hppMarginPercent: data.hppMarginPercent ?? null,
+      hppAdditionalCost: data.hppAdditionalCost ?? null,
+    },
+  });
+  revalidatePath(`/backoffice/work-orders/${woId}`);
+  return serializeWorkOrder(updated as any);
 }
 
 export async function issueWorkOrder(id: string, userId: string) {
@@ -268,6 +437,7 @@ const issueSchema = z.object({
     .array(
       z.object({
         itemId: idStr,
+        variantSku: z.string().optional(),
         qty: z.number().positive(),
         uomId: idStr,
         unitPrice: z.number().positive().optional()
@@ -288,7 +458,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
   const issueResult = await prisma.$transaction(async (tx) => {
     const wo = await tx.workOrder.findUnique({
       where: { id: data.woId },
-      select: { status: true, consumptionPlan: true, docNumber: true }
+      select: { status: true, consumptionPlan: true, docNumber: true, poId: true, consumptionMaterialId: true, rollBreakdown: true }
     });
 
     if (!wo) throw new Error('Work Order not found');
@@ -300,6 +470,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
     let totalCost = new Decimal(0);
     const movementData: Array<{
       itemId: string;
+      variantSku: string | null;
       qty: number;
       unitCost: number;
       totalCost: number;
@@ -311,30 +482,49 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       qty: number;
       uomId: string;
       avgCostAtIssue: number;
-      unitPrice?: number;
+      ppnIncluded?: boolean;
       totalCost: number;
+      sellingPrice?: number;
+      totalSellingPrice?: number;
     }> = [];
 
     for (const item of validated.items) {
+      // Match costing convention: non-variant items use variantSku '' in DB, not null
+      const variantKey = item.variantSku != null && item.variantSku !== '' ? item.variantSku : '';
       const inventory = await tx.inventoryValue.findUnique({
-        where: { itemId: item.itemId }
+        where: { itemId_variantSku: { itemId: item.itemId, variantSku: variantKey } },
+      });
+
+      const itemRow = await tx.item.findUnique({
+        where: { id: item.itemId },
+        select: { nameId: true, defaultPpnIncluded: true }
       });
 
       if (
         !inventory ||
         new Decimal(inventory.qtyOnHand.toString()).lt(item.qty)
       ) {
-        const it = await tx.item.findUnique({
-          where: { id: item.itemId },
-          select: { nameId: true }
-        });
         throw new Error(
-          `Stok tidak mencukupi untuk ${it?.nameId || item.itemId}`
+          `Stok tidak mencukupi untuk ${itemRow?.nameId || item.itemId}`
         );
       }
 
       const avgCostNum = Number(inventory.avgCost);
-      const unitCost = item.unitPrice ?? avgCostNum;
+      let unitCost = item.unitPrice ?? avgCostNum;
+      let ppnIncluded = itemRow?.defaultPpnIncluded ?? true;
+      if (wo.poId) {
+        const poItem = await tx.pOItem.findFirst({
+          where: { poId: wo.poId, itemId: item.itemId },
+          select: { ppnIncluded: true, price: true },
+        });
+        if (poItem) {
+          ppnIncluded = poItem.ppnIncluded;
+          const baseCost = item.unitPrice ?? Number(poItem.price);
+          const ppnRatePercent = await getPpnRatePercent();
+          const ppnMultiplier = 1 + ppnRatePercent / 100;
+          unitCost = poItem.ppnIncluded ? baseCost : baseCost * ppnMultiplier;
+        }
+      }
       const cost = new Decimal(unitCost).mul(item.qty);
       totalCost = totalCost.plus(cost);
 
@@ -342,7 +532,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       const newValue = newQty.mul(new Decimal(inventory.avgCost.toString()));
 
       await tx.inventoryValue.update({
-        where: { itemId: item.itemId },
+        where: { id: inventory.id },
         data: {
           qtyOnHand: newQty.toNumber(),
           totalValue: newValue.toNumber()
@@ -351,6 +541,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
 
       movementData.push({
         itemId: item.itemId,
+        variantSku: variantKey,
         qty: -item.qty,
         unitCost,
         totalCost: cost.toNumber(),
@@ -358,14 +549,59 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         balanceValue: newValue.toNumber()
       });
 
+      // HPP: store raw cost per line (avgCostAtIssue × qty) and PPN status; optional CMT selling price
+      const lineTotalCostRaw = avgCostNum * item.qty;
+      const sellingPrice = item.unitPrice != null && item.unitPrice > 0 ? item.unitPrice : undefined;
+      const totalSellingPrice = sellingPrice != null ? sellingPrice * item.qty : undefined;
       issueItemsForJson.push({
         itemId: item.itemId,
         qty: item.qty,
         uomId: item.uomId,
         avgCostAtIssue: avgCostNum,
-        unitPrice: unitCost,
-        totalCost: cost.toNumber()
+        ppnIncluded,
+        totalCost: lineTotalCostRaw,
+        ...(sellingPrice != null && { sellingPrice, totalSellingPrice }),
       });
+    }
+
+    // Deduct from fabric rolls when the issued item is the WO consumption material and rollBreakdown exists
+    const consumptionMaterialId = (wo as { consumptionMaterialId?: string | null }).consumptionMaterialId ?? null;
+    const rawRollBreakdown = (wo as { rollBreakdown?: unknown }).rollBreakdown;
+    const rollBreakdown = (() => {
+      if (rawRollBreakdown == null) return null;
+      const arr = typeof rawRollBreakdown === 'string' ? (() => { try { return JSON.parse(rawRollBreakdown); } catch { return null; } })() : rawRollBreakdown;
+      return Array.isArray(arr) ? arr as Array<{ rollRef: string; qty: number }> : null;
+    })();
+
+    for (const item of validated.items) {
+      if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && rollBreakdown != null && rollBreakdown.length > 0) {
+        let remainingToAllocate = item.qty;
+        for (const entry of rollBreakdown) {
+          if (remainingToAllocate <= 0) break;
+          const roll = await tx.fabricRoll.findFirst({
+            where: {
+              itemId: item.itemId,
+              remainingLength: { gt: 0 },
+              isClosed: false,
+              OR: [
+                { rollCode: entry.rollRef },
+                { rollRef: entry.rollRef }
+              ]
+            },
+            select: { id: true, remainingLength: true }
+          });
+          if (!roll) continue;
+          const currentRemaining = new Decimal(roll.remainingLength.toString());
+          const deduct = Decimal.min(new Decimal(remainingToAllocate), currentRemaining).toNumber();
+          if (deduct <= 0) continue;
+          const newRemaining = currentRemaining.minus(deduct).toNumber();
+          await tx.fabricRoll.update({
+            where: { id: roll.id },
+            data: { remainingLength: newRemaining }
+          });
+          remainingToAllocate -= deduct;
+        }
+      }
     }
 
     const issue = await tx.materialIssue.create({
@@ -386,6 +622,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       await tx.stockMovement.create({
         data: {
           itemId: mov.itemId,
+          variantSku: mov.variantSku,
           type: 'OUT',
           refType: 'WO_ISSUE',
           refId: issue.id,
@@ -510,11 +747,18 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
     });
 
     if (qtyAccepted > 0 && wo.finishedGoodId) {
+      const fgVariantSku =
+        wo.outputMode === 'SKU'
+          ? ((typeof wo.skuBreakdown === 'string'
+              ? JSON.parse(wo.skuBreakdown)
+              : wo.skuBreakdown) as { variantSku?: string } | null)?.variantSku ?? null
+          : null;
       const costResult = await calculateMovingAverage(
         wo.finishedGoodId,
         new Decimal(qtyAccepted),
         avgCostPerUnit,
-        tx
+        tx,
+        fgVariantSku
       );
       await tx.stockMovement.create({
         data: {
@@ -524,6 +768,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           refId: receipt.id,
           refDocNumber: docNumber,
           qty: qtyAccepted,
+          variantSku: fgVariantSku,
           unitCost: avgCostPerUnit.toNumber(),
           totalCost: totalMaterialCost.toNumber(),
           balanceQty: costResult.newQty.toNumber(),
@@ -720,7 +965,13 @@ export async function getWorkOrderById(id: string) {
       receipts: {
         orderBy: { receivedAt: 'desc' }
       },
-      returns: true
+      returns: true,
+      steps: {
+        include: {
+          supplier: { select: { id: true, name: true, code: true } },
+        },
+        orderBy: { sequence: 'asc' },
+      },
     }
   });
   if (!raw) return null;
@@ -731,6 +982,47 @@ export async function getWorkOrderById(id: string) {
       ? { ...finishedGood, reorderPoint: finishedGood.reorderPoint != null ? Number(finishedGood.reorderPoint) : null }
       : undefined,
   });
+}
+
+/** Roll allocation status for WO detail: per-roll initial/remaining (so user sees what’s already issued). */
+export async function getWorkOrderRollAllocationStatus(woId: string): Promise<Array<{
+  rollRef: string;
+  allocatedQty: number;
+  initialLength: number | null;
+  remainingLength: number | null;
+  used: number | null;
+}>> {
+  const wo = await prisma.workOrder.findUnique({
+    where: { id: woId },
+    select: { consumptionMaterialId: true, rollBreakdown: true },
+  });
+  if (!wo?.consumptionMaterialId || !wo.rollBreakdown) return [];
+  const raw = wo.rollBreakdown;
+  const arr = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : raw;
+  const breakdown = Array.isArray(arr) ? (arr as Array<{ rollRef?: string; qty?: number }>) : [];
+  if (breakdown.length === 0) return [];
+
+  const itemId = wo.consumptionMaterialId;
+  const out: Array<{ rollRef: string; allocatedQty: number; initialLength: number | null; remainingLength: number | null; used: number | null }> = [];
+  for (const entry of breakdown) {
+    const rollRef = entry.rollRef ?? '';
+    const allocatedQty = Number(entry.qty ?? 0);
+    const roll = await prisma.fabricRoll.findFirst({
+      where: {
+        itemId,
+        OR: [{ rollCode: rollRef }, { rollRef }],
+      },
+      select: { initialLength: true, remainingLength: true },
+    });
+    if (roll) {
+      const initial = Number(roll.initialLength);
+      const remaining = Number(roll.remainingLength);
+      out.push({ rollRef, allocatedQty, initialLength: initial, remainingLength: remaining, used: initial - remaining });
+    } else {
+      out.push({ rollRef, allocatedQty, initialLength: null, remainingLength: null, used: null });
+    }
+  }
+  return out;
 }
 
 /**
@@ -795,6 +1087,45 @@ export async function getMaterialPlan(
     availableStock: m.availableStock.toNumber(),
     shortage: m.shortage.toNumber()
   }));
+}
+
+export async function suggestFabricRollAllocation(itemId: string, requiredQty: number) {
+  const rolls = await prisma.fabricRoll.findMany({
+    where: {
+      itemId,
+      isClosed: false,
+      remainingLength: { gt: 0 },
+    },
+    orderBy: { remainingLength: 'asc' },
+    select: {
+      id: true,
+      rollCode: true,
+      rollRef: true,
+      remainingLength: true,
+    },
+  });
+
+  let remaining = new Decimal(requiredQty);
+  const selected: Array<{ rollId: string; rollCode: string; rollRef: string; qty: number }> = [];
+  for (const roll of rolls) {
+    if (remaining.lte(0)) break;
+    const available = new Decimal(roll.remainingLength.toString());
+    const take = Decimal.min(available, remaining);
+    if (take.lte(0)) continue;
+    selected.push({
+      rollId: roll.id,
+      rollCode: roll.rollCode,
+      rollRef: roll.rollRef,
+      qty: take.toNumber(),
+    });
+    remaining = remaining.minus(take);
+  }
+
+  return {
+    selected,
+    totalAllocated: selected.reduce((sum, row) => sum + row.qty, 0),
+    unallocated: Math.max(0, remaining.toNumber()),
+  };
 }
 
 /** Get reconciliation data for a WO (serialized for client). */

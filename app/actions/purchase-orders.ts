@@ -390,6 +390,12 @@ export async function getPOById(id: string) {
       price: toNum(i.price),
       receivedQty: toNum(i.receivedQty),
     })),
+    grns: po.grns.map((g) => ({
+      id: g.id,
+      docNumber: g.docNumber,
+      totalAmount: toNum(g.totalAmount),
+      grnDate: g.grnDate,
+    })),
   };
 }
 
@@ -479,7 +485,7 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
   const session = await auth();
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: poId },
-    select: { docNumber: true },
+    select: { docNumber: true, status: true },
   });
   if (!po) throw new Error('PO not found');
 
@@ -489,6 +495,15 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
   });
 
   if (session?.user?.id) {
+    await prisma.pOStatusHistory.create({
+      data: {
+        poId,
+        status: po.status,
+        changedById: session.user.id,
+        paymentEvent: paidAt != null ? 'MARKED' : 'UNMARKED',
+        notes: paidAt != null ? 'Supplier payment marked' : 'Supplier payment unmarked',
+      },
+    });
     getActorName(session.user.id)
       .then((triggeredByName) =>
         notifyPOPaymentToggled(poId, po.docNumber, paidAt != null, triggeredByName)

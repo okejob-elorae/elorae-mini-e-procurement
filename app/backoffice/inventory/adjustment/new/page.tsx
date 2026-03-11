@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -16,7 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { createStockAdjustment } from '@/app/actions/inventory';
-import { getCurrentStockSummary } from '@/app/actions/stock-card';
+import { getCurrentStockSummary, getItemVariantOptions } from '@/app/actions/stock-card';
 import { getInventoryValue } from '@/lib/inventory/costing';
 import { getItemUomAndConversions } from '@/app/actions/uom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -27,6 +28,8 @@ export default function NewAdjustmentPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const [itemId, setItemId] = useState('');
+  const [variantSku, setVariantSku] = useState('');
+  const [variantOptions, setVariantOptions] = useState<string[]>([]);
   const [type, setType] = useState<'POSITIVE' | 'NEGATIVE'>('POSITIVE');
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState('');
@@ -35,6 +38,7 @@ export default function NewAdjustmentPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<{
     itemId?: string;
+    variantSku?: string;
     qty?: string;
     reason?: string;
     evidence?: string;
@@ -57,10 +61,25 @@ export default function NewAdjustmentPage() {
       setCurrentStock(null);
       setUomData(null);
       setSelectedUomId('');
+      setVariantOptions([]);
+      setVariantSku('');
+      return;
+    }
+    getItemVariantOptions(itemId).then(setVariantOptions);
+  }, [itemId]);
+
+  useEffect(() => {
+    if (!itemId) return;
+    const needsVariant = variantOptions.length > 0;
+    const effectiveVariant = needsVariant ? (variantSku || undefined) : undefined;
+    if (needsVariant && !variantSku) {
+      setCurrentStock(null);
+      setUomData(null);
+      setSelectedUomId('');
       return;
     }
     Promise.all([
-      getInventoryValue(itemId),
+      getInventoryValue(itemId, effectiveVariant ?? null),
       getItemUomAndConversions(itemId),
     ]).then(([v, uom]) => {
       if (v)
@@ -73,7 +92,7 @@ export default function NewAdjustmentPage() {
       setUomData(uom ?? null);
       setSelectedUomId(uom?.baseUom?.id ?? '');
     });
-  }, [itemId]);
+  }, [itemId, variantSku, variantOptions.length]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +103,7 @@ export default function NewAdjustmentPage() {
     }
     const nextErrors: typeof errors = {};
     if (!itemId) nextErrors.itemId = 'Select an item';
+    if (variantOptions.length > 0 && !variantSku) nextErrors.variantSku = 'Select a variant';
     const qtyNum = parseFloat(qty);
     if (isNaN(qtyNum) || qtyNum <= 0) nextErrors.qty = 'Enter a valid quantity';
     if (reason.trim().length < 5) nextErrors.reason = 'Alasan minimal 5 karakter';
@@ -122,6 +142,7 @@ export default function NewAdjustmentPage() {
       const adjustment = await createStockAdjustment(
         {
           itemId,
+          variantSku: variantSku || undefined,
           type,
           qty: qtyNum,
           uomId: selectedUomId || undefined,
@@ -163,28 +184,51 @@ export default function NewAdjustmentPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="itemId">Item *</Label>
-              <Select value={itemId} onValueChange={(v) => { setItemId(v); setErrors((e) => ({ ...e, itemId: undefined })); }}>
-                <SelectTrigger
-                  id="itemId"
-                  className={`min-h-[44px] ${errors.itemId ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
-                  aria-invalid={!!errors.itemId}
-                >
-                  <SelectValue placeholder="Select item" />
-                </SelectTrigger>
-                <SelectContent>
-                  {summary.map((s) => (
-                    <SelectItem key={s.itemId} value={s.itemId}>
-                      {s.item?.sku ?? '-'} – {s.item?.nameId ?? '-'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableCombobox
+                id="itemId"
+                options={summary.map((s) => ({
+                  value: s.itemId,
+                  label: `${s.item?.sku ?? '-'} – ${s.item?.nameId ?? '-'}`,
+                }))}
+                value={itemId}
+                onValueChange={(v) => { setItemId(v); setErrors((e) => ({ ...e, itemId: undefined })); }}
+                placeholder="Select item"
+                aria-invalid={!!errors.itemId}
+                className={errors.itemId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                triggerClassName="min-h-[44px]"
+              />
               {errors.itemId && (
                 <p className="text-sm text-destructive" role="alert">
                   {errors.itemId}
                 </p>
               )}
             </div>
+
+            {variantOptions.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="variantSku">Variant *</Label>
+                <Select
+                  value={variantSku}
+                  onValueChange={(v) => { setVariantSku(v); setErrors((e) => ({ ...e, variantSku: undefined })); }}
+                >
+                  <SelectTrigger id="variantSku" className={`min-h-[44px] ${errors.variantSku ? 'border-destructive' : ''}`}>
+                    <SelectValue placeholder="Select variant" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {variantOptions.map((sku) => (
+                      <SelectItem key={sku} value={sku}>
+                        {sku}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.variantSku && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {errors.variantSku}
+                  </p>
+                )}
+              </div>
+            )}
 
             {currentStock != null && (
               <div className="rounded-md border p-3 text-sm">
@@ -216,28 +260,27 @@ export default function NewAdjustmentPage() {
             {uomData && (
               <div className="space-y-2">
                 <Label htmlFor="uomId">UOM (quantity will be converted to base if different)</Label>
-                <Select
-                  value={selectedUomId}
-                  onValueChange={setSelectedUomId}
-                >
-                  <SelectTrigger id="uomId" className="min-h-[44px]">
-                    <SelectValue placeholder="UOM" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={uomData.baseUom.id}>
-                      {uomData.baseUom.code} ({uomData.baseUom.nameId}) — base
-                    </SelectItem>
-                    {uomData.conversions.map((c) => {
+                <SearchableCombobox
+                  id="uomId"
+                  options={[
+                    {
+                      value: uomData.baseUom.id,
+                      label: `${uomData.baseUom.code} (${uomData.baseUom.nameId}) — base`,
+                    },
+                    ...uomData.conversions.map((c) => {
                       const other = c.fromUomId === uomData.baseUom.id ? c.toUom : c.fromUom;
                       const isToBase = c.toUomId === uomData.baseUom.id;
-                      return (
-                        <SelectItem key={other.id} value={other.id}>
-                          {other.code} ({other.nameId}) — 1 = {isToBase ? c.factor : (1 / c.factor).toFixed(4)} base
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                      return {
+                        value: other.id,
+                        label: `${other.code} (${other.nameId}) — 1 = ${isToBase ? c.factor : (1 / c.factor).toFixed(4)} base`,
+                      };
+                    }),
+                  ]}
+                  value={selectedUomId}
+                  onValueChange={setSelectedUomId}
+                  placeholder="UOM"
+                  triggerClassName="min-h-[44px]"
+                />
               </div>
             )}
 

@@ -23,13 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { ChevronDown, ChevronRight, Loader2, FileDown, Filter, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -168,7 +162,15 @@ export default function AuditTrailPage() {
               <Label htmlFor="audit-user" className="text-muted-foreground">
                 User
               </Label>
-              <Select
+              <SearchableCombobox
+                id="audit-user"
+                options={[
+                  { value: '__all__', label: 'All users' },
+                  ...users.map((u) => ({
+                    value: u.id,
+                    label: u.name || u.email || u.id,
+                  })),
+                ]}
                 value={filters.userId ?? '__all__'}
                 onValueChange={(v) =>
                   setFilters((f) => ({
@@ -177,19 +179,9 @@ export default function AuditTrailPage() {
                     offset: 0,
                   }))
                 }
-              >
-                <SelectTrigger id="audit-user" className="h-9 w-full">
-                  <SelectValue placeholder="All users" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">All users</SelectItem>
-                  {users.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.name || u.email || u.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="All users"
+                triggerClassName="h-9 w-full"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="audit-action" className="text-muted-foreground">

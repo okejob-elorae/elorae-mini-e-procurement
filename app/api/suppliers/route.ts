@@ -33,10 +33,10 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const type = searchParams.get('type');
     const categoryId = searchParams.get('categoryId');
     const search = searchParams.get('search');
     const sync = searchParams.get('sync') === 'true';
+    const approvedOnly = searchParams.get('approvedOnly') === 'true';
     const pageParam = searchParams.get('page');
     const pageSizeParam = searchParams.get('pageSize');
     const usePagination = pageParam != null && pageSizeParam != null;
@@ -51,10 +51,13 @@ export async function GET(req: NextRequest) {
     if (statusParam && ['PENDING_APPROVAL', 'ACTIVE', 'REJECTED'].includes(statusParam)) {
       where.status = statusParam;
     }
+    if (approvedOnly) {
+      where.status = 'ACTIVE';
+    }
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { code: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search } },
+        { code: { contains: search } },
       ];
     }
 

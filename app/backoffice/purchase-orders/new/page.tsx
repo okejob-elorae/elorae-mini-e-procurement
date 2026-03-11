@@ -33,10 +33,11 @@ export default function NewPOPage() {
 
         // Fetch from API if online
         if (isOnline()) {
-          const response = await fetch('/api/suppliers?sync=true');
+          const response = await fetch('/api/suppliers?sync=true&approvedOnly=true');
           if (response.ok) {
             const data = await response.json();
-            setSuppliers(data.map((s: any) => ({ id: s.id, code: s.code, name: s.name })));
+            const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
+            setSuppliers(list.map((s: any) => ({ id: s.id, code: s.code, name: s.name })));
           }
         }
       } catch (error) {

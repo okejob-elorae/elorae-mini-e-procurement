@@ -30,13 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { Loader2, Shield, History, UserX, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -351,18 +345,16 @@ export default function SecuritySettingsPage() {
             <CardDescription>{t('resetPinDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2 items-end">
-            <Select value={resetTargetId} onValueChange={setResetTargetId}>
-              <SelectTrigger className="w-[280px]">
-                <SelectValue placeholder={t('selectUser')} />
-              </SelectTrigger>
-              <SelectContent>
-                {users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.name || u.email} ({u.email})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableCombobox
+              options={users.map((u) => ({
+                value: u.id,
+                label: `${u.name || u.email} (${u.email})`,
+              }))}
+              value={resetTargetId}
+              onValueChange={setResetTargetId}
+              placeholder={t('selectUser')}
+              triggerClassName="w-[280px]"
+            />
             <Button variant="destructive" onClick={handleForceReset} disabled={!resetTargetId || resetting}>
               {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : t('resetPin')}
             </Button>

@@ -54,18 +54,34 @@ export async function getInventoryValueSnapshot(
     },
   });
 
-  const totalValue = rows.reduce((s, r) => s + Number(r.totalValue), 0);
-  const totalQty = rows.reduce((s, r) => s + Number(r.qtyOnHand), 0);
-  const details: InventorySnapshotDetail[] = rows.map((r) => ({
-    itemId: r.item.id,
-    sku: r.item.sku,
-    name: r.item.nameEn || r.item.nameId,
-    type: r.item.type,
-    uomCode: r.item.uom?.code ?? '',
-    qtyOnHand: Number(r.qtyOnHand),
-    avgCost: Number(r.avgCost),
-    totalValue: Number(r.totalValue),
-    percentageOfTotal: totalValue > 0 ? (Number(r.totalValue) / totalValue) * 100 : 0,
+  // Aggregate by itemId (one row per item)
+  const byItem = new Map<
+    string,
+    { qtyOnHand: number; totalValue: number; item: (typeof rows)[0]['item'] }
+  >();
+  for (const r of rows) {
+    const qty = Number(r.qtyOnHand);
+    const val = Number(r.totalValue);
+    const existing = byItem.get(r.itemId);
+    if (existing) {
+      existing.qtyOnHand += qty;
+      existing.totalValue += val;
+    } else {
+      byItem.set(r.itemId, { qtyOnHand: qty, totalValue: val, item: r.item });
+    }
+  }
+  const totalValue = Array.from(byItem.values()).reduce((s, a) => s + a.totalValue, 0);
+  const totalQty = Array.from(byItem.values()).reduce((s, a) => s + a.qtyOnHand, 0);
+  const details: InventorySnapshotDetail[] = Array.from(byItem.entries()).map(([itemId, agg]) => ({
+    itemId,
+    sku: agg.item.sku,
+    name: agg.item.nameEn || agg.item.nameId,
+    type: agg.item.type,
+    uomCode: agg.item.uom?.code ?? '',
+    qtyOnHand: agg.qtyOnHand,
+    avgCost: agg.qtyOnHand > 0 ? agg.totalValue / agg.qtyOnHand : 0,
+    totalValue: agg.totalValue,
+    percentageOfTotal: totalValue > 0 ? (agg.totalValue / totalValue) * 100 : 0,
   }));
 
   const categories: Record<string, { totalValue: number; count: number }> = {};
@@ -76,28 +92,28 @@ export async function getInventoryValueSnapshot(
     categories[key].count += 1;
   }
 
-  const lowStockAlerts = rows
-    .filter((r) => {
-      const rp = r.item.reorderPoint != null ? Number(r.item.reorderPoint) : null;
-      return rp != null && Number(r.qtyOnHand) <= rp;
-    })
-    .map((r) => ({
-      itemId: r.item.id,
-      sku: r.item.sku,
-      name: r.item.nameEn || r.item.nameId,
-      qtyOnHand: Number(r.qtyOnHand),
-      reorderPoint: Number(r.item.reorderPoint),
-    }));
+  const lowStockAlerts = details.filter((d) => {
+    const item = byItem.get(d.itemId)?.item;
+    const rp = item?.reorderPoint != null ? Number(item.reorderPoint) : null;
+    return rp != null && d.qtyOnHand <= rp;
+  }).map((d) => ({
+    itemId: d.itemId,
+    sku: d.sku,
+    name: d.name,
+    qtyOnHand: d.qtyOnHand,
+    reorderPoint: Number(byItem.get(d.itemId)!.item.reorderPoint),
+  }));
 
+  const itemCount = byItem.size;
   return {
     generatedAt: new Date(),
     asOfDate,
     summary: {
-      totalItems: rows.length,
-      totalSKUs: rows.length,
+      totalItems: itemCount,
+      totalSKUs: itemCount,
       totalQuantity: totalQty,
       totalValue,
-      avgValuePerItem: rows.length > 0 ? totalValue / rows.length : 0,
+      avgValuePerItem: itemCount > 0 ? totalValue / itemCount : 0,
     },
     categories,
     details,
@@ -118,17 +134,26 @@ export async function getCOGSRawVsFinished(): Promise<{
       item: { select: { type: true } },
     },
   });
+  const byItem = new Map<string, { totalValue: number; type: string }>();
+  for (const r of rows) {
+    const val = Number(r.totalValue);
+    const existing = byItem.get(r.itemId);
+    if (existing) {
+      existing.totalValue += val;
+    } else {
+      byItem.set(r.itemId, { totalValue: val, type: r.item.type });
+    }
+  }
   let rawValue = 0;
   let finishedValue = 0;
   let rawCount = 0;
   let finishedCount = 0;
-  for (const r of rows) {
-    const val = Number(r.totalValue);
-    if (r.item.type === 'FINISHED_GOOD') {
-      finishedValue += val;
+  for (const a of byItem.values()) {
+    if (a.type === 'FINISHED_GOOD') {
+      finishedValue += a.totalValue;
       finishedCount += 1;
     } else {
-      rawValue += val;
+      rawValue += a.totalValue;
       rawCount += 1;
     }
   }

@@ -29,10 +29,10 @@ export async function generateMaterialPlan(
       material: {
         include: {
           uom: true,
-          inventoryValue: true
-        }
-      }
-    }
+          inventoryValues: { select: { qtyOnHand: true } },
+        },
+      },
+    },
   });
 
   return rules.map((rule) => {
@@ -42,7 +42,10 @@ export async function generateMaterialPlan(
     );
     const plannedQty = baseQty.mul(wasteFactor);
     const availableStock = new Decimal(
-      rule.material.inventoryValue?.qtyOnHand?.toString() || 0
+      (rule.material.inventoryValues ?? []).reduce(
+        (sum, r) => sum + Number(r.qtyOnHand),
+        0
+      )
     );
     const shortage = plannedQty.gt(availableStock)
       ? plannedQty.minus(availableStock)

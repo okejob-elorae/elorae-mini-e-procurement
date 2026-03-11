@@ -11,9 +11,11 @@ export function createItemSchema(t: ValidationTranslate = defaultT) {
     nameEn: z.string().min(1, t('itemNameEnRequired')),
     type: z.enum(['FABRIC', 'ACCESSORIES', 'FINISHED_GOOD']),
     uomId: z.string().min(1, t('selectUom')),
+    categoryId: z.string().optional(),
     description: z.string().optional(),
     variants: z.array(z.record(z.string(), z.string())).optional(),
     reorderPoint: z.number().min(0).optional(),
+    overReceiveThreshold: z.number().min(0).optional(),
     sellingPrice: z.number().min(0).optional(),
   });
 }
@@ -32,6 +34,7 @@ export function createPoItemSchema(t: ValidationTranslate = defaultT) {
     itemId: z.string().min(1, t('selectItem')),
     qty: z.number().positive(t('qtyPositive')),
     price: z.number().nonnegative(t('priceNonNegative')),
+    ppnIncluded: z.boolean().default(true),
     uomId: z.string().min(1, t('selectUom')),
     notes: z.string().optional(),
   });

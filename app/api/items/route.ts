@@ -4,22 +4,37 @@ import { prisma } from '@/lib/prisma';
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
+/** Aggregate variant-level inventory to one item-level object. */
+function aggregateInventory(
+  rows: Array<{ qtyOnHand: unknown; totalValue: unknown }> | null | undefined
+): { qtyOnHand: number; avgCost: number; totalValue: number } | null {
+  if (!rows?.length) return null;
+  let qty = 0;
+  let totalValue = 0;
+  for (const r of rows) {
+    qty += toNum(r.qtyOnHand) ?? 0;
+    totalValue += toNum(r.totalValue) ?? 0;
+  }
+  return {
+    qtyOnHand: qty,
+    avgCost: qty > 0 ? totalValue / qty : 0,
+    totalValue,
+  };
+}
+
 /** Serialize item for client (no Prisma Decimal) */
 function serializeItem(item: {
   reorderPoint?: unknown;
-  inventoryValue?: { qtyOnHand: unknown; avgCost: unknown; totalValue: unknown } | null;
+  inventoryValues?: Array<{ qtyOnHand: unknown; avgCost: unknown; totalValue: unknown }>;
   [k: string]: unknown;
 }) {
+  const inv = aggregateInventory(
+    item.inventoryValues as Array<{ qtyOnHand: unknown; totalValue: unknown }> | undefined
+  );
   return {
     ...item,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
-    inventoryValue: item.inventoryValue
-      ? {
-          qtyOnHand: toNum(item.inventoryValue.qtyOnHand),
-          avgCost: toNum(item.inventoryValue.avgCost),
-          totalValue: toNum(item.inventoryValue.totalValue),
-        }
-      : null,
+    inventoryValue: inv,
   };
 }
 
@@ -42,9 +57,9 @@ export async function GET(req: NextRequest) {
     if (isActive !== undefined) where.isActive = isActive === 'true';
     if (search) {
       where.OR = [
-        { sku: { contains: search, mode: 'insensitive' } },
-        { nameId: { contains: search, mode: 'insensitive' } },
-        { nameEn: { contains: search, mode: 'insensitive' } },
+        { sku: { contains: search } },
+        { nameId: { contains: search } },
+        { nameEn: { contains: search } },
       ];
     }
 
@@ -52,8 +67,8 @@ export async function GET(req: NextRequest) {
       where,
       include: {
         uom: { select: { id: true, code: true, nameId: true, nameEn: true } },
-        inventoryValue: {
-          select: { qtyOnHand: true, avgCost: true, totalValue: true },
+        inventoryValues: {
+          select: { qtyOnHand: true, totalValue: true },
         },
       },
       orderBy: { createdAt: 'desc' },

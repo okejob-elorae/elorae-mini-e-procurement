@@ -10,13 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Table,
   TableBody,
@@ -315,21 +309,15 @@ export default function UOMPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="fromUomId">From UOM *</Label>
-                        <Select
+                        <SearchableCombobox
+                          options={uoms.map((uom) => ({
+                            value: uom.id,
+                            label: `${uom.code} – ${displayName(uom)}`,
+                          }))}
                           value={watchConversion('fromUomId')}
                           onValueChange={(value) => setValueConversion('fromUomId', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={tPlaceholders('selectUOM')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {uoms.map((uom) => (
-                              <SelectItem key={uom.id} value={uom.id}>
-                                {uom.code} – {displayName(uom)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          placeholder={tPlaceholders('selectUOM')}
+                        />
                         {errorsConversion.fromUomId && (
                           <p className="text-sm text-destructive">
                             {errorsConversion.fromUomId.message}
@@ -338,21 +326,15 @@ export default function UOMPage() {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="toUomId">To UOM *</Label>
-                        <Select
+                        <SearchableCombobox
+                          options={uoms.map((uom) => ({
+                            value: uom.id,
+                            label: `${uom.code} – ${displayName(uom)}`,
+                          }))}
                           value={watchConversion('toUomId')}
                           onValueChange={(value) => setValueConversion('toUomId', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={tPlaceholders('selectUOM')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {uoms.map((uom) => (
-                              <SelectItem key={uom.id} value={uom.id}>
-                                {uom.code} – {displayName(uom)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          placeholder={tPlaceholders('selectUOM')}
+                        />
                         {errorsConversion.toUomId && (
                           <p className="text-sm text-destructive">
                             {errorsConversion.toUomId.message}

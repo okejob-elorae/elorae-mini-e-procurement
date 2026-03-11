@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -72,7 +73,7 @@ export default function NotaRegisterPage() {
   const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
-    fetch('/api/suppliers?sync=true')
+    fetch('/api/suppliers?sync=true&approvedOnly=true')
       .then((r) => r.json())
       .then((data: unknown) => setSuppliers(Array.isArray(data) ? data : []))
       .catch(() => {
@@ -195,19 +196,16 @@ export default function NotaRegisterPage() {
         <CardContent className="flex flex-wrap gap-4 items-end">
           <div className="space-y-2">
             <Label>Vendor (CMT)</Label>
-            <Select value={vendorId || '_'} onValueChange={(v) => setVendorId(v === '_' ? '' : v)}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder={tPlaceholders('all')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_">{tPlaceholders('all')}</SelectItem>
-                {suppliers.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name} ({s.code})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableCombobox
+              options={[
+                { value: '_', label: tPlaceholders('all') },
+                ...suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })),
+              ]}
+              value={vendorId || '_'}
+              onValueChange={(v) => setVendorId(v === '_' ? '' : v)}
+              placeholder={tPlaceholders('all')}
+              triggerClassName="w-[220px]"
+            />
           </div>
           <div className="space-y-2">
             <Label>Dari</Label>

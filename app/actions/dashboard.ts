@@ -139,10 +139,18 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     }),
   ]);
 
-  const lowStockCount = inventoryRows.filter(
-    (r) =>
-      r.item.reorderPoint != null &&
-      Number(r.qtyOnHand) <= Number(r.item.reorderPoint)
+  const inventoryByItem = new Map<string, { qtyOnHand: number; reorderPoint: number | null }>();
+  for (const r of inventoryRows) {
+    const rp = r.item.reorderPoint != null ? Number(r.item.reorderPoint) : null;
+    const existing = inventoryByItem.get(r.itemId);
+    if (existing) {
+      existing.qtyOnHand += Number(r.qtyOnHand);
+    } else {
+      inventoryByItem.set(r.itemId, { qtyOnHand: Number(r.qtyOnHand), reorderPoint: rp });
+    }
+  }
+  const lowStockCount = Array.from(inventoryByItem.values()).filter(
+    (a) => a.reorderPoint != null && a.qtyOnHand <= a.reorderPoint
   ).length;
 
   const recentActivity = auditLogs.map((log) => ({

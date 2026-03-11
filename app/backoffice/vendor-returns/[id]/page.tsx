@@ -200,6 +200,7 @@ export default function VendorReturnDetailPage() {
 
   const vendor = ret.vendor as { name?: string; code?: string } | null;
   const wo = ret.wo as { id: string; docNumber: string } | null;
+  const grn = (ret as { grn?: { id: string; docNumber: string } | null }).grn ?? null;
   const rawLines = ret.lines;
   const lines: Array<{
     type: string;
@@ -349,6 +350,12 @@ export default function VendorReturnDetailPage() {
                   >
                     {wo.docNumber}
                   </Link>
+                </p>
+              )}
+              {grn && (
+                <p>
+                  <span className="text-muted-foreground">GRN:</span>{' '}
+                  <span>{grn.docNumber}</span>
                 </p>
               )}
               {ret.processedAt && (

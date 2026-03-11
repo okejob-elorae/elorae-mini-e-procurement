@@ -115,13 +115,18 @@ export async function reconcileWorkOrder(woId: string): Promise<{
       ? variance.div(theoreticalUsage).mul(100)
       : new Decimal(0);
 
-    const inventory = await prisma.inventoryValue.findUnique({
-      where: { itemId: planItemId }
+    const inventoryRows = await prisma.inventoryValue.findMany({
+      where: { itemId: planItemId },
+      select: { qtyOnHand: true, totalValue: true },
     });
+    let totalQty = 0;
+    let totalValue = 0;
+    for (const r of inventoryRows) {
+      totalQty += Number(r.qtyOnHand);
+      totalValue += Number(r.totalValue);
+    }
     const avgCost =
-      inventory != null && inventory.avgCost != null
-        ? new Decimal(String(inventory.avgCost))
-        : new Decimal(0);
+      totalQty > 0 ? new Decimal(totalValue / totalQty) : new Decimal(0);
     const varianceValue = variance.mul(avgCost);
 
     const tolerance = new Decimal(0.01);

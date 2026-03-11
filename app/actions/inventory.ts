@@ -11,6 +11,7 @@ import { getActorName, notifyStockAdjustmentCreated } from '@/app/actions/notifi
 
 const adjustmentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
+  variantSku: z.string().optional(),
   type: z.enum(['POSITIVE', 'NEGATIVE']),
   qty: z.number().positive(),
   uomId: z.string().min(1).optional(),
@@ -27,32 +28,40 @@ export async function createStockAdjustment(
   ipAddress?: string
 ) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
   
   adjustmentSchema.parse(data);
 
+  // Use server session for PIN verification; fallback to lookup by email if session id not in DB (e.g. stale JWT)
   const pinResult = await verifyPinForAction(
-    userId,
+    session.user.id,
     userPin,
     'STOCK_ADJUSTMENT',
     undefined,
-    ipAddress
+    ipAddress,
+    session.user.email ?? undefined
   );
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message);
   }
+  const effectiveUserId = pinResult.userId ?? session.user.id;
 
   const adjustmentResult = await prisma.$transaction(async (tx) => {
 
-    // Get item (for base UOM) and current inventory
+    const variantKey = data.variantSku ?? null;
+    const compositeWhere = {
+      itemId_variantSku: { itemId: data.itemId, variantSku: variantKey },
+    };
+
+    // Get item (for base UOM) and current inventory for (itemId, variantSku)
     const [item, current] = await Promise.all([
       tx.item.findUnique({
         where: { id: data.itemId },
         select: { uomId: true },
       }),
       tx.inventoryValue.findUnique({
-        where: { itemId: data.itemId },
+        where: compositeWhere,
       }),
     ]);
 
@@ -130,8 +139,8 @@ export async function createStockAdjustment(
         newQty: newQty.toNumber(),
         prevAvgCost: prevAvgCost.toNumber(),
         newAvgCost: prevAvgCost.toNumber(),
-        approvedById: userId,
-        createdById: userId
+        approvedById: effectiveUserId,
+        createdById: effectiveUserId
       }
     });
     
@@ -139,7 +148,7 @@ export async function createStockAdjustment(
 
     // Update inventory (avg cost unchanged)
     await tx.inventoryValue.update({
-      where: { itemId: data.itemId },
+      where: compositeWhere,
       data: {
         qtyOnHand: newQty.toNumber(),
         totalValue: newTotalValue.toNumber(),
@@ -158,6 +167,7 @@ export async function createStockAdjustment(
     await tx.stockMovement.create({
       data: {
         itemId: data.itemId,
+        variantSku: variantKey,
         type: 'ADJUSTMENT',
         refType: 'ADJUSTMENT',
         refId: adjustment.id,
@@ -175,7 +185,7 @@ export async function createStockAdjustment(
     const prevValue = prevQty.mul(prevAvgCost);
     await tx.auditLog.create({
       data: {
-        userId,
+        userId: effectiveUserId,
         action: 'STOCK_ADJUSTMENT',
         entityType: 'StockAdjustment',
         entityId: adjustment.id,
@@ -193,7 +203,7 @@ export async function createStockAdjustment(
     return adjustment;
   });
 
-  getActorName(userId)
+  getActorName(effectiveUserId)
     .then((triggeredByName) =>
       notifyStockAdjustmentCreated(adjustmentResult.id, adjustmentResult.docNumber, triggeredByName)
     )
@@ -328,18 +338,30 @@ export async function getStockAdjustmentById(id: string) {
   };
 }
 
-/** Get average cost per item for given item IDs (for Material Issue form prefill). */
+/** Get average cost per item for given item IDs (weighted by qty across variants). */
 export async function getItemAvgCosts(
   itemIds: string[]
 ): Promise<Record<string, number>> {
   if (itemIds.length === 0) return {};
   const rows = await prisma.inventoryValue.findMany({
     where: { itemId: { in: itemIds } },
-    select: { itemId: true, avgCost: true },
+    select: { itemId: true, qtyOnHand: true, totalValue: true },
   });
-  const out: Record<string, number> = {};
+  const byItem = new Map<string, { qty: number; totalValue: number }>();
   for (const r of rows) {
-    out[r.itemId] = Number(r.avgCost);
+    const qty = Number(r.qtyOnHand);
+    const val = Number(r.totalValue);
+    const existing = byItem.get(r.itemId);
+    if (existing) {
+      existing.qty += qty;
+      existing.totalValue += val;
+    } else {
+      byItem.set(r.itemId, { qty, totalValue: val });
+    }
+  }
+  const out: Record<string, number> = {};
+  for (const [id, agg] of byItem.entries()) {
+    out[id] = agg.qty > 0 ? agg.totalValue / agg.qty : 0;
   }
   return out;
 }
@@ -433,10 +455,18 @@ export async function getInventoryStats() {
     })
   ]);
 
-  const lowStockItems = inventoryWithReorder.filter(
-    (r) =>
-      r.item.reorderPoint != null &&
-      Number(r.qtyOnHand) <= Number(r.item.reorderPoint)
+  const inventoryByItem = new Map<string, { qtyOnHand: number; reorderPoint: number | null }>();
+  for (const r of inventoryWithReorder) {
+    const rp = r.item.reorderPoint != null ? Number(r.item.reorderPoint) : null;
+    const existing = inventoryByItem.get(r.itemId);
+    if (existing) {
+      existing.qtyOnHand += Number(r.qtyOnHand);
+    } else {
+      inventoryByItem.set(r.itemId, { qtyOnHand: Number(r.qtyOnHand), reorderPoint: rp });
+    }
+  }
+  const lowStockItems = Array.from(inventoryByItem.values()).filter(
+    (a) => a.reorderPoint != null && a.qtyOnHand <= a.reorderPoint
   ).length;
   
   return {

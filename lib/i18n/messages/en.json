@@ -38,6 +38,7 @@
     "supplierType": "Supplier Type",
     "items": "Items",
     "navItemsAll": "All Items",
+    "navItemsCategory": "Category",
     "navItemsRaw": "Raw Materials",
     "navItemsFinished": "Finished Goods",
     "purchaseOrders": "Purchase Orders",
@@ -163,10 +164,25 @@
       "title": "Document Numbers",
       "description": "Prefix and reset period for document numbers"
     },
+    "tax": {
+      "title": "Tax (PPN)",
+      "description": "PPN rate used when PO line excludes tax"
+    },
     "uom": {
       "title": "UOM",
       "description": "Units of measure and conversions"
+    },
+    "rbac": {
+      "title": "Roles & Permissions",
+      "description": "Manage user roles and permissions (RBAC)"
     }
+  },
+  "tax": {
+    "pageTitle": "Tax (PPN) Settings",
+    "pageDescription": "PPN rate (percent) applied to PO line cost when the line is set to \"Exclude PPN\". Used for work order material cost calculation.",
+    "ppnRateLabel": "PPN rate (%)",
+    "save": "Save",
+    "loadError": "Failed to load PPN rate"
   },
   "documents": {
     "pageTitle": "Document Numbering",
@@ -665,9 +681,39 @@
   },
   "hpp": {
     "title": "HPP (Harga Pokok Produksi)",
-    "subtitle": "Cost of goods for finished goods — material cost and avg cost per unit from FG receipts",
-    "cardTitle": "Finished goods — HPP view",
-    "cardDescription": "Last receipt cost and material cost per finished good. Data comes from FG receipt records.",
+    "subtitle": "Cost of goods manufactured per work order — fabric, accessories, and service costs",
+    "cardTitle": "HPP by Work Order",
+    "cardDescription": "Per-WO cost breakdown: fabric, accessories, service, margin, and selling price.",
+    "filters": "Filters",
+    "finishedGood": "Finished good",
+    "dateFrom": "Date from",
+    "dateTo": "Date to",
+    "vendor": "Vendor",
+    "applyFilters": "Apply",
+    "woDocNumber": "WO Doc Number",
+    "articleFg": "Article / FG",
+    "plannedQty": "Planned Qty",
+    "fabricCostPcs": "Fabric Cost/pcs",
+    "accessoriesCostPcs": "Accessories Cost/pcs",
+    "serviceCostPcs": "Service Cost/pcs",
+    "hppPcs": "HPP/pcs",
+    "ppnStatus": "PPN Status",
+    "ppnOk": "OK",
+    "ppnMixed": "Mixed",
+    "marginPercent": "Margin %",
+    "sellingPrice": "Selling Price",
+    "detail": "Detail",
+    "detailTitle": "HPP breakdown",
+    "category": "Category",
+    "itemName": "Item name",
+    "unitCost": "Unit cost",
+    "qtyPerPcs": "Qty/pcs",
+    "costPerPcs": "Cost/pcs",
+    "ppnIncluded": "PPN incl.",
+    "marginPercentEdit": "Margin %",
+    "additionalCostEdit": "Additional cost",
+    "saveAdjustments": "Save",
+    "noRows": "No work orders match the filters.",
     "sku": "SKU",
     "name": "Name",
     "receiptCount": "Receipt count",
@@ -677,11 +723,11 @@
     "noFinishedGoods": "No finished goods found.",
     "helpAriaLabel": "How is HPP calculated?",
     "helpTitle": "How HPP is calculated",
-    "helpIntro": "HPP (Harga Pokok Produksi) is the cost of producing finished goods. This report shows values derived from FG (Finished Goods) receipt records.",
+    "helpIntro": "HPP (Harga Pokok Produksi) aggregates fabric, accessories, and service costs per piece. Selling price = HPP × (1 + margin%) + additional cost.",
     "helpWhenStored": "When production receives finished goods (via Work Order receipt), the system stores on each receipt:",
     "helpMaterialCost": "Material cost — total cost of materials issued for that production",
     "helpAvgCostPerUnit": "Avg cost per unit — total cost (e.g. material + CMT if applicable) divided by quantity received",
-    "helpTableExplanation": "The table shows for each finished good: Receipt count, the last avg cost/unit and last material cost from the most recent FG receipt, and the last receipt date. If there are no receipts yet, those columns show —.",
+    "helpTableExplanation": "The table shows for each work order: cost layers, HPP per piece, PPN status (Mixed if costs have mixed PPN), margin, and selling price.",
     "helpFuture": "Labor/CMT and overhead can be included in future updates via WO or allocation rules."
   }
 }

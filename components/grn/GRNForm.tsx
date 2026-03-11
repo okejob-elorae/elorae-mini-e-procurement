@@ -1,17 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Table,
   TableBody,
@@ -34,10 +28,12 @@ import { createGRN, type GRNFormData } from '@/app/actions/grn';
 import { getPOs } from '@/app/actions/purchase-orders';
 import { getPOById } from '@/app/actions/purchase-orders';
 import { getItems } from '@/app/actions/items';
+import { getItemCategories } from '@/app/actions/item-categories';
 import { savePendingGRN } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
+import { FabricRollInput, FabricRackPreview } from '@/components/grn/FabricRollInput';
 
 interface Supplier {
   id: string;
@@ -50,19 +46,34 @@ interface ItemOption {
   sku: string;
   nameId: string;
   nameEn: string;
+  type?: string;
+  categoryId?: string | null;
   uomId: string;
   uom?: { id?: string; code: string };
+}
+
+interface ItemCategoryOption {
+  id: string;
+  name: string;
+  code?: string | null;
 }
 
 interface LineRow {
   id: string;
   itemId: string;
+  itemType?: string;
   sku: string;
   nameId: string;
   uomId: string;
   uomCode: string;
   qty: number;
   unitCost: number;
+  /** Fabric: tokenized roll lengths (one string per roll). Qty is derived from valid numeric values. */
+  rollValues?: string[];
+  /** PO ordered qty for this line when loaded from PO – used for "Received X / Y" in FabricRollInput. */
+  poOrderedQty?: number | null;
+  /** Already received qty for this line from previous GRNs (from PO line receivedQty). */
+  poAlreadyReceivedQty?: number | null;
 }
 
 interface GRNFormProps {
@@ -75,17 +86,21 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const [poId, setPoId] = useState<string>('');
   const [supplierId, setSupplierId] = useState<string>('');
   const [lines, setLines] = useState<LineRow[]>([
-    { id: '0', itemId: '', sku: '', nameId: '', uomId: '', uomCode: '', qty: 0, unitCost: 0 },
+    { id: '0', itemId: '', itemType: '', sku: '', nameId: '', uomId: '', uomCode: '', qty: 0, unitCost: 0, rollValues: [] },
   ]);
+  const [categoryId, setCategoryId] = useState<string>('');
   const [notes, setNotes] = useState('');
-  const [photoUrls, _setPhotoUrls] = useState<string[]>([]);
+  const [photoUrls] = useState<string[]>([]);
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [poList, setPoList] = useState<Array<{ id: string; docNumber: string; supplierId: string }>>([]);
   const [items, setItems] = useState<ItemOption[]>([]);
+  const [categories, setCategories] = useState<ItemCategoryOption[]>([]);
   const [scanOpen, setScanOpen] = useState(false);
   const [nextLineId, setNextLineId] = useState(1);
   const [errors, setErrors] = useState<{ supplierId?: string; lines?: string }>({});
+  /** Number of existing GRNs for the selected PO (when loaded from PO). */
+  const [poGrnCount, setPoGrnCount] = useState(0);
 
   const loadPOs = useCallback(async () => {
     try {
@@ -121,27 +136,46 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
     }
   }, []);
 
+  const loadCategories = useCallback(async () => {
+    try {
+      const rows = await getItemCategories(true);
+      setCategories((rows as ItemCategoryOption[]) || []);
+    } catch {
+      setCategories([]);
+    }
+  }, []);
+
   useEffect(() => {
     loadPOs();
     loadItems();
-  }, [loadPOs, loadItems]);
+    loadCategories();
+  }, [loadPOs, loadItems, loadCategories]);
 
   useEffect(() => {
-    if (!poId) return;
+    if (!poId) {
+      setPoGrnCount(0);
+      return;
+    }
     (async () => {
       try {
         const po = await getPOById(poId);
         if (!po || !po.supplier) return;
         setSupplierId(po.supplierId);
-        const rows: LineRow[] = (po.items || []).map((line: { itemId: string; item: { sku: string; nameId: string; uom: { id: string; code: string } }; qty: unknown; price: unknown; uomId: string }, i: number) => ({
+        const grns = (po as { grns?: Array<{ id: string }> }).grns;
+        setPoGrnCount(grns?.length ?? 0);
+        const rows: LineRow[] = (po.items || []).map((line: { itemId: string; item: { sku: string; nameId: string; type?: string; uom: { id: string; code: string } }; qty: unknown; price: unknown; receivedQty?: unknown; uomId: string }, i: number) => ({
           id: `po-${i}`,
           itemId: line.itemId,
+          itemType: line.item?.type ?? '',
           sku: line.item.sku,
           nameId: line.item.nameId,
           uomId: line.uomId || line.item.uom?.id,
           uomCode: line.item.uom?.code ?? '',
-          qty: Number(line.qty),
+          qty: 0,
           unitCost: Number(line.price),
+          rollValues: [],
+          poOrderedQty: Number(line.qty),
+          poAlreadyReceivedQty: line.receivedQty != null ? Number(line.receivedQty) : null,
         }));
         if (rows.length > 0) setLines(rows);
       } catch {
@@ -157,12 +191,14 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
       {
         id: `line-${nextLineId}`,
         itemId: '',
+        itemType: '',
         sku: '',
         nameId: '',
         uomId: '',
         uomCode: '',
         qty: 0,
         unitCost: 0,
+        rollValues: [],
       },
     ]);
     setNextLineId((n) => n + 1);
@@ -180,10 +216,12 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           ? {
               ...r,
               itemId: item.id,
+              itemType: item.type,
               sku: item.sku,
               nameId: item.nameId,
               uomId: item.uomId || (item.uom as { id?: string })?.id || '',
               uomCode: item.uom?.code ?? '',
+              rollValues: item.type === 'FABRIC' ? (r.rollValues ?? []) : undefined,
             }
           : r
       )
@@ -193,6 +231,21 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const setLineQty = (lineId: string, qty: number) => {
     setLines((prev) =>
       prev.map((r) => (r.id === lineId ? { ...r, qty } : r))
+    );
+  };
+
+  const parseRollValuesToLengths = (rollValues: string[]): number[] =>
+    rollValues
+      .map((v) => Number(v.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+  const setLineRollValues = (lineId: string, rollValues: string[]) => {
+    setLines((prev) =>
+      prev.map((r) => {
+        if (r.id !== lineId) return r;
+        const lengths = parseRollValuesToLengths(rollValues);
+        return { ...r, rollValues, qty: lengths.reduce((sum, n) => sum + n, 0) };
+      })
     );
   };
 
@@ -295,14 +348,27 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         await savePendingGRN({
           poId: poId || undefined,
           supplierId,
-          items: validLines.map((l) => ({
-            itemId: l.itemId,
-            sku: l.sku,
-            name: l.nameId,
-            qty: l.qty,
-            unitCost: l.unitCost,
-            uomId: l.uomId,
-          })),
+          items: validLines.map((l) => {
+            const lengths = l.itemType === 'FABRIC' ? parseRollValuesToLengths(l.rollValues ?? []) : [];
+            const base = {
+              itemId: l.itemId,
+              sku: l.sku,
+              name: l.nameId,
+              qty: lengths.length > 0 ? lengths.reduce((a, b) => a + b, 0) : l.qty,
+              unitCost: l.unitCost,
+              uomId: l.uomId,
+            };
+            if (l.itemType === 'FABRIC' && lengths.length > 0) {
+              return {
+                ...base,
+                rolls: lengths.map((length, idx) => ({
+                  rollRef: `${l.sku || 'ROLL'}-${idx + 1}`,
+                  length,
+                })),
+              };
+            }
+            return base;
+          }),
           notes: notes || undefined,
           photoBase64,
           totalAmount: runningTotal,
@@ -341,12 +407,23 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
       const data: GRNFormData = {
         poId: poId || undefined,
         supplierId,
-        items: validLines.map((l) => ({
-          itemId: l.itemId,
-          qty: l.qty,
-          unitCost: l.unitCost,
-          uomId: l.uomId,
-        })),
+        items: validLines.map((l) => {
+          const lengths = l.itemType === 'FABRIC' ? parseRollValuesToLengths(l.rollValues ?? []) : [];
+          return {
+            ...(l.itemType === 'FABRIC' && lengths.length > 0
+              ? {
+                  rolls: lengths.map((length, idx) => ({
+                    rollRef: `${l.sku || 'ROLL'}-${idx + 1}`,
+                    length,
+                  })),
+                }
+              : {}),
+            itemId: l.itemId,
+            qty: l.itemType === 'FABRIC' && lengths.length > 0 ? lengths.reduce((a, b) => a + b, 0) : l.qty,
+            unitCost: l.unitCost,
+            uomId: l.uomId,
+          };
+        }),
         notes: notes || undefined,
         photoUrls: urls.length > 0 ? urls : undefined,
       };
@@ -376,45 +453,51 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 w-full">
+              <Label htmlFor="categoryId">Category (filter)</Label>
+              <SearchableCombobox
+                id="categoryId"
+                options={[
+                  { value: '__all__', label: 'All categories' },
+                  ...categories.map((c) => ({
+                    value: c.id,
+                    label: (c.code ? `${c.code} - ` : '') + c.name,
+                  })),
+                ]}
+                value={categoryId || '__all__'}
+                onValueChange={(v) => setCategoryId(v === '__all__' ? '' : v)}
+                placeholder="All categories"
+                triggerClassName="min-h-[44px] w-full"
+              />
+            </div>
+            <div className="space-y-2 w-full">
               <Label htmlFor="poId">PO Reference (optional)</Label>
-              <Select
+              <SearchableCombobox
+                id="poId"
+                options={[
+                  { value: '__none__', label: 'None' },
+                  ...poList.map((po) => ({ value: po.id, label: po.docNumber })),
+                ]}
                 value={poId || '__none__'}
                 onValueChange={(v) => setPoId(v === '__none__' ? '' : v)}
-              >
-                <SelectTrigger id="poId" className="min-h-[44px] w-full">
-                  <SelectValue placeholder="Select PO" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {poList.map((po) => (
-                    <SelectItem key={po.id} value={po.id}>
-                      {po.docNumber}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select PO"
+                triggerClassName="min-h-[44px] w-full"
+              />
             </div>
             <div className="space-y-2 w-full">
               <Label htmlFor="supplierId">Supplier *</Label>
-              <Select
+              <SearchableCombobox
+                id="supplierId"
+                options={suppliers.map((s) => ({ value: s.id, label: `${s.code} – ${s.name}` }))}
                 value={supplierId}
-                onValueChange={(v) => { setSupplierId(v); setErrors((e) => ({ ...e, supplierId: undefined })); }}
-              >
-                <SelectTrigger
-                  id="supplierId"
-                  className={`min-h-[44px] w-full ${errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
-                  aria-invalid={!!errors.supplierId}
-                >
-                  <SelectValue placeholder="Select supplier" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.code} – {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onValueChange={(v) => {
+                  setSupplierId(v);
+                  setErrors((e) => ({ ...e, supplierId: undefined }));
+                }}
+                placeholder="Select supplier"
+                aria-invalid={!!errors.supplierId}
+                className={errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                triggerClassName="min-h-[44px] w-full"
+              />
               {errors.supplierId && (
                 <p className="text-sm text-destructive" role="alert">
                   {errors.supplierId}
@@ -454,6 +537,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                   <TableRow>
                     <TableHead>Item</TableHead>
                     <TableHead>UOM</TableHead>
+                    <TableHead className="min-w-[280px]">Roll lengths (fabric)</TableHead>
                     <TableHead className="w-24">Qty</TableHead>
                     <TableHead className="w-32">Unit cost</TableHead>
                     <TableHead className="w-32">Total</TableHead>
@@ -462,67 +546,116 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                 </TableHeader>
                 <TableBody>
                   {lines.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell>
-                        <Select
-                          value={row.itemId || '__placeholder__'}
-                          onValueChange={(v) => {
-                            if (v === '__placeholder__') return;
-                            const item = items.find((i) => i.id === v);
-                            setLineItem(row.id, item || null);
-                          }}
-                        >
-                          <SelectTrigger className="min-h-[44px]">
-                            <SelectValue placeholder="Select item" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__placeholder__">Select item</SelectItem>
-                            {items.map((i) => (
-                              <SelectItem key={i.id} value={i.id}>
-                                {i.sku} – {i.nameId}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>{row.uomCode || '-'}</TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min={0}
-                          step="any"
-                          inputMode="decimal"
-                          className="min-h-[44px]"
-                          value={row.qty || ''}
-                          onChange={(e) => setLineQty(row.id, parseFloat(e.target.value) || 0)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          inputMode="decimal"
-                          className="min-h-[44px]"
-                          value={row.unitCost || ''}
-                          onChange={(e) => setLineUnitCost(row.id, parseFloat(e.target.value) || 0)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        {((row.qty || 0) * (row.unitCost || 0)).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="min-h-[44px] min-w-[44px]"
-                          onClick={() => removeLine(row.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                    <Fragment key={row.id}>
+                      <TableRow>
+                        <TableCell>
+                          <SearchableCombobox
+                            options={items
+                              .filter((i) => !categoryId || i.categoryId === categoryId)
+                              .map((i) => ({ value: i.id, label: `${i.sku} – ${i.nameId}` }))}
+                            value={row.itemId}
+                            onValueChange={(v) => {
+                              const item = items.find((i) => i.id === v);
+                              if (item) setLineItem(row.id, item);
+                            }}
+                            placeholder="Select item"
+                            triggerClassName="min-h-[44px]"
+                          />
+                        </TableCell>
+                        <TableCell>{row.uomCode || '-'}</TableCell>
+                        <TableCell className="align-top">
+                          {row.itemType === 'FABRIC' ? (
+                            <FabricRollInput
+                              value={row.rollValues ?? []}
+                              onChange={(v) => setLineRollValues(row.id, v)}
+                              uomCode={row.uomCode || 'MTR'}
+                              poOrderedQty={row.poOrderedQty}
+                              placeholder="100, 50, 100..."
+                              showRackPreview={false}
+                              aria-label={`Roll lengths for ${row.sku || 'fabric'}`}
+                              className="min-w-[260px]"
+                            />
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="any"
+                            inputMode="decimal"
+                            className="min-h-[44px]"
+                            value={row.qty || ''}
+                            disabled={row.itemType === 'FABRIC'}
+                            onChange={(e) => setLineQty(row.id, parseFloat(e.target.value) || 0)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            inputMode="decimal"
+                            className="min-h-[44px]"
+                            value={row.unitCost || ''}
+                            onChange={(e) => setLineUnitCost(row.id, parseFloat(e.target.value) || 0)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {((row.qty || 0) * (row.unitCost || 0)).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="min-h-[44px] min-w-[44px]"
+                            onClick={() => removeLine(row.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {row.itemType === 'FABRIC' && (row.rollValues?.length ?? 0) > 0 && (() => {
+                        const rollVals = row.rollValues ?? [];
+                        const lengths = parseRollValuesToLengths(rollVals);
+                        const totalLength = lengths.reduce((a, b) => a + b, 0);
+                        const invalidCount = rollVals.length - lengths.length;
+                        return (
+                          <TableRow>
+                            <TableCell colSpan={7} className="bg-muted/20 py-2">
+                              <p className="text-sm text-muted-foreground mb-3">
+                                {rollVals.length} roll{rollVals.length !== 1 ? 's' : ''}
+                                {invalidCount > 0 && (
+                                  <span className="text-destructive"> ({invalidCount} invalid)</span>
+                                )}{' '}
+                                · {totalLength.toLocaleString()} {row.uomCode || 'MTR'}
+                                {row.poOrderedQty != null && Number.isFinite(row.poOrderedQty) && (
+                                  <span className="ml-1">
+                                    (Received {totalLength.toLocaleString()} / {Number(row.poOrderedQty).toLocaleString()} {row.uomCode || 'MTR'}
+                                    {(row.poAlreadyReceivedQty != null && Number(row.poAlreadyReceivedQty) > 0) || poGrnCount > 0
+                                      ? ` · Already received: ${Number(row.poAlreadyReceivedQty ?? 0).toLocaleString()} ${row.uomCode || 'MTR'} in ${poGrnCount} GRN${poGrnCount !== 1 ? 's' : ''}`
+                                      : ''}
+                                    )
+                                  </span>
+                                )}
+                              </p>
+                              <FabricRackPreview
+                                rollValues={rollVals}
+                                uomCode={row.uomCode || 'MTR'}
+                                onRemoveRoll={(index) =>
+                                  setLineRollValues(
+                                    row.id,
+                                    (row.rollValues ?? []).filter((_, i) => i !== index)
+                                  )
+                                }
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })()}
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>

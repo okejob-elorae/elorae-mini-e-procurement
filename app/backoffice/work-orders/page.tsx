@@ -7,6 +7,7 @@ import {
   Search, 
   ClipboardList, 
   Eye,
+  Pencil,
   Calendar,
   CheckCircle,
   Clock,
@@ -284,18 +285,25 @@ export default function WorkOrdersPage() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Link href={`/backoffice/work-orders/${wo.id}`}>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" title="View">
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
                           {wo.status === 'DRAFT' && (
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => handleIssue(wo.id)}
-                            >
-                              Issue
-                            </Button>
+                            <>
+                              <Link href={`/backoffice/work-orders/${wo.id}/edit`}>
+                                <Button variant="ghost" size="icon" title="Edit">
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => handleIssue(wo.id)}
+                              >
+                                Issue
+                              </Button>
+                            </>
                           )}
                           {(wo.status === 'DRAFT' || wo.status === 'ISSUED') && (
                             <Button 

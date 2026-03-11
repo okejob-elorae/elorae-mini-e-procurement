@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -71,6 +72,7 @@ interface POFormProps {
       };
       qty: number;
       price: number;
+      ppnIncluded?: boolean;
       uomId: string;
       notes?: string;
     }>;
@@ -110,9 +112,10 @@ export function POForm({
       itemId: item.itemId,
       qty: Number(item.qty),
       price: Number(item.price),
+      ppnIncluded: item.ppnIncluded ?? true,
       uomId: item.uomId,
       notes: item.notes,
-    })) || [{ id: 'line-0', itemId: '', qty: 0, price: 0, uomId: '' }]
+    })) || [{ id: 'line-0', itemId: '', qty: 0, price: 0, ppnIncluded: true, uomId: '' }]
   );
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -134,6 +137,7 @@ export function POForm({
         itemId: item.itemId,
         qty: Number(item.qty),
         price: Number(item.price),
+        ppnIncluded: item.ppnIncluded ?? true,
         uomId: item.uomId,
         notes: item.notes,
       })) || [],
@@ -191,6 +195,7 @@ export function POForm({
         itemId: item.itemId ?? '',
         qty: item.qty ?? 0,
         price: item.price ?? 0,
+        ppnIncluded: item.ppnIncluded ?? true,
         uomId: item.uomId ?? '',
         notes: item.notes ?? '',
       })),
@@ -199,7 +204,7 @@ export function POForm({
   }, [lineItems, setValue]);
 
   const addLineItem = () => {
-    setLineItems([...lineItems, { id: `line-${Date.now()}`, itemId: '', qty: 0, price: 0, uomId: '' }]);
+    setLineItems([...lineItems, { id: `line-${Date.now()}`, itemId: '', qty: 0, price: 0, ppnIncluded: true, uomId: '' }]);
   };
 
   const removeLineItem = (idParam: string) => {
@@ -313,25 +318,15 @@ export function POForm({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="supplierId">Supplier *</Label>
-              <Select
+              <SearchableCombobox
+                id="supplierId"
+                options={suppliers.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))}
                 value={watch('supplierId')}
                 onValueChange={(value) => setValue('supplierId', value, { shouldValidate: true })}
-              >
-                <SelectTrigger
-                  id="supplierId"
-                  aria-invalid={!!errors.supplierId}
-                  className={`w-full ${errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
-                >
-                  <SelectValue placeholder={tPlaceholders('selectSupplier')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((supplier) => (
-                    <SelectItem key={supplier.id} value={supplier.id}>
-                      {supplier.code} - {supplier.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder={tPlaceholders('selectSupplier')}
+                aria-invalid={!!errors.supplierId}
+                className={errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+              />
               {errors.supplierId && (
                 <p className="text-sm text-destructive" role="alert">
                   {errors.supplierId.message}
@@ -447,6 +442,7 @@ export function POForm({
                   <TableHead>Qty</TableHead>
                   <TableHead>UOM</TableHead>
                   <TableHead>Price (IDR)</TableHead>
+                  <TableHead>PPN</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Notes</TableHead>
                   <TableHead className="w-12"></TableHead>
@@ -460,21 +456,16 @@ export function POForm({
                   return (
                     <TableRow key={lineItem.id}>
                       <TableCell>
-                        <Select
+                        <SearchableCombobox
+                          options={filteredItems.map((item) => ({
+                            value: item.id,
+                            label: `${item.sku} - ${getItemDisplayName(item)}`,
+                          }))}
                           value={lineItem.itemId}
                           onValueChange={(value) => updateLineItem(lineItem.id, 'itemId', value)}
-                        >
-                          <SelectTrigger className="max-w-[16rem] min-w-0 **:data-[slot=select-value]:truncate">
-                            <SelectValue placeholder={tPlaceholders('selectItem')} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {filteredItems.map((item) => (
-                              <SelectItem key={item.id} value={item.id}>
-                                {item.sku} - {getItemDisplayName(item)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          placeholder={tPlaceholders('selectItem')}
+                          triggerClassName="max-w-[16rem] min-w-0"
+                        />
                       </TableCell>
                       <TableCell>
                         <Input
@@ -512,6 +503,22 @@ export function POForm({
                           }
                           placeholder="0.00"
                         />
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={lineItem.ppnIncluded ? 'include' : 'exclude'}
+                          onValueChange={(value) =>
+                            updateLineItem(lineItem.id, 'ppnIncluded', value === 'include')
+                          }
+                        >
+                          <SelectTrigger className="max-w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="include">Include PPN</SelectItem>
+                            <SelectItem value="exclude">Exclude PPN</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         Rp {lineTotal.toLocaleString('id-ID')}

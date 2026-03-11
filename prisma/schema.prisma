@@ -63,6 +63,7 @@ model User {
   vendorReturnsCreated    VendorReturn[]
   vendorReturnsCompleted  VendorReturn[] @relation("VendorReturnCompleted")
   suppliersApproved       Supplier[]
+  grnsOwnerApproved       GRN[]      @relation("GRNOwnerApproved")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -162,6 +163,7 @@ model Supplier {
   updatedAt        DateTime         @updatedAt
   purchaseOrders   PurchaseOrder[]
   workOrders       WorkOrder[]
+  workOrderSteps   WorkOrderStep[]
   grns             GRN[]
   vendorReturns    VendorReturn[]
   @@index([typeId])
@@ -179,6 +181,7 @@ model UOM {
   description     String?
   isActive        Boolean         @default(true)
   items           Item[]
+  fabricRolls     FabricRoll[]
   fromConversions UOMConversion[] @relation("FromConversions")
   toConversions   UOMConversion[] @relation("ToConversions")
   createdAt       DateTime        @default(now())
@@ -197,6 +200,17 @@ model UOMConversion {
   @@index([toUomId])
 }
 
+model ItemCategory {
+  id        String   @id @default(cuid())
+  code      String?  @unique
+  name      String
+  isActive  Boolean  @default(true)
+  sortOrder Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items     Item[]
+}
+
 model Item {
   id               String            @id @default(cuid())
   sku              String            @unique
@@ -206,24 +220,30 @@ model Item {
   type             ItemType
   uomId            String
   uom              UOM               @relation(fields: [uomId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categoryId       String?
+  category         ItemCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   variants         Json?
   isActive         Boolean           @default(true)
   reorderPoint     Decimal?          @db.Decimal(10,2)
+  overReceiveThreshold Decimal?      @db.Decimal(10,2)
   sellingPrice     Decimal?          @db.Decimal(14,2)
+  defaultPpnIncluded Boolean         @default(true)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   stockMovements   StockMovement[]
   poItems          POItem[]
-  inventoryValue   InventoryValue?
+  inventoryValues  InventoryValue[]
   fgConsumptions   ConsumptionRule[] @relation("FGConsumptions")
   materialUsages   ConsumptionRule[] @relation("MaterialUsages")
   stockAdjustments StockAdjustment[]
   workOrdersAsFinishedGood WorkOrder[]
   workOrdersAsConsumptionMaterial WorkOrder[] @relation("WorkOrderConsumptionMaterial")
   rejectedGoodsLedger RejectedGoodsLedger[]
+  fabricRolls      FabricRoll[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
+  @@index([categoryId])
 }
 
 model ConsumptionRule {
@@ -284,6 +304,7 @@ model POItem {
   item        Item          @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   qty         Decimal       @db.Decimal(10,2)
   price       Decimal       @db.Decimal(15,2)
+  ppnIncluded Boolean       @default(true)
   receivedQty Decimal       @default(0) @db.Decimal(10,2)
   uomId       String
   notes       String?
@@ -293,14 +314,15 @@ model POItem {
 }
 
 model POStatusHistory {
-  id          String        @id @default(cuid())
-  poId        String
-  po          PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
-  status      POStatus
-  changedById String
-  changedBy   User          @relation(fields: [changedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  notes       String?
-  createdAt   DateTime      @default(now())
+  id            String        @id @default(cuid())
+  poId          String
+  po            PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  status        POStatus
+  changedById   String
+  changedBy     User          @relation(fields: [changedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  notes         String?
+  paymentEvent  String?       // 'MARKED' | 'UNMARKED' when record is for supplier payment marked/unmarked
+  createdAt     DateTime      @default(now())
   @@index([poId, createdAt])
   @@index([changedById])
 }
@@ -310,12 +332,14 @@ model POStatusHistory {
 // ==========================================
 model InventoryValue {
   id          String   @id @default(cuid())
-  itemId      String   @unique
+  itemId      String
+  variantSku  String?
   item        Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
   qtyOnHand   Decimal  @default(0) @db.Decimal(10,2)
   avgCost     Decimal  @default(0) @db.Decimal(15,2)
   totalValue  Decimal  @default(0) @db.Decimal(15,2)
   lastUpdated DateTime @default(now())
+  @@unique([itemId, variantSku])
   @@index([itemId])
 }
 
@@ -332,13 +356,41 @@ model GRN {
   notes         String?
   photoUrls     String?
   items         Json      
+  requiresOwnerApproval Boolean @default(false)
+  ownerApprovedAt DateTime?
+  ownerApprovedById String?
+  ownerApprovedBy User?    @relation("GRNOwnerApproved", fields: [ownerApprovedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   syncStatus    SyncStatus @default(SYNCED)
   localId       String?
   createdAt     DateTime  @default(now())
+  fabricRolls   FabricRoll[]
+  vendorReturns VendorReturn[]
   @@index([poId])
   @@index([supplierId])
   @@index([grnDate])
   @@index([docNumber])
+  @@index([ownerApprovedById])
+}
+
+model FabricRoll {
+  id            String   @id @default(cuid())
+  grnId         String
+  grn           GRN      @relation(fields: [grnId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  itemId        String
+  item          Item     @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  rollCode      String   @unique
+  rollRef       String
+  initialLength Decimal  @db.Decimal(10,2)
+  remainingLength Decimal @db.Decimal(10,2)
+  uomId         String
+  uom           UOM      @relation(fields: [uomId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  isClosed      Boolean  @default(false)
+  notes         String?
+  createdAt     DateTime @default(now())
+  @@index([grnId])
+  @@index([itemId])
+  @@index([uomId])
+  @@index([rollCode])
 }
 
 model StockMovement {
@@ -350,6 +402,7 @@ model StockMovement {
   refId        String
   refDocNumber String
   qty          Decimal  @db.Decimal(10,2)
+  variantSku   String?
   unitCost     Decimal? @db.Decimal(15,2)
   totalCost    Decimal? @db.Decimal(15,2)
   balanceQty   Decimal  @db.Decimal(10,2)
@@ -411,6 +464,8 @@ model WorkOrder {
   consumptionPlan Json
   skuBreakdown    Json?
   rollBreakdown   Json?     // Optional: [{ rollRef: string, qty: number, notes?: string }], sum qty = plannedQty
+  hppMarginPercent Decimal? @db.Decimal(5,2)
+  hppAdditionalCost Decimal? @db.Decimal(15,2)
   notes           String?
   syncStatus      SyncStatus @default(SYNCED)
   createdById     String
@@ -419,6 +474,7 @@ model WorkOrder {
   issues          MaterialIssue[]
   receipts        FGReceipt[]
   returns         VendorReturn[]
+  steps           WorkOrderStep[]
   @@index([poId])
   @@index([vendorId])
   @@index([finishedGoodId])
@@ -427,6 +483,30 @@ model WorkOrder {
   @@index([status])
   @@index([targetDate])
   @@index([docNumber])
+}
+
+model WorkOrderStep {
+  id                 String   @id @default(cuid())
+  woId               String
+  wo                 WorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sequence           Int
+  stepName           String?
+  supplierId         String
+  supplier           Supplier @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  servicePrice       Decimal  @default(0) @db.Decimal(15,2)
+  servicePpnIncluded Boolean  @default(false)
+  qty                Decimal? @db.Decimal(10,2)
+  totalCost          Decimal? @db.Decimal(15,2)
+  issueDocNumber     String?
+  receiptDocNumber   String?
+  issuedAt           DateTime?
+  receivedAt         DateTime?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  @@index([woId])
+  @@index([supplierId])
+  @@unique([woId, sequence])
 }
 
 model MaterialIssue {
@@ -503,6 +583,8 @@ model VendorReturn {
   wo               WorkOrder?   @relation(fields: [woId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   vendorId         String
   vendor           Supplier     @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  grnId            String?
+  grn              GRN?         @relation(fields: [grnId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   lines            Json
   totalItems       Int
   totalValue       Decimal      @db.Decimal(15,2)
@@ -522,6 +604,7 @@ model VendorReturn {
   createdAt        DateTime     @default(now())
   @@index([woId])
   @@index([vendorId])
+  @@index([grnId])
   @@index([status])
   @@index([createdById])
   @@index([completedById])
@@ -559,6 +642,13 @@ model DocNumberConfig {
   lastNumber  Int      @default(0)
   year        Int      @default(0)
   month       Int      @default(0)
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
 }
 
 model NotificationQueue {

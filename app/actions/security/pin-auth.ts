@@ -7,19 +7,32 @@ import { SENSITIVE_ACTIONS } from '@/app/actions/security/pin-constants';
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_FAILED_ATTEMPTS = 3;
 
-export type PinAuthResult = { success: boolean; message?: string; messageKey?: string };
+export type PinAuthResult = { success: boolean; message?: string; messageKey?: string; userId?: string };
 
 export async function verifyPinForAction(
   userId: string,
   pin: string,
   action: string,
   reason?: string,
-  ipAddress?: string
+  ipAddress?: string,
+  /** If user not found by id (e.g. session id mismatch), try lookup by this email and use that user for PIN verification. */
+  fallbackEmail?: string | null
 ): Promise<PinAuthResult> {
-  const user = await prisma.user.findUnique({
+  let user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { pinHash: true },
+    select: { id: true, pinHash: true },
   });
+  let effectiveUserId = userId;
+  if (!user && fallbackEmail?.trim()) {
+    const byEmail = await prisma.user.findUnique({
+      where: { email: fallbackEmail.trim() },
+      select: { id: true, pinHash: true },
+    });
+    if (byEmail) {
+      user = byEmail;
+      effectiveUserId = byEmail.id;
+    }
+  }
   if (!user) {
     return { success: false, messageKey: 'userNotFound' };
   }
@@ -30,7 +43,7 @@ export async function verifyPinForAction(
   const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
   const failedCount = await prisma.pinAttempt.count({
     where: {
-      userId,
+      userId: effectiveUserId,
       success: false,
       createdAt: { gte: since },
     },
@@ -42,7 +55,7 @@ export async function verifyPinForAction(
   const match = await bcrypt.compare(pin, user.pinHash);
   await prisma.pinAttempt.create({
     data: {
-      userId,
+      userId: effectiveUserId,
       action,
       success: match,
       ipAddress: ipAddress ?? null,
@@ -52,7 +65,7 @@ export async function verifyPinForAction(
   if (!match) {
     return { success: false, messageKey: 'pinIncorrect' };
   }
-  return { success: true, messageKey: 'ok' };
+  return { success: true, messageKey: 'ok', userId: effectiveUserId };
 }
 
 const PIN_REGEX = /^\d{4,6}$/;

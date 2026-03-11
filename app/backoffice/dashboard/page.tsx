@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -629,24 +630,18 @@ export default function DashboardPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Supplier</Label>
-                  <Select
+                  <SearchableCombobox
+                    options={[
+                      { value: 'all', label: 'All' },
+                      ...suppliers.map((sup) => ({ value: sup.id, label: sup.name })),
+                    ]}
                     value={rp1Filters.supplierId || 'all'}
                     onValueChange={(v) =>
                       setRp1Filters((f) => ({ ...f, supplierId: v === 'all' ? '' : v }))
                     }
-                  >
-                    <SelectTrigger className="w-[200px]">
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {suppliers.map((sup) => (
-                        <SelectItem key={sup.id} value={sup.id}>
-                          {sup.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="All"
+                    triggerClassName="w-[200px]"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Status</Label>
@@ -761,18 +756,13 @@ export default function DashboardPage() {
               <div className="flex flex-wrap gap-4 items-end">
                 <div className="space-y-2">
                   <Label>Vendor</Label>
-                  <Select value={rp2VendorId} onValueChange={setRp2VendorId}>
-                    <SelectTrigger className="w-[220px]">
-                      <SelectValue placeholder="Select vendor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {suppliers.map((sup) => (
-                        <SelectItem key={sup.id} value={sup.id}>
-                          {sup.name} ({sup.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableCombobox
+                    options={suppliers.map((sup) => ({ value: sup.id, label: `${sup.name} (${sup.code})` }))}
+                    value={rp2VendorId}
+                    onValueChange={setRp2VendorId}
+                    placeholder="Select vendor"
+                    triggerClassName="w-[220px]"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>From</Label>

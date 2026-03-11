@@ -14,6 +14,7 @@ const idStr = z.string().min(1);
 const returnLineSchema = z.object({
   type: z.enum(['FABRIC', 'ACCESSORIES', 'FG_REJECT']),
   itemId: idStr,
+  variantSku: z.string().optional(),
   qty: z.number().positive(),
   reason: z.string().min(3),
   condition: z.enum(['GOOD', 'DAMAGED', 'DEFECTIVE']),
@@ -22,6 +23,7 @@ const returnLineSchema = z.object({
 
 const returnSchema = z.object({
   woId: idStr.optional(),
+  grnId: idStr.optional(),
   vendorId: idStr,
   lines: z.array(returnLineSchema).min(1),
   evidenceUrls: z.array(z.string().url()).optional()
@@ -41,8 +43,9 @@ export async function createVendorReturn(
 
     const linesWithValue = await Promise.all(
       data.lines.map(async (line) => {
+        const variantKey = line.variantSku ?? null;
         const inventory = await tx.inventoryValue.findUnique({
-          where: { itemId: line.itemId }
+          where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
         });
         const avgCost = inventory
           ? new Decimal(inventory.avgCost.toString())
@@ -68,6 +71,7 @@ export async function createVendorReturn(
       data: {
         docNumber,
         woId: data.woId ?? null,
+        grnId: data.grnId ?? null,
         vendorId: data.vendorId,
         lines: JSON.stringify(linesWithValue),
         totalItems: data.lines.length,
@@ -107,8 +111,9 @@ export async function updateVendorReturn(
   return await prisma.$transaction(async (tx) => {
     const linesWithValue = await Promise.all(
       data.lines.map(async (line) => {
+        const variantKey = line.variantSku ?? null;
         const inventory = await tx.inventoryValue.findUnique({
-          where: { itemId: line.itemId }
+          where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
         });
         const avgCost = inventory
           ? new Decimal(inventory.avgCost.toString())
@@ -134,6 +139,7 @@ export async function updateVendorReturn(
       where: { id },
       data: {
         woId: data.woId ?? null,
+        grnId: data.grnId ?? null,
         vendorId: data.vendorId,
         lines: JSON.stringify(linesWithValue),
         totalItems: data.lines.length,
@@ -171,27 +177,38 @@ export async function processReturn(id: string, userId: string) {
       throw new Error('Return tidak valid atau sudah diproses');
     }
 
-    const lines = (ret.lines as Array<{ type: string; itemId: string; qty: number; costValue: number }>) || [];
+    const lines = (ret.lines as Array<{ type: string; itemId: string; variantSku?: string | null; qty: number | string; costValue: number | string }>) || [];
 
     for (const line of lines) {
       if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
-        const qty = new Decimal(line.qty);
-        const unitCost = new Decimal(line.costValue).div(line.qty);
+        const parsedQty = Number(line.qty);
+        const parsedCostValue = Number(line.costValue);
+        if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
+          throw new Error(`Invalid return qty for item ${line.itemId}`);
+        }
+        if (!Number.isFinite(parsedCostValue) || parsedCostValue < 0) {
+          throw new Error(`Invalid return cost for item ${line.itemId}`);
+        }
+        const variantKey = line.variantSku ?? null;
+        const qty = new Decimal(parsedQty);
+        const unitCost = parsedQty === 0 ? new Decimal(0) : new Decimal(parsedCostValue).div(parsedQty);
         const costResult = await reverseInventoryValue(
           line.itemId,
           qty,
           unitCost,
-          tx
+          tx,
+          variantKey
         );
         const outgoingValue = qty.mul(unitCost);
         await tx.stockMovement.create({
           data: {
             itemId: line.itemId,
+            variantSku: variantKey,
             type: 'OUT',
             refType: 'VENDOR_RETURN',
             refId: ret.id,
             refDocNumber: ret.docNumber,
-            qty: -line.qty,
+            qty: -parsedQty,
             unitCost: unitCost.toNumber(),
             totalCost: outgoingValue.toNumber(),
             balanceQty: costResult.newQty.toNumber(),
@@ -371,6 +388,9 @@ export async function getVendorReturns(
     },
     wo: {
       select: { id: true, docNumber: true }
+    },
+    grn: {
+      select: { id: true, docNumber: true }
     }
   };
 
@@ -409,7 +429,8 @@ export async function getVendorReturnById(id: string) {
     where: { id },
     include: {
       vendor: true,
-      wo: { select: { id: true, docNumber: true } }
+      wo: { select: { id: true, docNumber: true } },
+      grn: { select: { id: true, docNumber: true } }
     }
   });
   if (!ret) return null;

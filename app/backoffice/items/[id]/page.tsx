@@ -110,9 +110,11 @@ export default function ItemDetailPage() {
           nameEn: item.nameEn,
           type: item.type,
           uomId: item.uomId,
+          categoryId: item.categoryId ?? undefined,
           description: item.description || undefined,
           variants: item.variants as Array<Record<string, string>> | undefined,
           reorderPoint: item.reorderPoint != null ? Number(item.reorderPoint) : undefined,
+          overReceiveThreshold: item.overReceiveThreshold != null ? Number(item.overReceiveThreshold) : undefined,
           sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : undefined,
           consumptionRules: item.fgConsumptions?.map((rule: any) => ({
             materialId: rule.materialId,

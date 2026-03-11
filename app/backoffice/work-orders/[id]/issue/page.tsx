@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow
 } from '@/components/ui/table';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
   SelectContent,
@@ -121,11 +122,9 @@ export default function WorkOrderIssuePage() {
   const addLine = (itemId?: string) => {
     const p = planWithRemaining.find((x) => x.itemId === itemId || !itemId);
     if (!p) return;
-    const remaining = p.plannedQty - p.issuedQty;
-    if (remaining <= 0 && lines.filter((l) => l.itemId === p.itemId).reduce((s, l) => s + l.qty, 0) >= remaining) return;
     const existing = lines.find((l) => l.itemId === p.itemId);
     if (existing) return;
-    const maxQty = p.plannedQty - p.issuedQty;
+    const remaining = p.plannedQty - p.issuedQty;
     const defaultPrice = itemAvgCosts[p.itemId];
     setLines((prev) => [
       ...prev,
@@ -133,8 +132,8 @@ export default function WorkOrderIssuePage() {
         itemId: p.itemId,
         itemName: p.itemName,
         uomId: p.uomId,
-        qty: Math.min(1, maxQty),
-        maxQty,
+        qty: remaining > 0 ? Math.min(1, remaining) : 0,
+        maxQty: remaining,
         unitPrice: defaultPrice != null && defaultPrice > 0 ? defaultPrice : undefined,
       }
     ]);
@@ -144,7 +143,7 @@ export default function WorkOrderIssuePage() {
     setLines((prev) =>
       prev.map((l) =>
         l.itemId === itemId
-          ? { ...l, qty: Math.min(Math.max(0, qty), l.maxQty) }
+          ? { ...l, qty: Math.max(0, qty) }
           : l
       )
     );
@@ -298,24 +297,18 @@ export default function WorkOrderIssuePage() {
               </div>
               <div className="flex items-center gap-2">
                 <Label>Add material</Label>
-                <Select onValueChange={(itemId) => addLine(itemId)}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Select material" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {planWithRemaining
-                      .filter(
-                        (p) =>
-                          p.plannedQty - p.issuedQty > 0 &&
-                          !lines.some((l) => l.itemId === p.itemId)
-                      )
-                      .map((p) => (
-                        <SelectItem key={p.itemId} value={p.itemId}>
-                          {p.itemName} (remaining {(p.plannedQty - p.issuedQty).toLocaleString()})
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                <SearchableCombobox
+                  options={planWithRemaining
+                    .filter((p) => !lines.some((l) => l.itemId === p.itemId))
+                    .map((p) => ({
+                      value: p.itemId,
+                      label: `${p.itemName} (remaining ${(p.plannedQty - p.issuedQty).toLocaleString()})`,
+                    }))}
+                  value=""
+                  onValueChange={(itemId) => addLine(itemId)}
+                  placeholder="Select material"
+                  triggerClassName="w-[200px]"
+                />
                 <Dialog open={scanOpen} onOpenChange={setScanOpen}>
                   <DialogTrigger asChild>
                     <Button type="button" variant="outline" size="icon">
@@ -351,12 +344,14 @@ export default function WorkOrderIssuePage() {
                           <Input
                             type="number"
                             min={0}
-                            max={l.maxQty}
-                            value={l.qty}
-                            onChange={(e) =>
-                              updateLineQty(l.itemId, Number(e.target.value))
-                            }
+                            step="any"
+                            value={l.qty === 0 ? '' : l.qty}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              updateLineQty(l.itemId, v === '' ? 0 : Number(v));
+                            }}
                             className="w-24 text-right"
+                            placeholder={l.maxQty > 0 ? `max ${l.maxQty}` : 'over-issue ok'}
                           />
                         </TableCell>
                         <TableCell className="text-right">
