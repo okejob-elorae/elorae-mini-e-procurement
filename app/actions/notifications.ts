@@ -184,7 +184,8 @@ export async function checkAndSendOverdueNotifications(): Promise<{ sent: number
     const docNumber = po.docNumber;
     const title = 'PO Overdue';
     const body = `${docNumber} (${po.supplier?.name ?? 'Supplier'}) – ETA has passed`;
-    const data = { type: PO_OVERDUE_TYPE, poId, docNumber };
+    const _data = { type: PO_OVERDUE_TYPE, poId, docNumber };
+    void _data;
 
     // Send to all users with permission, plus the PO creator if they have permission
     const recipients = new Set<string>();

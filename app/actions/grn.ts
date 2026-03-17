@@ -221,19 +221,23 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
       if (allFullyReceived) newStatus = anyOverReceived ? 'OVER' : 'CLOSED';
       else if (anyReceived) newStatus = 'PARTIAL';
 
-      await tx.purchaseOrder.update({
-        where: { id: validated.poId },
-        data: { status: newStatus },
-      });
+      // Defer PO status transition to CLOSED/OVER until GRN is owner-approved when over-receive
+      const shouldUpdatePOStatus = !requiresOwnerApproval;
+      if (shouldUpdatePOStatus) {
+        await tx.purchaseOrder.update({
+          where: { id: validated.poId },
+          data: { status: newStatus },
+        });
 
-      await tx.pOStatusHistory.create({
-        data: {
-          poId: validated.poId,
-          status: newStatus,
-          changedById: userId,
-          notes: `GRN issued: ${grn.docNumber}`,
-        },
-      });
+        await tx.pOStatusHistory.create({
+          data: {
+            poId: validated.poId,
+            status: newStatus,
+            changedById: userId,
+            notes: `GRN issued: ${grn.docNumber}`,
+          },
+        });
+      }
     }
 
     revalidatePath('/backoffice/inventory');
@@ -463,6 +467,40 @@ export async function approveGRNByOwner(id: string, userId: string) {
       ownerApprovedById: userId,
     },
   });
+
+  // Recompute PO status now that GRN is approved (deferred transition to CLOSED/OVER)
+  if (grn.poId) {
+    const poItems = await prisma.pOItem.findMany({
+      where: { poId: grn.poId },
+    });
+    const allFullyReceived = poItems.every((poItem) =>
+      new Decimal(poItem.receivedQty.toString()).gte(poItem.qty.toString())
+    );
+    const anyOverReceived = poItems.some((poItem) =>
+      new Decimal(poItem.receivedQty.toString()).gt(poItem.qty.toString())
+    );
+    const anyReceived = poItems.some((poItem) =>
+      new Decimal(poItem.receivedQty.toString()).gt(0)
+    );
+    let newStatus: 'SUBMITTED' | 'PARTIAL' | 'CLOSED' | 'OVER' = 'SUBMITTED';
+    if (allFullyReceived) newStatus = anyOverReceived ? 'OVER' : 'CLOSED';
+    else if (anyReceived) newStatus = 'PARTIAL';
+
+    await prisma.purchaseOrder.update({
+      where: { id: grn.poId },
+      data: { status: newStatus },
+    });
+    await prisma.pOStatusHistory.create({
+      data: {
+        poId: grn.poId,
+        status: newStatus,
+        changedById: userId,
+        notes: `GRN owner-approved: ${grn.docNumber}`,
+      },
+    });
+    revalidatePath(`/backoffice/purchase-orders/${grn.poId}`);
+  }
+
   revalidatePath('/backoffice/inventory');
   return grn;
 }

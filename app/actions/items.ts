@@ -443,13 +443,14 @@ function serializeListItemForClient(item: {
   reorderPoint?: unknown;
   overReceiveThreshold?: unknown;
   sellingPrice?: unknown;
-  inventoryValues?: Array<{ qtyOnHand: unknown; avgCost: unknown; totalValue: unknown }>;
+  inventoryValues?: Array<{ qtyOnHand: unknown; totalValue: unknown; avgCost?: unknown }>;
   [k: string]: unknown;
 }) {
   const inv = aggregateInventoryValues(
     item.inventoryValues as Array<{ qtyOnHand: unknown; totalValue: unknown }> | undefined
   );
-  const { inventoryValues: _invVals, ...rest } = item;
+  const { inventoryValues: _omit, ...rest } = item;
+  void _omit;
   return {
     ...rest,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
@@ -463,7 +464,7 @@ function serializeListItemForClient(item: {
 /** Serialize list item when including variants and BOM (fgConsumptions) */
 function serializeListItemForClientWithDetails(item: {
   reorderPoint?: unknown;
-  inventoryValues?: Array<{ qtyOnHand: unknown; avgCost: unknown; totalValue: unknown }>;
+  inventoryValues?: Array<{ qtyOnHand: unknown; totalValue: unknown; avgCost?: unknown }>;
   variants?: unknown;
   fgConsumptions?: Array<{
     qtyRequired: unknown;

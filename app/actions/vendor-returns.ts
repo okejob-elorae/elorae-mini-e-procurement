@@ -7,6 +7,36 @@ import { prisma } from '@/lib/prisma';
 import { generateDocNumber } from '@/lib/docNumber';
 import { reverseInventoryValue } from '@/lib/inventory/costing';
 import { getActorName, notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/app/actions/notifications';
+import { getEffectiveHPPForItem } from '@/app/actions/hpp';
+
+/** When vendor return is linked to a GRN: max returnable qty per itemId. Before approval = ordered qty; after = received qty. */
+async function getMaxReturnableByItemForGRN(grnId: string): Promise<Map<string, number> | null> {
+  const grn = await prisma.gRN.findUnique({
+    where: { id: grnId },
+    select: { items: true, poId: true, requiresOwnerApproval: true, ownerApprovedAt: true },
+  });
+  if (!grn) return null;
+  const items = (grn.items as Array<{ itemId: string; qty: number }>) ?? [];
+  const receivedByItem = new Map<string, number>();
+  for (const row of items) {
+    const qty = typeof row.qty === 'number' ? row.qty : Number(row.qty);
+    receivedByItem.set(row.itemId, (receivedByItem.get(row.itemId) ?? 0) + qty);
+  }
+  const pendingApproval = grn.requiresOwnerApproval && !grn.ownerApprovedAt;
+  if (pendingApproval && grn.poId) {
+    const poItems = await prisma.pOItem.findMany({
+      where: { poId: grn.poId },
+      select: { itemId: true, qty: true },
+    });
+    const maxByItem = new Map<string, number>();
+    for (const po of poItems) {
+      const ordered = Number(po.qty);
+      maxByItem.set(po.itemId, ordered);
+    }
+    return maxByItem;
+  }
+  return receivedByItem;
+}
 
 // Prisma uses CUID, not UUID
 const idStr = z.string().min(1);
@@ -15,6 +45,7 @@ const returnLineSchema = z.object({
   type: z.enum(['FABRIC', 'ACCESSORIES', 'FG_REJECT']),
   itemId: idStr,
   variantSku: z.string().optional(),
+  rollId: z.string().optional(),
   qty: z.number().positive(),
   reason: z.string().min(3),
   condition: z.enum(['GOOD', 'DAMAGED', 'DEFECTIVE']),
@@ -32,32 +63,99 @@ const returnSchema = z.object({
 export type VendorReturnLineInput = z.infer<typeof returnLineSchema>;
 export type CreateVendorReturnInput = z.infer<typeof returnSchema>;
 
+// Returnable fabric rolls for a given item (open rolls with remaining length)
+export async function getReturnableFabricRolls(itemId: string) {
+  const rolls = await prisma.fabricRoll.findMany({
+    where: { itemId, isClosed: false, remainingLength: { gt: 0 } },
+    select: { id: true, rollRef: true, remainingLength: true },
+    orderBy: { remainingLength: 'desc' },
+  });
+  return rolls.map((r) => ({
+    id: r.id,
+    rollRef: r.rollRef,
+    remainingLength: Number(r.remainingLength),
+  }));
+}
+
+/** Available reject qty for an item (sum of RejectedGoodsLedger rows for that itemId). */
+export async function getAvailableRejectQtyByItem(itemId: string): Promise<number> {
+  const rows = await prisma.rejectedGoodsLedger.findMany({
+    where: { itemId },
+    select: { qty: true },
+  });
+  return rows.reduce((s, r) => s + Number(r.qty), 0);
+}
+
 export async function createVendorReturn(
   data: CreateVendorReturnInput,
   userId: string
 ) {
   returnSchema.parse(data);
 
+  for (const line of data.lines) {
+    if (line.type === 'FG_REJECT') {
+      const available = await getAvailableRejectQtyByItem(line.itemId);
+      if (line.qty > available) {
+        throw new Error(
+          `Reject qty for item exceeds available rejects (max ${available}). Reduce qty or check reject ledger.`
+        );
+      }
+    }
+  }
+
+  if (data.grnId) {
+    const maxReturnable = await getMaxReturnableByItemForGRN(data.grnId);
+    if (maxReturnable) {
+      for (const line of data.lines) {
+        if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
+          const max = maxReturnable.get(line.itemId) ?? 0;
+          if (line.qty > max) {
+            throw new Error(
+              `Return qty for item exceeds allowed amount (max ${max} when GRN is pending owner approval). Reduce qty or wait for GRN approval.`
+            );
+          }
+        }
+      }
+    }
+  }
+
   const ret = await prisma.$transaction(async (tx) => {
     const docNumber = await generateDocNumber('RET', tx);
 
     const linesWithValue = await Promise.all(
       data.lines.map(async (line) => {
-        const variantKey = line.variantSku ?? null;
-        const inventory = await tx.inventoryValue.findUnique({
-          where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
-        });
-        const avgCost = inventory
-          ? new Decimal(inventory.avgCost.toString())
-          : new Decimal(0);
-        const value = avgCost.mul(line.qty);
+        let costValue: number;
+        if (line.type === 'FG_REJECT') {
+          const hpp = await getEffectiveHPPForItem(line.itemId);
+          const avgCost = hpp?.avgCostPerUnit ?? 0;
+          costValue = avgCost * line.qty;
+        } else {
+          const variantKey = (line.variantSku ?? '') as string;
+          const inventory = await tx.inventoryValue.findUnique({
+            where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
+          });
+          const avgCost = inventory
+            ? new Decimal(inventory.avgCost.toString())
+            : new Decimal(0);
+          costValue = avgCost.mul(line.qty).toNumber();
+        }
+        const itemName = (await tx.item.findUnique({
+          where: { id: line.itemId },
+          select: { nameId: true }
+        }))?.nameId;
+        let rollRef: string | undefined;
+        if (line.type === 'FABRIC' && line.rollId) {
+          const roll = await tx.fabricRoll.findUnique({
+            where: { id: line.rollId },
+            select: { rollRef: true }
+          });
+          rollRef = roll?.rollRef ?? undefined;
+        }
         return {
           ...line,
-          itemName: (await tx.item.findUnique({
-            where: { id: line.itemId },
-            select: { nameId: true }
-          }))?.nameId,
-          costValue: value.toNumber()
+          itemName: itemName ?? undefined,
+          costValue,
+          rollRef
         };
       })
     );
@@ -97,9 +195,37 @@ export async function createVendorReturn(
 export async function updateVendorReturn(
   id: string,
   data: CreateVendorReturnInput,
-  userId: string
+  _userId: string
 ) {
+  void _userId;
   returnSchema.parse(data);
+
+  for (const line of data.lines) {
+    if (line.type === 'FG_REJECT') {
+      const available = await getAvailableRejectQtyByItem(line.itemId);
+      if (line.qty > available) {
+        throw new Error(
+          `Reject qty for item exceeds available rejects (max ${available}). Reduce qty or check reject ledger.`
+        );
+      }
+    }
+  }
+
+  if (data.grnId) {
+    const maxReturnable = await getMaxReturnableByItemForGRN(data.grnId);
+    if (maxReturnable) {
+      for (const line of data.lines) {
+        if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
+          const max = maxReturnable.get(line.itemId) ?? 0;
+          if (line.qty > max) {
+            throw new Error(
+              `Return qty for item exceeds allowed amount (max ${max} when GRN is pending owner approval). Reduce qty or wait for GRN approval.`
+            );
+          }
+        }
+      }
+    }
+  }
 
   const existing = await prisma.vendorReturn.findUnique({
     where: { id }
@@ -111,21 +237,38 @@ export async function updateVendorReturn(
   return await prisma.$transaction(async (tx) => {
     const linesWithValue = await Promise.all(
       data.lines.map(async (line) => {
-        const variantKey = line.variantSku ?? null;
-        const inventory = await tx.inventoryValue.findUnique({
-          where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
-        });
-        const avgCost = inventory
-          ? new Decimal(inventory.avgCost.toString())
-          : new Decimal(0);
-        const value = avgCost.mul(line.qty);
+        let costValue: number;
+        if (line.type === 'FG_REJECT') {
+          const hpp = await getEffectiveHPPForItem(line.itemId);
+          const avgCost = hpp?.avgCostPerUnit ?? 0;
+          costValue = avgCost * line.qty;
+        } else {
+          const variantKey = (line.variantSku ?? '') as string;
+          const inventory = await tx.inventoryValue.findUnique({
+            where: { itemId_variantSku: { itemId: line.itemId, variantSku: variantKey } }
+          });
+          const avgCost = inventory
+            ? new Decimal(inventory.avgCost.toString())
+            : new Decimal(0);
+          costValue = avgCost.mul(line.qty).toNumber();
+        }
+        const itemName = (await tx.item.findUnique({
+          where: { id: line.itemId },
+          select: { nameId: true }
+        }))?.nameId;
+        let rollRef: string | undefined;
+        if (line.type === 'FABRIC' && line.rollId) {
+          const roll = await tx.fabricRoll.findUnique({
+            where: { id: line.rollId },
+            select: { rollRef: true }
+          });
+          rollRef = roll?.rollRef ?? undefined;
+        }
         return {
           ...line,
-          itemName: (await tx.item.findUnique({
-            where: { id: line.itemId },
-            select: { nameId: true }
-          }))?.nameId,
-          costValue: value.toNumber()
+          itemName: itemName ?? undefined,
+          costValue,
+          rollRef
         };
       })
     );
@@ -156,7 +299,8 @@ export async function updateVendorReturn(
   });
 }
 
-export async function deleteVendorReturn(id: string, userId: string) {
+export async function deleteVendorReturn(id: string, _userId: string) {
+  void _userId;
   const existing = await prisma.vendorReturn.findUnique({
     where: { id }
   });
@@ -177,7 +321,7 @@ export async function processReturn(id: string, userId: string) {
       throw new Error('Return tidak valid atau sudah diproses');
     }
 
-    const lines = (ret.lines as Array<{ type: string; itemId: string; variantSku?: string | null; qty: number | string; costValue: number | string }>) || [];
+    const lines = (ret.lines as Array<{ type: string; itemId: string; variantSku?: string | null; rollId?: string; qty: number | string; costValue: number | string }>) || [];
 
     for (const line of lines) {
       if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
@@ -214,6 +358,30 @@ export async function processReturn(id: string, userId: string) {
             balanceQty: costResult.newQty.toNumber(),
             balanceValue: costResult.newTotalValue.toNumber(),
             notes: ret.woId ? `Vendor return ${ret.docNumber} (WO)` : `Vendor return ${ret.docNumber}`,
+          },
+        });
+        if (line.type === 'FABRIC' && line.rollId) {
+          await tx.fabricRoll.update({
+            where: { id: line.rollId },
+            data: { remainingLength: 0, isClosed: true },
+          });
+        }
+      } else if (line.type === 'FG_REJECT') {
+        const parsedQty = Number(line.qty);
+        if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
+          throw new Error(`Invalid reject return qty for item ${line.itemId}`);
+        }
+        await tx.rejectedGoodsLedger.create({
+          data: {
+            itemId: line.itemId,
+            variantSku: line.variantSku ?? null,
+            qty: -parsedQty,
+            refType: 'VENDOR_RETURN',
+            refId: ret.id,
+            refDocNumber: ret.docNumber,
+            woId: ret.woId ?? null,
+            receivedAt: new Date(),
+            notes: `Vendor return ${ret.docNumber}`,
           },
         });
       }

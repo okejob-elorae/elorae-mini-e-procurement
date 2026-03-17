@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import {
   Select,
@@ -34,7 +35,9 @@ import {
 import { toast } from 'sonner';
 import {
   getVendorReturnById,
-  updateVendorReturn
+  updateVendorReturn,
+  getReturnableFabricRolls,
+  getAvailableRejectQtyByItem
 } from '@/app/actions/vendor-returns';
 import { getWorkOrders } from '@/app/actions/production';
 import { getItems } from '@/app/actions/items';
@@ -58,11 +61,14 @@ interface GRNOption {
   docNumber: string;
 }
 
+type ItemTypeOption = 'FABRIC' | 'ACCESSORIES' | 'FINISHED_GOOD';
+
 interface ItemOption {
   id: string;
   sku: string;
   nameId: string;
   nameEn: string;
+  type?: ItemTypeOption;
 }
 
 type LineType = 'FABRIC' | 'ACCESSORIES' | 'FG_REJECT';
@@ -71,6 +77,8 @@ type Condition = 'GOOD' | 'DAMAGED' | 'DEFECTIVE';
 interface FormLine {
   type: LineType;
   itemId: string;
+  /** For FABRIC: selected roll IDs (multiple). Qty derived from sum of roll lengths. */
+  rollIds?: string[];
   qty: string;
   reason: string;
   condition: Condition;
@@ -84,6 +92,8 @@ interface StoredLine {
   reason: string;
   condition: string;
   referenceIssueId?: string;
+  rollId?: string;
+  rollRef?: string;
 }
 
 export default function EditVendorReturnPage() {
@@ -103,9 +113,12 @@ export default function EditVendorReturnPage() {
   const [grnId, setGrnId] = useState<string>('__none__');
   const [vendorId, setVendorId] = useState<string>('');
   const [lines, setLines] = useState<FormLine[]>([
-    { type: 'FABRIC', itemId: '', qty: '', reason: '', condition: 'GOOD' }
+    { type: 'FABRIC', itemId: '', rollIds: [], qty: '', reason: '', condition: 'GOOD' }
   ]);
   const [evidenceUrls, setEvidenceUrls] = useState<string>('');
+  const [fabricRollOptions, setFabricRollOptions] = useState<
+    Record<string, { value: string; label: string; qty: number }[]>
+  >({});
 
   useEffect(() => {
     if (!id) return;
@@ -132,16 +145,41 @@ export default function EditVendorReturnPage() {
 
         const rawLines = (ret.lines as StoredLine[] | null) || [];
         if (rawLines.length > 0) {
-          setLines(
-            rawLines.map((l) => ({
-              type: (l.type as LineType) ?? 'FABRIC',
-              itemId: l.itemId ?? '',
+          const formLines: FormLine[] = [];
+          for (const l of rawLines) {
+            const type = (l.type as LineType) ?? 'FABRIC';
+            const itemId = l.itemId ?? '';
+            const reason = l.reason ?? '';
+            const condition = (l.condition as Condition) ?? 'GOOD';
+            if (type === 'FABRIC' && l.rollId && formLines.length > 0) {
+              const last = formLines[formLines.length - 1];
+              if (last.type === 'FABRIC' && last.itemId === itemId && last.reason === reason && last.condition === condition) {
+                last.rollIds = [...(last.rollIds ?? []), l.rollId!];
+                continue;
+              }
+            }
+            formLines.push({
+              type,
+              itemId,
               qty: String(l.qty ?? ''),
-              reason: l.reason ?? '',
-              condition: (l.condition as Condition) ?? 'GOOD',
-              referenceIssueId: l.referenceIssueId
-            }))
-          );
+              reason,
+              condition,
+              referenceIssueId: l.referenceIssueId,
+              rollIds: type === 'FABRIC' && l.rollId ? [l.rollId] : [],
+            });
+          }
+          setLines(formLines);
+          const fabricItemIds = [...new Set(formLines.filter((l) => l.type === 'FABRIC' && l.itemId).map((l) => l.itemId))];
+          const options: Record<string, { value: string; label: string; qty: number }[]> = {};
+          for (const itemId of fabricItemIds) {
+            const rolls = await getReturnableFabricRolls(itemId);
+            options[itemId] = rolls.map((r) => ({
+              value: r.id,
+              label: `${r.rollRef} (${r.remainingLength})`,
+              qty: r.remainingLength
+            }));
+          }
+          setFabricRollOptions((prev) => ({ ...prev, ...options }));
         }
 
         let urlsStr = '';
@@ -180,7 +218,7 @@ export default function EditVendorReturnPage() {
         const itemList: ItemOption[] = Array.isArray(raw)
           ? raw
               .filter(
-                (i): i is Record<'id' | 'sku' | 'nameId' | 'nameEn', string> =>
+                (i): i is Record<'id' | 'sku' | 'nameId' | 'nameEn' | 'type', string> =>
                   typeof i === 'object' &&
                   i !== null &&
                   'id' in i &&
@@ -188,7 +226,13 @@ export default function EditVendorReturnPage() {
                   'nameId' in i &&
                   'nameEn' in i
               )
-              .map((i) => ({ id: i.id, sku: i.sku, nameId: i.nameId, nameEn: i.nameEn }))
+              .map((i) => ({
+                id: i.id,
+                sku: i.sku,
+                nameId: i.nameId,
+                nameEn: i.nameEn,
+                type: (i.type as ItemTypeOption) || undefined,
+              }))
           : [];
         setItems(itemList);
       } catch {
@@ -201,10 +245,31 @@ export default function EditVendorReturnPage() {
     load();
   }, [id, router]);
 
+  /** Filter items by line type: FABRIC → fabric items, ACCESSORIES → accessories, FG_REJECT → finished goods. */
+  const itemOptionsForLineType = (lineType: LineType): ItemOption[] => {
+    if (lineType === 'FABRIC') return items.filter((it) => it.type === 'FABRIC');
+    if (lineType === 'ACCESSORIES') return items.filter((it) => it.type === 'ACCESSORIES');
+    if (lineType === 'FG_REJECT') return items.filter((it) => it.type === 'FINISHED_GOOD');
+    return items;
+  };
+
+  const loadFabricRollsForItem = async (itemId: string) => {
+    if (!itemId) return;
+    const rolls = await getReturnableFabricRolls(itemId);
+    setFabricRollOptions((prev) => ({
+      ...prev,
+      [itemId]: rolls.map((r) => ({
+        value: r.id,
+        label: `${r.rollRef} (${r.remainingLength})`,
+        qty: r.remainingLength
+      }))
+    }));
+  };
+
   const addLine = () => {
     setLines((prev) => [
       ...prev,
-      { type: 'FABRIC', itemId: '', qty: '', reason: '', condition: 'GOOD' }
+      { type: 'FABRIC', itemId: '', rollIds: [], qty: '', reason: '', condition: 'GOOD' }
     ]);
   };
 
@@ -214,9 +279,19 @@ export default function EditVendorReturnPage() {
 
   const updateLine = (index: number, field: keyof FormLine, value: string) => {
     setLines((prev) =>
-      prev.map((line, i) =>
-        i === index ? { ...line, [field]: value } : line
-      )
+      prev.map((line, i) => {
+        if (i !== index) return line;
+        const updated = { ...line, [field]: value };
+        if (field === 'type') {
+          updated.itemId = '';
+          updated.rollIds = [];
+          updated.qty = '';
+        } else if (field === 'itemId' && line.type === 'FABRIC' && value) {
+          loadFabricRollsForItem(value);
+          return { ...updated, rollIds: [], qty: '' };
+        }
+        return updated;
+      })
     );
   };
 
@@ -227,10 +302,49 @@ export default function EditVendorReturnPage() {
     const parsedLines: VendorReturnLineInput[] = [];
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
-      const qty = Number(l.qty);
-      if (!l.itemId || !(qty > 0) || (l.reason?.trim().length ?? 0) < 3) {
-        toast.error(`Line ${i + 1}: item, qty > 0, and reason (min 3 chars) required`);
+      if (!l.itemId || (l.reason?.trim().length ?? 0) < 3) {
+        toast.error(`Line ${i + 1}: item and reason (min 3 chars) required`);
         return;
+      }
+      if (l.type === 'FABRIC') {
+        const rollIds = l.rollIds ?? [];
+        if (rollIds.length === 0) {
+          toast.error(`Line ${i + 1}: select at least one roll for fabric item`);
+          return;
+        }
+        const itemRollOpts = fabricRollOptions[l.itemId] ?? [];
+        for (const rollId of rollIds) {
+          const opt = itemRollOpts.find((o) => o.value === rollId);
+          const qty = opt?.qty ?? 0;
+          if (!(qty > 0)) continue;
+          parsedLines.push({
+            type: 'FABRIC',
+            itemId: l.itemId,
+            qty,
+            reason: l.reason.trim(),
+            condition: l.condition as Condition,
+            referenceIssueId: l.referenceIssueId || undefined,
+            rollId,
+          });
+        }
+        continue;
+      }
+      const qty = Number(l.qty);
+      if (!(qty > 0)) {
+        toast.error(`Line ${i + 1}: qty > 0 required`);
+        return;
+      }
+      if (l.type === 'FG_REJECT') {
+        try {
+          const available = await getAvailableRejectQtyByItem(l.itemId);
+          if (qty > available) {
+            toast.error(`Line ${i + 1}: reject qty exceeds available rejects (max ${available})`);
+            return;
+          }
+        } catch {
+          toast.error(`Line ${i + 1}: could not check available reject qty`);
+          return;
+        }
       }
       parsedLines.push({
         type: l.type,
@@ -238,7 +352,7 @@ export default function EditVendorReturnPage() {
         qty,
         reason: l.reason.trim(),
         condition: l.condition as Condition,
-        referenceIssueId: l.referenceIssueId || undefined
+        referenceIssueId: l.referenceIssueId || undefined,
       });
     }
 
@@ -314,11 +428,11 @@ export default function EditVendorReturnPage() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Header</CardTitle>
-            <CardDescription>Vendor and optional work order</CardDescription>
+            <CardTitle>Vendor Return</CardTitle>
+            <CardDescription>Vendor and optional work order / GRN reference. Add line items below.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
                 <Label>Vendor *</Label>
                 <SearchableCombobox
@@ -340,37 +454,29 @@ export default function EditVendorReturnPage() {
                   placeholder="None"
                 />
               </div>
-            <div className="space-y-2">
-              <Label>GRN (optional)</Label>
-              <SearchableCombobox
-                options={[
-                  { value: '__none__', label: 'None' },
-                  ...grns.map((grn) => ({ value: grn.id, label: grn.docNumber })),
-                ]}
-                value={grnId}
-                onValueChange={setGrnId}
-                placeholder="Select GRN"
-              />
-            </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Lines</CardTitle>
-                <CardDescription>Type, item, qty, condition, reason</CardDescription>
+              <div className="space-y-2">
+                <Label>GRN (optional)</Label>
+                <SearchableCombobox
+                  options={[
+                    { value: '__none__', label: 'None' },
+                    ...grns.map((grn) => ({ value: grn.id, label: grn.docNumber })),
+                  ]}
+                  value={grnId}
+                  onValueChange={setGrnId}
+                  placeholder="Select GRN"
+                />
               </div>
-              <Button type="button" variant="outline" size="sm" onClick={addLine}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add line
-              </Button>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <Label>Line items</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addLine}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add line
+                </Button>
+              </div>
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -384,79 +490,149 @@ export default function EditVendorReturnPage() {
                 </TableHeader>
                 <TableBody>
                   {lines.map((line, i) => (
-                    <TableRow key={i}>
-                      <TableCell>
-                        <Select
-                          value={line.type}
-                          onValueChange={(v) => updateLine(i, 'type', v)}
-                        >
-                          <SelectTrigger className="w-[130px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="FABRIC">FABRIC</SelectItem>
-                            <SelectItem value="ACCESSORIES">ACCESSORIES</SelectItem>
-                            <SelectItem value="FG_REJECT">FG_REJECT</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <SearchableCombobox
-                          options={items.map((it) => ({
-                            value: it.id,
-                            label: `${it.sku} – ${it.nameId || it.nameEn}`,
-                          }))}
-                          value={line.itemId}
-                          onValueChange={(v) => updateLine(i, 'itemId', v)}
-                          placeholder="Select item"
-                          triggerClassName="min-w-[180px]"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          min={0.0001}
-                          step="any"
-                          value={line.qty}
-                          onChange={(e) => updateLine(i, 'qty', e.target.value)}
-                          placeholder="0"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={line.condition}
-                          onValueChange={(v) => updateLine(i, 'condition', v)}
-                        >
-                          <SelectTrigger className="w-[120px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="GOOD">GOOD</SelectItem>
-                            <SelectItem value="DAMAGED">DAMAGED</SelectItem>
-                            <SelectItem value="DEFECTIVE">DEFECTIVE</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={line.reason}
-                          onChange={(e) => updateLine(i, 'reason', e.target.value)}
-                          placeholder="Reason (min 3 chars)"
-                          className="min-w-[160px]"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeLine(i)}
-                          disabled={lines.length <= 1}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                    <Fragment key={i}>
+                      <TableRow>
+                        <TableCell>
+                          <Select
+                            value={line.type}
+                            onValueChange={(v) => updateLine(i, 'type', v)}
+                          >
+                            <SelectTrigger className="w-[130px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="FABRIC">FABRIC</SelectItem>
+                              <SelectItem value="ACCESSORIES">ACCESSORIES</SelectItem>
+                              <SelectItem value="FG_REJECT">FG_REJECT</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <SearchableCombobox
+                            options={itemOptionsForLineType(line.type).map((it) => ({
+                              value: it.id,
+                              label: `${it.sku} – ${it.nameId || it.nameEn}`,
+                            }))}
+                            value={line.itemId}
+                            onValueChange={(v) => updateLine(i, 'itemId', v)}
+                            placeholder="Select item"
+                            triggerClassName="min-w-[180px]"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {line.type === 'FABRIC' ? (
+                            <SearchableCombobox
+                              options={(fabricRollOptions[line.itemId] ?? [])
+                                .filter((o) => !(line.rollIds ?? []).includes(o.value))
+                                .map((o) => ({ value: o.value, label: o.label }))}
+                              value=""
+                              onValueChange={(rollId) => {
+                                if (!rollId || (line.rollIds ?? []).includes(rollId)) return;
+                                setLines((prev) =>
+                                  prev.map((l, idx) =>
+                                    idx === i
+                                      ? { ...l, rollIds: [...(l.rollIds ?? []), rollId] }
+                                      : l
+                                  )
+                                );
+                              }}
+                              placeholder="Select roll"
+                              triggerClassName="min-w-[160px]"
+                            />
+                          ) : (
+                            <Input
+                              type="number"
+                              min={0.0001}
+                              step="any"
+                              value={line.qty}
+                              onChange={(e) => updateLine(i, 'qty', e.target.value)}
+                              placeholder="0"
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={line.condition}
+                            onValueChange={(v) => updateLine(i, 'condition', v)}
+                          >
+                            <SelectTrigger className="w-[120px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="GOOD">GOOD</SelectItem>
+                              <SelectItem value="DAMAGED">DAMAGED</SelectItem>
+                              <SelectItem value="DEFECTIVE">DEFECTIVE</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={line.reason}
+                            onChange={(e) => updateLine(i, 'reason', e.target.value)}
+                            placeholder="Reason (min 3 chars)"
+                            className="min-w-[160px]"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeLine(i)}
+                            disabled={lines.length <= 1}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {line.type === 'FABRIC' && (line.rollIds ?? []).length > 0 && (
+                        <TableRow className="bg-muted/40">
+                          <TableCell colSpan={6}>
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="font-medium text-muted-foreground">Rolls:</span>
+                              {(line.rollIds ?? []).map((rollId) => {
+                                const opts = fabricRollOptions[line.itemId] ?? [];
+                                const selected = opts.find((o) => o.value === rollId);
+                                const label = selected?.label ?? rollId;
+                                return (
+                                  <Badge
+                                    key={rollId}
+                                    variant="secondary"
+                                    asChild
+                                    className="cursor-pointer border-border gap-1.5 py-1 transition-[color,background-color,border-color] hover:bg-destructive/20 hover:border-destructive/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setLines((prev) =>
+                                          prev.map((l, idx) =>
+                                            idx === i
+                                              ? {
+                                                  ...l,
+                                                  rollIds: (l.rollIds ?? []).filter((id) => id !== rollId),
+                                                }
+                                              : l
+                                          )
+                                        );
+                                      }}
+                                      aria-label={`Remove roll ${label}`}
+                                    >
+                                      {label}
+                                      <span
+                                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                                        aria-hidden
+                                      >
+                                        ×
+                                      </span>
+                                    </button>
+                                  </Badge>
+                                );
+                              })}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>
@@ -464,21 +640,17 @@ export default function EditVendorReturnPage() {
             <p className="mt-2 text-sm text-muted-foreground">
               Total value is calculated on save from current average cost.
             </p>
-          </CardContent>
-        </Card>
+            </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Evidence (optional)</CardTitle>
-            <CardDescription>One URL per line, or comma/newline separated</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <textarea
-              className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              value={evidenceUrls}
-              onChange={(e) => setEvidenceUrls(e.target.value)}
-              placeholder="https://..."
-            />
+            <div className="space-y-2">
+              <Label>Evidence URLs (optional)</Label>
+              <textarea
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={evidenceUrls}
+                onChange={(e) => setEvidenceUrls(e.target.value)}
+                placeholder="One URL per line, or comma/newline separated (https://...)"
+              />
+            </div>
           </CardContent>
         </Card>
 

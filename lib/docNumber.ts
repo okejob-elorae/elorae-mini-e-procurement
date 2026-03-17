@@ -14,6 +14,16 @@ const DEFAULT_CONFIGS: Record<
   RECEIPT: { prefix: 'RCPT/', resetPeriod: 'MONTHLY', padding: 4 },
 };
 
+type ConfigRow = {
+  lastNumber: number;
+  year: number;
+  month: number;
+  prefix: string;
+  padding: number;
+  resetPeriod: string;
+};
+
+/** Generate next doc number. Uses atomic UPDATE so concurrent callers get distinct numbers. */
 export async function generateDocNumber(
   type: DocType,
   tx?: any
@@ -29,50 +39,57 @@ export async function generateDocNumber(
 
   if (!config) {
     const def = DEFAULT_CONFIGS[type];
-    config = await prismaClient.docNumberConfig.create({
-      data: {
-        docType: type,
-        prefix: def.prefix,
-        resetPeriod: def.resetPeriod,
-        padding: def.padding,
-        lastNumber: 0,
-        year: currentYear,
-        month: currentMonth,
-      },
-    });
+    try {
+      config = await prismaClient.docNumberConfig.create({
+        data: {
+          docType: type,
+          prefix: def.prefix,
+          resetPeriod: def.resetPeriod,
+          padding: def.padding,
+          lastNumber: 0,
+          year: currentYear,
+          month: currentMonth,
+        },
+      });
+    } catch {
+      config = await prismaClient.docNumberConfig.findUnique({
+        where: { docType: type },
+      });
+      if (!config) throw new Error(`Failed to get or create DocNumberConfig for ${type}`);
+    }
   }
 
-  let { lastNumber, year, month } = config;
-  const resetPeriod = config.resetPeriod as string;
+  // Atomic increment (or reset) in the DB so no two callers get the same number
+  await prismaClient.$executeRaw`
+    UPDATE DocNumberConfig
+    SET
+      lastNumber = CASE
+        WHEN resetPeriod = 'YEARLY' AND year = ${currentYear} THEN lastNumber + 1
+        WHEN resetPeriod = 'YEARLY' AND year <> ${currentYear} THEN 1
+        WHEN resetPeriod = 'MONTHLY' AND year = ${currentYear} AND month = ${currentMonth} THEN lastNumber + 1
+        ELSE 1
+      END,
+      year = ${currentYear},
+      month = ${currentMonth}
+    WHERE docType = ${type}
+  `;
 
-  if (resetPeriod === 'YEARLY' && year !== currentYear) {
-    lastNumber = 0;
-    year = currentYear;
-    month = currentMonth;
-  } else if (
-    resetPeriod === 'MONTHLY' &&
-    (year !== currentYear || month !== currentMonth)
-  ) {
-    lastNumber = 0;
-    year = currentYear;
-    month = currentMonth;
-  }
+  const rows = await prismaClient.$queryRaw<ConfigRow[]>`
+    SELECT lastNumber, year, month, prefix, padding, resetPeriod
+    FROM DocNumberConfig
+    WHERE docType = ${type}
+  `;
+  const row = rows[0];
+  if (!row) throw new Error(`DocNumberConfig missing after update: ${type}`);
 
-  lastNumber += 1;
-
-  await prismaClient.docNumberConfig.update({
-    where: { docType: type },
-    data: { lastNumber, year, month },
-  });
-
-  const padding = config.padding || 4;
-  const numberStr = String(lastNumber).padStart(padding, '0');
-  const prefix = config.prefix.endsWith('/') ? config.prefix : config.prefix + '/';
+  const { lastNumber, prefix, padding, resetPeriod } = row;
+  const numberStr = String(lastNumber).padStart(padding || 4, '0');
+  const prefixWithSlash = prefix.endsWith('/') ? prefix : prefix + '/';
 
   if (resetPeriod === 'MONTHLY') {
-    return `${prefix}${year}/${String(month).padStart(2, '0')}/${numberStr}`;
+    return `${prefixWithSlash}${row.year}/${String(row.month).padStart(2, '0')}/${numberStr}`;
   }
-  return `${prefix}${year}/${numberStr}`;
+  return `${prefixWithSlash}${row.year}/${numberStr}`;
 }
 
 // Generate supplier code (not using document number table)

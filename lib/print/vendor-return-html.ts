@@ -15,6 +15,7 @@ export type VendorReturnPrintLine = {
   type: string;
   itemId: string;
   itemName?: string;
+  rollRef?: string;
   qty: number;
   reason: string;
   condition: string;
@@ -78,12 +79,19 @@ export function buildVendorReturnPrintHtml(
         ? new Date(completedAt).toLocaleString()
         : '';
 
+  const itemDisplay = (line: VendorReturnPrintLine) => {
+    const name = line.itemName ?? line.itemId;
+    if (line.type === 'FABRIC' && line.rollRef) return `${name} – ${line.rollRef} (${line.qty})`;
+    if (line.type === 'FG_REJECT') return `${name} — Source: Reject stock`;
+    return name;
+  };
+
   const rows = lines
     .map(
       (line) =>
         `<tr>
           <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.type)}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.itemName ?? line.itemId)}</td>
+          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(itemDisplay(line))}</td>
           <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(line.qty).toLocaleString()}</td>
           <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.condition)}</td>
           <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.reason)}</td>

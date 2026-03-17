@@ -25,6 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Progress } from '@/components/ui/progress';
 import {
   ShoppingCart,
   Package,
@@ -39,7 +40,7 @@ import {
   Download,
 } from 'lucide-react';
 import { Role } from '@/lib/constants/enums';
-import { getDashboardStats, type DashboardStats } from '@/app/actions/dashboard';
+import { getDashboardStats, getRawMaterialShortage, getWorkOrderCountByStatus, type DashboardStats, type RawMaterialShortageRow, type WorkOrderStatusCount } from '@/app/actions/dashboard';
 import { getOverduePOs } from '@/app/actions/purchase-orders';
 import {
   getProcurementReport,
@@ -110,15 +111,36 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+const WO_STATUS_BADGE_CLASS: Record<string, string> = {
+  DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+  ISSUED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  IN_PRODUCTION: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+  PARTIAL: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+  COMPLETED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  CANCELLED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+};
+
+const WO_STATUS_LABEL_KEY: Record<string, string> = {
+  DRAFT: 'draft',
+  ISSUED: 'issued',
+  IN_PRODUCTION: 'inProduction',
+  PARTIAL: 'partial',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
+};
+
 export default function DashboardPage() {
   const { data: session } = useSession();
   const tDashboard = useTranslations('dashboard');
+  const tWO = useTranslations('workOrders');
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overduePOs, setOverduePOs] = useState<Awaited<ReturnType<typeof getOverduePOs>>>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; name: string; code: string }[]>([]);
   const [cogsRawVsFinished, setCogsRawVsFinished] = useState<Awaited<ReturnType<typeof getCOGSRawVsFinished>> | null>(null);
+  const [rawMaterialShortage, setRawMaterialShortage] = useState<RawMaterialShortageRow[]>([]);
+  const [woStatusCounts, setWoStatusCounts] = useState<WorkOrderStatusCount[]>([]);
 
   const [rp1Filters, setRp1Filters] = useState<{
     fromDate: string;
@@ -148,19 +170,23 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const [dashboardData, overdueData, suppliersList, cogsData] = await Promise.all([
+        const [dashboardData, overdueData, suppliersList, cogsData, shortageData, woStatusData] = await Promise.all([
           getDashboardStats(),
           getOverduePOs(),
           getSuppliersForReportFilter(),
           getCOGSRawVsFinished(),
+          getRawMaterialShortage(),
+          getWorkOrderCountByStatus(),
         ]);
         if (!cancelled) {
           setStats(dashboardData);
           setOverduePOs(overdueData);
           setSuppliers(suppliersList);
           setCogsRawVsFinished(cogsData);
+          setRawMaterialShortage(shortageData);
+          setWoStatusCounts(woStatusData);
         }
-      } catch (e) {
+      } catch {
         if (!cancelled) {
           setError('Failed to load dashboard');
           toast.error('Failed to load dashboard');
@@ -516,6 +542,7 @@ export default function DashboardPage() {
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList className="flex flex-wrap gap-1">
           <TabsTrigger value="overview">{tDashboard('overview')}</TabsTrigger>
+          <TabsTrigger value="production">{tDashboard('productionTab')}</TabsTrigger>
           <TabsTrigger value="overdue">{tDashboard('overduePOs')}</TabsTrigger>
           <TabsTrigger value="rp1">{tDashboard('procurementRp1')}</TabsTrigger>
           <TabsTrigger value="rp2">{tDashboard('reportsSetoranCmt')}</TabsTrigger>
@@ -558,6 +585,99 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="production" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Raw material shortage (active WOs)
+              </CardTitle>
+              <CardDescription>Deficit vs on-hand for materials planned in work orders in production.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {rawMaterialShortage.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No shortage. All active WO material needs are covered.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Material</TableHead>
+                      <TableHead className="text-right">Planned</TableHead>
+                      <TableHead className="text-right">On hand</TableHead>
+                      <TableHead className="text-right">Deficit</TableHead>
+                      <TableHead>UOM</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rawMaterialShortage.map((row) => (
+                      <TableRow key={row.itemId}>
+                        <TableCell className="font-medium">{row.itemName}</TableCell>
+                        <TableCell className="text-right">{formatNumber(row.totalPlanned)}</TableCell>
+                        <TableCell className="text-right">{formatNumber(row.qtyOnHand)}</TableCell>
+                        <TableCell className="text-right text-destructive font-medium">{formatNumber(row.deficit)}</TableCell>
+                        <TableCell>{row.uomCode}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ClipboardList className="h-5 w-5" />
+                Work orders by status
+              </CardTitle>
+              <CardDescription>Count and total planned qty per status.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {(() => {
+                const totalPlanned = woStatusCounts.reduce((s, r) => s + Number(r.totalPlannedQty), 0);
+                const totalCount = woStatusCounts.reduce((s, r) => s + Number(r.count), 0);
+                return (
+                  <>
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">{formatNumber(totalCount)}</span>
+                      <span>work orders</span>
+                      <span className="text-muted-foreground/70">·</span>
+                      <span className="font-medium text-foreground">{formatNumber(totalPlanned)}</span>
+                      <span>total planned qty</span>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {woStatusCounts.map((row) => {
+                        const pct = totalPlanned > 0 ? (Number(row.totalPlannedQty) / totalPlanned) * 100 : 0;
+                        const label = WO_STATUS_LABEL_KEY[row.status] ? tWO(WO_STATUS_LABEL_KEY[row.status] as 'draft' | 'issued' | 'inProduction' | 'partial' | 'completed' | 'cancelled') : row.status;
+                        const badgeClass = WO_STATUS_BADGE_CLASS[row.status] ?? 'bg-muted text-muted-foreground';
+                        return (
+                          <div
+                            key={row.status}
+                            className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4 transition-colors hover:bg-muted/50"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <Badge className={badgeClass}>
+                                {label}
+                              </Badge>
+                              <span className="text-right text-sm tabular-nums text-muted-foreground">
+                                {formatNumber(row.count)} WO{Number(row.count) !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <p className="text-xl font-semibold tabular-nums">{formatNumber(row.totalPlannedQty)}</p>
+                            <p className="text-xs text-muted-foreground">planned qty</p>
+                            <Progress value={pct} className="h-1.5" />
+                            <p className="text-xs text-muted-foreground">{pct.toFixed(0)}% of total</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="overdue" className="space-y-4">

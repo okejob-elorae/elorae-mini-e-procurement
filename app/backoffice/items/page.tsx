@@ -132,7 +132,7 @@ export default function ItemsPage() {
         setItems((data as unknown as Item[]) || []);
         setTotalCount((data as unknown as Item[])?.length || 0);
       }
-    } catch (_error) {
+    } catch {
       toast.error(t('failedToLoadItems'));
     } finally {
       setIsLoading(false);

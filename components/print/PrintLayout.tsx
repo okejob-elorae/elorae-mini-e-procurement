@@ -51,6 +51,7 @@ export function PrintLayout({
         <div className="print:flex print:items-center print:justify-between print:gap-4">
           <div className="print:flex print:items-center print:gap-3">
             {logoSrc && (
+              // eslint-disable-next-line @next/next/no-img-element -- print layout logo; src is dynamic
               <img
                 src={logoSrc}
                 alt={logoAlt}

@@ -389,6 +389,7 @@ model FabricRoll {
   createdAt     DateTime @default(now())
   @@index([grnId])
   @@index([itemId])
+  @@index([itemId, isClosed, remainingLength])
   @@index([uomId])
   @@index([rollCode])
 }
@@ -562,6 +563,7 @@ model RejectedGoodsLedger {
   id          String    @id @default(cuid())
   itemId      String
   item        Item      @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  variantSku  String?
   qty         Decimal   @db.Decimal(10,2)
   refType     String    // FG_RECEIPT
   refId       String

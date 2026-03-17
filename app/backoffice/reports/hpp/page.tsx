@@ -66,6 +66,10 @@ export default function HPPPage() {
   const [editMargin, setEditMargin] = useState<string>('');
   const [editAdditional, setEditAdditional] = useState<string>('');
   const [savingAdjustments, setSavingAdjustments] = useState(false);
+  const [selectedWoIds, setSelectedWoIds] = useState<Set<string>>(new Set());
+  const [bulkMarginOpen, setBulkMarginOpen] = useState(false);
+  const [bulkMarginValue, setBulkMarginValue] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const loadData = useCallback(() => {
     setIsLoading(true);
@@ -109,14 +113,55 @@ export default function HPPPage() {
     setEditAdditional(row.additionalCost != null ? String(row.additionalCost) : '');
   };
 
+  const toggleSelectWo = (woId: string) => {
+    setSelectedWoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(woId)) next.delete(woId);
+      else next.add(woId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedWoIds.size === rows.length) {
+      setSelectedWoIds(new Set());
+    } else {
+      setSelectedWoIds(new Set(rows.map((r) => r.woId)));
+    }
+  };
+
+  const handleBulkSetMargin = async () => {
+    if (!isAdmin || selectedWoIds.size === 0) return;
+    const margin = bulkMarginValue.trim() === '' ? undefined : parseFloat(bulkMarginValue);
+    if (margin !== undefined && (Number.isNaN(margin) || margin < 0)) {
+      toast.error('Margin must be ≥ 0');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      for (const woId of selectedWoIds) {
+        await updateWOHppAdjustments(woId, { hppMarginPercent: margin });
+      }
+      toast.success(`Margin set for ${selectedWoIds.size} work order(s)`);
+      setBulkMarginOpen(false);
+      setBulkMarginValue('');
+      setSelectedWoIds(new Set());
+      loadData();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to set margin');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   const handleSaveAdjustments = async () => {
     if (!detailRow || !isAdmin) return;
     setSavingAdjustments(true);
     try {
       const margin = editMargin === '' ? undefined : parseFloat(editMargin);
       const additional = editAdditional === '' ? undefined : parseFloat(editAdditional);
-      if (margin !== undefined && (Number.isNaN(margin) || margin < 0 || margin > 100)) {
-        toast.error('Margin must be between 0 and 100');
+      if (margin !== undefined && (Number.isNaN(margin) || margin < 0)) {
+        toast.error('Margin must be ≥ 0');
         return;
       }
       if (additional !== undefined && (Number.isNaN(additional) || additional < 0)) {
@@ -229,13 +274,38 @@ export default function HPPPage() {
               <p>{t('noRows')}</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="space-y-2">
+              {isAdmin && selectedWoIds.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => setBulkMarginOpen(true)}
+                  >
+                    Set margin ({selectedWoIds.size} selected)
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedWoIds(new Set())}>
+                    Clear selection
+                  </Button>
+                </div>
+              )}
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {isAdmin && (
+                      <TableHead className="w-10">
+                        <input
+                          type="checkbox"
+                          checked={rows.length > 0 && selectedWoIds.size === rows.length}
+                          onChange={toggleSelectAll}
+                          aria-label="Select all"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>{t('woDocNumber')}</TableHead>
                     <TableHead>{t('articleFg')}</TableHead>
-                    <TableHead className="text-right">{t('plannedQty')}</TableHead>
+                    <TableHead className="text-right">{t('actualQty')}</TableHead>
                     <TableHead className="text-right">{t('fabricCostPcs')}</TableHead>
                     <TableHead className="text-right">{t('accessoriesCostPcs')}</TableHead>
                     <TableHead className="text-right">{t('serviceCostPcs')}</TableHead>
@@ -249,9 +319,19 @@ export default function HPPPage() {
                 <TableBody>
                   {rows.map((row) => (
                     <TableRow key={row.woId}>
+                      {isAdmin && (
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            checked={selectedWoIds.has(row.woId)}
+                            onChange={() => toggleSelectWo(row.woId)}
+                            aria-label={`Select ${row.woDocNumber}`}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-medium">{row.woDocNumber}</TableCell>
                       <TableCell>{row.finishedGoodSku} — {row.finishedGoodName}</TableCell>
-                      <TableCell className="text-right">{fmtNum(row.plannedQty)}</TableCell>
+                      <TableCell className="text-right">{fmtNum((row as { actualQty?: number }).actualQty ?? row.plannedQty)}</TableCell>
                       <TableCell className="text-right">{fmt(row.fabricCostPerPcs)}</TableCell>
                       <TableCell className="text-right">{fmt(row.accessoriesCostPerPcs)}</TableCell>
                       <TableCell className="text-right">{fmt(row.serviceCostPerPcs)}</TableCell>
@@ -280,9 +360,39 @@ export default function HPPPage() {
                 </TableBody>
               </Table>
             </div>
+            </div>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={bulkMarginOpen} onOpenChange={(open) => !open && setBulkMarginOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set margin for selected work orders</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Margin %</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step={0.01}
+                value={bulkMarginValue}
+                onChange={(e) => setBulkMarginValue(e.target.value)}
+                placeholder="e.g. 25"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setBulkMarginOpen(false)}>Cancel</Button>
+              <Button onClick={handleBulkSetMargin} disabled={bulkSaving}>
+                {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Apply to {selectedWoIds.size} WO(s)
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!detailRow} onOpenChange={(open) => !open && setDetailRow(null)}>
         <DialogContent className="max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -299,6 +409,7 @@ export default function HPPPage() {
                     <TableHead className="text-right">{t('unitCost')}</TableHead>
                     <TableHead className="text-right">{t('qtyPerPcs')}</TableHead>
                     <TableHead className="text-right">{t('costPerPcs')}</TableHead>
+                    <TableHead className="text-right">Final Price</TableHead>
                     <TableHead>{t('ppnIncluded')}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -310,13 +421,20 @@ export default function HPPPage() {
                       <TableCell className="text-right">{fmt(line.unitCost)}</TableCell>
                       <TableCell className="text-right">{fmtNum(line.qtyPerPcs)}</TableCell>
                       <TableCell className="text-right">{fmt(line.costPerPcs)}</TableCell>
+                      <TableCell className="text-right">{fmt((line as { nettCostPerPcs?: number }).nettCostPerPcs ?? line.costPerPcs)}</TableCell>
                       <TableCell>{line.ppnIncluded ? 'Yes' : 'No'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
               <div className="flex flex-wrap gap-4 pt-2 border-t">
-                <div className="font-medium">Subtotal (HPP/pcs): {fmt(detailRow.subtotal)}</div>
+                <div className="font-medium">
+                  Subtotal (HPP/pcs):{' '}
+                  {fmt(
+                    (detailRow as { nettSubtotal?: number }).nettSubtotal ??
+                      detailRow.subtotal
+                  )}
+                </div>
                 {detailRow.hasMixedPPN && (
                   <Badge variant="secondary">{t('ppnMixed')}</Badge>
                 )}

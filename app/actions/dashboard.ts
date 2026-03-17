@@ -188,3 +188,116 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     recentActivity,
   };
 }
+
+export type RawMaterialShortageRow = {
+  itemId: string;
+  itemName: string;
+  uomCode: string;
+  totalPlanned: number;
+  qtyOnHand: number;
+  deficit: number;
+};
+
+/** Accumulated raw material shortages across all active (IN_PRODUCTION) work orders. */
+export async function getRawMaterialShortage(): Promise<RawMaterialShortageRow[]> {
+  const wos = await prisma.workOrder.findMany({
+    where: { status: 'IN_PRODUCTION' },
+    select: { consumptionPlan: true },
+  });
+
+  const plannedByItem = new Map<string, number>();
+  const itemIds = new Set<string>();
+
+  for (const wo of wos) {
+    const plan = (() => {
+      const raw = wo.consumptionPlan;
+      if (Array.isArray(raw)) return raw;
+      if (typeof raw === 'string') {
+        try {
+          const p = JSON.parse(raw) as unknown;
+          return Array.isArray(p) ? p : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    })();
+    for (const row of plan as Array<{ itemId?: string; plannedQty?: number }>) {
+      if (!row?.itemId) continue;
+      const qty = Number(row.plannedQty) || 0;
+      itemIds.add(row.itemId);
+      plannedByItem.set(row.itemId, (plannedByItem.get(row.itemId) ?? 0) + qty);
+    }
+  }
+
+  if (itemIds.size === 0) return [];
+
+  const items = await prisma.item.findMany({
+    where: { id: { in: Array.from(itemIds) } },
+    select: { id: true, nameId: true, uomId: true },
+  });
+  const itemById = new Map(items.map((i) => [i.id, i]));
+  const uomIds = [...new Set(items.map((i) => i.uomId))];
+  const uoms = await prisma.uOM.findMany({
+    where: { id: { in: uomIds } },
+    select: { id: true, code: true },
+  });
+  const uomById = new Map(uoms.map((u) => [u.id, u]));
+
+  const inventoryRows = await prisma.inventoryValue.findMany({
+    where: { itemId: { in: Array.from(itemIds) } },
+    select: { itemId: true, qtyOnHand: true },
+  });
+  const onHandByItem = new Map<string, number>();
+  for (const r of inventoryRows) {
+    onHandByItem.set(r.itemId, (onHandByItem.get(r.itemId) ?? 0) + Number(r.qtyOnHand));
+  }
+
+  const result: RawMaterialShortageRow[] = [];
+  for (const itemId of itemIds) {
+    const totalPlanned = plannedByItem.get(itemId) ?? 0;
+    const qtyOnHand = onHandByItem.get(itemId) ?? 0;
+    const deficit = Math.max(0, totalPlanned - qtyOnHand);
+    if (deficit <= 0) continue;
+    const item = itemById.get(itemId);
+    const uom = item ? uomById.get(item.uomId) : null;
+    result.push({
+      itemId,
+      itemName: item?.nameId ?? itemId,
+      uomCode: uom?.code ?? '',
+      totalPlanned,
+      qtyOnHand,
+      deficit,
+    });
+  }
+  return result.sort((a, b) => b.deficit - a.deficit);
+}
+
+export type WorkOrderStatusCount = {
+  status: string;
+  count: number;
+  totalPlannedQty: number;
+};
+
+/** Work orders grouped by status with counts and total planned qty. */
+export async function getWorkOrderCountByStatus(): Promise<WorkOrderStatusCount[]> {
+  const wos = await prisma.workOrder.findMany({
+    select: { status: true, plannedQty: true },
+  });
+  const byStatus = new Map<string, { count: number; totalPlanned: number }>();
+  const statusOrder = ['DRAFT', 'ISSUED', 'IN_PRODUCTION', 'PARTIAL', 'COMPLETED', 'CANCELLED'];
+  for (const s of statusOrder) {
+    byStatus.set(s, { count: 0, totalPlanned: 0 });
+  }
+  for (const wo of wos) {
+    const s = wo.status;
+    if (!byStatus.has(s)) byStatus.set(s, { count: 0, totalPlanned: 0 });
+    const rec = byStatus.get(s)!;
+    rec.count += 1;
+    rec.totalPlanned += Number(wo.plannedQty) || 0;
+  }
+  return statusOrder.map((status) => {
+    const rec = byStatus.get(status) ?? { count: 0, totalPlanned: 0 };
+    return { status, count: rec.count, totalPlannedQty: rec.totalPlanned };
+  });
+}

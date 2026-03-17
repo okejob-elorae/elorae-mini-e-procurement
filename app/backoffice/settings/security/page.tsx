@@ -96,7 +96,7 @@ export default function SecuritySettingsPage() {
       } else {
         toast.error(result.messageKey ? t(result.messageKey) : result.message);
       }
-    } catch (_e) {
+    } catch {
       toast.error(t('pinSaveFailed'));
     } finally {
       setSaving(false);
@@ -125,7 +125,7 @@ export default function SecuritySettingsPage() {
       } else {
         toast.error(t(result.messageKey));
       }
-    } catch (_e) {
+    } catch {
       toast.error(t('changePasswordFailed'));
     } finally {
       setSavingPassword(false);
@@ -143,7 +143,7 @@ export default function SecuritySettingsPage() {
       } else {
         toast.error(result.messageKey ? t(result.messageKey) : result.message);
       }
-    } catch (_e) {
+    } catch {
       toast.error(t('resetPinFailed'));
     } finally {
       setResetting(false);

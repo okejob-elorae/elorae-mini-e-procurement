@@ -13,6 +13,7 @@ export function GlobalLoadingBar() {
 
   useEffect(() => {
     if (prevPathname.current !== null && prevPathname.current !== pathname) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync loading bar to route change
       setVisible(true);
       if (hideTimeout.current) clearTimeout(hideTimeout.current);
       hideTimeout.current = setTimeout(() => {

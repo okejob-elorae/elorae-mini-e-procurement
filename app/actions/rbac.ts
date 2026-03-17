@@ -11,9 +11,10 @@ const roleSchema = z.object({
   description: z.string().optional(),
 });
 
-const updateRolePermissionsSchema = z.object({
+const _updateRolePermissionsSchema = z.object({
   permissionIds: z.array(z.string()),
 });
+void _updateRolePermissionsSchema;
 
 /**
  * Get all roles with their permissions and user counts

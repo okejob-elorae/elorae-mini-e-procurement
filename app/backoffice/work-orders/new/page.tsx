@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption, suggestFabricRollAllocation } from '@/app/actions/production';
+import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption, suggestFabricRollAllocation, getAvailableFabricRolls } from '@/app/actions/production';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
 import { getPOs } from '@/app/actions/purchase-orders';
 import { ItemType } from '@prisma/client';
@@ -118,11 +118,14 @@ export default function NewWorkOrderPage() {
   const [targetDate, setTargetDate] = useState('');
   const [notes, setNotes] = useState('');
   const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
+  const [availableRolls, setAvailableRolls] = useState<Array<{ rollId: string; rollCode: string; rollRef: string; remainingLength: number }>>([]);
+  const [addRollValue, setAddRollValue] = useState('');
   const [poId, setPoId] = useState('');
   const [purchaseOrders, setPurchaseOrders] = useState<Array<{ id: string; docNumber: string }>>([]);
   const [isLoadingPOs, setIsLoadingPOs] = useState(true);
   const [selectedVariantSku, setSelectedVariantSku] = useState('');
   const [selectedVariantAttributes, setSelectedVariantAttributes] = useState<Record<string, string> | null>(null);
+  const [variantRatios, setVariantRatios] = useState<Array<{ variantSku: string; ratioPercent: number }>>([]);
   const [finishedGoodVariants, setFinishedGoodVariants] = useState<Array<{ sku?: string; attributes: Record<string, string> }>>([]);
   const [isLoadingVariants, setIsLoadingVariants] = useState(false);
   const [steps, setSteps] = useState<WorkOrderStepForm[]>([]);
@@ -156,6 +159,7 @@ export default function NewWorkOrderPage() {
       }
     };
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
   }, []);
 
   useEffect(() => {
@@ -228,6 +232,16 @@ export default function NewWorkOrderPage() {
   }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, t]);
 
   useEffect(() => {
+    if (!consumptionMaterialId) {
+      setAvailableRolls([]);
+      return;
+    }
+    getAvailableFabricRolls(consumptionMaterialId)
+      .then(setAvailableRolls)
+      .catch(() => setAvailableRolls([]));
+  }, [consumptionMaterialId]);
+
+  useEffect(() => {
     if (!finishedGoodId || outputMode !== 'SKU') {
       setFinishedGoodVariants([]);
       setSelectedVariantSku('');
@@ -246,6 +260,18 @@ export default function NewWorkOrderPage() {
         setFinishedGoodVariants(variants);
         setSelectedVariantSku('');
         setSelectedVariantAttributes(null);
+        if (variants.length > 1) {
+          const equal = Math.floor(100 / variants.length);
+          const remainder = 100 - equal * variants.length;
+          setVariantRatios(
+            variants.map((v, i) => ({
+              variantSku: v.sku ?? `variant-${i}`,
+              ratioPercent: i === 0 ? equal + remainder : equal,
+            }))
+          );
+        } else {
+          setVariantRatios([]);
+        }
       })
       .catch(() => setFinishedGoodVariants([]))
       .finally(() => setIsLoadingVariants(false));
@@ -281,7 +307,10 @@ export default function NewWorkOrderPage() {
   /** Material qty (consumption UOM); roll total must be at least this (excess allowed) */
   const materialPlannedQtyForRolls = consumptionResult?.actualConsumption ?? 0;
   const rollValid = rollBreakdown.length === 0 || rollSum >= materialPlannedQtyForRolls - 1e-6;
-  const skuVariantValid = outputMode !== 'SKU' || (outputMode === 'SKU' && selectedVariantSku.length > 0);
+  const variantRatioSum = variantRatios.reduce((s, x) => s + x.ratioPercent, 0);
+  const skuVariantValid =
+    outputMode !== 'SKU' ||
+    (outputMode === 'SKU' && (variantRatios.length > 1 ? Math.abs(variantRatioSum - 100) < 0.01 : selectedVariantSku.length > 0));
   const noVariantsForSku = outputMode === 'SKU' && finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
   const canSubmit =
     session?.user?.id &&
@@ -295,8 +324,8 @@ export default function NewWorkOrderPage() {
     !noVariantsForSku &&
     !isSubmitting;
 
-  const addRollRow = () => {
-    setRollBreakdown((prev) => [...prev, { rollRef: `Roll ${prev.length + 1}`, qty: 0 }]);
+  const addRollBySelection = (roll: { rollId: string; rollCode: string; rollRef: string; remainingLength: number }) => {
+    setRollBreakdown((prev) => [...prev, { rollRef: roll.rollCode || roll.rollRef, qty: roll.remainingLength, notes: '' }]);
   };
   const updateRollRow = (i: number, field: 'rollRef' | 'qty' | 'notes', value: string | number) => {
     setRollBreakdown((prev) => {
@@ -357,8 +386,12 @@ export default function NewWorkOrderPage() {
           notes: notes.trim() || undefined,
           rollBreakdown: rollBreakdown.length > 0 ? rollBreakdown : undefined,
           skuBreakdown:
-            outputMode === 'SKU' && selectedVariantSku
-              ? { variantSku: selectedVariantSku, attributes: selectedVariantAttributes ?? undefined }
+            outputMode === 'SKU'
+              ? variantRatios.length > 1
+                ? variantRatios
+                : selectedVariantSku
+                  ? { variantSku: selectedVariantSku, attributes: selectedVariantAttributes ?? undefined }
+                  : undefined
               : undefined,
           steps:
             steps.length > 0
@@ -451,7 +484,31 @@ export default function NewWorkOrderPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {outputMode === 'SKU' && (
+              {outputMode === 'SKU' && finishedGoodVariants.length > 1 && (
+                <div className="space-y-2">
+                  <Label>Variant ratio % (sum = 100%)</Label>
+                  {variantRatios.map((row, i) => (
+                    <div key={row.variantSku} className="flex items-center gap-2">
+                      <span className="w-48 truncate text-sm">{row.variantSku}</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={row.ratioPercent === 0 ? '' : row.ratioPercent}
+                        onChange={(e) => {
+                          const v = Number(e.target.value) || 0;
+                          setVariantRatios((prev) => prev.map((p, j) => (j === i ? { ...p, ratioPercent: v } : p)));
+                        }}
+                        className="w-20"
+                      />
+                      %
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">Sum: {variantRatioSum}%</p>
+                </div>
+              )}
+              {outputMode === 'SKU' && finishedGoodVariants.length <= 1 && (
                 <div className="space-y-2">
                   <Label>{tWO('variantSku')}</Label>
                   <SearchableCombobox
@@ -540,7 +597,7 @@ export default function NewWorkOrderPage() {
                 </Button>
               </div>
               {steps.map((step, index) => (
-                <div key={index} className="grid gap-2 rounded border p-2 sm:grid-cols-6">
+                <div key={index} className="grid gap-2 rounded border p-2 sm:grid-cols-5">
                   <Input
                     placeholder="Step name"
                     value={step.stepName}
@@ -594,17 +651,6 @@ export default function NewWorkOrderPage() {
                       <SelectItem value="include">Include PPN</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Input
-                    type="number"
-                    min={0}
-                    placeholder="Qty (optional)"
-                    value={step.qty || ''}
-                    onChange={(e) =>
-                      setSteps((prev) =>
-                        prev.map((s, i) => (i === index ? { ...s, qty: Number(e.target.value) || 0 } : s))
-                      )
-                    }
-                  />
                   <Button
                     type="button"
                     variant="ghost"
@@ -760,14 +806,14 @@ export default function NewWorkOrderPage() {
                       <div className="space-y-2 border-t pt-4">
                         <Label>Alokasi per roll (opsional)</Label>
                         <p className="text-xs text-muted-foreground">
-                          Total qty per roll minimal sama dengan kebutuhan material ({consumptionResult ? `${materialPlannedQtyForRolls.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${consumptionResult.uomCode}` : '—'}). Boleh melebihi.
+                          Pilih roll utuh (whole rolls only). Total allocated minimal sama dengan kebutuhan material.
                         </p>
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow>
                                 <TableHead>Roll / Ref</TableHead>
-                                <TableHead className="text-right">Qty</TableHead>
+                                <TableHead className="text-right">Qty (whole roll)</TableHead>
                                 <TableHead>Notes</TableHead>
                                 <TableHead className="w-12" />
                               </TableRow>
@@ -775,24 +821,8 @@ export default function NewWorkOrderPage() {
                             <TableBody>
                               {rollBreakdown.map((row, i) => (
                                 <TableRow key={i}>
-                                  <TableCell>
-                                    <Input
-                                      value={row.rollRef}
-                                      onChange={(e) => updateRollRow(i, 'rollRef', e.target.value)}
-                                      placeholder="Roll 1"
-                                      className="h-8"
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    <Input
-                                      type="number"
-                                      min={0}
-                                      step="any"
-                                      value={row.qty === 0 ? '' : row.qty}
-                                      onChange={(e) => updateRollRow(i, 'qty', e.target.value === '' ? 0 : Number(e.target.value))}
-                                      className="h-8 text-right"
-                                    />
-                                  </TableCell>
+                                  <TableCell className="font-medium">{row.rollRef}</TableCell>
+                                  <TableCell className="text-right">{Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
                                   <TableCell>
                                     <Input
                                       value={row.notes ?? ''}
@@ -817,18 +847,44 @@ export default function NewWorkOrderPage() {
                             </TableBody>
                           </Table>
                         </div>
-                        <Button type="button" variant="outline" size="sm" onClick={addRollRow}>
-                          + Tambah roll
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleSuggestRolls}
-                          disabled={!consumptionMaterialId || isSuggestingRolls}
-                        >
-                          {isSuggestingRolls ? 'Suggesting...' : 'Suggest best-fit'}
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <SearchableCombobox
+                            options={availableRolls
+                              .filter((r) => !rollBreakdown.some((b) => b.rollRef === r.rollCode || b.rollRef === r.rollRef))
+                              .map((r) => ({
+                                value: r.rollId,
+                                label: `${r.rollCode} — ${r.remainingLength.toLocaleString()} remaining`,
+                              }))}
+                            value={addRollValue}
+                            onValueChange={(value) => {
+                              const roll = availableRolls.find((r) => r.rollId === value);
+                              if (roll) {
+                                addRollBySelection(roll);
+                                setAddRollValue('');
+                              }
+                            }}
+                            placeholder="Add roll..."
+                            emptyMessage="No more rolls"
+                            triggerClassName="w-[280px]"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleSuggestRolls}
+                            disabled={!consumptionMaterialId || isSuggestingRolls}
+                          >
+                            {isSuggestingRolls ? 'Suggesting...' : 'Suggest best-fit'}
+                          </Button>
+                        </div>
+                        {rollBreakdown.length > 0 && (
+                          <p className="text-sm">
+                            Total allocated: {rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}{consumptionResult ? ` ${consumptionResult.uomCode}` : ''}.
+                            {rollSum >= materialPlannedQtyForRolls - 1e-6
+                              ? ` +${(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 })} over`
+                              : ` ${(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 })} short`}
+                          </p>
+                        )}
                         {rollBreakdown.length > 0 && !rollValid && (
                           <p className="text-sm text-destructive">
                             Total roll ({rollSum.toLocaleString(undefined, { maximumFractionDigits: 4 })}{consumptionResult ? ` ${consumptionResult.uomCode}` : ''}) kurang dari kebutuhan material ({consumptionResult ? `${materialPlannedQtyForRolls.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${consumptionResult.uomCode}` : '—'}).

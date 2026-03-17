@@ -33,17 +33,32 @@ export default function WorkOrderReceivePage() {
   const [qtyReceived, setQtyReceived] = useState('');
   const [qtyRejected, setQtyRejected] = useState('0');
   const [qcNotes, setQcNotes] = useState('');
-  const [qcPhotos, setQcPhotos] = useState<string[]>([]);
+  const [qcPhotos, _setQcPhotos] = useState<string[]>([]);
+  void _setQcPhotos;
+  const [variantQtys, setVariantQtys] = useState<Array<{ variantSku: string; qty: number }>>([]);
+  const [rejectedVariantQtys, setRejectedVariantQtys] = useState<Array<{ variantSku: string; qty: number }>>([]);
 
   useEffect(() => {
     if (!id) return;
     getWorkOrderById(id)
-      .then(setWO)
+      .then((data) => {
+        setWO(data);
+        const sb = (data as { skuBreakdown?: unknown })?.skuBreakdown;
+        if (Array.isArray(sb) && sb.length > 0) {
+          const rows = sb.map((x: { variantSku?: string }) => ({ variantSku: String((x as { variantSku?: string }).variantSku ?? ''), qty: 0 }));
+          setVariantQtys(rows);
+          setRejectedVariantQtys(rows.map((r) => ({ ...r })));
+        } else {
+          setVariantQtys([]);
+          setRejectedVariantQtys([]);
+        }
+      })
       .catch(() => {
         toast.error(t('failedToLoadWorkOrder'));
         router.push('/backoffice/work-orders');
       })
       .finally(() => setIsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- id, router drive fetch
   }, [id, router]);
 
   const received = Number(qtyReceived) || 0;
@@ -65,6 +80,22 @@ export default function WorkOrderReceivePage() {
       toast.error(t('qtyReceivedMustBePositive'));
       return;
     }
+    const sb = (wo as { skuBreakdown?: unknown })?.skuBreakdown;
+    const needsVariantBreakdown = Array.isArray(sb) && sb.length > 1;
+    if (needsVariantBreakdown) {
+      const sumAccepted = variantQtys.reduce((s, x) => s + x.qty, 0);
+      if (Math.abs(sumAccepted - accepted) > 0.01) {
+        toast.error('Sum of variant qtys must equal qty accepted');
+        return;
+      }
+      if (rejected > 0) {
+        const sumRejected = rejectedVariantQtys.reduce((s, x) => s + x.qty, 0);
+        if (Math.abs(sumRejected - rejected) > 0.01) {
+          toast.error('Sum of rejected variant qtys must equal qty rejected');
+          return;
+        }
+      }
+    }
     setIsSubmitting(true);
     try {
       await receiveFG(
@@ -73,7 +104,12 @@ export default function WorkOrderReceivePage() {
           qtyReceived: received,
           qtyRejected: rejected,
           qcNotes: qcNotes.trim() || undefined,
-          qcPhotos: qcPhotos.length > 0 ? qcPhotos : undefined
+          qcPhotos: qcPhotos.length > 0 ? qcPhotos : undefined,
+          skuBreakdown: needsVariantBreakdown && variantQtys.length > 0 ? variantQtys : undefined,
+          rejectedSkuBreakdown:
+            needsVariantBreakdown && rejected > 0 && rejectedVariantQtys.length > 0
+              ? rejectedVariantQtys
+              : undefined
         },
         session.user.id
       );
@@ -160,6 +196,60 @@ export default function WorkOrderReceivePage() {
                   : 'N/A'}
               </p>
             </div>
+            {variantQtys.length > 1 && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Per-variant breakdown (sum must equal qty accepted)</Label>
+                  {variantQtys.map((row, i) => (
+                    <div key={row.variantSku} className="flex items-center gap-2">
+                      <span className="w-48 truncate text-sm">{row.variantSku}</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={row.qty === 0 ? '' : row.qty}
+                        onChange={(e) => {
+                          const v = Number(e.target.value) || 0;
+                          setVariantQtys((prev) => prev.map((p, j) => (j === i ? { ...p, qty: v } : p)));
+                        }}
+                        placeholder="0"
+                        className="w-24"
+                      />
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">
+                    Sum: {variantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString()} / {accepted.toLocaleString()} accepted
+                  </p>
+                </div>
+                {rejected > 0 && (
+                  <div className="space-y-2">
+                    <Label>Per-variant rejected (sum must equal qty rejected)</Label>
+                    {rejectedVariantQtys.map((row, i) => (
+                      <div key={row.variantSku} className="flex items-center gap-2">
+                        <span className="w-48 truncate text-sm">{row.variantSku}</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={row.qty === 0 ? '' : row.qty}
+                          onChange={(e) => {
+                            const v = Number(e.target.value) || 0;
+                            setRejectedVariantQtys((prev) =>
+                              prev.map((p, j) => (j === i ? { ...p, qty: v } : p))
+                            );
+                          }}
+                          placeholder="0"
+                          className="w-24"
+                        />
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground">
+                      Sum: {rejectedVariantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString()} / {rejected.toLocaleString()} rejected
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>QC Notes</Label>
               <Textarea

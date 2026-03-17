@@ -315,6 +315,7 @@ export default function StockCardPage() {
                     <TableHead>Tanggal</TableHead>
                     <TableHead>Dokumen</TableHead>
                     <TableHead>Keterangan</TableHead>
+                    <TableHead>Notes</TableHead>
                     <TableHead>Variant</TableHead>
                     <TableHead className="text-right text-green-600 dark:text-green-400">Masuk</TableHead>
                     <TableHead className="text-right text-red-600 dark:text-red-400">Keluar</TableHead>
@@ -329,6 +330,7 @@ export default function StockCardPage() {
                       <TableCell>{format(new Date(m.date), 'dd/MM/yyyy HH:mm')}</TableCell>
                       <TableCell className="font-medium">{m.docNumber}</TableCell>
                       <TableCell>{m.description}</TableCell>
+                      <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                       <TableCell>{m.variantSku ?? '-'}</TableCell>
                       <TableCell className="text-right text-green-600 dark:text-green-400">
                         {m.in != null ? m.in.toLocaleString() : '-'}
@@ -497,6 +499,7 @@ export default function StockCardPage() {
                                           <TableHead>Date</TableHead>
                                           <TableHead>Doc</TableHead>
                                           <TableHead>Description</TableHead>
+                                          <TableHead>Notes</TableHead>
                                           <TableHead className="text-right">In</TableHead>
                                           <TableHead className="text-right">Out</TableHead>
                                           <TableHead className="text-right">Balance</TableHead>
@@ -508,6 +511,7 @@ export default function StockCardPage() {
                                             <TableCell className="whitespace-nowrap">{format(new Date(m.date), 'dd/MM/yyyy HH:mm')}</TableCell>
                                             <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
                                             <TableCell>{m.description}</TableCell>
+                                            <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString() : '-'}
                                             </TableCell>
@@ -683,6 +687,7 @@ export default function StockCardPage() {
                                           <TableHead>Date</TableHead>
                                           <TableHead>Doc</TableHead>
                                           <TableHead>Description</TableHead>
+                                          <TableHead>Notes</TableHead>
                                           <TableHead className="text-right">In</TableHead>
                                           <TableHead className="text-right">Out</TableHead>
                                           <TableHead className="text-right">Balance</TableHead>
@@ -694,6 +699,7 @@ export default function StockCardPage() {
                                             <TableCell className="whitespace-nowrap">{format(new Date(m.date), 'dd/MM/yyyy HH:mm')}</TableCell>
                                             <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
                                             <TableCell>{m.description}</TableCell>
+                                            <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString() : '-'}
                                             </TableCell>

@@ -1,6 +1,7 @@
 'use server';
 
 import { Decimal } from 'decimal.js';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../prisma';
 
 export interface CostCalculationResult {
@@ -251,12 +252,16 @@ const inventorySnapshotOrderBy = {
   }
 };
 
+type InventorySnapshotRow = Prisma.InventoryValueGetPayload<{
+  include: typeof inventorySnapshotInclude;
+}>;
+
 // Aggregate InventoryValue rows by itemId (one row per item; sum qty/value, weighted avg cost)
 function aggregateSnapshotByItemId(
-  values: Awaited<ReturnType<typeof prisma.inventoryValue.findMany>> & { item: NonNullable<Awaited<ReturnType<typeof prisma.inventoryValue.findMany>>[0]['item']> }[],
+  values: InventorySnapshotRow[],
   toNum: (v: unknown) => number | null
 ) {
-  const byItem = new Map<string, { qtyOnHand: number; totalValue: number; item: typeof values[0]['item'] }>();
+  const byItem = new Map<string, { qtyOnHand: number; totalValue: number; item: InventorySnapshotRow['item'] }>();
   for (const v of values) {
     const qty = toNum(v.qtyOnHand) ?? 0;
     const val = toNum(v.totalValue) ?? 0;
@@ -291,10 +296,7 @@ export async function getInventorySnapshot(opts?: { page: number; pageSize: numb
     orderBy: inventorySnapshotOrderBy,
   });
 
-  const allItems = aggregateSnapshotByItemId(
-    values as (typeof values & { item: NonNullable<(typeof values)[0]['item']> })[],
-    toNum
-  );
+  const allItems = aggregateSnapshotByItemId(values, toNum);
   const totalValue = allItems.reduce((sum, v) => sum + v.totalValue, 0);
   const lowStockItems = allItems.filter(
     (v) => v.item.reorderPoint != null && v.qtyOnHand <= Number(v.item.reorderPoint)

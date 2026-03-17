@@ -49,7 +49,9 @@ export async function createStockAdjustment(
 
   const adjustmentResult = await prisma.$transaction(async (tx) => {
 
-    const variantKey = data.variantSku ?? null;
+    // Keep variantSku consistent with inventory costing helpers:
+    // compound keys use '' for non-variant items (no nulls).
+    const variantKey = data.variantSku ?? '';
     const compositeWhere = {
       itemId_variantSku: { itemId: data.itemId, variantSku: variantKey },
     };
@@ -414,6 +416,7 @@ export async function getRejectedGoodsRecap(filters?: {
   const items = rows.map((r) => ({
     id: r.id,
     itemId: r.itemId,
+    variantSku: r.variantSku ?? null,
     qty: Number(r.qty),
     refType: r.refType,
     refDocNumber: r.refDocNumber,

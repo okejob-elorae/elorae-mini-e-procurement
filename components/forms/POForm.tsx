@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createPoSchema, poSchema, poItemSchema } from '@/lib/validations';
+import { createPoSchema, poItemSchema } from '@/lib/validations';
 import { getItems } from '@/app/actions/items';
 import { getCachedItems } from '@/lib/offline/db';
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,7 @@ import { OfflinePOButton } from '@/components/offline/OfflinePOButton';
 import { isOnline } from '@/lib/offline/sync';
 import { useLocale, useTranslations } from 'next-intl';
 
-type POFormData = z.infer<typeof poSchema>;
+type POFormData = z.infer<ReturnType<typeof createPoSchema>>;
 type POItemData = z.infer<typeof poItemSchema>;
 
 interface Supplier {
@@ -126,7 +126,7 @@ export function POForm({
     setValue,
     formState: { errors },
   } = useForm<POFormData>({
-    resolver: zodResolver(poSchemaT),
+    resolver: zodResolver(poSchemaT) as any,
     defaultValues: {
       supplierId: initialData?.supplierId || '',
       etaDate: initialData?.etaDate ?? null,
@@ -179,26 +179,31 @@ export function POForm({
           };
         });
         setItems(mapped);
-      } catch (_error) {
+      } catch {
         toast.error(tToasts('failedToLoadItems'));
       }
     };
 
     loadItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load items on mount
   }, []);
 
   // Keep form state in sync with line items so validation and submit see current data
   useEffect(() => {
     setValue(
       'items',
-      lineItems.map(({ id: _lineId, ...item }) => ({
+      lineItems.map((lineItem) => {
+        const { id: _omitId, ...item } = lineItem;
+        void _omitId;
+        return {
         itemId: item.itemId ?? '',
         qty: item.qty ?? 0,
         price: item.price ?? 0,
         ppnIncluded: item.ppnIncluded ?? true,
         uomId: item.uomId ?? '',
         notes: item.notes ?? '',
-      })),
+      };
+      }),
       { shouldValidate: false }
     );
   }, [lineItems, setValue]);
@@ -268,14 +273,18 @@ export function POForm({
 
     await onSubmit({
       ...data,
-      items: validItems.map(({ id: _id, ...item }) => item),
+      items: validItems.map((lineItem) => {
+        const { id: _omitId, ...item } = lineItem;
+        void _omitId;
+        return item;
+      }),
     });
   };
 
   const handleSaveLocally = handleSubmit(async (data) => {
     if (!onSaveLocally) return;
 
-    const enrichedItems = data.items.map((line) => {
+    const enrichedItems = data.items.map((line: POItemData) => {
       const source = items.find((i) => i.id === line.itemId);
       return {
         ...line,
@@ -285,13 +294,16 @@ export function POForm({
       };
     });
 
-    const totalAmount = data.items.reduce((sum, line) => sum + line.qty * line.price, 0);
+    const totalAmount = data.items.reduce(
+      (sum: number, line: POItemData) => sum + line.qty * line.price,
+      0
+    );
     const supplier = suppliers.find((s) => s.id === data.supplierId);
 
     await onSaveLocally(data, { enrichedItems, totalAmount, supplier });
   });
 
-  const onValidationError = (err: Record<string, { message?: string }>) => {
+  const onValidationError = (err: FieldErrors<POFormData>) => {
     const first = Object.values(err)[0];
     const msg = first?.message ?? '';
     const securityKeys = ['userNotFound','pinNotSet','tooManyAttempts','pinIncorrect','enterCurrentPin','currentPinIncorrect','pinFormatError','adminOnlyReset'];

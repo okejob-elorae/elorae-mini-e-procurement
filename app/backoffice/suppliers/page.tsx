@@ -118,8 +118,10 @@ type SupplierForm = z.infer<typeof supplierSchema>;
 export default function SuppliersPage() {
   const t = useTranslations('toasts');
   const tSecurity = useTranslations('security');
-  const tSupplier = useTranslations('supplier');
-  const tCommon = useTranslations('common');
+  const _tSupplier = useTranslations('supplier');
+  const _tCommon = useTranslations('common');
+  void _tSupplier;
+  void _tCommon;
   const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierTypes, setSupplierTypes] = useState<SupplierTypeOption[]>([]);
@@ -223,6 +225,7 @@ export default function SuppliersPage() {
 
   useEffect(() => {
     fetchSuppliers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchSuppliers depends on filters
   }, [page, pageSize, searchQuery, categoryFilter, statusFilter]);
 
   const isSupplierFormOpen = supplierDialogMode !== null;
@@ -311,7 +314,7 @@ export default function SuppliersPage() {
           toast.error(error.error || (isEdit ? t('failedToUpdateSupplier') : t('failedToCreateSupplier')));
         }
       }
-    } catch (_error) {
+    } catch {
       toast.error(t('anErrorOccurred'));
     }
   };

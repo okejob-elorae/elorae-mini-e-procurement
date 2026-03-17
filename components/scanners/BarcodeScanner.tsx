@@ -25,7 +25,7 @@ export function BarcodeScanner({ onScan, onError, onClose, width = 300 }: Barcod
         await scannerRef.current.stop();
         scannerRef.current = null;
       }
-    } catch (_err) {
+    } catch {
       // Ignore stop errors
     }
   }, []);
@@ -46,7 +46,7 @@ export function BarcodeScanner({ onScan, onError, onClose, width = 300 }: Barcod
             onScan(decodedText);
             stopScanner();
           },
-          (_errorMessage) => {
+          () => {
             // Ignore continuous scanning errors (no barcode in frame)
           }
         );

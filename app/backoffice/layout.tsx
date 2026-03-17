@@ -199,6 +199,7 @@ function Sidebar({
 
   useEffect(() => {
     const key = getOpenKeyFromPath(pathname);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync nav open state to pathname
     if (key) setOpenNavKey(key);
   }, [pathname]);
 

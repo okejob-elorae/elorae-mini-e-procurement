@@ -38,6 +38,7 @@ import {
   processReturn,
   completeReturn
 } from '@/app/actions/vendor-returns';
+import { logPrint } from '@/app/actions/audit';
 import { buildVendorReturnPrintHtml } from '@/lib/print/vendor-return-html';
 
 export default function VendorReturnDetailPage() {
@@ -86,8 +87,9 @@ export default function VendorReturnDetailPage() {
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!ret) return;
+    await logPrint('VendorReturn', ret.id);
     const vendor = ret.vendor as { name?: string; code?: string } | null;
     const wo = ret.wo as { id: string; docNumber: string } | null;
     const rawLines = ret.lines;
@@ -206,6 +208,7 @@ export default function VendorReturnDetailPage() {
     type: string;
     itemId: string;
     itemName?: string;
+    rollRef?: string;
     qty: number;
     reason: string;
     condition: string;
@@ -411,7 +414,13 @@ export default function VendorReturnDetailPage() {
                   {lines.map((line, i) => (
                     <TableRow key={i}>
                       <TableCell>{line.type}</TableCell>
-                      <TableCell>{line.itemName ?? line.itemId}</TableCell>
+                      <TableCell>
+                        {line.type === 'FABRIC' && line.rollRef
+                          ? `${line.itemName ?? line.itemId} – ${line.rollRef} (${line.qty})`
+                          : line.type === 'FG_REJECT'
+                            ? `${line.itemName ?? line.itemId} — Source: Reject stock`
+                            : line.itemName ?? line.itemId}
+                      </TableCell>
                       <TableCell className="text-right">{line.qty}</TableCell>
                       <TableCell>{line.condition}</TableCell>
                       <TableCell>{line.reason}</TableCell>

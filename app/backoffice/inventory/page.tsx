@@ -46,15 +46,15 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
 interface InventoryItem {
   itemId: string;
-  qtyOnHand: string;
-  avgCost: string;
-  totalValue: string;
+  qtyOnHand: number;
+  avgCost: number;
+  totalValue: number;
   item: {
     sku: string;
     nameId: string;
     nameEn: string;
     type: string;
-    reorderPoint: string | null;
+    reorderPoint: number | null;
     uom: {
       code: string;
       nameId: string;
@@ -102,7 +102,19 @@ export default function InventoryPage() {
   const [expandedAdjustmentId, setExpandedAdjustmentId] = useState<string | null>(null);
   const [expandedGrnId, setExpandedGrnId] = useState<string | null>(null);
   const [grnRolls, setGrnRolls] = useState<Array<{ id: string; rollCode: string; rollRef: string; initialLength: number; remainingLength: number; isClosed: boolean; item: { sku: string; nameId: string }; uom: { code: string } }>>([]);
-  const [rolls, setRolls] = useState<Array<{ id: string; rollCode: string; rollRef: string; initialLength: number; remainingLength: number; isClosed: boolean; item: { sku: string; nameId: string }; uom: { code: string }; grn?: { docNumber: string; grnDate: Date } }>>([]);
+  const [rolls, setRolls] = useState<
+    Array<{
+      id: string;
+      rollCode: string;
+      rollRef: string;
+      initialLength: number | null;
+      remainingLength: number | null;
+      isClosed: boolean;
+      item: { sku: string; nameId: string };
+      uom: { code: string };
+      grn?: { docNumber: string; grnDate: Date };
+    }>
+  >([]);
   const [rollsPage, setRollsPage] = useState(1);
   const [rollsPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [rollsTotalCount, setRollsTotalCount] = useState(0);
@@ -168,7 +180,7 @@ export default function InventoryPage() {
         setAdjustments(adjList);
         setAdjTotalCount(adjList.length);
       }
-    } catch (_error) {
+    } catch {
       toast.error('Failed to load inventory data');
     } finally {
       setIsLoading(false);
@@ -177,6 +189,7 @@ export default function InventoryPage() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchData depends on pagination/filters above
   }, [stockPage, grnPage, adjPage, adjItemFilter]);
 
   useEffect(() => {
@@ -313,6 +326,8 @@ export default function InventoryPage() {
             className="min-h-[44px]"
             onClick={async () => {
               try {
+                const { logPrint } = await import('@/app/actions/audit');
+                await logPrint('InventoryReport', 'snapshot');
                 const snap = await getInventoryValueSnapshot();
                 const html = buildInventoryReportPrintHtml({
                   generatedAt: snap.generatedAt,
@@ -653,8 +668,12 @@ export default function InventoryPage() {
                               <TableCell className="font-mono text-sm">{r.rollCode}</TableCell>
                               <TableCell>{r.rollRef}</TableCell>
                               <TableCell>{r.item.sku} – {r.item.nameId}</TableCell>
-                              <TableCell className="text-right">{r.initialLength.toLocaleString()}</TableCell>
-                              <TableCell className="text-right">{r.remainingLength.toLocaleString()}</TableCell>
+                              <TableCell className="text-right">
+                                {(r.initialLength ?? 0).toLocaleString()}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {(r.remainingLength ?? 0).toLocaleString()}
+                              </TableCell>
                               <TableCell>{r.uom.code}</TableCell>
                               <TableCell>{r.grn ? `${r.grn.docNumber} (${new Date(r.grn.grnDate).toLocaleDateString('id-ID')})` : '-'}</TableCell>
                               <TableCell>{r.isClosed ? <Badge variant="secondary">Closed</Badge> : <Badge variant="default">Open</Badge>}</TableCell>

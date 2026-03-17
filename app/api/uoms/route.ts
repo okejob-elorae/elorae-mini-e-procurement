@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 
 // GET /api/uoms - List UOMs (for offline sync and client use)
 export async function GET(_req: NextRequest) {
+  void _req;
   try {
     const session = await auth();
     if (!session) {

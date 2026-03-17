@@ -73,7 +73,8 @@ function exportToCSV(logs: AuditLogRow[]): string {
 
 export default function AuditTrailPage() {
   const tAudit = useTranslations('audit');
-  const { data: session, status } = useSession();
+  const { data: _session, status } = useSession();
+  void _session;
   const router = useRouter();
   const [logs, setLogs] = useState<AuditLogRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -104,6 +105,7 @@ export default function AuditTrailPage() {
       return;
     }
     loadLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadLogs and router are stable; filters drive refetch
   }, [status, filters.userId, filters.action, filters.dateFrom, filters.dateTo, filters.entitySearch, filters.offset, filters.limit]);
 
   useEffect(() => {

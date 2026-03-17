@@ -21,7 +21,8 @@ import { toast } from 'sonner';
 export default function TaxSettingsPage() {
   const t = useTranslations('tax');
   const tToasts = useTranslations('toasts');
-  const { data: session, status } = useSession();
+  const { data: _session, status } = useSession();
+  void _session;
   const router = useRouter();
   const [rate, setRate] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
@@ -36,6 +37,7 @@ export default function TaxSettingsPage() {
       .then((v) => setRate(String(v)))
       .catch(() => toast.error(t('loadError')))
       .finally(() => setIsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t from useTranslations
   }, [status, router]);
 
   const handleSave = async () => {

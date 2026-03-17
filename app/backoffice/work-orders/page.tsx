@@ -115,7 +115,7 @@ export default function WorkOrdersPage() {
         setWorkOrders(list);
         setTotalCount(list.length);
       }
-    } catch (_error) {
+    } catch {
       toast.error('Failed to load work orders');
     } finally {
       setIsLoading(false);
@@ -128,6 +128,7 @@ export default function WorkOrdersPage() {
 
   useEffect(() => {
     fetchWorkOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchWorkOrders depends on filters
   }, [statusFilter, page, pageSize]);
 
   const handleIssue = async (id: string) => {

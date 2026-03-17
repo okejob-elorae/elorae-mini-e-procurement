@@ -51,6 +51,7 @@ export function OfflineIndicator() {
       window.removeEventListener('offline', handleOffline);
       clearInterval(interval);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tToasts from useTranslations
   }, []);
 
   const handleSync = async () => {
@@ -74,7 +75,7 @@ export function OfflineIndicator() {
       const status = await getSyncStatus();
       setPendingCount(status.pendingCount);
       setPendingPOCount(status.pendingPOCount || 0);
-    } catch (_error) {
+    } catch {
       toast.error(tToasts('syncFailed'));
     } finally {
       setIsSyncing(false);

@@ -9,7 +9,6 @@ import {
   Loader2,
   Package,
   Calendar,
-  Play,
   ClipboardList,
   Truck,
   BarChart3
@@ -50,9 +49,12 @@ import {
   issueWorkOrder,
   cancelWorkOrder,
   getMaterialIssueForPrint,
-  updateWOHppAdjustments
+  updateWOHppAdjustments,
+  getAdditionalMaterialsPreview,
+  issueAdditionalMaterials,
 } from '@/app/actions/production';
 import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
+import { logPrint } from '@/app/actions/audit';
 import { WOStatus } from '@/lib/constants/enums';
 
 
@@ -89,6 +91,11 @@ export default function WorkOrderDetailPage() {
   const [hppMarginPercent, setHppMarginPercent] = useState('');
   const [hppAdditionalCost, setHppAdditionalCost] = useState('');
   const [rollAllocationStatus, setRollAllocationStatus] = useState<Awaited<ReturnType<typeof getWorkOrderRollAllocationStatus>> | null>(null);
+  const [additionalMaterialsOpen, setAdditionalMaterialsOpen] = useState(false);
+  const [additionalQtyInput, setAdditionalQtyInput] = useState('');
+  const [additionalPreview, setAdditionalPreview] = useState<Awaited<ReturnType<typeof getAdditionalMaterialsPreview>> | null>(null);
+  const [additionalPreviewLoading, setAdditionalPreviewLoading] = useState(false);
+  const [additionalSubmitLoading, setAdditionalSubmitLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -107,6 +114,7 @@ export default function WorkOrderDetailPage() {
         router.push('/backoffice/work-orders');
       })
       .finally(() => setIsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- id, router drive fetch
   }, [id, router]);
 
   useEffect(() => {
@@ -159,9 +167,11 @@ export default function WorkOrderDetailPage() {
     getMaterialIssueForPrint(printIssueId)
       .then(setPrintData)
       .catch(() => toast.error(tToasts('failedToLoadIssueForPrint')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- printIssueId drives fetch
   }, [printIssueId]);
-  const handlePrintNota = () => {
-    if (!printData) return;
+  const handlePrintNota = async () => {
+    if (!printData || !printIssueId) return;
+    await logPrint('MaterialIssue', printIssueId);
     const html = buildMaterialIssuePrintHtml({
       docNumber: printData.docNumber,
       woDocNumber: printData.woDocNumber,
@@ -223,6 +233,48 @@ export default function WorkOrderDetailPage() {
     }
   };
 
+  const loadAdditionalPreview = async () => {
+    const qty = parseInt(additionalQtyInput, 10);
+    if (!id || !Number.isInteger(qty) || qty <= 0) {
+      toast.error('Enter a positive integer for additional qty');
+      return;
+    }
+    setAdditionalPreviewLoading(true);
+    setAdditionalPreview(null);
+    try {
+      const preview = await getAdditionalMaterialsPreview(id, qty);
+      setAdditionalPreview(preview);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load preview');
+    } finally {
+      setAdditionalPreviewLoading(false);
+    }
+  };
+
+  const handleIssueAdditionalMaterials = async () => {
+    const qty = parseInt(additionalQtyInput, 10);
+    if (!session?.user?.id || !id || !Number.isInteger(qty) || qty <= 0) return;
+    const allSufficient = additionalPreview?.lines.every((l) => l.sufficient) ?? false;
+    if (!allSufficient) {
+      toast.error('Cannot issue: some items have insufficient stock');
+      return;
+    }
+    setAdditionalSubmitLoading(true);
+    try {
+      await issueAdditionalMaterials(id, qty, session.user.id);
+      toast.success('Additional materials issued');
+      setAdditionalMaterialsOpen(false);
+      setAdditionalQtyInput('');
+      setAdditionalPreview(null);
+      const updated = await getWorkOrderById(id);
+      setWO(updated);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to issue');
+    } finally {
+      setAdditionalSubmitLoading(false);
+    }
+  };
+
   if (isLoading || !wo) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
@@ -274,6 +326,18 @@ export default function WorkOrderDetailPage() {
               <Link href={`/backoffice/work-orders/${id}/issue`}>
                 <Button variant="outline">Issue Materials</Button>
               </Link>
+              {wo.status === 'IN_PRODUCTION' && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setAdditionalMaterialsOpen(true);
+                    setAdditionalQtyInput('');
+                    setAdditionalPreview(null);
+                  }}
+                >
+                  Issue Additional Materials
+                </Button>
+              )}
               <Link href={`/backoffice/work-orders/${id}/receive`}>
                 <Button variant="outline">Receive FG</Button>
               </Link>
@@ -705,6 +769,78 @@ export default function WorkOrderDetailPage() {
           ) : (
             <p className="text-muted-foreground">Loading...</p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={additionalMaterialsOpen} onOpenChange={(open) => !open && setAdditionalMaterialsOpen(false)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Issue Additional Materials</DialogTitle>
+            <CardDescription>
+              Issue only accessories for over-production. Fabric stays at vendor. Planned qty is not changed.
+            </CardDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Additional qty (pcs)</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  value={additionalQtyInput}
+                  onChange={(e) => setAdditionalQtyInput(e.target.value)}
+                  placeholder="e.g. 200"
+                />
+                <Button
+                  variant="outline"
+                  onClick={loadAdditionalPreview}
+                  disabled={additionalPreviewLoading || !additionalQtyInput.trim()}
+                >
+                  {additionalPreviewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Preview'}
+                </Button>
+              </div>
+            </div>
+            {additionalPreview && (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="text-right">Qty needed</TableHead>
+                      <TableHead className="text-right">On hand</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {additionalPreview.lines.map((line, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{line.itemName}</TableCell>
+                        <TableCell className="text-right">{line.qtyNeeded.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{line.qtyOnHand.toLocaleString()}</TableCell>
+                        <TableCell>
+                          <span className={line.sufficient ? 'text-green-600' : 'text-red-600'}>
+                            {line.sufficient ? 'OK' : 'Short'}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setAdditionalMaterialsOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleIssueAdditionalMaterials}
+                    disabled={additionalSubmitLoading || !additionalPreview.lines.every((l) => l.sufficient)}
+                  >
+                    {additionalSubmitLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Issue accessories
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

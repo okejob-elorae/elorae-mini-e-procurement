@@ -25,7 +25,7 @@ function aggregateInventory(
 /** Serialize item for client (no Prisma Decimal) */
 function serializeItem(item: {
   reorderPoint?: unknown;
-  inventoryValues?: Array<{ qtyOnHand: unknown; avgCost: unknown; totalValue: unknown }>;
+  inventoryValues?: Array<{ qtyOnHand: unknown; totalValue: unknown; avgCost?: unknown }>;
   [k: string]: unknown;
 }) {
   const inv = aggregateInventory(

@@ -147,7 +147,7 @@ export function FabricRollInput({
   value,
   onChange,
   uomCode,
-  poOrderedQty,
+  poOrderedQty: _poOrderedQty,
   disabled = false,
   placeholder = '100, 50, 100...',
   showRackPreview = false,
@@ -155,6 +155,7 @@ export function FabricRollInput({
   'aria-label': ariaLabel,
   className,
 }: FabricRollInputProps) {
+  void _poOrderedQty;
   const [inputValue, setInputValue] = React.useState('');
   const inputRef = React.useRef<HTMLInputElement>(null);
 

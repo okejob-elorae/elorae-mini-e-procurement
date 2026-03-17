@@ -47,10 +47,11 @@ export async function getVendorPerformanceReport(
       (sum, i) => sum.plus(i.totalCost.toString()),
       new Decimal(0)
     );
-    const totalReceived = wo.receipts.reduce(
+    const _totalReceived = wo.receipts.reduce(
       (sum, r) => sum + Number(r.qtyAccepted),
       0
     );
+    void _totalReceived;
     const totalReturned = wo.returns.reduce(
       (sum, r) => sum + Number(r.totalValue),
       0

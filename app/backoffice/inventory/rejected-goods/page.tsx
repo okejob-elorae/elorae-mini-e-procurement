@@ -33,6 +33,7 @@ export default function RejectedGoodsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag synced to async fetch
     setIsLoading(true);
     getRejectedGoodsRecap({ page, pageSize })
       .then(setData)

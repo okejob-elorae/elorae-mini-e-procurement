@@ -22,6 +22,7 @@ export type HPPBreakdown = {
   finishedGoodName: string;
   finishedGoodSku: string;
   plannedQty: number;
+  actualQty: number;
   lines: HPPCostLine[];
   fabricCostPerPcs: number;
   accessoriesCostPerPcs: number;
@@ -66,6 +67,7 @@ export async function calculateHPP(woId: string): Promise<HPPBreakdown> {
       docNumber: true,
       finishedGoodId: true,
       plannedQty: true,
+      actualQty: true,
       hppMarginPercent: true,
       hppAdditionalCost: true,
       finishedGood: { select: { id: true, sku: true, nameId: true } },
@@ -77,6 +79,7 @@ export async function calculateHPP(woId: string): Promise<HPPBreakdown> {
   if (!wo) throw new Error('Work order not found');
 
   const plannedQty = Number(wo.plannedQty) || 0;
+  const actualQty = Number(wo.actualQty ?? 0) || 0;
   const marginPercent = wo.hppMarginPercent != null ? Number(wo.hppMarginPercent) : null;
   const additionalCost = wo.hppAdditionalCost != null ? Number(wo.hppAdditionalCost) : null;
 
@@ -182,6 +185,7 @@ export async function calculateHPP(woId: string): Promise<HPPBreakdown> {
     finishedGoodName: wo.finishedGood?.nameId ?? '',
     finishedGoodSku: wo.finishedGood?.sku ?? '',
     plannedQty,
+    actualQty,
     lines,
     fabricCostPerPcs,
     accessoriesCostPerPcs,

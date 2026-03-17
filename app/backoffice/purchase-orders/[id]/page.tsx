@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/table';
 import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer } from 'lucide-react';
 import { buildPOPrintHtml } from '@/lib/print/po-html';
+import { logPrint } from '@/app/actions/audit';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { POStatus } from '@/lib/constants/enums';
@@ -177,7 +178,8 @@ export default function PODetailPage() {
   const canSubmit = po.status === 'DRAFT';
   const canCancel = po.status === 'DRAFT' || po.status === 'SUBMITTED';
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    await logPrint('PurchaseOrder', String(params.id));
     const supplier = po.supplier as { name: string; code?: string; address?: string | null };
     const lines = (po.items as any[]).map((item: any) => ({
       itemName: item.item?.nameId ?? item.item?.nameEn ?? item.item?.sku ?? '',

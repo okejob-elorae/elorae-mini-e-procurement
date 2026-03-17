@@ -55,7 +55,7 @@ export default function LoginPage() {
         router.push('/backoffice');
         router.refresh();
       }
-    } catch (_error) {
+    } catch {
       setError(t('errorOccurred'));
     } finally {
       setIsLoading(false);

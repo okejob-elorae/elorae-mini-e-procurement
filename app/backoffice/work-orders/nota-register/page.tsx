@@ -42,6 +42,7 @@ import {
   getMaterialIssueForPrint
 } from '@/app/actions/production';
 import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
+import { logPrint } from '@/app/actions/audit';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
@@ -56,7 +57,8 @@ type RegisterRow = {
 };
 
 export default function NotaRegisterPage() {
-  const t = useTranslations('toasts');
+  const _t = useTranslations('toasts');
+  void _t;
   const tNota = useTranslations('notaRegister');
   const tPlaceholders = useTranslations('placeholders');
   const [issues, setIssues] = useState<RegisterRow[]>([]);
@@ -108,6 +110,7 @@ export default function NotaRegisterPage() {
 
   useEffect(() => {
     loadIssues();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadIssues depends on filters
   }, [page, vendorId, dateFrom, dateTo, issueType]);
 
   const openPrint = (issueId: string) => {
@@ -125,8 +128,9 @@ export default function NotaRegisterPage() {
       .catch(() => toast.error('Failed to load for print'));
   }, [printIssueId]);
 
-  const handlePrint = () => {
-    if (!printData) return;
+  const handlePrint = async () => {
+    if (!printData || !printIssueId) return;
+    await logPrint('MaterialIssue', printIssueId);
     const html = buildMaterialIssuePrintHtml({
       docNumber: printData.docNumber,
       woDocNumber: printData.woDocNumber,

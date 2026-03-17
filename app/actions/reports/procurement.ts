@@ -3,7 +3,6 @@
 import { prisma } from '@/lib/prisma';
 import { getETAStatus } from '@/lib/eta-alerts';
 import { POStatus } from '@prisma/client';
-import { Decimal } from 'decimal.js';
 import * as XLSX from 'xlsx';
 
 export type ProcurementReportFilters = {

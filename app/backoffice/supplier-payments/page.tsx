@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { DollarSign, Eye, Calendar, CheckCircle } from 'lucide-react';
+import { DollarSign, Eye, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -44,8 +44,6 @@ interface POForPayment {
   grandTotal: number;
   supplier: { name: string; code: string };
 }
-
-const PAYMENT_STATUS = { all: 'all', paid: 'paid', unpaid: 'unpaid' } as const;
 
 export default function SupplierPaymentsPage() {
   const [pos, setPOs] = useState<POForPayment[]>([]);
@@ -124,6 +122,7 @@ export default function SupplierPaymentsPage() {
 
   useEffect(() => {
     fetchPOs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPOs depends on filters
   }, [supplierId, dateFrom, dateTo, paymentFilter, page, pageSize]);
 
   const unpaidTotal = pos.filter((p) => !p.paidAt).reduce((sum, p) => sum + p.grandTotal, 0);

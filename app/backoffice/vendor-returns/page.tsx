@@ -113,6 +113,7 @@ export default function VendorReturnsPage() {
 
   useEffect(() => {
     fetchReturns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchReturns depends on filters
   }, [statusFilter, vendorFilter, searchQuery, page, pageSize]);
 
   const handleProcess = async (id: string) => {

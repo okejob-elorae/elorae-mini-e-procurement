@@ -106,6 +106,7 @@ export default function WorkOrderIssuePage() {
         router.push('/backoffice/work-orders');
       })
       .finally(() => setIsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- id, router drive fetch
   }, [id, router]);
 
   const plan = (wo?.consumptionPlan as any[]) || [];
@@ -134,7 +135,7 @@ export default function WorkOrderIssuePage() {
         uomId: p.uomId,
         qty: remaining > 0 ? Math.min(1, remaining) : 0,
         maxQty: remaining,
-        unitPrice: defaultPrice != null && defaultPrice > 0 ? defaultPrice : undefined,
+        unitPrice: defaultPrice != null && defaultPrice > 0 ? Math.round(defaultPrice * 100) / 100 : undefined,
       }
     ]);
   };
@@ -153,14 +154,39 @@ export default function WorkOrderIssuePage() {
     setLines((prev) => prev.filter((l) => l.itemId !== itemId));
   };
 
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
   const updateLinePrice = (itemId: string, unitPrice: number | '') => {
     setLines((prev) =>
       prev.map((l) =>
         l.itemId === itemId
-          ? { ...l, unitPrice: unitPrice === '' ? undefined : unitPrice }
+          ? { ...l, unitPrice: unitPrice === '' ? undefined : round2(unitPrice) }
           : l
       )
     );
+  };
+
+  const autoFillRemaining = () => {
+    const withRemaining = planWithRemaining.filter((p) => (p.plannedQty - p.issuedQty) > 0);
+    if (withRemaining.length === 0) {
+      toast.info('No remaining qty to issue.');
+      return;
+    }
+    setLines(
+      withRemaining.map((p) => {
+        const remaining = p.plannedQty - p.issuedQty;
+        const defaultPrice = itemAvgCosts[p.itemId];
+        return {
+          itemId: p.itemId,
+          itemName: p.itemName,
+          uomId: p.uomId,
+          qty: remaining,
+          maxQty: remaining,
+          unitPrice: defaultPrice != null && defaultPrice > 0 ? Math.round(defaultPrice * 100) / 100 : undefined,
+        };
+      })
+    );
+    toast.success(withRemaining.length === 1 ? '1 line filled.' : `${withRemaining.length} lines filled with remaining qty.`);
   };
 
   const handleScan = (skuOrId: string) => {
@@ -295,7 +321,7 @@ export default function WorkOrderIssuePage() {
                 />
                 <Label htmlFor="partial">Partial / split allocation</Label>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Label>Add material</Label>
                 <SearchableCombobox
                   options={planWithRemaining
@@ -325,6 +351,9 @@ export default function WorkOrderIssuePage() {
                     />
                   </DialogContent>
                 </Dialog>
+                <Button type="button" variant="secondary" onClick={autoFillRemaining}>
+                  Auto-fill remaining
+                </Button>
               </div>
               {lines.length > 0 && (
                 <Table>
@@ -359,8 +388,8 @@ export default function WorkOrderIssuePage() {
                             type="number"
                             min={0}
                             step="0.01"
-                            placeholder={itemAvgCosts[l.itemId] != null ? String(itemAvgCosts[l.itemId]) : 'Avg cost'}
-                            value={l.unitPrice ?? ''}
+                            placeholder={itemAvgCosts[l.itemId] != null ? Number(itemAvgCosts[l.itemId]).toFixed(2) : 'Avg cost'}
+                            value={l.unitPrice != null ? l.unitPrice.toFixed(2) : ''}
                             onChange={(e) => {
                               const v = e.target.value;
                               updateLinePrice(l.itemId, v === '' ? '' : Number(v));

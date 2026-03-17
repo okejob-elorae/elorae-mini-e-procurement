@@ -68,7 +68,7 @@ export function FcmRegistration() {
         if (res.ok) {
           registered.current = true;
         }
-      } catch (_) {
+      } catch {
         // Permission denied or FCM not available; ignore
       }
     }

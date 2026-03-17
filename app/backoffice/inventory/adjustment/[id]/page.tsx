@@ -13,6 +13,7 @@ import {
   CardTitle
 } from '@/components/ui/card';
 import { getStockAdjustmentById } from '@/app/actions/inventory';
+import { logPrint } from '@/app/actions/audit';
 import { toast } from 'sonner';
 
 export default function StockAdjustmentDetailPage() {
@@ -34,7 +35,8 @@ export default function StockAdjustmentDetailPage() {
       .finally(() => setIsLoading(false));
   }, [id, router]);
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    await logPrint('StockAdjustment', id);
     window.print();
   };
 

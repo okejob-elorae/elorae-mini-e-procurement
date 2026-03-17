@@ -13,7 +13,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   AlertDialog,
@@ -27,7 +26,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { Trash2, Plus, Edit2, Save, X } from 'lucide-react';
+import { Trash2, Plus, Edit2 } from 'lucide-react';
 import { getRoles, getPermissions, createRole, updateRolePermissions, deleteRole } from '@/app/actions/rbac';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';

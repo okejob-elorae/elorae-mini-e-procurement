@@ -172,6 +172,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     getUOMs().then(setUOMs).catch(() => toast.error(tToasts('failedToLoadUOMs')));
     getItemTypeMasters().then(setItemTypeMasters).catch(() => {});
     getItemCategories(true).then((rows) => setItemCategories(rows as ItemCategoryOption[])).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
   }, []);
 
   useEffect(() => {
@@ -180,6 +181,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         .then((result) => setMaterials(Array.isArray(result) ? (result as unknown as Item[]) : []))
         .catch(() => toast.error(tToasts('failedToLoadMaterials')));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- itemType drives fetch
   }, [itemType]);
 
   const handleGenerateSKU = async () => {
@@ -191,7 +193,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     try {
       const newSku = await generateSKU(itemType);
       setSku(newSku);
-    } catch (_error) {
+    } catch {
       toast.error(tToasts('failedToGenerateSKU'));
     } finally {
       setIsGeneratingSKU(false);
@@ -266,7 +268,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       return trimmed.map((current, idx) => {
         const combo = variantCombinations[idx];
         const match = normalizedVariants.find((v) => {
-          const { sku: _s, ...rest } = v;
+          const { sku, ...rest } = v;
+          void sku;
           return Object.keys(combo).every((k) => rest[k] === combo[k]);
         });
         return match?.sku?.trim() ?? current;

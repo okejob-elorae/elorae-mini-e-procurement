@@ -129,7 +129,7 @@ export default function PurchaseOrdersPage() {
         setPOs(list);
         setTotalCount(list.length);
       }
-    } catch (_error) {
+    } catch {
       toast.error('Failed to load purchase orders');
     } finally {
       setIsLoading(false);
@@ -142,6 +142,7 @@ export default function PurchaseOrdersPage() {
 
   useEffect(() => {
     fetchPOs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPOs depends on filters/page
   }, [statusFilter, page, pageSize]);
 
   const handleSubmit = async (id: string) => {
@@ -164,11 +165,6 @@ export default function PurchaseOrdersPage() {
     } catch (error: any) {
       toast.error(error.message || 'Failed to cancel PO');
     }
-  };
-
-  const _isOverdue = (po: PurchaseOrder) => {
-    if (!po.etaDate || po.status === 'CLOSED' || po.status === 'OVER' || po.status === 'CANCELLED') return false;
-    return new Date(po.etaDate) < new Date();
   };
 
   const getPendingQty = (po: PurchaseOrder) => {

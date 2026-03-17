@@ -119,6 +119,7 @@ export default function UOMPage() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchData on mount only
   }, []);
 
   const fetchData = async () => {
@@ -130,7 +131,7 @@ export default function UOMPage() {
       ]);
       setUOMs(uomsData);
       setConversions(conversionsData.map((c) => ({ ...c, factor: Number(c.factor) })));
-    } catch (_error) {
+    } catch {
       toast.error(tToasts('failedToLoadUOMData'));
     } finally {
       setIsLoading(false);

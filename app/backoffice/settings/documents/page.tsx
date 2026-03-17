@@ -67,6 +67,7 @@ export default function DocumentNumbersSettingsPage() {
       .then(setConfigs)
       .catch(() => toast.error(t('loadError')))
       .finally(() => setIsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t from useTranslations
   }, [status, router]);
 
   const [edits, setEdits] = useState<Record<string, { prefix: string; resetPeriod: string; padding: string }>>({});
