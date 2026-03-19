@@ -52,21 +52,23 @@ async function main() {
   });
   const purchaser = await prisma.user.upsert({
     where: { email: "purchaser@elorae.com" },
-    update: {},
+    update: { pinHash: adminPin },
     create: {
       email: "purchaser@elorae.com",
       name: "Purchaser",
       passwordHash: await bcrypt.hash("purchaser123", 10),
+      pinHash: adminPin,
       role: Role.PURCHASER,
     },
   });
   const warehouse = await prisma.user.upsert({
     where: { email: "warehouse@elorae.com" },
-    update: {},
+    update: { pinHash: adminPin },
     create: {
       email: "warehouse@elorae.com",
       name: "Warehouse Staff",
       passwordHash: await bcrypt.hash("warehouse123", 10),
+      pinHash: adminPin,
       role: Role.WAREHOUSE,
     },
   });
@@ -244,10 +246,11 @@ async function main() {
     }
   }
 
-  // WAREHOUSE permissions
+  // WAREHOUSE permissions (suppliers:view for GRN supplier list / offline sync)
   const warehousePermissions = [
     'dashboard:view',
     'items:view',
+    'suppliers:view',
     'inventory:view', 'inventory:manage',
   ];
   for (const code of warehousePermissions) {
@@ -443,11 +446,11 @@ async function main() {
     where: {
       fromUomId_toUomId: { fromUomId: uomRoll.id, toUomId: uomYard.id },
     },
-    update: {},
+    update: { factor: 100 },
     create: {
       fromUomId: uomRoll.id,
       toUomId: uomYard.id,
-      factor: 25,
+      factor: 100,
       isDefault: false,
     },
   });
@@ -604,6 +607,19 @@ async function main() {
       nameEn: "Linen Fabric",
       type: ItemType.FABRIC,
       uomId: uomMeter.id,
+    },
+  });
+  /** E2E Step 32: yard-based fabric + ROLL→YD conversion (100) */
+  const fabricCottonPoplin = await prisma.item.upsert({
+    where: { sku: "FB-COTTON-POP" },
+    update: { uomId: uomYard.id },
+    create: {
+      sku: "FB-COTTON-POP",
+      nameId: "Kain Cotton Poplin",
+      nameEn: "Cotton Poplin",
+      type: ItemType.FABRIC,
+      uomId: uomYard.id,
+      description: "E2E stock adjustment UOM conversion",
     },
   });
   const acc1 = await prisma.item.upsert({
@@ -819,6 +835,24 @@ async function main() {
       });
     }
   }
+  // variantSku '' matches createStockAdjustment / costing (not null)
+  await prisma.inventoryValue.upsert({
+    where: {
+      itemId_variantSku: { itemId: fabricCottonPoplin.id, variantSku: "" },
+    },
+    update: {
+      qtyOnHand: 200,
+      avgCost: 40000,
+      totalValue: 8_000_000,
+    },
+    create: {
+      itemId: fabricCottonPoplin.id,
+      variantSku: "",
+      qtyOnHand: 200,
+      avgCost: 40000,
+      totalValue: 8_000_000,
+    },
+  });
   console.log("InventoryValue OK");
 
   // ---------- 9. Purchase orders + POItem + POStatusHistory (only if none exist) ----------
@@ -1525,7 +1559,7 @@ async function main() {
 
   console.log("\nSeeding completed!");
   console.log("Login: admin@elorae.com / admin123 (PIN: 123456)");
-  console.log("      purchaser@elorae.com / purchaser123");
+  console.log("      purchaser@elorae.com / purchaser123 (PIN: 123456 after seed)");
   console.log("      warehouse@elorae.com / warehouse123");
   console.log("      production@elorae.com / production123");
 }

@@ -290,6 +290,13 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
   try {
     docNumber = await generateDocNumber('WO');
     result = await runCreateTx(docNumber);
+    logAudit({
+      userId,
+      action: 'CREATE',
+      entityType: 'WorkOrder',
+      entityId: result.id,
+      changes: { after: { docNumber: result.docNumber } },
+    }).catch(() => {});
   } catch (err: unknown) {
     const isWorkOrderUniqueViolation =
       err &&
@@ -981,13 +988,15 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
 
     const newActualQty =
       (wo.actualQty?.toString() ? Number(wo.actualQty) : 0) + qtyAccepted;
+    const plannedQty = Number(wo.plannedQty);
+    const meetsTarget = newActualQty >= plannedQty;
     await tx.workOrder.update({
       where: { id: data.woId },
       data: {
         actualQty: newActualQty,
-        status: newActualQty >= Number(wo.plannedQty) ? 'COMPLETED' : 'PARTIAL',
-        completedAt:
-          newActualQty >= Number(wo.plannedQty) ? new Date() : null
+        status: meetsTarget ? 'COMPLETED' : 'PARTIAL',
+        // Set once when WO first reaches Completed; keep on later over-production receipts
+        completedAt: meetsTarget ? (wo.completedAt ?? new Date()) : null,
       }
     });
 

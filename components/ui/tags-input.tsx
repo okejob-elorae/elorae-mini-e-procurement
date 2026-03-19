@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-const DEFAULT_SEPARATORS = [',', ' ', '\n'];
+const DEFAULT_SEPARATORS = [',', '\n'];
 
 export interface TagsInputProps {
   value: string[];
@@ -15,7 +15,7 @@ export interface TagsInputProps {
   onValueChange?: (value: string[]) => void;
   placeholder?: string;
   disabled?: boolean;
-  /** Characters that commit the current text as a new tag. Default: comma, space, newline */
+  /** Characters that commit the current text as a new tag. Default: comma, newline (Enter). Space does not commit. */
   separator?: string | string[];
   /** Allow duplicate tags. Default: false */
   allowDuplicates?: boolean;

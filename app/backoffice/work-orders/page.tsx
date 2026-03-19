@@ -41,6 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 import { getWorkOrders, issueWorkOrder, cancelWorkOrder } from '@/app/actions/production';
 import { WOStatus } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
@@ -53,6 +54,7 @@ interface WorkOrder {
   plannedQty: string;
   actualQty: string | null;
   targetDate: string | null;
+  completedAt: string | null;
   createdAt: string;
   vendor: {
     name: string;
@@ -238,6 +240,7 @@ export default function WorkOrdersPage() {
                     <TableHead>Vendor</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Target Date</TableHead>
+                    <TableHead>{tWO('completedAt')}</TableHead>
                     <TableHead>Progress</TableHead>
                     <TableHead className="text-right">Issues</TableHead>
                     <TableHead className="text-right">Receipts</TableHead>
@@ -265,6 +268,21 @@ export default function WorkOrdersPage() {
                           <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 text-muted-foreground" />
                             {new Date(wo.targetDate).toLocaleDateString('id-ID')}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {wo.completedAt ? (
+                          <div className="flex items-center gap-2 text-sm">
+                            <CheckCircle className="h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
+                            <span>
+                              {new Date(wo.completedAt).toLocaleString('id-ID', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })}
+                            </span>
                           </div>
                         ) : (
                           <span className="text-muted-foreground">-</span>

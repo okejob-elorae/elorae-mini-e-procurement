@@ -41,7 +41,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   DropdownMenu,
@@ -397,18 +396,18 @@ export default function SuppliersPage() {
         <Dialog
           open={isSupplierFormOpen}
           onOpenChange={(open) => {
-            if (!open) {
+            if (open) {
+              setSupplierDialogMode('create');
+            } else {
               setSupplierDialogMode(null);
               setEditSupplier(null);
             }
           }}
         >
-          <DialogTrigger asChild>
-            <Button onClick={() => setSupplierDialogMode('create')}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Supplier
-            </Button>
-          </DialogTrigger>
+          <Button onClick={() => setSupplierDialogMode('create')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Supplier
+          </Button>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>

@@ -96,6 +96,21 @@ interface StoredLine {
   rollRef?: string;
 }
 
+/** Prisma Json / server action may return lines as string or array */
+function normalizeReturnLines(raw: unknown): StoredLine[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw as StoredLine[];
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown;
+      return Array.isArray(p) ? (p as StoredLine[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export default function EditVendorReturnPage() {
   const params = useParams();
   const router = useRouter();
@@ -141,35 +156,64 @@ export default function EditVendorReturnPage() {
 
         setVendorId(ret.vendorId);
         setWoId(ret.woId ?? '__none__');
-        setGrnId((ret as { grnId?: string | null }).grnId ?? '__none__');
+        const retGrnId = (ret as { grnId?: string | null }).grnId;
+        setGrnId(retGrnId && String(retGrnId).length > 0 ? String(retGrnId) : '__none__');
 
-        const rawLines = (ret.lines as StoredLine[] | null) || [];
+        const rawLines = normalizeReturnLines(ret.lines);
         if (rawLines.length > 0) {
+          const fabricKey = (itemId: string, reason: string, condition: string) =>
+            `${itemId}\0${reason}\0${condition}`;
+          const fabricGroups = new Map<string, FormLine>();
           const formLines: FormLine[] = [];
+
           for (const l of rawLines) {
             const type = (l.type as LineType) ?? 'FABRIC';
             const itemId = l.itemId ?? '';
             const reason = l.reason ?? '';
             const condition = (l.condition as Condition) ?? 'GOOD';
-            if (type === 'FABRIC' && l.rollId && formLines.length > 0) {
-              const last = formLines[formLines.length - 1];
-              if (last.type === 'FABRIC' && last.itemId === itemId && last.reason === reason && last.condition === condition) {
-                last.rollIds = [...(last.rollIds ?? []), l.rollId!];
-                continue;
+
+            if (type === 'FABRIC' && l.rollId) {
+              const key = fabricKey(itemId, reason, condition);
+              let fl = fabricGroups.get(key);
+              if (!fl) {
+                fl = {
+                  type: 'FABRIC',
+                  itemId,
+                  rollIds: [],
+                  qty: '',
+                  reason,
+                  condition,
+                  referenceIssueId: l.referenceIssueId,
+                };
+                fabricGroups.set(key, fl);
               }
+              fl.rollIds = [...(fl.rollIds ?? []), l.rollId];
+            } else if (type === 'FABRIC') {
+              formLines.push({
+                type: 'FABRIC',
+                itemId,
+                rollIds: [],
+                qty: String(l.qty ?? ''),
+                reason,
+                condition,
+                referenceIssueId: l.referenceIssueId,
+              });
+            } else {
+              formLines.push({
+                type,
+                itemId,
+                rollIds: [],
+                qty: String(l.qty ?? ''),
+                reason,
+                condition,
+                referenceIssueId: l.referenceIssueId,
+              });
             }
-            formLines.push({
-              type,
-              itemId,
-              qty: String(l.qty ?? ''),
-              reason,
-              condition,
-              referenceIssueId: l.referenceIssueId,
-              rollIds: type === 'FABRIC' && l.rollId ? [l.rollId] : [],
-            });
           }
-          setLines(formLines);
-          const fabricItemIds = [...new Set(formLines.filter((l) => l.type === 'FABRIC' && l.itemId).map((l) => l.itemId))];
+          const merged = [...fabricGroups.values(), ...formLines];
+          setLines(merged.length > 0 ? merged : [{ type: 'FABRIC', itemId: '', rollIds: [], qty: '', reason: '', condition: 'GOOD' }]);
+
+          const fabricItemIds = [...new Set(merged.filter((x) => x.type === 'FABRIC' && x.itemId).map((x) => x.itemId))];
           const options: Record<string, { value: string; label: string; qty: number }[]> = {};
           for (const itemId of fabricItemIds) {
             const rolls = await getReturnableFabricRolls(itemId);
@@ -178,6 +222,21 @@ export default function EditVendorReturnPage() {
               label: `${r.rollRef} (${r.remainingLength})`,
               qty: r.remainingLength
             }));
+          }
+          for (const fl of merged) {
+            if (fl.type !== 'FABRIC' || !fl.itemId || !(fl.rollIds?.length)) continue;
+            const list = [...(options[fl.itemId] ?? [])];
+            for (const rid of fl.rollIds!) {
+              if (list.some((o) => o.value === rid)) continue;
+              const sl = rawLines.find((r) => r.rollId === rid && r.itemId === fl.itemId);
+              const q = sl != null ? Number(sl.qty) : 0;
+              list.push({
+                value: rid,
+                label: sl?.rollRef ? `${sl.rollRef} (${q})` : rid,
+                qty: q > 0 ? q : 0.0001,
+              });
+            }
+            options[fl.itemId] = list;
           }
           setFabricRollOptions((prev) => ({ ...prev, ...options }));
         }
@@ -207,12 +266,15 @@ export default function EditVendorReturnPage() {
             docNumber: w.docNumber
           }))
         );
-        setGrns(
-          (grnList as { id: string; docNumber: string }[]).map((g) => ({
-            id: g.id,
-            docNumber: g.docNumber,
-          }))
-        );
+        const grnRows = (grnList as { id: string; docNumber: string }[]).map((g) => ({
+          id: g.id,
+          docNumber: g.docNumber,
+        }));
+        const retGrn = (ret as { grn?: { id: string; docNumber: string } | null }).grn;
+        if (retGrn?.id && !grnRows.some((g) => g.id === retGrn.id)) {
+          grnRows.unshift({ id: retGrn.id, docNumber: retGrn.docNumber });
+        }
+        setGrns(grnRows);
         const raw =
           Array.isArray(itemsRes) ? itemsRes : (itemsRes as { items?: unknown[] })?.items ?? [];
         const itemList: ItemOption[] = Array.isArray(raw)

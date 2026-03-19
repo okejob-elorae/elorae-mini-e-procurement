@@ -580,6 +580,7 @@
     "inProduction": "In Production",
     "partial": "Partial",
     "completed": "Completed",
+    "completedAt": "Completed at",
     "cancelled": "Cancelled",
     "issue": "Issue",
     "issueMaterials": "Issue Materials",

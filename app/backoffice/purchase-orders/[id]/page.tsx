@@ -175,8 +175,17 @@ export default function PODetailPage() {
   }
 
   const canEdit = po.status === 'DRAFT';
+  const canEditPosted =
+    po.status === 'SUBMITTED' ||
+    po.status === 'PARTIAL' ||
+    po.status === 'OVER';
+  const canOpenEditForm = canEdit || canEditPosted;
   const canSubmit = po.status === 'DRAFT';
-  const canCancel = po.status === 'DRAFT' || po.status === 'SUBMITTED';
+  const canCancel =
+    po.status === 'DRAFT' ||
+    po.status === 'SUBMITTED' ||
+    po.status === 'PARTIAL' ||
+    po.status === 'OVER';
 
   const handlePrint = async () => {
     await logPrint('PurchaseOrder', String(params.id));
@@ -500,7 +509,7 @@ export default function PODetailPage() {
 
           {/* Actions */}
           <div className="flex justify-end gap-2">
-            {canEdit && (
+            {canOpenEditForm && (
               <Button onClick={() => setIsEditMode(true)}>
                 <Edit className="h-4 w-4 mr-2" />
                 Edit PO

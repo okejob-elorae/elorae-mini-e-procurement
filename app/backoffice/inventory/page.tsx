@@ -35,8 +35,15 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { toast } from 'sonner';
+import { useSession } from 'next-auth/react';
 import { getInventorySnapshot } from '@/lib/inventory/costing';
-import { getGRNs, getRollsByGrnId, getFabricRolls, getFabricRollFilterOptions } from '@/app/actions/grn';
+import {
+  getGRNs,
+  getRollsByGrnId,
+  getFabricRolls,
+  getFabricRollFilterOptions,
+  approveGRNByOwner,
+} from '@/app/actions/grn';
 import { getStockAdjustments } from '@/app/actions/inventory';
 import { getCurrentStockSummary } from '@/app/actions/stock-card';
 import { getInventoryValueSnapshot } from '@/app/actions/reports/inventory';
@@ -67,6 +74,8 @@ interface GRN {
   docNumber: string;
   grnDate: string;
   totalAmount: string;
+  requiresOwnerApproval?: boolean;
+  ownerApprovedAt?: string | Date | null;
   supplier: {
     name: string;
   };
@@ -92,8 +101,10 @@ interface Adjustment {
 }
 
 export default function InventoryPage() {
+  const { data: session } = useSession();
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [grns, setGRNs] = useState<GRN[]>([]);
+  const [approvingGrnId, setApprovingGrnId] = useState<string | null>(null);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -508,6 +519,7 @@ export default function InventoryPage() {
                       <TableHead>Supplier</TableHead>
                       <TableHead>PO Reference</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="min-w-[200px]">Over-receive</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -539,10 +551,48 @@ export default function InventoryPage() {
                           <TableCell className="text-right">
                             Rp {Number(grn.totalAmount).toLocaleString()}
                           </TableCell>
+                          <TableCell>
+                            {grn.requiresOwnerApproval && !grn.ownerApprovedAt ? (
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400 w-fit">
+                                  Awaiting owner approval
+                                </Badge>
+                                {session?.user?.role === 'ADMIN' && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="w-fit"
+                                    disabled={approvingGrnId === grn.id}
+                                    onClick={async () => {
+                                      if (!session?.user?.id) return;
+                                      setApprovingGrnId(grn.id);
+                                      try {
+                                        await approveGRNByOwner(grn.id, session.user.id);
+                                        toast.success('Over-receive GRN approved. PO status updated.');
+                                        await fetchData();
+                                      } catch (err) {
+                                        toast.error(
+                                          err instanceof Error ? err.message : 'Failed to approve GRN'
+                                        );
+                                      } finally {
+                                        setApprovingGrnId(null);
+                                      }
+                                    }}
+                                  >
+                                    Approve
+                                  </Button>
+                                )}
+                              </div>
+                            ) : grn.ownerApprovedAt ? (
+                              <span className="text-xs text-muted-foreground">Owner approved</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                         {expandedGrnId === grn.id && (
                           <TableRow>
-                            <TableCell colSpan={6} className="bg-muted/30 p-4">
+                            <TableCell colSpan={7} className="bg-muted/30 p-4">
                               <p className="text-sm font-medium mb-2">Fabric rolls in this GRN</p>
                               {grnRolls.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">No rolls</p>

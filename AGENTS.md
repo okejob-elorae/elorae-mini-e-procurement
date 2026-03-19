@@ -44,7 +44,7 @@ See `package.json` scripts for the full list. Most useful:
 
 - **Admin**: admin@elorae.com / admin123 (PIN: 123456)
 - **Purchaser**: purchaser@elorae.com / purchaser123
-- **Warehouse**: warehouse@elorae.com / warehouse123
+- **Warehouse**: warehouse@elorae.com / warehouse123 (PIN: 123456, after seed)
 - **Production**: production@elorae.com / production123
 
 ### Gotchas

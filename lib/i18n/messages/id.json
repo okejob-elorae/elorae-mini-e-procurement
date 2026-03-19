@@ -569,6 +569,7 @@
     "inProduction": "Dalam Produksi",
     "partial": "Sebagian",
     "completed": "Selesai",
+    "completedAt": "Selesai pada",
     "cancelled": "Dibatalkan",
     "issue": "Terbitkan",
     "issueMaterials": "Terbitkan Material",

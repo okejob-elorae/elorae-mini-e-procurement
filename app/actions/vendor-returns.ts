@@ -9,18 +9,38 @@ import { reverseInventoryValue } from '@/lib/inventory/costing';
 import { getActorName, notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/app/actions/notifications';
 import { getEffectiveHPPForItem } from '@/app/actions/hpp';
 
-/** When vendor return is linked to a GRN: max returnable qty per itemId. Before approval = ordered qty; after = received qty. */
-async function getMaxReturnableByItemForGRN(grnId: string): Promise<Map<string, number> | null> {
+function parseGrnStoredItems(raw: unknown): Array<{ itemId?: string; qty?: unknown }> {
+  if (raw == null) return [];
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown;
+      return Array.isArray(p) ? (p as Array<{ itemId?: string; qty?: unknown }>) : [];
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(raw)) return raw as Array<{ itemId?: string; qty?: unknown }>;
+  return [];
+}
+
+/** When vendor return is linked to a GRN: max returnable qty per itemId. Before owner approval = PO ordered qty; after = received qty on GRN (JSON lines + fabric rolls on that GRN). */
+async function getGrnReturnCaps(grnId: string): Promise<{
+  byItem: Map<string, number>;
+  usesPendingPoCaps: boolean;
+} | null> {
   const grn = await prisma.gRN.findUnique({
     where: { id: grnId },
     select: { items: true, poId: true, requiresOwnerApproval: true, ownerApprovedAt: true },
   });
   if (!grn) return null;
-  const items = (grn.items as Array<{ itemId: string; qty: number }>) ?? [];
+  const items = parseGrnStoredItems(grn.items);
   const receivedByItem = new Map<string, number>();
   for (const row of items) {
+    const id = row.itemId;
+    if (!id || typeof id !== 'string') continue;
     const qty = typeof row.qty === 'number' ? row.qty : Number(row.qty);
-    receivedByItem.set(row.itemId, (receivedByItem.get(row.itemId) ?? 0) + qty);
+    if (!Number.isFinite(qty)) continue;
+    receivedByItem.set(id, (receivedByItem.get(id) ?? 0) + qty);
   }
   const pendingApproval = grn.requiresOwnerApproval && !grn.ownerApprovedAt;
   if (pendingApproval && grn.poId) {
@@ -33,9 +53,41 @@ async function getMaxReturnableByItemForGRN(grnId: string): Promise<Map<string, 
       const ordered = Number(po.qty);
       maxByItem.set(po.itemId, ordered);
     }
-    return maxByItem;
+    return { byItem: maxByItem, usesPendingPoCaps: true };
   }
-  return receivedByItem;
+  // Fabric: GRN `items` JSON can be empty/out of sync while FabricRoll rows exist (e.g. by-roll receipt UI).
+  const rolls = await prisma.fabricRoll.findMany({
+    where: { grnId },
+    select: { itemId: true, initialLength: true },
+  });
+  const qtyByItemFromRolls = new Map<string, number>();
+  for (const r of rolls) {
+    const len = Number(r.initialLength);
+    if (!Number.isFinite(len)) continue;
+    qtyByItemFromRolls.set(r.itemId, (qtyByItemFromRolls.get(r.itemId) ?? 0) + len);
+  }
+  for (const [itemId, rollQty] of qtyByItemFromRolls) {
+    const fromJson = receivedByItem.get(itemId) ?? 0;
+    receivedByItem.set(itemId, Math.max(fromJson, rollQty));
+  }
+  return { byItem: receivedByItem, usesPendingPoCaps: false };
+}
+
+function grnQtyExceededMessage(
+  max: number,
+  usesPendingPoCaps: boolean,
+  lineQty: number
+): string {
+  if (usesPendingPoCaps) {
+    return `Return qty for item exceeds allowed amount (max ${max} while GRN is pending owner approval). Reduce qty or wait for GRN approval.`;
+  }
+  if (max <= 0) {
+    return (
+      'This item was not received on the selected GRN (returnable qty is 0). ' +
+      'Choose a GRN that includes this item, or clear GRN if the return is not tied to a specific receipt.'
+    );
+  }
+  return `Return qty (${lineQty}) exceeds amount received on this GRN for this item (max ${max}). Reduce qty or pick another GRN.`;
 }
 
 // Prisma uses CUID, not UUID
@@ -104,15 +156,13 @@ export async function createVendorReturn(
   }
 
   if (data.grnId) {
-    const maxReturnable = await getMaxReturnableByItemForGRN(data.grnId);
-    if (maxReturnable) {
+    const caps = await getGrnReturnCaps(data.grnId);
+    if (caps) {
       for (const line of data.lines) {
         if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
-          const max = maxReturnable.get(line.itemId) ?? 0;
+          const max = caps.byItem.get(line.itemId) ?? 0;
           if (line.qty > max) {
-            throw new Error(
-              `Return qty for item exceeds allowed amount (max ${max} when GRN is pending owner approval). Reduce qty or wait for GRN approval.`
-            );
+            throw new Error(grnQtyExceededMessage(max, caps.usesPendingPoCaps, line.qty));
           }
         }
       }
@@ -212,15 +262,13 @@ export async function updateVendorReturn(
   }
 
   if (data.grnId) {
-    const maxReturnable = await getMaxReturnableByItemForGRN(data.grnId);
-    if (maxReturnable) {
+    const caps = await getGrnReturnCaps(data.grnId);
+    if (caps) {
       for (const line of data.lines) {
         if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
-          const max = maxReturnable.get(line.itemId) ?? 0;
+          const max = caps.byItem.get(line.itemId) ?? 0;
           if (line.qty > max) {
-            throw new Error(
-              `Return qty for item exceeds allowed amount (max ${max} when GRN is pending owner approval). Reduce qty or wait for GRN approval.`
-            );
+            throw new Error(grnQtyExceededMessage(max, caps.usesPendingPoCaps, line.qty));
           }
         }
       }
@@ -311,6 +359,29 @@ export async function deleteVendorReturn(id: string, _userId: string) {
   revalidatePath('/backoffice/vendor-returns');
 }
 
+type VendorReturnLineRow = {
+  type: string;
+  itemId: string;
+  variantSku?: string | null;
+  rollId?: string;
+  qty: number | string;
+  costValue: number | string;
+};
+
+function parseVendorReturnLines(raw: unknown): VendorReturnLineRow[] {
+  if (raw == null) return [];
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown;
+      return Array.isArray(p) ? (p as VendorReturnLineRow[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(raw)) return raw as VendorReturnLineRow[];
+  return [];
+}
+
 export async function processReturn(id: string, userId: string) {
   const result = await prisma.$transaction(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
@@ -321,7 +392,10 @@ export async function processReturn(id: string, userId: string) {
       throw new Error('Return tidak valid atau sudah diproses');
     }
 
-    const lines = (ret.lines as Array<{ type: string; itemId: string; variantSku?: string | null; rollId?: string; qty: number | string; costValue: number | string }>) || [];
+    const lines = parseVendorReturnLines(ret.lines);
+    if (lines.length === 0) {
+      throw new Error('Return has no valid line items to process');
+    }
 
     for (const line of lines) {
       if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {

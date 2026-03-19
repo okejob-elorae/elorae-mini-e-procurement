@@ -83,6 +83,10 @@ export async function updatePO(
     select: { status: true }
   });
 
+  if (existing?.status === 'CLOSED' || existing?.status === 'CANCELLED') {
+    throw new Error('Cannot edit closed or cancelled PO');
+  }
+
   if (existing?.status !== 'DRAFT') {
     if (!pin) {
       throw new Error('PIN required to edit a posted PO');
@@ -93,14 +97,59 @@ export async function updatePO(
     }
   }
 
-  return await prisma.$transaction(async (tx) => {
+  const receivedPreservingStatuses = ['SUBMITTED', 'PARTIAL', 'OVER'] as const;
+  const preserveReceived =
+    existing?.status &&
+    receivedPreservingStatuses.includes(
+      existing.status as (typeof receivedPreservingStatuses)[number]
+    );
+
+  const po = await prisma.$transaction(async (tx) => {
+    const oldItems = await tx.pOItem.findMany({
+      where: { poId: id },
+      select: { itemId: true, receivedQty: true },
+    });
+    const receivedByItem = new Map<string, number>();
+    for (const o of oldItems) {
+      const r = Number(o.receivedQty);
+      receivedByItem.set(o.itemId, (receivedByItem.get(o.itemId) ?? 0) + r);
+    }
+
+    if (preserveReceived) {
+      for (const [itemId, recv] of receivedByItem) {
+        if (recv <= 0) continue;
+        const lines = data.items.filter((i) => i.itemId === itemId);
+        const totalNewQty = lines.reduce((s, i) => s + i.qty, 0);
+        if (lines.length === 0 || totalNewQty < recv) {
+          throw new Error(
+            `Cannot edit: item has ${recv} received — keep the line and qty ≥ ${recv}, or remove only zero-received lines.`
+          );
+        }
+      }
+    }
+
     const totalAmount = data.items.reduce((sum, item) => {
       return sum.plus(new Decimal(item.qty).mul(item.price));
     }, new Decimal(0));
-    
-    // Delete old items and create new ones
+
     await tx.pOItem.deleteMany({ where: { poId: id } });
-    
+
+    const remainingRecv = new Map(receivedByItem);
+    const itemCreates = data.items.map((item) => {
+      const avail = remainingRecv.get(item.itemId) ?? 0;
+      const receivedQty = preserveReceived ? Math.min(avail, item.qty) : 0;
+      remainingRecv.set(item.itemId, Math.max(0, avail - receivedQty));
+      return {
+        itemId: item.itemId,
+        qty: item.qty,
+        price: item.price,
+        ppnIncluded: item.ppnIncluded,
+        uomId: item.uomId,
+        notes: item.notes ?? null,
+        receivedQty,
+      };
+    });
+
     const po = await tx.purchaseOrder.update({
       where: { id },
       data: {
@@ -111,18 +160,31 @@ export async function updatePO(
         terms: data.terms,
         totalAmount: totalAmount.toNumber(),
         grandTotal: totalAmount.toNumber(),
-        items: {
-          create: data.items
-        }
+        items: { create: itemCreates },
       },
       include: {
         items: { include: { item: true } },
-        supplier: true
-      }
+        supplier: true,
+      },
     });
-    
+
+    if (existing?.status && existing.status !== 'DRAFT') {
+      await tx.pOStatusHistory.create({
+        data: {
+          poId: id,
+          status: existing.status,
+          changedById: userId,
+          notes: 'PO Edited (PIN verified)',
+        },
+      });
+    }
+
     return po;
   });
+
+  revalidatePath('/backoffice/purchase-orders');
+  revalidatePath(`/backoffice/purchase-orders/${id}`);
+  return po;
 }
 
 export async function changePOStatus(
@@ -139,6 +201,17 @@ export async function changePOStatus(
     const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
     if (!pinResult.success) {
       throw new Error(pinResult.messageKey ?? pinResult.message);
+    }
+
+    // Block cancellation if any receipts exist (or GRNs are linked).
+    const poWithReceipts = await prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: { grns: { select: { id: true } }, items: { select: { receivedQty: true } } },
+    });
+    if (!poWithReceipts) throw new Error('PO not found');
+    const anyReceived = (poWithReceipts.items ?? []).some((it) => Number(it.receivedQty) > 0);
+    if ((poWithReceipts.grns ?? []).length > 0 || anyReceived) {
+      throw new Error('Cannot cancel PO with GRNs');
     }
   }
 
@@ -188,12 +261,14 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id },
-    include: { grns: true }
+    include: { grns: { select: { id: true } }, items: { select: { receivedQty: true } } }
   });
 
   if (!po) throw new Error('PO not found');
 
-  if (po.grns.length > 0) {
+  // Safety: block cancelling if anything was received (even if GRN rows aren't linked via poId).
+  const anyReceived = (po.items ?? []).some((it) => Number(it.receivedQty) > 0);
+  if (po.grns.length > 0 || anyReceived) {
     throw new Error('Cannot cancel PO with GRNs');
   }
 

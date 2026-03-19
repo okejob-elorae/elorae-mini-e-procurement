@@ -597,7 +597,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                       setAttributes(updated);
                     }}
                     placeholder="Red, Blue, Green"
-                    separator={[',', ' ', '\n']}
+                    separator={[',', '\n']}
                   />
                   <Button
                     type="button"

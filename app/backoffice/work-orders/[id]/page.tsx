@@ -309,10 +309,19 @@ export default function WorkOrderDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge className={statusColors[wo.status as WOStatus]}>
             {statusLabels[wo.status as WOStatus]}
           </Badge>
+          {wo.status === 'COMPLETED' && (wo as { completedAt?: string | Date | null }).completedAt && (
+            <span className="text-sm text-muted-foreground">
+              {tWO('completedAt')}:{' '}
+              {new Date((wo as { completedAt: string | Date }).completedAt).toLocaleString(
+                undefined,
+                { dateStyle: 'medium', timeStyle: 'short' }
+              )}
+            </span>
+          )}
           {wo.status === 'DRAFT' && (
             <Button onClick={handleIssue}>Issue</Button>
           )}

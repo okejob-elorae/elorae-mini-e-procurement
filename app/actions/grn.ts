@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { getActorName, notifyGRNCreated } from '@/app/actions/notifications';
+import { logAudit } from '@/lib/audit';
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -259,6 +260,15 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   getActorName(userId)
     .then((triggeredByName) => notifyGRNCreated(result.id, result.docNumber, triggeredByName))
     .catch(() => {});
+
+  logAudit({
+    userId,
+    action: 'CREATE',
+    entityType: 'GRN',
+    entityId: result.id,
+    changes: { after: { docNumber: result.docNumber } },
+  }).catch(() => {});
+
   return result;
 }
 
