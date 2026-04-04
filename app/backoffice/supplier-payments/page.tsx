@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { DollarSign, Eye, CheckCircle } from 'lucide-react';
+import { DollarSign, Eye, CheckCircle, ChevronDown, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -30,10 +30,48 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
+import { getPOById, getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
+import { logPrint } from '@/app/actions/audit';
+import { buildPOPrintHtml } from '@/lib/print/po-html';
+import { buildPOPaymentReceiptHtml } from '@/lib/print/po-payment-receipt-html';
+import { variantDetailForSku } from '@/lib/items/variants';
 import { POStatus } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+const statusLabels: Record<POStatus, string> = {
+  DRAFT: 'Draft',
+  SUBMITTED: 'Submitted',
+  PARTIAL: 'Partial',
+  CLOSED: 'Closed',
+  OVER: 'Over-received',
+  CANCELLED: 'Cancelled',
+};
+
+function printHtmlInIframe(html: string, iframeTitle: string) {
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
+  iframe.setAttribute('title', iframeTitle);
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow?.document;
+  if (doc) {
+    doc.open();
+    doc.write(html);
+    doc.close();
+    setTimeout(() => {
+      iframe.contentWindow?.print();
+    }, 350);
+  }
+  setTimeout(() => {
+    document.body.removeChild(iframe);
+  }, 1000);
+}
 
 interface POForPayment {
   id: string;
@@ -56,6 +94,7 @@ export default function SupplierPaymentsPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
+  const [printingPoId, setPrintingPoId] = useState<string | null>(null);
 
   const fetchSuppliers = async () => {
     try {
@@ -136,6 +175,139 @@ export default function SupplierPaymentsPage() {
       fetchPOs();
     } catch (e: any) {
       toast.error(e.message || 'Failed');
+    }
+  };
+
+  const buildLinesFromPO = (po: NonNullable<Awaited<ReturnType<typeof getPOById>>>) =>
+    (po.items ?? []).map((item) => {
+      const variantSku = item.variantSku ?? null;
+      return {
+        itemName:
+          item.item?.nameId ?? item.item?.nameEn ?? item.item?.sku ?? '',
+        itemSku: item.item?.sku,
+        variantSku,
+        variantDetail: variantDetailForSku(item.item?.variants, variantSku),
+        lineNotes: item.notes?.trim() ? String(item.notes).trim() : null,
+        qty: Number(item.qty ?? 0),
+        uomCode: item.item?.uom?.code ?? '',
+        price: Number(item.price ?? 0),
+        amount: Number(item.qty ?? 0) * Number(item.price ?? 0),
+      };
+    });
+
+  const handlePrintInvoice = async (poId: string) => {
+    setPrintingPoId(poId);
+    try {
+      const po = await getPOById(poId);
+      if (!po) {
+        toast.error('PO not found');
+        return;
+      }
+      await logPrint('PurchaseOrderInvoice', poId);
+      const supplier = po.supplier as {
+        name: string;
+        code?: string;
+        address?: string | null;
+      };
+      const html = buildPOPrintHtml({
+        docNumber: po.docNumber,
+        issuedAt: po.createdAt,
+        supplierName: supplier.name,
+        supplierAddress: supplier.address ?? null,
+        supplierCode: supplier.code?.trim() ? supplier.code : null,
+        status: statusLabels[po.status as POStatus],
+        etaDate: po.etaDate,
+        paymentDueDate: po.paymentDueDate,
+        currency: po.currency ?? 'IDR',
+        subtotal: Number(po.totalAmount ?? 0),
+        taxAmount: Number(po.taxAmount ?? 0),
+        grandTotal: Number(po.grandTotal ?? 0),
+        notes: po.notes ?? null,
+        terms: po.terms ?? null,
+        lines: buildLinesFromPO(po),
+        labels: {
+          title: 'Purchase invoice',
+          doc: 'PO Number',
+          date: 'Date',
+          issuedBy: 'Issued by',
+          supplier: 'Bill to',
+          address: 'Address',
+          attn: 'Attn:',
+          status: 'Status',
+          etaDate: 'ETA',
+          terms: 'Terms',
+          paymentDue: 'Payment due',
+          item: 'Item description',
+          qty: 'Qty',
+          uom: 'UOM',
+          price: 'Unit price',
+          amount: 'Amount',
+          subtotal: 'Subtotal',
+          tax: 'Tax',
+          grandTotal: 'Grand total',
+          notes: 'Notes',
+          termsFooter: 'Terms & conditions',
+        },
+      });
+      printHtmlInIframe(html, 'Print purchase invoice');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to print');
+    } finally {
+      setPrintingPoId(null);
+    }
+  };
+
+  const handlePrintReceipt = async (poId: string) => {
+    setPrintingPoId(poId);
+    try {
+      const po = await getPOById(poId);
+      if (!po) {
+        toast.error('PO not found');
+        return;
+      }
+      if (!po.paidAt) {
+        toast.error('Mark this PO as paid before printing a receipt');
+        return;
+      }
+      await logPrint('PurchaseOrderPaymentReceipt', poId);
+      const supplier = po.supplier as {
+        name: string;
+        code: string;
+        address?: string | null;
+      };
+      const receiptNumber = `PR-${po.docNumber.replace(/\//g, '-')}`;
+      const html = buildPOPaymentReceiptHtml({
+        receiptNumber,
+        poDocNumber: po.docNumber,
+        supplierName: supplier.name,
+        supplierCode: supplier.code ?? '',
+        supplierAddress: supplier.address ?? null,
+        paidAt: po.paidAt,
+        printedAt: new Date(),
+        currency: po.currency ?? 'IDR',
+        amountPaid: Number(po.grandTotal ?? 0),
+        labels: {
+          title: 'Receipt',
+          issuedBy: 'Issued by',
+          receiptNo: 'Receipt No.',
+          paymentDate: 'Payment date',
+          payee: 'Payee',
+          supplierCode: 'Code',
+          poRef: 'PO reference',
+          status: 'Status',
+          statusPaid: 'Paid in full',
+          printed: 'Printed',
+          grandLabel: 'Amount paid',
+          footerTitle: 'Notice',
+          footerNote:
+            'This receipt reflects the payment status recorded in Elorae. Retain for your records.',
+        },
+      });
+      printHtmlInIframe(html, 'Print payment receipt');
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to print');
+    } finally {
+      setPrintingPoId(null);
     }
   };
 
@@ -259,7 +431,7 @@ export default function SupplierPaymentsPage() {
                   <TableHead>Payment due</TableHead>
                   <TableHead>Paid date</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-32">Actions</TableHead>
+                  <TableHead className="min-w-[220px] text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -290,13 +462,46 @@ export default function SupplierPaymentsPage() {
                         <Badge variant="secondary">Unpaid</Badge>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap items-center justify-end gap-1">
                         <Link href={`/backoffice/purchase-orders/${po.id}`}>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" title="View PO">
                             <Eye className="h-4 w-4" />
                           </Button>
                         </Link>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1"
+                              disabled={printingPoId === po.id}
+                              title="Print"
+                            >
+                              <Printer className="h-3.5 w-3.5" />
+                              Print
+                              <ChevronDown className="h-3 w-3 opacity-60" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                void handlePrintInvoice(po.id);
+                              }}
+                            >
+                              Print invoice
+                            </DropdownMenuItem>
+                            {po.paidAt ? (
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  void handlePrintReceipt(po.id);
+                                }}
+                              >
+                                Print receipt
+                              </DropdownMenuItem>
+                            ) : null}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         {po.paidAt ? (
                           <Button variant="outline" size="sm" onClick={() => handleMarkPaid(po.id, false)}>
                             Unmark

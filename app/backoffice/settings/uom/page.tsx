@@ -1,11 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useLocale, useTranslations } from 'next-intl';
-import { createUOM, getUOMs, createUOMConversion, getUOMConversions } from '@/app/actions/uom';
+import {
+  createUOM,
+  updateUOM,
+  getUOMs,
+  createUOMConversion,
+  deleteUOMConversion,
+  getUOMConversions,
+} from '@/app/actions/uom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,7 +42,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Loader2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const uomSchema = z.object({
@@ -92,7 +109,11 @@ export default function UOMPage() {
   const [conversions, setConversions] = useState<Conversion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUOMDialogOpen, setIsUOMDialogOpen] = useState(false);
+  const [editingUom, setEditingUom] = useState<UOM | null>(null);
   const [isConversionDialogOpen, setIsConversionDialogOpen] = useState(false);
+  const [deleteConversionId, setDeleteConversionId] = useState<string | null>(null);
+  const [isDeletingConversion, setIsDeletingConversion] = useState(false);
+  const pendingConversionDeleteRef = useRef<string | null>(null);
 
   const displayName = (u: { nameId: string; nameEn: string }) => (locale === 'en' ? u.nameEn : u.nameId);
   const numberLocale = locale === 'id' ? 'id-ID' : 'en-US';
@@ -104,6 +125,7 @@ export default function UOMPage() {
     formState: { errors: errorsUOM, isSubmitting: isSubmittingUOM },
   } = useForm<UOMFormData>({
     resolver: zodResolver(uomSchema),
+    defaultValues: { code: '', nameId: '', nameEn: '', description: '' },
   });
 
   const {
@@ -140,13 +162,22 @@ export default function UOMPage() {
 
   const onSubmitUOM = async (data: UOMFormData) => {
     try {
-      await createUOM(data);
-      toast.success(tToasts('uomCreatedSuccessfully'));
+      if (editingUom) {
+        await updateUOM({ id: editingUom.id, ...data });
+        toast.success(tToasts('uomUpdatedSuccessfully'));
+      } else {
+        await createUOM(data);
+        toast.success(tToasts('uomCreatedSuccessfully'));
+      }
       setIsUOMDialogOpen(false);
+      setEditingUom(null);
       resetUOM();
       fetchData();
     } catch (error: any) {
-      toast.error(error.message || tToasts('failedToCreateUOM'));
+      toast.error(
+        error.message ||
+          (editingUom ? tToasts('failedToUpdateUOM') : tToasts('failedToCreateUOM')),
+      );
     }
   };
 
@@ -163,6 +194,27 @@ export default function UOMPage() {
       fetchData();
     } catch (error: any) {
       toast.error(error.message || tToasts('failedToCreateConversion'));
+    }
+  };
+
+  const conversionPendingDelete = deleteConversionId
+    ? conversions.find((c) => c.id === deleteConversionId)
+    : undefined;
+
+  const onConfirmDeleteConversion = async () => {
+    const id = pendingConversionDeleteRef.current;
+    if (!id) return;
+    pendingConversionDeleteRef.current = null;
+    setIsDeletingConversion(true);
+    try {
+      await deleteUOMConversion(id);
+      toast.success(tToasts('conversionDeletedSuccessfully'));
+      setDeleteConversionId(null);
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message || tToasts('failedToDeleteConversion'));
+    } finally {
+      setIsDeletingConversion(false);
     }
   };
 
@@ -190,18 +242,41 @@ export default function UOMPage() {
                 <CardTitle>{t('unitsTitle')}</CardTitle>
                 <CardDescription>{t('unitsDescription')}</CardDescription>
               </div>
-              <Dialog open={isUOMDialogOpen} onOpenChange={setIsUOMDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Plus className="h-4 w-4 mr-2" />
-                    {locale === 'en' ? 'New UOM' : 'UOM Baru'}
-                  </Button>
-                </DialogTrigger>
+              <Dialog
+                open={isUOMDialogOpen}
+                onOpenChange={(open) => {
+                  setIsUOMDialogOpen(open);
+                  if (!open) setEditingUom(null);
+                }}
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditingUom(null);
+                    resetUOM({ code: '', nameId: '', nameEn: '', description: '' });
+                    setIsUOMDialogOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  {locale === 'en' ? 'New UOM' : 'UOM Baru'}
+                </Button>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>{locale === 'en' ? 'Create New UOM' : 'Buat UOM Baru'}</DialogTitle>
+                    <DialogTitle>
+                      {editingUom
+                        ? t('editUOMTitle')
+                        : locale === 'en'
+                          ? 'Create New UOM'
+                          : 'Buat UOM Baru'}
+                    </DialogTitle>
                     <DialogDescription>
-                      {locale === 'en' ? 'Add a new unit of measure to the system' : 'Tambahkan unit ukur baru ke sistem'}
+                      {editingUom
+                        ? t('editUOMDescription')
+                        : locale === 'en'
+                          ? 'Add a new unit of measure to the system'
+                          : 'Tambahkan unit ukur baru ke sistem'}
                     </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleSubmitUOM(onSubmitUOM)} className="space-y-4">
@@ -245,13 +320,16 @@ export default function UOMPage() {
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => setIsUOMDialogOpen(false)}
+                        onClick={() => {
+                          setIsUOMDialogOpen(false);
+                          setEditingUom(null);
+                        }}
                       >
                         {tCommon('cancel')}
                       </Button>
                       <Button type="submit" disabled={isSubmittingUOM}>
                         {isSubmittingUOM && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        {locale === 'en' ? 'Create UOM' : 'Buat UOM'}
+                        {editingUom ? tCommon('update') : locale === 'en' ? 'Create UOM' : 'Buat UOM'}
                       </Button>
                     </DialogFooter>
                   </form>
@@ -263,6 +341,7 @@ export default function UOMPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[52px]">{tCommon('actions')}</TableHead>
                   <TableHead>Code</TableHead>
                   <TableHead>{t('nameId')}</TableHead>
                   <TableHead>{t('nameEn')}</TableHead>
@@ -271,6 +350,27 @@ export default function UOMPage() {
               <TableBody>
                 {uoms.map((uom) => (
                   <TableRow key={uom.id}>
+                    <TableCell className="p-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => {
+                          setEditingUom(uom);
+                          resetUOM({
+                            code: uom.code,
+                            nameId: uom.nameId,
+                            nameEn: uom.nameEn,
+                            description: uom.description ?? '',
+                          });
+                          setIsUOMDialogOpen(true);
+                        }}
+                        aria-label={t('editUOM')}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
                     <TableCell className="font-medium">{uom.code}</TableCell>
                     <TableCell>{uom.nameId}</TableCell>
                     <TableCell>{uom.nameEn}</TableCell>
@@ -386,6 +486,7 @@ export default function UOMPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[52px]">{tCommon('actions')}</TableHead>
                   <TableHead>{locale === 'en' ? 'From' : 'Dari'}</TableHead>
                   <TableHead>{locale === 'en' ? 'To' : 'Ke'}</TableHead>
                   <TableHead className="text-right">{locale === 'en' ? 'Factor' : 'Faktor'}</TableHead>
@@ -394,13 +495,28 @@ export default function UOMPage() {
               <TableBody>
                 {conversions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center text-muted-foreground">
                       {t('noConversions')}
                     </TableCell>
                   </TableRow>
                 ) : (
                   conversions.map((conv) => (
                     <TableRow key={conv.id}>
+                      <TableCell className="p-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => {
+                            pendingConversionDeleteRef.current = conv.id;
+                            setDeleteConversionId(conv.id);
+                          }}
+                          aria-label={t('deleteConversion')}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
                       <TableCell>
                         {conv.fromUom.code} – {displayName(conv.fromUom)}
                       </TableCell>
@@ -420,6 +536,44 @@ export default function UOMPage() {
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog
+        open={!!deleteConversionId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteConversionId(null);
+            pendingConversionDeleteRef.current = null;
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('deleteConversionTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {conversionPendingDelete
+                ? t('deleteConversionDescription', {
+                    from: `${conversionPendingDelete.fromUom.code} – ${displayName(conversionPendingDelete.fromUom)}`,
+                    to: `${conversionPendingDelete.toUom.code} – ${displayName(conversionPendingDelete.toUom)}`,
+                  })
+                : t('deleteConversionDescriptionFallback')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingConversion}>{tCommon('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void onConfirmDeleteConversion()}
+              disabled={isDeletingConversion}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingConversion ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                tCommon('delete')
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -101,6 +101,7 @@ export default function WorkOrdersPage() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
+  const tWO = useTranslations('workOrders');
 
   const fetchWorkOrders = async () => {
     setIsLoading(true);

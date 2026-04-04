@@ -69,7 +69,6 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
-  '/api/supplier-categories': 'supplier_types:view', // Same as supplier types
   '/api/items': 'items:view',
   '/api/uoms': 'settings_uom:view',
   '/api/purchase-orders': 'purchase_orders:view',

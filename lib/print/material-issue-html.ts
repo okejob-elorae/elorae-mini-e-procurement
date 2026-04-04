@@ -1,15 +1,8 @@
 /**
- * Builds a full HTML document string for printing a Material Issue (Nota ke CMT).
- * Written into an iframe's document for same-tab print without opening a new tab.
+ * Material Issue (Nota ke CMT) — shared print theme.
  */
 
-function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+import { esc, fmtDocDate, printCssBase, printPagePortrait } from '@/lib/print/print-theme';
 
 export type MaterialIssuePrintLine = {
   itemName: string;
@@ -28,6 +21,7 @@ export interface BuildMaterialIssuePrintHtmlOptions {
   issueType: string;
   totalCost: number;
   lines: MaterialIssuePrintLine[];
+  issuerName?: string;
   labels: {
     title: string;
     doc: string;
@@ -41,6 +35,8 @@ export interface BuildMaterialIssuePrintHtmlOptions {
     unitPrice?: string;
     lineTotal?: string;
     totalCost: string;
+    /** Subtitle prefix before issuer name (default: "Issued by"). */
+    issuedBy?: string;
   };
 }
 
@@ -55,35 +51,35 @@ export function buildMaterialIssuePrintHtml(
     issueType,
     totalCost,
     lines,
+    issuerName = 'Elorae ERP',
     labels,
   } = opts;
 
-  const dateStr =
-    issuedAt instanceof Date
-      ? issuedAt.toLocaleDateString('id-ID')
-      : new Date(issuedAt).toLocaleDateString('id-ID');
+  const issuedByLabel = labels.issuedBy ?? 'Issued by';
 
   const hasPrice = lines.some((l) => l.unitPrice != null || l.lineTotal != null);
   const priceLabel = labels.unitPrice ?? 'Unit Price';
   const lineTotalLabel = labels.lineTotal ?? 'Line Total';
 
   const rows = lines
-    .map(
-      (line) => {
-        const priceCells = hasPrice
-          ? `<td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${line.unitPrice != null ? Number(line.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${line.lineTotal != null ? Number(line.lineTotal).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}</td>`
+    .map((line) => {
+      const sub =
+        line.itemSku != null && line.itemSku !== ''
+          ? `<div class="line-sku">SKU: ${esc(line.itemSku)}</div>`
           : '';
-        return `<tr>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.itemName)}${line.itemSku ? ` <span style="color:#6b7280">(${esc(line.itemSku)})</span>` : ''}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(line.qty).toLocaleString()}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.uomCode)}</td>${priceCells}
-        </tr>`;
-      }
-    )
+      const priceCells = hasPrice
+        ? `<td class="right">${line.unitPrice != null ? Number(line.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}</td>
+          <td class="right">${line.lineTotal != null ? Number(line.lineTotal).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}</td>`
+        : '';
+      return `<tr>
+        <td class="col-desc"><div class="line-name">${esc(line.itemName)}</div>${sub}</td>
+        <td class="right">${Number(line.qty).toLocaleString()}</td>
+        <td class="uom">${esc(line.uomCode)}</td>${priceCells}
+      </tr>`;
+    })
     .join('');
 
-  const tableHeader = hasPrice
+  const head = hasPrice
     ? `<tr>
         <th>${esc(labels.item)}</th>
         <th class="right">${esc(labels.qty)}</th>
@@ -101,46 +97,52 @@ export function buildMaterialIssuePrintHtml(
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <title>${esc(labels.title)} - ${esc(docNumber)}</title>
+  <title>${esc(labels.title)} — ${esc(docNumber)}</title>
   <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 24px; background: #fff; color: #000; font-family: system-ui, sans-serif; font-size: 11pt; }
-    .header { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #9ca3af; }
-    .header h1 { margin: 0 0 12px; font-size: 18px; font-weight: 700; }
-    .meta { display: grid; gap: 4px; font-size: 13px; }
-    .meta p { margin: 0; }
-    .meta span.label { color: #6b7280; }
-    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 11pt; }
-    thead th { padding: 8px 10px; border: 1px solid #374151; background: #e5e7eb; font-weight: 700; text-align: left; }
-    thead th.right { text-align: right; }
-    .total { margin-top: 12px; font-size: 14px; font-weight: 600; }
-    @media print {
-      body { padding: 16px; }
-      @page { size: A4; margin: 15mm; }
-      @page { @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #666; } }
-    }
+${printCssBase}
+${printPagePortrait}
   </style>
 </head>
 <body>
-  <header class="header">
-    <h1>${esc(labels.title)}</h1>
-    <div class="meta">
-      <p><span class="label">${esc(labels.doc)}:</span> ${esc(docNumber)}</p>
-      <p><span class="label">${esc(labels.wo)}:</span> ${esc(woDocNumber)}</p>
-      <p><span class="label">${esc(labels.vendor)}:</span> ${esc(vendorName)}</p>
-      <p><span class="label">${esc(labels.date)}:</span> ${esc(dateStr)}</p>
-      <p><span class="label">${esc(labels.type)}:</span> ${esc(issueType)}</p>
+  <div class="doc-top">
+    <div>
+      <h1 class="doc-title">${esc(labels.title)}</h1>
+      <p class="doc-sub">${esc(issuedByLabel)} ${esc(issuerName)}</p>
     </div>
-  </header>
-  <table>
-    <thead>
-      ${tableHeader}
-    </thead>
-    <tbody>
-      ${rows}
-    </tbody>
+    <div class="doc-ref">
+      <span class="lbl">${esc(labels.doc)}</span>
+      <span class="val">${esc(docNumber)}</span>
+      <span class="lbl">${esc(labels.date)}</span>
+      <span class="val">${esc(fmtDocDate(issuedAt))}</span>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <p class="block-label">${esc(labels.vendor)}</p>
+      <p class="payee-name">${esc(vendorName)}</p>
+    </div>
+    <div>
+      <div class="meta-grid">
+        <div class="meta-row"><span class="mk">${esc(labels.wo)}</span><span class="mv">${esc(woDocNumber)}</span></div>
+        <div class="meta-row"><span class="mk">${esc(labels.type)}</span><span class="mv">${esc(issueType)}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <table class="data">
+    <thead>${head}</thead>
+    <tbody>${rows}</tbody>
   </table>
-  <p class="total">${esc(labels.totalCost)}: ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+
+  <div class="totals-wrap">
+    <div class="totals">
+      <div class="grand-row">
+        <span class="gk">${esc(labels.totalCost)}</span>
+        <span class="gv">${Number(totalCost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+      </div>
+    </div>
+  </div>
 </body>
 </html>`;
 }

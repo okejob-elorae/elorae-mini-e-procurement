@@ -24,10 +24,56 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Download, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, ChevronDown, ChevronRight, Printer } from 'lucide-react';
 import { getStockCard, getStockCardByType, getStockCardByCategory, getCurrentStockSummary, getItemVariantOptions } from '@/app/actions/stock-card';
 import { getItemCategories } from '@/app/actions/item-categories';
+import { logPrint } from '@/app/actions/audit';
+import { buildStockCardPrintHtml } from '@/lib/print/stock-card-html';
+import type { StockCardPrintLabels } from '@/lib/print/stock-card-html';
 import { toast } from 'sonner';
+
+const stockCardPrintLabelsId: Partial<StockCardPrintLabels> = {
+  title: 'Kartu Stok',
+  period: 'Periode',
+  openingBalance: 'Saldo awal',
+  openingValue: 'Nilai awal',
+  closingBalance: 'Saldo akhir',
+  closingValue: 'Nilai akhir',
+  variant: 'Varian',
+  colDate: 'Tanggal',
+  colDoc: 'Dokumen',
+  colDesc: 'Keterangan',
+  colNotes: 'Catatan',
+  colVariant: 'Varian',
+  colIn: 'Masuk',
+  colOut: 'Keluar',
+  colBalance: 'Sisa',
+  colUnitCost: 'Harga satuan',
+  colBalanceValue: 'Nilai persediaan',
+  noMovements: 'Tidak ada mutasi pada periode ini.',
+};
+
+function printHtmlInIframe(html: string, iframeTitle: string) {
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
+  iframe.setAttribute('title', iframeTitle);
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow?.document;
+  if (!doc) {
+    iframe.remove();
+    toast.error('Failed to load for print');
+    return;
+  }
+  doc.open();
+  doc.write(html);
+  doc.close();
+  setTimeout(() => {
+    iframe.contentWindow?.print();
+  }, 350);
+  setTimeout(() => {
+    iframe.remove();
+  }, 1000);
+}
 
 const defaultFrom = startOfDay(subDays(new Date(), 30));
 const defaultTo = endOfDay(new Date());
@@ -178,6 +224,124 @@ export default function StockCardPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handlePrintByItem = async () => {
+    if (!data?.item) {
+      toast.error('Load stock card data before printing');
+      return;
+    }
+    try {
+      await logPrint('StockCard', itemId);
+      const closingValue =
+        data.movements.length > 0
+          ? data.movements[data.movements.length - 1].balanceValue
+          : data.openingValue;
+      const html = buildStockCardPrintHtml({
+        kind: 'item',
+        itemSku: data.item.sku ?? '-',
+        itemName: data.item.nameId ?? '-',
+        uomCode: data.item.uom?.code ?? '',
+        variantFilterLabel: variantSku.trim() ? variantSku : 'All variants',
+        dateFromLabel: dateFrom,
+        dateToLabel: dateTo,
+        openingBalance: data.openingBalance,
+        openingValue: data.openingValue,
+        closingBalance: data.closingBalance,
+        closingValue,
+        movements: data.movements.map((m) => ({
+          date: m.date,
+          docNumber: m.docNumber,
+          description: m.description,
+          notes: m.notes ?? null,
+          variantSku: m.variantSku ?? null,
+          in: m.in,
+          out: m.out,
+          balance: m.balance,
+          unitCost: m.unitCost,
+          balanceValue: m.balanceValue,
+        })),
+        labels: stockCardPrintLabelsId,
+      });
+      printHtmlInIframe(html, 'Print stock card');
+    } catch {
+      toast.error('Failed to print stock card');
+    }
+  };
+
+  const handlePrintByType = async () => {
+    if (!dataByType) {
+      toast.error('Load stock card by type before printing');
+      return;
+    }
+    try {
+      await logPrint('StockCard', `by-type:${dataByType.type}`);
+      const typeTitle =
+        dataByType.type === 'raw' ? 'Raw materials (Fabric + Accessories)' : 'Finished goods';
+      const html = buildStockCardPrintHtml({
+        kind: 'byType',
+        typeTitle,
+        dateFromLabel: dateFrom,
+        dateToLabel: dateTo,
+        items: dataByType.items.map((row) => ({
+          sku: row.item?.sku ?? '-',
+          name: row.item?.nameId ?? '-',
+          uomCode: row.item?.uom?.code ?? '',
+          openingBalance: row.openingBalance,
+          closingBalance: row.closingBalance,
+          movements: row.movements.map((m) => ({
+            date: m.date,
+            docNumber: m.docNumber,
+            description: m.description,
+            notes: m.notes ?? null,
+            in: m.in,
+            out: m.out,
+            balance: m.balance,
+          })),
+        })),
+        labels: stockCardPrintLabelsId,
+      });
+      printHtmlInIframe(html, 'Print stock card by type');
+    } catch {
+      toast.error('Failed to print stock card');
+    }
+  };
+
+  const handlePrintByCategory = async () => {
+    if (!dataByCategory) {
+      toast.error('Load stock card by category before printing');
+      return;
+    }
+    try {
+      await logPrint('StockCard', `by-category:${categoryId}`);
+      const html = buildStockCardPrintHtml({
+        kind: 'byCategory',
+        categoryTitle: dataByCategory.category.name || 'Category',
+        categoryCode: dataByCategory.category.code,
+        dateFromLabel: dateFrom,
+        dateToLabel: dateTo,
+        items: dataByCategory.items.map((row) => ({
+          sku: row.item?.sku ?? '-',
+          name: row.item?.nameId ?? '-',
+          uomCode: row.item?.uom?.code ?? '',
+          openingBalance: row.openingBalance,
+          closingBalance: row.closingBalance,
+          movements: row.movements.map((m) => ({
+            date: m.date,
+            docNumber: m.docNumber,
+            description: m.description,
+            notes: m.notes ?? null,
+            in: m.in,
+            out: m.out,
+            balance: m.balance,
+          })),
+        })),
+        labels: stockCardPrintLabelsId,
+      });
+      printHtmlInIframe(html, 'Print stock card by category');
+    } catch {
+      toast.error('Failed to print stock card');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -275,7 +439,7 @@ export default function StockCardPage() {
 
       {data && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle>
               {data.item?.sku} – {data.item?.nameId}
               {data.item?.uom && (
@@ -284,13 +448,19 @@ export default function StockCardPage() {
                 </span>
               )}
             </CardTitle>
-            <Button variant="outline" size="sm" onClick={handleExport} className="min-h-[44px]">
-              <Download className="mr-2 h-4 w-4" />
-              Export CSV
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={handlePrintByItem} className="min-h-[44px]">
+                <Printer className="mr-2 h-4 w-4" />
+                Print
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExport} className="min-h-[44px]">
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 print:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="text-sm text-muted-foreground">Opening balance</p>
                 <p className="text-lg font-semibold">
@@ -427,10 +597,14 @@ export default function StockCardPage() {
 
           {dataByType && (
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
                 <CardTitle>
                   Stock card by type: {typeFilter === 'raw' ? 'Raw materials' : 'Finished goods'}
                 </CardTitle>
+                <Button variant="outline" size="sm" onClick={() => void handlePrintByType()} className="min-h-[44px]">
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print
+                </Button>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto rounded-md border">
@@ -610,7 +784,7 @@ export default function StockCardPage() {
 
           {dataByCategory && (
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
                 <CardTitle>
                   Stock card by category: {dataByCategory.category.name}
                   {dataByCategory.category.code && (
@@ -619,6 +793,10 @@ export default function StockCardPage() {
                     </span>
                   )}
                 </CardTitle>
+                <Button variant="outline" size="sm" onClick={() => void handlePrintByCategory()} className="min-h-[44px]">
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print
+                </Button>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto rounded-md border">

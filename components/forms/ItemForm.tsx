@@ -25,13 +25,15 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TagsInput } from '@/components/ui/tags-input';
-import { Plus, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Loader2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import type { z } from 'zod';
 
 type ItemFormData = z.infer<typeof itemSchema>;
 type ConsumptionRuleData = z.infer<typeof consumptionRuleSchema>;
+
+type ConsumptionRuleRow = ConsumptionRuleData & { qtyInput?: string };
 
 interface UOM {
   id: string;
@@ -56,6 +58,33 @@ interface ItemCategoryOption {
   name: string;
   code?: string | null;
   isActive: boolean;
+}
+
+/** Normalize attribute value for variant SKU segment (e.g. red → RED, light blue → LIGHTBLUE). */
+function slugVariantAttributeValue(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toUpperCase();
+}
+
+/**
+ * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. OUTERWEAR-RED-S).
+ * Base is the item category code when the category has one; otherwise the parent item SKU (server accepts both prefixes).
+ */
+function buildVariantSkuCode(
+  basePrefix: string,
+  combo: Record<string, string>,
+  orderedAttributeKeys: string[]
+): string {
+  const base = basePrefix.trim();
+  const segments = orderedAttributeKeys
+    .map((key) => slugVariantAttributeValue(combo[key] ?? ''))
+    .filter((s) => s.length > 0);
+  if (!base) return segments.join('-');
+  if (segments.length === 0) return base;
+  return `${base}-${segments.join('-')}`;
 }
 
 interface ItemFormProps {
@@ -98,7 +127,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const [itemCategories, setItemCategories] = useState<ItemCategoryOption[]>([]);
   const [sku, setSku] = useState(initialData?.sku || '');
   const [isGeneratingSKU, setIsGeneratingSKU] = useState(false);
-  const [consumptionRules, setConsumptionRules] = useState<ConsumptionRuleData[]>(
+  const [consumptionRules, setConsumptionRules] = useState<ConsumptionRuleRow[]>(
     initialData?.consumptionRules?.map(r => ({
       materialId: r.materialId,
       qtyRequired: Number(r.qtyRequired),
@@ -166,6 +195,14 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   });
 
   const itemType = watch('type');
+  const watchedCategoryId = watch('categoryId');
+
+  const categoryCodePrefix = useMemo(() => {
+    const id = (watchedCategoryId ?? '').trim();
+    if (!id) return '';
+    const row = itemCategories.find((c) => c.id === id);
+    return (row?.code ?? '').trim();
+  }, [watchedCategoryId, itemCategories]);
 
   useEffect(() => {
     // Load UOMs
@@ -212,11 +249,18 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     setConsumptionRules(consumptionRules.filter((_, i) => i !== index));
   };
 
-  const updateConsumptionRule = (index: number, field: keyof ConsumptionRuleData, value: any) => {
+  const updateConsumptionRule = (index: number, field: keyof ConsumptionRuleRow, value: unknown) => {
     const updated = [...consumptionRules];
     updated[index] = { ...updated[index], [field]: value };
     setConsumptionRules(updated);
   };
+
+  const stripConsumptionRuleRows = (rows: ConsumptionRuleRow[]): ConsumptionRuleData[] =>
+    rows.map((row) => {
+      const next = { ...row };
+      delete next.qtyInput;
+      return next as ConsumptionRuleData;
+    });
 
   const addAttribute = () => {
     setAttributes([...attributes, { key: '', values: [] }]);
@@ -250,6 +294,24 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   }, [attributes]);
 
   const parentSku = (initialData?.sku ?? sku) || '';
+  const variantSkuBasePrefix = categoryCodePrefix || parentSku.trim();
+
+  const applyVariantSkuCodeAt = (idx: number) => {
+    if (!variantSkuBasePrefix) {
+      toast.error(tToasts('setParentSkuBeforeVariantCode'));
+      return;
+    }
+    const combo = variantCombinations[idx];
+    if (!combo) return;
+    const keys = attributes.map((a) => a.key).filter((k) => k.trim());
+    const code = buildVariantSkuCode(variantSkuBasePrefix, combo, keys);
+    setVariantSkus((prev) => {
+      const next = [...prev];
+      while (next.length <= idx) next.push('');
+      next[idx] = code;
+      return next;
+    });
+  };
 
   const variantCombinationsKey = useMemo(
     () => variantCombinations.map((c) => JSON.stringify(c)).join('|'),
@@ -316,7 +378,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
     await onSubmit(
       { ...dataWithSku, variants },
-      itemType === ItemType.FINISHED_GOOD ? consumptionRules : undefined
+      itemType === ItemType.FINISHED_GOOD ? stripConsumptionRuleRows(consumptionRules) : undefined
     );
   };
 
@@ -615,7 +677,19 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           {variantCombinations.length > 0 && (
             <div className="space-y-2 pt-2 border-t">
               <p className="text-sm text-muted-foreground">
-                Variant SKU must start with parent SKU{parentSku ? ` (${parentSku})` : ''}. Leave empty to auto-generate.
+                Variant SKU must start with the category code
+                {categoryCodePrefix ? ` (${categoryCodePrefix})` : ' (when the category has one)'} or the parent item SKU
+                {parentSku ? ` (${parentSku})` : ''}. Leave empty to save and the server will auto-fill using the same
+                base. Use <span className="font-medium text-foreground">Generate code</span> for{' '}
+                <code className="rounded bg-muted px-1 py-0.5 text-xs">{`{base}-{attr1}-…-{attrN}`}</code>
+                {variantSkuBasePrefix ? (
+                  <>
+                    {' '}
+                    (e.g. {variantSkuBasePrefix}-RED-S).
+                  </>
+                ) : (
+                  <> (pick a category with a code or set the item SKU first).</>
+                )}
               </p>
               <Table>
                 <TableHeader>
@@ -623,7 +697,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     {attributes.map((attr) => (
                       <TableHead key={attr.key}>{attr.key}</TableHead>
                     ))}
-                    <TableHead>Variant SKU</TableHead>
+                    <TableHead className="min-w-56">Variant SKU</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -633,16 +707,35 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                         <TableCell key={attr.key}>{combo[attr.key] ?? '—'}</TableCell>
                       ))}
                       <TableCell>
-                        <Input
-                          value={variantSkus[idx] ?? ''}
-                          onChange={(e) => {
-                            const next = [...variantSkus];
-                            while (next.length <= idx) next.push('');
-                            next[idx] = e.target.value;
-                            setVariantSkus(next);
-                          }}
-                          placeholder={parentSku ? `${parentSku}-…` : 'e.g. FB-001-RED'}
-                        />
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <Input
+                            className="min-w-0 flex-1 font-mono text-sm"
+                            value={variantSkus[idx] ?? ''}
+                            onChange={(e) => {
+                              const next = [...variantSkus];
+                              while (next.length <= idx) next.push('');
+                              next[idx] = e.target.value;
+                              setVariantSkus(next);
+                            }}
+                            placeholder={variantSkuBasePrefix ? `${variantSkuBasePrefix}-…` : 'e.g. OUTERWEAR-RED'}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => applyVariantSkuCodeAt(idx)}
+                            disabled={!variantSkuBasePrefix}
+                            title={
+                              variantSkuBasePrefix
+                                ? `Build ${variantSkuBasePrefix}-{values}`
+                                : 'Select a category with code or set item SKU'
+                            }
+                          >
+                            <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                            Generate code
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -710,17 +803,49 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                       </TableCell>
                       <TableCell>
                         <Input
-                          type="number"
-                          step="0.0001"
-                          min="0"
-                          value={rule.qtyRequired || ''}
-                          onChange={(e) =>
-                            updateConsumptionRule(
-                              index,
-                              'qtyRequired',
-                              parseFloat(e.target.value) || 0
-                            )
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={
+                            rule.qtyInput !== undefined
+                              ? rule.qtyInput
+                              : rule.qtyRequired > 0
+                                ? String(rule.qtyRequired)
+                                : ''
                           }
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            if (raw !== '' && !/^\d*\.?\d*$/.test(raw)) return;
+                            const n = parseFloat(raw);
+                            const qtyRequired = raw === '' || Number.isNaN(n) ? 0 : n;
+                            const updated = [...consumptionRules];
+                            updated[index] = {
+                              ...updated[index],
+                              qtyRequired,
+                              qtyInput: raw,
+                            };
+                            setConsumptionRules(updated);
+                          }}
+                          onBlur={() => {
+                            const row = consumptionRules[index];
+                            if (row?.qtyInput === undefined) return;
+                            const n = parseFloat(row.qtyInput);
+                            const updated = [...consumptionRules];
+                            if (Number.isFinite(n) && n > 0) {
+                              updated[index] = {
+                                ...row,
+                                qtyRequired: n,
+                                qtyInput: undefined,
+                              };
+                            } else {
+                              updated[index] = {
+                                ...row,
+                                qtyRequired: 0,
+                                qtyInput: undefined,
+                              };
+                            }
+                            setConsumptionRules(updated);
+                          }}
                           placeholder="0.0000"
                         />
                       </TableCell>

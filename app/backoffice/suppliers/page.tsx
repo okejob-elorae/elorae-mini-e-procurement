@@ -73,13 +73,6 @@ interface SupplierTypeOption {
   sortOrder: number | null;
 }
 
-interface SupplierCategoryOption {
-  id: string;
-  code: string;
-  nameId: string;
-  nameEn: string;
-}
-
 type SupplierStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED';
 
 interface Supplier {
@@ -88,7 +81,6 @@ interface Supplier {
   name: string;
   typeId: string;
   type?: { id: string; code: string; name: string } | null;
-  category?: { id: string; nameId: string; nameEn: string } | null;
   address: string | null;
   phone: string | null;
   email: string | null;
@@ -103,7 +95,6 @@ const supplierSchema = z.object({
   code: z.string().optional(),
   name: z.string().min(1, 'Name is required'),
   typeId: z.string().min(1, 'Supplier type is required'),
-  categoryId: z.string().optional(),
   address: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
@@ -124,8 +115,7 @@ export default function SuppliersPage() {
   const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierTypes, setSupplierTypes] = useState<SupplierTypeOption[]>([]);
-  const [supplierCategories, setSupplierCategories] = useState<SupplierCategoryOption[]>([]);
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -167,7 +157,7 @@ export default function SuppliersPage() {
       params.set('page', String(page));
       params.set('pageSize', String(pageSize));
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
-      if (categoryFilter) params.set('categoryId', categoryFilter);
+      if (typeFilter) params.set('typeId', typeFilter);
       if (statusFilter) params.set('status', statusFilter);
       const response = await fetch(`/api/suppliers?${params.toString()}`);
       if (response.ok) {
@@ -194,38 +184,26 @@ export default function SuppliersPage() {
       const res = await fetch('/api/supplier-types?activeOnly=true');
       if (res.ok) {
         const data = await res.json();
-        setSupplierTypes(data);
+        const list = Array.isArray(data) ? data : data?.data;
+        setSupplierTypes(Array.isArray(list) ? list : []);
       }
     } catch (e) {
       console.error('Failed to fetch supplier types:', e);
     }
   };
 
-  const fetchSupplierCategories = async () => {
-    try {
-      const res = await fetch('/api/supplier-categories');
-      if (res.ok) {
-        const data = await res.json();
-        setSupplierCategories(Array.isArray(data) ? data : []);
-      }
-    } catch (e) {
-      console.error('Failed to fetch supplier categories:', e);
-    }
-  };
-
   useEffect(() => {
     fetchSupplierTypes();
-    fetchSupplierCategories();
   }, []);
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, categoryFilter, statusFilter]);
+  }, [searchQuery, typeFilter, statusFilter]);
 
   useEffect(() => {
     fetchSuppliers();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchSuppliers depends on filters
-  }, [page, pageSize, searchQuery, categoryFilter, statusFilter]);
+  }, [page, pageSize, searchQuery, typeFilter, statusFilter]);
 
   const isSupplierFormOpen = supplierDialogMode !== null;
 
@@ -235,7 +213,6 @@ export default function SuppliersPage() {
         code: '',
         name: '',
         typeId: supplierTypes[0]?.id ?? '',
-        categoryId: undefined,
         address: '',
         phone: '',
         email: '',
@@ -249,7 +226,6 @@ export default function SuppliersPage() {
         code: editSupplier.code,
         name: editSupplier.name,
         typeId: editSupplier.typeId,
-        categoryId: editSupplier.category?.id ?? undefined,
         address: editSupplier.address ?? '',
         phone: editSupplier.phone ?? '',
         email: editSupplier.email ?? '',
@@ -295,7 +271,7 @@ export default function SuppliersPage() {
         const error = await response.json();
         const details = error?.details as Array<{ path: (string | number)[]; message: string }> | undefined;
         const formKeys: (keyof SupplierForm)[] = [
-          'code', 'name', 'typeId', 'categoryId', 'address', 'phone', 'email',
+          'code', 'name', 'typeId', 'address', 'phone', 'email',
           'bankName', 'bankAccount', 'bankAccountName',
         ];
         if (Array.isArray(details) && details.length > 0) {
@@ -619,17 +595,17 @@ export default function SuppliersPage() {
           />
         </div>
         <Select
-          value={categoryFilter ?? 'all'}
-          onValueChange={(v) => setCategoryFilter(v === 'all' ? null : v)}
+          value={typeFilter ?? 'all'}
+          onValueChange={(v) => setTypeFilter(v === 'all' ? null : v)}
         >
           <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Category" />
+            <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
-            {supplierCategories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id}>
-                {cat.nameEn || cat.nameId}
+            <SelectItem value="all">All types</SelectItem>
+            {supplierTypes.map((st) => (
+              <SelectItem key={st.id} value={st.id}>
+                {st.name}
               </SelectItem>
             ))}
           </SelectContent>

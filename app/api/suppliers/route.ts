@@ -15,7 +15,6 @@ const supplierSchema = z.object({
   ),
   name: z.string().min(1),
   typeId: z.string().min(1),
-  categoryId: z.string().optional(),
   address: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email().optional(),
@@ -33,7 +32,6 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const categoryId = searchParams.get('categoryId');
     const search = searchParams.get('search');
     const sync = searchParams.get('sync') === 'true';
     const approvedOnly = searchParams.get('approvedOnly') === 'true';
@@ -47,7 +45,6 @@ export async function GET(req: NextRequest) {
     const typeId = searchParams.get('typeId');
     const statusParam = searchParams.get('status');
     if (typeId) where.typeId = typeId;
-    if (categoryId) where.categoryId = categoryId;
     if (statusParam && ['PENDING_APPROVAL', 'ACTIVE', 'REJECTED'].includes(statusParam)) {
       where.status = statusParam;
     }
@@ -67,13 +64,6 @@ export async function GET(req: NextRequest) {
         where,
         include: {
           type: { select: { id: true, code: true, name: true } },
-          category: {
-            select: {
-              id: true,
-              nameId: true,
-              nameEn: true,
-            },
-          },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -84,7 +74,6 @@ export async function GET(req: NextRequest) {
           name: s.name,
           typeId: s.typeId,
           type: s.type ? { id: s.type.id, code: s.type.code, name: s.type.name } : null,
-          categoryId: s.categoryId,
           address: s.address,
           phone: s.phone,
           email: s.email,
@@ -103,13 +92,6 @@ export async function GET(req: NextRequest) {
           take: pageSize,
           include: {
             type: { select: { id: true, code: true, name: true } },
-            category: {
-              select: {
-                id: true,
-                nameId: true,
-                nameEn: true,
-              },
-            },
           },
           orderBy: { createdAt: 'desc' },
         }),
@@ -126,13 +108,6 @@ export async function GET(req: NextRequest) {
       where,
       include: {
         type: { select: { id: true, code: true, name: true } },
-        category: {
-          select: {
-            id: true,
-            nameId: true,
-            nameEn: true,
-          },
-        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -189,7 +164,6 @@ export async function POST(req: NextRequest) {
         code,
         name: validated.name,
         typeId: validated.typeId,
-        categoryId: validated.categoryId,
         address: validated.address,
         phone: validated.phone,
         email: validated.email,

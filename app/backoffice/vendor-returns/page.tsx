@@ -3,7 +3,19 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { Plus, Loader2, CheckCircle, Clock, MoreHorizontal, Eye, Pencil, Trash2, Search, Package } from 'lucide-react';
+import {
+  Plus,
+  Loader2,
+  CheckCircle,
+  Clock,
+  MoreHorizontal,
+  Eye,
+  Pencil,
+  Trash2,
+  Search,
+  Package,
+  PlayCircle,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -308,8 +320,10 @@ export default function VendorReturnsPage() {
                                     >
                                       {processingId === r.id ? (
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                      ) : null}
-                                      Process
+                                      ) : (
+                                        <PlayCircle className="mr-2 h-4 w-4" />
+                                      )}
+                                      {processingId === r.id ? 'Processing...' : 'Process'}
                                     </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"

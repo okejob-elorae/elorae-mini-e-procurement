@@ -35,6 +35,7 @@ import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { OfflinePOButton } from '@/components/offline/OfflinePOButton';
 import { isOnline } from '@/lib/offline/sync';
 import { useLocale, useTranslations } from 'next-intl';
+import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
 
 type POFormData = z.infer<ReturnType<typeof createPoSchema>>;
 type POItemData = z.infer<typeof poItemSchema>;
@@ -54,6 +55,7 @@ interface Item {
     id: string;
     code: string;
   };
+  variants?: Array<Record<string, string>>;
 }
 
 interface POFormProps {
@@ -65,10 +67,12 @@ interface POFormProps {
     terms?: string;
     items?: Array<{
       itemId: string;
+      variantSku?: string | null;
       item: {
         sku: string;
         nameId: string;
         uom: { id: string; code: string };
+        variants?: unknown;
       };
       qty: number;
       price: number;
@@ -110,12 +114,15 @@ export function POForm({
     initialData?.items?.map((item, idx) => ({
       id: `line-${idx}`,
       itemId: item.itemId,
+      variantSku: item.variantSku?.trim() || undefined,
       qty: Number(item.qty),
       price: Number(item.price),
       ppnIncluded: item.ppnIncluded ?? true,
       uomId: item.uomId,
       notes: item.notes,
-    })) || [{ id: 'line-0', itemId: '', qty: 0, price: 0, ppnIncluded: true, uomId: '' }]
+    })) || [
+      { id: 'line-0', itemId: '', variantSku: undefined, qty: 0, price: 0, ppnIncluded: true, uomId: '' },
+    ]
   );
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -135,6 +142,7 @@ export function POForm({
       terms: initialData?.terms || '',
       items: initialData?.items?.map(item => ({
         itemId: item.itemId,
+        variantSku: item.variantSku?.trim() || undefined,
         qty: Number(item.qty),
         price: Number(item.price),
         ppnIncluded: item.ppnIncluded ?? true,
@@ -160,6 +168,7 @@ export function POForm({
                   id: item.uomId,
                   code: item.uomCode || '',
                 },
+                variants: item.variants,
               }))
             );
             return;
@@ -169,13 +178,22 @@ export function POForm({
         const data = await getItems({ isActive: true });
         const list = Array.isArray(data) ? data : (data as { items: unknown[] }).items;
         const mapped: Item[] = list.map((row: unknown) => {
-          const r = row as { id: string; sku: string; nameId: string; nameEn: string; uomId?: string; uom?: { id?: string; code: string } };
+          const r = row as {
+            id: string;
+            sku: string;
+            nameId: string;
+            nameEn: string;
+            uomId?: string;
+            uom?: { id?: string; code: string };
+            variants?: unknown;
+          };
           return {
             id: r.id,
             sku: r.sku,
             nameId: r.nameId,
             nameEn: r.nameEn,
             uom: { id: r.uomId ?? r.uom?.id ?? '', code: r.uom?.code ?? '' },
+            variants: parseItemVariants(r.variants),
           };
         });
         setItems(mapped);
@@ -197,6 +215,7 @@ export function POForm({
         void _omitId;
         return {
         itemId: item.itemId ?? '',
+        variantSku: item.variantSku,
         qty: item.qty ?? 0,
         price: item.price ?? 0,
         ppnIncluded: item.ppnIncluded ?? true,
@@ -209,7 +228,18 @@ export function POForm({
   }, [lineItems, setValue]);
 
   const addLineItem = () => {
-    setLineItems([...lineItems, { id: `line-${Date.now()}`, itemId: '', qty: 0, price: 0, ppnIncluded: true, uomId: '' }]);
+    setLineItems([
+      ...lineItems,
+      {
+        id: `line-${Date.now()}`,
+        itemId: '',
+        variantSku: undefined,
+        qty: 0,
+        price: 0,
+        ppnIncluded: true,
+        uomId: '',
+      },
+    ]);
   };
 
   const removeLineItem = (idParam: string) => {
@@ -220,15 +250,17 @@ export function POForm({
     setLineItems(lineItems.filter((item) => item.id !== idParam));
   };
 
-  const updateLineItem = (idParam: string, field: keyof POItemData, value: any) => {
+  const updateLineItem = (idParam: string, field: keyof POItemData, value: unknown) => {
     const updated = lineItems.map((item) => {
       if (item.id === idParam) {
-        const updatedItem = { ...item, [field]: value };
-        // Auto-set UOM when item is selected
+        const updatedItem = { ...item, [field]: value } as POItemData & { id: string };
+        // Auto-set UOM and variant when item is selected
         if (field === 'itemId' && value) {
           const selectedItem = items.find((i) => i.id === value);
           if (selectedItem) {
             updatedItem.uomId = selectedItem.uom.id;
+            const opts = variantSelectOptions(parseItemVariants(selectedItem.variants));
+            updatedItem.variantSku = opts.length === 1 ? opts[0].sku : undefined;
           }
         }
         return updatedItem;
@@ -264,6 +296,15 @@ export function POForm({
     if (validItems.length === 0) {
       toast.error(tToasts('addAtLeastOneValidLineItem'));
       return;
+    }
+
+    for (const line of validItems) {
+      const cat = items.find((i) => i.id === line.itemId);
+      const opts = variantSelectOptions(parseItemVariants(cat?.variants));
+      if (opts.length > 0 && !line.variantSku?.trim()) {
+        toast.error('Select a variant for each line item that has variants');
+        return;
+      }
     }
 
     // Check ETA date
@@ -451,6 +492,7 @@ export function POForm({
               <TableHeader>
                 <TableRow>
                   <TableHead>Item</TableHead>
+                  <TableHead>Variant</TableHead>
                   <TableHead>Qty</TableHead>
                   <TableHead>UOM</TableHead>
                   <TableHead>Price (IDR)</TableHead>
@@ -464,6 +506,7 @@ export function POForm({
                 {lineItems.map((lineItem) => {
                   const selectedItem = items.find((i) => i.id === lineItem.itemId);
                   const lineTotal = calculateLineTotal(lineItem.qty, lineItem.price);
+                  const variantOpts = variantSelectOptions(parseItemVariants(selectedItem?.variants));
 
                   return (
                     <TableRow key={lineItem.id}>
@@ -478,6 +521,34 @@ export function POForm({
                           placeholder={tPlaceholders('selectItem')}
                           triggerClassName="max-w-[16rem] min-w-0"
                         />
+                      </TableCell>
+                      <TableCell className="min-w-[10rem] max-w-[14rem]">
+                        {variantOpts.length === 0 ? (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        ) : (
+                          <Select
+                            value={lineItem.variantSku?.trim() ? lineItem.variantSku : '__none__'}
+                            onValueChange={(v) =>
+                              updateLineItem(
+                                lineItem.id,
+                                'variantSku',
+                                v === '__none__' ? undefined : v
+                              )
+                            }
+                          >
+                            <SelectTrigger className="w-full max-w-[14rem]">
+                              <SelectValue placeholder="Variant" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">Select variant</SelectItem>
+                              {variantOpts.map((o) => (
+                                <SelectItem key={o.sku} value={o.sku}>
+                                  {o.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Input

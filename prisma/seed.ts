@@ -318,43 +318,7 @@ async function main() {
   });
   console.log('Users migrated to roleId');
 
-  // ---------- 2. Supplier categories ----------
-  const fabricCategory = await prisma.supplierCategory.upsert({
-    where: { id: "cat-fabric" },
-    update: {},
-    create: {
-      id: "cat-fabric",
-      code: "FABRIC",
-      nameId: "Kain",
-      nameEn: "Fabric",
-      description: "Fabric and textile suppliers",
-    },
-  });
-  const accessoriesCategory = await prisma.supplierCategory.upsert({
-    where: { id: "cat-accessories" },
-    update: {},
-    create: {
-      id: "cat-accessories",
-      code: "ACCESSORIES",
-      nameId: "Aksesoris",
-      nameEn: "Accessories",
-      description: "Buttons, zippers, and other accessories",
-    },
-  });
-  const tailorCategory = await prisma.supplierCategory.upsert({
-    where: { id: "cat-tailor" },
-    update: {},
-    create: {
-      id: "cat-tailor",
-      code: "TAILOR",
-      nameId: "Penjahit",
-      nameEn: "Tailor",
-      description: "Production vendors and tailors",
-    },
-  });
-  console.log("Supplier categories OK");
-
-  // ---------- 2b. Supplier types ----------
+  // ---------- 2. Supplier types ----------
   const typeFabric = await prisma.supplierType.upsert({
     where: { id: "st-fabric" },
     update: {},
@@ -491,7 +455,6 @@ async function main() {
       code: "SUP0001",
       name: "PT Kain Indah",
       typeId: typeFabric.id,
-      categoryId: fabricCategory.id,
       address: "Jl. Textile No. 123, Bandung",
       phone: "+62 22 1234567",
       email: "sales@kainindah.com",
@@ -507,7 +470,6 @@ async function main() {
       code: "SUP0002",
       name: "Aksesoris Jaya",
       typeId: typeAccessories.id,
-      categoryId: accessoriesCategory.id,
       address: "Jl. Accessories No. 45, Jakarta",
       phone: "+62 21 9876543",
       email: "order@aksesorisjaya.com",
@@ -523,7 +485,6 @@ async function main() {
       code: "SUP0003",
       name: "Penjahit Pak Budi",
       typeId: typeTailor.id,
-      categoryId: tailorCategory.id,
       address: "Jl. Produksi No. 78, Bandung",
       phone: "+62 812 34567890",
       email: "budi.tailor@email.com",
@@ -539,7 +500,6 @@ async function main() {
       code: "SUP0004",
       name: "PT Kain Sutra",
       typeId: typeFabric.id,
-      categoryId: fabricCategory.id,
       address: "Jl. Sutra 10, Solo",
       isActive: false,
     },

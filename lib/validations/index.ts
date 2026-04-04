@@ -32,6 +32,11 @@ export const consumptionRuleSchema = z.object({
 export function createPoItemSchema(t: ValidationTranslate = defaultT) {
   return z.object({
     itemId: z.string().min(1, t('selectItem')),
+    /** Per-variant SKU from Item.variants; omit/null when item has no variants */
+    variantSku: z
+      .union([z.string().min(1), z.literal('')])
+      .optional()
+      .transform((v) => (v === '' || v == null ? undefined : v)),
     qty: z.number().positive(t('qtyPositive')),
     price: z.number().nonnegative(t('priceNonNegative')),
     ppnIncluded: z.boolean().default(true),

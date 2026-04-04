@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
+import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { formatDistanceToNow } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +39,7 @@ import {
   Wallet,
   Calendar,
   Download,
+  ChevronDown,
 } from 'lucide-react';
 import { Role } from '@/lib/constants/enums';
 import { getDashboardStats, getRawMaterialShortage, getWorkOrderCountByStatus, type DashboardStats, type RawMaterialShortageRow, type WorkOrderStatusCount } from '@/app/actions/dashboard';
@@ -59,6 +61,7 @@ import {
 import { getSuppliersForReportFilter } from '@/app/actions/reports/index';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
 
 function getCurrentMonthDateRange(): { from: string; to: string } {
   const d = new Date();
@@ -140,7 +143,17 @@ export default function DashboardPage() {
   const [suppliers, setSuppliers] = useState<{ id: string; name: string; code: string }[]>([]);
   const [cogsRawVsFinished, setCogsRawVsFinished] = useState<Awaited<ReturnType<typeof getCOGSRawVsFinished>> | null>(null);
   const [rawMaterialShortage, setRawMaterialShortage] = useState<RawMaterialShortageRow[]>([]);
+  const [shortageRowsOpen, setShortageRowsOpen] = useState<Set<string>>(() => new Set());
   const [woStatusCounts, setWoStatusCounts] = useState<WorkOrderStatusCount[]>([]);
+
+  const toggleShortageRow = (itemId: string) => {
+    setShortageRowsOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
 
   const [rp1Filters, setRp1Filters] = useState<{
     fromDate: string;
@@ -594,7 +607,10 @@ export default function DashboardPage() {
                 <Package className="h-5 w-5" />
                 Raw material shortage (active WOs)
               </CardTitle>
-              <CardDescription>Deficit vs on-hand for materials planned in work orders in production.</CardDescription>
+              <CardDescription>
+                Deficit vs on-hand from consumption plans on work orders in production or partial. Expand a row to see
+                vendors (WO partners) and per-WO planned qty for that material.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {rawMaterialShortage.length === 0 ? (
@@ -603,6 +619,7 @@ export default function DashboardPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10 shrink-0 p-2" />
                       <TableHead>Material</TableHead>
                       <TableHead className="text-right">Planned</TableHead>
                       <TableHead className="text-right">On hand</TableHead>
@@ -611,15 +628,77 @@ export default function DashboardPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {rawMaterialShortage.map((row) => (
-                      <TableRow key={row.itemId}>
-                        <TableCell className="font-medium">{row.itemName}</TableCell>
-                        <TableCell className="text-right">{formatNumber(row.totalPlanned)}</TableCell>
-                        <TableCell className="text-right">{formatNumber(row.qtyOnHand)}</TableCell>
-                        <TableCell className="text-right text-destructive font-medium">{formatNumber(row.deficit)}</TableCell>
-                        <TableCell>{row.uomCode}</TableCell>
-                      </TableRow>
-                    ))}
+                    {rawMaterialShortage.map((row) => {
+                      const expanded = shortageRowsOpen.has(row.itemId);
+                      const hasVendors = row.vendors.length > 0;
+                      return (
+                        <Fragment key={row.itemId}>
+                          <TableRow>
+                            <TableCell className="p-2 align-middle">
+                              {hasVendors ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 shrink-0"
+                                  onClick={() => toggleShortageRow(row.itemId)}
+                                  aria-expanded={expanded}
+                                  aria-label={expanded ? 'Hide vendors' : 'Show vendors'}
+                                >
+                                  <ChevronDown
+                                    className={cn('h-4 w-4 transition-transform', expanded && 'rotate-180')}
+                                  />
+                                </Button>
+                              ) : (
+                                <span className="inline-flex h-8 w-8 items-center justify-center" aria-hidden />
+                              )}
+                            </TableCell>
+                            <TableCell className="font-medium">{row.itemName}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatNumber(row.totalPlanned)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatNumber(row.qtyOnHand)}</TableCell>
+                            <TableCell className="text-right font-medium tabular-nums text-destructive">
+                              {formatNumber(row.deficit)}
+                            </TableCell>
+                            <TableCell>{row.uomCode}</TableCell>
+                          </TableRow>
+                          {expanded && hasVendors ? (
+                            <TableRow key={`${row.itemId}-vendors`} className="hover:bg-transparent">
+                              <TableCell colSpan={6} className="border-t-0 bg-muted/40 px-4 py-3 align-top">
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                  Vendors to supply (WO planned qty)
+                                </p>
+                                <ul className="space-y-3 text-sm">
+                                  {row.vendors.map((v) => (
+                                    <li key={v.vendorId}>
+                                      <span className="font-medium">{v.vendorName}</span>
+                                      {v.vendorCode ? (
+                                        <span className="text-muted-foreground"> ({v.vendorCode})</span>
+                                      ) : null}
+                                      <ul className="mt-1.5 space-y-1 border-l-2 border-border pl-3 ml-0.5">
+                                        {v.workOrders.map((wo) => (
+                                          <li key={wo.woId} className="text-muted-foreground">
+                                            <Link
+                                              href={`/backoffice/work-orders/${wo.woId}`}
+                                              className="font-mono text-xs text-primary hover:underline"
+                                            >
+                                              {wo.docNumber}
+                                            </Link>
+                                            <span className="tabular-nums">
+                                              {' '}
+                                              — planned {formatNumber(wo.plannedQty)} {row.uomCode}
+                                            </span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </TableCell>
+                            </TableRow>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
@@ -725,7 +804,7 @@ export default function DashboardPage() {
         <TabsContent value="rp1" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Procurement Report (RP1)</CardTitle>
+              <CardTitle>Procurement Report</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Outstanding POs with ETA alerts. Default status: SUBMITTED, PARTIAL.
               </p>
@@ -960,7 +1039,7 @@ export default function DashboardPage() {
         <TabsContent value="rp3" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Inventory Snapshot (RP3)</CardTitle>
+              <CardTitle>Inventory Snapshot</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Current inventory value by type, value distribution, low stock alerts.
               </p>

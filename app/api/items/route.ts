@@ -85,6 +85,7 @@ export async function GET(req: NextRequest) {
           uomId: i.uomId,
           uomCode: i.uom?.code,
           isActive: i.isActive,
+          variants: Array.isArray(i.variants) ? i.variants : undefined,
         }))
       );
     }

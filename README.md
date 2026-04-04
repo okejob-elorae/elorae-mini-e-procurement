@@ -1,189 +1,167 @@
 # Elorae ERP
 
-A comprehensive Procurement & Production Management System for Textile/Garment Manufacturing.
+A procurement and production management system for textile and garment manufacturing: suppliers, purchase orders, goods receipt, inventory, work orders, vendor returns, supplier payments, and settings (UOM, tax, document numbering, RBAC).
 
 ## Features
 
-### Phase 1 Deliverables (Completed)
+- **Authentication** — NextAuth.js v5 (credentials, Prisma adapter, JWT sessions). Optional `AUTH_SECRET` (falls back to `NEXTAUTH_SECRET`).
+- **Authorization** — Dynamic RBAC from the database (`RoleDefinition`, `Permission`, `RolePermission`). Route-to-permission checks in `proxy.ts` (edge gate) via `lib/rbac.ts`.
+- **Supplier management** — CRUD, supplier **types** (e.g. fabric, accessories), AES-256 encrypted bank details, PIN-gated viewing with audit logging.
+- **Procurement & inventory** — Purchase orders, GRN, stock movements, adjustments, stock card, rejected goods; items and categories; UOM.
+- **Production** — Work orders, material issues, FG receipts, reconciliation, related flows (e.g. nota register).
+- **Returns & payables** — Vendor returns, supplier payments.
+- **Operations** — Audit trail, HPP report, dashboard.
+- **Internationalization** — `next-intl` with messages under `lib/i18n/messages/`.
+- **Offline-first** — Dexie (IndexedDB), pending-operation queue, sync via `POST /api/sync` when online.
+- **PWA** — `next-pwa` (service worker enabled in production builds).
+- **Print / export** — HTML helpers under `lib/print/` for PO, stock card, inventory reports, and related documents.
 
-- **Authentication & Authorization**
-  - NextAuth.js v5 with Credentials provider
-  - Role-Based Access Control (ADMIN, PURCHASER, WAREHOUSE, PRODUCTION)
-  - PIN setup for sensitive actions
+## Tech stack
 
-- **Supplier Management**
-  - Full CRUD operations
-  - Bank Account Encryption (AES-256)
-  - Supplier categories and types (Fabric, Accessories, Tailor, Other)
-  - PIN-restricted bank account viewing with audit logging
+| Area | Choice |
+|------|--------|
+| Framework | **Next.js 16** (App Router, Turbopack in dev) |
+| UI | **React 19**, **Tailwind CSS v4**, **shadcn/ui** (Radix), **lucide-react** |
+| Language | **TypeScript 5** |
+| Data | **Prisma 7** + **@prisma/adapter-mariadb** (MySQL / MariaDB / TiDB) |
+| Auth | **NextAuth.js v5** (`next-auth` beta), **@auth/prisma-adapter** |
+| Forms / API shape | **React Hook Form**, **Zod** |
+| Client data | **TanStack Query**, **TanStack Table**, **Zustand** |
+| Offline | **Dexie** |
+| Files | **Cloudflare R2** (S3-compatible via **@aws-sdk/client-s3**) |
+| Push (optional) | **Firebase** client + **firebase-admin** (FCM) |
+| Crypto | **bcryptjs**, **crypto-js** |
 
-- **Document Numbering Engine**
-  - Auto-generation with configurable format
-  - Prefix + year + month + counter
-  - Transaction-safe counter increment
+## Prerequisites
 
-- **Offline-First Infrastructure**
-  - Dexie.js IndexedDB for local storage
-  - Sync queue system for pending operations
-  - Background sync when connection restored
-  - Online/offline status indicator
+- **Node.js** 20+ (matches `@types/node`; 18+ may work but 20 is the safer baseline)
+- **MySQL**, **MariaDB**, or **TiDB** database
 
-- **PWA Support**
-  - Installable on mobile devices
-  - Service worker for offline functionality
-  - Responsive design for mobile-first experience
+## Getting started
 
-## Tech Stack
+1. Clone and install:
 
-- **Framework**: Next.js 14+ (App Router)
-- **Language**: TypeScript
-- **Database**: Prisma ORM with MySQL/TiDB support
-- **Authentication**: NextAuth.js v5 (Auth.js)
-- **State Management**: Zustand (client), TanStack Query (server)
-- **Forms**: React Hook Form + Zod
-- **UI Library**: shadcn/ui
-- **Offline Storage**: Dexie.js (IndexedDB wrapper)
-- **PWA**: next-pwa
-- **Encryption**: crypto-js (AES-256)
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- MySQL/TiDB database
-
-### Installation
-
-1. Clone the repository:
 ```bash
 git clone <repository-url>
 cd elorae-erp
-```
-
-2. Install dependencies:
-```bash
 npm install
 ```
 
-3. Set up environment variables:
+2. Environment — copy the root template and edit values:
+
 ```bash
-cp .env.local.example .env.local
-# Edit .env.local with your configuration
+cp .env.example .env.local
 ```
 
-4. Set up the database:
+3. Database:
+
 ```bash
 npx prisma migrate dev
 npx prisma db seed
 ```
 
-5. Run the development server:
+(`db seed` is configured in `prisma.config.ts`; you can also use `npm run db:seed`.)
+
+4. Dev server:
+
 ```bash
 npm run dev
 ```
 
-6. Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000). Unauthenticated users are sent to `/login`; the main app lives under **`/backoffice`**.
 
-### Default Login Credentials
+## npm scripts
 
-- **Admin**: admin@elorae.com / admin123 (PIN: 123456)
-- **Purchaser**: purchaser@elorae.com / purchaser123
-- **Warehouse**: warehouse@elorae.com / warehouse123
+| Script | Purpose |
+|--------|---------|
+| `dev` | Next.js dev server |
+| `build` | Production build (no migrate) |
+| `vercel-build` | `prisma generate` → `prisma migrate deploy` → `next build` (Vercel) |
+| `start` | Run production server |
+| `lint` | ESLint |
+| `type-check` | `tsc --noEmit` |
+| `check` | `type-check` + `lint` |
+| `db:migrate` | `prisma migrate dev` |
+| `db:seed` | Run `prisma/seed.ts` |
+| `db:seed:production-login` | Additional seed script for production-style login |
+| `db:studio` | Prisma Studio |
+| `db:generate` | `prisma generate` |
+| `db:test` | Connection test helper |
 
-## Environment Variables
+There is **no** configured Jest/Vitest/Playwright script in this repo; use `npm run check` for static quality gates.
 
-```env
-# Database (TiDB)
-DATABASE_URL="mysql://user:password@host.tidbcloud.com:4000/elorae?sslaccept=strict"
+## Default login (after `prisma db seed`)
 
-# NextAuth
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=your-super-secret-random-string-min-32-chars!!
+| User | Password | Notes |
+|------|----------|--------|
+| admin@elorae.com | admin123 | PIN 123456 (sensitive actions) |
+| purchaser@elorae.com | purchaser123 | PIN set in seed output |
+| warehouse@elorae.com | warehouse123 | |
+| production@elorae.com | production123 | |
 
-# Encryption (Must be exactly 32 characters for AES-256)
-ENCRYPTION_KEY=your-32-char-encryption-key-here!!
+Use only in development; change or remove these users in production.
 
-# Cloudflare R2 (for file uploads)
-R2_ACCOUNT_ID=your-cloudflare-account-id
-R2_ACCESS_KEY_ID=your-r2-access-key
-R2_SECRET_ACCESS_KEY=your-r2-secret-key
-R2_BUCKET_NAME=elorae-erp-files
-R2_PUBLIC_URL=https://pub-your-hash.r2.dev
-```
+## Environment variables
 
-## Project Structure
+See **`.env.example`** for the full list. Commonly required:
+
+- **`DATABASE_URL`** — MySQL-compatible URL (TiDB Cloud often uses `sslaccept=strict`).
+- **`NEXTAUTH_URL`** — App URL (production: your Vercel URL).
+- **`NEXTAUTH_SECRET`** — Session secret (32+ random characters).
+- **`ENCRYPTION_KEY`** — Exactly **32 characters** for AES-256 (supplier bank data).
+- **`R2_*`** — Optional; file uploads to Cloudflare R2.
+- **Firebase** — Optional; PWA push (`NEXT_PUBLIC_*` + `FIREBASE_ADMIN_*`).
+- **`CRON_SECRET`** — Protects **`/api/cron/check-overdue`** (used by Vercel Cron).
+
+## Project structure (high level)
 
 ```
 app/
-├── api/                    # API routes
-│   ├── auth/[...nextauth]  # NextAuth configuration
-│   ├── suppliers/          # Supplier CRUD API
-│   └── sync/               # Offline sync API
-├── dashboard/              # Dashboard pages
-│   ├── layout.tsx          # Dashboard layout with sidebar
-│   ├── page.tsx            # Dashboard home
-│   └── suppliers/          # Supplier management
-├── login/                  # Login page
-components/
-├── ui/                     # shadcn/ui components
-├── forms/                  # Form components
-├── tables/                 # Table components
-└── offline/                # Offline indicator
+  api/                 # Route handlers (auth, sync, suppliers, items, cron, …)
+  backoffice/          # Main ERP UI (dashboard, items, suppliers, POs, inventory, production, …)
+  login/               # Sign-in
+components/            # UI, forms, domain components (GRN, tables, …)
 lib/
-├── auth.ts                 # Authentication configuration
-├── prisma.ts               # Prisma client
-├── encryption.ts           # Bank account encryption
-├── docNumber.ts            # Document numbering engine
-├── audit.ts                # Audit logging
-└── offline/                # Offline functionality
-    ├── db.ts               # Dexie.js database
-    └── sync.ts             # Sync logic
-types/                      # TypeScript types
+  auth.ts              # NextAuth configuration
+  rbac.ts              # Permissions and route mapping
+  prisma.ts            # Prisma client
+  offline/             # Dexie schema + sync client
+  i18n/                # next-intl messages
+  print/               # Printable HTML builders
+  validations/         # Zod schemas
+app/actions/           # Server Actions (mutations, orchestration)
 prisma/
-└── schema.prisma           # Database schema
+  schema.prisma
+  migrations/
+  seed.ts
+proxy.ts               # Edge request gate: auth redirect + JWT permission checks
+types/                 # Shared TypeScript types
 ```
 
-## Database Schema
+Business logic is split between **`app/actions/*`** (server actions) and **`app/api/**/route.ts`** (HTTP APIs, including offline sync).
 
-The system includes models for:
-- Users (with roles)
-- Suppliers (with encrypted bank accounts)
-- Supplier Categories
-- Items (Fabric, Accessories, Finished Goods)
-- UOM (Unit of Measure)
-- Purchase Orders
-- GRN (Goods Receipt Notes)
-- Work Orders
-- Stock Movements
-- Audit Logs
+## Database domains (Prisma)
 
-## Role-Based Access Control
+Users and sessions; roles and permissions; suppliers and supplier types; items, categories, UOM; purchase orders and lines; GRN; inventory valuations and stock movements; adjustments; work orders, material issues, FG receipts; vendor returns; document numbering; audit logs; notifications; and related enums — see **`prisma/schema.prisma`**.
 
-| Role | Permissions |
-|------|-------------|
-| ADMIN | Full access to all features |
-| PURCHASER | Suppliers, Purchase Orders, Reports |
-| WAREHOUSE | Inventory, GRN, Stock Adjustment, Work Orders |
-| PRODUCTION | Work Orders, Vendors, Reports |
-| USER | Dashboard only |
+## Role model (legacy enum + dynamic RBAC)
 
-## Security Features
+Users have a legacy **`Role`** enum (`ADMIN`, `PURCHASER`, `WAREHOUSE`, `PRODUCTION`, `USER`). Effective page and API access is driven by **permission codes** loaded from the database into the JWT and enforced in **`proxy.ts`**. For day-to-day behavior, treat the seeded roles and **Settings → RBAC** as the source of truth.
 
-- Password hashing with bcryptjs
-- AES-256 encryption for bank accounts
-- PIN verification for sensitive actions
-- Audit logging for data access
-- CSRF protection
-- Role-based route protection
+## Deployment (Vercel)
 
-## Offline Functionality
+- **`vercel.json`** sets `buildCommand` to **`npm run vercel-build`** (migrations run on deploy).
+- A daily cron calls **`/api/cron/check-overdue`** at **09:00 UTC**; set **`CRON_SECRET`** and secure that route as implemented in the app.
 
-The app supports offline operations:
-- Create suppliers while offline (queued for sync)
-- View cached data when offline
-- Automatic sync when connection restored
-- Visual indicator of online/offline status
+## Security notes
+
+- Passwords hashed with bcrypt; supplier bank fields encrypted at rest.
+- PIN for selected sensitive actions; audit logging for data access.
+- HTTPS and cookie security in production; `trustHost` enabled for Vercel in auth config (see `lib/auth.ts`).
+
+## Offline behavior
+
+Queued mutations (e.g. suppliers, POs, GRN) sync to the server when connectivity returns; the UI exposes online/offline status. Details live in **`lib/offline/`** and **`app/api/sync/route.ts`**.
 
 ## License
 

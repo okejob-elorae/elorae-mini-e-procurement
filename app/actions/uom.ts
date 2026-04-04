@@ -1,6 +1,7 @@
 'use server';
 
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
@@ -24,6 +25,26 @@ export async function createUOM(data: z.infer<typeof uomSchema>) {
   });
   revalidatePath('/backoffice/settings/uom');
   return uom;
+}
+
+const updateUOMSchema = uomSchema.extend({ id: z.string().min(1) });
+
+export async function updateUOM(data: z.infer<typeof updateUOMSchema>) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_UOM_MANAGE);
+
+  const validated = updateUOMSchema.parse(data);
+  const { id, ...rest } = validated;
+  try {
+    await prisma.uOM.update({ where: { id }, data: rest });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new Error('A UOM with this code already exists');
+    }
+    throw e;
+  }
+  revalidatePath('/backoffice/settings/uom');
 }
 
 export async function getUOMs() {
@@ -50,31 +71,47 @@ export async function createUOMConversion(data: {
   revalidatePath('/backoffice/settings/uom');
 }
 
+export async function deleteUOMConversion(id: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_UOM_MANAGE);
+
+  const parsed = z.string().min(1).parse(id);
+  await prisma.uOMConversion.delete({ where: { id: parsed } });
+  revalidatePath('/backoffice/settings/uom');
+}
+
 export async function getUOMConversions() {
-  return prisma.uOMConversion.findMany({
+  const rows = await prisma.uOMConversion.findMany({
     include: {
       fromUom: {
         select: {
           id: true,
           code: true,
           nameId: true,
-          nameEn: true
-        }
+          nameEn: true,
+        },
       },
       toUom: {
         select: {
           id: true,
           code: true,
           nameId: true,
-          nameEn: true
-        }
-      }
+          nameEn: true,
+        },
+      },
     },
-    orderBy: [
-      { fromUom: { code: 'asc' } },
-      { toUom: { code: 'asc' } }
-    ]
+    orderBy: [{ fromUom: { code: 'asc' } }, { toUom: { code: 'asc' } }],
   });
+  return rows.map((c) => ({
+    id: c.id,
+    fromUomId: c.fromUomId,
+    toUomId: c.toUomId,
+    factor: Number(c.factor),
+    isDefault: c.isDefault,
+    fromUom: c.fromUom,
+    toUom: c.toUom,
+  }));
 }
 
 /** Get item's base UOM and all conversions that involve it (for stock adjustment UOM selector). */

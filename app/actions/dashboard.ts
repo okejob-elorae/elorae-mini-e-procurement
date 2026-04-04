@@ -189,6 +189,20 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   };
 }
 
+export type RawMaterialShortageVendorWo = {
+  woId: string;
+  docNumber: string;
+  plannedQty: number;
+};
+
+/** Vendors (CMT / WO vendor) that need this material for active production WOs. */
+export type RawMaterialShortageVendor = {
+  vendorId: string;
+  vendorName: string;
+  vendorCode: string | null;
+  workOrders: RawMaterialShortageVendorWo[];
+};
+
 export type RawMaterialShortageRow = {
   itemId: string;
   itemName: string;
@@ -196,37 +210,124 @@ export type RawMaterialShortageRow = {
   totalPlanned: number;
   qtyOnHand: number;
   deficit: number;
+  vendors: RawMaterialShortageVendor[];
 };
 
-/** Accumulated raw material shortages across all active (IN_PRODUCTION) work orders. */
+type PlanRow = { itemId?: string; plannedQty?: number };
+
+function parseConsumptionPlan(raw: unknown): PlanRow[] {
+  if (Array.isArray(raw)) return raw as PlanRow[];
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown;
+      return Array.isArray(p) ? (p as PlanRow[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function groupVendorsForItem(
+  rows: Array<{
+    vendorId: string;
+    vendorName: string;
+    vendorCode: string | null;
+    woId: string;
+    woDocNumber: string;
+    plannedQty: number;
+  }>
+): RawMaterialShortageVendor[] {
+  const byVendor = new Map<
+    string,
+    {
+      vendorId: string;
+      vendorName: string;
+      vendorCode: string | null;
+      woById: Map<string, { woId: string; docNumber: string; plannedQty: number }>;
+    }
+  >();
+  for (const r of rows) {
+    let v = byVendor.get(r.vendorId);
+    if (!v) {
+      v = {
+        vendorId: r.vendorId,
+        vendorName: r.vendorName,
+        vendorCode: r.vendorCode,
+        woById: new Map(),
+      };
+      byVendor.set(r.vendorId, v);
+    }
+    const existing = v.woById.get(r.woId);
+    if (existing) {
+      existing.plannedQty += r.plannedQty;
+    } else {
+      v.woById.set(r.woId, {
+        woId: r.woId,
+        docNumber: r.woDocNumber,
+        plannedQty: r.plannedQty,
+      });
+    }
+  }
+  return Array.from(byVendor.values())
+    .map((v) => ({
+      vendorId: v.vendorId,
+      vendorName: v.vendorName,
+      vendorCode: v.vendorCode,
+      workOrders: Array.from(v.woById.values()).sort((a, b) =>
+        a.docNumber.localeCompare(b.docNumber, undefined, { numeric: true })
+      ),
+    }))
+    .sort((a, b) => a.vendorName.localeCompare(b.vendorName, undefined, { sensitivity: 'base' }));
+}
+
+/** Accumulated raw material shortages across active production work orders (in production + partial). */
 export async function getRawMaterialShortage(): Promise<RawMaterialShortageRow[]> {
   const wos = await prisma.workOrder.findMany({
-    where: { status: 'IN_PRODUCTION' },
-    select: { consumptionPlan: true },
+    where: { status: { in: ['IN_PRODUCTION', 'PARTIAL'] } },
+    select: {
+      id: true,
+      docNumber: true,
+      vendorId: true,
+      consumptionPlan: true,
+      vendor: { select: { name: true, code: true } },
+    },
   });
 
   const plannedByItem = new Map<string, number>();
   const itemIds = new Set<string>();
+  const contributionsByItem = new Map<
+    string,
+    Array<{
+      vendorId: string;
+      vendorName: string;
+      vendorCode: string | null;
+      woId: string;
+      woDocNumber: string;
+      plannedQty: number;
+    }>
+  >();
 
   for (const wo of wos) {
-    const plan = (() => {
-      const raw = wo.consumptionPlan;
-      if (Array.isArray(raw)) return raw;
-      if (typeof raw === 'string') {
-        try {
-          const p = JSON.parse(raw) as unknown;
-          return Array.isArray(p) ? p : [];
-        } catch {
-          return [];
-        }
-      }
-      return [];
-    })();
-    for (const row of plan as Array<{ itemId?: string; plannedQty?: number }>) {
+    const plan = parseConsumptionPlan(wo.consumptionPlan);
+    const vendorName = wo.vendor.name;
+    const vendorCode = wo.vendor.code ?? null;
+    for (const row of plan) {
       if (!row?.itemId) continue;
       const qty = Number(row.plannedQty) || 0;
+      if (qty <= 0) continue;
       itemIds.add(row.itemId);
       plannedByItem.set(row.itemId, (plannedByItem.get(row.itemId) ?? 0) + qty);
+      const list = contributionsByItem.get(row.itemId) ?? [];
+      list.push({
+        vendorId: wo.vendorId,
+        vendorName,
+        vendorCode,
+        woId: wo.id,
+        woDocNumber: wo.docNumber,
+        plannedQty: qty,
+      });
+      contributionsByItem.set(row.itemId, list);
     }
   }
 
@@ -268,6 +369,7 @@ export async function getRawMaterialShortage(): Promise<RawMaterialShortageRow[]
       totalPlanned,
       qtyOnHand,
       deficit,
+      vendors: groupVendorsForItem(contributionsByItem.get(itemId) ?? []),
     });
   }
   return result.sort((a, b) => b.deficit - a.deficit);

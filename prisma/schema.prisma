@@ -64,6 +64,7 @@ model User {
   vendorReturnsCompleted  VendorReturn[] @relation("VendorReturnCompleted")
   suppliersApproved       Supplier[]
   grnsOwnerApproved       GRN[]      @relation("GRNOwnerApproved")
+  grnsOwnerDeclined       GRN[]      @relation("GRNOwnerDeclined")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -114,20 +115,6 @@ model RolePermission {
 // ==========================================
 // MASTER DATA (Phase 2)
 // ==========================================
-model SupplierCategory {
-  id          String     @id @default(cuid())
-  code        String     @unique
-  nameId      String
-  nameEn      String
-  description String?
-  parentId    String?
-  parent      SupplierCategory? @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children    SupplierCategory[] @relation("CategoryHierarchy")
-  suppliers   Supplier[]
-  createdAt   DateTime   @default(now())
-  @@index([parentId])
-}
-
 model SupplierType {
   id        String     @id @default(cuid())
   code      String     @unique
@@ -145,8 +132,6 @@ model Supplier {
   name             String
   typeId           String
   type             SupplierType    @relation(fields: [typeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  categoryId       String?
-  category         SupplierCategory? @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   address          String?
   phone            String?
   email            String?
@@ -167,7 +152,6 @@ model Supplier {
   grns             GRN[]
   vendorReturns    VendorReturn[]
   @@index([typeId])
-  @@index([categoryId])
   @@index([code])
   @@index([status])
   @@index([approvedById])
@@ -302,6 +286,8 @@ model POItem {
   po          PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
   itemId      String
   item        Item          @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  /** Matches Item.variants[].sku; null = non-variant / parent SKU stock bucket */
+  variantSku  String?
   qty         Decimal       @db.Decimal(10,2)
   price       Decimal       @db.Decimal(15,2)
   ppnIncluded Boolean       @default(true)
@@ -311,6 +297,7 @@ model POItem {
   createdAt   DateTime      @default(now())
   @@index([poId])
   @@index([itemId])
+  @@index([poId, itemId, variantSku])
 }
 
 model POStatusHistory {
@@ -360,6 +347,9 @@ model GRN {
   ownerApprovedAt DateTime?
   ownerApprovedById String?
   ownerApprovedBy User?    @relation("GRNOwnerApproved", fields: [ownerApprovedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ownerDeclinedAt DateTime?
+  ownerDeclinedById String?
+  ownerDeclinedBy User?    @relation("GRNOwnerDeclined", fields: [ownerDeclinedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   syncStatus    SyncStatus @default(SYNCED)
   localId       String?
   createdAt     DateTime  @default(now())
@@ -370,6 +360,7 @@ model GRN {
   @@index([grnDate])
   @@index([docNumber])
   @@index([ownerApprovedById])
+  @@index([ownerDeclinedById])
 }
 
 model FabricRoll {

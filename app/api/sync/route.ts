@@ -50,7 +50,6 @@ async function handleSupplierCreate(payload: any) {
         code,
         name: payload.name,
         typeId: payload.typeId,
-        categoryId: payload.categoryId,
         address: payload.address,
         phone: payload.phone,
         email: payload.email,
@@ -72,17 +71,18 @@ async function handleSupplierCreate(payload: any) {
 
 async function handleSupplierUpdate(payload: any) {
   try {
-    const { id, ...data } = payload;
+    const { id, ...rest } = { ...payload };
+    delete rest.categoryId;
 
     let bankAccountEnc = undefined;
-    if (data.bankAccount) {
-      bankAccountEnc = encryptBankAccount(data.bankAccount, 'DEFAULT_PIN');
+    if (rest.bankAccount) {
+      bankAccountEnc = encryptBankAccount(rest.bankAccount, 'DEFAULT_PIN');
     }
 
     const supplier = await prisma.supplier.update({
       where: { id },
       data: {
-        ...data,
+        ...rest,
         bankAccountEnc,
       },
     });

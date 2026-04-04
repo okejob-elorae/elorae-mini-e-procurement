@@ -15,7 +15,6 @@ export interface CachedSupplier {
   name: string;
   typeId: string;
   type?: string; // display name (from type.name)
-  categoryId?: string;
   address?: string;
   phone?: string;
   email?: string;
@@ -34,6 +33,8 @@ export interface CachedItem {
   uomId: string;
   uomCode?: string;
   isActive: boolean;
+  /** Item.variants JSON for offline PO/GRN variant pickers */
+  variants?: Array<Record<string, string>>;
   syncAt: Date;
 }
 
@@ -54,6 +55,7 @@ export interface PendingPO {
     itemId: string;
     itemName?: string;
     sku?: string;
+    variantSku?: string;
     qty: number;
     price: number;
     uomId: string;
@@ -73,6 +75,7 @@ export interface PendingGRN {
     itemId: string;
     sku?: string;
     name?: string;
+    variantSku?: string;
     qty: number;
     unitCost: number;
     uomId: string;

@@ -1,15 +1,13 @@
 /**
- * Builds a full HTML document string for printing a Vendor Return (Nota Retur).
- * Written into an iframe's document for same-tab print without opening a new tab.
+ * Vendor Return (Nota Retur) — shared print theme.
  */
 
-function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+import {
+  esc,
+  fmtDocDateTime,
+  printCssBase,
+  printPagePortrait,
+} from '@/lib/print/print-theme';
 
 export type VendorReturnPrintLine = {
   type: string;
@@ -32,6 +30,7 @@ export interface BuildVendorReturnPrintHtmlOptions {
   completedAt?: Date | string | null;
   trackingNumber?: string | null;
   lines: VendorReturnPrintLine[];
+  issuerName?: string;
   labels: {
     title: string;
     doc: string;
@@ -47,6 +46,9 @@ export interface BuildVendorReturnPrintHtmlOptions {
     condition: string;
     reason: string;
     value: string;
+    /** Label for status row (default "Status"). */
+    status?: string;
+    issuedBy?: string;
   };
 }
 
@@ -63,21 +65,12 @@ export function buildVendorReturnPrintHtml(
     completedAt,
     trackingNumber,
     lines,
+    issuerName = 'Elorae ERP',
     labels,
   } = opts;
 
-  const processedStr =
-    processedAt instanceof Date
-      ? processedAt.toLocaleString()
-      : processedAt
-        ? new Date(processedAt).toLocaleString()
-        : '';
-  const completedStr =
-    completedAt instanceof Date
-      ? completedAt.toLocaleString()
-      : completedAt
-        ? new Date(completedAt).toLocaleString()
-        : '';
+  const issuedByLabel = labels.issuedBy ?? 'Issued by';
+  const statusLabel = labels.status ?? 'Status';
 
   const itemDisplay = (line: VendorReturnPrintLine) => {
     const name = line.itemName ?? line.itemId;
@@ -90,58 +83,82 @@ export function buildVendorReturnPrintHtml(
     .map(
       (line) =>
         `<tr>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.type)}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(itemDisplay(line))}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(line.qty).toLocaleString()}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.condition)}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(line.reason)}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${(line.costValue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+          <td class="uom">${esc(line.type)}</td>
+          <td class="col-desc"><div class="line-name">${esc(itemDisplay(line))}</div></td>
+          <td class="right">${Number(line.qty).toLocaleString()}</td>
+          <td>${esc(line.condition)}</td>
+          <td>${esc(line.reason)}</td>
+          <td class="right">${(line.costValue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
         </tr>`
     )
     .join('');
+
+  const metaRows: string[] = [
+    `<div class="meta-row"><span class="mk">${esc(statusLabel)}</span><span class="mv">${esc(status)}</span></div>`,
+  ];
+  if (woDocNumber) {
+    metaRows.push(
+      `<div class="meta-row"><span class="mk">${esc(labels.workOrder)}</span><span class="mv">${esc(woDocNumber)}</span></div>`
+    );
+  }
+  if (processedAt != null && processedAt !== '') {
+    metaRows.push(
+      `<div class="meta-row"><span class="mk">${esc(labels.processed)}</span><span class="mv">${esc(fmtDocDateTime(processedAt))}</span></div>`
+    );
+  }
+  if (completedAt != null && completedAt !== '') {
+    metaRows.push(
+      `<div class="meta-row"><span class="mk">${esc(labels.completed)}</span><span class="mv">${esc(fmtDocDateTime(completedAt))}</span></div>`
+    );
+  }
+  if (trackingNumber?.trim()) {
+    metaRows.push(
+      `<div class="meta-row"><span class="mk">${esc(labels.tracking)}</span><span class="mv">${esc(trackingNumber.trim())}</span></div>`
+    );
+  }
 
   return `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <title>${esc(labels.title)} - ${esc(docNumber)}</title>
+  <title>${esc(labels.title)} — ${esc(docNumber)}</title>
   <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 24px; background: #fff; color: #000; font-family: system-ui, sans-serif; font-size: 11pt; }
-    .header { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #9ca3af; text-align: center; }
-    .header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 700; }
-    .header .doc { font-size: 14px; color: #6b7280; }
-    .summary { margin-bottom: 20px; padding: 16px; border: 1px solid #d1d5db; border-radius: 6px; background: #f9fafb; }
-    .summary p { margin: 0 0 8px; font-size: 13px; }
-    .summary p:last-child { margin-bottom: 0; }
-    .summary .label { color: #6b7280; }
-    .summary .total { font-size: 18px; font-weight: 700; margin: 8px 0 12px; }
-    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 11pt; }
-    thead th { padding: 8px 10px; border: 1px solid #374151; background: #e5e7eb; font-weight: 700; text-align: left; }
-    thead th.right { text-align: right; }
-    @media print {
-      body { padding: 16px; }
-      @page { size: A4; margin: 15mm; }
-      @page { @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #666; } }
-    }
+${printCssBase}
+${printPagePortrait}
   </style>
 </head>
 <body>
-  <header class="header">
-    <h1>${esc(labels.title)}</h1>
-    <p class="doc">${esc(docNumber)}</p>
-  </header>
-  <div class="summary">
-    <p><span class="label">${esc(labels.vendor)}:</span> ${esc(vendorName)}</p>
-    <p><span class="label">${esc(labels.totalValue)}:</span></p>
-    <p class="total">Rp ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-    ${woDocNumber ? `<p><span class="label">${esc(labels.workOrder)}:</span> ${esc(woDocNumber)}</p>` : ''}
-    <p><span class="label">Status:</span> ${esc(status)}</p>
-    ${processedStr ? `<p><span class="label">${esc(labels.processed)}:</span> ${esc(processedStr)}</p>` : ''}
-    ${completedStr ? `<p><span class="label">${esc(labels.completed)}:</span> ${esc(completedStr)}</p>` : ''}
-    ${trackingNumber ? `<p><span class="label">${esc(labels.tracking)}:</span> ${esc(trackingNumber)}</p>` : ''}
+  <div class="doc-top">
+    <div>
+      <h1 class="doc-title">${esc(labels.title)}</h1>
+      <p class="doc-sub">${esc(issuedByLabel)} ${esc(issuerName)}</p>
+    </div>
+    <div class="doc-ref">
+      <span class="lbl">${esc(labels.doc)}</span>
+      <span class="val">${esc(docNumber)}</span>
+    </div>
   </div>
-  <table>
+
+  <div class="two-col">
+    <div>
+      <p class="block-label">${esc(labels.vendor)}</p>
+      <p class="payee-name">${esc(vendorName)}</p>
+    </div>
+    <div>
+      <div class="meta-grid">${metaRows.join('')}</div>
+    </div>
+  </div>
+
+  <div class="totals-wrap">
+    <div class="totals">
+      <div class="grand-row">
+        <span class="gk">${esc(labels.totalValue)}</span>
+        <span class="gv">Rp ${Number(totalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+      </div>
+    </div>
+  </div>
+
+  <table class="data">
     <thead>
       <tr>
         <th>${esc(labels.type)}</th>
@@ -152,9 +169,7 @@ export function buildVendorReturnPrintHtml(
         <th class="right">${esc(labels.value)}</th>
       </tr>
     </thead>
-    <tbody>
-      ${rows}
-    </tbody>
+    <tbody>${rows}</tbody>
   </table>
 </body>
 </html>`;

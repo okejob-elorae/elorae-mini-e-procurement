@@ -97,8 +97,22 @@ export default function RejectedGoodsPage() {
                           {new Date(row.receivedAt).toLocaleDateString('id-ID')}
                         </TableCell>
                         <TableCell className="font-medium">{row.refDocNumber}</TableCell>
-                        <TableCell>{row.item.sku}</TableCell>
-                        <TableCell>{row.item.nameId}</TableCell>
+                        <TableCell>
+                          <span className="font-medium">{row.item.sku}</span>
+                          {row.variantSku ? (
+                            <span className="mt-0.5 block font-mono text-xs text-muted-foreground">
+                              {row.variantSku}
+                            </span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell>
+                          <span>{row.item.nameId}</span>
+                          {row.variantDetail ? (
+                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                              {row.variantDetail}
+                            </span>
+                          ) : null}
+                        </TableCell>
                         <TableCell className="text-right">
                           {row.qty.toLocaleString()}
                         </TableCell>

@@ -12,8 +12,13 @@ import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { getActorName, notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/app/actions/notifications';
+import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 
 export type POFormData = z.infer<typeof poSchema>;
+
+function poReceiptLineKey(itemId: string, variantSku?: string | null) {
+  return `${itemId}\n${variantSku ?? ''}`;
+}
 
 export async function createPO(data: POFormData, userId: string) {
   const session = await auth();
@@ -23,6 +28,8 @@ export async function createPO(data: POFormData, userId: string) {
   const validated = poSchema.parse(data);
   
   const po = await prisma.$transaction(async (tx) => {
+    await assertLinesVariantSkusMatchItemDefinitions(tx.item, validated.items);
+
     const docNumber = await generateDocNumber('PO', tx);
     
     // Calculate totals
@@ -42,7 +49,15 @@ export async function createPO(data: POFormData, userId: string) {
         grandTotal: totalAmount.toNumber(),
         createdById: userId,
         items: {
-          create: validated.items
+          create: validated.items.map((i) => ({
+            itemId: i.itemId,
+            variantSku: i.variantSku?.trim() || null,
+            qty: i.qty,
+            price: i.price,
+            ppnIncluded: i.ppnIncluded,
+            uomId: i.uomId,
+            notes: i.notes ?? null,
+          })),
         }
       },
       include: { items: true }
@@ -105,24 +120,29 @@ export async function updatePO(
     );
 
   const po = await prisma.$transaction(async (tx) => {
+    await assertLinesVariantSkusMatchItemDefinitions(tx.item, data.items);
+
     const oldItems = await tx.pOItem.findMany({
       where: { poId: id },
-      select: { itemId: true, receivedQty: true },
+      select: { itemId: true, variantSku: true, receivedQty: true },
     });
-    const receivedByItem = new Map<string, number>();
+    const receivedByLine = new Map<string, number>();
     for (const o of oldItems) {
       const r = Number(o.receivedQty);
-      receivedByItem.set(o.itemId, (receivedByItem.get(o.itemId) ?? 0) + r);
+      const k = poReceiptLineKey(o.itemId, o.variantSku);
+      receivedByLine.set(k, (receivedByLine.get(k) ?? 0) + r);
     }
 
     if (preserveReceived) {
-      for (const [itemId, recv] of receivedByItem) {
+      for (const [key, recv] of receivedByLine) {
         if (recv <= 0) continue;
-        const lines = data.items.filter((i) => i.itemId === itemId);
+        const lines = data.items.filter(
+          (i) => poReceiptLineKey(i.itemId, i.variantSku ?? null) === key
+        );
         const totalNewQty = lines.reduce((s, i) => s + i.qty, 0);
         if (lines.length === 0 || totalNewQty < recv) {
           throw new Error(
-            `Cannot edit: item has ${recv} received — keep the line and qty ≥ ${recv}, or remove only zero-received lines.`
+            `Cannot edit: a line has ${recv} received — keep that line and qty ≥ ${recv}, or remove only zero-received lines.`
           );
         }
       }
@@ -134,13 +154,15 @@ export async function updatePO(
 
     await tx.pOItem.deleteMany({ where: { poId: id } });
 
-    const remainingRecv = new Map(receivedByItem);
+    const remainingRecv = new Map(receivedByLine);
     const itemCreates = data.items.map((item) => {
-      const avail = remainingRecv.get(item.itemId) ?? 0;
+      const k = poReceiptLineKey(item.itemId, item.variantSku ?? null);
+      const avail = remainingRecv.get(k) ?? 0;
       const receivedQty = preserveReceived ? Math.min(avail, item.qty) : 0;
-      remainingRecv.set(item.itemId, Math.max(0, avail - receivedQty));
+      remainingRecv.set(k, Math.max(0, avail - receivedQty));
       return {
         itemId: item.itemId,
+        variantSku: item.variantSku?.trim() || null,
         qty: item.qty,
         price: item.price,
         ppnIncluded: item.ppnIncluded,
@@ -432,11 +454,17 @@ export async function getPOById(id: string) {
       items: {
         include: {
           item: {
-            include: {
-              uom: true
-            }
-          }
-        }
+            select: {
+              id: true,
+              sku: true,
+              nameId: true,
+              nameEn: true,
+              type: true,
+              variants: true,
+              uom: true,
+            },
+          },
+        },
       },
       grns: true,
       statusHistory: {

@@ -3,7 +3,6 @@ import { Role, ItemType, POStatus, WOStatus } from '@prisma/client';
 export interface SupplierFormData {
   name: string;
   typeId: string;
-  categoryId?: string;
   address?: string;
   phone?: string;
   email?: string;
@@ -12,17 +11,12 @@ export interface SupplierFormData {
   bankAccountName?: string;
 }
 
-export interface SupplierWithCategory {
+export interface SupplierWithType {
   id: string;
   code: string;
   name: string;
   typeId: string;
   type?: { id: string; code: string; name: string } | null;
-  category?: {
-    id: string;
-    nameId: string;
-    nameEn: string;
-  } | null;
   address: string | null;
   phone: string | null;
   email: string | null;
@@ -40,6 +34,7 @@ export interface PurchaseOrderFormData {
   notes?: string;
   items: {
     itemId: string;
+    variantSku?: string;
     qty: number;
     price: number;
     notes?: string;

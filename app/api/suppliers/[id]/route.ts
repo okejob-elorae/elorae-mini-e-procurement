@@ -9,7 +9,6 @@ const supplierSchema = z.object({
   code: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
   typeId: z.string().min(1).optional(),
-  categoryId: z.string().optional().nullable(),
   address: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email().optional(),
@@ -39,13 +38,6 @@ export async function GET(
       where: { id },
       include: {
         type: { select: { id: true, code: true, name: true } },
-        category: {
-          select: {
-            id: true,
-            nameId: true,
-            nameEn: true,
-          },
-        },
       },
     });
 

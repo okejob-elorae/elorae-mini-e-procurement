@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@/lib/prisma';
+import { variantDetailForSku } from '@/lib/items/variants';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
@@ -256,11 +257,18 @@ export async function getGRNs(filters?: {
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
-function serializeItemForClient(item: { reorderPoint?: unknown; [k: string]: unknown } | null) {
+function serializeItemForClient(item: {
+  reorderPoint?: unknown;
+  overReceiveThreshold?: unknown;
+  sellingPrice?: unknown;
+  [k: string]: unknown;
+} | null) {
   if (!item) return null;
   return {
     ...item,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
+    overReceiveThreshold: item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
+    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
   };
 }
 
@@ -371,6 +379,10 @@ export async function getItemAvgCosts(
 export type RejectedGoodsRecapRow = {
   id: string;
   itemId: string;
+  /** Set when rejection was recorded per variant (FG receipt breakdown or vendor return line). */
+  variantSku: string | null;
+  /** Attribute summary from Item.variants when resolvable (e.g. Size: M · Color: Black). */
+  variantDetail: string | null;
   qty: number;
   refType: string;
   refDocNumber: string;
@@ -403,7 +415,7 @@ export async function getRejectedGoodsRecap(filters?: {
     prisma.rejectedGoodsLedger.findMany({
       where,
       include: {
-        item: { select: { sku: true, nameId: true, nameEn: true } },
+        item: { select: { sku: true, nameId: true, nameEn: true, variants: true } },
       },
       orderBy: { receivedAt: 'desc' },
       ...(filters?.page != null && filters?.pageSize != null && filters.pageSize > 0
@@ -413,19 +425,27 @@ export async function getRejectedGoodsRecap(filters?: {
     prisma.rejectedGoodsLedger.count({ where }),
   ]);
 
-  const items = rows.map((r) => ({
-    id: r.id,
-    itemId: r.itemId,
-    variantSku: r.variantSku ?? null,
-    qty: Number(r.qty),
-    refType: r.refType,
-    refDocNumber: r.refDocNumber,
-    woId: r.woId,
-    receivedAt: r.receivedAt,
-    notes: r.notes,
-    createdAt: r.createdAt,
-    item: r.item,
-  }));
+  const items = rows.map((r) => {
+    const variantSku = r.variantSku ?? null;
+    return {
+      id: r.id,
+      itemId: r.itemId,
+      variantSku,
+      variantDetail: variantDetailForSku(r.item.variants, variantSku),
+      qty: Number(r.qty),
+      refType: r.refType,
+      refDocNumber: r.refDocNumber,
+      woId: r.woId,
+      receivedAt: r.receivedAt,
+      notes: r.notes,
+      createdAt: r.createdAt,
+      item: {
+        sku: r.item.sku,
+        nameId: r.item.nameId,
+        nameEn: r.item.nameEn,
+      },
+    };
+  });
 
   return { items, totalCount };
 }

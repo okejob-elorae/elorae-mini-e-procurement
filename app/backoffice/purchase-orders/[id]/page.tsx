@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/table';
 import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer } from 'lucide-react';
 import { buildPOPrintHtml } from '@/lib/print/po-html';
+import { variantDetailForSku } from '@/lib/items/variants';
 import { logPrint } from '@/app/actions/audit';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -189,19 +190,31 @@ export default function PODetailPage() {
 
   const handlePrint = async () => {
     await logPrint('PurchaseOrder', String(params.id));
-    const supplier = po.supplier as { name: string; code?: string; address?: string | null };
-    const lines = (po.items as any[]).map((item: any) => ({
-      itemName: item.item?.nameId ?? item.item?.nameEn ?? item.item?.sku ?? '',
-      itemSku: item.item?.sku,
-      qty: Number(item.qty ?? 0),
-      uomCode: item.item?.uom?.code ?? '',
-      price: Number(item.price ?? 0),
-      amount: Number(item.qty ?? 0) * Number(item.price ?? 0),
-    }));
+    const supplier = po.supplier as {
+      name: string;
+      code?: string;
+      address?: string | null;
+    };
+    const lines = (po.items as any[]).map((item: any) => {
+      const variantSku = item.variantSku ?? null;
+      return {
+        itemName: item.item?.nameId ?? item.item?.nameEn ?? item.item?.sku ?? '',
+        itemSku: item.item?.sku,
+        variantSku,
+        variantDetail: variantDetailForSku(item.item?.variants, variantSku),
+        lineNotes: item.notes?.trim() ? String(item.notes).trim() : null,
+        qty: Number(item.qty ?? 0),
+        uomCode: item.item?.uom?.code ?? '',
+        price: Number(item.price ?? 0),
+        amount: Number(item.qty ?? 0) * Number(item.price ?? 0),
+      };
+    });
     const html = buildPOPrintHtml({
       docNumber: po.docNumber,
+      issuedAt: po.createdAt,
       supplierName: supplier.name,
       supplierAddress: supplier.address ?? null,
+      supplierCode: supplier.code?.trim() ? supplier.code : null,
       status: statusLabels[po.status as POStatus],
       etaDate: po.etaDate,
       paymentDueDate: po.paymentDueDate,
@@ -215,21 +228,25 @@ export default function PODetailPage() {
       labels: {
         title: 'Purchase Order',
         doc: 'PO Number',
+        date: 'Date',
+        issuedBy: 'Issued by',
         supplier: 'Supplier',
         address: 'Address',
+        attn: 'Attn:',
         status: 'Status',
-        etaDate: 'ETA Date',
-        paymentDue: 'Payment Due',
-        item: 'Item',
+        etaDate: 'ETA',
+        terms: 'Terms',
+        paymentDue: 'Payment due',
+        item: 'Item description',
         qty: 'Qty',
         uom: 'UOM',
-        price: 'Unit Price',
+        price: 'Unit price',
         amount: 'Amount',
         subtotal: 'Subtotal',
         tax: 'Tax',
-        grandTotal: 'Grand Total',
+        grandTotal: 'Grand total',
         notes: 'Notes',
-        terms: 'Terms',
+        termsFooter: 'Terms & conditions',
       },
     });
     const iframe = document.createElement('iframe');
@@ -283,7 +300,7 @@ export default function PODetailPage() {
         </div>
       </div>
 
-      {isEditMode && canEdit ? (
+      {isEditMode && canOpenEditForm ? (
         <POForm
           initialData={{
             supplierId: po.supplierId,
@@ -293,10 +310,12 @@ export default function PODetailPage() {
             terms: po.terms || undefined,
             items: po.items.map((item: any) => ({
               itemId: item.itemId,
+              variantSku: item.variantSku ?? undefined,
               item: {
                 sku: item.item.sku,
                 nameId: item.item.nameId,
                 uom: { id: item.uomId, code: item.item.uom.code },
+                variants: item.item.variants,
               },
               qty: Number(item.qty),
               price: Number(item.price),
@@ -417,6 +436,7 @@ export default function PODetailPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item</TableHead>
+                    <TableHead>Variant</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>UOM</TableHead>
                     <TableHead className="text-right">Price</TableHead>
@@ -432,6 +452,9 @@ export default function PODetailPage() {
                           <p className="font-medium">{item.item.sku}</p>
                           <p className="text-sm text-muted-foreground">{item.item.nameId}</p>
                         </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {item.variantSku ?? '—'}
                       </TableCell>
                       <TableCell>{Number(item.qty).toLocaleString()}</TableCell>
                       <TableCell>{item.item.uom.code}</TableCell>

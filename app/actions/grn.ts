@@ -3,10 +3,11 @@
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { calculateMovingAverage } from '@/lib/inventory/costing';
+import { calculateMovingAverage, reverseMovingAverage } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { getActorName, notifyGRNCreated } from '@/app/actions/notifications';
 import { logAudit } from '@/lib/audit';
+import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -35,8 +36,37 @@ const grnSchema = z.object({
 
 export type GRNFormData = z.infer<typeof grnSchema>;
 
+function grnPoLineKey(itemId: string, variantSku?: string | null) {
+  const v = variantSku?.trim() ?? '';
+  return `${itemId}\t${v}`;
+}
+
+type StoredGrnLine = {
+  itemId?: string;
+  variantSku?: string | null;
+  qty?: unknown;
+  unitCost?: unknown;
+};
+
+function parseGrnStoredLines(raw: unknown): StoredGrnLine[] {
+  if (raw == null) return [];
+  let arr: unknown[] = [];
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw) as unknown;
+      arr = Array.isArray(p) ? p : [];
+    } catch {
+      return [];
+    }
+  } else if (Array.isArray(raw)) {
+    arr = raw;
+  }
+  return arr as StoredGrnLine[];
+}
+
 export async function createGRN(data: z.infer<typeof grnSchema>, userId: string) {
   const validated = grnSchema.parse(data);
+  await assertLinesVariantSkusMatchItemDefinitions(prisma.item, validated.items);
 
   const result = await prisma.$transaction(async (tx) => {
     const now = new Date();
@@ -103,6 +133,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
 
         return {
           itemId: item.itemId,
+          variantSku: item.variantSku?.trim() || null,
           qty: derivedQty,
           unitCost: item.unitCost,
           itemType: itemRow.type,
@@ -122,13 +153,16 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
     if (validated.poId) {
       const poItems = await tx.pOItem.findMany({
         where: { poId: validated.poId },
-        select: { itemId: true, qty: true, receivedQty: true },
+        select: { itemId: true, variantSku: true, qty: true, receivedQty: true },
       });
       const poMap = new Map(
-        poItems.map((poItem) => [poItem.itemId, poItem])
+        poItems.map((poItem) => [
+          grnPoLineKey(poItem.itemId, poItem.variantSku),
+          poItem,
+        ])
       );
       for (const item of processedItems) {
-        const poItem = poMap.get(item.itemId);
+        const poItem = poMap.get(grnPoLineKey(item.itemId, item.variantSku));
         if (!poItem) continue;
         const nextReceivedQty = Number(poItem.receivedQty) + Number(item.qty);
         const overBy = nextReceivedQty - Number(poItem.qty);
@@ -192,14 +226,19 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
     });
 
     if (validated.poId) {
-      for (const item of validated.items) {
+      for (let i = 0; i < validated.items.length; i++) {
+        const item = validated.items[i];
+        const proc = processedItems[i];
+        const incQty = proc ? Number(proc.qty) : Number(item.qty);
+        const variantSku = item.variantSku?.trim() || null;
         await tx.pOItem.updateMany({
           where: {
             poId: validated.poId!,
             itemId: item.itemId,
+            variantSku,
           },
           data: {
-            receivedQty: { increment: Number(item.qty) },
+            receivedQty: { increment: incQty },
           },
         });
       }
@@ -513,4 +552,173 @@ export async function approveGRNByOwner(id: string, userId: string) {
 
   revalidatePath('/backoffice/inventory');
   return grn;
+}
+
+/**
+ * Owner declines an over-receive GRN: reverse inventory and PO received qty, remove fabric rolls, record decline.
+ * Fails if fabric rolls from this GRN were partially consumed or on-hand qty is insufficient.
+ */
+export async function declineGRNByOwner(id: string, userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  if (!user || user.role !== 'ADMIN') {
+    throw new Error('Only owner/admin can decline over-receive GRN');
+  }
+
+  let poIdForRevalidate: string | null = null;
+
+  await prisma.$transaction(async (tx) => {
+    const grn = await tx.gRN.findUnique({ where: { id } });
+    if (!grn) throw new Error('GRN not found');
+    poIdForRevalidate = grn.poId ?? null;
+    if (!grn.requiresOwnerApproval || grn.ownerApprovedAt != null) {
+      throw new Error('This GRN is not awaiting owner approval');
+    }
+    if (grn.ownerDeclinedAt != null) {
+      throw new Error('This GRN was already declined');
+    }
+
+    const lines = parseGrnStoredLines(grn.items);
+    let reversedLines = 0;
+    const rolls = await tx.fabricRoll.findMany({ where: { grnId: id } });
+    for (const r of rolls) {
+      if (Number(r.remainingLength) !== Number(r.initialLength)) {
+        throw new Error(
+          'Cannot decline: fabric rolls from this GRN have been consumed. Adjust stock or contact support.'
+        );
+      }
+    }
+
+    for (const line of lines) {
+      const itemId = line.itemId;
+      if (!itemId) continue;
+      const qty = typeof line.qty === 'number' ? line.qty : Number(line.qty);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      const unitCost = typeof line.unitCost === 'number' ? line.unitCost : Number(line.unitCost);
+      if (!Number.isFinite(unitCost) || unitCost < 0) {
+        throw new Error(`Invalid unit cost on GRN line for item ${itemId}`);
+      }
+      const variantKey = line.variantSku?.trim() ? line.variantSku.trim() : null;
+
+      const inv = await tx.inventoryValue.findUnique({
+        where: {
+          itemId_variantSku: {
+            itemId,
+            variantSku: variantKey ?? '',
+          },
+        },
+      });
+      const onHand = inv ? new Decimal(inv.qtyOnHand.toString()) : new Decimal(0);
+      if (onHand.lt(qty)) {
+        throw new Error(
+          'Cannot decline: insufficient on-hand stock (goods may have been issued or consumed).'
+        );
+      }
+
+      const costResult = await reverseMovingAverage(
+        itemId,
+        new Decimal(qty),
+        new Decimal(unitCost),
+        tx,
+        variantKey
+      );
+
+      const lineTotal = new Decimal(qty).mul(unitCost).toNumber();
+      await tx.stockMovement.create({
+        data: {
+          itemId,
+          variantSku: variantKey,
+          type: 'OUT',
+          refType: 'GRN_OWNER_DECLINE',
+          refId: grn.id,
+          refDocNumber: grn.docNumber,
+          qty: new Decimal(qty).neg().toNumber(),
+          unitCost,
+          totalCost: -lineTotal,
+          balanceQty: costResult.newQty.toNumber(),
+          balanceValue: costResult.newTotalValue.toNumber(),
+          notes: 'Owner declined over-receive GRN — receipt reversed',
+        },
+      });
+      reversedLines += 1;
+    }
+
+    if (reversedLines === 0) {
+      throw new Error('No valid GRN lines to reverse');
+    }
+
+    if (rolls.length > 0) {
+      await tx.fabricRoll.deleteMany({ where: { grnId: id } });
+    }
+
+    if (grn.poId) {
+      for (const line of lines) {
+        const itemId = line.itemId;
+        if (!itemId) continue;
+        const qty = typeof line.qty === 'number' ? line.qty : Number(line.qty);
+        if (!Number.isFinite(qty) || qty <= 0) continue;
+        const variantKey = line.variantSku?.trim() ? line.variantSku.trim() : null;
+
+        const poItem = await tx.pOItem.findFirst({
+          where: {
+            poId: grn.poId,
+            itemId,
+            variantSku: variantKey,
+          },
+        });
+        if (!poItem) continue;
+        const cur = Number(poItem.receivedQty);
+        const next = cur - qty;
+        if (next < 0) {
+          throw new Error('PO received quantity would become negative; data may be inconsistent.');
+        }
+        await tx.pOItem.update({
+          where: { id: poItem.id },
+          data: { receivedQty: next },
+        });
+      }
+
+      const poItems = await tx.pOItem.findMany({ where: { poId: grn.poId } });
+      const allFullyReceived = poItems.every((poItem) =>
+        new Decimal(poItem.receivedQty.toString()).gte(poItem.qty.toString())
+      );
+      const anyOverReceived = poItems.some((poItem) =>
+        new Decimal(poItem.receivedQty.toString()).gt(poItem.qty.toString())
+      );
+      const anyReceived = poItems.some((poItem) =>
+        new Decimal(poItem.receivedQty.toString()).gt(0)
+      );
+      let newStatus: 'SUBMITTED' | 'PARTIAL' | 'CLOSED' | 'OVER' = 'SUBMITTED';
+      if (allFullyReceived) newStatus = anyOverReceived ? 'OVER' : 'CLOSED';
+      else if (anyReceived) newStatus = 'PARTIAL';
+
+      await tx.purchaseOrder.update({
+        where: { id: grn.poId },
+        data: { status: newStatus },
+      });
+      await tx.pOStatusHistory.create({
+        data: {
+          poId: grn.poId,
+          status: newStatus,
+          changedById: userId,
+          notes: `GRN owner-declined: ${grn.docNumber}`,
+        },
+      });
+    }
+
+    await tx.gRN.update({
+      where: { id },
+      data: {
+        requiresOwnerApproval: false,
+        ownerDeclinedAt: new Date(),
+        ownerDeclinedById: userId,
+      },
+    });
+  });
+
+  revalidatePath('/backoffice/inventory');
+  revalidatePath('/backoffice/purchase-orders');
+  if (poIdForRevalidate) revalidatePath(`/backoffice/purchase-orders/${poIdForRevalidate}`);
 }

@@ -34,6 +34,14 @@ import { isOnline } from '@/lib/offline/sync';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
 import { FabricRollInput, FabricRackPreview } from '@/components/grn/FabricRollInput';
+import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface Supplier {
   id: string;
@@ -50,6 +58,7 @@ interface ItemOption {
   categoryId?: string | null;
   uomId: string;
   uom?: { id?: string; code: string };
+  variants?: unknown;
 }
 
 interface ItemCategoryOption {
@@ -66,6 +75,8 @@ interface LineRow {
   nameId: string;
   uomId: string;
   uomCode: string;
+  /** Item.variants[].sku for inventory bucket */
+  variantSku?: string;
   qty: number;
   unitCost: number;
   /** Fabric: tokenized roll lengths (one string per roll). Qty is derived from valid numeric values. */
@@ -86,7 +97,19 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const [poId, setPoId] = useState<string>('');
   const [supplierId, setSupplierId] = useState<string>('');
   const [lines, setLines] = useState<LineRow[]>([
-    { id: '0', itemId: '', itemType: '', sku: '', nameId: '', uomId: '', uomCode: '', qty: 0, unitCost: 0, rollValues: [] },
+    {
+      id: '0',
+      itemId: '',
+      itemType: '',
+      sku: '',
+      nameId: '',
+      uomId: '',
+      uomCode: '',
+      variantSku: undefined,
+      qty: 0,
+      unitCost: 0,
+      rollValues: [],
+    },
   ]);
   const [categoryId, setCategoryId] = useState<string>('');
   const [notes, setNotes] = useState('');
@@ -163,7 +186,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         setSupplierId(po.supplierId);
         const grns = (po as { grns?: Array<{ id: string }> }).grns;
         setPoGrnCount(grns?.length ?? 0);
-        const rows: LineRow[] = (po.items || []).map((line: { itemId: string; item: { sku: string; nameId: string; type?: string; uom: { id: string; code: string } }; qty: unknown; price: unknown; receivedQty?: unknown; uomId: string }, i: number) => ({
+        const rows: LineRow[] = (po.items || []).map((line: { itemId: string; variantSku?: string | null; item: { sku: string; nameId: string; type?: string; uom: { id: string; code: string } }; qty: unknown; price: unknown; receivedQty?: unknown; uomId: string }, i: number) => ({
           id: `po-${i}`,
           itemId: line.itemId,
           itemType: line.item?.type ?? '',
@@ -171,6 +194,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           nameId: line.item.nameId,
           uomId: line.uomId || line.item.uom?.id,
           uomCode: line.item.uom?.code ?? '',
+          variantSku: line.variantSku?.trim() || undefined,
           qty: 0,
           unitCost: Number(line.price),
           rollValues: [],
@@ -196,6 +220,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         nameId: '',
         uomId: '',
         uomCode: '',
+        variantSku: undefined,
         qty: 0,
         unitCost: 0,
         rollValues: [],
@@ -210,6 +235,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
 
   const setLineItem = (lineId: string, item: ItemOption | null) => {
     if (!item) return;
+    const vOpts = variantSelectOptions(parseItemVariants(item.variants));
     setLines((prev) =>
       prev.map((r) =>
         r.id === lineId
@@ -221,10 +247,17 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
               nameId: item.nameId,
               uomId: item.uomId || (item.uom as { id?: string })?.id || '',
               uomCode: item.uom?.code ?? '',
+              variantSku: vOpts.length === 1 ? vOpts[0].sku : undefined,
               rollValues: item.type === 'FABRIC' ? (r.rollValues ?? []) : undefined,
             }
           : r
       )
+    );
+  };
+
+  const setLineVariantSku = (lineId: string, variantSku: string | undefined) => {
+    setLines((prev) =>
+      prev.map((r) => (r.id === lineId ? { ...r, variantSku } : r))
     );
   };
 
@@ -269,14 +302,19 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
             const last = prev[prev.length - 1];
             return prev.map((r) =>
               r.id === last.id
-                ? {
-                    ...r,
-                    itemId: item.id,
-                    sku: item.sku,
-                    nameId: item.nameId,
-                    uomId: item.uomId || (item.uom as { id?: string })?.id || '',
-                    uomCode: item.uom?.code ?? '',
-                  }
+                ? (() => {
+                    const scanVOpts = variantSelectOptions(parseItemVariants(item.variants));
+                    return {
+                      ...r,
+                      itemId: item.id,
+                      itemType: item.type,
+                      sku: item.sku,
+                      nameId: item.nameId,
+                      uomId: item.uomId || (item.uom as { id?: string })?.id || '',
+                      uomCode: item.uom?.code ?? '',
+                      variantSku: scanVOpts.length === 1 ? scanVOpts[0].sku : undefined,
+                    };
+                  })()
                 : r
             );
           });
@@ -337,6 +375,15 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
       return;
     }
 
+    for (const l of validLines) {
+      const rowItem = items.find((i) => i.id === l.itemId);
+      const vOpts = variantSelectOptions(parseItemVariants(rowItem?.variants));
+      if (vOpts.length > 0 && !l.variantSku?.trim()) {
+        toast.error('Select a variant for each line item that has variants');
+        return;
+      }
+    }
+
     const offline = !isOnline();
     if (offline) {
       setIsLoading(true);
@@ -354,6 +401,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
               itemId: l.itemId,
               sku: l.sku,
               name: l.nameId,
+              variantSku: l.variantSku?.trim() || undefined,
               qty: lengths.length > 0 ? lengths.reduce((a, b) => a + b, 0) : l.qty,
               unitCost: l.unitCost,
               uomId: l.uomId,
@@ -419,6 +467,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                 }
               : {}),
             itemId: l.itemId,
+            variantSku: l.variantSku?.trim() || undefined,
             qty: l.itemType === 'FABRIC' && lengths.length > 0 ? lengths.reduce((a, b) => a + b, 0) : l.qty,
             unitCost: l.unitCost,
             uomId: l.uomId,
@@ -536,6 +585,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item</TableHead>
+                    <TableHead>Variant</TableHead>
                     <TableHead>UOM</TableHead>
                     <TableHead className="min-w-[280px]">Roll lengths (fabric)</TableHead>
                     <TableHead className="w-24">Qty</TableHead>
@@ -545,7 +595,10 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lines.map((row) => (
+                  {lines.map((row) => {
+                    const rowItem = items.find((i) => i.id === row.itemId);
+                    const rowVOpts = variantSelectOptions(parseItemVariants(rowItem?.variants));
+                    return (
                     <Fragment key={row.id}>
                       <TableRow>
                         <TableCell>
@@ -561,6 +614,30 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                             placeholder="Select item"
                             triggerClassName="min-h-[44px]"
                           />
+                        </TableCell>
+                        <TableCell className="min-w-[10rem] max-w-[14rem] align-top">
+                          {rowVOpts.length === 0 ? (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <Select
+                              value={row.variantSku?.trim() ? row.variantSku : '__none__'}
+                              onValueChange={(v) =>
+                                setLineVariantSku(row.id, v === '__none__' ? undefined : v)
+                              }
+                            >
+                              <SelectTrigger className="min-h-[44px] w-full max-w-[14rem]">
+                                <SelectValue placeholder="Variant" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">Select variant</SelectItem>
+                                {rowVOpts.map((o) => (
+                                  <SelectItem key={o.sku} value={o.sku}>
+                                    {o.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
                         <TableCell>{row.uomCode || '-'}</TableCell>
                         <TableCell className="align-top">
@@ -624,7 +701,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                         const invalidCount = rollVals.length - lengths.length;
                         return (
                           <TableRow>
-                            <TableCell colSpan={7} className="bg-muted/20 py-2">
+                            <TableCell colSpan={8} className="bg-muted/20 py-2">
                               <p className="text-sm text-muted-foreground mb-3">
                                 {rollVals.length} roll{rollVals.length !== 1 ? 's' : ''}
                                 {invalidCount > 0 && (
@@ -656,7 +733,8 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                         );
                       })()}
                     </Fragment>
-                  ))}
+                  );
+                  })}
                 </TableBody>
               </Table>
             </div>

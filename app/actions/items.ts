@@ -45,24 +45,53 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   }
 }
 
-/** Ensure each variant has sku prefixed with parent SKU; auto-generate if missing. */
+/** Variant SKU may start with parent SKU and/or item category code (when category has a code). */
 function validateAndNormalizeVariants(
   parentSku: string,
-  variants: Array<Record<string, string>> | undefined
+  variants: Array<Record<string, string>> | undefined,
+  opts?: { categoryCode?: string | null }
 ): Array<Record<string, string>> {
   if (!variants?.length) return [];
   const prefix = parentSku.trim();
+  const cat = opts?.categoryCode?.trim() || '';
+  const validPrefixes: string[] = [];
+  if (prefix) validPrefixes.push(prefix);
+  if (cat && !validPrefixes.includes(cat)) validPrefixes.push(cat);
+
   return variants.map((v, idx) => {
     let sku = (v.sku ?? '').trim();
-    if (sku && !sku.startsWith(prefix)) {
-      throw new Error(`Variant SKU "${sku}" must start with parent SKU "${prefix}"`);
+    if (sku) {
+      const ok = validPrefixes.some((p) => sku.startsWith(p));
+      if (!ok) {
+        const hint =
+          cat && prefix
+            ? `parent SKU "${prefix}" or category code "${cat}"`
+            : prefix
+              ? `parent SKU "${prefix}"`
+              : cat
+                ? `category code "${cat}"`
+                : 'parent SKU';
+        throw new Error(`Variant SKU "${sku}" must start with ${hint}`);
+      }
     }
     if (!sku) {
-      const suffix = (v.color || v.name || v.nameId || `V${idx + 1}`).trim().replace(/\s+/g, '-') || `V${idx + 1}`;
-      sku = `${prefix}-${suffix}`;
+      const autoBase = cat || prefix;
+      const suffix =
+        (v.color || v.name || v.nameId || `V${idx + 1}`).trim().replace(/\s+/g, '-') || `V${idx + 1}`;
+      sku = autoBase ? `${autoBase}-${suffix}` : suffix;
     }
     return { ...v, sku };
   });
+}
+
+async function resolveCategoryCode(categoryId: string | null | undefined): Promise<string | null> {
+  if (!categoryId?.trim()) return null;
+  const row = await prisma.itemCategory.findUnique({
+    where: { id: categoryId },
+    select: { code: true },
+  });
+  const c = row?.code?.trim();
+  return c || null;
 }
 
 export async function createItem(data: ItemFormData) {
@@ -77,7 +106,8 @@ export async function createItem(data: ItemFormData) {
     throw new Error('SKU already exists');
   }
 
-  const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants);
+  const categoryCode = await resolveCategoryCode(rest.categoryId ?? null);
+  const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants, { categoryCode });
 
   const item = await prisma.$transaction(async (tx) => {
     // Create item
@@ -222,9 +252,16 @@ export async function updateItem(id: string, data: ItemFormData) {
   const { sku, ...rest } = normalized;
   void sku; // omitted from update payload
 
-  const existing = await prisma.item.findUnique({ where: { id }, select: { sku: true } });
+  const existing = await prisma.item.findUnique({
+    where: { id },
+    select: { sku: true, categoryId: true },
+  });
   if (!existing) throw new Error('Item not found');
-  const normalizedVariants = validateAndNormalizeVariants(existing.sku, rest.variants);
+  const effectiveCategoryId = rest.categoryId !== undefined ? rest.categoryId || null : existing.categoryId;
+  const categoryCode = await resolveCategoryCode(effectiveCategoryId);
+  const normalizedVariants = validateAndNormalizeVariants(existing.sku, rest.variants, {
+    categoryCode,
+  });
 
   const item = await prisma.item.update({
     where: { id },
@@ -511,8 +548,10 @@ function serializeItemForClient(item: ItemWithRelations | null) {
   if (!item) return null;
   const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
   const inv = aggregateInventoryValues(item.inventoryValues);
+  const { inventoryValues: _omitInv, ...itemRest } = item;
+  void _omitInv;
   return {
-    ...item,
+    ...itemRest,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
     overReceiveThreshold:
       item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,

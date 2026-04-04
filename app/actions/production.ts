@@ -30,6 +30,39 @@ function parseConsumptionPlan(raw: unknown): unknown[] {
   return [];
 }
 
+/** Item row included on WO (e.g. finishedGood) — strip Decimal fields for server action → client. */
+function serializeIncludedItemForClient(item: unknown): unknown {
+  if (item == null || typeof item !== 'object') return item;
+  const o = item as Record<string, unknown>;
+  return {
+    ...o,
+    reorderPoint: o.reorderPoint != null ? Number(o.reorderPoint) : null,
+    overReceiveThreshold:
+      o.overReceiveThreshold != null ? Number(o.overReceiveThreshold) : null,
+    sellingPrice: o.sellingPrice != null ? Number(o.sellingPrice) : null,
+  };
+}
+
+/** VendorReturn row on WO — totalValue and optional linked GRN.totalAmount. */
+function serializeVendorReturnForClient(ret: unknown): unknown {
+  if (ret == null || typeof ret !== 'object') return ret;
+  const r = ret as Record<string, unknown>;
+  const grn = r.grn;
+  let serializedGrn: unknown = grn;
+  if (grn != null && typeof grn === 'object') {
+    const g = grn as Record<string, unknown>;
+    serializedGrn = {
+      ...g,
+      totalAmount: g.totalAmount != null ? Number(g.totalAmount) : null,
+    };
+  }
+  return {
+    ...r,
+    totalValue: r.totalValue != null ? Number(r.totalValue) : 0,
+    grn: serializedGrn,
+  };
+}
+
 /** Serialize WO (and optional includes) to plain object for Client Components (no Prisma Decimal). */
 function serializeWorkOrder(wo: {
   id: string;
@@ -116,7 +149,7 @@ function serializeWorkOrder(wo: {
     createdAt: wo.createdAt,
     updatedAt: wo.updatedAt,
     vendor: wo.vendor ?? undefined,
-    finishedGood: wo.finishedGood != null ? (typeof (wo.finishedGood as { reorderPoint?: unknown }).reorderPoint === 'number' ? wo.finishedGood : { ...(wo.finishedGood as object), reorderPoint: (wo.finishedGood as { reorderPoint?: unknown }).reorderPoint != null ? Number((wo.finishedGood as { reorderPoint: unknown }).reorderPoint) : null }) : undefined,
+    finishedGood: serializeIncludedItemForClient(wo.finishedGood) as typeof wo.finishedGood,
     issues: (wo.issues ?? []).map((iss) => ({
       ...iss,
       totalCost: Number(iss.totalCost),
@@ -140,7 +173,7 @@ function serializeWorkOrder(wo: {
       receivedAt: r.receivedAt,
       syncStatus: r.syncStatus ?? null,
     })),
-    returns: wo.returns ?? [],
+    returns: (wo.returns ?? []).map((r) => serializeVendorReturnForClient(r)),
     steps: (wo.steps ?? []).map((s) => ({
       ...s,
       servicePrice: Number(s.servicePrice),
@@ -1297,13 +1330,7 @@ export async function getWorkOrderById(id: string) {
     }
   });
   if (!raw) return null;
-  const finishedGood = raw.finishedGood as { reorderPoint?: unknown; [k: string]: unknown } | null;
-  return serializeWorkOrder({
-    ...raw,
-    finishedGood: finishedGood
-      ? { ...finishedGood, reorderPoint: finishedGood.reorderPoint != null ? Number(finishedGood.reorderPoint) : null }
-      : undefined,
-  });
+  return serializeWorkOrder(raw as Parameters<typeof serializeWorkOrder>[0]);
 }
 
 /** Roll allocation status for WO detail: per-roll initial/remaining (so user sees what’s already issued). */

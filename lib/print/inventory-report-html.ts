@@ -1,14 +1,14 @@
 /**
- * Builds a full HTML document string for printing the Inventory Report (snapshot).
+ * Inventory Report snapshot — shared print theme (landscape for wide grid).
  */
 
-function esc(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+import {
+  esc,
+  fmtDocDate,
+  fmtDocDateTime,
+  printCssBase,
+  printPageLandscape,
+} from '@/lib/print/print-theme';
 
 export type InventoryReportDetail = {
   sku: string;
@@ -33,6 +33,7 @@ export interface BuildInventoryReportPrintHtmlOptions {
   };
   details: InventoryReportDetail[];
   lowStockAlerts: Array<{ sku: string; name: string; qtyOnHand: number; reorderPoint: number }>;
+  issuerName?: string;
   labels?: {
     title?: string;
     asOf?: string;
@@ -47,6 +48,10 @@ export interface BuildInventoryReportPrintHtmlOptions {
     pct?: string;
     summary?: string;
     lowStock?: string;
+    items?: string;
+    totalQty?: string;
+    reorderPoint?: string;
+    issuedBy?: string;
   };
 }
 
@@ -59,6 +64,7 @@ export function buildInventoryReportPrintHtml(
     summary,
     details,
     lowStockAlerts,
+    issuerName = 'Elorae ERP',
     labels: customLabels = {},
   } = opts;
 
@@ -76,23 +82,24 @@ export function buildInventoryReportPrintHtml(
     pct: customLabels.pct ?? '%',
     summary: customLabels.summary ?? 'Summary',
     lowStock: customLabels.lowStock ?? 'Low Stock Alerts',
+    items: customLabels.items ?? 'Items',
+    totalQty: customLabels.totalQty ?? 'Total Qty',
+    reorderPoint: customLabels.reorderPoint ?? 'Reorder Point',
+    issuedBy: customLabels.issuedBy ?? 'Issued by',
   };
-
-  const generatedStr = generatedAt.toLocaleString('id-ID');
-  const asOfStr = asOfDate.toLocaleDateString('id-ID');
 
   const rows = details
     .map(
       (d) =>
         `<tr>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(d.sku)}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(d.name)}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(d.type)}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(d.uomCode)}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(d.qtyOnHand).toLocaleString()}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(d.avgCost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(d.totalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-          <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(d.percentageOfTotal).toFixed(2)}%</td>
+          <td class="uom">${esc(d.sku)}</td>
+          <td>${esc(d.name)}</td>
+          <td>${esc(d.type)}</td>
+          <td class="uom">${esc(d.uomCode)}</td>
+          <td class="right">${Number(d.qtyOnHand).toLocaleString()}</td>
+          <td class="right">${Number(d.avgCost).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+          <td class="right">${Number(d.totalValue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+          <td class="right">${Number(d.percentageOfTotal).toFixed(2)}%</td>
         </tr>`
     )
     .join('');
@@ -103,10 +110,10 @@ export function buildInventoryReportPrintHtml(
           .map(
             (a) =>
               `<tr>
-                <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(a.sku)}</td>
-                <td style="border:1px solid #d1d5db;padding:6px 8px;color:#000">${esc(a.name)}</td>
-                <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(a.qtyOnHand).toLocaleString()}</td>
-                <td style="border:1px solid #d1d5db;padding:6px 8px;text-align:right;color:#000">${Number(a.reorderPoint).toLocaleString()}</td>
+                <td class="uom">${esc(a.sku)}</td>
+                <td>${esc(a.name)}</td>
+                <td class="right">${Number(a.qtyOnHand).toLocaleString()}</td>
+                <td class="right">${Number(a.reorderPoint).toLocaleString()}</td>
               </tr>`
           )
           .join('')
@@ -118,35 +125,41 @@ export function buildInventoryReportPrintHtml(
   <meta charset="utf-8">
   <title>${esc(labels.title)}</title>
   <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 24px; background: #fff; color: #000; font-family: system-ui, sans-serif; font-size: 10pt; }
-    .header { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #9ca3af; }
-    .header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 700; }
-    .meta { font-size: 12px; color: #6b7280; }
-    .summary { margin: 16px 0; padding: 12px; border: 1px solid #d1d5db; border-radius: 6px; background: #f9fafb; display: grid; grid-template-columns: auto auto auto; gap: 8px 24px; }
-    .summary p { margin: 0; font-size: 12px; }
-    .summary .label { color: #6b7280; }
-    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 10pt; }
-    thead th { padding: 6px 8px; border: 1px solid #374151; background: #e5e7eb; font-weight: 700; text-align: left; }
-    thead th.right { text-align: right; }
-    h2 { font-size: 14px; margin: 20px 0 8px; }
-    @media print {
-      body { padding: 16px; }
-      @page { size: A4 landscape; margin: 12mm; }
-    }
+${printCssBase}
+${printPageLandscape}
   </style>
 </head>
 <body>
-  <header class="header">
-    <h1>${esc(labels.title)}</h1>
-    <p class="meta">${esc(labels.asOf)}: ${esc(asOfStr)} | ${esc(labels.generated)}: ${esc(generatedStr)}</p>
-  </header>
-  <div class="summary">
-    <p><span class="label">Items:</span> ${summary.totalItems}</p>
-    <p><span class="label">Total Qty:</span> ${summary.totalQuantity.toLocaleString()}</p>
-    <p><span class="label">Total Value:</span> Rp ${summary.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+  <div class="doc-top">
+    <div>
+      <h1 class="doc-title">${esc(labels.title)}</h1>
+      <p class="doc-sub">${esc(labels.issuedBy)} ${esc(issuerName)}</p>
+    </div>
+    <div class="doc-ref">
+      <span class="lbl">${esc(labels.asOf)}</span>
+      <span class="val">${esc(fmtDocDate(asOfDate))}</span>
+      <span class="lbl">${esc(labels.generated)}</span>
+      <span class="val">${esc(fmtDocDateTime(generatedAt))}</span>
+    </div>
   </div>
-  <table>
+
+  <div class="summary-strip">
+    <div>
+      <div class="sk">${esc(labels.items)}</div>
+      <div class="sv">${summary.totalItems}</div>
+    </div>
+    <div>
+      <div class="sk">${esc(labels.totalQty)}</div>
+      <div class="sv">${summary.totalQuantity.toLocaleString()}</div>
+    </div>
+    <div>
+      <div class="sk">${esc(labels.totalValue)}</div>
+      <div class="sv">Rp ${summary.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+    </div>
+  </div>
+
+  <h2 class="section-title">${esc(labels.summary)}</h2>
+  <table class="data">
     <thead>
       <tr>
         <th>${esc(labels.sku)}</th>
@@ -159,26 +172,25 @@ export function buildInventoryReportPrintHtml(
         <th class="right">${esc(labels.pct)}</th>
       </tr>
     </thead>
-    <tbody>
-      ${rows}
-    </tbody>
+    <tbody>${rows}</tbody>
   </table>
-  ${lowStockAlerts.length > 0 ? `
-  <h2>${esc(labels.lowStock)}</h2>
-  <table>
+  ${
+    lowStockAlerts.length > 0
+      ? `
+  <h2 class="section-title">${esc(labels.lowStock)}</h2>
+  <table class="data">
     <thead>
       <tr>
         <th>${esc(labels.sku)}</th>
         <th>${esc(labels.name)}</th>
         <th class="right">${esc(labels.qty)}</th>
-        <th class="right">Reorder Point</th>
+        <th class="right">${esc(labels.reorderPoint)}</th>
       </tr>
     </thead>
-    <tbody>
-      ${lowStockRows}
-    </tbody>
-  </table>
-  ` : ''}
+    <tbody>${lowStockRows}</tbody>
+  </table>`
+      : ''
+  }
 </body>
 </html>`;
 }

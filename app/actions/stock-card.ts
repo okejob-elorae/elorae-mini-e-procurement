@@ -45,6 +45,8 @@ function formatMovementDescription(refType: string): string {
       return 'Retur';
     case 'VENDOR_RETURN':
       return 'Pengembalian Vendor';
+    case 'GRN_OWNER_DECLINE':
+      return 'GRN ditolak owner (pembatalan penerimaan)';
     default:
       return refType;
   }

@@ -12,6 +12,7 @@
     "check": "npm run type-check && npm run lint",
     "postinstall": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:production-login": "tsx prisma/seed-production-login.ts",
     "db:test": "tsx prisma/test-connection.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

@@ -43,6 +43,7 @@ import {
   getFabricRolls,
   getFabricRollFilterOptions,
   approveGRNByOwner,
+  declineGRNByOwner,
 } from '@/app/actions/grn';
 import { getStockAdjustments } from '@/app/actions/inventory';
 import { getCurrentStockSummary } from '@/app/actions/stock-card';
@@ -76,6 +77,7 @@ interface GRN {
   totalAmount: string;
   requiresOwnerApproval?: boolean;
   ownerApprovedAt?: string | Date | null;
+  ownerDeclinedAt?: string | Date | null;
   supplier: {
     name: string;
   };
@@ -105,6 +107,7 @@ export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [grns, setGRNs] = useState<GRN[]>([]);
   const [approvingGrnId, setApprovingGrnId] = useState<string | null>(null);
+  const [decliningGrnId, setDecliningGrnId] = useState<string | null>(null);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -552,35 +555,72 @@ export default function InventoryPage() {
                             Rp {Number(grn.totalAmount).toLocaleString()}
                           </TableCell>
                           <TableCell>
-                            {grn.requiresOwnerApproval && !grn.ownerApprovedAt ? (
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            {grn.ownerDeclinedAt ? (
+                              <Badge variant="outline" className="border-destructive/50 text-destructive w-fit">
+                                Declined by owner
+                              </Badge>
+                            ) : grn.requiresOwnerApproval && !grn.ownerApprovedAt ? (
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
                                 <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400 w-fit">
                                   Awaiting owner approval
                                 </Badge>
                                 {session?.user?.role === 'ADMIN' && (
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    className="w-fit"
-                                    disabled={approvingGrnId === grn.id}
-                                    onClick={async () => {
-                                      if (!session?.user?.id) return;
-                                      setApprovingGrnId(grn.id);
-                                      try {
-                                        await approveGRNByOwner(grn.id, session.user.id);
-                                        toast.success('Over-receive GRN approved. PO status updated.');
-                                        await fetchData();
-                                      } catch (err) {
-                                        toast.error(
-                                          err instanceof Error ? err.message : 'Failed to approve GRN'
-                                        );
-                                      } finally {
-                                        setApprovingGrnId(null);
-                                      }
-                                    }}
-                                  >
-                                    Approve
-                                  </Button>
+                                  <>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      className="w-fit"
+                                      disabled={approvingGrnId === grn.id || decliningGrnId === grn.id}
+                                      onClick={async () => {
+                                        if (!session?.user?.id) return;
+                                        setApprovingGrnId(grn.id);
+                                        try {
+                                          await approveGRNByOwner(grn.id, session.user.id);
+                                          toast.success('Over-receive GRN approved. PO status updated.');
+                                          await fetchData();
+                                        } catch (err) {
+                                          toast.error(
+                                            err instanceof Error ? err.message : 'Failed to approve GRN'
+                                          );
+                                        } finally {
+                                          setApprovingGrnId(null);
+                                        }
+                                      }}
+                                    >
+                                      Approve
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="w-fit text-destructive hover:text-destructive"
+                                      disabled={approvingGrnId === grn.id || decliningGrnId === grn.id}
+                                      onClick={async () => {
+                                        if (!session?.user?.id) return;
+                                        if (
+                                          !window.confirm(
+                                            'Decline this over-receive GRN? Stock and PO received quantities for this receipt will be reversed. Fabric rolls on this GRN must be unused.'
+                                          )
+                                        ) {
+                                          return;
+                                        }
+                                        setDecliningGrnId(grn.id);
+                                        try {
+                                          await declineGRNByOwner(grn.id, session.user.id);
+                                          toast.success('Over-receive GRN declined. Receipt reversed.');
+                                          await fetchData();
+                                        } catch (err) {
+                                          toast.error(
+                                            err instanceof Error ? err.message : 'Failed to decline GRN'
+                                          );
+                                        } finally {
+                                          setDecliningGrnId(null);
+                                        }
+                                      }}
+                                    >
+                                      Decline
+                                    </Button>
+                                  </>
                                 )}
                               </div>
                             ) : grn.ownerApprovedAt ? (
