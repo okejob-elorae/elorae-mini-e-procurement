@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Shield, FileDigit, Percent, Ruler, Users } from 'lucide-react';
+import { FileDigit, KeyRound, Percent, Ruler, Shield, Users } from 'lucide-react';
 
 export default function SettingsPage() {
   const t = useTranslations('settings');
@@ -14,6 +14,7 @@ export default function SettingsPage() {
     { titleKey: 'tax.title' as const, descriptionKey: 'tax.description' as const, href: '/backoffice/settings/tax', icon: Percent },
     { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
     { titleKey: 'rbac.title' as const, descriptionKey: 'rbac.description' as const, href: '/backoffice/settings/rbac', icon: Users },
+    { titleKey: 'jubelio.title' as const, descriptionKey: 'jubelio.description' as const, href: '/backoffice/settings/jubelio', icon: KeyRound },
   ];
 
   return (

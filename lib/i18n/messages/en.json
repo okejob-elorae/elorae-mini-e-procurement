@@ -175,6 +175,24 @@
     "rbac": {
       "title": "Roles & Permissions",
       "description": "Manage user roles and permissions (RBAC)"
+    },
+    "jubelio": {
+      "title": "Jubelio Session",
+      "description": "Log in to Jubelio and store only the session token for API calls.",
+      "email": "Jubelio Email",
+      "password": "Jubelio Password",
+      "loginButton": "Login & Save Token",
+      "credentialsNotStored": "Email and password are only used for login and are not stored.",
+      "tokenLabel": "Stored token",
+      "loadingToken": "Loading token...",
+      "noTokenStored": "No token stored yet.",
+      "copyToken": "Copy token",
+      "copySuccess": "Token copied to clipboard",
+      "lastUpdated": "Last updated",
+      "missingCredentials": "Please enter Jubelio email and password",
+      "loginSuccess": "Jubelio token saved successfully",
+      "loginFailed": "Failed to login to Jubelio",
+      "loadTokenError": "Failed to load stored Jubelio token"
     }
   },
   "tax": {

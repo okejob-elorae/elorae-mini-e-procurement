@@ -171,6 +171,24 @@
     "rbac": {
       "title": "Peran & Izin",
       "description": "Kelola peran pengguna dan izin (RBAC)"
+    },
+    "jubelio": {
+      "title": "Sesi Jubelio",
+      "description": "Login ke Jubelio dan simpan hanya token sesi untuk panggilan API.",
+      "email": "Email Jubelio",
+      "password": "Password Jubelio",
+      "loginButton": "Login & Simpan Token",
+      "credentialsNotStored": "Email dan password hanya dipakai untuk login dan tidak disimpan.",
+      "tokenLabel": "Token tersimpan",
+      "loadingToken": "Memuat token...",
+      "noTokenStored": "Belum ada token tersimpan.",
+      "copyToken": "Salin token",
+      "copySuccess": "Token disalin ke clipboard",
+      "lastUpdated": "Terakhir diperbarui",
+      "missingCredentials": "Mohon isi email dan password Jubelio",
+      "loginSuccess": "Token Jubelio berhasil disimpan",
+      "loginFailed": "Gagal login ke Jubelio",
+      "loadTokenError": "Gagal memuat token Jubelio yang tersimpan"
     }
   },
   "documents": {

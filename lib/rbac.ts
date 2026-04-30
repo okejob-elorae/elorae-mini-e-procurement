@@ -65,6 +65,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/settings/tax': 'settings_tax:view',
   '/backoffice/settings/uom': 'settings_uom:view',
   '/backoffice/settings/security': 'settings_security:view',
+  '/backoffice/settings/jubelio': 'settings_security:view',
   '/backoffice/settings/rbac': 'settings_rbac:view',
   // API routes
   '/api/suppliers': 'suppliers:view',
@@ -96,6 +97,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/settings/tax',
   '/backoffice/settings/uom',
   '/backoffice/settings/security',
+  '/backoffice/settings/jubelio',
   '/backoffice/settings/rbac',
 ];
 
