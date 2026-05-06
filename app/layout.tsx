@@ -4,6 +4,7 @@ import { SessionProvider } from 'next-auth/react';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
 import { LocaleProvider } from '@/components/providers/LocaleProvider';
+import { ThemeColorProvider } from '@/components/providers/ThemeColorProvider';
 import { GlobalLoadingBar } from '@/components/GlobalLoadingBar';
 import './globals.css';
 
@@ -58,7 +59,9 @@ export default function RootLayout({
         >
           <GlobalLoadingBar />
           <SessionProvider>
-            <LocaleProvider>{children}</LocaleProvider>
+            <ThemeColorProvider>
+              <LocaleProvider>{children}</LocaleProvider>
+            </ThemeColorProvider>
           </SessionProvider>
           <Toaster position="top-center" richColors />
         </ThemeProvider>

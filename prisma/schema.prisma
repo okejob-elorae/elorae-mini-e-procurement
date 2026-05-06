@@ -49,6 +49,8 @@ model User {
   roleId        String?
   roleDefinition RoleDefinition? @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   fcmToken      String?
+  themeBase     String    @default("slate")
+  themePrimary  String    @default("#334155")
   emailVerified DateTime?
   image         String?
   accounts      Account[]

@@ -1,0 +1,2 @@
+ALTER TABLE `User`
+    ADD COLUMN `themeBase` VARCHAR(32) NOT NULL DEFAULT 'slate';

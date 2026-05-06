@@ -164,6 +164,10 @@
       "title": "Nomor Dokumen",
       "description": "Prefix dan periode reset untuk nomor dokumen"
     },
+    "tax": {
+      "title": "Pajak (PPN)",
+      "description": "Tarif PPN yang dipakai saat baris PO belum termasuk pajak"
+    },
     "uom": {
       "title": "UOM",
       "description": "Unit ukur dan konversi"
@@ -190,6 +194,13 @@
       "loginFailed": "Gagal login ke Jubelio",
       "loadTokenError": "Gagal memuat token Jubelio yang tersimpan"
     }
+  },
+  "tax": {
+    "pageTitle": "Pengaturan Pajak (PPN)",
+    "pageDescription": "Tarif PPN (%) yang diterapkan ke biaya baris PO saat baris diset \"Tidak termasuk PPN\". Dipakai untuk perhitungan biaya material work order.",
+    "ppnRateLabel": "Tarif PPN (%)",
+    "save": "Simpan",
+    "loadError": "Gagal memuat tarif PPN"
   },
   "documents": {
     "pageTitle": "Penomoran Dokumen",
