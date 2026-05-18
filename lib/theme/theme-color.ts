@@ -85,7 +85,7 @@ type BaseTokens = {
   input: string;
 };
 
-const BASE_TOKEN_MAP_LIGHT: Record<string, BaseTokens> = {
+export const BASE_TOKEN_MAP_LIGHT: Record<string, BaseTokens> = {
   slate: {
     background: '#ffffff',
     foreground: '#0f172a',
@@ -168,7 +168,7 @@ const BASE_TOKEN_MAP_LIGHT: Record<string, BaseTokens> = {
   },
 };
 
-const BASE_TOKEN_MAP_DARK: Record<string, BaseTokens> = {
+export const BASE_TOKEN_MAP_DARK: Record<string, BaseTokens> = {
   slate: {
     background: '#0f172a',
     foreground: '#f8fafc',

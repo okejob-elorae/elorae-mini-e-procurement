@@ -1,14 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { getUserThemePreference } from '@/app/actions/settings/theme';
 import {
   applyThemeBaseColor,
   applyThemePrimaryColor,
-  clearThemePrimaryColor,
-  getUserThemeBaseStorageKey,
-  getUserThemeStorageKey,
   normalizeThemeHexColor,
 } from '@/lib/theme/theme-color';
 import {
@@ -17,37 +14,31 @@ import {
   isAllowedThemeBaseColorName,
   isAllowedThemePrimaryColor,
 } from '@/lib/theme/theme-presets';
+import {
+  applyCachedThemeFromLocalStorage,
+  readThemeFromLocalStorage,
+  saveThemeToLocalStorage,
+} from '@/lib/theme/theme-storage';
 
 export function ThemeColorProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
+  const userId = session?.user?.id ?? null;
+
+  // Re-apply cached theme before paint (backup to the blocking <head> script).
+  useLayoutEffect(() => {
+    applyCachedThemeFromLocalStorage(userId);
+  }, [userId]);
 
   useEffect(() => {
-    if (status !== 'authenticated' || !session?.user?.id) {
-      clearThemePrimaryColor();
-      return;
-    }
+    applyCachedThemeFromLocalStorage(userId);
 
-    const storageKey = getUserThemeStorageKey(session.user.id);
-    const baseStorageKey = getUserThemeBaseStorageKey(session.user.id);
-    const cached = localStorage.getItem(storageKey);
-    const cachedBase = localStorage.getItem(baseStorageKey);
-
-    if (cachedBase && isAllowedThemeBaseColorName(cachedBase)) {
-      applyThemeBaseColor(cachedBase);
-    } else {
-      localStorage.removeItem(baseStorageKey);
-    }
-
+    const cached = readThemeFromLocalStorage(userId);
     if (cached) {
-      try {
-        const normalized = normalizeThemeHexColor(cached);
-        if (!isAllowedThemePrimaryColor(normalized)) {
-          throw new Error('Invalid preset color');
-        }
-        applyThemePrimaryColor(normalized);
-      } catch {
-        localStorage.removeItem(storageKey);
-      }
+      saveThemeToLocalStorage(cached, userId);
+    }
+
+    if (status !== 'authenticated' || !userId) {
+      return;
     }
 
     void getUserThemePreference()
@@ -60,30 +51,19 @@ export function ThemeColorProvider({ children }: { children: React.ReactNode }) 
           ? normalized
           : DEFAULT_THEME_PRIMARY_COLOR;
         applyThemeBaseColor(base);
-        const applied = applyThemePrimaryColor(finalColor);
-        localStorage.setItem(baseStorageKey, base);
-        localStorage.setItem(storageKey, applied);
+        applyThemePrimaryColor(finalColor);
+        saveThemeToLocalStorage({ primary: finalColor, base }, userId);
       })
       .catch(() => {
-        if (!cachedBase) {
-          applyThemeBaseColor(DEFAULT_THEME_BASE_COLOR);
-        }
-        if (!cached) {
-          applyThemePrimaryColor(DEFAULT_THEME_PRIMARY_COLOR);
-        }
-        // Keep cached state when server action fails.
+        // Keep device / local cache when the server action fails.
       });
-  }, [session?.user?.id, status]);
+  }, [userId, status]);
 
   useEffect(() => {
-    if (status !== 'authenticated' || !session?.user?.id) return;
+    const cached = readThemeFromLocalStorage(userId);
+    const base = cached?.base ?? DEFAULT_THEME_BASE_COLOR;
 
-    const baseStorageKey = getUserThemeBaseStorageKey(session.user.id);
     const observer = new MutationObserver(() => {
-      const cachedBase = localStorage.getItem(baseStorageKey);
-      const base = cachedBase && isAllowedThemeBaseColorName(cachedBase)
-        ? cachedBase
-        : DEFAULT_THEME_BASE_COLOR;
       applyThemeBaseColor(base);
     });
 
@@ -93,7 +73,7 @@ export function ThemeColorProvider({ children }: { children: React.ReactNode }) 
     });
 
     return () => observer.disconnect();
-  }, [session?.user?.id, status]);
+  }, [userId]);
 
   return <>{children}</>;
 }

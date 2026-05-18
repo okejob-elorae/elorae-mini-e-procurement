@@ -1,0 +1,396 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { 
+  Plus, 
+  Search, 
+  ShoppingCart, 
+  Eye,
+  Calendar,
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  XCircle
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { toast } from 'sonner';
+import { getPOs, submitPO, cancelPO } from '@/app/actions/purchase-orders';
+import { POStatus } from '@/lib/constants/enums';
+import { ETABadge } from '@/components/ui/ETABadge';
+import { Progress } from '@/components/ui/progress';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { cn } from '@/lib/utils';
+
+export interface PurchaseOrder {
+  id: string;
+  docNumber: string;
+  status: POStatus;
+  etaDate: string | null;
+  paymentDueDate?: string | null;
+  paidAt?: string | null;
+  totalAmount: string;
+  grandTotal: string;
+  createdAt: string;
+  supplier: {
+    name: string;
+    code: string;
+  };
+  items: Array<{
+    qty: string;
+    receivedQty: string;
+    item: {
+      sku: string;
+      nameId: string;
+    };
+  }>;
+  _count: {
+    grns: number;
+  };
+  etaAlert?: {
+    status: 'normal' | 'warning' | 'danger' | 'completed';
+    message: string;
+    daysUntil: number;
+  };
+}
+
+const statusLabels: Record<POStatus, string> = {
+  DRAFT: 'Draft',
+  SUBMITTED: 'Submitted',
+  PARTIAL: 'Partial',
+  CLOSED: 'Closed',
+  OVER: 'Over-received',
+  CANCELLED: 'Cancelled'
+};
+
+const statusColors: Record<POStatus, string> = {
+  DRAFT: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+  SUBMITTED: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  PARTIAL: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+  CLOSED: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  OVER: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+  CANCELLED: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+};
+
+const statusIcons: Record<POStatus, React.ReactNode> = {
+  DRAFT: <Clock className="h-4 w-4" />,
+  SUBMITTED: <CheckCircle className="h-4 w-4" />,
+  PARTIAL: <AlertCircle className="h-4 w-4" />,
+  CLOSED: <CheckCircle className="h-4 w-4" />,
+  OVER: <AlertCircle className="h-4 w-4" />,
+  CANCELLED: <XCircle className="h-4 w-4" />
+};
+
+export function PurchaseOrdersPageClient({
+  initialPOs,
+  initialTotalCount,
+  initialPage = 1,
+}: {
+  initialPOs?: PurchaseOrder[];
+  initialTotalCount?: number;
+  initialPage?: number;
+} = {}) {
+  const [pos, setPOs] = useState<PurchaseOrder[]>(initialPOs ?? []);
+  const [isLoading, setIsLoading] = useState(!initialPOs);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<POStatus | ''>('');
+  const [page, setPage] = useState(initialPage);
+  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [totalCount, setTotalCount] = useState(initialTotalCount ?? 0);
+
+  const fetchPOs = async () => {
+    setIsLoading(true);
+    try {
+      const result = await getPOs(
+        { status: statusFilter || undefined },
+        { page, pageSize }
+      );
+      if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
+        setPOs((result as unknown as { items: PurchaseOrder[]; totalCount: number }).items);
+        setTotalCount((result as unknown as { items: PurchaseOrder[]; totalCount: number }).totalCount);
+      } else {
+        const list = (result as unknown as PurchaseOrder[]) ?? [];
+        setPOs(list);
+        setTotalCount(list.length);
+      }
+    } catch {
+      toast.error('Failed to load purchase orders');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter]);
+
+  useEffect(() => {
+    fetchPOs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPOs depends on filters/page
+  }, [statusFilter, page, pageSize]);
+
+  const handleSubmit = async (id: string) => {
+    try {
+      await submitPO(id, 'user-id'); // TODO: Get actual user ID
+      toast.success('PO submitted successfully');
+      fetchPOs();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to submit PO');
+    }
+  };
+
+  const handleCancel = async (id: string) => {
+    if (!confirm('Are you sure you want to cancel this PO?')) return;
+    
+    try {
+      await cancelPO(id, 'user-id'); // TODO: Get actual user ID
+      toast.success('PO cancelled successfully');
+      fetchPOs();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to cancel PO');
+    }
+  };
+
+  const getPendingQty = (po: PurchaseOrder) => {
+    return po.items.reduce((sum, item) => 
+      sum + (Number(item.qty) - Number(item.receivedQty)), 0
+    );
+  };
+
+  const getReceivedProgress = (po: PurchaseOrder) => {
+    const totalOrdered = po.items.reduce((sum, item) => sum + Number(item.qty), 0);
+    const totalReceived = po.items.reduce((sum, item) => sum + Number(item.receivedQty), 0);
+    if (totalOrdered <= 0) return { ratio: 0, totalOrdered: 0, totalReceived: 0, overReceived: false };
+    const ratio = totalReceived / totalOrdered;
+    return {
+      ratio,
+      totalOrdered,
+      totalReceived,
+      overReceived: ratio > 1,
+    };
+  };
+
+  const filteredPOs = pos.filter(po => 
+    po.docNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    po.supplier.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Purchase Orders</h1>
+          <p className="text-muted-foreground">
+            Manage procurement and track deliveries
+          </p>
+        </div>
+        <Link href="/backoffice/purchase-orders/new">
+          <Button>
+            <Plus className="mr-2 h-4 w-4" />
+            New PO
+          </Button>
+        </Link>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search PO number or supplier..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select
+          value={statusFilter || '__all__'}
+          onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : (v as POStatus))}
+        >
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Status</SelectItem>
+            {(Object.entries(statusLabels) as [POStatus, string][]).map(([status, label]) => (
+              <SelectItem key={status} value={status}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* POs Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShoppingCart className="h-5 w-5" />
+            Purchase Order List
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+          ) : filteredPOs.length === 0 ? (
+            <div className="text-center py-12">
+              <ShoppingCart className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">No purchase orders found</p>
+            </div>
+          ) : (
+            <>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>PO Number</TableHead>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>ETA</TableHead>
+                    <TableHead>Payment</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="min-w-[120px]">Progress</TableHead>
+                    <TableHead className="text-right">Pending</TableHead>
+                    <TableHead className="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredPOs.map((po) => (
+                    <TableRow key={po.id}>
+                      <TableCell className="font-medium">{po.docNumber}</TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{po.supplier.name}</p>
+                          <p className="text-sm text-muted-foreground">{po.supplier.code}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={statusColors[po.status]}>
+                          {statusIcons[po.status]}
+                          <span className="ml-1">{statusLabels[po.status]}</span>
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {po.etaDate ? (
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-4 w-4 text-muted-foreground" />
+                              {new Date(po.etaDate).toLocaleDateString('id-ID')}
+                            </div>
+                            <ETABadge etaDate={new Date(po.etaDate)} status={po.status} />
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {po.paidAt ? (
+                          <Badge variant="default" className="bg-green-600">Paid</Badge>
+                        ) : (
+                          <Badge variant="secondary">Unpaid</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        Rp {Number(po.grandTotal).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const { ratio, totalOrdered, totalReceived, overReceived } = getReceivedProgress(po);
+                          if (totalOrdered <= 0) return <span className="text-muted-foreground text-sm">—</span>;
+                          const percent = Math.min(100, ratio * 100);
+                          return (
+                            <div className="space-y-1 min-w-[100px]">
+                              <Progress
+                                value={percent}
+                                className={cn(
+                                  overReceived && 'bg-amber-100 dark:bg-amber-900/30 [&_[data-slot=progress-indicator]]:bg-amber-500'
+                                )}
+                              />
+                              <p className={cn(
+                                'text-xs tabular-nums',
+                                overReceived ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'
+                              )}>
+                                {totalReceived.toLocaleString()} / {totalOrdered.toLocaleString()}
+                                {overReceived && <span className="ml-1">(over)</span>}
+                              </p>
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {getPendingQty(po).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Link href={`/backoffice/purchase-orders/${po.id}`}>
+                            <Button variant="ghost" size="icon">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                          {po.status === 'DRAFT' && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleSubmit(po.id)}
+                            >
+                              Submit
+                            </Button>
+                          )}
+                          {(po.status === 'DRAFT' || po.status === 'SUBMITTED') && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              className="text-destructive"
+                              onClick={() => handleCancel(po.id)}
+                            >
+                              Cancel
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <Pagination
+              page={page}
+              totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
+              onPageChange={setPage}
+              totalCount={totalCount}
+              pageSize={pageSize}
+            />
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

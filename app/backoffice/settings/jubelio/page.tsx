@@ -5,12 +5,24 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { getJubelioTokenState, loginAndStoreJubelioToken } from '@/app/actions/settings/jubelio';
+import { runJubelioCatalogSync } from '@/app/actions/jubelio/catalog-sync';
+import type { CatalogSyncResult } from '@/lib/jubelio/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { KeyRound, Loader2 } from 'lucide-react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { KeyRound, Loader2, Package } from 'lucide-react';
 import { toast } from 'sonner';
+
+const isDev = process.env.NODE_ENV === 'development';
 
 export default function JubelioSettingsPage() {
   const t = useTranslations('settings');
@@ -23,6 +35,8 @@ export default function JubelioSettingsPage() {
   const [jubelioTokenUpdatedAt, setJubelioTokenUpdatedAt] = useState<string | null>(null);
   const [isLoadingToken, setIsLoadingToken] = useState(true);
   const [isSubmittingJubelioLogin, setIsSubmittingJubelioLogin] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<CatalogSyncResult | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -73,6 +87,38 @@ export default function JubelioSettingsPage() {
       toast.success(t('jubelio.copySuccess'));
     } catch {
       toast.error(tToasts('failed'));
+    }
+  };
+
+  const runSync = async (opts: {
+    dryRun: boolean;
+    source: 'api' | 'snapshot';
+  }) => {
+    if (opts.source === 'api' && !jubelioToken) {
+      toast.error(t('jubelio.noTokenForApi'));
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const result = await runJubelioCatalogSync({
+        dryRun: opts.dryRun,
+        source: opts.source,
+      });
+      setSyncResult(result);
+      toast.success(
+        opts.dryRun
+          ? t('jubelio.syncSummary', {
+              created: result.summary.created,
+              updated: result.summary.updated,
+              errors: result.summary.errors,
+            })
+          : t('jubelio.syncSuccess')
+      );
+    } catch {
+      toast.error(t('jubelio.syncFailed'));
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -133,7 +179,11 @@ export default function JubelioSettingsPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={handleJubelioLogin} disabled={isSubmittingJubelioLogin}>
-              {isSubmittingJubelioLogin ? <Loader2 className="h-4 w-4 animate-spin" /> : t('jubelio.loginButton')}
+              {isSubmittingJubelioLogin ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                t('jubelio.loginButton')
+              )}
             </Button>
           </div>
 
@@ -157,6 +207,108 @@ export default function JubelioSettingsPage() {
               {t('jubelio.copyToken')}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="max-w-5xl">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            {t('jubelio.catalogSyncTitle')}
+          </CardTitle>
+          <CardDescription>{t('jubelio.catalogSyncDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={isSyncing}
+              onClick={() => runSync({ dryRun: true, source: 'api' })}
+            >
+              {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : t('jubelio.previewSync')}
+            </Button>
+            <Button disabled={isSyncing} onClick={() => runSync({ dryRun: false, source: 'api' })}>
+              {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : t('jubelio.importCatalog')}
+            </Button>
+            {isDev ? (
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={isSyncing}
+                  onClick={() => runSync({ dryRun: true, source: 'snapshot' })}
+                >
+                  {t('jubelio.previewSync')} (snapshot)
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={isSyncing}
+                  onClick={() => runSync({ dryRun: false, source: 'snapshot' })}
+                >
+                  {t('jubelio.importFromSnapshot')}
+                </Button>
+              </>
+            ) : null}
+          </div>
+
+          {syncResult ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {syncResult.dryRun ? '[Dry run] ' : ''}
+                {t('jubelio.syncSummary', {
+                  created: syncResult.summary.created,
+                  updated: syncResult.summary.updated,
+                  errors: syncResult.summary.errors,
+                })}
+                {syncResult.summary.warnings.length > 0
+                  ? ` · ${syncResult.summary.warnings.length} warning(s)`
+                  : ''}
+              </p>
+              {syncResult.errors.length > 0 ? (
+                <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm">
+                  {syncResult.errors.slice(0, 5).map((err, i) => (
+                    <p key={i}>
+                      {err.parentSku ?? err.jubelioItemGroupId}: {err.message}
+                    </p>
+                  ))}
+                  {syncResult.errors.length > 5 ? (
+                    <p className="text-muted-foreground">+{syncResult.errors.length - 5} more</p>
+                  ) : null}
+                </div>
+              ) : null}
+              {syncResult.items.length > 0 ? (
+                <div className="max-h-80 overflow-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('jubelio.colParentSku')}</TableHead>
+                        <TableHead>{t('jubelio.colAction')}</TableHead>
+                        <TableHead className="text-right">{t('jubelio.colVariants')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {syncResult.items.slice(0, 50).map((row) => (
+                        <TableRow key={row.itemSku}>
+                          <TableCell className="font-mono text-xs">
+                            {row.itemSku}
+                            {row.itemSku !== row.parentSku ? (
+                              <span className="ml-1 text-muted-foreground">({row.parentSku})</span>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>{row.action}</TableCell>
+                          <TableCell className="text-right">{row.variantCount}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {syncResult.items.length > 50 ? (
+                    <p className="p-2 text-xs text-muted-foreground">
+                      Showing 50 of {syncResult.items.length}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

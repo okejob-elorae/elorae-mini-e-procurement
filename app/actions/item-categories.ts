@@ -1,13 +1,25 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { prisma } from '@/lib/prisma';
+import { auth } from '@/lib/auth';
+import { PERMISSIONS, requirePermission } from '@/lib/rbac';
+import { listItemCategories } from '@/lib/item-categories/queries';
+import {
+  createItemCategoryRecord,
+  updateItemCategoryRecord,
+  deleteItemCategoryRecord,
+} from '@/lib/item-categories/mutations';
+
+async function requireSession() {
+  const session = await auth();
+  if (!session?.user) throw new Error('Unauthorized');
+  return session;
+}
 
 export async function getItemCategories(activeOnly = false) {
-  return prisma.itemCategory.findMany({
-    where: activeOnly ? { isActive: true } : undefined,
-    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-  });
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.ITEMS_VIEW);
+  return listItemCategories(activeOnly);
 }
 
 export async function createItemCategory(data: {
@@ -16,15 +28,11 @@ export async function createItemCategory(data: {
   sortOrder?: number;
   isActive?: boolean;
 }) {
-  const row = await prisma.itemCategory.create({
-    data: {
-      name: data.name.trim(),
-      code: data.code?.trim() || null,
-      sortOrder: data.sortOrder ?? null,
-      isActive: data.isActive ?? true,
-    },
-  });
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.ITEMS_CREATE);
+  const row = await createItemCategoryRecord(data);
   revalidatePath('/backoffice/items');
+  revalidatePath('/backoffice/items/categories');
   return row;
 }
 
@@ -37,24 +45,18 @@ export async function updateItemCategory(
     isActive?: boolean;
   }
 ) {
-  const row = await prisma.itemCategory.update({
-    where: { id },
-    data: {
-      name: data.name.trim(),
-      code: data.code?.trim() || null,
-      sortOrder: data.sortOrder ?? null,
-      isActive: data.isActive ?? true,
-    },
-  });
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.ITEMS_EDIT);
+  const row = await updateItemCategoryRecord(id, data);
   revalidatePath('/backoffice/items');
+  revalidatePath('/backoffice/items/categories');
   return row;
 }
 
 export async function deleteItemCategory(id: string) {
-  const itemCount = await prisma.item.count({ where: { categoryId: id } });
-  if (itemCount > 0) {
-    throw new Error('Cannot delete category with assigned items');
-  }
-  await prisma.itemCategory.delete({ where: { id } });
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.ITEMS_DELETE);
+  await deleteItemCategoryRecord(id);
   revalidatePath('/backoffice/items');
+  revalidatePath('/backoffice/items/categories');
 }

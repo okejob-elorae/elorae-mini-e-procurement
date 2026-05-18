@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { listSupplierTypes } from '@/lib/supplier-types/queries';
+import { createSupplierType } from '@/lib/supplier-types/mutations';
+
+export const dynamic = 'force-dynamic';
 
 const createSchema = z.object({
   code: z.string().min(1).max(50),
@@ -11,7 +14,6 @@ const createSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
-// GET /api/supplier-types - List supplier types
 export async function GET(req: NextRequest) {
   try {
     const session = await auth();
@@ -24,40 +26,21 @@ export async function GET(req: NextRequest) {
     const pageParam = searchParams.get('page');
     const pageSizeParam = searchParams.get('pageSize');
     const usePagination = pageParam != null && pageSizeParam != null;
-    const page = usePagination ? Math.max(1, parseInt(pageParam, 10) || 1) : 1;
-    const pageSize = usePagination ? Math.max(1, Math.min(100, parseInt(pageSizeParam, 10) || 20)) : 0;
 
-    const where = activeOnly ? { isActive: true } : {};
-
-    if (usePagination && pageSize > 0) {
-      const [types, totalCount] = await Promise.all([
-        prisma.supplierType.findMany({
-          where,
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-          orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
-        }),
-        prisma.supplierType.count({ where }),
-      ]);
-      return NextResponse.json({ data: types, totalCount });
+    if (usePagination) {
+      const page = Math.max(1, parseInt(pageParam!, 10) || 1);
+      const pageSize = Math.max(1, Math.min(100, parseInt(pageSizeParam!, 10) || 20));
+      const result = await listSupplierTypes({ page, pageSize, activeOnly });
+      return NextResponse.json(result);
     }
 
-    const types = await prisma.supplierType.findMany({
-      where,
-      orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
-    });
-
-    return NextResponse.json(types);
+    return NextResponse.json(await listSupplierTypes({ activeOnly }));
   } catch (error) {
     console.error('Failed to fetch supplier types:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch supplier types' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch supplier types' }, { status: 500 });
   }
 }
 
-// POST /api/supplier-types - Create supplier type
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
@@ -68,26 +51,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const validated = createSchema.parse(body);
-
-    const existing = await prisma.supplierType.findUnique({
-      where: { code: validated.code },
-    });
-    if (existing) {
-      return NextResponse.json(
-        { error: 'A supplier type with this code already exists' },
-        { status: 409 }
-      );
-    }
-
-    const supplierType = await prisma.supplierType.create({
-      data: {
-        code: validated.code,
-        name: validated.name,
-        isActive: validated.isActive,
-        sortOrder: validated.sortOrder,
-      },
-    });
-
+    const supplierType = await createSupplierType(validated);
     return NextResponse.json(supplierType, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -97,9 +61,6 @@ export async function POST(req: NextRequest) {
       );
     }
     console.error('Failed to create supplier type:', error);
-    return NextResponse.json(
-      { error: 'Failed to create supplier type' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to create supplier type' }, { status: 500 });
   }
 }

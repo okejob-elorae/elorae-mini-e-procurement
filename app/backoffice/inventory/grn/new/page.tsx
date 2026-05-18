@@ -9,6 +9,7 @@ import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { offlineDB } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
+import { getSuppliersForSelect } from '@/app/actions/suppliers';
 
 interface Supplier {
   id: string;
@@ -29,12 +30,9 @@ export default function NewGRNPage() {
           setSuppliers(cached.map((s) => ({ id: s.id, code: s.code, name: s.name })));
         }
         if (isOnline()) {
-          const response = await fetch('/api/suppliers?sync=true&approvedOnly=true');
-          if (response.ok) {
-            const data = await response.json();
-            const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
-            setSuppliers(list.map((s: Supplier) => ({ id: s.id, code: s.code, name: s.name })));
-          }
+          const data = await getSuppliersForSelect({ sync: true, approvedOnly: true });
+          const list = Array.isArray(data) ? data : [];
+          setSuppliers(list.map((s: Supplier) => ({ id: s.id, code: s.code, name: s.name })));
         }
       } catch (error) {
         console.error('Failed to fetch suppliers:', error);

@@ -1,27 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';
-import { encryptBankAccount } from '@/lib/encryption';
-import { generateSupplierCode } from '@/lib/docNumber';
-import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { PERMISSIONS, requirePermission } from '@/lib/rbac';
+import { listSuppliers } from '@/lib/suppliers/queries';
+import { createSupplier, supplierSchema } from '@/lib/suppliers/mutations';
 import { getActorName, notifySupplierCreated } from '@/app/actions/notifications';
 
-const supplierSchema = z.object({
-  // When blank or omitted, backend will auto-generate code
-  code: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined ? undefined : val),
-    z.string().min(1).optional()
-  ),
-  name: z.string().min(1),
-  typeId: z.string().min(1),
-  address: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().email().optional(),
-  bankName: z.string().optional(),
-  bankAccount: z.string().optional(),
-  bankAccountName: z.string().optional(),
-});
+export const dynamic = 'force-dynamic';
 
 // GET /api/suppliers - List suppliers
 export async function GET(req: NextRequest) {
@@ -32,98 +17,33 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const search = searchParams.get('search');
+    const search = searchParams.get('search') ?? undefined;
     const sync = searchParams.get('sync') === 'true';
     const approvedOnly = searchParams.get('approvedOnly') === 'true';
+    const typeId = searchParams.get('typeId') ?? undefined;
+    const statusParam = searchParams.get('status');
+    const status =
+      statusParam && ['PENDING_APPROVAL', 'ACTIVE', 'REJECTED'].includes(statusParam)
+        ? (statusParam as 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED')
+        : undefined;
+
     const pageParam = searchParams.get('page');
     const pageSizeParam = searchParams.get('pageSize');
     const usePagination = pageParam != null && pageSizeParam != null;
-    const page = usePagination ? Math.max(1, parseInt(pageParam, 10) || 1) : 1;
-    const pageSize = usePagination ? Math.max(1, Math.min(100, parseInt(pageSizeParam, 10) || 20)) : 0;
+    const page = usePagination ? Math.max(1, parseInt(pageParam!, 10) || 1) : 1;
+    const pageSize = usePagination
+      ? Math.max(1, Math.min(100, parseInt(pageSizeParam!, 10) || 20))
+      : 0;
 
-    const where: any = {};
-    const typeId = searchParams.get('typeId');
-    const statusParam = searchParams.get('status');
-    if (typeId) where.typeId = typeId;
-    if (statusParam && ['PENDING_APPROVAL', 'ACTIVE', 'REJECTED'].includes(statusParam)) {
-      where.status = statusParam;
-    }
-    if (approvedOnly) {
-      where.status = 'ACTIVE';
-    }
-    if (search) {
-      where.OR = [
-        { name: { contains: search } },
-        { code: { contains: search } },
-      ];
-    }
+    const result = await listSuppliers(
+      { search, approvedOnly, typeId, status },
+      { sync, page: usePagination ? page : undefined, pageSize: usePagination ? pageSize : undefined }
+    );
 
-    // For sync requests, return simplified data (no pagination)
-    if (sync) {
-      const suppliers = await prisma.supplier.findMany({
-        where,
-        include: {
-          type: { select: { id: true, code: true, name: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-      return NextResponse.json(
-        suppliers.map((s) => ({
-          id: s.id,
-          code: s.code,
-          name: s.name,
-          typeId: s.typeId,
-          type: s.type ? { id: s.type.id, code: s.type.code, name: s.type.name } : null,
-          address: s.address,
-          phone: s.phone,
-          email: s.email,
-          bankName: s.bankName,
-          bankAccountName: s.bankAccountName,
-          isActive: s.isActive,
-        }))
-      );
-    }
-
-    if (usePagination && pageSize > 0) {
-      const [suppliers, totalCount] = await Promise.all([
-        prisma.supplier.findMany({
-          where,
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-          include: {
-            type: { select: { id: true, code: true, name: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-        }),
-        prisma.supplier.count({ where }),
-      ]);
-      const maskedSuppliers = suppliers.map((s) => ({
-        ...s,
-        bankAccountEnc: s.bankAccountEnc ? '***ENCRYPTED***' : null,
-      }));
-      return NextResponse.json({ data: maskedSuppliers, totalCount });
-    }
-
-    const suppliers = await prisma.supplier.findMany({
-      where,
-      include: {
-        type: { select: { id: true, code: true, name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    const maskedSuppliers = suppliers.map((s) => ({
-      ...s,
-      bankAccountEnc: s.bankAccountEnc ? '***ENCRYPTED***' : null,
-    }));
-
-    return NextResponse.json(maskedSuppliers);
+    return NextResponse.json(result);
   } catch (error) {
     console.error('Failed to fetch suppliers:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch suppliers' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch suppliers' }, { status: 500 });
   }
 }
 
@@ -138,41 +58,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const validated = supplierSchema.parse(body);
-
-    let code: string;
-    if (validated.code?.trim()) {
-      code = validated.code.trim();
-      const existing = await prisma.supplier.findUnique({ where: { code } });
-      if (existing) {
-        return NextResponse.json(
-          { error: 'Supplier code already exists' },
-          { status: 400 }
-        );
-      }
-    } else {
-      code = await generateSupplierCode();
-    }
-
-    // Encrypt bank account if provided
-    let bankAccountEnc = null;
-    if (validated.bankAccount) {
-      bankAccountEnc = encryptBankAccount(validated.bankAccount, 'DEFAULT_PIN');
-    }
-
-    const supplier = await prisma.supplier.create({
-      data: {
-        code,
-        name: validated.name,
-        typeId: validated.typeId,
-        address: validated.address,
-        phone: validated.phone,
-        email: validated.email,
-        bankName: validated.bankName,
-        bankAccountEnc,
-        bankAccountName: validated.bankAccountName,
-        status: 'PENDING_APPROVAL',
-      },
-    });
+    const supplier = await createSupplier(validated);
 
     getActorName(session.user.id)
       .then((triggeredByName) => notifySupplierCreated(supplier.id, supplier.name, triggeredByName))
@@ -186,10 +72,8 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    console.error('Failed to create supplier:', error);
-    return NextResponse.json(
-      { error: 'Failed to create supplier' },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : 'Failed to create supplier';
+    const status = message.includes('already exists') ? 400 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

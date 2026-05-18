@@ -142,7 +142,9 @@ export default function EditVendorReturnPage() {
       try {
         const [ret, suppliersRes, woList, itemsRes, grnList] = await Promise.all([
           getVendorReturnById(id),
-          fetch('/api/suppliers?approvedOnly=true'),
+          import('@/app/actions/suppliers').then(({ getSuppliersForSelect }) =>
+            getSuppliersForSelect({ approvedOnly: true })
+          ),
           getWorkOrders(),
           getItems({ isActive: true }),
           getGRNs()
@@ -255,11 +257,8 @@ export default function EditVendorReturnPage() {
         }
         setEvidenceUrls(urlsStr);
 
-        if (suppliersRes.ok) {
-          const data = await suppliersRes.json();
-          const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
-          setVendors((list as Supplier[]) || []);
-        }
+        const vendorList = Array.isArray(suppliersRes) ? suppliersRes : [];
+        setVendors(vendorList as unknown as Supplier[]);
         setWorkOrders(
           (woList as { id: string; docNumber: string }[]).map((w) => ({
             id: w.id,

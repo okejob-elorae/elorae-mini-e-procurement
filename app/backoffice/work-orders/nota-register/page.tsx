@@ -75,8 +75,8 @@ export default function NotaRegisterPage() {
   const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
-    fetch('/api/suppliers?sync=true&approvedOnly=true')
-      .then((r) => r.json())
+    import('@/app/actions/suppliers')
+      .then(({ getSuppliersForSelect }) => getSuppliersForSelect({ sync: true, approvedOnly: true }))
       .then((data: unknown) => setSuppliers(Array.isArray(data) ? data : []))
       .catch(() => {
         setSuppliers([]);

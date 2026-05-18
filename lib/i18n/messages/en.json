@@ -192,7 +192,21 @@
       "missingCredentials": "Please enter Jubelio email and password",
       "loginSuccess": "Jubelio token saved successfully",
       "loginFailed": "Failed to login to Jubelio",
-      "loadTokenError": "Failed to load stored Jubelio token"
+      "loadTokenError": "Failed to load stored Jubelio token",
+      "catalogSyncTitle": "Catalog import",
+      "catalogSyncDescription": "Import finished goods from Jubelio into Items (catalog only, stock starts at 0). Preview with dry run before importing.",
+      "previewSync": "Preview sync (dry run)",
+      "importCatalog": "Import catalog",
+      "importFromSnapshot": "Import from snapshot (dev)",
+      "syncRunning": "Syncing...",
+      "syncSuccess": "Catalog sync completed",
+      "syncFailed": "Catalog sync failed",
+      "syncSummary": "Created: {created}, updated: {updated}, errors: {errors}",
+      "syncResults": "Sync results",
+      "noTokenForApi": "Save a Jubelio token before importing from API",
+      "colParentSku": "Parent SKU",
+      "colAction": "Action",
+      "colVariants": "Variants"
     }
   },
   "tax": {

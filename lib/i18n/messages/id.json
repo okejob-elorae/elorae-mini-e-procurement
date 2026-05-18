@@ -192,7 +192,21 @@
       "missingCredentials": "Mohon isi email dan password Jubelio",
       "loginSuccess": "Token Jubelio berhasil disimpan",
       "loginFailed": "Gagal login ke Jubelio",
-      "loadTokenError": "Gagal memuat token Jubelio yang tersimpan"
+      "loadTokenError": "Gagal memuat token Jubelio yang tersimpan",
+      "catalogSyncTitle": "Impor katalog",
+      "catalogSyncDescription": "Impor barang jadi dari Jubelio ke Item (katalog saja, stok awal 0). Pratinjau dengan dry run sebelum impor.",
+      "previewSync": "Pratinjau sync (dry run)",
+      "importCatalog": "Impor katalog",
+      "importFromSnapshot": "Impor dari snapshot (dev)",
+      "syncRunning": "Menyinkronkan...",
+      "syncSuccess": "Sinkronisasi katalog selesai",
+      "syncFailed": "Sinkronisasi katalog gagal",
+      "syncSummary": "Dibuat: {created}, diperbarui: {updated}, error: {errors}",
+      "syncResults": "Hasil sync",
+      "noTokenForApi": "Simpan token Jubelio sebelum impor dari API",
+      "colParentSku": "SKU induk",
+      "colAction": "Aksi",
+      "colVariants": "Varian"
     }
   },
   "tax": {

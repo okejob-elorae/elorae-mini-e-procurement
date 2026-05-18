@@ -98,11 +98,13 @@ export default function HPPPage() {
   useEffect(() => {
     Promise.all([
       getItemsByType(ItemType.FINISHED_GOOD),
-      fetch('/api/suppliers?approvedOnly=true').then((r) => r.ok ? r.json() : []),
+      import('@/app/actions/suppliers').then(({ getSuppliersForSelect }) =>
+        getSuppliersForSelect({ approvedOnly: true })
+      ),
     ]).then(([fgList, supList]) => {
       const fg = (fgList as Array<{ id: string; sku: string; nameId: string }>) ?? [];
       setFinishedGoods(fg.map((x) => ({ value: x.id, label: `${x.nameId} (${x.sku})` })));
-      const list = Array.isArray(supList) ? supList : (supList?.data ?? []);
+      const list = Array.isArray(supList) ? supList : [];
       setVendors(list.map((x: { id: string; name: string; code?: string }) => ({ value: x.id, label: `${x.name} (${x.code ?? ''})` })));
     }).catch(() => {});
   }, []);

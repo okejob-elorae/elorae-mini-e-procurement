@@ -4,6 +4,15 @@ export type ValidationTranslate = (key: string) => string;
 
 const defaultT: ValidationTranslate = (k) => k;
 
+/** Empty / NaN number inputs (e.g. valueAsNumber on blank fields) → 0 */
+function numberDefaultZero() {
+  return z.preprocess((val) => {
+    if (val === '' || val === null || val === undefined) return 0;
+    if (typeof val === 'number' && Number.isNaN(val)) return 0;
+    return val;
+  }, z.number().min(0));
+}
+
 export function createItemSchema(t: ValidationTranslate = defaultT) {
   return z.object({
     sku: z.string().optional(),
@@ -14,8 +23,8 @@ export function createItemSchema(t: ValidationTranslate = defaultT) {
     categoryId: z.string().optional(),
     description: z.string().optional(),
     variants: z.array(z.record(z.string(), z.string())).optional(),
-    reorderPoint: z.number().min(0).optional(),
-    overReceiveThreshold: z.number().min(0).optional(),
+    reorderPoint: numberDefaultZero(),
+    overReceiveThreshold: numberDefaultZero(),
     sellingPrice: z.number().min(0).optional(),
   });
 }

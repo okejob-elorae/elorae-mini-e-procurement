@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createItemSchema, itemSchema, consumptionRuleSchema } from '@/lib/validations';
 import { ItemType } from '@/lib/constants/enums';
@@ -73,6 +73,13 @@ function slugVariantAttributeValue(value: string): string {
  * Pattern: `{base}-{v1}-…-{vn}` with n = number of attribute columns (e.g. OUTERWEAR-RED-S).
  * Base is the item category code when the category has one; otherwise the parent item SKU (server accepts both prefixes).
  */
+/** Parse number inputs; blank or invalid → 0 (avoids NaN from valueAsNumber). */
+function parseNumberFieldDefaultZero(value: unknown): number {
+  if (value === '' || value === null || value === undefined) return 0;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isNaN(n) ? 0 : n;
+}
+
 function buildVariantSkuCode(
   basePrefix: string,
   combo: Record<string, string>,
@@ -179,7 +186,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     control,
     formState: { errors },
   } = useForm<ItemFormData>({
-    resolver: zodResolver(itemSchemaT),
+    resolver: zodResolver(itemSchemaT) as Resolver<ItemFormData>,
     defaultValues: {
       nameId: initialData?.nameId || '',
       nameEn: initialData?.nameEn || '',
@@ -188,8 +195,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       categoryId: initialData?.categoryId || '',
       description: initialData?.description || '',
       variants: normalizedVariants,
-      reorderPoint: initialData?.reorderPoint,
-      overReceiveThreshold: initialData?.overReceiveThreshold,
+      reorderPoint: initialData?.reorderPoint ?? 0,
+      overReceiveThreshold: initialData?.overReceiveThreshold ?? 0,
       sellingPrice: initialData?.sellingPrice,
     },
   });
@@ -357,12 +364,30 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       }
     }
 
+    const variantSkuPrefixes = [
+      categoryCodePrefix,
+      parentSku.trim(),
+    ].filter((p, i, arr) => p && arr.indexOf(p) === i);
+
     const variants =
       variantCombinations.length > 0
-        ? variantCombinations.map((combo, i) => ({
-            ...combo,
-            ...(variantSkus[i]?.trim() ? { sku: variantSkus[i].trim() } : {}),
-          }))
+        ? variantCombinations.map((combo, i) => {
+            let variantSku = variantSkus[i]?.trim() || '';
+            const autoBase = variantSkuBasePrefix;
+            if (variantSku && autoBase) {
+              const hasValidPrefix = variantSkuPrefixes.some((p) => variantSku.startsWith(p));
+              if (!hasValidPrefix) {
+                const bare =
+                  slugVariantAttributeValue(variantSku) ||
+                  variantSku.replace(/\s+/g, '-').toUpperCase();
+                variantSku = `${autoBase}-${bare}`;
+              }
+            }
+            return {
+              ...combo,
+              ...(variantSku ? { sku: variantSku } : {}),
+            };
+          })
         : undefined;
 
     // Validate consumption rules if type is FINISHED_GOOD
@@ -543,7 +568,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 type="number"
                 step="0.01"
                 min="0"
-                {...register('overReceiveThreshold', { valueAsNumber: true })}
+                {...register('overReceiveThreshold', {
+                  setValueAs: parseNumberFieldDefaultZero,
+                })}
                 placeholder="0.00"
                 aria-invalid={!!errors.overReceiveThreshold}
                 className={errors.overReceiveThreshold ? 'border-destructive focus-visible:ring-destructive/20' : ''}
@@ -582,7 +609,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               type="number"
               step="0.01"
               min="0"
-              {...register('reorderPoint', { valueAsNumber: true })}
+              {...register('reorderPoint', {
+                setValueAs: parseNumberFieldDefaultZero,
+              })}
               placeholder="0.00"
               aria-invalid={!!errors.reorderPoint}
               className={errors.reorderPoint ? 'border-destructive focus-visible:ring-destructive/20' : ''}

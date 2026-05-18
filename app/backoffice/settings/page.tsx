@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
@@ -13,10 +13,9 @@ import { Check, FileDigit, KeyRound, Loader2, Palette, Percent, Ruler, Shield, U
 import {
   applyThemeBaseColor,
   applyThemePrimaryColor,
-  getUserThemeBaseStorageKey,
-  getUserThemeStorageKey,
   normalizeThemeHexColor,
 } from '@/lib/theme/theme-color';
+import { readThemeFromLocalStorage, saveThemeToLocalStorage } from '@/lib/theme/theme-storage';
 import {
   DEFAULT_THEME_BASE_COLOR,
   DEFAULT_THEME_PRIMARY_COLOR,
@@ -45,41 +44,20 @@ export default function SettingsPage() {
     { titleKey: 'jubelio.title' as const, descriptionKey: 'jubelio.description' as const, href: '/backoffice/settings/jubelio', icon: KeyRound },
   ];
 
-  const storageKey = useMemo(
-    () => (session?.user?.id ? getUserThemeStorageKey(session.user.id) : null),
-    [session?.user?.id]
-  );
-  const baseStorageKey = useMemo(
-    () => (session?.user?.id ? getUserThemeBaseStorageKey(session.user.id) : null),
-    [session?.user?.id]
-  );
+  const userId = session?.user?.id ?? null;
 
   useEffect(() => {
-    if (status !== 'authenticated' || !storageKey || !baseStorageKey) {
+    if (status !== 'authenticated' || !userId) {
       setIsThemeLoading(false);
       return;
     }
 
-    const cachedColor = localStorage.getItem(storageKey);
-    const cachedBase = localStorage.getItem(baseStorageKey);
+    const cached = readThemeFromLocalStorage(userId);
 
-    if (cachedBase && isAllowedThemeBaseColorName(cachedBase)) {
-      setBaseColor(cachedBase);
-      applyThemeBaseColor(cachedBase);
-    } else {
-      localStorage.removeItem(baseStorageKey);
-    }
-
-    if (cachedColor) {
-      try {
-        const normalized = normalizeThemeHexColor(cachedColor);
-        if (!isAllowedThemePrimaryColor(normalized)) {
-          throw new Error('Invalid preset color');
-        }
-        setThemeColor(normalized);
-      } catch {
-        localStorage.removeItem(storageKey);
-      }
+    if (cached) {
+      setBaseColor(cached.base);
+      applyThemeBaseColor(cached.base);
+      setThemeColor(cached.primary);
     }
 
     void getUserThemePreference()
@@ -95,8 +73,7 @@ export default function SettingsPage() {
         setThemeColor(finalColor);
         setInitialColor(finalColor);
         applyThemeBaseColor(finalBase);
-        localStorage.setItem(baseStorageKey, finalBase);
-        localStorage.setItem(storageKey, finalColor);
+        saveThemeToLocalStorage({ primary: finalColor, base: finalBase }, userId);
       })
       .catch(() => {
         setBaseColor(DEFAULT_THEME_BASE_COLOR);
@@ -105,7 +82,7 @@ export default function SettingsPage() {
         toast.error('Failed to load theme preference');
       })
       .finally(() => setIsThemeLoading(false));
-  }, [baseStorageKey, status, storageKey]);
+  }, [status, userId]);
 
   const handlePresetChange = (nextBase: string) => {
     if (!isAllowedThemeBaseColorName(nextBase)) return;
@@ -121,7 +98,7 @@ export default function SettingsPage() {
   };
 
   const handleThemeSave = async () => {
-    if (!storageKey || !baseStorageKey) return;
+    if (!userId) return;
     setIsThemeSaving(true);
 
     try {
@@ -134,8 +111,7 @@ export default function SettingsPage() {
       }
       applyThemeBaseColor(baseColor);
       applyThemePrimaryColor(normalized);
-      localStorage.setItem(baseStorageKey, baseColor);
-      localStorage.setItem(storageKey, normalized);
+      saveThemeToLocalStorage({ primary: normalized, base: baseColor }, userId);
       const result = await setUserThemePreference({
         baseColor,
         primaryColor: normalized,
@@ -152,15 +128,14 @@ export default function SettingsPage() {
   };
 
   const handleThemeReset = async () => {
-    if (!storageKey || !baseStorageKey) return;
+    if (!userId) return;
     setIsThemeSaving(true);
 
     const fallbackBase = DEFAULT_THEME_BASE_COLOR;
     const fallback = DEFAULT_THEME_PRIMARY_COLOR;
     applyThemeBaseColor(fallbackBase);
     applyThemePrimaryColor(fallback);
-    localStorage.setItem(baseStorageKey, fallbackBase);
-    localStorage.setItem(storageKey, fallback);
+    saveThemeToLocalStorage({ primary: fallback, base: fallbackBase }, userId);
 
     try {
       const result = await setUserThemePreference({

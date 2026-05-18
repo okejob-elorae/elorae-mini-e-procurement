@@ -8,6 +8,14 @@ import { generateDocNumber } from '@/lib/docNumber';
 import { reverseInventoryValue } from '@/lib/inventory/costing';
 import { getActorName, notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/app/actions/notifications';
 import { getEffectiveHPPForItem } from '@/app/actions/hpp';
+import { auth } from '@/lib/auth';
+import { PERMISSIONS, requirePermission } from '@/lib/rbac';
+
+async function requireSession() {
+  const session = await auth();
+  if (!session?.user) throw new Error('Unauthorized');
+  return session;
+}
 
 function parseGrnStoredItems(raw: unknown): Array<{ itemId?: string; qty?: unknown }> {
   if (raw == null) return [];
@@ -142,6 +150,9 @@ export async function createVendorReturn(
   data: CreateVendorReturnInput,
   userId: string
 ) {
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_CREATE);
+
   returnSchema.parse(data);
 
   for (const line of data.lines) {
@@ -248,6 +259,9 @@ export async function updateVendorReturn(
   _userId: string
 ) {
   void _userId;
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
+
   returnSchema.parse(data);
 
   for (const line of data.lines) {
@@ -349,6 +363,9 @@ export async function updateVendorReturn(
 
 export async function deleteVendorReturn(id: string, _userId: string) {
   void _userId;
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
+
   const existing = await prisma.vendorReturn.findUnique({
     where: { id }
   });

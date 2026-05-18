@@ -1,0 +1,433 @@
+﻿'use client';
+
+import { useState, useEffect } from 'react';
+import { useSession, signOut } from 'next-auth/react';
+import { usePathname, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import {
+  LayoutDashboard,
+  Building2,
+  ShoppingCart,
+  DollarSign,
+  Package,
+  ClipboardList,
+  RotateCcw,
+  FileText,
+  Settings,
+  Menu,
+  ChevronDown,
+  ChevronRight,
+  LogOut,
+  Sun,
+  Moon,
+  Monitor,
+  Check,
+  BarChart2,
+} from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { cn } from '@/lib/utils';
+import { Role } from '@/lib/constants/enums';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
+import { QuickActionFAB } from '@/components/QuickActionFAB';
+import { FcmRegistration } from '@/components/notifications/FcmRegistration';
+import { NotificationIcon } from '@/components/notifications/NotificationIcon';
+import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { useTranslations } from 'next-intl';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+
+interface NavChild {
+  labelKey: string;
+  href: string;
+}
+
+interface NavItem {
+  labelKey: string;
+  href: string;
+  icon: React.ElementType;
+  permission: string; // Permission code required to view this nav item
+  children?: NavChild[];
+}
+
+const navItems: NavItem[] = [
+  {
+    labelKey: 'dashboard',
+    href: '/backoffice/dashboard',
+    icon: LayoutDashboard,
+    permission: PERMISSIONS.DASHBOARD_VIEW,
+  },
+  {
+    labelKey: 'suppliers',
+    href: '/backoffice/suppliers',
+    icon: Building2,
+    permission: PERMISSIONS.SUPPLIERS_VIEW,
+    children: [
+      { labelKey: 'masterSuppliers', href: '/backoffice/suppliers' },
+      { labelKey: 'supplierType', href: '/backoffice/suppliers/types' },
+    ],
+  },
+  {
+    labelKey: 'items',
+    href: '/backoffice/items',
+    icon: Package,
+    permission: PERMISSIONS.ITEMS_VIEW,
+    children: [
+      { labelKey: 'navItemsAll', href: '/backoffice/items' },
+      { labelKey: 'navItemsCategory', href: '/backoffice/items/categories' },
+      { labelKey: 'navItemsRaw', href: '/backoffice/items?type=raw' },
+      { labelKey: 'navItemsFinished', href: '/backoffice/items?type=FINISHED_GOOD' },
+    ],
+  },
+  {
+    labelKey: 'purchaseOrders',
+    href: '/backoffice/purchase-orders',
+    icon: ShoppingCart,
+    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+  },
+  {
+    labelKey: 'supplierPayment',
+    href: '/backoffice/supplier-payments',
+    icon: DollarSign,
+    permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
+  },
+  {
+    labelKey: 'inventory',
+    href: '/backoffice/inventory',
+    icon: Package,
+    permission: PERMISSIONS.INVENTORY_VIEW,
+  },
+  {
+    labelKey: 'workOrders',
+    href: '/backoffice/work-orders',
+    icon: ClipboardList,
+    permission: PERMISSIONS.WORK_ORDERS_VIEW,
+    children: [
+      { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders' },
+      { labelKey: 'registerNotaCmt', href: '/backoffice/work-orders/nota-register' },
+    ],
+  },
+  {
+    labelKey: 'vendorReturns',
+    href: '/backoffice/vendor-returns',
+    icon: RotateCcw,
+    permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
+  },
+  {
+    labelKey: 'reports',
+    href: '/backoffice/reports/hpp',
+    icon: BarChart2,
+    permission: PERMISSIONS.REPORTS_HPP_VIEW,
+    children: [
+      { labelKey: 'hppReport', href: '/backoffice/reports/hpp' },
+    ],
+  },
+  {
+    labelKey: 'auditTrail',
+    href: '/backoffice/audit-trail',
+    icon: FileText,
+    permission: PERMISSIONS.AUDIT_TRAIL_VIEW,
+  },
+  {
+    labelKey: 'settings',
+    href: '/backoffice/settings',
+    icon: Settings,
+    permission: PERMISSIONS.SETTINGS_SECURITY_VIEW, // Settings hub - check any settings permission
+  },
+];
+
+function ThemeDropdownItems() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const current = theme ?? 'system';
+  const isLight = current === 'light' || (current === 'system' && resolvedTheme === 'light');
+  const isDark = current === 'dark' || (current === 'system' && resolvedTheme === 'dark');
+  const isSystem = current === 'system';
+  return (
+    <>
+      <DropdownMenuItem onClick={() => setTheme('light')}>
+        <Sun className="mr-2 h-4 w-4" />
+        Light
+        {isLight && <Check className="ml-auto h-4 w-4" />}
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setTheme('dark')}>
+        <Moon className="mr-2 h-4 w-4" />
+        Dark
+        {isDark && <Check className="ml-auto h-4 w-4" />}
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setTheme('system')}>
+        <Monitor className="mr-2 h-4 w-4" />
+        System
+        {isSystem && <Check className="ml-auto h-4 w-4" />}
+      </DropdownMenuItem>
+    </>
+  );
+}
+
+function Sidebar({
+  className,
+  permissions,
+  onClose,
+}: {
+  className?: string;
+  permissions: string[];
+  onClose?: () => void;
+}) {
+  const pathname = usePathname();
+  const tNav = useTranslations('navigation');
+  const getOpenKeyFromPath = (path: string) => {
+    if (path.startsWith('/backoffice/suppliers')) return '/backoffice/suppliers';
+    if (path.startsWith('/backoffice/items')) return '/backoffice/items';
+    if (path.startsWith('/backoffice/work-orders')) return '/backoffice/work-orders';
+    return null;
+  };
+  const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
+
+  useEffect(() => {
+    const key = getOpenKeyFromPath(pathname);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync nav open state to pathname
+    if (key) setOpenNavKey(key);
+  }, [pathname]);
+
+  const filteredItems = navItems.filter((item) =>
+    hasPermission(permissions, item.permission)
+  );
+
+  return (
+    <div className={cn('flex flex-col h-full', className)}>
+      <div className="flex items-center gap-3 px-4 py-4 border-b">
+        <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+          <span className="text-primary-foreground font-bold text-lg">E</span>
+        </div>
+        <div>
+          <h1 className="font-bold text-lg">Elorae ERP</h1>
+          <p className="text-xs text-muted-foreground">v1.0.0</p>
+        </div>
+      </div>
+
+      <nav className="flex-1 overflow-auto py-4 px-3 space-y-1">
+        {filteredItems.map((item) => {
+          const Icon = item.icon;
+          const hasChildren = item.children && item.children.length > 0;
+          const isParentActive =
+            pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+
+          if (hasChildren) {
+            return (
+              <Collapsible
+                key={item.href}
+                open={openNavKey === item.href}
+                onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
+                className="group/collapsible"
+              >
+                <CollapsibleTrigger
+                  className={cn(
+                    'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg:last-of-type]:rotate-90',
+                    isParentActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  )}
+                >
+                  <Icon className="w-5 h-5 shrink-0" />
+                  <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="ml-4 mt-1 space-y-0.5 border-l border-border pl-3">
+                    {item.children!.map((child) => {
+                      const isChildActive =
+                        pathname === child.href || pathname.startsWith(`${child.href}/`);
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={onClose}
+                          className={cn(
+                            'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+                            isChildActive
+                              ? 'font-medium text-primary'
+                              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                          )}
+                        >
+                          {tNav(child.labelKey as any)}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            );
+          }
+
+          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onClose}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              )}
+            >
+              <Icon className="w-5 h-5" />
+              {tNav(item.labelKey as any)}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="p-4 border-t">
+        <OfflineIndicator />
+      </div>
+    </div>
+  );
+}
+
+export function BackofficeShell({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const tRole = useTranslations('auth.roles');
+  const tNav = useTranslations('navigation');
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.replace('/login');
+    }
+  }, [status, router]);
+
+  useEffect(() => {
+    setupSyncListeners();
+    syncReferenceData();
+  }, []);
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  const userRole = session.user.role as Role;
+  const userInitials = session.user.name
+    ? session.user.name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+    : session.user.email?.[0].toUpperCase() || 'U';
+
+  return (
+    <div className="min-h-screen flex">
+      {/* Desktop Sidebar */}
+      <aside className="hidden lg:block w-64 border-r bg-card">
+        <Sidebar permissions={session.user.permissions} />
+      </aside>
+
+      {/* Mobile Sidebar */}
+      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <SheetContent side="left" className="p-0 w-64">
+          <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
+        </SheetContent>
+      </Sheet>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <header className="h-16 border-b bg-card flex items-center justify-between px-4 lg:px-6">
+          <div className="flex items-center gap-4">
+            <Sheet>
+              <SheetTrigger asChild className="lg:hidden">
+                <Button variant="ghost" size="icon">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="p-0 w-64">
+                <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
+              </SheetContent>
+            </Sheet>
+            <h2 className="text-lg font-semibold hidden sm:block">
+              {tNav('dashboard')} - {session.user.name || session.user.email}
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <NotificationIcon />
+            <LanguageSwitcher />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="flex items-center gap-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="text-xs">
+                      {userInitials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="hidden sm:block text-left">
+                    <p className="text-sm font-medium">{session.user.name || session.user.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {tRole(userRole as any)}
+                    </p>
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Theme</DropdownMenuLabel>
+                <ThemeDropdownItems />
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/backoffice/settings" className="flex items-center">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/login' })} data-testid="sign-out">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
+        <QuickActionFAB />
+        <FcmRegistration />
+      </div>
+    </div>
+  );
+}

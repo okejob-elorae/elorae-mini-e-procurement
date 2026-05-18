@@ -6,15 +6,14 @@ import { prisma } from '@/lib/prisma';
 import { generateDocNumber } from '@/lib/docNumber';
 import { POStatus } from '@prisma/client';
 import { poSchema } from '@/lib/validations';
-import { getETAStatus } from '@/lib/eta-alerts';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { getActorName, notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/app/actions/notifications';
+import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/mutations';
+import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
-
-export type POFormData = z.infer<typeof poSchema>;
 
 function poReceiptLineKey(itemId: string, variantSku?: string | null) {
   return `${itemId}\n${variantSku ?? ''}`;
@@ -24,63 +23,14 @@ export async function createPO(data: POFormData, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_CREATE);
-  
-  const validated = poSchema.parse(data);
-  
-  const po = await prisma.$transaction(async (tx) => {
-    await assertLinesVariantSkusMatchItemDefinitions(tx.item, validated.items);
 
-    const docNumber = await generateDocNumber('PO', tx);
-    
-    // Calculate totals
-    const totalAmount = validated.items.reduce((sum, item) => {
-      return sum.plus(new Decimal(item.qty).mul(item.price));
-    }, new Decimal(0));
-    
-    const created = await tx.purchaseOrder.create({
-      data: {
-        docNumber,
-        supplierId: validated.supplierId,
-        etaDate: validated.etaDate,
-        paymentDueDate: validated.paymentDueDate ?? undefined,
-        notes: validated.notes,
-        terms: validated.terms,
-        totalAmount: totalAmount.toNumber(),
-        grandTotal: totalAmount.toNumber(),
-        createdById: userId,
-        items: {
-          create: validated.items.map((i) => ({
-            itemId: i.itemId,
-            variantSku: i.variantSku?.trim() || null,
-            qty: i.qty,
-            price: i.price,
-            ppnIncluded: i.ppnIncluded,
-            uomId: i.uomId,
-            notes: i.notes ?? null,
-          })),
-        }
-      },
-      include: { items: true }
-    });
-    
-    // Create initial status history
-    await tx.pOStatusHistory.create({
-      data: {
-        poId: created.id,
-        status: 'DRAFT',
-        changedById: userId,
-        notes: 'PO Created'
-      }
-    });
-    
-    return created;
-  });
+  const po = await createPurchaseOrder(data, userId);
 
   getActorName(userId)
     .then((triggeredByName) => notifyPOCreated(po.id, po.docNumber, triggeredByName))
     .catch(() => {});
 
-  return po;
+  return { id: po.id, docNumber: po.docNumber };
 }
 
 export async function updatePO(
@@ -206,7 +156,7 @@ export async function updatePO(
 
   revalidatePath('/backoffice/purchase-orders');
   revalidatePath(`/backoffice/purchase-orders/${id}`);
-  return po;
+  return { id };
 }
 
 export async function changePOStatus(
@@ -216,6 +166,14 @@ export async function changePOStatus(
   notes?: string,
   pin?: string
 ) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  if (newStatus === 'SUBMITTED') {
+    requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_APPROVE);
+  } else {
+    requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+  }
+
   if (newStatus === 'CANCELLED') {
     if (!pin) {
       throw new Error('PIN required to void/cancel a PO');
@@ -265,7 +223,7 @@ export async function changePOStatus(
   
   revalidatePath('/backoffice/purchase-orders');
   revalidatePath(`/backoffice/purchase-orders/${id}`);
-  return po;
+  return { id: po.id, status: po.status };
 }
 
 export async function submitPO(id: string, userId: string) {
@@ -273,6 +231,10 @@ export async function submitPO(id: string, userId: string) {
 }
 
 export async function cancelPO(id: string, userId: string, reason?: string, pin?: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+
   if (!pin) {
     throw new Error('PIN required to cancel/void a PO');
   }
@@ -314,238 +276,14 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
 }
 
 export async function getPOs(
-  filters?: {
-    status?: POStatus;
-    statusIn?: POStatus[];
-    supplierId?: string;
-    fromDate?: Date;
-    toDate?: Date;
-    overdue?: boolean;
-    paymentDueFrom?: Date;
-    paymentDueTo?: Date;
-    paid?: boolean;
-  },
-  opts?: { page: number; pageSize: number }
+  filters?: Parameters<typeof listPOs>[0],
+  opts?: Parameters<typeof listPOs>[1]
 ) {
-  const where: any = {};
-
-  if (filters?.status) {
-    where.status = filters.status;
-  }
-  if (filters?.statusIn?.length) {
-    where.status = { in: filters.statusIn };
-  }
-
-  if (filters?.supplierId) {
-    where.supplierId = filters.supplierId;
-  }
-
-  if (filters?.fromDate || filters?.toDate) {
-    where.createdAt = {};
-    if (filters.fromDate) {
-      where.createdAt.gte = filters.fromDate;
-    }
-    if (filters.toDate) {
-      where.createdAt.lte = filters.toDate;
-    }
-  }
-  if (filters?.paymentDueFrom || filters?.paymentDueTo) {
-    where.paymentDueDate = {};
-    if (filters.paymentDueFrom) {
-      where.paymentDueDate.gte = filters.paymentDueFrom;
-    }
-    if (filters.paymentDueTo) {
-      where.paymentDueDate.lte = filters.paymentDueTo;
-    }
-  }
-  if (filters?.paid === true) {
-    where.paidAt = { not: null };
-  }
-  if (filters?.paid === false) {
-    where.paidAt = null;
-  }
-
-  if (filters?.overdue) {
-    where.etaDate = { lt: new Date() };
-    where.status = { notIn: ['CLOSED', 'OVER', 'CANCELLED'] };
-  }
-
-  const include = {
-    supplier: {
-      select: {
-        name: true,
-        code: true,
-      },
-    },
-    items: {
-      include: {
-        item: {
-          select: {
-            sku: true,
-            nameId: true,
-          },
-        },
-      },
-    },
-    _count: {
-      select: {
-        grns: true,
-      },
-    },
-  };
-
-  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
-    const [pos, totalCount] = await Promise.all([
-      prisma.purchaseOrder.findMany({
-        where,
-        skip: (opts.page - 1) * opts.pageSize,
-        take: opts.pageSize,
-        include,
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.purchaseOrder.count({ where }),
-    ]);
-    const items = pos.map((po) => ({
-      ...po,
-      totalAmount: toNum(po.totalAmount),
-      taxAmount: toNum(po.taxAmount),
-      grandTotal: toNum(po.grandTotal),
-      items: po.items.map((i) => ({
-        ...i,
-        qty: toNum(i.qty),
-        price: toNum(i.price),
-        receivedQty: toNum(i.receivedQty),
-      })),
-      etaAlert: getETAStatus(po.etaDate, po.status),
-    }));
-    return { items, totalCount };
-  }
-
-  const pos = await prisma.purchaseOrder.findMany({
-    where,
-    include,
-    orderBy: { createdAt: 'desc' },
-  });
-
-  return pos.map((po) => ({
-    ...po,
-    totalAmount: toNum(po.totalAmount),
-    taxAmount: toNum(po.taxAmount),
-    grandTotal: toNum(po.grandTotal),
-    items: po.items.map((i) => ({
-      ...i,
-      qty: toNum(i.qty),
-      price: toNum(i.price),
-      receivedQty: toNum(i.receivedQty),
-    })),
-    etaAlert: getETAStatus(po.etaDate, po.status),
-  }));
-}
-
-function toNum(v: unknown): number | null {
-  return v == null ? null : Number(v);
+  return listPOs(filters, opts);
 }
 
 export async function getPOById(id: string) {
-  const po = await prisma.purchaseOrder.findUnique({
-    where: { id },
-    include: {
-      supplier: true,
-      items: {
-        include: {
-          item: {
-            select: {
-              id: true,
-              sku: true,
-              nameId: true,
-              nameEn: true,
-              type: true,
-              variants: true,
-              uom: true,
-            },
-          },
-        },
-      },
-      grns: true,
-      statusHistory: {
-        include: {
-          changedBy: {
-            select: {
-              id: true,
-              name: true,
-              email: true
-            }
-          }
-        },
-        orderBy: { createdAt: 'desc' }
-      }
-    }
-  });
-  if (!po) return null;
-  return {
-    ...po,
-    totalAmount: toNum(po.totalAmount),
-    taxAmount: toNum(po.taxAmount),
-    grandTotal: toNum(po.grandTotal),
-    items: po.items.map((i) => ({
-      ...i,
-      qty: toNum(i.qty),
-      price: toNum(i.price),
-      receivedQty: toNum(i.receivedQty),
-    })),
-    grns: po.grns.map((g) => ({
-      id: g.id,
-      docNumber: g.docNumber,
-      totalAmount: toNum(g.totalAmount),
-      grnDate: g.grnDate,
-    })),
-  };
-}
-
-// Get overdue POs with alert status
-export async function getOverduePOs() {
-  const today = new Date();
-  
-  const pos = await prisma.purchaseOrder.findMany({
-    where: {
-      etaDate: { lt: today },
-      status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] }
-    },
-    include: {
-      supplier: {
-        select: {
-          name: true,
-          code: true
-        }
-      },
-      items: {
-        select: {
-          qty: true,
-          receivedQty: true
-        }
-      }
-    },
-    orderBy: { etaDate: 'asc' }
-  });
-  
-  return pos.map(po => {
-    const etaStatus = getETAStatus(po.etaDate, po.status);
-    const totalQty = po.items.reduce((sum, item) => sum + Number(item.qty), 0);
-    const receivedQty = po.items.reduce((sum, item) => sum + Number(item.receivedQty), 0);
-    const pendingQty = totalQty - receivedQty;
-
-    return {
-      id: po.id,
-      docNumber: po.docNumber,
-      etaDate: po.etaDate,
-      status: po.status,
-      grandTotal: Number(po.grandTotal),
-      supplier: po.supplier,
-      daysOverdue: Math.abs(etaStatus.daysUntil),
-      pendingQty,
-      etaAlert: etaStatus,
-    };
-  });
+  return getPOByIdQuery(id);
 }
 
 // Get PO statistics for dashboard
@@ -586,6 +324,9 @@ export async function getPOStats() {
 /** Mark a PO as paid (or unmark by passing paidAt: null). */
 export async function setPOPaidAt(poId: string, paidAt: Date | null) {
   const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: poId },
     select: { docNumber: true, status: true },

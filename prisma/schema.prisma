@@ -195,6 +195,7 @@ model ItemCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   items     Item[]
+  jubelioCategoryMappings JubelioCategoryMapping[]
 }
 
 model Item {
@@ -226,6 +227,7 @@ model Item {
   workOrdersAsConsumptionMaterial WorkOrder[] @relation("WorkOrderConsumptionMaterial")
   rejectedGoodsLedger RejectedGoodsLedger[]
   fabricRolls      FabricRoll[]
+  jubelioProductMappings JubelioProductMapping[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -644,6 +646,32 @@ model SystemSetting {
   key       String   @unique
   value     String   @db.Text
   updatedAt DateTime @updatedAt
+}
+
+// ==========================================
+// JUBELIO INTEGRATION
+// ==========================================
+model JubelioProductMapping {
+  id                  String    @id @default(cuid())
+  itemId              String
+  item                Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  jubelioItemGroupId  Int
+  jubelioItemId       Int       @unique
+  jubelioItemCode     String
+  erpVariantSku        String
+  lastSyncedAt        DateTime  @default(now())
+  jubelioLastModified DateTime?
+  @@index([itemId])
+  @@index([jubelioItemGroupId])
+}
+
+model JubelioCategoryMapping {
+  id                String       @id @default(cuid())
+  jubelioCategoryId Int          @unique
+  itemCategoryId    String
+  itemCategory      ItemCategory @relation(fields: [itemCategoryId], references: [id], onDelete: Cascade)
+  createdAt         DateTime     @default(now())
+  @@index([itemCategoryId])
 }
 
 model NotificationQueue {

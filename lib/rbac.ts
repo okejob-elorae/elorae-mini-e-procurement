@@ -72,10 +72,6 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/api/supplier-types': 'supplier_types:view',
   '/api/items': 'items:view',
   '/api/uoms': 'settings_uom:view',
-  '/api/purchase-orders': 'purchase_orders:view',
-  '/api/inventory': 'inventory:view',
-  '/api/work-orders': 'work_orders:view',
-  '/api/vendor-returns': 'vendor_returns:view',
   '/api/notifications': 'dashboard:view', // All authenticated users can view their notifications
 };
 

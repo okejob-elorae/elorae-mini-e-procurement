@@ -135,18 +135,14 @@ export default function NewWorkOrderPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [suppliersRes, fgList, posResult] = await Promise.all([
-          fetch('/api/suppliers?approvedOnly=true'),
+        const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
+        const [supplierData, fgList, posResult] = await Promise.all([
+          getSuppliersForSelect({ approvedOnly: true }),
           getItemsByType(ItemType.FINISHED_GOOD),
           getPOs({ statusIn: ['SUBMITTED', 'PARTIAL'] }, { page: 1, pageSize: 200 }),
         ]);
-        if (suppliersRes.ok) {
-          const data = await suppliersRes.json();
-          const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
-          setTailors(
-            list as TailorSupplier[]
-          );
-        }
+        const list = Array.isArray(supplierData) ? supplierData : [];
+        setTailors(list as TailorSupplier[]);
         setFinishedGoods((fgList as FinishedGood[]) || []);
         const pos = (posResult as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
         setPurchaseOrders(pos);

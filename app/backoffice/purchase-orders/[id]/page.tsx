@@ -68,11 +68,11 @@ export default function PODetailPage() {
         .then((data) => {
           setPO(data);
           // Load suppliers for edit mode
-          fetch('/api/suppliers?sync=true&approvedOnly=true')
-            .then(res => res.json())
+          import('@/app/actions/suppliers')
+            .then(({ getSuppliersForSelect }) => getSuppliersForSelect({ sync: true, approvedOnly: true }))
             .then((data: unknown) => {
-              const list = Array.isArray(data) ? data : (data as { data?: unknown[] })?.data ?? [];
-              setSuppliers(Array.isArray(list) ? list.map((s: any) => ({ id: s.id, code: s.code, name: s.name })) : []);
+              const list = Array.isArray(data) ? data : [];
+              setSuppliers(list.map((s: { id: string; code: string; name: string }) => ({ id: s.id, code: s.code, name: s.name })));
             })
             .catch(() => {});
         })

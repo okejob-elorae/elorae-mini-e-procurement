@@ -98,12 +98,10 @@ export default function SupplierPaymentsPage() {
 
   const fetchSuppliers = async () => {
     try {
-      const res = await fetch('/api/suppliers?sync=true&approvedOnly=true');
-      if (res.ok) {
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
-        setSuppliers(list.map((s: { id: string; name: string; code: string }) => ({ id: s.id, name: s.name, code: s.code })));
-      }
+      const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
+      const data = await getSuppliersForSelect({ sync: true, approvedOnly: true });
+      const list = Array.isArray(data) ? data : [];
+      setSuppliers(list.map((s: { id: string; name: string; code: string }) => ({ id: s.id, name: s.name, code: s.code })));
     } catch {
       // ignore
     }
