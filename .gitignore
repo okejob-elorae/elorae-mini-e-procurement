@@ -2,4 +2,6 @@ node_modules/
 .turbo/
 .pnpm-store/
 
+packages/db/generated/
+
 reference/jubelio/
