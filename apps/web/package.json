@@ -1,5 +1,5 @@
 {
-  "name": "elorae-erp",
+  "name": "@elorae/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {

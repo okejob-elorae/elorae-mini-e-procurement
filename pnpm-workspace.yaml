@@ -1,0 +1,14 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+allowBuilds:
+  '@firebase/util': false
+  '@parcel/watcher': true
+  '@prisma/engines': true
+  '@swc/core': true
+  esbuild: true
+  msw: false
+  prisma: true
+  protobufjs: false
+  sharp: true
+  unrs-resolver: true
