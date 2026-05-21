@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 // Procurement Report
 export async function getProcurementReport(filters?: {
   fromDate?: Date;

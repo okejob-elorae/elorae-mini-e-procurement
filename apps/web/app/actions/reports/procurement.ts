@@ -1,8 +1,8 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 import { getETAStatus } from '@/lib/eta-alerts';
-import { POStatus } from '@prisma/client';
+import { POStatus } from '@elorae/db';
 import * as XLSX from 'xlsx';
 
 export type ProcurementReportFilters = {

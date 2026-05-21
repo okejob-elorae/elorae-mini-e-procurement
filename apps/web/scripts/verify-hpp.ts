@@ -27,7 +27,7 @@ function assert(condition: boolean, message: string) {
 }
 
 async function main() {
-  const { prisma } = await import('../lib/prisma');
+  const { prisma } = await import('@elorae/db');
   const { calculateHPP } = await import('../app/actions/hpp');
 
   const wo = await prisma.workOrder.findFirst({
@@ -85,6 +85,6 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    const { prisma } = await import('../lib/prisma');
+    const { prisma } = await import('@elorae/db');
     await prisma.$disconnect();
   });

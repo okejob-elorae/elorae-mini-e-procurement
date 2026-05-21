@@ -1,5 +1,5 @@
-import { prisma } from './prisma';
-import { ItemType } from '@prisma/client';
+import { prisma } from '@elorae/db';
+import { ItemType } from '@elorae/db';
 
 const typePrefixes: Record<ItemType, string> = {
   FABRIC: 'FAB',

@@ -1,8 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { prisma } from '@/lib/prisma';
-import { ItemType, Prisma } from '@prisma/client';
+import { prisma } from '@elorae/db';
+import { ItemType, Prisma } from '@elorae/db';
 import { generateSKU } from '@/lib/sku-generator';
 import { auth } from '@/lib/auth';
 import { getActorName, notifyItemCreated } from '@/app/actions/notifications';

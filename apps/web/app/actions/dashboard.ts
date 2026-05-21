@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 
 function getWeekStart(d: Date): Date {
   const date = new Date(d);

@@ -2,7 +2,7 @@
 
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 import { calculateMovingAverage, reverseMovingAverage } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { getActorName, notifyGRNCreated } from '@/app/actions/notifications';

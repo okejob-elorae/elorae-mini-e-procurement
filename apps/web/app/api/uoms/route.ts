@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 
 // GET /api/uoms - List UOMs (for offline sync and client use)
 export async function GET(_req: NextRequest) {

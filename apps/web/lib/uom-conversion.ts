@@ -1,4 +1,4 @@
-import { prisma } from './prisma';
+import { prisma } from '@elorae/db';
 
 /**
  * Convert a quantity between two UOMs using configured conversion factors.

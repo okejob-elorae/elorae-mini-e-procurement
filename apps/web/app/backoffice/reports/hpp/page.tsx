@@ -39,7 +39,7 @@ import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { getHPPList, type HPPBreakdown } from '@/app/actions/hpp';
 import { updateWOHppAdjustments } from '@/app/actions/production';
 import { getItemsByType } from '@/app/actions/items';
-import { ItemType } from '@prisma/client';
+import { ItemType } from '@/lib/constants/enums';
 import { toast } from 'sonner';
 
 const fmt = (n: number | null | undefined) =>

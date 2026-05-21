@@ -1,5 +1,5 @@
-import { DocType } from '@prisma/client';
-import { prisma } from './prisma';
+import { DocType } from '@elorae/db';
+import { prisma } from '@elorae/db';
 
 const DEFAULT_CONFIGS: Record<
   DocType,

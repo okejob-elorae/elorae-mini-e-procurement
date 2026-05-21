@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 import { Decimal } from 'decimal.js';
 import * as XLSX from 'xlsx';
 

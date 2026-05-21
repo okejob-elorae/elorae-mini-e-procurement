@@ -1,8 +1,8 @@
 'use server';
 
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { Prisma } from '@elorae/db';
+import { prisma } from '@elorae/db';
 import { revalidatePath } from 'next/cache';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';

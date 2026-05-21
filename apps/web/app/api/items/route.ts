@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 

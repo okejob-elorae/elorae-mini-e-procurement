@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 
 export async function getSuppliersForReportFilter(): Promise<
   { id: string; name: string; code: string }[]

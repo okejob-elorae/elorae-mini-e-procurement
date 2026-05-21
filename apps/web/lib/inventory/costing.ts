@@ -1,8 +1,8 @@
 'use server';
 
 import { Decimal } from 'decimal.js';
-import { Prisma } from '@prisma/client';
-import { prisma } from '../prisma';
+import { Prisma } from '@elorae/db';
+import { prisma } from '@elorae/db';
 
 export interface CostCalculationResult {
   previousQty: Decimal;

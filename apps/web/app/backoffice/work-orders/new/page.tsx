@@ -37,7 +37,7 @@ import { toast } from 'sonner';
 import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption, suggestFabricRollAllocation, getAvailableFabricRolls } from '@/app/actions/production';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
 import { getPOs } from '@/app/actions/purchase-orders';
-import { ItemType } from '@prisma/client';
+import { ItemType } from '@/lib/constants/enums';
 
 interface TailorSupplier {
   id: string;

@@ -45,7 +45,7 @@ import { toast } from 'sonner';
 import { getWorkOrderById, issueMaterials } from '@/app/actions/production';
 import { getItemsByType } from '@/app/actions/items';
 import { getItemAvgCosts } from '@/app/actions/inventory';
-import { ItemType } from '@prisma/client';
+import { ItemType } from '@/lib/constants/enums';
 
 interface PlanRow {
   itemId: string;

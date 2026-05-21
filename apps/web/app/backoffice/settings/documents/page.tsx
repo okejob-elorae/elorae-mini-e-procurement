@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { DocType } from '@prisma/client';
+import { DocType } from '@/lib/constants/enums';
 
 const DOC_TYPES: DocType[] = ['PO', 'GRN', 'WO', 'ADJ', 'RET', 'ISSUE', 'RECEIPT'];
 

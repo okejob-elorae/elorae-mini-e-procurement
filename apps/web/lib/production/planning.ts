@@ -1,7 +1,7 @@
 'use server';
 
 import { Decimal } from 'decimal.js';
-import { prisma } from '../prisma';
+import { prisma } from '@elorae/db';
 
 export interface MaterialPlanItem {
   itemId: string;

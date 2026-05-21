@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import {
   DEFAULT_THEME_BASE_COLOR,

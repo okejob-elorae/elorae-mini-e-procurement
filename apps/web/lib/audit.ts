@@ -1,6 +1,6 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '@elorae/db';
 import type { GetAuditLogsFilters } from '@/types/audit';
-import { prisma } from './prisma';
+import { prisma } from '@elorae/db';
 
 export interface AuditLogData {
   userId: string;

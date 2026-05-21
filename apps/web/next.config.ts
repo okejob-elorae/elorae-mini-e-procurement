@@ -1,6 +1,9 @@
 import type { NextConfig } from 'next';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import withPWA from 'next-pwa';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
   typescript: {
@@ -16,8 +19,9 @@ const nextConfig: NextConfig = {
   },
   // Next.js 16 uses Turbopack by default; empty config silences webpack conflict (PWA is disabled in dev)
   turbopack: {
-    root: path.resolve(process.cwd()),
+    root: path.join(here, '../..'),
   },
+  outputFileTracingRoot: path.join(here, '../..'),
   webpack: (config) => {
     // PWA configuration uses webpack (production build)
     return config;

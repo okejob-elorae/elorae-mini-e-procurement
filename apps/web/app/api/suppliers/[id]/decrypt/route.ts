@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 import { decryptBankAccount } from '@/lib/encryption';
 import { logBankAccountView } from '@/lib/audit';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';

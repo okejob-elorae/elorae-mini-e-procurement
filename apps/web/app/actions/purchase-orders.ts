@@ -2,9 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { Decimal } from 'decimal.js';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 import { generateDocNumber } from '@/lib/docNumber';
-import { POStatus } from '@prisma/client';
+import { POStatus } from '@elorae/db';
 import { poSchema } from '@/lib/validations';
 import { getETAStatus } from '@/lib/eta-alerts';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';

@@ -1,7 +1,7 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
-import { ItemType } from '@prisma/client';
+import { prisma } from '@elorae/db';
+import { ItemType } from '@elorae/db';
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 

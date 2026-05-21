@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 import bcrypt from 'bcryptjs';
 
 export type ChangePasswordResult =

@@ -1,6 +1,6 @@
 'use server';
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@elorae/db';
 import { messaging } from '@/lib/firebase/admin';
 
 const PO_OVERDUE_TYPE = 'PO_OVERDUE';

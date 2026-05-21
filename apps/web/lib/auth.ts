@@ -2,8 +2,8 @@ import NextAuth from 'next-auth';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import Credentials from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
-import { prisma } from './prisma';
-import { Role } from '@prisma/client';
+import { prisma } from '@elorae/db';
+import { Role } from '@elorae/db';
 
 export const {
   handlers: { GET, POST },

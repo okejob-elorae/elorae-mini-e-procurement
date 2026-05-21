@@ -1,8 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { prisma } from '@/lib/prisma';
-import type { DocNumberConfig, DocType } from '@prisma/client';
+import { prisma } from '@elorae/db';
+import type { DocNumberConfig, DocType } from '@elorae/db';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { getActorName, notifyDocNumberAltered } from '@/app/actions/notifications';
