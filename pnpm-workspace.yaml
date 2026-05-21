@@ -1,11 +1,12 @@
 packages:
-  - 'apps/*'
-  - 'packages/*'
+  - "apps/*"
+  - "packages/*"
 allowBuilds:
-  '@firebase/util': false
-  '@parcel/watcher': true
-  '@prisma/engines': true
-  '@swc/core': true
+  "@firebase/util": false
+  "@nestjs/core": true
+  "@parcel/watcher": true
+  "@prisma/engines": true
+  "@swc/core": true
   esbuild: true
   msw: false
   prisma: true
