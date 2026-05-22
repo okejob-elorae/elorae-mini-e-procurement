@@ -23,6 +23,7 @@ import {
   Monitor,
   Check,
   BarChart2,
+  Palette,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -123,6 +124,17 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    labelKey: 'production',
+    href: '/backoffice/production/colors',
+    icon: Palette,
+    permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
+    children: [
+      { labelKey: 'navProductionColorsAll', href: '/backoffice/production/colors' },
+      { labelKey: 'navProductionColorsFavorites', href: '/backoffice/production/colors/favorites' },
+      { labelKey: 'navProductionColorsPhotoAnalyzer', href: '/backoffice/production/colors/photo-analyzer' },
+    ],
+  },
+  {
     labelKey: 'vendorReturns',
     href: '/backoffice/vendor-returns',
     icon: RotateCcw,
@@ -193,6 +205,7 @@ function Sidebar({
     if (path.startsWith('/backoffice/suppliers')) return '/backoffice/suppliers';
     if (path.startsWith('/backoffice/items')) return '/backoffice/items';
     if (path.startsWith('/backoffice/work-orders')) return '/backoffice/work-orders';
+    if (path.startsWith('/backoffice/production/colors')) return '/backoffice/production/colors';
     return null;
   };
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
@@ -208,14 +221,14 @@ function Sidebar({
   );
 
   return (
-    <div className={cn('flex flex-col h-full', className)}>
-      <div className="flex items-center gap-3 px-4 py-4 border-b">
-        <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-          <span className="text-primary-foreground font-bold text-lg">E</span>
+    <div className={cn('flex flex-col h-full text-primary-foreground', className)}>
+      <div className="flex items-center gap-3 px-4 py-4 border-b border-primary-foreground/20">
+        <div className="w-10 h-10 bg-primary-foreground rounded-lg flex items-center justify-center">
+          <span className="text-primary font-bold text-lg">E</span>
         </div>
         <div>
           <h1 className="font-bold text-lg">Elorae ERP</h1>
-          <p className="text-xs text-muted-foreground">v1.0.0</p>
+          <p className="text-xs text-primary-foreground/60">v1.0.0</p>
         </div>
       </div>
 
@@ -238,8 +251,8 @@ function Sidebar({
                   className={cn(
                     'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg:last-of-type]:rotate-90',
                     isParentActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      ? 'bg-primary-foreground text-primary'
+                      : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
                   )}
                 >
                   <Icon className="w-5 h-5 shrink-0" />
@@ -247,7 +260,7 @@ function Sidebar({
                   <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
                 </CollapsibleTrigger>
                 <CollapsibleContent>
-                  <div className="ml-4 mt-1 space-y-0.5 border-l border-border pl-3">
+                  <div className="ml-4 mt-1 space-y-0.5 border-l border-primary-foreground/20 pl-3">
                     {item.children!.map((child) => {
                       const isChildActive =
                         pathname === child.href || pathname.startsWith(`${child.href}/`);
@@ -259,8 +272,8 @@ function Sidebar({
                           className={cn(
                             'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
                             isChildActive
-                              ? 'font-medium text-primary'
-                              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                              ? 'font-medium text-primary-foreground'
+                              : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
                           )}
                         >
                           {tNav(child.labelKey as any)}
@@ -282,8 +295,8 @@ function Sidebar({
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  ? 'bg-primary-foreground text-primary'
+                  : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
               )}
             >
               <Icon className="w-5 h-5" />
@@ -293,7 +306,7 @@ function Sidebar({
         })}
       </nav>
 
-      <div className="p-4 border-t">
+      <div className="p-4 border-t border-primary-foreground/20 [&_button]:text-primary-foreground [&_button]:hover:bg-primary-foreground/10 [&_button]:hover:text-primary-foreground">
         <OfflineIndicator />
       </div>
     </div>
@@ -350,13 +363,13 @@ export function BackofficeShell({
   return (
     <div className="min-h-screen flex">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:block w-64 border-r bg-card">
+      <aside className="hidden lg:block w-64 border-r border-primary-foreground/10 bg-primary">
         <Sidebar permissions={session.user.permissions} />
       </aside>
 
       {/* Mobile Sidebar */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="p-0 w-64">
+        <SheetContent side="left" className="p-0 w-64 bg-primary border-primary-foreground/10">
           <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
         </SheetContent>
       </Sheet>
@@ -372,7 +385,7 @@ export function BackofficeShell({
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64">
+              <SheetContent side="left" className="p-0 w-64 bg-primary border-primary-foreground/10">
                 <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
               </SheetContent>
             </Sheet>

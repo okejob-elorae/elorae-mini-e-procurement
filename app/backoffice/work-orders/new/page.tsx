@@ -25,6 +25,8 @@ import {
   TableRow
 } from '@/components/ui/table';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { DatePicker } from '@/components/ui/date-picker';
+import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
 import {
   Select,
   SelectContent,
@@ -377,7 +379,7 @@ export default function NewWorkOrderPage() {
           plannedQty: plannedNum,
           expectedConsumption: consumptionInput.trim() ? Number(consumptionInput) : undefined,
           consumptionMaterialId: consumptionMaterialId || undefined,
-          targetDate: targetDate ? new Date(targetDate) : undefined,
+          targetDate: parseDateOnly(targetDate),
           poId: poId.trim() || undefined,
           notes: notes.trim() || undefined,
           rollBreakdown: rollBreakdown.length > 0 ? rollBreakdown : undefined,
@@ -536,11 +538,11 @@ export default function NewWorkOrderPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Target Date</Label>
-                <Input
-                  type="date"
-                  value={targetDate}
-                  onChange={(e) => setTargetDate(e.target.value)}
+                <Label htmlFor="targetDate">Target Date</Label>
+                <DatePicker
+                  id="targetDate"
+                  value={parseDateOnly(targetDate)}
+                  onChange={(date) => setTargetDate(date ? formatDateOnly(date) : '')}
                 />
               </div>
               <div className="space-y-2">

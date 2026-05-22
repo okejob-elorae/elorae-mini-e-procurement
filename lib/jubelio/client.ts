@@ -1,15 +1,41 @@
+import {
+  getValidJubelioToken,
+  isJubelioAuthFailureStatus,
+  JUBELIO_API_BASE_URL,
+  refreshJubelioToken,
+} from './auth';
 import type { JubelioItemsPayload } from './types';
 
-const JUBELIO_API_BASE_URL = 'https://api2.jubelio.com';
+type FetchWithTokenOptions = {
+  token: string;
+  retried?: boolean;
+};
 
-export async function fetchJubelioItems(token: string): Promise<JubelioItemsPayload> {
-  const response = await fetch(`${JUBELIO_API_BASE_URL}/inventory/items/`, {
+async function fetchWithBearer(
+  url: string,
+  { token, retried = false }: FetchWithTokenOptions
+): Promise<Response> {
+  const response = await fetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     cache: 'no-store',
+  });
+
+  if (!isJubelioAuthFailureStatus(response.status) || retried) {
+    return response;
+  }
+
+  const newToken = await refreshJubelioToken();
+  return fetchWithBearer(url, { token: newToken, retried: true });
+}
+
+export async function fetchJubelioItems(token?: string): Promise<JubelioItemsPayload> {
+  const bearer = token ?? (await getValidJubelioToken());
+  const response = await fetchWithBearer(`${JUBELIO_API_BASE_URL}/inventory/items/`, {
+    token: bearer,
   });
 
   if (!response.ok) {
@@ -24,14 +50,10 @@ export async function fetchJubelioCatalogDescription(
   token: string,
   itemGroupId: number
 ): Promise<string | undefined> {
-  const response = await fetch(`${JUBELIO_API_BASE_URL}/inventory/catalog/${itemGroupId}`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    cache: 'no-store',
-  });
+  const response = await fetchWithBearer(
+    `${JUBELIO_API_BASE_URL}/inventory/catalog/${itemGroupId}`,
+    { token }
+  );
 
   if (!response.ok) return undefined;
 

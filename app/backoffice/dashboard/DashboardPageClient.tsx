@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
 import {
   Select,
   SelectContent,
@@ -804,19 +806,21 @@ export function DashboardPageClient({
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-4 items-end">
                 <div className="space-y-2">
-                  <Label>From</Label>
-                  <Input
-                    type="date"
-                    value={rp1Filters.fromDate}
-                    onChange={(e) => setRp1Filters((f) => ({ ...f, fromDate: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>To</Label>
-                  <Input
-                    type="date"
-                    value={rp1Filters.toDate}
-                    onChange={(e) => setRp1Filters((f) => ({ ...f, toDate: e.target.value }))}
+                  <Label htmlFor="rp1-date-range">Date range</Label>
+                  <DateRangePicker
+                    id="rp1-date-range"
+                    triggerClassName="w-[220px]"
+                    value={{
+                      from: parseDateOnly(rp1Filters.fromDate),
+                      to: parseDateOnly(rp1Filters.toDate),
+                    }}
+                    onChange={(range) =>
+                      setRp1Filters((f) => ({
+                        ...f,
+                        fromDate: range?.from ? formatDateOnly(range.from) : '',
+                        toDate: range?.to ? formatDateOnly(range.to) : '',
+                      }))
+                    }
                   />
                 </div>
                 <div className="space-y-2">
@@ -956,12 +960,19 @@ export function DashboardPageClient({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>From</Label>
-                  <Input type="date" value={rp2From} onChange={(e) => setRp2From(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>To</Label>
-                  <Input type="date" value={rp2To} onChange={(e) => setRp2To(e.target.value)} />
+                  <Label htmlFor="rp2-date-range">Date range</Label>
+                  <DateRangePicker
+                    id="rp2-date-range"
+                    triggerClassName="w-[220px]"
+                    value={{
+                      from: parseDateOnly(rp2From),
+                      to: parseDateOnly(rp2To),
+                    }}
+                    onChange={(range) => {
+                      setRp2From(range?.from ? formatDateOnly(range.from) : '');
+                      setRp2To(range?.to ? formatDateOnly(range.to) : '');
+                    }}
+                  />
                 </div>
                 <Button onClick={loadRp2} disabled={rp2Loading}>
                   {rp2Loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load'}

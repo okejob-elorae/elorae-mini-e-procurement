@@ -27,7 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { getPOById, getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
@@ -338,21 +339,18 @@ export default function SupplierPaymentsPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Payment due from</Label>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-[160px]"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Payment due to</Label>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-[160px]"
+            <Label htmlFor="payment-due-range">Payment due range</Label>
+            <DateRangePicker
+              id="payment-due-range"
+              triggerClassName="w-[220px]"
+              value={{
+                from: parseDateOnly(dateFrom),
+                to: parseDateOnly(dateTo),
+              }}
+              onChange={(range) => {
+                setDateFrom(range?.from ? formatDateOnly(range.from) : '');
+                setDateTo(range?.to ? formatDateOnly(range.to) : '');
+              }}
             />
           </div>
           <div className="space-y-2">

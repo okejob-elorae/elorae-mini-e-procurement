@@ -13,6 +13,19 @@ function numberDefaultZero() {
   }, z.number().min(0));
 }
 
+/** Server actions serialize Date → ISO string in production; accept both. */
+function optionalDateField() {
+  return z.preprocess((val) => {
+    if (val === '' || val === null || val === undefined) return null;
+    if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val;
+    if (typeof val === 'string') {
+      const d = new Date(val);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return val;
+  }, z.date().nullable().optional());
+}
+
 export function createItemSchema(t: ValidationTranslate = defaultT) {
   return z.object({
     sku: z.string().optional(),
@@ -60,8 +73,8 @@ export function createPoSchema(t: ValidationTranslate = defaultT) {
   const poItem = createPoItemSchema(t);
   return z.object({
     supplierId: z.string().min(1, t('selectSupplier')),
-    etaDate: z.date().optional().nullable(),
-    paymentDueDate: z.date().optional().nullable(),
+    etaDate: optionalDateField(),
+    paymentDueDate: optionalDateField(),
     notes: z.string().optional(),
     terms: z.string().optional(),
     items: z.array(poItem).min(1, t('minOneItem')),

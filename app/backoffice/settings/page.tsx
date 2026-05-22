@@ -1,37 +1,56 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { getUserThemePreference, setUserThemePreference } from '@/app/actions/settings/theme';
+import {
+  PantoneThemePickerDialog,
+  type PantoneThemeSelection,
+} from '@/components/settings/PantoneThemePickerDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Check, FileDigit, KeyRound, Loader2, Palette, Percent, Ruler, Shield, Users } from 'lucide-react';
 import {
-  applyThemeBaseColor,
-  applyThemePrimaryColor,
+  FileDigit,
+  KeyRound,
+  Loader2,
+  Palette,
+  Percent,
+  Ruler,
+  Shield,
+  Users,
+} from 'lucide-react';
+import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
+import {
+  applyDefaultTheme,
+  applyThemeFromPantoneSeed,
+  isDocumentDarkMode,
   normalizeThemeHexColor,
 } from '@/lib/theme/theme-color';
 import { readThemeFromLocalStorage, saveThemeToLocalStorage } from '@/lib/theme/theme-storage';
-import {
-  DEFAULT_THEME_BASE_COLOR,
-  DEFAULT_THEME_PRIMARY_COLOR,
-  TAILWIND_BASE_COLOR_OPTIONS,
-  TAILWIND_THEME_COLOR_OPTIONS,
-  isAllowedThemeBaseColorName,
-  isAllowedThemePrimaryColor,
-} from '@/lib/theme/theme-presets';
+import { DEFAULT_THEME_PRIMARY_COLOR } from '@/lib/theme/theme-presets';
+
+type ThemeDraft = {
+  pantoneTcx: string | null;
+  pantoneName: string | null;
+  primaryHex: string;
+};
 
 export default function SettingsPage() {
   const t = useTranslations('settings');
+  const tTheme = useTranslations('settings.theme');
   const tToasts = useTranslations('toasts');
   const { data: session, status } = useSession();
-  const [baseColor, setBaseColor] = useState(DEFAULT_THEME_BASE_COLOR);
-  const [themeColor, setThemeColor] = useState(DEFAULT_THEME_PRIMARY_COLOR);
-  const [initialColor, setInitialColor] = useState(DEFAULT_THEME_PRIMARY_COLOR);
+  const [saved, setSaved] = useState<ThemeDraft>({
+    pantoneTcx: null,
+    pantoneName: null,
+    primaryHex: DEFAULT_THEME_PRIMARY_COLOR,
+  });
+  const [draft, setDraft] = useState<ThemeDraft>(saved);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [isThemeLoading, setIsThemeLoading] = useState(true);
   const [isThemeSaving, setIsThemeSaving] = useState(false);
 
@@ -46,6 +65,30 @@ export default function SettingsPage() {
 
   const userId = session?.user?.id ?? null;
 
+  const previewPalette = useMemo(() => {
+    if (draft.pantoneTcx === null) return null;
+    try {
+      return generatePaletteFromSeed(draft.primaryHex);
+    } catch {
+      return null;
+    }
+  }, [draft.pantoneTcx, draft.primaryHex]);
+
+  const previewTokens = previewPalette
+    ? isDocumentDarkMode()
+      ? previewPalette.dark
+      : previewPalette.light
+    : null;
+
+  const applyDraftToDocument = (next: ThemeDraft) => {
+    if (next.pantoneTcx === null) {
+      applyDefaultTheme();
+      return;
+    }
+    const palette = generatePaletteFromSeed(next.primaryHex);
+    applyThemeFromPantoneSeed(next.primaryHex, palette);
+  };
+
   useEffect(() => {
     if (status !== 'authenticated' || !userId) {
       setIsThemeLoading(false);
@@ -53,48 +96,58 @@ export default function SettingsPage() {
     }
 
     const cached = readThemeFromLocalStorage(userId);
-
     if (cached) {
-      setBaseColor(cached.base);
-      applyThemeBaseColor(cached.base);
-      setThemeColor(cached.primary);
+      const cachedDraft: ThemeDraft = {
+        pantoneTcx: cached.pantoneTcx,
+        pantoneName: null,
+        primaryHex: cached.seedHex,
+      };
+      setDraft(cachedDraft);
+      if (cached.pantoneTcx) {
+        applyThemeFromPantoneSeed(cached.seedHex, cached.palette);
+      } else {
+        applyDefaultTheme();
+      }
     }
 
     void getUserThemePreference()
       .then((preference) => {
-        const finalBase = isAllowedThemeBaseColorName(preference.baseColor)
-          ? preference.baseColor
-          : DEFAULT_THEME_BASE_COLOR;
-        const normalized = normalizeThemeHexColor(preference.primaryColor);
-        const finalColor = isAllowedThemePrimaryColor(normalized)
-          ? normalized
-          : DEFAULT_THEME_PRIMARY_COLOR;
-        setBaseColor(finalBase);
-        setThemeColor(finalColor);
-        setInitialColor(finalColor);
-        applyThemeBaseColor(finalBase);
-        saveThemeToLocalStorage({ primary: finalColor, base: finalBase }, userId);
+        const primaryHex = normalizeThemeHexColor(preference.primaryHex);
+        const next: ThemeDraft = {
+          pantoneTcx: preference.pantoneTcx,
+          pantoneName: preference.pantoneName ?? null,
+          primaryHex,
+        };
+        setSaved(next);
+        setDraft(next);
+        applyDraftToDocument(next);
+        const palette =
+          next.pantoneTcx !== null ? generatePaletteFromSeed(primaryHex) : undefined;
+        saveThemeToLocalStorage(
+          {
+            primary: primaryHex,
+            pantoneTcx: next.pantoneTcx,
+            seedHex: primaryHex,
+            palette,
+          },
+          userId
+        );
       })
       .catch(() => {
-        setBaseColor(DEFAULT_THEME_BASE_COLOR);
-        setThemeColor(DEFAULT_THEME_PRIMARY_COLOR);
-        setInitialColor(DEFAULT_THEME_PRIMARY_COLOR);
-        toast.error('Failed to load theme preference');
+        toast.error(tTheme('loadError'));
       })
       .finally(() => setIsThemeLoading(false));
-  }, [status, userId]);
+  }, [status, userId, tTheme]);
 
-  const handlePresetChange = (nextBase: string) => {
-    if (!isAllowedThemeBaseColorName(nextBase)) return;
-    setBaseColor(nextBase);
-    applyThemeBaseColor(nextBase);
-  };
-
-  const handleThemeColorChange = (nextColor: string) => {
-    const normalized = normalizeThemeHexColor(nextColor);
-    if (!isAllowedThemePrimaryColor(normalized)) return;
-    setThemeColor(normalized);
-    applyThemePrimaryColor(normalized);
+  const handlePantoneSelect = (selection: PantoneThemeSelection) => {
+    const primaryHex = normalizeThemeHexColor(selection.hex);
+    const next: ThemeDraft = {
+      pantoneTcx: selection.tcx,
+      pantoneName: selection.name,
+      primaryHex,
+    };
+    setDraft(next);
+    applyDraftToDocument(next);
   };
 
   const handleThemeSave = async () => {
@@ -102,23 +155,30 @@ export default function SettingsPage() {
     setIsThemeSaving(true);
 
     try {
-      const normalized = normalizeThemeHexColor(themeColor);
-      if (!isAllowedThemePrimaryColor(normalized)) {
-        throw new Error('Invalid preset color');
+      if (draft.pantoneTcx === null) {
+        throw new Error('Select a Pantone color first');
       }
-      if (!isAllowedThemeBaseColorName(baseColor)) {
-        throw new Error('Invalid base color');
-      }
-      applyThemeBaseColor(baseColor);
-      applyThemePrimaryColor(normalized);
-      saveThemeToLocalStorage({ primary: normalized, base: baseColor }, userId);
-      const result = await setUserThemePreference({
-        baseColor,
-        primaryColor: normalized,
-      });
-      const savedColor = normalizeThemeHexColor(result.primaryColor);
-      setBaseColor(result.baseColor);
-      setInitialColor(savedColor);
+
+      const palette = generatePaletteFromSeed(draft.primaryHex);
+      applyThemeFromPantoneSeed(draft.primaryHex, palette);
+      saveThemeToLocalStorage(
+        {
+          primary: draft.primaryHex,
+          pantoneTcx: draft.pantoneTcx,
+          seedHex: draft.primaryHex,
+          palette,
+        },
+        userId
+      );
+
+      const result = await setUserThemePreference({ tcx: draft.pantoneTcx });
+      const savedState: ThemeDraft = {
+        pantoneTcx: result.pantoneTcx,
+        pantoneName: result.pantoneName ?? draft.pantoneName,
+        primaryHex: normalizeThemeHexColor(result.primaryHex),
+      };
+      setSaved(savedState);
+      setDraft(savedState);
       toast.success(tToasts('saved'));
     } catch {
       toast.error(tToasts('failedToSave'));
@@ -131,21 +191,31 @@ export default function SettingsPage() {
     if (!userId) return;
     setIsThemeSaving(true);
 
-    const fallbackBase = DEFAULT_THEME_BASE_COLOR;
-    const fallback = DEFAULT_THEME_PRIMARY_COLOR;
-    applyThemeBaseColor(fallbackBase);
-    applyThemePrimaryColor(fallback);
-    saveThemeToLocalStorage({ primary: fallback, base: fallbackBase }, userId);
+    applyDefaultTheme();
+    const fallback: ThemeDraft = {
+      pantoneTcx: null,
+      pantoneName: null,
+      primaryHex: DEFAULT_THEME_PRIMARY_COLOR,
+    };
+    setDraft(fallback);
+    saveThemeToLocalStorage(
+      {
+        primary: DEFAULT_THEME_PRIMARY_COLOR,
+        pantoneTcx: null,
+        seedHex: DEFAULT_THEME_PRIMARY_COLOR,
+      },
+      userId
+    );
 
     try {
-      const result = await setUserThemePreference({
-        baseColor: fallbackBase,
-        primaryColor: fallback,
-      });
-      const savedColor = normalizeThemeHexColor(result.primaryColor);
-      setBaseColor(result.baseColor);
-      setThemeColor(savedColor);
-      setInitialColor(savedColor);
+      const result = await setUserThemePreference({ reset: true });
+      const savedState: ThemeDraft = {
+        pantoneTcx: result.pantoneTcx,
+        pantoneName: null,
+        primaryHex: normalizeThemeHexColor(result.primaryHex),
+      };
+      setSaved(savedState);
+      setDraft(savedState);
       toast.success(tToasts('saved'));
     } catch {
       toast.error(tToasts('failedToSave'));
@@ -153,6 +223,10 @@ export default function SettingsPage() {
       setIsThemeSaving(false);
     }
   };
+
+  const isDirty =
+    draft.pantoneTcx !== saved.pantoneTcx ||
+    draft.primaryHex !== saved.primaryHex;
 
   return (
     <div className="space-y-6">
@@ -165,78 +239,97 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Palette className="h-5 w-5" />
-            Base Color
+            {tTheme('title')}
           </CardTitle>
-          <CardDescription>
-            Choose from Tailwind preset base colors. This setting is saved to your account.
-          </CardDescription>
+          <CardDescription>{tTheme('description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Base color</Label>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {TAILWIND_BASE_COLOR_OPTIONS.map((option) => {
-                const selected = baseColor === option.name;
-                return (
-                  <button
-                    key={option.name}
-                    type="button"
-                    onClick={() => handlePresetChange(option.name)}
-                    disabled={isThemeLoading || isThemeSaving}
-                    className="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span className="font-medium">{option.label}</span>
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="h-4 w-4 rounded-full border"
-                        style={{ backgroundColor: option.primary }}
-                        aria-hidden="true"
-                      />
-                      {selected ? <Check className="h-4 w-4 text-primary" /> : null}
-                    </span>
-                  </button>
-                );
-              })}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div
+              className="h-24 w-24 shrink-0 rounded-lg border shadow-sm"
+              style={{
+                backgroundColor:
+                  draft.pantoneTcx !== null ? draft.primaryHex : DEFAULT_THEME_PRIMARY_COLOR,
+              }}
+              aria-hidden
+            />
+            <div className="space-y-1 min-w-0">
+              {draft.pantoneTcx ? (
+                <>
+                  <p className="font-medium">{draft.pantoneName ?? '—'}</p>
+                  <p className="font-mono text-sm text-muted-foreground">{draft.pantoneTcx}</p>
+                  <p className="font-mono text-sm text-muted-foreground">{draft.primaryHex}</p>
+                </>
+              ) : (
+                <p className="text-muted-foreground">{tTheme('defaultLabel')}</p>
+              )}
+              <p className="text-sm text-muted-foreground pt-1">{tTheme('hint')}</p>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label>Theme color</Label>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {TAILWIND_THEME_COLOR_OPTIONS.map((option) => {
-                const selected = themeColor === option.primary;
-                return (
-                  <button
-                    key={option.name}
-                    type="button"
-                    onClick={() => handleThemeColorChange(option.primary)}
-                    disabled={isThemeLoading || isThemeSaving}
-                    className="flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span className="font-medium">{option.label}</span>
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="h-4 w-4 rounded-full border"
-                        style={{ backgroundColor: option.primary }}
-                        aria-hidden="true"
-                      />
-                      {selected ? <Check className="h-4 w-4 text-primary" /> : null}
-                    </span>
-                  </button>
-                );
-              })}
+
+          {previewTokens && (
+            <div className="space-y-2">
+              <Label>{tTheme('previewLabel')}</Label>
+              <div className="flex flex-wrap gap-2">
+                <span
+                  className="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium text-primary-foreground"
+                  style={{ backgroundColor: draft.primaryHex }}
+                >
+                  {tTheme('previewPrimary')}
+                </span>
+                {(
+                  [
+                    ['background', previewTokens.background],
+                    ['card', previewTokens.card],
+                    ['muted', previewTokens.muted],
+                    ['border', previewTokens.border],
+                  ] as const
+                ).map(([key, color]) => (
+                  <span
+                    key={key}
+                    className="h-9 w-14 rounded-md border"
+                    style={{ backgroundColor: color }}
+                    title={key}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={handleThemeSave} disabled={isThemeLoading || isThemeSaving}>
-              {isThemeSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save color'}
+          )}
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setPickerOpen(true)}
+            disabled={isThemeLoading || isThemeSaving}
+          >
+            {tTheme('choosePantone')}
+          </Button>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={handleThemeSave}
+              disabled={
+                isThemeLoading || isThemeSaving || !isDirty || draft.pantoneTcx === null
+              }
+            >
+              {isThemeSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : tTheme('save')}
             </Button>
-            <Button variant="outline" onClick={handleThemeReset} disabled={isThemeLoading || isThemeSaving}>
-              Reset default
+            <Button
+              variant="outline"
+              onClick={handleThemeReset}
+              disabled={isThemeLoading || isThemeSaving}
+            >
+              {tTheme('resetDefault')}
             </Button>
           </div>
-          <p className="text-sm text-muted-foreground">Saved color: {initialColor}</p>
         </CardContent>
       </Card>
+
+      <PantoneThemePickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={handlePantoneSelect}
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => (

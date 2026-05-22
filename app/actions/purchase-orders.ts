@@ -24,7 +24,15 @@ export async function createPO(data: POFormData, userId: string) {
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_CREATE);
 
-  const po = await createPurchaseOrder(data, userId);
+  let po;
+  try {
+    po = await createPurchaseOrder(data, userId);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      throw new Error(error.issues[0]?.message ?? 'Invalid purchase order data');
+    }
+    throw error;
+  }
 
   getActorName(userId)
     .then((triggeredByName) => notifyPOCreated(po.id, po.docNumber, triggeredByName))

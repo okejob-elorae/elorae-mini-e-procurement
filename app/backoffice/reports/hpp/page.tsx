@@ -36,6 +36,8 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
 import { getHPPList, type HPPBreakdown } from '@/app/actions/hpp';
 import { updateWOHppAdjustments } from '@/app/actions/production';
 import { getItemsByType } from '@/app/actions/items';
@@ -234,19 +236,18 @@ export default function HPPPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>{t('dateFrom')}</Label>
-              <Input
-                type="date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('dateTo')}</Label>
-              <Input
-                type="date"
-                value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
+              <Label htmlFor="hpp-date-range">{t('dateFrom')} – {t('dateTo')}</Label>
+              <DateRangePicker
+                id="hpp-date-range"
+                triggerClassName="min-w-[220px]"
+                value={{
+                  from: parseDateOnly(filterDateFrom),
+                  to: parseDateOnly(filterDateTo),
+                }}
+                onChange={(range) => {
+                  setFilterDateFrom(range?.from ? formatDateOnly(range.from) : '');
+                  setFilterDateTo(range?.to ? formatDateOnly(range.to) : '');
+                }}
               />
             </div>
             <div className="space-y-2">

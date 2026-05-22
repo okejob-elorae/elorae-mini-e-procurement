@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Card,
@@ -22,6 +21,8 @@ import {
   TableRow
 } from '@/components/ui/table';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
 import {
   Select,
   SelectContent,
@@ -212,12 +213,19 @@ export default function NotaRegisterPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Dari</Label>
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Sampai</Label>
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <Label htmlFor="nota-date-range">Dari – Sampai</Label>
+            <DateRangePicker
+              id="nota-date-range"
+              triggerClassName="w-[220px]"
+              value={{
+                from: parseDateOnly(dateFrom),
+                to: parseDateOnly(dateTo),
+              }}
+              onChange={(range) => {
+                setDateFrom(range?.from ? formatDateOnly(range.from) : '');
+                setDateTo(range?.to ? formatDateOnly(range.to) : '');
+              }}
+            />
           </div>
           <div className="space-y-2">
             <Label>Tipe</Label>

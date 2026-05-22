@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { DatePicker } from '@/components/ui/date-picker';
 import {
   Select,
   SelectContent,
@@ -388,28 +389,13 @@ export function POForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="etaDate">ETA Date</Label>
-              <Input
+              <DatePicker
                 id="etaDate"
-                type="date"
+                value={watch('etaDate') ?? null}
                 aria-invalid={!!errors.etaDate}
                 className={errors.etaDate ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                value={
-                  (() => {
-                    const v = watch('etaDate');
-                    if (!v) return '';
-                    const d = v instanceof Date ? v : new Date(v);
-                    if (isNaN(d.getTime())) return '';
-                    const y = d.getFullYear();
-                    const m = String(d.getMonth() + 1).padStart(2, '0');
-                    const day = String(d.getDate()).padStart(2, '0');
-                    return `${y}-${m}-${day}`;
-                  })()
-                }
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  setValue('etaDate', raw ? new Date(raw + 'T00:00:00') : null, {
-                    shouldValidate: true,
-                  });
+                onChange={(date) => {
+                  setValue('etaDate', date ?? null, { shouldValidate: true });
                 }}
               />
               {errors.etaDate && (
@@ -428,28 +414,13 @@ export function POForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="paymentDueDate">Payment due date</Label>
-              <Input
+              <DatePicker
                 id="paymentDueDate"
-                type="date"
+                value={watch('paymentDueDate') ?? null}
                 aria-invalid={!!errors.paymentDueDate}
                 className={errors.paymentDueDate ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                value={
-                  (() => {
-                    const v = watch('paymentDueDate');
-                    if (!v) return '';
-                    const d = v instanceof Date ? v : new Date(v);
-                    if (isNaN(d.getTime())) return '';
-                    const y = d.getFullYear();
-                    const m = String(d.getMonth() + 1).padStart(2, '0');
-                    const day = String(d.getDate()).padStart(2, '0');
-                    return `${y}-${m}-${day}`;
-                  })()
-                }
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  setValue('paymentDueDate', raw ? new Date(raw + 'T00:00:00') : null, {
-                    shouldValidate: true,
-                  });
+                onChange={(date) => {
+                  setValue('paymentDueDate', date ?? null, { shouldValidate: true });
                 }}
               />
               {errors.paymentDueDate && (

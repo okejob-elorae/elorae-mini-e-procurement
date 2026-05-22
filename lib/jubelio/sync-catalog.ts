@@ -1,6 +1,7 @@
 import path from 'path';
 import { ItemType, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { getValidJubelioToken, readJubelioTokenFromDb } from './auth';
 import { fetchJubelioItems } from './client';
 import { buildCatalogDrafts, loadSnapshotPayload, sellingPriceToDecimal } from './map-catalog';
 import type {
@@ -13,7 +14,6 @@ import type {
   VariantJson,
 } from './types';
 
-const JUBELIO_TOKEN_KEY = 'JUBELIO_SESSION_TOKEN';
 const DEFAULT_SNAPSHOT = path.join(
   process.cwd(),
   'agent-instruction',
@@ -48,7 +48,6 @@ async function loadCategoryMap(): Promise<Map<number, string>> {
 
 async function loadPayload(
   source: 'api' | 'snapshot',
-  token: string | null,
   itemGroupIds?: number[],
   enrichDescriptions?: boolean
 ): Promise<JubelioItemsPayload> {
@@ -57,11 +56,11 @@ async function loadPayload(
   if (source === 'snapshot') {
     payload = loadSnapshotPayload(DEFAULT_SNAPSHOT);
   } else {
-    if (!token) throw new Error('Jubelio session token not configured');
-    payload = await fetchJubelioItems(token);
+    payload = await fetchJubelioItems();
   }
 
-  if (enrichDescriptions && source === 'api' && token && itemGroupIds?.length) {
+  if (enrichDescriptions && source === 'api' && itemGroupIds?.length) {
+    const token = await getValidJubelioToken();
     const descriptionsByGroupId = new Map<number, string>();
     const { fetchJubelioCatalogDescription } = await import('./client');
     for (const id of itemGroupIds) {
@@ -245,19 +244,12 @@ export async function syncCatalog(opts: SyncCatalogOptions = {}): Promise<Catalo
     throw new Error('Snapshot source is only allowed in development');
   }
 
-  const tokenRow =
-    source === 'api'
-      ? await prisma.systemSetting.findUnique({ where: { key: JUBELIO_TOKEN_KEY } })
-      : null;
-  const token = tokenRow?.value?.trim() ?? null;
+  if (source === 'api') {
+    await getValidJubelioToken();
+  }
 
   const categoryIdByJubelioId = await loadCategoryMap();
-  const payload = await loadPayload(
-    source,
-    token,
-    opts.itemGroupIds,
-    opts.enrichDescriptions
-  );
+  const payload = await loadPayload(source, opts.itemGroupIds, opts.enrichDescriptions);
 
   const { drafts, warnings: buildWarnings } = buildCatalogDrafts(payload, {
     itemGroupIds: opts.itemGroupIds,
@@ -314,11 +306,8 @@ export async function syncCatalog(opts: SyncCatalogOptions = {}): Promise<Catalo
 }
 
 export async function getJubelioTokenFromDb(): Promise<string | null> {
-  const row = await prisma.systemSetting.findUnique({
-    where: { key: JUBELIO_TOKEN_KEY },
-    select: { value: true },
-  });
-  return row?.value?.trim() ?? null;
+  const { token } = await readJubelioTokenFromDb();
+  return token;
 }
 
 // Re-export for tests

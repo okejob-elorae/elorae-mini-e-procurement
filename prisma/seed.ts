@@ -24,6 +24,7 @@ import {
 import bcrypt from "bcryptjs";
 
 import { getDatabaseUrl } from "../lib/db-connection";
+import { seedPantoneColors } from "./seed-pantone-colors";
 
 const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL!);
 const prisma = new PrismaClient({ adapter });
@@ -123,6 +124,8 @@ async function main() {
     { code: 'work_orders:manage', module: 'work_orders', action: 'manage', description: 'Manage work orders' },
     // Nota Register
     { code: 'nota_register:view', module: 'nota_register', action: 'view', description: 'View nota register' },
+    // Production Colors (Pantone TCX)
+    { code: 'production_colors:view', module: 'production_colors', action: 'view', description: 'View production Pantone colors' },
     // Vendor Returns
     { code: 'vendor_returns:view', module: 'vendor_returns', action: 'view', description: 'View vendor returns' },
     { code: 'vendor_returns:create', module: 'vendor_returns', action: 'create', description: 'Create vendor returns' },
@@ -278,6 +281,7 @@ async function main() {
     'items:view',
     'work_orders:view', 'work_orders:create', 'work_orders:manage',
     'nota_register:view',
+    'production_colors:view',
   ];
   for (const code of productionPermissions) {
     const perm = permissionMap.get(code);
@@ -317,6 +321,9 @@ async function main() {
     data: { roleId: productionRole.id },
   });
   console.log('Users migrated to roleId');
+
+  // ---------- 1.6 Pantone TCX catalog ----------
+  await seedPantoneColors(prisma);
 
   // ---------- 2. Supplier types ----------
   const typeFabric = await prisma.supplierType.upsert({

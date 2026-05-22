@@ -3,17 +3,13 @@
 import { useEffect, useLayoutEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { getUserThemePreference } from '@/app/actions/settings/theme';
+import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import {
-  applyThemeBaseColor,
-  applyThemePrimaryColor,
+  applyDefaultTheme,
+  applyThemeFromPantoneSeed,
   normalizeThemeHexColor,
 } from '@/lib/theme/theme-color';
-import {
-  DEFAULT_THEME_BASE_COLOR,
-  DEFAULT_THEME_PRIMARY_COLOR,
-  isAllowedThemeBaseColorName,
-  isAllowedThemePrimaryColor,
-} from '@/lib/theme/theme-presets';
+import { DEFAULT_THEME_PRIMARY_COLOR } from '@/lib/theme/theme-presets';
 import {
   applyCachedThemeFromLocalStorage,
   readThemeFromLocalStorage,
@@ -24,7 +20,6 @@ export function ThemeColorProvider({ children }: { children: React.ReactNode }) 
   const { data: session, status } = useSession();
   const userId = session?.user?.id ?? null;
 
-  // Re-apply cached theme before paint (backup to the blocking <head> script).
   useLayoutEffect(() => {
     applyCachedThemeFromLocalStorage(userId);
   }, [userId]);
@@ -43,16 +38,31 @@ export function ThemeColorProvider({ children }: { children: React.ReactNode }) 
 
     void getUserThemePreference()
       .then((preference) => {
-        const base = isAllowedThemeBaseColorName(preference.baseColor)
-          ? preference.baseColor
-          : DEFAULT_THEME_BASE_COLOR;
-        const normalized = normalizeThemeHexColor(preference.primaryColor);
-        const finalColor = isAllowedThemePrimaryColor(normalized)
-          ? normalized
-          : DEFAULT_THEME_PRIMARY_COLOR;
-        applyThemeBaseColor(base);
-        applyThemePrimaryColor(finalColor);
-        saveThemeToLocalStorage({ primary: finalColor, base }, userId);
+        const primaryHex = normalizeThemeHexColor(preference.primaryHex);
+        if (preference.pantoneTcx === null) {
+          applyDefaultTheme();
+          saveThemeToLocalStorage(
+            {
+              primary: DEFAULT_THEME_PRIMARY_COLOR,
+              pantoneTcx: null,
+              seedHex: DEFAULT_THEME_PRIMARY_COLOR,
+            },
+            userId
+          );
+          return;
+        }
+
+        const palette = generatePaletteFromSeed(primaryHex);
+        applyThemeFromPantoneSeed(primaryHex, palette);
+        saveThemeToLocalStorage(
+          {
+            primary: primaryHex,
+            pantoneTcx: preference.pantoneTcx,
+            seedHex: primaryHex,
+            palette,
+          },
+          userId
+        );
       })
       .catch(() => {
         // Keep device / local cache when the server action fails.
@@ -61,10 +71,15 @@ export function ThemeColorProvider({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     const cached = readThemeFromLocalStorage(userId);
-    const base = cached?.base ?? DEFAULT_THEME_BASE_COLOR;
+    const seedHex = cached?.seedHex ?? DEFAULT_THEME_PRIMARY_COLOR;
+    const palette = cached?.palette;
 
     const observer = new MutationObserver(() => {
-      applyThemeBaseColor(base);
+      if (cached?.pantoneTcx === null && !palette) {
+        applyDefaultTheme();
+      } else {
+        applyThemeFromPantoneSeed(seedHex, palette);
+      }
     });
 
     observer.observe(document.documentElement, {

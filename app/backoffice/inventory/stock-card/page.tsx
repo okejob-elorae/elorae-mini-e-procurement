@@ -4,9 +4,10 @@ import React, { useState, useCallback, useEffect, Fragment } from 'react';
 import Link from 'next/link';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
 import {
   Select,
   SelectContent,
@@ -358,6 +359,26 @@ export default function StockCardPage() {
         </div>
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Date range</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DateRangePicker
+            id="stock-card-date-range"
+            triggerClassName="min-h-[44px] max-w-md"
+            value={{
+              from: parseDateOnly(dateFrom),
+              to: parseDateOnly(dateTo),
+            }}
+            onChange={(range) => {
+              setDateFrom(range?.from ? formatDateOnly(range.from) : '');
+              setDateTo(range?.to ? formatDateOnly(range.to) : '');
+            }}
+          />
+        </CardContent>
+      </Card>
+
       <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
         <TabsList>
           <TabsTrigger value="by-item">By item</TabsTrigger>
@@ -371,7 +392,7 @@ export default function StockCardPage() {
           <CardTitle>Filter</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
             <div className="space-y-2">
               <Label>Item</Label>
               <SearchableCombobox
@@ -387,24 +408,6 @@ export default function StockCardPage() {
                 }}
                 placeholder="Select item"
                 triggerClassName="min-h-[44px]"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>From date</Label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="min-h-[44px]"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>To date</Label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="min-h-[44px]"
               />
             </div>
             <div className="flex items-end">
@@ -541,7 +544,7 @@ export default function StockCardPage() {
               <CardTitle>Filter</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Item type</Label>
                   <Select
@@ -559,24 +562,6 @@ export default function StockCardPage() {
                       <SelectItem value="finished">Finished goods</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>From date</Label>
-                  <Input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    className="min-h-[44px]"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>To date</Label>
-                  <Input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="min-h-[44px]"
-                  />
                 </div>
                 <div className="flex items-end">
                   <Button
@@ -723,7 +708,7 @@ export default function StockCardPage() {
               <CardTitle>Filter</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Item category</Label>
                   <Select
@@ -746,24 +731,6 @@ export default function StockCardPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>From date</Label>
-                  <Input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    className="min-h-[44px]"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>To date</Label>
-                  <Input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="min-h-[44px]"
-                  />
                 </div>
                 <div className="flex items-end">
                   <Button
