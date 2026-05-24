@@ -5,4 +5,4 @@ node_modules/
 packages/db/dist/
 packages/db/generated/
 
-reference/jubelio/
+reference/*
