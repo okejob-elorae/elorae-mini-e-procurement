@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE `auditlog` ADD COLUMN `reason` VARCHAR(191) NULL,
+ALTER TABLE `AuditLog` ADD COLUMN `reason` VARCHAR(191) NULL,
     ADD COLUMN `sensitiveDataAccessed` VARCHAR(191) NULL,
     ADD COLUMN `userAgent` VARCHAR(191) NULL;
 

@@ -7,19 +7,19 @@
 
 */
 -- AlterTable
-ALTER TABLE `fgreceipt` ADD COLUMN `materialCost` DECIMAL(15, 2) NULL,
+ALTER TABLE `FGReceipt` ADD COLUMN `materialCost` DECIMAL(15, 2) NULL,
     ADD COLUMN `qcPassed` BOOLEAN NOT NULL DEFAULT true;
 
 -- AlterTable
-ALTER TABLE `materialissue` ADD COLUMN `notes` TEXT NULL,
+ALTER TABLE `MaterialIssue` ADD COLUMN `notes` TEXT NULL,
     ADD COLUMN `splitSequence` INTEGER NULL;
 
 -- AlterTable
-ALTER TABLE `vendorreturn` ADD COLUMN `createdById` VARCHAR(191) NOT NULL,
+ALTER TABLE `VendorReturn` ADD COLUMN `createdById` VARCHAR(191) NOT NULL,
     ADD COLUMN `totalValue` DECIMAL(15, 2) NOT NULL;
 
 -- AlterTable
-ALTER TABLE `workorder` ADD COLUMN `finishedGoodId` VARCHAR(191) NOT NULL;
+ALTER TABLE `WorkOrder` ADD COLUMN `finishedGoodId` VARCHAR(191) NOT NULL;
 
 -- CreateIndex
 CREATE INDEX `FGReceipt_docNumber_idx` ON `FGReceipt`(`docNumber`);

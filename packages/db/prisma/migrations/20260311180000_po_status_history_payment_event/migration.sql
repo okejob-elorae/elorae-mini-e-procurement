@@ -1,2 +1,2 @@
 -- AlterTable
-ALTER TABLE `postatushistory` ADD COLUMN `paymentEvent` VARCHAR(191) NULL;
+ALTER TABLE `POStatusHistory` ADD COLUMN `paymentEvent` VARCHAR(191) NULL;
