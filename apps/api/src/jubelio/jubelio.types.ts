@@ -1,15 +1,36 @@
+import { ApiProperty } from "@nestjs/swagger";
+
 export type JubelioLoginResponse = {
   token?: string;
   error?: string;
   message?: string;
 };
 
-export type JubelioTokenStatus = {
-  hasToken: boolean;
-  updatedAt: string | null;
-  expiresAt: string | null;
-  expiresInSeconds: number | null;
-};
+export class JubelioTokenStatus {
+  @ApiProperty({ description: "Whether a Jubelio session token is currently cached." })
+  hasToken!: boolean;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "ISO-8601 timestamp of the last token refresh, or null if none.",
+  })
+  updatedAt!: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "ISO-8601 timestamp at which the cached token expires.",
+  })
+  expiresAt!: string | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: "Seconds remaining until token expiry, or null if no token.",
+  })
+  expiresInSeconds!: number | null;
+}
 
 export class JubelioError extends Error {
   constructor(
