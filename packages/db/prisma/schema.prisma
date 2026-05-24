@@ -661,6 +661,22 @@ model NotificationQueue {
   @@index([createdAt])
 }
 
+// Operational alerts written by apps/api (token-refresh failure, outbox stuck,
+// webhook signature mismatch, rate-limit hit). Consumed by apps/web admin UI.
+model AdminNotification {
+  id        String    @id @default(cuid())
+  category  String
+  severity  String
+  title     String
+  message   String    @db.Text
+  metadata  Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([readAt, severity, createdAt])
+  @@index([category, createdAt])
+}
+
 model PinAttempt {
   id        String   @id @default(cuid())
   userId    String

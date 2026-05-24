@@ -1,4 +1,6 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Inject } from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
+import { AdminNotificationService } from "../admin/notification.service";
 import { PRISMA, type PrismaService } from "../db/prisma.module";
 import {
   JUBELIO_TOKEN_KEY,
@@ -18,15 +20,21 @@ type CachedToken = {
   expiresAt: Date;
 };
 
+const MAX_REFRESH_ATTEMPTS = 4;
+const BACKOFF_BASE_MS = 1_000;
+const BACKOFF_FACTOR = 4;
+
 @Injectable()
 export class JubelioTokenService {
   private readonly logger = new Logger(JubelioTokenService.name);
   private cached: CachedToken | null = null;
   private inflightRefresh: Promise<string> | null = null;
+  private consecutiveFailures = 0;
 
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaService,
     private readonly config: JubelioConfig,
+    private readonly admin: AdminNotificationService,
   ) {}
 
   async getToken(): Promise<string> {
@@ -55,6 +63,71 @@ export class JubelioTokenService {
   }
 
   async refresh(): Promise<string> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MAX_REFRESH_ATTEMPTS; attempt++) {
+      try {
+        const token = await this.callLogin();
+        this.consecutiveFailures = 0;
+        return token;
+      } catch (err) {
+        lastError = err;
+        const delay = BACKOFF_BASE_MS * BACKOFF_FACTOR ** (attempt - 1);
+        this.logger.warn(
+          `Refresh attempt ${attempt}/${MAX_REFRESH_ATTEMPTS} failed: ${(err as Error).message}` +
+            (attempt < MAX_REFRESH_ATTEMPTS ? ` — retrying in ${delay}ms` : ""),
+        );
+        if (attempt < MAX_REFRESH_ATTEMPTS) {
+          await sleep(delay);
+        }
+      }
+    }
+
+    this.consecutiveFailures += 1;
+    await this.admin.write({
+      category: "JUBELIO_TOKEN_REFRESH_FAILED",
+      severity: this.consecutiveFailures >= 3 ? "CRITICAL" : "ERROR",
+      title: "Jubelio token refresh failed",
+      message:
+        `Jubelio token refresh failed after ${MAX_REFRESH_ATTEMPTS} attempts. ` +
+        `Consecutive failure count: ${this.consecutiveFailures}. ` +
+        `Last error: ${(lastError as Error)?.message ?? String(lastError)}`,
+      metadata: {
+        consecutiveFailures: this.consecutiveFailures,
+        attempts: MAX_REFRESH_ATTEMPTS,
+      },
+    });
+    throw lastError;
+  }
+
+  async invalidate(): Promise<void> {
+    this.cached = null;
+  }
+
+  // Run hourly. If token expires in less than 2 hours, refresh proactively so a
+  // burst of requests near expiry doesn't all stampede the single-flight path.
+  @Cron(CronExpression.EVERY_HOUR, { name: "jubelio-token-prewarm" })
+  async prewarm(): Promise<void> {
+    const cached = await this.loadCached();
+    if (!cached) {
+      this.logger.debug("No cached token yet — skipping prewarm cron");
+      return;
+    }
+    const msUntilExpiry = cached.expiresAt.getTime() - Date.now();
+    const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+    if (msUntilExpiry > TWO_HOURS_MS) {
+      return;
+    }
+    this.logger.log(
+      `Prewarm cron triggering refresh (expires in ${Math.round(msUntilExpiry / 60_000)}m)`,
+    );
+    try {
+      await this.getToken();
+    } catch (err) {
+      this.logger.error(`Prewarm refresh failed: ${(err as Error).message}`);
+    }
+  }
+
+  private async callLogin(): Promise<string> {
     const { email, password } = this.config.credentials;
     const url = `${this.config.baseUrl}/login`;
 
@@ -89,10 +162,6 @@ export class JubelioTokenService {
     return this.cached.token;
   }
 
-  async invalidate(): Promise<void> {
-    this.cached = null;
-  }
-
   private async loadCached(): Promise<CachedToken | null> {
     if (this.cached) return this.cached;
     const row = await this.prisma.systemSetting.findUnique({
@@ -111,4 +180,8 @@ export class JubelioTokenService {
   private isNearExpiry(cached: CachedToken): boolean {
     return cached.expiresAt.getTime() - Date.now() <= JUBELIO_TOKEN_REFRESH_LEAD_MS;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

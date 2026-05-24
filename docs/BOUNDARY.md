@@ -285,5 +285,6 @@ script uses `nest start --watch --builder swc` (SWC honours
 | Q4 | Audit log writer | Shared helper in `@elorae/db` (e.g. `writeAuditLog()`). Single Prisma call site. Both services call it. |
 | Q5 | `SystemSetting` namespace | api-owned keys prefixed `JUBELIO_*` (e.g. `JUBELIO_SESSION_TOKEN`). All other keys web-owned. Enforce in a small helper that rejects writes from the wrong owner. |
 | D1 | Outbound queue | **BullMQ + Upstash Redis** (per Q2). All `apps/web` → `apps/api` async writes enqueued; `apps/api` workers drain. |
-| D2 | Admin alert channel | TBD — pick before token polish ships (in-DB notification table / Slack webhook / Firebase push). |
-| D3 | Admin dashboard | TBD — pick before outbox queue ships (JSON endpoints only vs full UI in apps/web). |
+| D2 | Admin alert channel | **In-DB `AdminNotification` table.** Written by api on token-refresh failure, outbox-stuck, rate-limit hit, etc. Consumed by apps/web admin UI. |
+| D3 | Admin dashboard | **Full UI in apps/web** at `/backoffice/jubelio/admin` — queue depth, failed items, audit log, outbox status, retry buttons. api exposes JSON endpoints; apps/web renders. |
+| D4 | Local Redis | **Docker compose** (`redis:7-alpine`) declared in repo-root `docker-compose.dev.yml`. apps/api reads `REDIS_URL` env. Upstash used for staging/prod. |
