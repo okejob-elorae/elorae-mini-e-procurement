@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Prisma } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../db/prisma.module";
 
 export type AdminNotificationSeverity = "INFO" | "WARN" | "ERROR" | "CRITICAL";
@@ -25,7 +26,7 @@ export class AdminNotificationService {
           severity: input.severity,
           title: input.title,
           message: input.message,
-          metadata: input.metadata ?? undefined,
+          metadata: (input.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
         },
       });
       this.logger.log(`[${input.severity}] ${input.category}: ${input.title}`);

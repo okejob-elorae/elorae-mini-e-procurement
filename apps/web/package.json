@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "vercel-build": "pnpm --filter @elorae/db generate && pnpm --filter @elorae/db migrate:deploy && next build",
+    "vercel-build": "pnpm --filter @elorae/db generate && next build",
     "start": "next start",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",

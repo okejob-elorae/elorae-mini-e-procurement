@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: elorae-api
+    runtime: node
+    plan: free
+    region: singapore
+    branch: refactor/monorepo
+    rootDir: .
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @elorae/db generate && pnpm --filter @elorae/db build && pnpm --filter @elorae/api build
+    preDeployCommand: pnpm --filter @elorae/api migrate:deploy
+    startCommand: node apps/api/dist/main.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXTAUTH_SECRET
+        sync: false
+      - key: SWAGGER_USER
+        sync: false
+      - key: SWAGGER_PASS
+        sync: false
+      - key: JUBELIO_USER
+        sync: false
+      - key: JUBELIO_PASS
+        sync: false
+      - key: JUBELIO_API_BASE_URL
+        value: https://api2.jubelio.com
+      - key: JUBELIO_WEBHOOK_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: INTERNAL_API_KEY
+        sync: false

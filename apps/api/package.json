@@ -6,6 +6,7 @@
     "dev": "nest start --watch --builder swc",
     "build": "nest build",
     "start": "node dist/main.js",
+    "migrate:deploy": "pnpm --filter @elorae/db migrate:deploy",
     "lint": "eslint src --max-warnings 0",
     "type-check": "tsc --noEmit",
     "test": "jest"
