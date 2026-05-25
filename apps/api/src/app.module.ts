@@ -4,6 +4,7 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { AdminModule } from "./admin/admin.module";
 import { PrismaModule } from "./db/prisma.module";
 import { HealthModule } from "./health/health.module";
+import { JubelioCatalogModule } from "./jubelio/catalog/catalog.module";
 import { JubelioModule } from "./jubelio/jubelio.module";
 import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
 
@@ -18,6 +19,7 @@ import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
     AdminModule,
     HealthModule,
     JubelioModule,
+    JubelioCatalogModule,
     JubelioWebhooksModule,
   ],
 })

@@ -2,82 +2,90 @@
 
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
-import { prisma } from '@elorae/db';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 
-const JUBELIO_API_BASE_URL = 'https://api2.jubelio.com';
-const JUBELIO_TOKEN_KEY = 'JUBELIO_SESSION_TOKEN';
-
-type JubelioLoginResponse = {
-  token?: string;
-  error?: string;
-  message?: string;
-};
+const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? 'http://localhost:3001';
 
 export type JubelioTokenState = {
-  token: string | null;
+  hasToken: boolean;
   updatedAt: string | null;
+  expiresAt: string | null;
+  expiresInSeconds: number | null;
 };
+
+export type JubelioCatalogSyncOptions = {
+  dryRun?: boolean;
+  itemGroupIds?: number[];
+};
+
+export type JubelioCatalogSyncResult = {
+  dryRun: boolean;
+  summary: {
+    created: number;
+    updated: number;
+    skipped: number;
+    errors: number;
+    warnings: string[];
+  };
+  items: Array<{
+    parentSku: string;
+    itemSku: string;
+    action: 'create' | 'update' | 'skip';
+    variantCount: number;
+    variantless?: boolean;
+  }>;
+  errors: Array<{
+    parentSku?: string;
+    jubelioItemGroupId?: number;
+    message: string;
+  }>;
+};
+
+async function callApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${INTERNAL_API_URL}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`API ${response.status} on ${path}: ${text.slice(0, 200)}`);
+  }
+  return (await response.json()) as T;
+}
 
 export async function getJubelioTokenState(): Promise<JubelioTokenState> {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
 
-  const row = await prisma.systemSetting.findUnique({
-    where: { key: JUBELIO_TOKEN_KEY },
-    select: { value: true, updatedAt: true },
-  });
-
-  return {
-    token: row?.value ?? null,
-    updatedAt: row?.updatedAt ? row.updatedAt.toISOString() : null,
-  };
+  return callApi<JubelioTokenState>('/jubelio/status');
 }
 
-export async function loginAndStoreJubelioToken(email: string, password: string): Promise<{ token: string }> {
+export async function refreshJubelioToken(): Promise<JubelioTokenState> {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  const trimmedEmail = email.trim();
-  const trimmedPassword = password.trim();
-  if (!trimmedEmail || !trimmedPassword) {
-    throw new Error('Email and password are required');
-  }
-
-  const response = await fetch(`${JUBELIO_API_BASE_URL}/login`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email: trimmedEmail,
-      password: trimmedPassword,
-    }),
-    cache: 'no-store',
-  });
-
-  const payload = (await response.json().catch(() => ({}))) as JubelioLoginResponse;
-  const token = payload?.token?.trim();
-
-  if (!response.ok || !token) {
-    const reason = payload?.message || payload?.error || 'Invalid Jubelio credentials';
-    throw new Error(reason);
-  }
-
-  await prisma.systemSetting.upsert({
-    where: { key: JUBELIO_TOKEN_KEY },
-    create: {
-      key: JUBELIO_TOKEN_KEY,
-      value: token,
-    },
-    update: {
-      value: token,
-    },
-  });
-
+  const result = await callApi<JubelioTokenState>('/jubelio/refresh', { method: 'POST' });
   revalidatePath('/backoffice/settings');
+  return result;
+}
 
-  return { token };
+export async function syncJubelioCatalog(
+  opts: JubelioCatalogSyncOptions = {},
+): Promise<JubelioCatalogSyncResult> {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
+
+  const result = await callApi<JubelioCatalogSyncResult>('/jubelio/catalog/sync', {
+    method: 'POST',
+    body: JSON.stringify({ dryRun: opts.dryRun ?? false, itemGroupIds: opts.itemGroupIds }),
+  });
+  if (!opts.dryRun) revalidatePath('/backoffice/settings');
+  return result;
 }

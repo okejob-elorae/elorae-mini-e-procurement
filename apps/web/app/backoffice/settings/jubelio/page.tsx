@@ -3,26 +3,31 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { useTranslations } from 'next-intl';
-import { getJubelioTokenState, loginAndStoreJubelioToken } from '@/app/actions/settings/jubelio';
+import {
+  getJubelioTokenState,
+  refreshJubelioToken,
+  syncJubelioCatalog,
+  type JubelioCatalogSyncResult,
+  type JubelioTokenState,
+} from '@/app/actions/settings/jubelio';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { KeyRound, Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw, Cloud } from 'lucide-react';
 import { toast } from 'sonner';
 
+function formatTimestamp(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString();
+}
+
 export default function JubelioSettingsPage() {
-  const t = useTranslations('settings');
-  const tToasts = useTranslations('toasts');
   const { status } = useSession();
   const router = useRouter();
-  const [jubelioEmail, setJubelioEmail] = useState('');
-  const [jubelioPassword, setJubelioPassword] = useState('');
-  const [jubelioToken, setJubelioToken] = useState<string | null>(null);
-  const [jubelioTokenUpdatedAt, setJubelioTokenUpdatedAt] = useState<string | null>(null);
-  const [isLoadingToken, setIsLoadingToken] = useState(true);
-  const [isSubmittingJubelioLogin, setIsSubmittingJubelioLogin] = useState(false);
+  const [tokenState, setTokenState] = useState<JubelioTokenState | null>(null);
+  const [isLoadingState, setIsLoadingState] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<JubelioCatalogSyncResult | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -32,131 +37,157 @@ export default function JubelioSettingsPage() {
     if (status !== 'authenticated') return;
 
     getJubelioTokenState()
-      .then((state) => {
-        setJubelioToken(state.token);
-        setJubelioTokenUpdatedAt(state.updatedAt);
-      })
-      .catch(() => {
-        toast.error(t('jubelio.loadTokenError'));
-      })
-      .finally(() => {
-        setIsLoadingToken(false);
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- t from useTranslations
+      .then(setTokenState)
+      .catch((err: Error) => toast.error(`Failed to load token state: ${err.message}`))
+      .finally(() => setIsLoadingState(false));
   }, [status, router]);
 
-  const handleJubelioLogin = async () => {
-    if (!jubelioEmail.trim() || !jubelioPassword.trim()) {
-      toast.error(t('jubelio.missingCredentials'));
-      return;
-    }
-
-    setIsSubmittingJubelioLogin(true);
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
     try {
-      const result = await loginAndStoreJubelioToken(jubelioEmail, jubelioPassword);
-      setJubelioToken(result.token);
-      setJubelioTokenUpdatedAt(new Date().toISOString());
-      setJubelioEmail('');
-      setJubelioPassword('');
-      toast.success(t('jubelio.loginSuccess'));
-    } catch {
-      toast.error(t('jubelio.loginFailed'));
+      const state = await refreshJubelioToken();
+      setTokenState(state);
+      toast.success('Jubelio token refreshed');
+    } catch (err) {
+      toast.error(`Refresh failed: ${(err as Error).message}`);
     } finally {
-      setIsSubmittingJubelioLogin(false);
+      setIsRefreshing(false);
     }
   };
 
-  const handleCopyToken = async () => {
-    if (!jubelioToken) return;
+  const handleSync = async (dryRun: boolean) => {
+    setIsSyncing(true);
     try {
-      await navigator.clipboard.writeText(jubelioToken);
-      toast.success(t('jubelio.copySuccess'));
-    } catch {
-      toast.error(tToasts('failed'));
+      const result = await syncJubelioCatalog({ dryRun });
+      setLastSync(result);
+      const { created, updated, skipped, errors } = result.summary;
+      const action = dryRun ? 'preview' : 'sync';
+      toast.success(
+        `${action}: ${created} create, ${updated} update, ${skipped} skip, ${errors} error`,
+      );
+    } catch (err) {
+      toast.error(`Sync failed: ${(err as Error).message}`);
+    } finally {
+      setIsSyncing(false);
     }
   };
-
-  const formatTokenPreview = (token: string | null) => {
-    if (!token) return t('jubelio.noTokenStored');
-    if (token.length <= 12) return token;
-    return `${token.slice(0, 6)}...${token.slice(-6)}`;
-  };
-
-  if (status === 'loading') {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t('jubelio.title')}</h1>
-        <p className="text-muted-foreground">{t('jubelio.description')}</p>
-      </div>
+    <div className="p-6 space-y-6 max-w-4xl">
+      <h1 className="text-2xl font-bold">Jubelio integration</h1>
 
-      <Card className="max-w-3xl">
+      <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <KeyRound className="h-5 w-5" />
-            {t('jubelio.title')}
-          </CardTitle>
-          <CardDescription>{t('jubelio.credentialsNotStored')}</CardDescription>
+          <CardTitle>Session token</CardTitle>
+          <CardDescription>
+            Token managed by apps/api. Refresh credentials read from JUBELIO_USER / JUBELIO_PASS env.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="jubelio-email">{t('jubelio.email')}</Label>
-              <Input
-                id="jubelio-email"
-                type="email"
-                value={jubelioEmail}
-                onChange={(event) => setJubelioEmail(event.target.value)}
-                placeholder="user@example.com"
-                autoComplete="off"
-              />
+          {isLoadingState ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading status...
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="jubelio-password">{t('jubelio.password')}</Label>
-              <Input
-                id="jubelio-password"
-                type="password"
-                value={jubelioPassword}
-                onChange={(event) => setJubelioPassword(event.target.value)}
-                placeholder="••••••••"
-                autoComplete="off"
-              />
-            </div>
-          </div>
+          ) : tokenState ? (
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <dt className="text-muted-foreground">Has token</dt>
+              <dd>{tokenState.hasToken ? 'yes' : 'no'}</dd>
+              <dt className="text-muted-foreground">Last refresh</dt>
+              <dd>{formatTimestamp(tokenState.updatedAt)}</dd>
+              <dt className="text-muted-foreground">Expires</dt>
+              <dd>{formatTimestamp(tokenState.expiresAt)}</dd>
+              <dt className="text-muted-foreground">Expires in</dt>
+              <dd>
+                {tokenState.expiresInSeconds != null
+                  ? `${Math.round(tokenState.expiresInSeconds / 60)} min`
+                  : '—'}
+              </dd>
+            </dl>
+          ) : (
+            <p className="text-sm text-muted-foreground">No token state</p>
+          )}
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={handleJubelioLogin} disabled={isSubmittingJubelioLogin}>
-              {isSubmittingJubelioLogin ? <Loader2 className="h-4 w-4 animate-spin" /> : t('jubelio.loginButton')}
-            </Button>
-          </div>
+          <Button onClick={handleRefresh} disabled={isRefreshing} size="sm">
+            {isRefreshing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            Refresh token now
+          </Button>
+        </CardContent>
+      </Card>
 
-          <div className="rounded-md border p-3">
-            <p className="text-sm font-medium">{t('jubelio.tokenLabel')}</p>
-            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-              {isLoadingToken ? t('jubelio.loadingToken') : formatTokenPreview(jubelioToken)}
-            </p>
-            {jubelioTokenUpdatedAt ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t('jubelio.lastUpdated')}: {new Date(jubelioTokenUpdatedAt).toLocaleString()}
-              </p>
-            ) : null}
+      <Card>
+        <CardHeader>
+          <CardTitle>Catalog sync</CardTitle>
+          <CardDescription>
+            Pull Jubelio items, map to ERP catalog drafts, upsert Items + JubelioProductMapping.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
             <Button
-              variant="outline"
+              onClick={() => handleSync(true)}
+              disabled={isSyncing}
               size="sm"
-              className="mt-3"
-              onClick={handleCopyToken}
-              disabled={!jubelioToken || isLoadingToken}
+              variant="outline"
             >
-              {t('jubelio.copyToken')}
+              {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
+              Preview sync (dry run)
+            </Button>
+            <Button onClick={() => handleSync(false)} disabled={isSyncing} size="sm">
+              {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
+              Import catalog
             </Button>
           </div>
+
+          {lastSync && (
+            <div className="rounded border p-3 text-sm space-y-2">
+              <div className="font-medium">
+                Last run: {lastSync.dryRun ? 'dry run' : 'applied'}
+              </div>
+              <dl className="grid grid-cols-4 gap-2">
+                <dt className="text-muted-foreground">Created</dt>
+                <dd>{lastSync.summary.created}</dd>
+                <dt className="text-muted-foreground">Updated</dt>
+                <dd>{lastSync.summary.updated}</dd>
+                <dt className="text-muted-foreground">Skipped</dt>
+                <dd>{lastSync.summary.skipped}</dd>
+                <dt className="text-muted-foreground">Errors</dt>
+                <dd>{lastSync.summary.errors}</dd>
+              </dl>
+              {lastSync.summary.warnings.length > 0 && (
+                <details>
+                  <summary className="cursor-pointer text-muted-foreground">
+                    {lastSync.summary.warnings.length} warning(s)
+                  </summary>
+                  <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                    {lastSync.summary.warnings.slice(0, 20).map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                    {lastSync.summary.warnings.length > 20 && (
+                      <li>…and {lastSync.summary.warnings.length - 20} more</li>
+                    )}
+                  </ul>
+                </details>
+              )}
+              {lastSync.errors.length > 0 && (
+                <details>
+                  <summary className="cursor-pointer text-destructive">
+                    {lastSync.errors.length} error(s)
+                  </summary>
+                  <ul className="mt-2 list-disc pl-5 text-xs text-destructive space-y-1">
+                    {lastSync.errors.map((e, i) => (
+                      <li key={i}>
+                        {e.parentSku ?? `group ${e.jubelioItemGroupId}`}: {e.message}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
