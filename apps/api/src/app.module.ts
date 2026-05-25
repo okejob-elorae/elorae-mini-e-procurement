@@ -5,6 +5,7 @@ import { AdminModule } from "./admin/admin.module";
 import { PrismaModule } from "./db/prisma.module";
 import { HealthModule } from "./health/health.module";
 import { JubelioModule } from "./jubelio/jubelio.module";
+import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { JubelioModule } from "./jubelio/jubelio.module";
     AdminModule,
     HealthModule,
     JubelioModule,
+    JubelioWebhooksModule,
   ],
 })
 export class AppModule {}

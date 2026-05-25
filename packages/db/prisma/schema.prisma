@@ -661,8 +661,24 @@ model NotificationQueue {
   @@index([createdAt])
 }
 
-// Operational alerts written by apps/api (token-refresh failure, outbox stuck,
-// webhook signature mismatch, rate-limit hit). Consumed by apps/web admin UI.
+model JubelioWebhookEvent {
+  id          String    @id @default(cuid())
+  event       String
+  eventId     String?
+  signature   String    @db.Text
+  payloadHash String
+  rawPayload  Json
+  status      String    @default("RECEIVED")
+  attempts    Int       @default(0)
+  lastError   String?   @db.Text
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  @@unique([event, payloadHash])
+  @@index([status, receivedAt])
+  @@index([event, receivedAt])
+}
+
 model AdminNotification {
   id        String    @id @default(cuid())
   category  String

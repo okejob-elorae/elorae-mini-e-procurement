@@ -22,4 +22,10 @@ export class JubelioConfig {
     if (!password) throw new JubelioConfigError("JUBELIO_PASS");
     return { email, password };
   }
+
+  get webhookSecret(): string {
+    const secret = this.config.get<string>("JUBELIO_WEBHOOK_SECRET");
+    if (!secret) throw new JubelioConfigError("JUBELIO_WEBHOOK_SECRET");
+    return secret;
+  }
 }
