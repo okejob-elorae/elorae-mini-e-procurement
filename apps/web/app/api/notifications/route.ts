@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@elorae/db';
+export const dynamic = 'force-dynamic';
+
 
 const LIMIT = 50;
 

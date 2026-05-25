@@ -106,12 +106,10 @@ export default function VendorReturnsPage() {
   useEffect(() => {
     const loadVendors = async () => {
       try {
-        const res = await fetch('/api/suppliers?approvedOnly=true');
-        if (res.ok) {
-          const data = await res.json();
-          const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
-          setVendors((list as SupplierOption[]) || []);
-        }
+        const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
+        const data = await getSuppliersForSelect({ approvedOnly: true });
+        const list = Array.isArray(data) ? data : [];
+        setVendors((list as SupplierOption[]) || []);
       } catch {
         // non-blocking
       }

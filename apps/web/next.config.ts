@@ -7,11 +7,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ["@prisma/client", "@prisma/adapter-mariadb", "mariadb"],
   async redirects() {
     return [
       { source: '/backoffice/reports', destination: '/backoffice/dashboard', permanent: false },

@@ -59,3 +59,10 @@ export const DocType = {
   RECEIPT: 'RECEIPT',
 } as const;
 export type DocType = (typeof DocType)[keyof typeof DocType];
+
+export const SupplierStatus = {
+  PENDING_APPROVAL: 'PENDING_APPROVAL',
+  ACTIVE: 'ACTIVE',
+  REJECTED: 'REJECTED',
+} as const;
+export type SupplierStatus = (typeof SupplierStatus)[keyof typeof SupplierStatus];

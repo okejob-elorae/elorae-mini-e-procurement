@@ -1,13 +1,25 @@
+import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
+
 const HEX_COLOR_PATTERN = /^#?[0-9a-fA-F]{6}$/;
-const BASE_STORAGE_KEY = 'elorae:user-theme-primary';
-const BASE_COLOR_STORAGE_KEY = 'elorae:user-theme-base';
+const PRIMARY_STORAGE_KEY = 'elorae:user-theme-primary';
+const PANTONE_STORAGE_KEY = 'elorae:user-theme-pantone';
+const PALETTE_STORAGE_KEY = 'elorae:user-theme-palette';
 
 export function getUserThemeStorageKey(userId: string): string {
-  return `${BASE_STORAGE_KEY}:${userId}`;
+  return `${PRIMARY_STORAGE_KEY}:${userId}`;
 }
 
+export function getUserThemePantoneStorageKey(userId: string): string {
+  return `${PANTONE_STORAGE_KEY}:${userId}`;
+}
+
+export function getUserThemePaletteStorageKey(userId: string): string {
+  return `${PALETTE_STORAGE_KEY}:${userId}`;
+}
+
+/** @deprecated Use getUserThemePantoneStorageKey — kept for one release of cache migration */
 export function getUserThemeBaseStorageKey(userId: string): string {
-  return `${BASE_COLOR_STORAGE_KEY}:${userId}`;
+  return `elorae:user-theme-base:${userId}`;
 }
 
 export function normalizeThemeHexColor(value: string): string {
@@ -68,7 +80,7 @@ export function clearThemePrimaryColor(): void {
   rootStyle.removeProperty('--sidebar-primary-foreground');
 }
 
-type BaseTokens = {
+export type BaseTokens = {
   background: string;
   foreground: string;
   card: string;
@@ -85,7 +97,7 @@ type BaseTokens = {
   input: string;
 };
 
-const BASE_TOKEN_MAP_LIGHT: Record<string, BaseTokens> = {
+export const BASE_TOKEN_MAP_LIGHT: Record<string, BaseTokens> = {
   slate: {
     background: '#ffffff',
     foreground: '#0f172a',
@@ -102,73 +114,9 @@ const BASE_TOKEN_MAP_LIGHT: Record<string, BaseTokens> = {
     border: '#e2e8f0',
     input: '#e2e8f0',
   },
-  gray: {
-    background: '#ffffff',
-    foreground: '#111827',
-    card: '#ffffff',
-    cardForeground: '#111827',
-    popover: '#ffffff',
-    popoverForeground: '#111827',
-    secondary: '#f3f4f6',
-    secondaryForeground: '#111827',
-    muted: '#f3f4f6',
-    mutedForeground: '#4b5563',
-    accent: '#f3f4f6',
-    accentForeground: '#111827',
-    border: '#e5e7eb',
-    input: '#e5e7eb',
-  },
-  zinc: {
-    background: '#ffffff',
-    foreground: '#18181b',
-    card: '#ffffff',
-    cardForeground: '#18181b',
-    popover: '#ffffff',
-    popoverForeground: '#18181b',
-    secondary: '#f4f4f5',
-    secondaryForeground: '#18181b',
-    muted: '#f4f4f5',
-    mutedForeground: '#52525b',
-    accent: '#f4f4f5',
-    accentForeground: '#18181b',
-    border: '#e4e4e7',
-    input: '#e4e4e7',
-  },
-  neutral: {
-    background: '#ffffff',
-    foreground: '#171717',
-    card: '#ffffff',
-    cardForeground: '#171717',
-    popover: '#ffffff',
-    popoverForeground: '#171717',
-    secondary: '#f5f5f5',
-    secondaryForeground: '#171717',
-    muted: '#f5f5f5',
-    mutedForeground: '#525252',
-    accent: '#f5f5f5',
-    accentForeground: '#171717',
-    border: '#e5e5e5',
-    input: '#e5e5e5',
-  },
-  stone: {
-    background: '#ffffff',
-    foreground: '#1c1917',
-    card: '#ffffff',
-    cardForeground: '#1c1917',
-    popover: '#ffffff',
-    popoverForeground: '#1c1917',
-    secondary: '#f5f5f4',
-    secondaryForeground: '#1c1917',
-    muted: '#f5f5f4',
-    mutedForeground: '#57534e',
-    accent: '#f5f5f4',
-    accentForeground: '#1c1917',
-    border: '#e7e5e4',
-    input: '#e7e5e4',
-  },
 };
 
-const BASE_TOKEN_MAP_DARK: Record<string, BaseTokens> = {
+export const BASE_TOKEN_MAP_DARK: Record<string, BaseTokens> = {
   slate: {
     background: '#0f172a',
     foreground: '#f8fafc',
@@ -185,80 +133,10 @@ const BASE_TOKEN_MAP_DARK: Record<string, BaseTokens> = {
     border: '#334155',
     input: '#475569',
   },
-  gray: {
-    background: '#111827',
-    foreground: '#f9fafb',
-    card: '#1f2937',
-    cardForeground: '#f9fafb',
-    popover: '#1f2937',
-    popoverForeground: '#f9fafb',
-    secondary: '#374151',
-    secondaryForeground: '#f9fafb',
-    muted: '#374151',
-    mutedForeground: '#9ca3af',
-    accent: '#374151',
-    accentForeground: '#f9fafb',
-    border: '#374151',
-    input: '#4b5563',
-  },
-  zinc: {
-    background: '#18181b',
-    foreground: '#fafafa',
-    card: '#27272a',
-    cardForeground: '#fafafa',
-    popover: '#27272a',
-    popoverForeground: '#fafafa',
-    secondary: '#3f3f46',
-    secondaryForeground: '#fafafa',
-    muted: '#3f3f46',
-    mutedForeground: '#a1a1aa',
-    accent: '#3f3f46',
-    accentForeground: '#fafafa',
-    border: '#3f3f46',
-    input: '#52525b',
-  },
-  neutral: {
-    background: '#171717',
-    foreground: '#fafafa',
-    card: '#262626',
-    cardForeground: '#fafafa',
-    popover: '#262626',
-    popoverForeground: '#fafafa',
-    secondary: '#404040',
-    secondaryForeground: '#fafafa',
-    muted: '#404040',
-    mutedForeground: '#a3a3a3',
-    accent: '#404040',
-    accentForeground: '#fafafa',
-    border: '#404040',
-    input: '#525252',
-  },
-  stone: {
-    background: '#1c1917',
-    foreground: '#fafaf9',
-    card: '#292524',
-    cardForeground: '#fafaf9',
-    popover: '#292524',
-    popoverForeground: '#fafaf9',
-    secondary: '#44403c',
-    secondaryForeground: '#fafaf9',
-    muted: '#44403c',
-    mutedForeground: '#a8a29e',
-    accent: '#44403c',
-    accentForeground: '#fafaf9',
-    border: '#44403c',
-    input: '#57534e',
-  },
 };
 
-export function applyThemeBaseColor(baseColor: string): string {
-  const normalized = baseColor.trim().toLowerCase();
-  const isDarkMode = document.documentElement.classList.contains('dark');
-  const palette = isDarkMode ? BASE_TOKEN_MAP_DARK : BASE_TOKEN_MAP_LIGHT;
-  const fallbackPalette = isDarkMode ? BASE_TOKEN_MAP_DARK.slate : BASE_TOKEN_MAP_LIGHT.slate;
-  const tokens = palette[normalized] ?? fallbackPalette;
+export function applyThemePalette(tokens: BaseTokens): void {
   const rootStyle = document.documentElement.style;
-
   rootStyle.setProperty('--background', tokens.background);
   rootStyle.setProperty('--foreground', tokens.foreground);
   rootStyle.setProperty('--card', tokens.card);
@@ -273,6 +151,37 @@ export function applyThemeBaseColor(baseColor: string): string {
   rootStyle.setProperty('--accent-foreground', tokens.accentForeground);
   rootStyle.setProperty('--border', tokens.border);
   rootStyle.setProperty('--input', tokens.input);
+}
 
+export function isDocumentDarkMode(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.documentElement.classList.contains('dark');
+}
+
+export function applyThemeFromPantoneSeed(hex: string, palette?: { light: BaseTokens; dark: BaseTokens }): string {
+  const normalized = normalizeThemeHexColor(hex);
+  const generated = palette ?? generatePaletteFromSeed(normalized);
+  const tokens = isDocumentDarkMode() ? generated.dark : generated.light;
+  applyThemePalette(tokens);
+  applyThemePrimaryColor(normalized);
+  return normalized;
+}
+
+export function applyDefaultTheme(): void {
+  const tokens = isDocumentDarkMode()
+    ? BASE_TOKEN_MAP_DARK.slate
+    : BASE_TOKEN_MAP_LIGHT.slate;
+  applyThemePalette(tokens);
+  applyThemePrimaryColor('#334155');
+}
+
+/** @deprecated Preset base colors — use applyDefaultTheme or applyThemeFromPantoneSeed */
+export function applyThemeBaseColor(baseColor: string): string {
+  const normalized = baseColor.trim().toLowerCase();
+  const isDarkMode = isDocumentDarkMode();
+  const palette = isDarkMode ? BASE_TOKEN_MAP_DARK : BASE_TOKEN_MAP_LIGHT;
+  const fallbackPalette = isDarkMode ? BASE_TOKEN_MAP_DARK.slate : BASE_TOKEN_MAP_LIGHT.slate;
+  const tokens = palette[normalized] ?? fallbackPalette;
+  applyThemePalette(tokens);
   return normalized;
 }

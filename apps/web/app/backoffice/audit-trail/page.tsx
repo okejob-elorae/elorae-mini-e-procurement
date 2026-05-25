@@ -24,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { ChevronDown, ChevronRight, Loader2, FileDown, Filter, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -214,47 +215,24 @@ export default function AuditTrailPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="audit-date-from" className="text-muted-foreground">
-                Date from
+              <Label htmlFor="audit-date-range" className="text-muted-foreground">
+                Date range
               </Label>
-              <Input
-                id="audit-date-from"
-                type="date"
-                value={
-                  filters.dateFrom
-                    ? new Date(filters.dateFrom).toISOString().slice(0, 10)
-                    : ''
-                }
-                onChange={(e) =>
+              <DateRangePicker
+                id="audit-date-range"
+                triggerClassName="h-9"
+                value={{
+                  from: filters.dateFrom,
+                  to: filters.dateTo,
+                }}
+                onChange={(range) =>
                   setFilters((f) => ({
                     ...f,
-                    dateFrom: e.target.value ? new Date(e.target.value) : undefined,
+                    dateFrom: range?.from,
+                    dateTo: range?.to,
                     offset: 0,
                   }))
                 }
-                className="h-9"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="audit-date-to" className="text-muted-foreground">
-                Date to
-              </Label>
-              <Input
-                id="audit-date-to"
-                type="date"
-                value={
-                  filters.dateTo
-                    ? new Date(filters.dateTo).toISOString().slice(0, 10)
-                    : ''
-                }
-                onChange={(e) =>
-                  setFilters((f) => ({
-                    ...f,
-                    dateTo: e.target.value ? new Date(e.target.value) : undefined,
-                    offset: 0,
-                  }))
-                }
-                className="h-9"
               />
             </div>
           </div>

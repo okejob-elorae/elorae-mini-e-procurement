@@ -36,6 +36,8 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
 import { getHPPList, type HPPBreakdown } from '@/app/actions/hpp';
 import { updateWOHppAdjustments } from '@/app/actions/production';
 import { getItemsByType } from '@/app/actions/items';
@@ -98,11 +100,13 @@ export default function HPPPage() {
   useEffect(() => {
     Promise.all([
       getItemsByType(ItemType.FINISHED_GOOD),
-      fetch('/api/suppliers?approvedOnly=true').then((r) => r.ok ? r.json() : []),
+      import('@/app/actions/suppliers').then(({ getSuppliersForSelect }) =>
+        getSuppliersForSelect({ approvedOnly: true })
+      ),
     ]).then(([fgList, supList]) => {
       const fg = (fgList as Array<{ id: string; sku: string; nameId: string }>) ?? [];
       setFinishedGoods(fg.map((x) => ({ value: x.id, label: `${x.nameId} (${x.sku})` })));
-      const list = Array.isArray(supList) ? supList : (supList?.data ?? []);
+      const list = Array.isArray(supList) ? supList : [];
       setVendors(list.map((x: { id: string; name: string; code?: string }) => ({ value: x.id, label: `${x.name} (${x.code ?? ''})` })));
     }).catch(() => {});
   }, []);
@@ -232,19 +236,18 @@ export default function HPPPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>{t('dateFrom')}</Label>
-              <Input
-                type="date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('dateTo')}</Label>
-              <Input
-                type="date"
-                value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
+              <Label htmlFor="hpp-date-range">{t('dateFrom')} – {t('dateTo')}</Label>
+              <DateRangePicker
+                id="hpp-date-range"
+                triggerClassName="min-w-[220px]"
+                value={{
+                  from: parseDateOnly(filterDateFrom),
+                  to: parseDateOnly(filterDateTo),
+                }}
+                onChange={(range) => {
+                  setFilterDateFrom(range?.from ? formatDateOnly(range.from) : '');
+                  setFilterDateTo(range?.to ? formatDateOnly(range.to) : '');
+                }}
               />
             </div>
             <div className="space-y-2">

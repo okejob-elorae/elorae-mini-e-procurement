@@ -48,8 +48,9 @@ model User {
   roleId        String?
   roleDefinition RoleDefinition? @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   fcmToken      String?
-  themeBase     String    @default("slate")
-  themePrimary  String    @default("#334155")
+  themePantoneTcx  String?
+  themePrimaryHex  String    @default("#334155")
+  themePantone     PantoneColor? @relation(fields: [themePantoneTcx], references: [tcx], onDelete: SetNull, onUpdate: NoAction)
   emailVerified DateTime?
   image         String?
   accounts      Account[]
@@ -63,12 +64,14 @@ model User {
   stockAdjustmentsCreated  StockAdjustment[] @relation("CreatedAdjustments")
   vendorReturnsCreated    VendorReturn[]
   vendorReturnsCompleted  VendorReturn[] @relation("VendorReturnCompleted")
+  pantoneColorFavorites   PantoneColorFavorite[]
   suppliersApproved       Supplier[]
   grnsOwnerApproved       GRN[]      @relation("GRNOwnerApproved")
   grnsOwnerDeclined       GRN[]      @relation("GRNOwnerDeclined")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
+  @@index([themePantoneTcx])
 }
 
 model VerificationToken {
@@ -645,6 +648,11 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
+// ==========================================
+// JUBELIO INTEGRATION
+// ==========================================
+
+
 model NotificationQueue {
   id        String    @id @default(cuid())
   userId    String
@@ -659,38 +667,6 @@ model NotificationQueue {
   createdAt DateTime  @default(now())
   @@index([userId, sent])
   @@index([createdAt])
-}
-
-model JubelioWebhookEvent {
-  id          String    @id @default(cuid())
-  event       String
-  eventId     String?
-  signature   String    @db.Text
-  payloadHash String
-  rawPayload  Json
-  status      String    @default("RECEIVED")
-  attempts    Int       @default(0)
-  lastError   String?   @db.Text
-  receivedAt  DateTime  @default(now())
-  processedAt DateTime?
-
-  @@unique([event, payloadHash])
-  @@index([status, receivedAt])
-  @@index([event, receivedAt])
-}
-
-model AdminNotification {
-  id        String    @id @default(cuid())
-  category  String
-  severity  String
-  title     String
-  message   String    @db.Text
-  metadata  Json?
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
-
-  @@index([readAt, severity, createdAt])
-  @@index([category, createdAt])
 }
 
 model PinAttempt {
@@ -826,4 +802,71 @@ enum DocType {
   RET
   ISSUE
   RECEIPT
+}
+
+// ==========================================
+// PRODUCTION COLORS (Pantone TCX catalog)
+// ==========================================
+model PantoneColor {
+  tcx         String   @id
+  name        String
+  hex         String
+  rgbR        Int
+  rgbG        Int
+  rgbB        Int
+  groupName   String?
+  filterTags  Json
+  labL        Float?
+  labA        Float?
+  labB        Float?
+  favorites   PantoneColorFavorite[]
+  themeUsers  User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
+  @@index([groupName])
+}
+
+model PantoneColorFavorite {
+  id        String       @id @default(cuid())
+  userId    String
+  tcx       String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  color     PantoneColor @relation(fields: [tcx], references: [tcx], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@unique([userId, tcx])
+  @@index([userId])
+  @@index([tcx])
+}
+model JubelioWebhookEvent {
+  id          String    @id @default(cuid())
+  event       String
+  eventId     String?
+  signature   String    @db.Text
+  payloadHash String
+  rawPayload  Json
+  status      String    @default("RECEIVED")
+  attempts    Int       @default(0)
+  lastError   String?   @db.Text
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  @@unique([event, payloadHash])
+  @@index([status, receivedAt])
+  @@index([event, receivedAt])
+}
+model AdminNotification {
+  id        String    @id @default(cuid())
+  category  String
+  severity  String
+  title     String
+  message   String    @db.Text
+  metadata  Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([readAt, severity, createdAt])
+  @@index([category, createdAt])
 }

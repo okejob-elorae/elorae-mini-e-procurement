@@ -107,15 +107,18 @@ export async function syncPendingPOs(): Promise<{
 
   for (const po of pendingPOs) {
     try {
-      const response = await fetch('/api/purchase-orders', {
+      const response = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          supplierId: po.supplierId,
-          etaDate: po.etaDate,
-          paymentDueDate: po.paymentDueDate,
-          notes: po.notes,
-          items: po.items,
+          type: 'PO_CREATE',
+          payload: {
+            supplierId: po.supplierId,
+            etaDate: po.etaDate,
+            paymentDueDate: po.paymentDueDate,
+            notes: po.notes,
+            items: po.items,
+          },
         }),
       });
 

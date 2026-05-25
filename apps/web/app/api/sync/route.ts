@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+
 import { auth } from '@/lib/auth';
 import { prisma } from '@elorae/db';
 import { encryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
+import { createPurchaseOrderFromOfflinePayload } from '@/lib/purchase-orders/mutations';
+
+export const dynamic = 'force-dynamic';
 
 // POST /api/sync - Process offline operations
 export async function POST(req: NextRequest) {
@@ -99,36 +103,7 @@ async function handleSupplierUpdate(payload: any) {
 
 async function handlePOCreate(payload: any, userId: string) {
   try {
-    // Generate PO number
-    const { generateDocNumber } = await import('@/lib/docNumber');
-    const docNumber = await generateDocNumber('PO');
-
-    const { items, ...poData } = payload;
-    const totalAmount = items.reduce(
-      (sum: number, item: any) => sum + item.qty * item.price,
-      0
-    );
-
-    const po = await prisma.purchaseOrder.create({
-      data: {
-        docNumber,
-        ...poData,
-        totalAmount,
-        createdById: userId,
-        items: {
-          create: items.map((item: any) => ({
-            itemId: item.itemId,
-            qty: item.qty,
-            price: item.price,
-            notes: item.notes,
-          })),
-        },
-      },
-      include: {
-        items: true,
-      },
-    });
-
+    const po = await createPurchaseOrderFromOfflinePayload(payload, userId);
     return NextResponse.json({ success: true, data: po });
   } catch (error) {
     console.error('Failed to sync PO create:', error);

@@ -101,16 +101,17 @@ export default function NewVendorReturnPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [suppliersRes, woList, itemsRes, grnList] = await Promise.all([
-          fetch('/api/suppliers?approvedOnly=true'),
+        const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
+        const [supplierData, woList, itemsRes, grnList] = await Promise.all([
+          getSuppliersForSelect({ approvedOnly: true }),
           getWorkOrders(),
           getItems({ isActive: true }),
           getGRNs()
         ]);
-        if (suppliersRes.ok) {
-          const data = await suppliersRes.json();
-          const list = Array.isArray(data) ? data : (data?.data && Array.isArray(data.data)) ? data.data : [];
-          setVendors((list as Supplier[]) || []);
+        {
+          const data = supplierData;
+          const list = Array.isArray(data) ? data : [];
+          setVendors((list as unknown as Supplier[]) || []);
         }
         setWorkOrders(
           (woList as { id: string; docNumber: string }[]).map((w) => ({

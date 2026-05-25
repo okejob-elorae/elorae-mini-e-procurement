@@ -58,6 +58,9 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/inventory': 'inventory:view',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
+  '/backoffice/production/colors': 'production_colors:view',
+  '/backoffice/production/colors/favorites': 'production_colors:view',
+  '/backoffice/production/colors/photo-analyzer': 'production_colors:view',
   '/backoffice/vendor-returns': 'vendor_returns:view',
   '/backoffice/reports/hpp': 'reports_hpp:view',
   '/backoffice/audit-trail': 'audit_trail:view',
@@ -72,10 +75,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/api/supplier-types': 'supplier_types:view',
   '/api/items': 'items:view',
   '/api/uoms': 'settings_uom:view',
-  '/api/purchase-orders': 'purchase_orders:view',
-  '/api/inventory': 'inventory:view',
-  '/api/work-orders': 'work_orders:view',
-  '/api/vendor-returns': 'vendor_returns:view',
+  '/api/production/colors': 'production_colors:view',
   '/api/notifications': 'dashboard:view', // All authenticated users can view their notifications
 };
 
@@ -90,6 +90,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/supplier-payments',
   '/backoffice/inventory',
   '/backoffice/work-orders',
+  '/backoffice/production/colors',
   '/backoffice/vendor-returns',
   '/backoffice/reports/hpp',
   '/backoffice/audit-trail',
@@ -176,6 +177,8 @@ export const PERMISSIONS = {
   WORK_ORDERS_MANAGE: 'work_orders:manage',
   // Nota Register
   NOTA_REGISTER_VIEW: 'nota_register:view',
+  // Production Colors (Pantone TCX)
+  PRODUCTION_COLORS_VIEW: 'production_colors:view',
   // Vendor Returns
   VENDOR_RETURNS_VIEW: 'vendor_returns:view',
   VENDOR_RETURNS_CREATE: 'vendor_returns:create',

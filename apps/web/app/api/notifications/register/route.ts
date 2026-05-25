@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@elorae/db';
+export const dynamic = 'force-dynamic';
+
 
 /**
  * POST /api/notifications/register

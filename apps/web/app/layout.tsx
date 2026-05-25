@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { LocaleProvider } from '@/components/providers/LocaleProvider';
 import { ThemeColorProvider } from '@/components/providers/ThemeColorProvider';
 import { GlobalLoadingBar } from '@/components/GlobalLoadingBar';
+import { getThemeInitScript } from '@/lib/theme/theme-init-script';
 import './globals.css';
 
 const geistSans = Geist({
@@ -46,6 +47,10 @@ export default function RootLayout({
     <html lang="id" suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <script
+          id="elorae-theme-init"
+          dangerouslySetInnerHTML={{ __html: getThemeInitScript() }}
+        />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

@@ -8,6 +8,8 @@ import { revalidatePath } from 'next/cache';
 import { getActorName, notifyGRNCreated } from '@/app/actions/notifications';
 import { logAudit } from '@/lib/audit';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
+import { auth } from '@/lib/auth';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -65,6 +67,10 @@ function parseGrnStoredLines(raw: unknown): StoredGrnLine[] {
 }
 
 export async function createGRN(data: z.infer<typeof grnSchema>, userId: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
+
   const validated = grnSchema.parse(data);
   await assertLinesVariantSkusMatchItemDefinitions(prisma.item, validated.items);
 
@@ -501,6 +507,10 @@ export async function getFabricRolls(opts?: {
 }
 
 export async function approveGRNByOwner(id: string, userId: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { role: true },
@@ -559,6 +569,10 @@ export async function approveGRNByOwner(id: string, userId: string) {
  * Fails if fabric rolls from this GRN were partially consumed or on-hand qty is insufficient.
  */
 export async function declineGRNByOwner(id: string, userId: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { role: true },

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { uploadToR2, deleteFromR2, keyFromUrl, isConfigured } from '@/lib/r2';
+export const dynamic = 'force-dynamic';
+
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = new Set([

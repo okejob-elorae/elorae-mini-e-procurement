@@ -27,8 +27,8 @@ const month = now.getMonth() + 1;
 async function truncateAllTables() {
   // WARNING: This deletes ALL rows in the current database (all base tables).
   // It is intentionally used for "production-login minimal seeder" reset/testing.
-  const tables = await prisma.$queryRaw<Array<{ table_name: string }>>`
-    SELECT table_name
+  const tables = await prisma.$queryRaw<Array<{ TABLE_NAME: string }>>`
+    SELECT TABLE_NAME
     FROM information_schema.tables
     WHERE table_schema = DATABASE()
       AND table_type = 'BASE TABLE'
@@ -38,8 +38,10 @@ async function truncateAllTables() {
   await prisma.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 0;`);
 
   for (const t of tables) {
+    const name = t.TABLE_NAME;
+    if (!name) continue;
     // TRUNCATE cannot be parameterized as an identifier.
-    await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${t.table_name}\`;`);
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${name}\`;`);
   }
 
   await prisma.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 1;`);

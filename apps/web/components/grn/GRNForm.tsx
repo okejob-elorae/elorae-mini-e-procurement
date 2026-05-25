@@ -186,14 +186,16 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         setSupplierId(po.supplierId);
         const grns = (po as { grns?: Array<{ id: string }> }).grns;
         setPoGrnCount(grns?.length ?? 0);
-        const rows: LineRow[] = (po.items || []).map((line: { itemId: string; variantSku?: string | null; item: { sku: string; nameId: string; type?: string; uom: { id: string; code: string } }; qty: unknown; price: unknown; receivedQty?: unknown; uomId: string }, i: number) => ({
+        const rows: LineRow[] = (po.items || [])
+          .filter((line) => line.item != null)
+          .map((line, i) => ({
           id: `po-${i}`,
           itemId: line.itemId,
-          itemType: line.item?.type ?? '',
-          sku: line.item.sku,
-          nameId: line.item.nameId,
-          uomId: line.uomId || line.item.uom?.id,
-          uomCode: line.item.uom?.code ?? '',
+          itemType: line.item!.type ?? '',
+          sku: line.item!.sku,
+          nameId: line.item!.nameId,
+          uomId: line.uomId || line.item!.uom?.id || '',
+          uomCode: line.item!.uom?.code ?? '',
           variantSku: line.variantSku?.trim() || undefined,
           qty: 0,
           unitCost: Number(line.price),

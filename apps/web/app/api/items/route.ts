@@ -1,36 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { prisma } from '@elorae/db';
+import { listItems, listItemsForSync, aggregateInventoryValues } from '@/lib/items/queries';
+
+export const dynamic = 'force-dynamic';
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
-/** Aggregate variant-level inventory to one item-level object. */
-function aggregateInventory(
-  rows: Array<{ qtyOnHand: unknown; totalValue: unknown }> | null | undefined
-): { qtyOnHand: number; avgCost: number; totalValue: number } | null {
-  if (!rows?.length) return null;
-  let qty = 0;
-  let totalValue = 0;
-  for (const r of rows) {
-    qty += toNum(r.qtyOnHand) ?? 0;
-    totalValue += toNum(r.totalValue) ?? 0;
-  }
-  return {
-    qtyOnHand: qty,
-    avgCost: qty > 0 ? totalValue / qty : 0,
-    totalValue,
-  };
-}
-
-/** Serialize item for client (no Prisma Decimal) */
-function serializeItem(item: {
+function serializeItemForApi(item: {
   reorderPoint?: unknown;
-  inventoryValues?: Array<{ qtyOnHand: unknown; totalValue: unknown; avgCost?: unknown }>;
+  inventoryValues?: Array<{ qtyOnHand: unknown; totalValue: unknown }>;
+  uom?: { id: string; code: string; nameId: string; nameEn: string } | null;
+  variants?: unknown;
   [k: string]: unknown;
 }) {
-  const inv = aggregateInventory(
-    item.inventoryValues as Array<{ qtyOnHand: unknown; totalValue: unknown }> | undefined
-  );
+  const inv = aggregateInventoryValues(item.inventoryValues);
   return {
     ...item,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
@@ -48,33 +31,13 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const sync = searchParams.get('sync') === 'true';
-    const type = searchParams.get('type');
-    const isActive = searchParams.get('isActive');
-    const search = searchParams.get('search');
-
-    const where: Record<string, unknown> = {};
-    if (type) where.type = type;
-    if (isActive !== undefined) where.isActive = isActive === 'true';
-    if (search) {
-      where.OR = [
-        { sku: { contains: search } },
-        { nameId: { contains: search } },
-        { nameEn: { contains: search } },
-      ];
-    }
-
-    const items = await prisma.item.findMany({
-      where,
-      include: {
-        uom: { select: { id: true, code: true, nameId: true, nameEn: true } },
-        inventoryValues: {
-          select: { qtyOnHand: true, totalValue: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const type = searchParams.get('type') ?? undefined;
+    const isActiveParam = searchParams.get('isActive');
+    const isActive = isActiveParam !== null ? isActiveParam === 'true' : undefined;
+    const search = searchParams.get('search') ?? undefined;
 
     if (sync) {
+      const items = await listItemsForSync({ type, isActive, search });
       return NextResponse.json(
         items.map((i) => ({
           id: i.id,
@@ -90,12 +53,10 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return NextResponse.json(items.map(serializeItem));
+    const items = await listItemsForSync({ type, isActive, search });
+    return NextResponse.json(items.map(serializeItemForApi));
   } catch (error) {
     console.error('Failed to fetch items:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch items' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 });
   }
 }

@@ -4,6 +4,28 @@ export type ValidationTranslate = (key: string) => string;
 
 const defaultT: ValidationTranslate = (k) => k;
 
+/** Empty / NaN number inputs (e.g. valueAsNumber on blank fields) → 0 */
+function numberDefaultZero() {
+  return z.preprocess((val) => {
+    if (val === '' || val === null || val === undefined) return 0;
+    if (typeof val === 'number' && Number.isNaN(val)) return 0;
+    return val;
+  }, z.number().min(0));
+}
+
+/** Server actions serialize Date → ISO string in production; accept both. */
+function optionalDateField() {
+  return z.preprocess((val) => {
+    if (val === '' || val === null || val === undefined) return null;
+    if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val;
+    if (typeof val === 'string') {
+      const d = new Date(val);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return val;
+  }, z.date().nullable().optional());
+}
+
 export function createItemSchema(t: ValidationTranslate = defaultT) {
   return z.object({
     sku: z.string().optional(),
@@ -14,8 +36,8 @@ export function createItemSchema(t: ValidationTranslate = defaultT) {
     categoryId: z.string().optional(),
     description: z.string().optional(),
     variants: z.array(z.record(z.string(), z.string())).optional(),
-    reorderPoint: z.number().min(0).optional(),
-    overReceiveThreshold: z.number().min(0).optional(),
+    reorderPoint: numberDefaultZero(),
+    overReceiveThreshold: numberDefaultZero(),
     sellingPrice: z.number().min(0).optional(),
   });
 }
@@ -51,8 +73,8 @@ export function createPoSchema(t: ValidationTranslate = defaultT) {
   const poItem = createPoItemSchema(t);
   return z.object({
     supplierId: z.string().min(1, t('selectSupplier')),
-    etaDate: z.date().optional().nullable(),
-    paymentDueDate: z.date().optional().nullable(),
+    etaDate: optionalDateField(),
+    paymentDueDate: optionalDateField(),
     notes: z.string().optional(),
     terms: z.string().optional(),
     items: z.array(poItem).min(1, t('minOneItem')),

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@elorae/db';
 import { messaging } from '@/lib/firebase/admin';
+export const dynamic = 'force-dynamic';
+
 
 const TEST_TYPE = 'TEST';
 const DEFAULT_HREF = '/backoffice/dashboard';

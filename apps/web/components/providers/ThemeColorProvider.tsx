@@ -1,90 +1,85 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { getUserThemePreference } from '@/app/actions/settings/theme';
+import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import {
-  applyThemeBaseColor,
-  applyThemePrimaryColor,
-  clearThemePrimaryColor,
-  getUserThemeBaseStorageKey,
-  getUserThemeStorageKey,
+  applyDefaultTheme,
+  applyThemeFromPantoneSeed,
   normalizeThemeHexColor,
 } from '@/lib/theme/theme-color';
+import { DEFAULT_THEME_PRIMARY_COLOR } from '@/lib/theme/theme-presets';
 import {
-  DEFAULT_THEME_BASE_COLOR,
-  DEFAULT_THEME_PRIMARY_COLOR,
-  isAllowedThemeBaseColorName,
-  isAllowedThemePrimaryColor,
-} from '@/lib/theme/theme-presets';
+  applyCachedThemeFromLocalStorage,
+  readThemeFromLocalStorage,
+  saveThemeToLocalStorage,
+} from '@/lib/theme/theme-storage';
 
 export function ThemeColorProvider({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
+  const userId = session?.user?.id ?? null;
+
+  useLayoutEffect(() => {
+    applyCachedThemeFromLocalStorage(userId);
+  }, [userId]);
 
   useEffect(() => {
-    if (status !== 'authenticated' || !session?.user?.id) {
-      clearThemePrimaryColor();
-      return;
-    }
+    applyCachedThemeFromLocalStorage(userId);
 
-    const storageKey = getUserThemeStorageKey(session.user.id);
-    const baseStorageKey = getUserThemeBaseStorageKey(session.user.id);
-    const cached = localStorage.getItem(storageKey);
-    const cachedBase = localStorage.getItem(baseStorageKey);
-
-    if (cachedBase && isAllowedThemeBaseColorName(cachedBase)) {
-      applyThemeBaseColor(cachedBase);
-    } else {
-      localStorage.removeItem(baseStorageKey);
-    }
-
+    const cached = readThemeFromLocalStorage(userId);
     if (cached) {
-      try {
-        const normalized = normalizeThemeHexColor(cached);
-        if (!isAllowedThemePrimaryColor(normalized)) {
-          throw new Error('Invalid preset color');
-        }
-        applyThemePrimaryColor(normalized);
-      } catch {
-        localStorage.removeItem(storageKey);
-      }
+      saveThemeToLocalStorage(cached, userId);
+    }
+
+    if (status !== 'authenticated' || !userId) {
+      return;
     }
 
     void getUserThemePreference()
       .then((preference) => {
-        const base = isAllowedThemeBaseColorName(preference.baseColor)
-          ? preference.baseColor
-          : DEFAULT_THEME_BASE_COLOR;
-        const normalized = normalizeThemeHexColor(preference.primaryColor);
-        const finalColor = isAllowedThemePrimaryColor(normalized)
-          ? normalized
-          : DEFAULT_THEME_PRIMARY_COLOR;
-        applyThemeBaseColor(base);
-        const applied = applyThemePrimaryColor(finalColor);
-        localStorage.setItem(baseStorageKey, base);
-        localStorage.setItem(storageKey, applied);
+        const primaryHex = normalizeThemeHexColor(preference.primaryHex);
+        if (preference.pantoneTcx === null) {
+          applyDefaultTheme();
+          saveThemeToLocalStorage(
+            {
+              primary: DEFAULT_THEME_PRIMARY_COLOR,
+              pantoneTcx: null,
+              seedHex: DEFAULT_THEME_PRIMARY_COLOR,
+            },
+            userId
+          );
+          return;
+        }
+
+        const palette = generatePaletteFromSeed(primaryHex);
+        applyThemeFromPantoneSeed(primaryHex, palette);
+        saveThemeToLocalStorage(
+          {
+            primary: primaryHex,
+            pantoneTcx: preference.pantoneTcx,
+            seedHex: primaryHex,
+            palette,
+          },
+          userId
+        );
       })
       .catch(() => {
-        if (!cachedBase) {
-          applyThemeBaseColor(DEFAULT_THEME_BASE_COLOR);
-        }
-        if (!cached) {
-          applyThemePrimaryColor(DEFAULT_THEME_PRIMARY_COLOR);
-        }
-        // Keep cached state when server action fails.
+        // Keep device / local cache when the server action fails.
       });
-  }, [session?.user?.id, status]);
+  }, [userId, status]);
 
   useEffect(() => {
-    if (status !== 'authenticated' || !session?.user?.id) return;
+    const cached = readThemeFromLocalStorage(userId);
+    const seedHex = cached?.seedHex ?? DEFAULT_THEME_PRIMARY_COLOR;
+    const palette = cached?.palette;
 
-    const baseStorageKey = getUserThemeBaseStorageKey(session.user.id);
     const observer = new MutationObserver(() => {
-      const cachedBase = localStorage.getItem(baseStorageKey);
-      const base = cachedBase && isAllowedThemeBaseColorName(cachedBase)
-        ? cachedBase
-        : DEFAULT_THEME_BASE_COLOR;
-      applyThemeBaseColor(base);
+      if (cached?.pantoneTcx === null && !palette) {
+        applyDefaultTheme();
+      } else {
+        applyThemeFromPantoneSeed(seedHex, palette);
+      }
     });
 
     observer.observe(document.documentElement, {
@@ -93,7 +88,7 @@ export function ThemeColorProvider({ children }: { children: React.ReactNode }) 
     });
 
     return () => observer.disconnect();
-  }, [session?.user?.id, status]);
+  }, [userId]);
 
   return <>{children}</>;
 }

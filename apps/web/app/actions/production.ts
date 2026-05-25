@@ -12,6 +12,12 @@ import { getActorName, notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterials
 import { getPpnRatePercent } from '@/app/actions/settings/ppn';
 import { auth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import {
+  listWorkOrders as listWorkOrdersLib,
+  type ListWorkOrdersFilters,
+  type ListWorkOrdersOpts,
+} from '@/lib/work-orders/queries';
 
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
@@ -237,6 +243,10 @@ const woSchema = z
 export type WOFormData = z.infer<typeof woSchema>;
 
 export async function createWorkOrder(data: WOFormData, userId: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_CREATE);
+
   woSchema.parse(data);
 
   const plannedOutput = new Decimal(data.plannedQty);
@@ -381,6 +391,9 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
 
 /** Update a work order. Only allowed when status is DRAFT. */
 export async function updateWorkOrder(woId: string, data: WOFormData, _userId: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
   void _userId;
   woSchema.parse(data);
 
@@ -518,6 +531,10 @@ export async function updateWOHppAdjustments(
 }
 
 export async function issueWorkOrder(id: string, userId: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+
   const wo = await prisma.workOrder.findUnique({
     where: { id }
   });
@@ -564,6 +581,10 @@ const issueSchema = z.object({
 export type IssueFormData = z.infer<typeof issueSchema>;
 
 export async function issueMaterials(data: IssueFormData, userId: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+
   const validated = issueSchema.parse(data);
 
   const issueResult = await prisma.$transaction(async (tx) => {
@@ -866,6 +887,10 @@ export async function issueAdditionalMaterials(
   additionalQty: number,
   userId: string
 ) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+
   const wo = await prisma.workOrder.findUnique({
     where: { id: woId },
     select: { status: true, finishedGoodId: true, docNumber: true },
@@ -975,6 +1000,10 @@ const receiptSchema = z
 export type ReceiptFormData = z.infer<typeof receiptSchema>;
 
 export async function receiveFG(data: ReceiptFormData, userId: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+
   receiptSchema.parse(data);
 
   const receiveResult = await prisma.$transaction(async (tx) => {
@@ -1159,6 +1188,10 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
 }
 
 export async function cancelWorkOrder(id: string, userId: string, reason?: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+
   const wo = await prisma.workOrder.findUnique({
     where: { id },
     include: { issues: true, receipts: true }
@@ -1189,120 +1222,10 @@ export async function cancelWorkOrder(id: string, userId: string, reason?: strin
 }
 
 export async function getWorkOrders(
-  filters?: {
-    status?: string;
-    vendorId?: string;
-    fromDate?: Date;
-    toDate?: Date;
-  },
-  opts?: { page: number; pageSize: number }
+  filters?: ListWorkOrdersFilters,
+  opts?: ListWorkOrdersOpts
 ) {
-  const where: any = {};
-
-  if (filters?.status) {
-    where.status = filters.status;
-  }
-
-  if (filters?.vendorId) {
-    where.vendorId = filters.vendorId;
-  }
-
-  if (filters?.fromDate || filters?.toDate) {
-    where.createdAt = {};
-    if (filters.fromDate) {
-      where.createdAt.gte = filters.fromDate;
-    }
-    if (filters.toDate) {
-      where.createdAt.lte = filters.toDate;
-    }
-  }
-
-  const include = {
-    vendor: {
-      select: {
-        name: true,
-        code: true,
-      },
-    },
-    finishedGood: {
-      select: {
-        id: true,
-        sku: true,
-        nameId: true,
-        nameEn: true,
-      },
-    },
-    _count: {
-      select: {
-        issues: true,
-        receipts: true,
-      },
-    },
-  };
-
-  if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
-    const [rows, totalCount] = await Promise.all([
-      prisma.workOrder.findMany({
-        where,
-        skip: (opts.page - 1) * opts.pageSize,
-        take: opts.pageSize,
-        include,
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.workOrder.count({ where }),
-    ]);
-    const items = rows.map((wo) => ({
-      id: wo.id,
-      docNumber: wo.docNumber,
-      vendorId: wo.vendorId,
-      finishedGoodId: wo.finishedGoodId,
-      outputMode: wo.outputMode,
-      plannedQty: Number(wo.plannedQty),
-      actualQty: wo.actualQty != null ? Number(wo.actualQty) : null,
-      targetDate: wo.targetDate,
-      status: wo.status,
-      issuedAt: wo.issuedAt,
-      completedAt: wo.completedAt,
-      canceledAt: wo.canceledAt,
-      canceledReason: wo.canceledReason,
-      notes: wo.notes,
-      createdById: wo.createdById,
-      createdAt: wo.createdAt,
-      updatedAt: wo.updatedAt,
-      vendor: wo.vendor,
-      finishedGood: wo.finishedGood,
-      _count: wo._count,
-    }));
-    return { items, totalCount };
-  }
-
-  const rows = await prisma.workOrder.findMany({
-    where,
-    include,
-    orderBy: { createdAt: 'desc' },
-  });
-  return rows.map((wo) => ({
-    id: wo.id,
-    docNumber: wo.docNumber,
-    vendorId: wo.vendorId,
-    finishedGoodId: wo.finishedGoodId,
-    outputMode: wo.outputMode,
-    plannedQty: Number(wo.plannedQty),
-    actualQty: wo.actualQty != null ? Number(wo.actualQty) : null,
-    targetDate: wo.targetDate,
-    status: wo.status,
-    issuedAt: wo.issuedAt,
-    completedAt: wo.completedAt,
-    canceledAt: wo.canceledAt,
-    canceledReason: wo.canceledReason,
-    notes: wo.notes,
-    createdById: wo.createdById,
-    createdAt: wo.createdAt,
-    updatedAt: wo.updatedAt,
-    vendor: wo.vendor,
-    finishedGood: wo.finishedGood,
-    _count: wo._count,
-  }));
+  return listWorkOrdersLib(filters, opts);
 }
 
 export async function getWorkOrderById(id: string) {
