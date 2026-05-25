@@ -15,3 +15,9 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 export * from "../generated/prisma/client";
 export { getDatabaseUrl } from "./db-connection";
+export {
+  createItemFromIngest,
+  updateItemFromIngest,
+  type IngestItemCreateData,
+  type IngestItemUpdateData,
+} from "./item-writer";

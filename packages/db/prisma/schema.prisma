@@ -217,6 +217,7 @@ model Item {
   overReceiveThreshold Decimal?      @db.Decimal(10,2)
   sellingPrice     Decimal?          @db.Decimal(14,2)
   defaultPpnIncluded Boolean         @default(true)
+  source           ItemSource        @default(ERP)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   stockMovements   StockMovement[]
@@ -714,6 +715,11 @@ enum ItemType {
   FABRIC
   ACCESSORIES
   FINISHED_GOOD
+}
+
+enum ItemSource {
+  ERP
+  JUBELIO_INGEST
 }
 
 enum ItemTypeGroup {

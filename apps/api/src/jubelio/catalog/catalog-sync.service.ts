@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { ItemType, Prisma } from "@elorae/db";
+import { ItemType, Prisma, createItemFromIngest, updateItemFromIngest } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
 import { buildCatalogDrafts, sellingPriceToDecimal } from "./map-catalog";
@@ -203,21 +203,19 @@ export class JubelioCatalogSyncService {
 
     if (!existing) {
       await this.prisma.$transaction(async (tx) => {
-        const item = await tx.item.create({
-          data: {
-            sku: draft.itemSku,
-            nameId: draft.nameId,
-            nameEn: draft.nameEn,
-            description: draft.description ?? null,
-            type: ItemType.FINISHED_GOOD,
-            uomId,
-            categoryId: draft.categoryId,
-            variants: draft.variantless ? [] : variantsJson,
-            isActive: true,
-            reorderPoint: null,
-            overReceiveThreshold: null,
-            sellingPrice,
-          },
+        const item = await createItemFromIngest(tx, {
+          sku: draft.itemSku,
+          nameId: draft.nameId,
+          nameEn: draft.nameEn,
+          description: draft.description ?? null,
+          type: ItemType.FINISHED_GOOD,
+          uomId,
+          categoryId: draft.categoryId,
+          variants: draft.variantless ? [] : variantsJson,
+          isActive: true,
+          reorderPoint: null,
+          overReceiveThreshold: null,
+          sellingPrice,
         });
         await this.ensureInventoryRows(tx, item.id, draft);
         await this.upsertMappings(tx, item.id, draft);
@@ -234,15 +232,12 @@ export class JubelioCatalogSyncService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.item.update({
-        where: { id: existing.id },
-        data: {
-          nameId: draft.nameId,
-          nameEn: draft.nameEn,
-          description: draft.description ?? existing.description,
-          variants: draft.variantless ? [] : (merged as Prisma.InputJsonValue),
-          sellingPrice,
-        },
+      await updateItemFromIngest(tx, { id: existing.id }, {
+        nameId: draft.nameId,
+        nameEn: draft.nameEn,
+        description: draft.description ?? existing.description,
+        variants: draft.variantless ? [] : (merged as Prisma.InputJsonValue),
+        sellingPrice,
       });
       await this.ensureInventoryRows(tx, existing.id, draft);
       await this.upsertMappings(tx, existing.id, draft);

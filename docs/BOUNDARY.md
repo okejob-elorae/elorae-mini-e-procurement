@@ -1,6 +1,6 @@
 # Service boundary — `apps/web` ↔ `apps/api`
 
-Status: **active** · Owner: backend integration · Last updated: 2026-05-24
+Status: **active** · Owner: backend integration · Last updated: 2026-05-25
 
 This document defines the responsibility split between the Next.js app
 (`apps/web`) and the NestJS Jubelio integration service (`apps/api`) in the
@@ -24,10 +24,12 @@ Legend used throughout: **✅ built** · **🟡 partial** · **⏳ planned**.
 | `apps/api` | NestJS scaffold (`PrismaModule`, `HealthModule`, `JubelioModule`) | ✅ |
 | `apps/api` | Swagger `/docs` behind HTTP Basic auth (`SWAGGER_USER`/`SWAGGER_PASS`) | ✅ |
 | Jubelio token | env creds + DB persistence + 12 h TTL + in-memory cache + single-flight refresh + on-demand re-fetch within 5 min of expiry | ✅ |
-| Jubelio token | Proactive scheduled refresh (cron) + exponential backoff on `refresh()` failure + admin alert on persistent failure | ⏳ |
-| Webhooks | Receivers (`salesorder`, `stock`, `salesreturn`, `product`) + signature verify | ⏳ |
+| Jubelio token | Proactive scheduled refresh (`@Cron` hourly prewarm) + exponential backoff on `refresh()` failure + `AdminNotification` write on persistent failure | ✅ |
+| Webhooks | Receivers (`salesorder`, `stock`, `salesreturn`, `product`) + signature verify + dedupe via `JubelioWebhookEvent` | ✅ |
+| Catalog ingest | `POST /jubelio/catalog/sync` — Jubelio → ERP (upserts `Item` via `@elorae/db` helper with `source=JUBELIO_INGEST`, `JubelioProductMapping`, zero `InventoryValue`) | ✅ |
 | Outbox queue | `JubelioOutbox` table + BullMQ producer/consumer + DLQ + retry policy | ⏳ |
 | API audit | `JubelioApiCall` audit log + HTTP interceptor + 429 rate-limit handling | ⏳ |
+| Admin alerts | `AdminNotification` table + writer in api + read in web admin UI | ✅ schema + api writer; ⏳ web UI consumer |
 | Cross-service auth bridge (NextAuth JWT verify in api) | | ⏳ |
 | Internal `api → web` revalidate endpoint | | ⏳ |
 | Render deployment + Upstash Redis provisioning + CI for migrations lint | | ⏳ |
@@ -73,11 +75,12 @@ not call Jubelio directly. **⏳ planned.**
 | File upload (R2, GRN photos)           | ✅          |            | built |
 | Firebase admin (push notifications)    | ✅          |            | built |
 | Jubelio HTTP client + token cache      |            | ✅          | built |
-| Jubelio webhook receivers              |            | ⏳          | planned |
+| Jubelio webhook receivers              |            | ✅          | built |
+| Catalog ingest (Jubelio → ERP)         |            | ✅          | built (`Item` dual-write per §3.3) |
 | Long-running jobs and queues           |            | ⏳          | planned |
 | Audit log writer (Jubelio side)        |            | ⏳          | planned |
 | RBAC guard for Jubelio endpoints       |            | ⏳          | planned (auth bridge) |
-| Catalog push                           |            | ⏳          | planned |
+| Catalog push (ERP → Jubelio)           |            | ⏳          | planned |
 | Marketplace listing                    |            | ⏳          | planned |
 | Stock push                             |            | ⏳          | planned |
 | Sales order ingest                     |            | ⏳          | planned |
@@ -97,7 +100,7 @@ contract for the migrations that will introduce them.
 | Table                          | Owner                       | Reads from other            | State |
 | ------------------------------ | --------------------------- | --------------------------- | :---: |
 | `User`, `Role`, `Permission`   | web                         | api (read)                  | ✅ |
-| `Item`, `ItemVariant`          | web                         | api (read for push)         | ✅ |
+| `Item`, `ItemVariant`          | **both** — see §3.3         | —                           | ✅ schema + `source` column; api ingest via helper ✅; web continues bare prisma 🟡 |
 | `Supplier`, `SupplierType`     | web                         | —                           | ✅ |
 | `GRN`, `GRNItem`               | web                         | api (read)                  | ✅ |
 | `PurchaseOrder`, `POItem`      | web                         | api (read)                  | ✅ |
@@ -108,11 +111,12 @@ contract for the migrations that will introduce them.
 | `SalesOrder`                   | **both** — see §3.2         |                             | ✅ schema; 🟡 ownership guard ⏳ |
 | `SalesOrderItem`               | api                         | web (read)                  | ✅ schema; api writer ⏳ |
 | `SalesReturn`                  | api                         | web (read)                  | ⏳ |
-| `JubelioProductMapping`        | api                         | web (read)                  | ⏳ |
-| `JubelioCategoryMapping`       | api                         | web (read)                  | ⏳ |
+| `JubelioProductMapping`        | api                         | web (read)                  | ✅ |
+| `JubelioCategoryMapping`       | api                         | web (read)                  | ✅ schema; writer ⏳ (currently seed-only, no runtime writer) |
 | `JubelioOutbox`                | web insert, api consume/update | —                        | ⏳ |
-| `JubelioWebhookEvent`          | api                         | —                           | ⏳ |
+| `JubelioWebhookEvent`          | api                         | —                           | ✅ |
 | `JubelioApiCall`               | api                         | web (read for admin UI)     | ⏳ |
+| `AdminNotification`            | api (writes); web (reads + marks read) | —                | ✅ schema + api writer; web UI ⏳ |
 | `SystemSetting` (Jubelio keys) | api                         | web (read for settings UI)  | ✅ (`JUBELIO_SESSION_TOKEN`) |
 | `SystemSetting` (other keys)   | web                         | —                           | ✅ |
 | `AuditLog`                     | both — shared writer        | —                           | ✅ schema; 🟡 shared writer ⏳ |
@@ -141,6 +145,33 @@ Both writes go through a shared helper in `@elorae/db` to enforce the columns:
 
 Field-level ownership is enforced by Prisma client middleware in
 `@elorae/db/sales-order-guard.ts`.
+
+### 3.3 `Item` writes — two writers (resolved 2026-05-25)
+
+`Item` has an `ItemSource` discriminator column:
+
+- `ERP` — row created/edited via apps/web (ERP forms, GRN receive-new-SKU).
+  Default on `INSERT`.
+- `JUBELIO_INGEST` — row created/edited by apps/api catalog ingest.
+
+**api** writes `Item` only through the shared helper
+`@elorae/db/item-writer.ts` (`createItemFromIngest`, `updateItemFromIngest`).
+The helper stamps `source = JUBELIO_INGEST` automatically. Direct
+`prisma.item.create` / `prisma.item.update` from apps/api is still forbidden
+(§7).
+
+**web** continues to use `prisma.item.*` directly; rows default to
+`source = ERP`. Migrating web call sites to an `ErpItemWriter` helper is a
+future cleanup, not a prerequisite for ingest.
+
+Backfill in migration `20260525100000_add_item_source`: any pre-existing row
+joined to `JubelioProductMapping` was set to `JUBELIO_INGEST`; all others
+default to `ERP`.
+
+**Conflict policy:** none yet. If both services edit the same item
+near-simultaneously, last-write-wins. Add a policy in the helper when a real
+collision case appears (low probability; ingest is push-button, not
+continuous).
 
 ---
 
@@ -234,7 +265,7 @@ be closed before any public deploy.
 | DB down          | Both services 500. Standard.                                                                       | ✅ |
 | Outbox stuck     | Alert when `PENDING + FAILED > threshold` for `> X min`. Manual replay tool in api admin.          | ⏳ |
 | Webhook replay   | Dedup by `event_id` in `JubelioWebhookEvent`. Safe to replay.                                      | ⏳ |
-| Token expired    | api auto-refreshes within 5 min of expiry (on demand). Single-flight refresh per process.          | ✅ on-demand; ⏳ proactive cron + alert on persistent failure |
+| Token expired    | api auto-refreshes within 5 min of expiry (on demand). Single-flight refresh per process. Hourly `@Cron` prewarm + exponential backoff + `AdminNotification` on persistent failure. | ✅ |
 | Schema drift     | Migrations run only via `@elorae/db`. CI blocks PRs that add migrations elsewhere.                 | 🟡 convention enforced socially; ⏳ CI guard |
 
 ---
@@ -250,8 +281,10 @@ be closed before any public deploy.
 - ❌ Writing to a table not listed in §3 without updating this doc first.
 - ❌ Sync HTTP call from ERP server action to api inside a Prisma transaction.
   Always outbox.
-- ❌ api writing to `User`, `Role`, `Permission`, `Item`, `GRN`, `PO`, or any
-  table marked web-owned.
+- ❌ api writing to `User`, `Role`, `Permission`, `GRN`, `PO`, or any table
+  marked web-owned. `Item` is dual-owned (§3.3) — api writes **only** via
+  `@elorae/db/item-writer.ts` helpers, never `prisma.item.create/update`
+  directly.
 
 ---
 
