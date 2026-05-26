@@ -1,4 +1,4 @@
-import { hexToRgb, labChroma, labHueRadians, labToHex, rgbToLab } from '@/lib/color/lab';
+import { hexToRgb, labChroma, labHueRadians, labToHex, rgbToLab } from '@elorae/db';
 import type { BaseTokens } from '@/lib/theme/theme-color';
 import { normalizeThemeHexColor } from '@/lib/theme/theme-color';
 

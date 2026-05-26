@@ -20,10 +20,10 @@ import {
   IssueType,
   ReceiptType,
   SyncStatus,
-} from "@prisma/client";
+} from "../generated/prisma/client";
 import bcrypt from "bcryptjs";
 
-import { getDatabaseUrl } from "../lib/db-connection";
+import { getDatabaseUrl } from "../src/db-connection";
 import { seedPantoneColors } from "./seed-pantone-colors";
 
 const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL!);

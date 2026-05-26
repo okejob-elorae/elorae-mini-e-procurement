@@ -5,7 +5,7 @@ import {
   getNearestPantone,
   getSimilarColors,
 } from 'pantone-tcx';
-import { hexToRgb, labToHex, rgbToLab } from '@/lib/color/lab';
+import { hexToRgb, labToHex, rgbToLab } from '@elorae/db';
 
 export type PantoneMatchResult = {
   name: string;

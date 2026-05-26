@@ -20,9 +20,9 @@ export type ClassifiedColor = {
   rgbB: number;
 };
 
-import { hexToRgb, rgbToLab } from '@/lib/color/lab';
+import { hexToRgb, rgbToLab } from "../color/lab";
 
-export { hexToRgb, rgbToLab } from '@/lib/color/lab';
+export { hexToRgb, rgbToLab } from "../color/lab";
 
 function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
   r /= 255;

@@ -6,3 +6,4 @@ packages/db/dist/
 packages/db/generated/
 
 reference/*
+.vercel

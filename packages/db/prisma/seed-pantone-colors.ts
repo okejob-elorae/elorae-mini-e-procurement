@@ -3,19 +3,19 @@
  */
 import fs from 'fs';
 import path from 'path';
-import type { PrismaClient } from '@prisma/client';
-import { classifyColor } from '../lib/pantone/classify';
+import type { PrismaClient } from '../generated/prisma/client';
+import { classifyColor } from '../src/pantone/classify';
 
 type CatalogEntry = { name: string; hex: string; tcx: string };
 
 export async function seedPantoneColors(prisma: PrismaClient): Promise<void> {
   const jsonPath = path.join(
     process.cwd(),
-    'lib/pantone/pantone-tcx-colors.json'
+    'prisma/pantone-tcx-colors.json'
   );
   if (!fs.existsSync(jsonPath)) {
     console.warn(
-      'Skipping Pantone seed: lib/pantone/pantone-tcx-colors.json not found. Run: npx tsx scripts/extract-pantone-tcx-catalog.ts'
+      'Skipping Pantone seed: prisma/pantone-tcx-colors.json not found.'
     );
     return;
   }

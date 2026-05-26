@@ -12,10 +12,10 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
-import { PrismaClient, DocType, Role } from "@prisma/client";
+import { PrismaClient, DocType, Role } from "../generated/prisma/client";
 import bcrypt from "bcryptjs";
 
-import { getDatabaseUrl } from "../lib/db-connection";
+import { getDatabaseUrl } from "../src/db-connection";
 
 const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL!);
 const prisma = new PrismaClient({ adapter });
