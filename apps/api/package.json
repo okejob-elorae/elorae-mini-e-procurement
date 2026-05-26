@@ -7,6 +7,9 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "migrate:deploy": "pnpm --filter @elorae/db migrate:deploy",
+    "prod:build": "pnpm --filter @elorae/db generate && pnpm --filter @elorae/db build && pnpm --filter @elorae/api build",
+    "prod:start": "NODE_ENV=production node dist/main.js",
+    "prod": "pnpm prod:build && pnpm migrate:deploy && pnpm prod:start",
     "lint": "eslint src --max-warnings 0",
     "type-check": "tsc --noEmit",
     "test": "jest"

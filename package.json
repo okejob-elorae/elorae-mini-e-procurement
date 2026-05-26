@@ -8,7 +8,8 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "prod:api": "pnpm --filter @elorae/api prod"
   },
   "devDependencies": {
     "turbo": "^2.5.0"
