@@ -7,7 +7,7 @@ import {
   buildGradient,
   hexToRgbString,
 } from '@/lib/pantone/match';
-import type { FilterTags } from '@elorae/db';
+import type { FilterTags } from "@elorae/db/pantone";
 
 export const dynamic = 'force-dynamic';
 

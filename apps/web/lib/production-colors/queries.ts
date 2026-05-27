@@ -1,6 +1,6 @@
 import { Prisma } from '@elorae/db';
 import { prisma } from '@elorae/db';
-import type { FilterTags } from '@elorae/db';
+import type { FilterTags } from "@elorae/db/pantone";
 import { COLOR_PAGE_SIZE } from '@/lib/production-colors/constants';
 
 export { COLOR_PAGE_SIZE };

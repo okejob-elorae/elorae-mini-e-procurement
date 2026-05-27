@@ -21,16 +21,3 @@ export {
   type IngestItemCreateData,
   type IngestItemUpdateData,
 } from "./item-writer";
-export {
-  hexToRgb,
-  rgbToLab,
-  labToHex,
-  labChroma,
-  labHueRadians,
-} from "./color/lab";
-export {
-  classifyColor,
-  DEFAULT_FILTER_OPTIONS,
-  type FilterTags,
-  type ClassifiedColor,
-} from "./pantone/classify";

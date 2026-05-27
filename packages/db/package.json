@@ -8,6 +8,14 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
+    },
+    "./color": {
+      "types": "./dist/src/color/lab.d.ts",
+      "default": "./dist/src/color/lab.js"
+    },
+    "./pantone": {
+      "types": "./dist/src/pantone/classify.d.ts",
+      "default": "./dist/src/pantone/classify.js"
     }
   },
   "scripts": {
