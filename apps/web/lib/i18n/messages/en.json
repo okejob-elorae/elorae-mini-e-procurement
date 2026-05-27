@@ -55,6 +55,7 @@
     "reports": "Reports",
     "hppReport": "HPP (Cost of Goods)",
     "auditTrail": "Audit Trail",
+    "jubelioAdmin": "Jubelio API",
     "settings": "Settings",
     "masterData": "Master Data"
   },

@@ -6,6 +6,8 @@ export const JUBELIO_TOKEN_KEY = "JUBELIO_SESSION_TOKEN";
 export const JUBELIO_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 export const JUBELIO_TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;
 export const JUBELIO_DEFAULT_BASE_URL = "https://api2.jubelio.com";
+export const JUBELIO_RATE_LIMIT_MAX_RETRIES = 3;
+export const JUBELIO_RATE_LIMIT_BASE_DELAY_MS = 1000;
 
 @Injectable()
 export class JubelioConfig {

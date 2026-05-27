@@ -3,10 +3,11 @@ import { JubelioConfig } from "./jubelio.config";
 import { JubelioController } from "./jubelio.controller";
 import { JubelioHttpService } from "./http.service";
 import { JubelioTokenService } from "./token.service";
+import { JubelioApiCallLogger } from "./api-call-logger.service";
 
 @Module({
   controllers: [JubelioController],
-  providers: [JubelioConfig, JubelioTokenService, JubelioHttpService],
+  providers: [JubelioConfig, JubelioTokenService, JubelioHttpService, JubelioApiCallLogger],
   exports: [JubelioConfig, JubelioTokenService, JubelioHttpService],
 })
 export class JubelioModule {}

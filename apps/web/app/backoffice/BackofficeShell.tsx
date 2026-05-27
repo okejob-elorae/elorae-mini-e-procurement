@@ -24,6 +24,7 @@ import {
   Check,
   BarChart2,
   Palette,
+  Activity,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -154,6 +155,12 @@ const navItems: NavItem[] = [
     href: '/backoffice/audit-trail',
     icon: FileText,
     permission: PERMISSIONS.AUDIT_TRAIL_VIEW,
+  },
+  {
+    labelKey: 'jubelioAdmin',
+    href: '/backoffice/jubelio/admin',
+    icon: Activity,
+    permission: PERMISSIONS.JUBELIO_ADMIN_VIEW,
   },
   {
     labelKey: 'settings',

@@ -903,3 +903,20 @@ model JubelioCategoryMapping {
 
   @@index([itemCategoryId])
 }
+
+model JubelioApiCall {
+  id           String   @id @default(cuid())
+  method       String
+  path         String
+  payloadHash  String?
+  statusCode   Int?
+  latencyMs    Int
+  ok           Boolean
+  rateLimited  Boolean  @default(false)
+  errorMessage String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([path, createdAt])
+  @@index([ok, createdAt])
+}

@@ -1,6 +1,11 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { JubelioConfig } from "./jubelio.config";
+import {
+  JubelioConfig,
+  JUBELIO_RATE_LIMIT_BASE_DELAY_MS,
+  JUBELIO_RATE_LIMIT_MAX_RETRIES,
+} from "./jubelio.config";
 import { JubelioTokenService } from "./token.service";
+import { JubelioApiCallLogger } from "./api-call-logger.service";
 import { JubelioError } from "./jubelio.types";
 
 export type JubelioRequestInit = Omit<RequestInit, "headers"> & {
@@ -15,21 +20,65 @@ export class JubelioHttpService {
   constructor(
     private readonly config: JubelioConfig,
     private readonly tokens: JubelioTokenService,
+    private readonly apiLog: JubelioApiCallLogger,
   ) {}
 
   async request<T = unknown>(path: string, init: JubelioRequestInit = {}): Promise<T> {
     const url = this.buildUrl(path, init.query);
-    const token = await this.tokens.getToken();
-    const response = await this.send(url, init, token);
+    const method = init.method ?? "GET";
+    const bodyStr = typeof init.body === "string" ? init.body : undefined;
+    const start = Date.now();
+    let rateLimited = false;
 
-    if (response.status === 401) {
-      this.logger.warn(`401 from ${path} — invalidating cached token, retrying once`);
-      await this.tokens.invalidate();
-      const retryToken = await this.tokens.getToken();
-      const retry = await this.send(url, init, retryToken);
-      return this.parse<T>(path, retry);
+    try {
+      const token = await this.tokens.getToken();
+      let response = await this.send(url, init, token);
+
+      if (response.status === 401) {
+        this.logger.warn(`401 from ${path} — invalidating cached token, retrying once`);
+        await this.tokens.invalidate();
+        const retryToken = await this.tokens.getToken();
+        response = await this.send(url, init, retryToken);
+      }
+
+      let attempt = 0;
+      while (response.status === 429 && attempt < JUBELIO_RATE_LIMIT_MAX_RETRIES) {
+        rateLimited = true;
+        const delay = this.retryAfterMs(response, attempt);
+        this.logger.warn(
+          `429 from ${path} — retry ${attempt + 1}/${JUBELIO_RATE_LIMIT_MAX_RETRIES} after ${delay}ms`,
+        );
+        await this.sleep(delay);
+        const token = await this.tokens.getToken();
+        response = await this.send(url, init, token);
+        attempt++;
+      }
+
+      const status = response.status;
+      const result = await this.parse<T>(path, response);
+      this.apiLog.record({ method, path, body: bodyStr, statusCode: status, latencyMs: Date.now() - start, ok: true, rateLimited });
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const statusCode = err instanceof JubelioError ? err.status : undefined;
+      this.apiLog.record({ method, path, body: bodyStr, statusCode, latencyMs: Date.now() - start, ok: false, rateLimited, errorMessage: message });
+      throw err;
     }
-    return this.parse<T>(path, response);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private retryAfterMs(response: Response, attempt: number): number {
+    const header = response.headers.get("retry-after");
+    if (header) {
+      const seconds = Number(header);
+      if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+      const date = Date.parse(header);
+      if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+    }
+    return JUBELIO_RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt;
   }
 
   get<T = unknown>(path: string, init?: JubelioRequestInit): Promise<T> {

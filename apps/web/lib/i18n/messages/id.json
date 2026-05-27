@@ -55,6 +55,7 @@
     "reports": "Laporan",
     "hppReport": "HPP (Harga Pokok Produksi)",
     "auditTrail": "Audit Trail",
+    "jubelioAdmin": "Jubelio API",
     "settings": "Pengaturan",
     "masterData": "Data Master"
   },
