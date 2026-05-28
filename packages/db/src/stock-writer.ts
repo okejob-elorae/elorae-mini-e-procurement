@@ -4,6 +4,11 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
 
 export type ApplyJubelioStockAdjustmentInput = {
   itemId: string;
+  /**
+   * ERP variant SKU. Empty string `""` for variantless items (catalog-ingest convention).
+   * Never pass `null` — the helper's findUnique on the composite `(itemId, variantSku)` key
+   * relies on the empty-string convention to match rows for variantless items.
+   */
   variantSku: string;
   newQty: number;
   idempotencyKey: string;
@@ -27,7 +32,7 @@ export async function applyJubelioStockAdjustment(
   client: AnyClient,
   input: ApplyJubelioStockAdjustmentInput,
 ): Promise<ApplyJubelioStockAdjustmentResult> {
-  const isTx = typeof (client as PrismaClient).$transaction !== "function";
+  const hasTransactionFn = typeof (client as PrismaClient).$transaction === "function";
   const run = async (tx: Prisma.TransactionClient): Promise<ApplyJubelioStockAdjustmentResult> => {
     const inv = await tx.inventoryValue.findUnique({
       where: { itemId_variantSku: { itemId: input.itemId, variantSku: input.variantSku } },
@@ -60,7 +65,11 @@ export async function applyJubelioStockAdjustment(
 
       await tx.inventoryValue.update({
         where: { itemId_variantSku: { itemId: input.itemId, variantSku: input.variantSku } },
-        data: { qtyOnHand: input.newQty },
+        data: {
+          qtyOnHand: input.newQty,
+          totalValue: input.newQty * avgCost,
+          lastUpdated: new Date(),
+        },
       });
 
       return { adjustmentId: created.id, skipped: false };
@@ -69,14 +78,20 @@ export async function applyJubelioStockAdjustment(
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === "P2002"
       ) {
-        return { adjustmentId: null, skipped: true };
+        const target = err.meta?.target;
+        const targets = Array.isArray(target) ? target : typeof target === "string" ? [target] : [];
+        const isIdempotencyCollision =
+          targets.includes("idempotencyKey") || targets.includes("docNumber");
+        if (isIdempotencyCollision) {
+          return { adjustmentId: null, skipped: true };
+        }
       }
       throw err;
     }
   };
 
-  if (isTx) {
-    return run(client as Prisma.TransactionClient);
+  if (hasTransactionFn) {
+    return (client as PrismaClient).$transaction(run);
   }
-  return (client as PrismaClient).$transaction(run);
+  return run(client as Prisma.TransactionClient);
 }
