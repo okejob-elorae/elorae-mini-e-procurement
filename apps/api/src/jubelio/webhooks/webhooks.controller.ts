@@ -41,7 +41,7 @@ export class JubelioWebhooksController {
     summary: "Receive a Jubelio webhook",
     description:
       "Accepts inbound webhooks for salesorder | stock | salesreturn | product. " +
-      "Verifies the `webhook-signature` header (sha256(rawBody + secret)), persists the " +
+      "Verifies the `Sign` header (sha256(rawBody + secret)), persists the " +
       "raw payload, and acks 200. Processing happens asynchronously.",
   })
   async receive(
@@ -58,7 +58,11 @@ export class JubelioWebhooksController {
       throw new BadRequestException("Missing request body");
     }
 
+    // Jubelio sends the signature in a `Sign` header (Express lowercases to `sign`).
+    // `webhook-signature` / `x-webhook-signature` kept as fallbacks for test harnesses
+    // and any future signature header rename by Jubelio.
     const signatureHeader =
+      (req.headers["sign"] as string | undefined) ??
       (req.headers["webhook-signature"] as string | undefined) ??
       (req.headers["x-webhook-signature"] as string | undefined);
 
