@@ -45,6 +45,7 @@ export function ItemDetailClient({
 
   const handlePushStock = async () => {
     if (!initialData?.id) return;
+    if (!confirm("Push this item's current stock to Jubelio?")) return;
     const r = await pushItemStockToJubelio(initialData.id);
     if (r.ok) toast.success("Queued. Pushes within ~5 seconds.");
     else toast.error("Push failed (admin only).");

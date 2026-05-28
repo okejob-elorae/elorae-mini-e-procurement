@@ -163,6 +163,7 @@ export default function JubelioAdminPage() {
   };
 
   const handleOutboxRetry = async (id: string) => {
+    if (!confirm("Re-queue this row? Worker will re-push to Jubelio.")) return;
     const r = await retryJubelioOutboxRow(id);
     if (r.ok) {
       toast.success("Re-queued. Poller picks up within ~5 seconds.");
