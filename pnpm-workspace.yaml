@@ -9,6 +9,7 @@ allowBuilds:
   "@scarf/scarf": false
   "@swc/core": true
   esbuild: true
+  msgpackr-extract: true
   msw: false
   prisma: true
   protobufjs: false

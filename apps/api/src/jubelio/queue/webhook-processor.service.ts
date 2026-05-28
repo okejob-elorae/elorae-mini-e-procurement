@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { OnWorkerEvent, Processor, WorkerHost } from "@nestjs/bullmq";
-import type { Job } from "bullmq";
+import type { Job, Worker } from "bullmq";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { AdminNotificationService } from "../../admin/notification.service";
 import { JubelioEventRouter } from "./event-router";
@@ -12,7 +12,7 @@ type JobPayload = { rowId: string };
 
 @Processor(JUBELIO_WEBHOOK_QUEUE, { concurrency: QUEUE_DEFAULTS.WORKER_CONCURRENCY })
 @Injectable()
-export class WebhookProcessor extends WorkerHost<Job<JobPayload>> {
+export class WebhookProcessor extends WorkerHost<Worker<JobPayload>> {
   private readonly logger = new Logger(WebhookProcessor.name);
 
   constructor(
