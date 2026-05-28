@@ -7,6 +7,12 @@ import {
   getJubelioApiCalls,
   getJubelioApiCallStats,
 } from "@/app/actions/jubelio-api-calls";
+import {
+  getJubelioWebhookEvents,
+  getJubelioWebhookStats,
+  retryJubelioWebhookEvent,
+} from "@/app/actions/jubelio-webhooks";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -30,6 +36,10 @@ type CallsResult = Awaited<ReturnType<typeof getJubelioApiCalls>>;
 type CallRow = CallsResult["calls"][number];
 type Stats = Awaited<ReturnType<typeof getJubelioApiCallStats>>;
 
+type WebhookCalls = Awaited<ReturnType<typeof getJubelioWebhookEvents>>;
+type WebhookRow = WebhookCalls["events"][number];
+type WebhookStats = Awaited<ReturnType<typeof getJubelioWebhookStats>>;
+
 const PAGE_SIZE = 50;
 
 function statusVariant(call: CallRow): "default" | "secondary" | "destructive" {
@@ -46,6 +56,10 @@ export default function JubelioAdminPage() {
   const [stats, setStats] = useState<Stats>(null);
   const [onlyErrors, setOnlyErrors] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [whEvents, setWhEvents] = useState<WebhookRow[]>([]);
+  const [whTotal, setWhTotal] = useState(0);
+  const [whStats, setWhStats] = useState<WebhookStats>(null);
+  const [whFilter, setWhFilter] = useState<"all" | "errors" | "DEAD">("all");
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -62,6 +76,21 @@ export default function JubelioAdminPage() {
     }
   }, [onlyErrors]);
 
+  const loadWebhooks = useCallback(async () => {
+    const statusFilter = whFilter === "DEAD" ? "DEAD" : undefined;
+    const [eventsRes, statsRes] = await Promise.all([
+      getJubelioWebhookEvents({ limit: 50, offset: 0, status: statusFilter as any }),
+      getJubelioWebhookStats(),
+    ]);
+    let events = eventsRes.events;
+    if (whFilter === "errors") {
+      events = events.filter((e) => e.status === "DEAD" || e.status === "SKIPPED");
+    }
+    setWhEvents(events);
+    setWhTotal(eventsRes.total);
+    setWhStats(statsRes);
+  }, [whFilter]);
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/login");
@@ -69,6 +98,20 @@ export default function JubelioAdminPage() {
     }
     if (status === "authenticated") void load();
   }, [status, onlyErrors, load, router]);
+
+  useEffect(() => {
+    if (status === "authenticated") void loadWebhooks();
+  }, [status, whFilter, loadWebhooks]);
+
+  const handleRetry = async (id: string) => {
+    const result = await retryJubelioWebhookEvent(id);
+    if (result.ok) {
+      toast.success("Re-queued. Sweeper picks up within 10 min.");
+      void loadWebhooks();
+    } else {
+      toast.error("Retry not allowed (status must be DEAD or SKIPPED).");
+    }
+  };
 
   if (status === "loading") {
     return (
@@ -212,6 +255,98 @@ export default function JubelioAdminPage() {
               </Table>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {(["RECEIVED", "PROCESSING", "PROCESSED", "SKIPPED", "DEAD"] as const).map((s) => (
+          <Card key={s}>
+            <CardHeader className="pb-2">
+              <CardDescription>{s}</CardDescription>
+              <CardTitle className="text-2xl">{whStats?.byStatus?.[s] ?? 0}</CardTitle>
+            </CardHeader>
+          </Card>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Webhook events</CardTitle>
+              <CardDescription>{whTotal} total entries</CardDescription>
+            </div>
+            <div className="flex gap-2">
+              {(["all", "errors", "DEAD"] as const).map((f) => (
+                <Button
+                  key={f}
+                  size="sm"
+                  variant={whFilter === f ? "default" : "outline"}
+                  onClick={() => setWhFilter(f)}
+                >
+                  {f}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Event</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Attempts</TableHead>
+                  <TableHead>Flags / reason</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {whEvents.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                      No webhook events.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  whEvents.map((e) => (
+                    <TableRow key={e.id}>
+                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                        {new Date(e.receivedAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{e.event}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            e.status === "DEAD"
+                              ? "destructive"
+                              : e.status === "SKIPPED"
+                                ? "secondary"
+                                : "default"
+                          }
+                        >
+                          {e.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">{e.attempts}</TableCell>
+                      <TableCell className="text-xs">
+                        {e.skipReason ?? e.lastError?.slice(0, 60) ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {(e.status === "DEAD" || e.status === "SKIPPED") && (
+                          <Button size="sm" variant="outline" onClick={() => void handleRetry(e.id)}>
+                            Retry
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>
