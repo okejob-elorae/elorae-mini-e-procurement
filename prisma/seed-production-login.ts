@@ -160,6 +160,9 @@ async function main() {
 
     // Nota Register
     { code: "nota_register:view", module: "nota_register", action: "view", description: "View nota register" },
+    // Production Planning (Plan Kerja)
+    { code: "production_planning:view", module: "production_planning", action: "view", description: "View production planning" },
+    { code: "production_planning:manage", module: "production_planning", action: "manage", description: "Manage production planning" },
 
     // Vendor Returns
     { code: "vendor_returns:view", module: "vendor_returns", action: "view", description: "View vendor returns" },
@@ -286,7 +289,7 @@ async function main() {
     });
   }
 
-  const productionPermissions = ["dashboard:view", "items:view", "work_orders:view", "work_orders:create", "work_orders:manage", "nota_register:view"];
+  const productionPermissions = ["dashboard:view", "items:view", "work_orders:view", "work_orders:create", "work_orders:manage", "nota_register:view", "production_planning:view"];
   for (const code of productionPermissions) {
     const perm = permissionMap.get(code);
     if (!perm) continue;

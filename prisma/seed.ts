@@ -124,6 +124,9 @@ async function main() {
     { code: 'work_orders:manage', module: 'work_orders', action: 'manage', description: 'Manage work orders' },
     // Nota Register
     { code: 'nota_register:view', module: 'nota_register', action: 'view', description: 'View nota register' },
+    // Production Planning (Plan Kerja)
+    { code: 'production_planning:view', module: 'production_planning', action: 'view', description: 'View production planning' },
+    { code: 'production_planning:manage', module: 'production_planning', action: 'manage', description: 'Manage production planning' },
     // Production Colors (Pantone TCX)
     { code: 'production_colors:view', module: 'production_colors', action: 'view', description: 'View production Pantone colors' },
     // Vendor Returns
@@ -281,6 +284,7 @@ async function main() {
     'items:view',
     'work_orders:view', 'work_orders:create', 'work_orders:manage',
     'nota_register:view',
+    'production_planning:view',
     'production_colors:view',
   ];
   for (const code of productionPermissions) {

@@ -16,7 +16,7 @@ import type { PantoneSwatch } from '@/components/production-colors/types';
 import { COLOR_PAGE_SIZE } from '@/lib/production-colors/constants';
 
 type ColorsBrowseClientProps = {
-  mode: 'all' | 'favorites';
+  tab: 'all' | 'favorites';
   initialColors: PantoneSwatch[];
   totalCount: number;
   page: number;
@@ -24,8 +24,13 @@ type ColorsBrowseClientProps = {
   initialFilters: ColorFiltersState;
 };
 
-function buildQueryString(filters: ColorFiltersState, page: number): string {
+function buildQueryString(
+  filters: ColorFiltersState,
+  page: number,
+  tab: 'all' | 'favorites'
+): string {
   const params = new URLSearchParams();
+  if (tab === 'favorites') params.set('tab', 'favorites');
   if (filters.search.trim()) params.set('search', filters.search.trim());
   if (filters.tone.length) params.set('tone', filters.tone.join(','));
   if (filters.hue.length) params.set('hue', filters.hue.join(','));
@@ -37,7 +42,7 @@ function buildQueryString(filters: ColorFiltersState, page: number): string {
 }
 
 export function ColorsBrowseClient({
-  mode,
+  tab,
   initialColors,
   totalCount,
   page,
@@ -55,13 +60,12 @@ export function ColorsBrowseClient({
 
   const navigate = useCallback(
     (nextFilters: ColorFiltersState, nextPage: number) => {
-      router.push(`${pathname}${buildQueryString(nextFilters, nextPage)}`);
+      router.push(`${pathname}${buildQueryString(nextFilters, nextPage, tab)}`);
     },
-    [pathname, router]
+    [pathname, router, tab]
   );
 
-  const title = mode === 'favorites' ? t('titleFavorites') : t('titleAll');
-  const emptyMsg = mode === 'favorites' ? t('favoritesEmpty') : t('noResults');
+  const emptyMsg = tab === 'favorites' ? t('favoritesEmpty') : t('noResults');
 
   const colors = useMemo(() => initialColors, [initialColors]);
 
@@ -72,11 +76,6 @@ export function ColorsBrowseClient({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-        <p className="text-muted-foreground text-sm">{t('subtitle')}</p>
-      </div>
-
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <Card className="h-fit lg:sticky lg:top-4">
           <CardHeader className="pb-2">

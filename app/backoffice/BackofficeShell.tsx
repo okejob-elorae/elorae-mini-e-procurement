@@ -10,8 +10,6 @@ import {
   ShoppingCart,
   DollarSign,
   Package,
-  ClipboardList,
-  RotateCcw,
   FileText,
   Settings,
   Menu,
@@ -23,7 +21,7 @@ import {
   Monitor,
   Check,
   BarChart2,
-  Palette,
+  CalendarDays,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -114,31 +112,17 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.INVENTORY_VIEW,
   },
   {
-    labelKey: 'workOrders',
-    href: '/backoffice/work-orders',
-    icon: ClipboardList,
-    permission: PERMISSIONS.WORK_ORDERS_VIEW,
+    labelKey: 'production',
+    href: '/backoffice/production/planning',
+    icon: CalendarDays,
+    permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
     children: [
+      { labelKey: 'navProductionPlanning', href: '/backoffice/production/planning' },
       { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders' },
       { labelKey: 'registerNotaCmt', href: '/backoffice/work-orders/nota-register' },
+      { labelKey: 'navProductionColors', href: '/backoffice/production/colors' },
+      { labelKey: 'vendorReturns', href: '/backoffice/vendor-returns' },
     ],
-  },
-  {
-    labelKey: 'production',
-    href: '/backoffice/production/colors',
-    icon: Palette,
-    permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
-    children: [
-      { labelKey: 'navProductionColorsAll', href: '/backoffice/production/colors' },
-      { labelKey: 'navProductionColorsFavorites', href: '/backoffice/production/colors/favorites' },
-      { labelKey: 'navProductionColorsPhotoAnalyzer', href: '/backoffice/production/colors/photo-analyzer' },
-    ],
-  },
-  {
-    labelKey: 'vendorReturns',
-    href: '/backoffice/vendor-returns',
-    icon: RotateCcw,
-    permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
   },
   {
     labelKey: 'reports',
@@ -204,8 +188,8 @@ function Sidebar({
   const getOpenKeyFromPath = (path: string) => {
     if (path.startsWith('/backoffice/suppliers')) return '/backoffice/suppliers';
     if (path.startsWith('/backoffice/items')) return '/backoffice/items';
-    if (path.startsWith('/backoffice/work-orders')) return '/backoffice/work-orders';
-    if (path.startsWith('/backoffice/production/colors')) return '/backoffice/production/colors';
+    if (path.startsWith('/backoffice/work-orders')) return '/backoffice/production/planning';
+    if (path.startsWith('/backoffice/production')) return '/backoffice/production/planning';
     return null;
   };
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
