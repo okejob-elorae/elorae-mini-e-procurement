@@ -78,7 +78,8 @@ Insert the `jest` block at the top level of `apps/api/package.json` (alongside `
   "testEnvironment": "node",
   "moduleNameMapper": {
     "^@elorae/db$": "<rootDir>/../../../packages/db/dist/src/index.js",
-    "^@elorae/db/(.*)$": "<rootDir>/../../../packages/db/dist/src/$1.js"
+    "^@elorae/db/color$": "<rootDir>/../../../packages/db/dist/src/color/lab.js",
+    "^@elorae/db/pantone$": "<rootDir>/../../../packages/db/dist/src/pantone/classify.js"
   }
 }
 ```
