@@ -425,15 +425,19 @@ model StockAdjustment {
   newQty        Decimal  @db.Decimal(10,2)
   prevAvgCost   Decimal  @db.Decimal(15,2)
   newAvgCost    Decimal  @db.Decimal(15,2)
-  approvedById  String
-  approvedBy    User     @relation("ApprovedAdjustments", fields: [approvedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  createdById   String
-  createdBy     User     @relation("CreatedAdjustments", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  approvedById  String?
+  approvedBy    User?    @relation("ApprovedAdjustments", fields: [approvedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdById   String?
+  createdBy     User?    @relation("CreatedAdjustments", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  source           String   @default("ERP")
+  idempotencyKey   String?  @unique
+  externalRef      String?
   createdAt     DateTime @default(now())
   @@index([itemId])
   @@index([approvedById])
   @@index([createdById])
   @@index([docNumber])
+  @@index([source, createdAt])
 }
 
 // ==========================================
@@ -860,6 +864,9 @@ model JubelioWebhookEvent {
   lastError   String?   @db.Text
   receivedAt  DateTime  @default(now())
   processedAt DateTime?
+  skipReason     String?
+  deadAt         DateTime?
+  lastEnqueuedAt DateTime?
 
   @@unique([event, payloadHash])
   @@index([status, receivedAt])
@@ -885,7 +892,7 @@ model JubelioProductMapping {
   item                Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
   jubelioItemGroupId  Int
   jubelioItemId       Int       @unique
-  jubelioItemCode     String
+  jubelioItemCode     String    @unique
   erpVariantSku       String
   lastSyncedAt        DateTime  @default(now())
   jubelioLastModified DateTime?

@@ -21,3 +21,9 @@ export {
   type IngestItemCreateData,
   type IngestItemUpdateData,
 } from "./item-writer";
+export {
+  applyJubelioStockAdjustment,
+  InventoryValueMissingError,
+  type ApplyJubelioStockAdjustmentInput,
+  type ApplyJubelioStockAdjustmentResult,
+} from "./stock-writer";

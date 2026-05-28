@@ -2,6 +2,27 @@
   "name": "@elorae/api",
   "version": "0.1.0",
   "private": true,
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "testEnvironment": "node",
+    "setupFiles": [
+      "<rootDir>/jest.setup.ts"
+    ],
+    "moduleNameMapper": {
+      "^@elorae/db$": "<rootDir>/../../../packages/db/dist/src/index.js",
+      "^@elorae/db/color$": "<rootDir>/../../../packages/db/dist/src/color/lab.js",
+      "^@elorae/db/pantone$": "<rootDir>/../../../packages/db/dist/src/pantone/classify.js"
+    }
+  },
   "scripts": {
     "dev": "nest start --watch --builder swc",
     "build": "nest build",
@@ -16,14 +37,17 @@
   },
   "dependencies": {
     "@elorae/db": "workspace:*",
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/swagger": "^11.0.0",
+    "bullmq": "^5.77.4",
     "dotenv": "^16.6.1",
     "express-basic-auth": "^1.2.1",
+    "ioredis": "^5.11.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },

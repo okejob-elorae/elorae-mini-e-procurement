@@ -13,6 +13,7 @@ import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import { AdminNotificationService } from "../../admin/notification.service";
 import { JubelioConfig } from "../jubelio.config";
+import { WebhookQueueService } from "../queue/webhook-queue.service";
 import { verifyJubelioSignature } from "./signature";
 import {
   JubelioWebhooksService,
@@ -31,6 +32,7 @@ export class JubelioWebhooksController {
     private readonly service: JubelioWebhooksService,
     private readonly config: JubelioConfig,
     private readonly admin: AdminNotificationService,
+    private readonly queue: WebhookQueueService,
   ) {}
 
   @Post(":event")
@@ -39,7 +41,7 @@ export class JubelioWebhooksController {
     summary: "Receive a Jubelio webhook",
     description:
       "Accepts inbound webhooks for salesorder | stock | salesreturn | product. " +
-      "Verifies the `webhook-signature` header (sha256(rawBody + secret)), persists the " +
+      "Verifies the `Sign` header (sha256(rawBody + secret)), persists the " +
       "raw payload, and acks 200. Processing happens asynchronously.",
   })
   async receive(
@@ -56,7 +58,11 @@ export class JubelioWebhooksController {
       throw new BadRequestException("Missing request body");
     }
 
+    // Jubelio sends the signature in a `Sign` header (Express lowercases to `sign`).
+    // `webhook-signature` / `x-webhook-signature` kept as fallbacks for test harnesses
+    // and any future signature header rename by Jubelio.
     const signatureHeader =
+      (req.headers["sign"] as string | undefined) ??
       (req.headers["webhook-signature"] as string | undefined) ??
       (req.headers["x-webhook-signature"] as string | undefined);
 
@@ -78,11 +84,15 @@ export class JubelioWebhooksController {
         ? (req.headers["webhook-event-id"] as string)
         : undefined;
 
-    return this.service.persist({
+    const outcome = await this.service.persist({
       event: typedEvent,
       rawBody,
       signature: signatureHeader ?? "",
       eventId,
     });
+    if (!outcome.duplicate) {
+      await this.queue.enqueue(outcome.id);
+    }
+    return outcome;
   }
 }

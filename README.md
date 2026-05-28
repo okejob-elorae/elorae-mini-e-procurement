@@ -52,6 +52,16 @@ pnpm --filter @elorae/db generate
 pnpm --filter @elorae/db migrate:deploy
 ```
 
+## Redis (BullMQ queue for Jubelio webhook processing)
+
+The api needs Redis for the Jubelio webhook queue.
+
+```bash
+docker compose -f docker-compose.dev.yml up -d redis
+```
+
+`REDIS_URL` defaults to `redis://localhost:6379`. Set it in `apps/api/.env` if you run Redis elsewhere.
+
 ## Dev mode (hot reload)
 
 Two terminals:

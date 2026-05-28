@@ -223,9 +223,9 @@ Avoid otherwise. Prefer api owning its own data and web fetching from api.
 
 - Path: `POST /webhooks/jubelio/:event` (events: `salesorder`, `stock`,
   `salesreturn`, `product`).
-- Verify Jubelio signature header `webhook-signature`:
-  `sha256(JSON.stringify(rawBody) + WEBHOOK_SECRET)` (per Jubelio docs — not
-  strict HMAC).
+- Verify Jubelio signature header `Sign`:
+  `HMAC-SHA256(data=rawBody + secret, key=secret)` (per Jubelio's Node.js
+  example — the docs *text* says "SHA256" but the code uses `CryptoJS.HmacSHA256`).
 - Persist raw payload to `JubelioWebhookEvent` table, ack 200 immediately,
   process asynchronously via BullMQ queue.
 - Idempotency: dedupe by Jubelio's `event_id` (or hash of payload if missing).
@@ -239,7 +239,7 @@ Avoid otherwise. Prefer api owning its own data and web fetching from api.
 | Endpoint type           | Mechanism                                              | State |
 | ----------------------- | ------------------------------------------------------ | :---: |
 | api: user-facing        | NextAuth JWT (shared secret) + RBAC guard              | ⏳ |
-| api: webhook receivers  | Jubelio `webhook-signature` header (sha256 scheme)     | ⏳ |
+| api: webhook receivers  | Jubelio `Sign` header (sha256 scheme)                  | ⏳ |
 | api: internal (web→api) | Shared bearer JWT (same `NEXTAUTH_SECRET`)             | ⏳ |
 | api → web revalidate    | Shared `INTERNAL_API_KEY` (env, rotated quarterly)     | ⏳ |
 | api: `/docs`            | HTTP Basic (`SWAGGER_USER`/`SWAGGER_PASS`) — disabled if env missing | ✅ |
@@ -312,7 +312,7 @@ script uses `nest start --watch --builder swc` (SWC honours
 
 | # | Topic | Decision |
 | - | ----- | -------- |
-| Q1 | Webhook signature | Jubelio uses `sha256(JSON.stringify(payload) + SECRET_KEY)` — NOT strict HMAC. Header: `webhook-signature`. Secret configured in Jubelio dashboard (Pengaturan → Developer → Webhook). Rate limit: 600 req/min, 429 on exceed. Jubelio retries non-200 callbacks up to 3 times. |
+| Q1 | Webhook signature | Jubelio uses `HMAC-SHA256(data=rawBody + secret, key=secret)`, hex-encoded. Header name: **`Sign`** (verified 2026-05-28 from real delivery and Jubelio's docs Node.js example). Note: Jubelio's docs *text* incorrectly says "SHA256" without mentioning HMAC — their code example is the source of truth. Secret configured in Jubelio dashboard (Pengaturan → Developer → Webhook). Rate limit: 600 req/min, 429 on exceed. Jubelio retries non-200 callbacks up to 3 times. |
 | Q2 | Redis | **Upstash Redis** (managed). Free tier covers MVP. Used by BullMQ. |
 | Q3 | api deployment | **Render** (persistent web service, Docker). |
 | Q4 | Audit log writer | Shared helper in `@elorae/db` (e.g. `writeAuditLog()`). Single Prisma call site. Both services call it. |
