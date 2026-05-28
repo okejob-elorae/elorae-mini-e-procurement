@@ -2,9 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
+import { apiFetch } from '@/lib/internal-api';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
-
-const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? 'http://localhost:3001';
 
 export type JubelioTokenState = {
   hasToken: boolean;
@@ -41,28 +40,16 @@ export type JubelioCatalogSyncResult = {
   }>;
 };
 
-async function callApi<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${INTERNAL_API_URL}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-    cache: 'no-store',
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`API ${response.status} on ${path}: ${text.slice(0, 200)}`);
-  }
-  return (await response.json()) as T;
-}
-
 export async function getJubelioTokenState(): Promise<JubelioTokenState> {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
 
-  return callApi<JubelioTokenState>('/jubelio/status');
+  const r = await apiFetch<JubelioTokenState>('GET', '/jubelio/status', {
+    userId: session.user.id,
+  });
+  if (!r.ok) throw new Error(`API ${r.status} on /jubelio/status: ${(r.error ?? '').slice(0, 200)}`);
+  return r.data as JubelioTokenState;
 }
 
 export async function refreshJubelioToken(): Promise<JubelioTokenState> {
@@ -70,9 +57,12 @@ export async function refreshJubelioToken(): Promise<JubelioTokenState> {
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  const result = await callApi<JubelioTokenState>('/jubelio/refresh', { method: 'POST' });
+  const r = await apiFetch<JubelioTokenState>('POST', '/jubelio/refresh', {
+    userId: session.user.id,
+  });
+  if (!r.ok) throw new Error(`API ${r.status} on /jubelio/refresh: ${(r.error ?? '').slice(0, 200)}`);
   revalidatePath('/backoffice/settings');
-  return result;
+  return r.data as JubelioTokenState;
 }
 
 export async function syncJubelioCatalog(
@@ -82,10 +72,11 @@ export async function syncJubelioCatalog(
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  const result = await callApi<JubelioCatalogSyncResult>('/jubelio/catalog/sync', {
-    method: 'POST',
-    body: JSON.stringify({ dryRun: opts.dryRun ?? false, itemGroupIds: opts.itemGroupIds }),
+  const r = await apiFetch<JubelioCatalogSyncResult>('POST', '/jubelio/catalog/sync', {
+    userId: session.user.id,
+    body: { dryRun: opts.dryRun ?? false, itemGroupIds: opts.itemGroupIds },
   });
+  if (!r.ok) throw new Error(`API ${r.status} on /jubelio/catalog/sync: ${(r.error ?? '').slice(0, 200)}`);
   if (!opts.dryRun) revalidatePath('/backoffice/settings');
-  return result;
+  return r.data as JubelioCatalogSyncResult;
 }
