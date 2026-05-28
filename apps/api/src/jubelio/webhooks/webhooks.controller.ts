@@ -11,6 +11,7 @@ import {
 import type { RawBodyRequest } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
+import { Public } from "../../auth/public.decorator";
 import { AdminNotificationService } from "../../admin/notification.service";
 import { JubelioConfig } from "../jubelio.config";
 import { WebhookQueueService } from "../queue/webhook-queue.service";
@@ -35,6 +36,7 @@ export class JubelioWebhooksController {
     private readonly queue: WebhookQueueService,
   ) {}
 
+  @Public()
   @Post(":event")
   @HttpCode(200)
   @ApiOperation({
