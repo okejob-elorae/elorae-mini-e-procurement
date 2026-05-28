@@ -2,6 +2,7 @@
 
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
+import { apiFetch } from "@/lib/internal-api";
 
 const STATUSES = ["PENDING", "PROCESSING", "DONE", "SKIPPED", "DEAD"] as const;
 type Status = (typeof STATUSES)[number];
@@ -29,6 +30,11 @@ export async function pushItemStockToJubelio(itemId: string): Promise<{ ok: bool
   const row = await prisma.jubelioOutbox.create({
     data: { entityType: "stock_push", entityId: itemId, payload: {}, enqueuedById },
     select: { id: true },
+  });
+  void apiFetch("POST", `/jubelio/outbox/enqueue/${row.id}`, {
+    userId: enqueuedById ?? "",
+  }).catch(() => {
+    // swallow: poller picks it up within ~5s if this fails
   });
   return { ok: true, outboxId: row.id };
 }
