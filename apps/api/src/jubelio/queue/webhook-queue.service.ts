@@ -38,18 +38,37 @@ export class WebhookQueueService {
     const cutoff = new Date(Date.now() - SWEEP.STUCK_AFTER_MS);
     const stuck = await this.prisma.jubelioWebhookEvent.findMany({
       where: {
-        status: WEBHOOK_STATUS.RECEIVED,
-        OR: [{ lastEnqueuedAt: null }, { lastEnqueuedAt: { lt: cutoff } }],
+        OR: [
+          {
+            AND: [
+              { status: WEBHOOK_STATUS.RECEIVED },
+              { OR: [{ lastEnqueuedAt: null }, { lastEnqueuedAt: { lt: cutoff } }] },
+            ],
+          },
+          {
+            AND: [
+              { status: WEBHOOK_STATUS.PROCESSING },
+              { lastEnqueuedAt: { lt: cutoff } },
+            ],
+          },
+        ],
       },
-      select: { id: true },
+      select: { id: true, status: true },
       take: SWEEP.BATCH,
     });
-    for (const { id } of stuck) {
+    for (const row of stuck) {
       try {
-        await this.enqueue(id);
+        if (row.status === WEBHOOK_STATUS.PROCESSING) {
+          // Crashed-mid-job recovery: revert to RECEIVED, attempts already incremented from the prior try
+          await this.prisma.jubelioWebhookEvent.update({
+            where: { id: row.id },
+            data: { status: WEBHOOK_STATUS.RECEIVED },
+          });
+        }
+        await this.enqueue(row.id);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Sweep failed to re-enqueue ${id}: ${msg}`);
+        this.logger.error(`Sweep failed to re-enqueue ${row.id}: ${msg}`);
       }
     }
     if (stuck.length > 0) {

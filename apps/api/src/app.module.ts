@@ -7,7 +7,6 @@ import { PrismaModule } from "./db/prisma.module";
 import { HealthModule } from "./health/health.module";
 import { JubelioCatalogModule } from "./jubelio/catalog/catalog.module";
 import { JubelioModule } from "./jubelio/jubelio.module";
-import { JubelioQueueModule } from "./jubelio/queue/jubelio-queue.module";
 import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
 
 @Module({
@@ -30,7 +29,6 @@ import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
     JubelioModule,
     JubelioCatalogModule,
     JubelioWebhooksModule,
-    JubelioQueueModule,
   ],
 })
 export class AppModule {}
