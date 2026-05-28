@@ -14,7 +14,7 @@ async function isAdmin(): Promise<boolean> {
 export type JubelioWebhookFilters = {
   limit?: number;
   offset?: number;
-  status?: Status;
+  status?: Status | Status[];
   event?: string;
 };
 
@@ -24,7 +24,9 @@ export async function getJubelioWebhookEvents(filters: JubelioWebhookFilters = {
   const limit = filters.limit ?? 50;
   const offset = filters.offset ?? 0;
   const where: any = {};
-  if (filters.status) where.status = filters.status;
+  if (filters.status) {
+    where.status = Array.isArray(filters.status) ? { in: filters.status } : filters.status;
+  }
   if (filters.event) where.event = filters.event;
 
   const [events, total] = await Promise.all([

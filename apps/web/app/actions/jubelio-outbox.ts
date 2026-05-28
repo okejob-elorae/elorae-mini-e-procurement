@@ -20,7 +20,7 @@ async function currentUserId(): Promise<string | null> {
 export type JubelioOutboxFilters = {
   limit?: number;
   offset?: number;
-  status?: Status;
+  status?: Status | Status[];
   entityType?: string;
 };
 
@@ -64,7 +64,9 @@ export async function getJubelioOutboxRows(filters: JubelioOutboxFilters = {}) {
   const limit = filters.limit ?? 50;
   const offset = filters.offset ?? 0;
   const where: any = {};
-  if (filters.status) where.status = filters.status;
+  if (filters.status) {
+    where.status = Array.isArray(filters.status) ? { in: filters.status } : filters.status;
+  }
   if (filters.entityType) where.entityType = filters.entityType;
 
   const [rows, total] = await Promise.all([
