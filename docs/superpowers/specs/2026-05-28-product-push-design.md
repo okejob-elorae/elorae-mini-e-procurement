@@ -338,7 +338,7 @@ Document in the plan's Task 12 (smoke):
 
 Risk if Option B is chosen: if a test push creates listings on multiple marketplaces and a delete is missed on one, that listing stays orphaned. **Required for Option B: pre-test acknowledgement that all test products carry a recognizable test prefix (e.g., SKU starts with `TEST-`) so cleanup is auditable.**
 
-**Decision deferred to plan stage.** If Option A: it becomes the FIRST functional task in the plan (before any handler work that could create real listings). If Option B: Task 12 explicitly halts and waits for admin confirmation of cleanup readiness before any push.
+**Decision: Option A.** The admin action becomes the FIRST functional task in the plan, landing before any handler work that could create real Jubelio listings.
 
 ## 13. Decisions log
 
@@ -350,3 +350,4 @@ Risk if Option B is chosen: if a test push creates listings on multiple marketpl
 - **Defaults strategy**: settings table + admin UI.
 - **Slicing**: single sub-3, atomic ship.
 - **Bulk push**: not in scope; deferred to sub-5 (migration tool).
+- **Test rollback**: Option A (admin "Delete from Jubelio" action on settings page), gated by `SETTINGS_SECURITY_MANAGE`, lands as first functional task.
