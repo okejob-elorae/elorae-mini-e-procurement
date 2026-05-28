@@ -13,6 +13,7 @@ import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 import { AdminNotificationService } from "../../admin/notification.service";
 import { JubelioConfig } from "../jubelio.config";
+import { WebhookQueueService } from "../queue/webhook-queue.service";
 import { verifyJubelioSignature } from "./signature";
 import {
   JubelioWebhooksService,
@@ -31,6 +32,7 @@ export class JubelioWebhooksController {
     private readonly service: JubelioWebhooksService,
     private readonly config: JubelioConfig,
     private readonly admin: AdminNotificationService,
+    private readonly queue: WebhookQueueService,
   ) {}
 
   @Post(":event")
@@ -78,11 +80,15 @@ export class JubelioWebhooksController {
         ? (req.headers["webhook-event-id"] as string)
         : undefined;
 
-    return this.service.persist({
+    const outcome = await this.service.persist({
       event: typedEvent,
       rawBody,
       signature: signatureHeader ?? "",
       eventId,
     });
+    if (!outcome.duplicate) {
+      await this.queue.enqueue(outcome.id);
+    }
+    return outcome;
   }
 }
