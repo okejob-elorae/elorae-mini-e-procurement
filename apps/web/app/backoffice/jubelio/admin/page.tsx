@@ -12,6 +12,12 @@ import {
   getJubelioWebhookStats,
   retryJubelioWebhookEvent,
 } from "@/app/actions/jubelio-webhooks";
+import {
+  bulkPushAllStockToJubelio,
+  getJubelioOutboxRows,
+  getJubelioOutboxStats,
+  retryJubelioOutboxRow,
+} from "@/app/actions/jubelio-outbox";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +46,10 @@ type WebhookCalls = Awaited<ReturnType<typeof getJubelioWebhookEvents>>;
 type WebhookRow = WebhookCalls["events"][number];
 type WebhookStats = Awaited<ReturnType<typeof getJubelioWebhookStats>>;
 
+type OutboxRows = Awaited<ReturnType<typeof getJubelioOutboxRows>>;
+type OutboxRow = OutboxRows["rows"][number];
+type OutboxStats = Awaited<ReturnType<typeof getJubelioOutboxStats>>;
+
 const PAGE_SIZE = 50;
 
 function statusVariant(call: CallRow): "default" | "secondary" | "destructive" {
@@ -61,6 +71,12 @@ export default function JubelioAdminPage() {
   const [whStats, setWhStats] = useState<WebhookStats>(null);
   const [whFilter, setWhFilter] = useState<"all" | "errors" | "DEAD">("all");
   const [expandedWebhookId, setExpandedWebhookId] = useState<string | null>(null);
+  const [outboxRows, setOutboxRows] = useState<OutboxRow[]>([]);
+  const [outboxTotal, setOutboxTotal] = useState(0);
+  const [outboxStats, setOutboxStats] = useState<OutboxStats>(null);
+  const [outboxFilter, setOutboxFilter] = useState<"all" | "errors" | "DEAD">("all");
+  const [expandedOutboxId, setExpandedOutboxId] = useState<string | null>(null);
+  const [bulkPushing, setBulkPushing] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -92,6 +108,21 @@ export default function JubelioAdminPage() {
     setWhStats(statsRes);
   }, [whFilter]);
 
+  const loadOutbox = useCallback(async () => {
+    const statusFilter = outboxFilter === "DEAD" ? "DEAD" : undefined;
+    const [rowsRes, statsRes] = await Promise.all([
+      getJubelioOutboxRows({ limit: 50, offset: 0, status: statusFilter as any }),
+      getJubelioOutboxStats(),
+    ]);
+    let rows = rowsRes.rows;
+    if (outboxFilter === "errors") {
+      rows = rows.filter((r) => r.status === "DEAD" || r.status === "SKIPPED");
+    }
+    setOutboxRows(rows);
+    setOutboxTotal(rowsRes.total);
+    setOutboxStats(statsRes);
+  }, [outboxFilter]);
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/login");
@@ -104,11 +135,39 @@ export default function JubelioAdminPage() {
     if (status === "authenticated") void loadWebhooks();
   }, [status, whFilter, loadWebhooks]);
 
+  useEffect(() => {
+    if (status === "authenticated") void loadOutbox();
+  }, [status, outboxFilter, loadOutbox]);
+
   const handleRetry = async (id: string) => {
     const result = await retryJubelioWebhookEvent(id);
     if (result.ok) {
       toast.success("Re-queued. Sweeper picks up within 10 min.");
       void loadWebhooks();
+    } else {
+      toast.error("Retry not allowed (status must be DEAD or SKIPPED).");
+    }
+  };
+
+  const handleBulkPush = async () => {
+    if (!confirm("Push stock for all mapped items to Jubelio?")) return;
+    setBulkPushing(true);
+    try {
+      const r = await bulkPushAllStockToJubelio();
+      if (r.ok) toast.success(`Queued ${r.count} items. Pushes drain over the next few minutes.`);
+      else toast.error("Bulk push failed (admin only).");
+      void loadOutbox();
+    } finally {
+      setBulkPushing(false);
+    }
+  };
+
+  const handleOutboxRetry = async (id: string) => {
+    if (!confirm("Re-queue this row? Worker will re-push to Jubelio.")) return;
+    const r = await retryJubelioOutboxRow(id);
+    if (r.ok) {
+      toast.success("Re-queued. Poller picks up within ~5 seconds.");
+      void loadOutbox();
     } else {
       toast.error("Retry not allowed (status must be DEAD or SKIPPED).");
     }
@@ -129,6 +188,20 @@ export default function JubelioAdminPage() {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4 pt-6">
+          <div>
+            <p className="font-medium">Bulk push stock to Jubelio</p>
+            <p className="text-sm text-muted-foreground">
+              Creates one outbox row per mapped item. Worker drains within minutes.
+            </p>
+          </div>
+          <Button onClick={() => void handleBulkPush()} disabled={bulkPushing}>
+            {bulkPushing ? "Queuing…" : "Sync all stock"}
+          </Button>
+        </CardContent>
+      </Card>
+
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Jubelio API Calls</h1>
@@ -401,6 +474,152 @@ export default function JubelioAdminPage() {
                                     {JSON.stringify(e.rawPayload, null, 2)}
                                   </pre>
                                 </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {(["PENDING", "PROCESSING", "DONE", "SKIPPED", "DEAD"] as const).map((s) => (
+          <Card key={s}>
+            <CardHeader className="pb-2">
+              <CardDescription>{s}</CardDescription>
+              <CardTitle className="text-2xl">{outboxStats?.byStatus?.[s] ?? 0}</CardTitle>
+            </CardHeader>
+          </Card>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Outbox events</CardTitle>
+              <CardDescription>{outboxTotal} total entries</CardDescription>
+            </div>
+            <div className="flex gap-2">
+              {(["all", "errors", "DEAD"] as const).map((f) => (
+                <Button
+                  key={f}
+                  size="sm"
+                  variant={outboxFilter === f ? "default" : "outline"}
+                  onClick={() => setOutboxFilter(f)}
+                >
+                  {f}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead>Time</TableHead>
+                  <TableHead>Entity</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Attempts</TableHead>
+                  <TableHead>Flags / reason</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {outboxRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                      No outbox events.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  outboxRows.map((r) => {
+                    const expanded = expandedOutboxId === r.id;
+                    const enqueuedByLabel = r.enqueuedBy?.name ?? r.enqueuedBy?.email ?? "—";
+                    return (
+                      <React.Fragment key={r.id}>
+                        <TableRow>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => setExpandedOutboxId(expanded ? null : r.id)}
+                            >
+                              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                            {new Date(r.createdAt).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {r.entityType}:{r.entityId.slice(0, 8)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                r.status === "DEAD"
+                                  ? "destructive"
+                                  : r.status === "SKIPPED"
+                                    ? "secondary"
+                                    : "default"
+                              }
+                            >
+                              {r.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right text-sm tabular-nums">{r.attempts}</TableCell>
+                          <TableCell className="text-xs">
+                            {r.skipReason ?? r.lastError?.slice(0, 60) ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {(r.status === "DEAD" || r.status === "SKIPPED") && (
+                              <Button size="sm" variant="outline" onClick={() => void handleOutboxRetry(r.id)}>
+                                Retry
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        {expanded && (
+                          <TableRow key={`${r.id}-detail`}>
+                            <TableCell colSpan={7} className="bg-muted/50">
+                              <div className="space-y-2 p-4 text-sm">
+                                <p>
+                                  <span className="font-medium">Enqueued by:</span> {enqueuedByLabel}
+                                </p>
+                                <p>
+                                  <span className="font-medium">createdAt:</span>{" "}
+                                  {new Date(r.createdAt).toLocaleString()}
+                                </p>
+                                <p>
+                                  <span className="font-medium">lastEnqueuedAt:</span>{" "}
+                                  {r.lastEnqueuedAt ? new Date(r.lastEnqueuedAt).toLocaleString() : "—"}
+                                </p>
+                                <p>
+                                  <span className="font-medium">processedAt:</span>{" "}
+                                  {r.processedAt ? new Date(r.processedAt).toLocaleString() : "—"}
+                                </p>
+                                <p>
+                                  <span className="font-medium">deadAt:</span>{" "}
+                                  {r.deadAt ? new Date(r.deadAt).toLocaleString() : "—"}
+                                </p>
+                                {r.lastError && (
+                                  <pre className="bg-background max-h-32 overflow-auto rounded p-3 text-xs">
+                                    {r.lastError}
+                                  </pre>
+                                )}
+                                <pre className="bg-background max-h-64 overflow-auto rounded p-3 text-xs">
+                                  {JSON.stringify(r.payload, null, 2)}
+                                </pre>
                               </div>
                             </TableCell>
                           </TableRow>

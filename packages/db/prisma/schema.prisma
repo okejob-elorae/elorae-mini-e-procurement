@@ -68,6 +68,7 @@ model User {
   suppliersApproved       Supplier[]
   grnsOwnerApproved       GRN[]      @relation("GRNOwnerApproved")
   grnsOwnerDeclined       GRN[]      @relation("GRNOwnerDeclined")
+  enqueuedOutbox          JubelioOutbox[] @relation("EnqueuedOutbox")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -926,4 +927,25 @@ model JubelioApiCall {
   @@index([createdAt])
   @@index([path, createdAt])
   @@index([ok, createdAt])
+}
+
+model JubelioOutbox {
+  id              String    @id @default(cuid())
+  entityType      String
+  entityId        String
+  payload         Json      @default("{}")
+  status          String    @default("PENDING")
+  attempts        Int       @default(0)
+  lastError       String?   @db.Text
+  skipReason      String?
+  enqueuedById    String?
+  enqueuedBy      User?     @relation("EnqueuedOutbox", fields: [enqueuedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt       DateTime  @default(now())
+  lastEnqueuedAt  DateTime?
+  processedAt     DateTime?
+  deadAt          DateTime?
+
+  @@index([status, createdAt])
+  @@index([entityType, entityId])
+  @@index([enqueuedById])
 }

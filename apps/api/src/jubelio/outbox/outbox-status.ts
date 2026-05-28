@@ -1,0 +1,21 @@
+export const OUTBOX_STATUS = {
+  PENDING: "PENDING",
+  PROCESSING: "PROCESSING",
+  DONE: "DONE",
+  SKIPPED: "SKIPPED",
+  DEAD: "DEAD",
+} as const;
+
+export type OutboxStatus = (typeof OUTBOX_STATUS)[keyof typeof OUTBOX_STATUS];
+
+export const TERMINAL_OUTBOX_STATUSES: ReadonlySet<OutboxStatus> = new Set([
+  OUTBOX_STATUS.DONE,
+  OUTBOX_STATUS.SKIPPED,
+  OUTBOX_STATUS.DEAD,
+]);
+
+export const OUTBOX_SKIP_REASONS = {
+  MISSING_MAPPING: "missing_mapping",
+  NO_INVENTORY: "no_inventory",
+  UNKNOWN_ENTITY_TYPE: "unknown_entity_type",
+} as const;
