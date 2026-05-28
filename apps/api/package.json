@@ -10,6 +10,7 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "testEnvironment": "node",
+    "setupFiles": ["<rootDir>/jest.setup.ts"],
     "moduleNameMapper": {
       "^@elorae/db$": "<rootDir>/../../../packages/db/dist/src/index.js",
       "^@elorae/db/color$": "<rootDir>/../../../packages/db/dist/src/color/lab.js",
