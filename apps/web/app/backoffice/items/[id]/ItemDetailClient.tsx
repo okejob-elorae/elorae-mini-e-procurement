@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { ItemForm } from '@/components/forms/ItemForm';
 import { updateItem, saveConsumptionRules } from '@/app/actions/items';
+import { pushItemStockToJubelio } from '@/app/actions/jubelio-outbox';
 import type { ItemFormData } from '@/lib/items/mutations';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,9 +37,18 @@ export function ItemDetailClient({
   isActive,
 }: ItemDetailClientProps) {
   const router = useRouter();
+  const { data: session } = useSession();
   const tItems = useTranslations('items');
   const [isSaving, setIsSaving] = useState(false);
   const itemTypeLabel = tItems(itemTypeKeys[itemType]);
+  const isAdmin = session?.user?.permissions?.includes("*") ?? false;
+
+  const handlePushStock = async () => {
+    if (!initialData?.id) return;
+    const r = await pushItemStockToJubelio(initialData.id);
+    if (r.ok) toast.success("Queued. Pushes within ~5 seconds.");
+    else toast.error("Push failed (admin only).");
+  };
 
   const handleSubmit = async (
     data: ItemFormData,
@@ -79,7 +90,14 @@ export function ItemDetailClient({
             <p className="text-muted-foreground">{nameEn}</p>
           </div>
         </div>
-        <Badge variant={isActive ? 'default' : 'secondary'}>{itemTypeLabel}</Badge>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={() => void handlePushStock()}>
+              Push stock to Jubelio
+            </Button>
+          )}
+          <Badge variant={isActive ? 'default' : 'secondary'}>{itemTypeLabel}</Badge>
+        </div>
       </div>
 
       <ItemForm initialData={initialData} onSubmit={handleSubmit} isLoading={isSaving} />
