@@ -26,6 +26,10 @@ import {
   type ItemFormData,
   type SerializedItem,
 } from '@/lib/items/mutations';
+import {
+  enqueueProductPushOnCreate,
+  enqueueProductPushOnUpdate,
+} from '@/app/actions/jubelio-product-push';
 
 export async function generateSKU(type: ItemType) {
   await requireSession();
@@ -52,6 +56,8 @@ export async function createItem(data: ItemFormData) {
     )
     .catch(() => {});
 
+  enqueueProductPushOnCreate(item.id).catch(() => {});
+
   revalidatePath('/backoffice/items');
   return serialized;
 }
@@ -61,9 +67,12 @@ export async function updateItem(id: string, data: ItemFormData) {
   requirePermission(session.user.permissions, PERMISSIONS.ITEMS_EDIT);
 
   const result = await updateItemLib(id, data);
+
+  enqueueProductPushOnUpdate(id, result.before, result.after).catch(() => {});
+
   revalidatePath('/backoffice/items');
   revalidatePath(`/backoffice/items/${id}`);
-  return result;
+  return result.serialized;
 }
 
 export async function deleteItem(id: string) {
