@@ -180,6 +180,9 @@ export const PERMISSIONS = {
   NOTA_REGISTER_VIEW: 'nota_register:view',
   // Production Colors (Pantone TCX)
   PRODUCTION_COLORS_VIEW: 'production_colors:view',
+  // Production Planning (Plan Kerja)
+  PRODUCTION_PLANNING_VIEW: 'production_planning:view',
+  PRODUCTION_PLANNING_MANAGE: 'production_planning:manage',
   // Vendor Returns
   VENDOR_RETURNS_VIEW: 'vendor_returns:view',
   VENDOR_RETURNS_CREATE: 'vendor_returns:create',
