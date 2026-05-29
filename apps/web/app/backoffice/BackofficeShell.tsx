@@ -132,9 +132,7 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
     children: [
       { labelKey: 'navProductionPlanning', href: '/backoffice/production/planning' },
-      { labelKey: 'navProductionColorsAll', href: '/backoffice/production/colors' },
-      { labelKey: 'navProductionColorsFavorites', href: '/backoffice/production/colors/favorites' },
-      { labelKey: 'navProductionColorsPhotoAnalyzer', href: '/backoffice/production/colors/photo-analyzer' },
+      { labelKey: 'navProductionColors', href: '/backoffice/production/colors' },
     ],
   },
   {
