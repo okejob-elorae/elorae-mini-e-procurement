@@ -24,6 +24,7 @@ import {
   Check,
   BarChart2,
   Palette,
+  CalendarDays,
   Activity,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -126,10 +127,11 @@ const navItems: NavItem[] = [
   },
   {
     labelKey: 'production',
-    href: '/backoffice/production/colors',
-    icon: Palette,
-    permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
+    href: '/backoffice/production/planning',
+    icon: CalendarDays,
+    permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
     children: [
+      { labelKey: 'navProductionPlanning', href: '/backoffice/production/planning' },
       { labelKey: 'navProductionColorsAll', href: '/backoffice/production/colors' },
       { labelKey: 'navProductionColorsFavorites', href: '/backoffice/production/colors/favorites' },
       { labelKey: 'navProductionColorsPhotoAnalyzer', href: '/backoffice/production/colors/photo-analyzer' },
@@ -212,7 +214,7 @@ function Sidebar({
     if (path.startsWith('/backoffice/suppliers')) return '/backoffice/suppliers';
     if (path.startsWith('/backoffice/items')) return '/backoffice/items';
     if (path.startsWith('/backoffice/work-orders')) return '/backoffice/work-orders';
-    if (path.startsWith('/backoffice/production/colors')) return '/backoffice/production/colors';
+    if (path.startsWith('/backoffice/production')) return '/backoffice/production/planning';
     return null;
   };
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));

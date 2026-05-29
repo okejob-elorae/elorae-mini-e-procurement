@@ -48,6 +48,8 @@
     "navWorkOrdersList": "Daftar Perintah Kerja",
     "registerNotaCmt": "Register Nota CMT",
     "production": "Produksi",
+    "navProductionPlanning": "Plan Kerja",
+    "navProductionColors": "Warna",
     "navProductionColorsAll": "Semua Warna",
     "navProductionColorsFavorites": "Favorit",
     "navProductionColorsPhotoAnalyzer": "Photo Analyzer",
@@ -835,5 +837,100 @@
     "photoNoSamples": "Klik gambar untuk mengambil sampel warna (mode titik atau area).",
     "photoMatchTitle": "Kecocokan Pantone terdekat",
     "photoSessionNote": "Sampel tidak disimpan — hilang saat halaman di-refresh."
+  },
+  "planning": {
+    "title": "Plan Kerja",
+    "subtitle": "Perencanaan produksi tahunan dan jembatan ke work order",
+    "createdBy": "Dibuat oleh: {name}",
+    "tabs": {
+      "grid": "Isi Grid",
+      "dashboard": "Dashboard",
+      "rincian": "Rincian Plan",
+      "warna": "Pembagian Warna",
+      "jahitan": "Pembagian Jahitan",
+      "aksesoris": "Aksesoris"
+    },
+    "fields": {
+      "year": "Tahun",
+      "code": "Kode Jenis",
+      "name": "Keterangan",
+      "plan": "Plan",
+      "fulfilled": "Terpenuhi",
+      "variance": "Selisih",
+      "total": "Total",
+      "allTypes": "Semua jenis",
+      "targetQty": "Target Qty",
+      "sharePercent": "Share %",
+      "effectiveTarget": "Target Efektif",
+      "linkItem": "Link Item",
+      "selectItem": "Pilih item (opsional)"
+    },
+    "monthly": {
+      "title": "Distribusi Bulanan",
+      "total": "Total: {value}",
+      "autoLabel": "AUTO",
+      "manualOverride": "MANUAL",
+      "resetToAuto": "Reset ke auto",
+      "mismatchWarning": "Total bulanan ({monthlySum}) ≠ target tahunan ({effectiveTarget})"
+    },
+    "months": {
+      "1": "JAN",
+      "2": "FEB",
+      "3": "MAR",
+      "4": "APR",
+      "5": "MEI",
+      "6": "JUN",
+      "7": "JUL",
+      "8": "AGT",
+      "9": "SEP",
+      "10": "OKT",
+      "11": "NOV",
+      "12": "DES"
+    },
+    "stages": {
+      "title": "Tahap → Bulan Target",
+      "addNew": "Tambah tahap baru",
+      "namePlaceholder": "Nama (mis. TAHAP 1)",
+      "qtyPlaceholder": "Qty (mis. 18000)",
+      "monthPlaceholder": "Bulan (1–12)",
+      "quickAddNote": "Quick-add hanya butuh nama + qty. Detail lain bisa diisi via tab Rincian Plan.",
+      "createWO": "Buat WO",
+      "createNewWO": "Buat WO Baru",
+      "noVendor": "Belum ada vendor",
+      "noWOPermission": "Anda tidak memiliki izin untuk membuat Work Order."
+    },
+    "categories": {
+      "addParent": "Tambah jenis baru",
+      "addChild": "Tambah sub-jenis ke {parentCode}",
+      "unallocated": "({percent}% belum dialokasikan)",
+      "deleteConfirm": "Hapus {code}? Semua data terkait akan dihapus."
+    },
+    "lock": {
+      "lockPlan": "Kunci Plan",
+      "unlockPlan": "Buka Kunci",
+      "lockedBanner": "Plan ini sudah dikunci. Hubungi admin untuk membuka. Work Order dari tahap tetap dapat dibuat.",
+      "locked": "Terkunci",
+      "unlocked": "Terbuka"
+    },
+    "dashboard": {
+      "totalPlan": "Total Plan",
+      "totalFulfilled": "Total Terpenuhi",
+      "totalVariance": "Total Selisih",
+      "completion": "Pencapaian",
+      "progress": "Progress"
+    },
+    "search": {
+      "placeholder": "Cari jenis (CLP, JK_RK, kemeja, ...)"
+    },
+    "actions": {
+      "save": "Simpan",
+      "cancel": "Batal",
+      "add": "Tambah",
+      "edit": "Edit",
+      "delete": "Hapus",
+      "importExcel": "Import Excel",
+      "downloadTemplate": "Download Template",
+      "suggestBom": "Suggest from BOM"
+    }
   }
 }
