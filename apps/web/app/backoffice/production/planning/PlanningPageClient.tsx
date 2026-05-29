@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { ItemType } from "@elorae/db";
+import { ItemType } from "@/lib/constants/enums";
 import { PERMISSIONS, hasPermission } from "@/lib/rbac";
 import { getItemsByType } from "@/app/actions/items";
 import { getSuppliersForSelect } from "@/app/actions/suppliers";
