@@ -51,7 +51,6 @@ export async function togglePantoneFavorite(tcx: string) {
   requirePermission(session.user.permissions, PERMISSIONS.PRODUCTION_COLORS_VIEW);
   const result = await toggleFavorite(session.user.id, tcx);
   revalidatePath('/backoffice/production/colors');
-  revalidatePath('/backoffice/production/colors/favorites');
   return result;
 }
 

@@ -48,6 +48,8 @@
     "navWorkOrdersList": "Work Orders List",
     "registerNotaCmt": "Register Nota CMT",
     "production": "Production",
+    "navProductionPlanning": "Plan Kerja",
+    "navProductionColors": "Colors",
     "navProductionColorsAll": "All Colors",
     "navProductionColorsFavorites": "Favorites",
     "navProductionColorsPhotoAnalyzer": "Photo Analyzer",
@@ -835,5 +837,99 @@
     "photoNoSamples": "Click the image to sample colors (point or area mode).",
     "photoMatchTitle": "Nearest Pantone matches",
     "photoSessionNote": "Samples are not saved — they clear when you refresh the page."
+  },
+  "planning": {
+    "title": "Production Plan",
+    "subtitle": "Yearly production planning and work order bridge",
+    "createdBy": "Created by: {name}",
+    "tabs": {
+      "grid": "Fill Grid",
+      "dashboard": "Dashboard",
+      "rincian": "Plan Details",
+      "warna": "Color Allocation",
+      "jahitan": "CMT Distribution",
+      "aksesoris": "Accessories"
+    },
+    "fields": {
+      "year": "Year",
+      "code": "Type Code",
+      "name": "Description",
+      "plan": "Plan",
+      "fulfilled": "Fulfilled",
+      "variance": "Variance",
+      "total": "Total",
+      "allTypes": "All types",
+      "targetQty": "Target Qty",
+      "sharePercent": "Share %",
+      "effectiveTarget": "Effective Target",
+      "linkItem": "Link Item",
+      "selectItem": "Select item (optional)"
+    },
+    "monthly": {
+      "title": "Monthly Distribution",
+      "total": "Total: {value}",
+      "autoLabel": "AUTO",
+      "manualOverride": "MANUAL",
+      "resetToAuto": "Reset to auto",
+      "mismatchWarning": "Monthly total ({monthlySum}) ≠ annual target ({effectiveTarget})"
+    },
+    "months": {
+      "1": "JAN",
+      "2": "FEB",
+      "3": "MAR",
+      "4": "APR",
+      "5": "MAY",
+      "6": "JUN",
+      "7": "JUL",
+      "8": "AUG",
+      "9": "SEP",
+      "10": "OCT",
+      "11": "NOV",
+      "12": "DEC"
+    },
+    "stages": {
+      "title": "Stage → Target Month",
+      "addNew": "Add new stage",
+      "namePlaceholder": "Name (e.g. STAGE 1)",
+      "qtyPlaceholder": "Qty (e.g. 18000)",
+      "monthPlaceholder": "Month (1–12)",
+      "quickAddNote": "Quick-add needs name + qty only. Other details via Plan Details tab.",
+      "createWO": "Create WO",
+      "createNewWO": "Create New WO",
+      "noVendor": "No vendor assigned",
+      "noWOPermission": "You don't have permission to create Work Orders."
+    },
+    "categories": {
+      "addParent": "Add new type row",
+      "addChild": "Add sub-type to {parentCode}",
+      "unallocated": "({percent}% unallocated)",
+      "deleteConfirm": "Delete {code}? All related data will be removed."
+    },
+    "lock": {
+      "lockPlan": "Lock Plan",
+      "unlockPlan": "Unlock Plan",
+      "lockedBanner": "This plan is locked. Contact admin to unlock. Creating WO from stages is still allowed.",
+      "locked": "Locked",
+      "unlocked": "Unlocked"
+    },
+    "dashboard": {
+      "totalPlan": "Total Plan",
+      "totalFulfilled": "Total Fulfilled",
+      "totalVariance": "Total Variance",
+      "completion": "Completion",
+      "progress": "Progress"
+    },
+    "search": {
+      "placeholder": "Search type (CLP, JK_RK, shirt, ...)"
+    },
+    "actions": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "add": "Add",
+      "edit": "Edit",
+      "delete": "Delete",
+      "importExcel": "Import Excel",
+      "downloadTemplate": "Download Template"
+    }
   }
 }

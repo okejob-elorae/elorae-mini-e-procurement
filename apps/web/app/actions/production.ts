@@ -242,7 +242,11 @@ const woSchema = z
 
 export type WOFormData = z.infer<typeof woSchema>;
 
-export async function createWorkOrder(data: WOFormData, userId: string) {
+export async function createWorkOrder(
+  data: WOFormData,
+  userId: string,
+  options?: { skipStockCheck?: boolean }
+) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_CREATE);
@@ -255,15 +259,17 @@ export async function createWorkOrder(data: WOFormData, userId: string) {
     plannedOutput
   );
 
-  const shortages = materialPlan.filter((m) => m.shortage.gt(0));
-  if (shortages.length > 0) {
-    const msg = shortages
-      .map(
-        (s) =>
-          `${s.itemName} (kurang ${s.shortage.toFixed(2)} ${s.uomCode})`
-      )
-      .join(', ');
-    throw new Error(`Stok tidak mencukupi: ${msg}`);
+  if (!options?.skipStockCheck) {
+    const shortages = materialPlan.filter((m) => m.shortage.gt(0));
+    if (shortages.length > 0) {
+      const msg = shortages
+        .map(
+          (s) =>
+            `${s.itemName} (kurang ${s.shortage.toFixed(2)} ${s.uomCode})`
+        )
+        .join(', ');
+      throw new Error(`Stok tidak mencukupi: ${msg}`);
+    }
   }
 
   async function runCreateTx(docNumber: string) {

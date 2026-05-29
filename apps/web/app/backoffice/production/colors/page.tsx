@@ -1,55 +1,87 @@
-import { redirect } from 'next/navigation';
-import { auth } from '@/lib/auth';
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+import { auth } from "@/lib/auth";
 import {
   listPantoneColors,
+  listFavoriteColors,
   getFavoriteTcxSet,
   COLOR_PAGE_SIZE,
-} from '@/lib/production-colors/queries';
-import { ColorsBrowseClient } from '@/components/production-colors/ColorsBrowseClient';
-import type { ColorFiltersState } from '@/components/production-colors/ColorsFilterBar';
+} from "@/lib/production-colors/queries";
+import { parseColorSearchParams } from "@/lib/production-colors/url-params";
+import {
+  ProductionColorsPageClient,
+  type ProductionColorsTab,
+} from "@/components/production-colors/ProductionColorsPageClient";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-type PageProps = {
-  searchParams: Promise<{
-    search?: string;
-    tone?: string;
-    hue?: string;
-    temperature?: string;
-    tint?: string;
-    page?: string;
-  }>;
-};
-
-function parseList(raw: string | undefined): string[] {
-  if (!raw?.trim()) return [];
-  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+function parseTab(raw?: string): ProductionColorsTab {
+  if (raw === "favorites" || raw === "photo-analyzer") return raw;
+  return "all";
 }
 
-export default async function ProductionColorsPage({ searchParams }: PageProps) {
+type PageProps = {
+  searchParams: Promise<Record<string, string | undefined>>;
+};
+
+export default function ProductionColorsPage(props: PageProps) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[200px] items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
+        </div>
+      }
+    >
+      <ProductionColorsPageContent {...props} />
+    </Suspense>
+  );
+}
+
+async function ProductionColorsPageContent({ searchParams }: PageProps) {
   const session = await auth();
-  if (!session) redirect('/login');
+  if (!session) redirect("/login");
 
   const sp = await searchParams;
-  const filters: ColorFiltersState = {
-    search: sp.search?.trim() ?? '',
-    tone: parseList(sp.tone),
-    hue: parseList(sp.hue),
-    temperature: parseList(sp.temperature),
-    tint: parseList(sp.tint),
-  };
-  const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
+  const tab = parseTab(sp.tab);
 
-  const { colors, totalCount } = await listPantoneColors(
-    {
-      search: filters.search || undefined,
-      tone: filters.tone.length ? filters.tone : undefined,
-      hue: filters.hue.length ? filters.hue : undefined,
-      temperature: filters.temperature.length ? filters.temperature : undefined,
-      tint: filters.tint.length ? filters.tint : undefined,
-    },
-    { page, pageSize: COLOR_PAGE_SIZE }
-  );
+  if (tab === "photo-analyzer") {
+    return <ProductionColorsPageClient tab={tab} browseProps={null} />;
+  }
+
+  const { filters, page, filterState } = parseColorSearchParams(sp);
+
+  if (tab === "favorites") {
+    const { colors, totalCount } = await listFavoriteColors(
+      session.user.id,
+      filters,
+      { page, pageSize: COLOR_PAGE_SIZE }
+    );
+
+    return (
+      <ProductionColorsPageClient
+        tab={tab}
+        browseProps={{
+          tab: "favorites",
+          initialColors: colors.map((c) => ({
+            tcx: c.tcx,
+            name: c.name,
+            hex: c.hex,
+            groupName: c.groupName,
+            isFavorite: true,
+          })),
+          totalCount,
+          page,
+          initialFilters: filterState,
+        }}
+      />
+    );
+  }
+
+  const { colors, totalCount } = await listPantoneColors(filters, {
+    page,
+    pageSize: COLOR_PAGE_SIZE,
+  });
 
   const favoriteSet = await getFavoriteTcxSet(
     session.user.id,
@@ -57,18 +89,21 @@ export default async function ProductionColorsPage({ searchParams }: PageProps) 
   );
 
   return (
-    <ColorsBrowseClient
-      mode="all"
-      initialColors={colors.map((c) => ({
-        tcx: c.tcx,
-        name: c.name,
-        hex: c.hex,
-        groupName: c.groupName,
-        isFavorite: favoriteSet.has(c.tcx),
-      }))}
-      totalCount={totalCount}
-      page={page}
-      initialFilters={filters}
+    <ProductionColorsPageClient
+      tab="all"
+      browseProps={{
+        tab: "all",
+        initialColors: colors.map((c) => ({
+          tcx: c.tcx,
+          name: c.name,
+          hex: c.hex,
+          groupName: c.groupName,
+          isFavorite: favoriteSet.has(c.tcx),
+        })),
+        totalCount,
+        page,
+        initialFilters: filterState,
+      }}
     />
   );
 }
