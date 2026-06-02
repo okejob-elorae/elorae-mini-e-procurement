@@ -79,7 +79,7 @@ export function ColorsBrowseClient({
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <Card className="h-fit lg:sticky lg:top-4">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Filters</CardTitle>
+            <CardTitle className="text-base">{t('filtersTitle')}</CardTitle>
           </CardHeader>
           <CardContent>
             <ColorsFilterBar
@@ -96,7 +96,7 @@ export function ColorsBrowseClient({
         <div className="space-y-4">
           <FilterSummaryBadges filters={filters} />
           <p className="text-sm text-muted-foreground">
-            {totalCount.toLocaleString()} colors
+            {t('colorCount', { count: totalCount })}
           </p>
           <ColorSwatchGrid
             colors={colors}

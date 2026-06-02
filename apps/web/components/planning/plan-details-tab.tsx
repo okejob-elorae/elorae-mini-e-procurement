@@ -45,7 +45,7 @@ export function PlanDetailsTab({
   const leaves = collectLeafCategories(detail.categories);
 
   if (leaves.length === 0) {
-    return <p className="text-sm text-muted-foreground">{t("details")} — no leaf categories</p>;
+    return <p className="text-sm text-muted-foreground">{t("emptyNoLeafCategories")}</p>;
   }
 
   return (

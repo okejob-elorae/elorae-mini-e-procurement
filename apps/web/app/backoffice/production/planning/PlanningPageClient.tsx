@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { ItemType } from "@/lib/constants/enums";
 import { PERMISSIONS, hasPermission } from "@/lib/rbac";
+import { getItemCategories } from "@/app/actions/item-categories";
 import { getItemsByType } from "@/app/actions/items";
 import { getSuppliersForSelect } from "@/app/actions/suppliers";
 import {
@@ -62,6 +63,7 @@ export function PlanningPageClient() {
   const [dashboard, setDashboard] = useState<PlanDashboardData | null>(null);
   const [newYear, setNewYear] = useState(String(new Date().getFullYear()));
   const [itemOptions, setItemOptions] = useState<ComboboxOption[]>([]);
+  const [itemCategoryOptions, setItemCategoryOptions] = useState<ComboboxOption[]>([]);
   const [accessoryOptions, setAccessoryOptions] = useState<ComboboxOption[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<ComboboxOption[]>([]);
   const [tailorOptions, setTailorOptions] = useState<ComboboxOption[]>([]);
@@ -93,13 +95,20 @@ export function PlanningPageClient() {
     Promise.all([
       getItemsByType(ItemType.FINISHED_GOOD),
       getItemsByType(ItemType.ACCESSORIES),
+      getItemCategories(true),
       getSuppliersForSelect({ approvedOnly: true }),
       getSuppliersForSelect({ approvedOnly: true, typeId: "st-tailor" }),
-    ]).then(([fgRows, accRows, suppliers, tailors]) => {
+    ]).then(([fgRows, accRows, categories, suppliers, tailors]) => {
       setItemOptions(
         (fgRows as Array<{ id: string; sku: string; nameId: string }>).map((row) => ({
           value: row.id,
           label: `${row.nameId} (${row.sku})`,
+        }))
+      );
+      setItemCategoryOptions(
+        (categories as Array<{ id: string; code: string | null; name: string }>).map((row) => ({
+          value: row.id,
+          label: row.code ? `${row.code} — ${row.name}` : row.name,
         }))
       );
       setAccessoryOptions(
@@ -214,13 +223,13 @@ export function PlanningPageClient() {
             canManage={canManage}
             canCreateWo={canCreateWorkOrder}
             itemOptions={itemOptions}
+            itemCategoryOptions={itemCategoryOptions}
             supplierOptions={tailorOptions.length ? tailorOptions : supplierOptions}
             onRefresh={() => refreshAll(detail.id)}
             onCreateParent={async (data) => {
               await createPlanCategory({
                 planYearId: detail.id,
-                code: data.code,
-                name: data.name,
+                itemCategoryId: data.itemCategoryId,
                 targetQty: data.targetQty,
               });
             }}

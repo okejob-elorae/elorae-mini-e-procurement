@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import type { ComboboxOption, PlanCategoryDetail, PlanYearDetail } from "./types";
 import { formatPlanNumber } from "./types";
 import { CategoryTreeRow } from "./category-tree-row";
@@ -15,9 +16,10 @@ type PlanGridTabProps = {
   canManage?: boolean;
   canCreateWo?: boolean;
   itemOptions: ComboboxOption[];
+  itemCategoryOptions: ComboboxOption[];
   supplierOptions: ComboboxOption[];
   onRefresh: () => Promise<void>;
-  onCreateParent: (data: { code: string; name: string; targetQty: number }) => Promise<void>;
+  onCreateParent: (data: { itemCategoryId: string; targetQty: number }) => Promise<void>;
   onCreateChild: (
     parentId: string,
     data: { code: string; name: string; share: number }
@@ -48,6 +50,7 @@ export function PlanGridTab(props: PlanGridTabProps) {
     canManage,
     canCreateWo,
     itemOptions,
+    itemCategoryOptions,
     supplierOptions,
     onRefresh,
     onCreateParent,
@@ -72,7 +75,22 @@ export function PlanGridTab(props: PlanGridTabProps) {
   const [search, setSearch] = useState("");
   const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
-  const [newParent, setNewParent] = useState({ code: "", name: "", targetQty: "" });
+  const [newParent, setNewParent] = useState({ itemCategoryId: "", targetQty: "" });
+
+  const usedItemCategoryIds = useMemo(
+    () =>
+      new Set(
+        detail.categories
+          .map((c) => c.itemCategoryId)
+          .filter((id): id is string => !!id)
+      ),
+    [detail.categories]
+  );
+
+  const availableItemCategoryOptions = useMemo(
+    () => itemCategoryOptions.filter((opt) => !usedItemCategoryIds.has(opt.value)),
+    [itemCategoryOptions, usedItemCategoryIds]
+  );
 
   const filteredCategories = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -80,7 +98,10 @@ export function PlanGridTab(props: PlanGridTabProps) {
     return detail.categories
       .map((parent) => {
         const parentMatch =
-          parent.code.toLowerCase().includes(q) || parent.name.toLowerCase().includes(q);
+          parent.code.toLowerCase().includes(q) ||
+          parent.name.toLowerCase().includes(q) ||
+          (parent.itemCategoryCode?.toLowerCase().includes(q) ?? false) ||
+          (parent.itemCategoryName?.toLowerCase().includes(q) ?? false);
         const children = parent.children.filter(
           (c) => c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
         );
@@ -170,16 +191,16 @@ export function PlanGridTab(props: PlanGridTabProps) {
       {canManage && !disabled && (
         <Card>
           <CardContent className="pt-4">
-            <div className="grid gap-2 md:grid-cols-4">
-              <Input
-                placeholder={tf("code")}
-                value={newParent.code}
-                onChange={(e) => setNewParent((s) => ({ ...s, code: e.target.value }))}
-              />
-              <Input
-                placeholder={tf("name")}
-                value={newParent.name}
-                onChange={(e) => setNewParent((s) => ({ ...s, name: e.target.value }))}
+            <div className="grid gap-2 md:grid-cols-3">
+              <SearchableCombobox
+                options={availableItemCategoryOptions}
+                value={newParent.itemCategoryId}
+                onValueChange={(itemCategoryId) =>
+                  setNewParent((s) => ({ ...s, itemCategoryId }))
+                }
+                placeholder={tf("selectItemCategory")}
+                searchPlaceholder={tf("selectItemCategory")}
+                emptyMessage={tf("selectItemCategory")}
               />
               <Input
                 type="number"
@@ -189,13 +210,14 @@ export function PlanGridTab(props: PlanGridTabProps) {
               />
               <Button
                 type="button"
+                disabled={!newParent.itemCategoryId}
                 onClick={async () => {
+                  if (!newParent.itemCategoryId) return;
                   await onCreateParent({
-                    code: newParent.code,
-                    name: newParent.name,
+                    itemCategoryId: newParent.itemCategoryId,
                     targetQty: Number(newParent.targetQty || 0),
                   });
-                  setNewParent({ code: "", name: "", targetQty: "" });
+                  setNewParent({ itemCategoryId: "", targetQty: "" });
                   await onRefresh();
                 }}
               >

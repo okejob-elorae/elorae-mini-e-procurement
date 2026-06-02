@@ -58,6 +58,7 @@ import {
 interface NavChild {
   labelKey: string;
   href: string;
+  permission?: string;
 }
 
 interface NavItem {
@@ -131,8 +132,21 @@ const navItems: NavItem[] = [
     icon: CalendarDays,
     permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
     children: [
-      { labelKey: 'navProductionPlanning', href: '/backoffice/production/planning' },
-      { labelKey: 'navProductionColors', href: '/backoffice/production/colors' },
+      {
+        labelKey: 'navForecast',
+        href: '/backoffice/forecast',
+        permission: PERMISSIONS.FORECAST_VIEW,
+      },
+      {
+        labelKey: 'navProductionPlanning',
+        href: '/backoffice/production/planning',
+        permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
+      },
+      {
+        labelKey: 'navProductionColors',
+        href: '/backoffice/production/colors',
+        permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
+      },
     ],
   },
   {
@@ -212,7 +226,10 @@ function Sidebar({
     if (path.startsWith('/backoffice/suppliers')) return '/backoffice/suppliers';
     if (path.startsWith('/backoffice/items')) return '/backoffice/items';
     if (path.startsWith('/backoffice/work-orders')) return '/backoffice/work-orders';
-    if (path.startsWith('/backoffice/production')) return '/backoffice/production/planning';
+    if (path.startsWith('/backoffice/forecast')) return '/backoffice/production/planning';
+    if (path.startsWith('/backoffice/forecast') || path.startsWith('/backoffice/production')) {
+      return '/backoffice/production/planning';
+    }
     return null;
   };
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
@@ -223,9 +240,19 @@ function Sidebar({
     if (key) setOpenNavKey(key);
   }, [pathname]);
 
-  const filteredItems = navItems.filter((item) =>
-    hasPermission(permissions, item.permission)
-  );
+  const filteredItems = navItems.filter((item) => {
+    if (item.children?.length) {
+      const visibleChildren = item.children.filter(
+        (child) => !child.permission || hasPermission(permissions, child.permission)
+      );
+      if (visibleChildren.length === 0) return false;
+      if (hasPermission(permissions, item.permission)) return true;
+      return visibleChildren.some(
+        (child) => child.permission && hasPermission(permissions, child.permission)
+      );
+    }
+    return hasPermission(permissions, item.permission);
+  });
 
   return (
     <div className={cn('flex flex-col h-full text-primary-foreground', className)}>
@@ -268,7 +295,12 @@ function Sidebar({
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <div className="ml-4 mt-1 space-y-0.5 border-l border-primary-foreground/20 pl-3">
-                    {item.children!.map((child) => {
+                    {item
+                      .children!.filter(
+                        (child) =>
+                          !child.permission || hasPermission(permissions, child.permission)
+                      )
+                      .map((child) => {
                       const isChildActive =
                         pathname === child.href || pathname.startsWith(`${child.href}/`);
                       return (

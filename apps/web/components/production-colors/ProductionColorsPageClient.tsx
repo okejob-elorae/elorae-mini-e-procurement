@@ -12,6 +12,12 @@ export type ProductionColorsTab = "all" | "favorites" | "photo-analyzer";
 
 const TAB_KEYS: ProductionColorsTab[] = ["all", "favorites", "photo-analyzer"];
 
+const TITLE_KEYS: Record<ProductionColorsTab, "titleAll" | "titleFavorites" | "titlePhotoAnalyzer"> = {
+  all: "titleAll",
+  favorites: "titleFavorites",
+  "photo-analyzer": "titlePhotoAnalyzer",
+};
+
 const BROWSE_PARAM_KEYS = ["search", "tone", "hue", "temperature", "tint", "page"] as const;
 
 type BrowseProps = {
@@ -57,7 +63,7 @@ export function ProductionColorsPageClient({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t(TITLE_KEYS[tab])}</h1>
         <p className="text-muted-foreground text-sm">{t("subtitle")}</p>
       </div>
 

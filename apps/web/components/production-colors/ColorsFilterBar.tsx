@@ -79,7 +79,7 @@ export function ColorsFilterBar({
           />
         </div>
         <Button type="submit" variant="secondary">
-          Search
+          {t('searchButton')}
         </Button>
       </form>
 

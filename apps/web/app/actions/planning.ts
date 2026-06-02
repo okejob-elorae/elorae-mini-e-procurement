@@ -23,6 +23,7 @@ import {
   type PlanningMonthlyRow,
 } from "@/lib/planning/calculations";
 import { buildPlanTemplateWorkbook, parsePlanExcelBuffer } from "@/lib/planning/excel-parser";
+import { planCodeFromItemCategory } from "@/lib/planning/item-category";
 import {
   createPlanCategorySchema,
   createPlanStageSchema,
@@ -178,6 +179,8 @@ type RawCategory = {
   targetQty: number | null;
   parentSharePercent: unknown;
   itemId: string | null;
+  itemCategoryId: string | null;
+  itemCategory?: { id: string; code: string | null; name: string } | null;
   sortOrder: number;
   monthlyTargets: PlanningMonthlyRow[];
   stages: Array<{
@@ -256,6 +259,9 @@ interface EnrichedPlanCategory {
   parentSharePercent: number | null;
   itemId: string | null;
   itemName: string | null;
+  itemCategoryId: string | null;
+  itemCategoryCode: string | null;
+  itemCategoryName: string | null;
   sortOrder: number;
   effectiveTarget: number;
   actualQty: number;
@@ -349,6 +355,9 @@ function enrichCategoryNode(
       node.parentSharePercent != null ? toNumber(node.parentSharePercent) : null,
     itemId: node.itemId,
     itemName: node.itemId ? itemNames.get(node.itemId) ?? null : null,
+    itemCategoryId: node.itemCategoryId,
+    itemCategoryCode: node.itemCategory?.code ?? null,
+    itemCategoryName: node.itemCategory?.name ?? null,
     sortOrder: node.sortOrder,
     effectiveTarget,
     actualQty,
@@ -432,6 +441,7 @@ export async function getPlanYear(planYearId: string) {
           colorAllocations: true,
           cmtAllocations: true,
           accessoryPlans: true,
+          itemCategory: { select: { id: true, code: true, name: true } },
         },
       },
     },
@@ -596,10 +606,35 @@ export async function setPlanYearLock(planYearId: string, isLocked: boolean) {
   return updated;
 }
 
+async function loadItemCategoryForPlan(itemCategoryId: string) {
+  const row = await prisma.itemCategory.findFirst({
+    where: { id: itemCategoryId, isActive: true },
+  });
+  if (!row) throw new Error("Item category not found or inactive");
+  return row;
+}
+
+async function assertRootItemCategoryAvailable(
+  planYearId: string,
+  itemCategoryId: string,
+  excludeCategoryId?: string
+) {
+  const dup = await prisma.planCategory.findFirst({
+    where: {
+      planYearId,
+      parentId: null,
+      itemCategoryId,
+      ...(excludeCategoryId ? { id: { not: excludeCategoryId } } : {}),
+    },
+  });
+  if (dup) throw new Error("Item category already used in this plan year");
+}
+
 export async function createPlanCategory(input: {
   planYearId: string;
-  code: string;
-  name: string;
+  itemCategoryId?: string | null;
+  code?: string;
+  name?: string;
   description?: string;
   parentId?: string | null;
   targetQty?: number | null;
@@ -609,6 +644,21 @@ export async function createPlanCategory(input: {
   const session = await requirePlanningManage();
   const parsed = createPlanCategorySchema.parse(input);
   await requirePlanYearUnlocked(parsed.planYearId);
+
+  let code: string;
+  let name: string;
+  let itemCategoryId: string | null = null;
+
+  if (!parsed.parentId) {
+    itemCategoryId = parsed.itemCategoryId!;
+    const itemCategory = await loadItemCategoryForPlan(itemCategoryId);
+    await assertRootItemCategoryAvailable(parsed.planYearId, itemCategoryId);
+    code = planCodeFromItemCategory(itemCategory);
+    name = itemCategory.name;
+  } else {
+    code = parsed.code!.trim();
+    name = parsed.name!.trim();
+  }
 
   if (parsed.parentId) {
     const parent = await validateParentForTwoLevel(parsed.parentId);
@@ -634,13 +684,14 @@ export async function createPlanCategory(input: {
     const category = await tx.planCategory.create({
       data: {
         planYearId: parsed.planYearId,
-        code: parsed.code,
-        name: parsed.name,
+        code,
+        name,
         description: parsed.description || null,
         parentId: parsed.parentId ?? null,
         targetQty: parsed.parentId ? null : (parsed.targetQty ?? null),
         parentSharePercent: parsed.parentId ? (parsed.parentSharePercent ?? null) : null,
         itemId: parsed.itemId ?? null,
+        itemCategoryId,
         sortOrder: siblingCount,
       },
     });
@@ -681,10 +732,18 @@ export async function updatePlanCategory(
   const parsed = updatePlanCategorySchema.parse(input);
   const current = await prisma.planCategory.findUnique({
     where: { id: categoryId },
-    select: { id: true, planYearId: true, parentId: true },
+    select: { id: true, planYearId: true, parentId: true, itemCategoryId: true },
   });
   if (!current) throw new Error("Category not found");
   await requirePlanYearUnlocked(current.planYearId);
+
+  if (
+    current.itemCategoryId &&
+    !current.parentId &&
+    (parsed.code !== undefined || parsed.name !== undefined)
+  ) {
+    throw new Error("Cannot edit code or name for a category linked to item master");
+  }
 
   if (current.parentId && parsed.parentSharePercent != null) {
     const validation = await validateChildSharesForParent(
@@ -1352,6 +1411,17 @@ export async function importPlanFromExcel(planYearId: string, base64: string) {
   });
   const skuToId = new Map(items.map((i) => [i.sku, i.id]));
 
+  const itemCategories = await prisma.itemCategory.findMany({
+    where: { isActive: true },
+    select: { id: true, code: true, name: true },
+  });
+  const categoryCodeToId = new Map<string, string>();
+  const categoryById = new Map<string, { id: string; code: string | null; name: string }>();
+  for (const ic of itemCategories) {
+    categoryById.set(ic.id, ic);
+    if (ic.code?.trim()) categoryCodeToId.set(ic.code.trim(), ic.id);
+  }
+
   for (const row of rows) {
     try {
       const parentId = row.parentCode ? codeToId.get(row.parentCode) : null;
@@ -1366,10 +1436,28 @@ export async function importPlanFromExcel(planYearId: string, base64: string) {
         continue;
       }
 
-      const existingId = codeToId.get(row.code);
+      const isRoot = !parentId;
+      let itemCategoryId: string | undefined;
+      if (isRoot) {
+        const lookupCode = (row.itemCategoryCode ?? row.code).trim();
+        itemCategoryId = categoryCodeToId.get(lookupCode);
+        if (!itemCategoryId) {
+          errors.push({
+            row: row.rowNumber,
+            message: `Item category code "${lookupCode}" not found in master`,
+          });
+          continue;
+        }
+      }
+
+      const rowCode =
+        isRoot && itemCategoryId
+          ? planCodeFromItemCategory(categoryById.get(itemCategoryId)!)
+          : row.code;
+      const existingId = codeToId.get(rowCode);
       if (existingId) {
         await updatePlanCategory(existingId, {
-          name: row.name,
+          ...(parentId ? { name: row.name } : {}),
           description: row.description,
           ...(parentId
             ? { parentSharePercent: row.parentSharePercent ?? undefined }
@@ -1377,6 +1465,16 @@ export async function importPlanFromExcel(planYearId: string, base64: string) {
           itemId: itemId ?? undefined,
         });
         updated += 1;
+      } else if (isRoot && itemCategoryId) {
+        const createdCat = await createPlanCategory({
+          planYearId,
+          itemCategoryId,
+          description: row.description,
+          targetQty: row.targetQty ?? 0,
+          itemId: itemId ?? null,
+        });
+        codeToId.set(createdCat.code, createdCat.id);
+        created += 1;
       } else {
         const createdCat = await createPlanCategory({
           planYearId,

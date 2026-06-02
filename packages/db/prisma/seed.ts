@@ -126,6 +126,12 @@ async function main() {
     { code: 'nota_register:view', module: 'nota_register', action: 'view', description: 'View nota register' },
     // Production Colors (Pantone TCX)
     { code: 'production_colors:view', module: 'production_colors', action: 'view', description: 'View production Pantone colors' },
+    // Production Planning (Plan Kerja)
+    { code: 'production_planning:view', module: 'production_planning', action: 'view', description: 'View Plan Kerja' },
+    { code: 'production_planning:manage', module: 'production_planning', action: 'manage', description: 'Manage Plan Kerja' },
+    // S&OP Forecast
+    { code: 'forecast:view', module: 'forecast', action: 'view', description: 'View demand forecast' },
+    { code: 'forecast:manage', module: 'forecast', action: 'manage', description: 'Manage forecast imports and runs' },
     // Vendor Returns
     { code: 'vendor_returns:view', module: 'vendor_returns', action: 'view', description: 'View vendor returns' },
     { code: 'vendor_returns:create', module: 'vendor_returns', action: 'create', description: 'Create vendor returns' },
@@ -282,6 +288,8 @@ async function main() {
     'work_orders:view', 'work_orders:create', 'work_orders:manage',
     'nota_register:view',
     'production_colors:view',
+    'production_planning:view',
+    'forecast:view',
   ];
   for (const code of productionPermissions) {
     const perm = permissionMap.get(code);
