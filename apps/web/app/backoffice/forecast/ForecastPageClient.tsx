@@ -22,6 +22,7 @@ import {
   getDataCoverage,
   getForecastConfig,
   getForecastResults,
+  type ForecastConfigDetail,
   type ForecastResultDetail,
 } from '@/app/actions/forecast';
 
@@ -45,7 +46,7 @@ export function ForecastPageClient() {
 
   const [year, setYear] = useState(initialYear);
   const [results, setResults] = useState<ForecastResultDetail[]>([]);
-  const [config, setConfig] = useState<Awaited<ReturnType<typeof getForecastConfig>>>(null);
+  const [config, setConfig] = useState<ForecastConfigDetail | null>(null);
   const [coverageMonths, setCoverageMonths] = useState(0);
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
@@ -86,7 +87,7 @@ export function ForecastPageClient() {
 
   const configSummary =
     config ?
-      `Lookback ${config.lookbackMonths} mo · Growth ${Number(config.growthFactorPercent)}% · Decay ${Number(config.weightDecay)}`
+      `Lookback ${config.lookbackMonths} mo · Growth ${config.growthFactorPercent}% · Decay ${config.weightDecay}`
     : 'Default config (run forecast to create)';
 
   return (
@@ -166,9 +167,9 @@ export function ForecastPageClient() {
         initial={
           config ?
             {
-              growthFactorPercent: Number(config.growthFactorPercent),
+              growthFactorPercent: config.growthFactorPercent,
               lookbackMonths: config.lookbackMonths,
-              weightDecay: Number(config.weightDecay),
+              weightDecay: config.weightDecay,
               notes: config.notes,
             }
           : null

@@ -120,45 +120,102 @@ function salesHistoryToDemandRows(
   }));
 }
 
-async function resolveItemForParentSku(parentSku: string) {
-  const mapping = await prisma.jubelioProductMapping.findFirst({
-    where: {
-      OR: [{ erpVariantSku: parentSku }, { item: { sku: parentSku } }],
-    },
-    include: {
-      item: {
-        select: {
-          id: true,
-          sku: true,
-          categoryId: true,
-          category: { select: { id: true, code: true, name: true } },
-        },
-      },
-    },
-  });
+const resolvedItemSelect = {
+  id: true,
+  sku: true,
+  categoryId: true,
+  category: { select: { id: true, code: true, name: true } },
+} as const;
 
-  if (mapping) {
-    const bySku = await prisma.item.findUnique({
-      where: { sku: parentSku },
-      select: { id: true, sku: true, categoryId: true },
-    });
-    if (bySku && bySku.id !== mapping.itemId) {
-      console.warn(
-        `[forecast] Jubelio mapping overrides Item.sku for ${parentSku}`
-      );
-    }
-    return mapping.item;
+type ResolvedItem = {
+  id: string;
+  sku: string;
+  categoryId: string | null;
+  category: { id: string; code: string | null; name: string } | null;
+};
+
+async function buildItemByParentSkuMap(
+  parentSkus: string[]
+): Promise<Map<string, ResolvedItem | null>> {
+  const unique = [...new Set(parentSkus)];
+  const map = new Map<string, ResolvedItem | null>();
+  if (unique.length === 0) return map;
+
+  const [mappings, items] = await Promise.all([
+    prisma.jubelioProductMapping.findMany({
+      where: {
+        OR: [
+          { erpVariantSku: { in: unique } },
+          { item: { sku: { in: unique } } },
+        ],
+      },
+      include: { item: { select: resolvedItemSelect } },
+    }),
+    prisma.item.findMany({
+      where: { sku: { in: unique } },
+      select: resolvedItemSelect,
+    }),
+  ]);
+
+  const itemBySku = new Map(items.map((i) => [i.sku, i]));
+  const mappingByVariantSku = new Map<string, (typeof mappings)[number]>();
+  const mappingByItemSku = new Map<string, (typeof mappings)[number]>();
+  for (const m of mappings) {
+    mappingByVariantSku.set(m.erpVariantSku, m);
+    mappingByItemSku.set(m.item.sku, m);
   }
 
-  return prisma.item.findUnique({
-    where: { sku: parentSku },
-    select: {
-      id: true,
-      sku: true,
-      categoryId: true,
-      category: { select: { id: true, code: true, name: true } },
+  for (const parentSku of unique) {
+    const mapping =
+      mappingByVariantSku.get(parentSku) ?? mappingByItemSku.get(parentSku);
+    if (mapping) {
+      const bySku = itemBySku.get(parentSku);
+      if (bySku && bySku.id !== mapping.itemId) {
+        console.warn(
+          `[forecast] Jubelio mapping overrides Item.sku for ${parentSku}`
+        );
+      }
+      map.set(parentSku, mapping.item);
+    } else {
+      map.set(parentSku, itemBySku.get(parentSku) ?? null);
+    }
+  }
+
+  return map;
+}
+
+async function buildPlanRootByItemCategoryId(
+  planYearId: string,
+  itemCategoryIds: string[]
+): Promise<Map<string, { id: string; targetQty: number | null }>> {
+  const unique = [...new Set(itemCategoryIds)];
+  const map = new Map<string, { id: string; targetQty: number | null }>();
+  if (unique.length === 0) return map;
+
+  const categories = await prisma.planCategory.findMany({
+    where: {
+      planYearId,
+      parentId: null,
+      itemCategoryId: { in: unique },
     },
+    select: { id: true, targetQty: true, itemCategoryId: true },
   });
+
+  for (const cat of categories) {
+    if (cat.itemCategoryId) {
+      map.set(cat.itemCategoryId, {
+        id: cat.id,
+        targetQty: cat.targetQty,
+      });
+    }
+  }
+
+  return map;
+}
+
+async function resolveItemForParentSku(parentSku: string) {
+  const map = await buildItemByParentSkuMap([parentSku]);
+  return map.get(parentSku) ?? null;
 }
 
 function planAction(
@@ -439,9 +496,43 @@ export async function getDataCoverage(): Promise<DataCoverage> {
   };
 }
 
-export async function getForecastConfig(year: number) {
+export interface ForecastConfigDetail {
+  id: string;
+  year: number;
+  growthFactorPercent: number;
+  lookbackMonths: number;
+  weightDecay: number;
+  notes: string | null;
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function serializeForecastConfig(
+  config: NonNullable<
+    Awaited<ReturnType<typeof prisma.forecastConfig.findUnique>>
+  >
+): ForecastConfigDetail {
+  return {
+    id: config.id,
+    year: config.year,
+    growthFactorPercent: toNumber(config.growthFactorPercent),
+    lookbackMonths: config.lookbackMonths,
+    weightDecay: toNumber(config.weightDecay),
+    notes: config.notes,
+    createdById: config.createdById,
+    createdAt: config.createdAt,
+    updatedAt: config.updatedAt,
+  };
+}
+
+export async function getForecastConfig(
+  year: number
+): Promise<ForecastConfigDetail | null> {
   await requireForecastView();
-  return prisma.forecastConfig.findUnique({ where: { year } });
+  const config = await prisma.forecastConfig.findUnique({ where: { year } });
+  if (!config) return null;
+  return serializeForecastConfig(config);
 }
 
 export async function updateForecastConfig(data: {
@@ -752,9 +843,22 @@ export async function suggestPlanTargets(data: {
       orderBy: [{ abcClass: "asc" }, { forecastAnnual: "desc" }],
     });
 
-    const suggestions: PlanTargetSuggestion[] = [];
+    const parentSkus = results.map((r) => r.parentSku);
+    const itemByParentSku = await buildItemByParentSkuMap(parentSkus);
 
-    for (const row of results) {
+    const categoryIds = [
+      ...new Set(
+        [...itemByParentSku.values()]
+          .map((item) => item?.categoryId)
+          .filter((id): id is string => id != null)
+      ),
+    ];
+    const planRootByCategoryId = await buildPlanRootByItemCategoryId(
+      data.planYearId,
+      categoryIds
+    );
+
+    const suggestions: PlanTargetSuggestion[] = results.map((row) => {
       const monthly = [
         row.forecastMonth1,
         row.forecastMonth2,
@@ -770,32 +874,21 @@ export async function suggestPlanTargets(data: {
         row.forecastMonth12,
       ];
 
-      const item = await resolveItemForParentSku(row.parentSku);
+      const item = itemByParentSku.get(row.parentSku) ?? null;
       const itemCategoryId = item?.categoryId ?? null;
       const itemCategory = item?.category ?? null;
 
-      let existingCategoryId: string | null = null;
-      let existingPlanTarget: number | null = null;
+      const rootPlan =
+        itemCategoryId ?
+          (planRootByCategoryId.get(itemCategoryId) ?? null)
+        : null;
 
-      if (itemCategoryId) {
-        const rootCategory = await prisma.planCategory.findFirst({
-          where: {
-            planYearId: data.planYearId,
-            parentId: null,
-            itemCategoryId,
-          },
-          select: { id: true, targetQty: true },
-        });
-        if (rootCategory) {
-          existingCategoryId = rootCategory.id;
-          existingPlanTarget = rootCategory.targetQty;
-        }
-      }
-
+      const existingCategoryId = rootPlan?.id ?? null;
+      const existingPlanTarget = rootPlan?.targetQty ?? null;
       const action = planAction(row.forecastAnnual, existingPlanTarget);
       const canCreate = Boolean(itemCategoryId);
 
-      suggestions.push({
+      return {
         parentSku: row.parentSku,
         productName: row.productName,
         abcClass: row.abcClass,
@@ -809,8 +902,8 @@ export async function suggestPlanTargets(data: {
         itemCategoryName: itemCategory?.name ?? null,
         canCreate,
         action,
-      });
-    }
+      };
+    });
 
     return { success: true, suggestions };
   } catch (e) {
