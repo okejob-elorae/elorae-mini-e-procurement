@@ -72,6 +72,7 @@ model User {
   grnsOwnerApproved       GRN[]      @relation("GRNOwnerApproved")
   grnsOwnerDeclined       GRN[]      @relation("GRNOwnerDeclined")
   enqueuedOutbox          JubelioOutbox[] @relation("EnqueuedOutbox")
+  jubelioPushDefaultsUpdates JubelioPushDefaults[] @relation("JubelioPushDefaultsUpdater")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -1220,4 +1221,33 @@ model JubelioOutbox {
   @@index([status, createdAt])
   @@index([entityType, entityId])
   @@index([enqueuedById])
+}
+
+model JubelioPushDefaults {
+  id                       String   @id @default("singleton")
+  sellTaxId                Int      @default(-1)
+  buyTaxId                 Int      @default(-1)
+  salesAcctId              Int      @default(28)
+  cogsAcctId               Int      @default(30)
+  invtAcctId               Int      @default(4)
+  purchAcctId              Int?
+  uomId                    Int      @default(-1)
+  brandId                  String?
+  brandName                String?
+  sellThis                 Boolean  @default(true)
+  buyThis                  Boolean  @default(true)
+  stockThis                Boolean  @default(true)
+  dropshipThis             Boolean  @default(false)
+  isActive                 Boolean  @default(true)
+  sellUnit                 String   @default("Buah")
+  buyUnit                  String   @default("Buah")
+  packageWeight            Int      @default(1000)
+  storePriorityQtyTreshold Int      @default(0)
+  rop                      Int      @default(0)
+  useSingleImageSet        Boolean  @default(false)
+  useSerialNumber          Boolean  @default(false)
+  buyPrice                 Decimal  @default(0) @db.Decimal(15,2)
+  updatedAt                DateTime @updatedAt
+  updatedById              String?
+  updatedBy                User?    @relation("JubelioPushDefaultsUpdater", fields: [updatedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
 }

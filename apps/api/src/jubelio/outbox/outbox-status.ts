@@ -18,4 +18,9 @@ export const OUTBOX_SKIP_REASONS = {
   MISSING_MAPPING: "missing_mapping",
   NO_INVENTORY: "no_inventory",
   UNKNOWN_ENTITY_TYPE: "unknown_entity_type",
+  ORPHAN_ITEM: "orphan_item",
+  WRONG_TYPE: "wrong_type",
+  DEFAULTS_MISSING: "defaults_missing",
+  CATEGORY_UNMAPPED: "category_unmapped",
+  CANNOT_CREATE_FROM_INGESTED: "cannot_create_from_ingested",
 } as const;
