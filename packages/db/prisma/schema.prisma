@@ -66,6 +66,8 @@ model User {
   vendorReturnsCompleted  VendorReturn[] @relation("VendorReturnCompleted")
   pantoneColorFavorites   PantoneColorFavorite[]
   planYearsCreated        PlanYear[]
+  salesHistoryImports     SalesHistoryImport[]
+  forecastConfigsCreated  ForecastConfig[]
   suppliersApproved       Supplier[]
   grnsOwnerApproved       GRN[]      @relation("GRNOwnerApproved")
   grnsOwnerDeclined       GRN[]      @relation("GRNOwnerDeclined")
@@ -200,8 +202,9 @@ model ItemCategory {
   sortOrder Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  items     Item[]
+  items            Item[]
   jubelioCategoryMappings JubelioCategoryMapping[]
+  planCategories   PlanCategory[]
 }
 
 model Item {
@@ -652,6 +655,8 @@ model PlanCategory {
   parentSharePercent  Decimal?              @db.Decimal(5,2)
   itemId              String?
   item                Item?                 @relation(fields: [itemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  itemCategoryId      String?
+  itemCategory        ItemCategory?         @relation(fields: [itemCategoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   monthlyTargets      PlanMonthly[]
   stages              PlanStage[]
   colorAllocations    PlanColorAllocation[]
@@ -662,9 +667,11 @@ model PlanCategory {
   updatedAt           DateTime              @updatedAt
 
   @@unique([planYearId, code])
+  @@unique([planYearId, itemCategoryId])
   @@index([planYearId])
   @@index([parentId])
   @@index([itemId])
+  @@index([itemCategoryId])
 }
 
 model PlanMonthly {
@@ -740,6 +747,144 @@ model PlanAccessory {
 
   @@index([planCategoryId])
   @@index([itemId])
+}
+
+// ==========================================
+// S&OP FORECAST
+// ==========================================
+model SalesHistory {
+  id                     String             @id @default(cuid())
+  channel                SalesChannel
+  orderId                String
+  orderStatus            SalesHistoryStatus
+  variantSku             String
+  parentSku              String
+  productName            String
+  color                  String?
+  size                   String?
+  quantity               Int
+  returnedQuantity       Int                @default(0)
+  netQuantity            Int
+  unitPrice              Decimal            @db.Decimal(15, 2)
+  unitPriceAfterDiscount Decimal            @db.Decimal(15, 2)
+  lineTotal              Decimal            @db.Decimal(15, 2)
+  orderTotal             Decimal            @db.Decimal(15, 2)
+  orderDate              DateTime
+  completedDate          DateTime?
+  province               String?
+  city                   String?
+  productCategory        String?
+  importBatchId          String
+  importBatch            SalesHistoryImport @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  createdAt              DateTime           @default(now())
+
+  @@unique([channel, orderId, variantSku])
+  @@index([parentSku, orderDate])
+  @@index([orderDate])
+  @@index([channel])
+  @@index([importBatchId])
+  @@index([orderStatus])
+}
+
+model SalesHistoryImport {
+  id           String         @id @default(cuid())
+  channel      SalesChannel
+  fileName     String
+  periodMonth  Int
+  periodYear   Int
+  totalRows    Int
+  importedRows Int
+  skippedRows  Int            @default(0)
+  errorRows    Int            @default(0)
+  errors       Json?
+  uploadedById String
+  uploadedBy   User           @relation(fields: [uploadedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt    DateTime       @default(now())
+  rows         SalesHistory[]
+
+  @@unique([channel, periodYear, periodMonth])
+  @@index([uploadedById])
+}
+
+model ForecastConfig {
+  id                  String   @id @default(cuid())
+  year                Int      @unique
+  growthFactorPercent Decimal  @default(0) @db.Decimal(5, 2)
+  lookbackMonths      Int      @default(12)
+  weightDecay         Decimal  @default(0.90) @db.Decimal(3, 2)
+  notes               String?  @db.Text
+  createdById         String
+  createdBy           User     @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([createdById])
+}
+
+model ForecastResult {
+  id                     String   @id @default(cuid())
+  year                   Int
+  parentSku              String
+  productName            String
+  abcClass               ABCClass
+  xyzClass               XYZClass
+  totalHistoricalQty     Int
+  totalHistoricalRevenue Decimal  @db.Decimal(15, 2)
+  avgMonthlyDemand       Decimal  @db.Decimal(10, 2)
+  coefficientOfVariation Decimal  @db.Decimal(5, 4)
+  forecastMonth1         Int      @default(0)
+  forecastMonth2         Int      @default(0)
+  forecastMonth3         Int      @default(0)
+  forecastMonth4         Int      @default(0)
+  forecastMonth5         Int      @default(0)
+  forecastMonth6         Int      @default(0)
+  forecastMonth7         Int      @default(0)
+  forecastMonth8         Int      @default(0)
+  forecastMonth9         Int      @default(0)
+  forecastMonth10        Int      @default(0)
+  forecastMonth11        Int      @default(0)
+  forecastMonth12        Int      @default(0)
+  forecastAnnual         Int      @default(0)
+  seasonalIndex1         Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex2         Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex3         Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex4         Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex5         Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex6         Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex7         Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex8         Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex9         Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex10        Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex11        Decimal  @default(1) @db.Decimal(5, 4)
+  seasonalIndex12        Decimal  @default(1) @db.Decimal(5, 4)
+  generatedAt            DateTime @default(now())
+
+  @@unique([year, parentSku])
+  @@index([year])
+  @@index([abcClass, xyzClass])
+}
+
+enum SalesChannel {
+  SHOPEE
+  TIKTOK
+}
+
+enum SalesHistoryStatus {
+  COMPLETED
+  CANCELLED
+  RETURNED
+}
+
+enum ABCClass {
+  A
+  B
+  C
+}
+
+enum XYZClass {
+  X
+  Y
+  Z
 }
 
 // ==========================================

@@ -102,6 +102,8 @@ export function CategoryTreeRow({
       ? formatPlanNumber(category.variance)
       : "—";
 
+  const isMasterLinked = !category.parentId && !!category.itemCategoryId;
+
   return (
     <>
       <tr className="border-b hover:bg-muted/40">
@@ -123,11 +125,19 @@ export function CategoryTreeRow({
             </button>
           )}
         </td>
-        <td className="p-2 font-medium" style={{ paddingLeft: 8 + depth * 24 }}>
+        <td
+          className={`p-2 font-medium ${isMasterLinked ? "text-muted-foreground" : ""}`}
+          style={{ paddingLeft: 8 + depth * 24 }}
+        >
           {depth > 0 && <span className="text-muted-foreground mr-1">↳</span>}
           {category.code}
         </td>
-        <td className="p-2 max-w-[200px] truncate">{category.name}</td>
+        <td
+          className={`p-2 max-w-[200px] truncate ${isMasterLinked ? "text-muted-foreground" : ""}`}
+          title={isMasterLinked ? category.itemCategoryName ?? category.name : undefined}
+        >
+          {category.name}
+        </td>
         <td className="p-2 text-right">
           {isParent && !isLeaf && onUpdateTarget ? (
             <Input

@@ -1,19 +1,14 @@
 /**
- * Simple TiDB/MySQL connection test.
- * Run: npm run db:test
+ * Simple TiDB/MySQL connection test using the same client wiring
+ * as the monorepo (`@elorae/db`).
  *
  * TiDB Cloud requires TLS and may need a longer connect timeout.
- * This script normalizes DATABASE_URL for TiDB (ssl=true, connectTimeout).
+ * This script relies on DATABASE_URL in the environment; it does not
+ * load .env files itself.
  */
-import { config } from "dotenv";
-import path from "path";
-
-// Load .env.local first, then .env (so local overrides)
-config({ path: path.join(process.cwd(), ".env.local") });
-config({ path: path.join(process.cwd(), ".env") });
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
-import { PrismaClient } from "@prisma/client";
-import { getDatabaseUrl } from "../lib/db-connection";
+import { PrismaClient } from "../generated/prisma/client";
+import { getDatabaseUrl } from "../src/db-connection";
 
 const url = getDatabaseUrl();
 if (!url) {

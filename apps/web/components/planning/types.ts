@@ -23,6 +23,9 @@ export type PlanCategoryDetail = {
   parentSharePercent: number | null;
   itemId: string | null;
   itemName: string | null;
+  itemCategoryId: string | null;
+  itemCategoryCode: string | null;
+  itemCategoryName: string | null;
   sortOrder: number;
   effectiveTarget: number;
   actualQty: number;

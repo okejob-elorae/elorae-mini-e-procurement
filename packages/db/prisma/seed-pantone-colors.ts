@@ -67,8 +67,8 @@ export async function seedPantoneColors(prisma: PrismaClient): Promise<void> {
 if (require.main === module) {
   import('dotenv/config').then(async () => {
     const { PrismaMariaDb } = await import('@prisma/adapter-mariadb');
-    const { PrismaClient } = await import('@prisma/client');
-    const { getDatabaseUrl } = await import('../lib/db-connection');
+    const { PrismaClient } = await import('../generated/prisma/client');
+    const { getDatabaseUrl } = await import('../src/db-connection');
     const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL!);
     const prisma = new PrismaClient({ adapter });
     try {

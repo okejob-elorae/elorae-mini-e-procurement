@@ -25,6 +25,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
+    "seed:pantone": "tsx prisma/seed-pantone-colors.ts",
     "seed:production-login": "tsx prisma/seed-production-login.ts",
     "test:connection": "tsx prisma/test-connection.ts",
     "postinstall": "prisma generate"

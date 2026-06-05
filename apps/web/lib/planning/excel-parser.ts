@@ -10,6 +10,7 @@ export interface ParsedPlanExcelRow {
   targetQty?: number | null;
   parentSharePercent?: number | null;
   itemSku?: string | null;
+  itemCategoryCode?: string | null;
 }
 
 export interface ParsePlanExcelResult {
@@ -37,6 +38,9 @@ const HEADER_ALIASES: Record<string, keyof Omit<ParsedPlanExcelRow, "rowNumber">
   itemsku: "itemSku",
   sku: "itemSku",
   item: "itemSku",
+  itemcategorycode: "itemCategoryCode",
+  categorycode: "itemCategoryCode",
+  kategoricode: "itemCategoryCode",
 };
 
 function normalizeHeader(value: unknown): string {
@@ -94,6 +98,9 @@ export function parsePlanExcelBuffer(buffer: Buffer): ParsePlanExcelResult {
       targetQty: toOptionalNumber(record.targetQty),
       parentSharePercent: toOptionalNumber(record.parentSharePercent),
       itemSku: record.itemSku ? String(record.itemSku).trim() : undefined,
+      itemCategoryCode: record.itemCategoryCode
+        ? String(record.itemCategoryCode).trim()
+        : undefined,
     };
 
     if (!candidate.code && !candidate.name) return;
@@ -115,6 +122,7 @@ export function parsePlanExcelBuffer(buffer: Buffer): ParsePlanExcelResult {
 
 export function buildPlanTemplateWorkbook(): Buffer {
   const headers = [
+    "itemCategoryCode",
     "code",
     "name",
     "description",
@@ -124,8 +132,8 @@ export function buildPlanTemplateWorkbook(): Buffer {
     "itemSku",
   ];
   const example = [
-    ["KSM", "KAOS MAN", "Parent category", "", 54000, "", ""],
-    ["JK_RK", "JUNKIES REGULER", "", "KSM", "", 50, "SKU-001"],
+    ["KSM", "KSM", "KAOS MAN", "Parent category", "", 54000, "", ""],
+    ["", "JK_RK", "JUNKIES REGULER", "", "KSM", "", 50, "SKU-001"],
   ];
   const ws = XLSX.utils.aoa_to_sheet([headers, ...example]);
   const wb = XLSX.utils.book_new();

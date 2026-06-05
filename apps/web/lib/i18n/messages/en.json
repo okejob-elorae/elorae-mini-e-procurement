@@ -49,6 +49,7 @@
     "registerNotaCmt": "Register Nota CMT",
     "production": "Production",
     "navProductionPlanning": "Plan Kerja",
+    "navForecast": "Forecast & S&OP",
     "navProductionColors": "Colors",
     "navProductionColorsAll": "All Colors",
     "navProductionColorsFavorites": "Favorites",
@@ -803,6 +804,15 @@
     "titleAll": "All Colors",
     "titleFavorites": "Favorites",
     "titlePhotoAnalyzer": "Photo Analyzer",
+    "tabs": {
+      "all": "All Colors",
+      "favorites": "Favorites",
+      "photoAnalyzer": "Photo Analyzer"
+    },
+    "filtersTitle": "Filters",
+    "searchButton": "Search",
+    "colorCount": "{count, number} colors",
+    "favoriteError": "Could not update favorite",
     "subtitle": "Pantone TCX color library",
     "searchPlaceholder": "Search name, TCX code, or HEX…",
     "clearFilters": "Clear filters",
@@ -848,7 +858,8 @@
       "rincian": "Plan Details",
       "warna": "Color Allocation",
       "jahitan": "CMT Distribution",
-      "aksesoris": "Accessories"
+      "aksesoris": "Accessories",
+      "emptyNoLeafCategories": "No leaf categories yet. Add sub-types on the Fill Grid tab."
     },
     "fields": {
       "year": "Year",
@@ -863,7 +874,11 @@
       "sharePercent": "Share %",
       "effectiveTarget": "Effective Target",
       "linkItem": "Link Item",
-      "selectItem": "Select item (optional)"
+      "selectItem": "Select item (optional)",
+      "itemCategory": "Item category",
+      "selectItemCategory": "Select item category…",
+      "itemCategoryRequired": "Select an item category",
+      "itemCategoryAlreadyUsed": "This item category is already in the plan year"
     },
     "monthly": {
       "title": "Monthly Distribution",
@@ -900,7 +915,7 @@
       "noWOPermission": "You don't have permission to create Work Orders."
     },
     "categories": {
-      "addParent": "Add new type row",
+      "addParent": "Add type from item category",
       "addChild": "Add sub-type to {parentCode}",
       "unallocated": "({percent}% unallocated)",
       "deleteConfirm": "Delete {code}? All related data will be removed."
@@ -929,7 +944,88 @@
       "edit": "Edit",
       "delete": "Delete",
       "importExcel": "Import Excel",
-      "downloadTemplate": "Download Template"
+      "downloadTemplate": "Download Template",
+      "suggestBom": "Suggest from BOM"
+    }
+  },
+  "forecast": {
+    "title": "Forecast & S&OP",
+    "subtitle": "Demand forecasting & production planning",
+    "tabs": {
+      "overview": "Overview",
+      "articles": "Per Article",
+      "abc": "ABC-XYZ Matrix",
+      "planBridge": "→ Plan Kerja"
+    },
+    "import": {
+      "title": "Import Sales Data",
+      "channel": "Channel",
+      "period": "Period",
+      "upload": "Upload & Import",
+      "history": "Import History",
+      "coverage": "Data Coverage",
+      "seasonalReady": "Enough data for seasonal analysis",
+      "seasonalNotReady": "Need at least 12 months of data",
+      "deleteConfirm": "Delete {channel} {period} import? {count} rows will be removed.",
+      "alreadyExists": "Data for {channel} {period} already imported. Delete the existing import to re-import.",
+      "success": "{imported} rows imported, {skipped} skipped.",
+      "goToImport": "Import Data"
+    },
+    "config": {
+      "growth": "Growth Factor (%)",
+      "lookback": "Lookback (months)",
+      "decay": "Weight Decay",
+      "notes": "Notes",
+      "run": "Run Forecast",
+      "running": "Running forecast...",
+      "editConfig": "Edit Config",
+      "year": "Forecast year"
+    },
+    "results": {
+      "annual": "Annual Forecast",
+      "avgMonthly": "Avg/Month",
+      "totalArticles": "Total Articles",
+      "planTarget": "Plan Target",
+      "noPlan": "No plan yet",
+      "dataCoverage": "Data Coverage",
+      "months": "months"
+    },
+    "abc": {
+      "A": "High Revenue",
+      "B": "Mid Revenue",
+      "C": "Low Revenue"
+    },
+    "xyz": {
+      "X": "Stable",
+      "Y": "Variable",
+      "Z": "Erratic"
+    },
+    "recommendations": {
+      "AX": "Produce to stock. Forecast reliable.",
+      "AY": "Forecast with safety buffer.",
+      "BX": "Forecast with safety buffer.",
+      "AZ": "Forecast cautiously. Keep buffer.",
+      "BY": "Forecast cautiously. Keep buffer.",
+      "CX": "Low priority. Produce if convenient.",
+      "BZ": "Low priority. Safety stock optional.",
+      "CY": "Produce to order. Do not stock.",
+      "CZ": "Produce to order only. Do not stock."
+    },
+    "bridge": {
+      "title": "Suggestions to Plan Kerja",
+      "generate": "Generate Suggestions",
+      "apply": "Apply to Plan Kerja",
+      "applied": "{count} targets applied to Plan Kerja {year}.",
+      "note": "Only annual root category targets are set. Monthly distribution, colors, and vendors remain managed in Plan Kerja.",
+      "create": "Create",
+      "update": "Update",
+      "skip": "Skip",
+      "planYear": "Target Plan Year",
+      "selectCategory": "Select item category",
+      "forecast": "Forecast",
+      "planNow": "Plan Now",
+      "delta": "Delta",
+      "action": "Action"
     }
   }
 }

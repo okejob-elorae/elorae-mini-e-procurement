@@ -8,8 +8,9 @@ export const createPlanYearSchema = z.object({
 export const createPlanCategorySchema = z
   .object({
     planYearId: z.string().min(1),
-    code: z.string().min(1).max(50),
-    name: z.string().min(1).max(200),
+    code: z.string().min(1).max(50).optional(),
+    name: z.string().min(1).max(200).optional(),
+    itemCategoryId: z.string().optional().nullable(),
     description: z.string().optional(),
     parentId: z.string().optional().nullable(),
     targetQty: z.number().int().min(0).optional().nullable(),
@@ -18,6 +19,13 @@ export const createPlanCategorySchema = z
   })
   .superRefine((data, ctx) => {
     if (!data.parentId) {
+      if (!data.itemCategoryId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Parent category requires itemCategoryId",
+          path: ["itemCategoryId"],
+        });
+      }
       if (data.targetQty == null || data.targetQty < 0) {
         ctx.addIssue({
           code: "custom",
@@ -33,6 +41,27 @@ export const createPlanCategorySchema = z
         });
       }
     } else {
+      if (!data.code) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Child category requires code",
+          path: ["code"],
+        });
+      }
+      if (!data.name) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Child category requires name",
+          path: ["name"],
+        });
+      }
+      if (data.itemCategoryId) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Child cannot link to item category master",
+          path: ["itemCategoryId"],
+        });
+      }
       if (data.parentSharePercent == null || data.parentSharePercent <= 0) {
         ctx.addIssue({
           code: "custom",
@@ -124,6 +153,7 @@ export const excelPlanRowSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   parentCode: z.string().optional(),
+  itemCategoryCode: z.string().optional(),
   targetQty: z.number().optional().nullable(),
   parentSharePercent: z.number().optional().nullable(),
   itemSku: z.string().optional().nullable(),

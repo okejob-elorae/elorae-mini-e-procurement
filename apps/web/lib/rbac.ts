@@ -58,6 +58,8 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/inventory': 'inventory:view',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
+  '/backoffice/forecast': 'forecast:view',
+  '/backoffice/forecast/import': 'forecast:manage',
   '/backoffice/production/planning': 'production_planning:view',
   '/backoffice/production/colors': 'production_colors:view',
   '/backoffice/vendor-returns': 'vendor_returns:view',
@@ -90,6 +92,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/supplier-payments',
   '/backoffice/inventory',
   '/backoffice/work-orders',
+  '/backoffice/forecast',
   '/backoffice/production/planning',
   '/backoffice/production/colors',
   '/backoffice/vendor-returns',
@@ -180,6 +183,9 @@ export const PERMISSIONS = {
   NOTA_REGISTER_VIEW: 'nota_register:view',
   // Production Colors (Pantone TCX)
   PRODUCTION_COLORS_VIEW: 'production_colors:view',
+  // S&OP Forecast
+  FORECAST_VIEW: 'forecast:view',
+  FORECAST_MANAGE: 'forecast:manage',
   // Production Planning (Plan Kerja)
   PRODUCTION_PLANNING_VIEW: 'production_planning:view',
   PRODUCTION_PLANNING_MANAGE: 'production_planning:manage',

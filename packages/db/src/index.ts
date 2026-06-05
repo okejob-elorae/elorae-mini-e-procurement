@@ -8,10 +8,32 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-export const prisma =
-  globalForPrisma.prisma ?? new PrismaClient({ adapter });
+/** Delegate that must exist after Plan Kerja schema; used to detect stale dev singletons. */
+function hasPlanningDelegates(client: PrismaClient): boolean {
+  return typeof (client as PrismaClient & { planYear?: unknown }).planYear !== "undefined";
+}
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+function createPrismaClient(): PrismaClient {
+  return new PrismaClient({ adapter });
+}
+
+function getPrismaClient(): PrismaClient {
+  const cached = globalForPrisma.prisma;
+  if (cached && !hasPlanningDelegates(cached)) {
+    void cached.$disconnect().catch(() => {});
+    globalForPrisma.prisma = undefined;
+  }
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient();
+  }
+  return globalForPrisma.prisma;
+}
+
+export const prisma = getPrismaClient();
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}
 
 export * from "../generated/prisma/client";
 export { getDatabaseUrl } from "./db-connection";

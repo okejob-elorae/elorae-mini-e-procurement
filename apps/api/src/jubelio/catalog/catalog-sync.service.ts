@@ -18,6 +18,9 @@ export type SyncCatalogOptions = {
   itemGroupIds?: number[];
 };
 
+/** Per-item persist upserts many Jubelio mappings; Prisma default tx timeout (5s) is too low. */
+const CATALOG_PERSIST_TX_OPTIONS = { maxWait: 10_000, timeout: 60_000 };
+
 @Injectable()
 export class JubelioCatalogSyncService {
   private readonly logger = new Logger(JubelioCatalogSyncService.name);
@@ -202,24 +205,27 @@ export class JubelioCatalogSyncService {
     const variantsJson = draft.variants as Prisma.InputJsonValue;
 
     if (!existing) {
-      await this.prisma.$transaction(async (tx) => {
-        const item = await createItemFromIngest(tx, {
-          sku: draft.itemSku,
-          nameId: draft.nameId,
-          nameEn: draft.nameEn,
-          description: draft.description ?? null,
-          type: ItemType.FINISHED_GOOD,
-          uomId,
-          categoryId: draft.categoryId,
-          variants: draft.variantless ? [] : variantsJson,
-          isActive: true,
-          reorderPoint: null,
-          overReceiveThreshold: null,
-          sellingPrice,
-        });
-        await this.ensureInventoryRows(tx, item.id, draft);
-        await this.upsertMappings(tx, item.id, draft);
-      });
+      await this.prisma.$transaction(
+        async (tx) => {
+          const item = await createItemFromIngest(tx, {
+            sku: draft.itemSku,
+            nameId: draft.nameId,
+            nameEn: draft.nameEn,
+            description: draft.description ?? null,
+            type: ItemType.FINISHED_GOOD,
+            uomId,
+            categoryId: draft.categoryId,
+            variants: draft.variantless ? [] : variantsJson,
+            isActive: true,
+            reorderPoint: null,
+            overReceiveThreshold: null,
+            sellingPrice,
+          });
+          await this.ensureInventoryRows(tx, item.id, draft);
+          await this.upsertMappings(tx, item.id, draft);
+        },
+        CATALOG_PERSIST_TX_OPTIONS,
+      );
       return { action: "create", warnings };
     }
 
@@ -231,17 +237,20 @@ export class JubelioCatalogSyncService {
       );
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await updateItemFromIngest(tx, { id: existing.id }, {
-        nameId: draft.nameId,
-        nameEn: draft.nameEn,
-        description: draft.description ?? existing.description,
-        variants: draft.variantless ? [] : (merged as Prisma.InputJsonValue),
-        sellingPrice,
-      });
-      await this.ensureInventoryRows(tx, existing.id, draft);
-      await this.upsertMappings(tx, existing.id, draft);
-    });
+    await this.prisma.$transaction(
+      async (tx) => {
+        await updateItemFromIngest(tx, { id: existing.id }, {
+          nameId: draft.nameId,
+          nameEn: draft.nameEn,
+          description: draft.description ?? existing.description,
+          variants: draft.variantless ? [] : (merged as Prisma.InputJsonValue),
+          sellingPrice,
+        });
+        await this.ensureInventoryRows(tx, existing.id, draft);
+        await this.upsertMappings(tx, existing.id, draft);
+      },
+      CATALOG_PERSIST_TX_OPTIONS,
+    );
 
     return { action: "update", warnings };
   }
