@@ -120,7 +120,7 @@ export class ProductPushHandler implements OutboxHandler {
     const removed = mappings.filter((m) => !desiredSkuSet.has(m.erpVariantSku));
     if (removed.length > 0) {
       await this.http.delete("/inventory/items/item-variant/", {
-        body: JSON.stringify(removed.map((m) => m.jubelioItemId)),
+        body: JSON.stringify({ ids: removed.map((m) => m.jubelioItemId) }),
         headers: { "Content-Type": "application/json" },
       });
       await this.prisma.jubelioProductMapping.deleteMany({

@@ -198,7 +198,7 @@ describe("ProductPushHandler", () => {
     await handler.handle(row() as any);
 
     expect(http.delete).toHaveBeenCalledWith("/inventory/items/item-variant/", expect.objectContaining({
-      body: JSON.stringify([12]),
+      body: JSON.stringify({ ids: [12] }),
     }));
     expect(prisma.jubelioProductMapping.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ["m2"] } },
