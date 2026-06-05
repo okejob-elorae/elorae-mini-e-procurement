@@ -1182,7 +1182,7 @@ model JubelioCategoryMapping {
   itemCategory      ItemCategory @relation(fields: [itemCategoryId], references: [id], onDelete: Cascade)
   createdAt         DateTime     @default(now())
 
-  @@index([itemCategoryId])
+  @@unique([itemCategoryId])
 }
 
 model JubelioApiCall {
