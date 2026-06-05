@@ -72,6 +72,18 @@ export type CreateProductRequestBody = {
   item_category_id: number;
   store_priority_qty_treshold: number;
   package_weight: number;
+  package_content: string | null;
+  package_height: number | null;
+  package_width: number | null;
+  package_length: number | null;
+  lead_time: string;
+  min: number;
+  max: number;
+  use_batch_number: boolean;
+  images: Array<unknown>;
+  variation_images: Array<unknown>;
+  variations: Array<unknown>;
+  unlimited_stock_store_ids: Array<number> | null;
   sell_price: number;
   buy_price: number;
   brand_id: string | null;
@@ -141,6 +153,18 @@ export function buildCreateProductRequest(opts: {
     item_category_id: categoryJubelioId,
     store_priority_qty_treshold: d.storePriorityQtyTreshold,
     package_weight: d.packageWeight,
+    package_content: null,
+    package_height: null,
+    package_width: null,
+    package_length: null,
+    lead_time: "0",
+    min: 0,
+    max: 0,
+    use_batch_number: false,
+    images: [],
+    variation_images: [],
+    variations: [],
+    unlimited_stock_store_ids: null,
     sell_price: sellPrice,
     buy_price: d.buyPrice,
     brand_id: d.brandId,
