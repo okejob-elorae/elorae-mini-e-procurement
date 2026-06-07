@@ -2,8 +2,6 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
 
-const PAGE_SIZE = 100;
-
 type JubelioCategoryRaw = {
   category_id: number;
   category_name: string;
@@ -33,17 +31,12 @@ export class JubelioCategoriesService {
   ) {}
 
   async fetchAll(): Promise<JubelioCategoryFlat[]> {
-    const all: JubelioCategoryRaw[] = [];
-    let page = 1;
-    while (true) {
-      const batch = await this.http.get<JubelioCategoryRaw[]>(
-        "/inventory/categories/item-categories/",
-        { query: { page, pageSize: PAGE_SIZE } },
-      );
-      all.push(...batch);
-      if (batch.length < PAGE_SIZE) break;
-      page++;
-    }
+    // Jubelio's /inventory/categories/item-categories/ returns the full tree in a single
+    // response and ignores `page` / `pageSize` query params. Pagination here is a no-op
+    // and would loop forever (length always >= pageSize). Single call only.
+    const all = await this.http.get<JubelioCategoryRaw[]>(
+      "/inventory/categories/item-categories/",
+    );
 
     const byId = new Map<number, JubelioCategoryRaw>(all.map((c) => [c.category_id, c]));
     const pathCache = new Map<number, string>();

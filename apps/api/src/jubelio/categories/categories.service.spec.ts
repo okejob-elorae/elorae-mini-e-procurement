@@ -25,16 +25,14 @@ describe("JubelioCategoriesService", () => {
   });
 
   describe("fetchAll", () => {
-    it("paginates until response length < pageSize", async () => {
-      const page1 = Array.from({ length: 100 }, (_, i) => ({ category_id: i + 1, category_name: `C${i + 1}`, parent_id: null, has_children: false }));
-      const page2 = Array.from({ length: 47 }, (_, i) => ({ category_id: 200 + i, category_name: `D${i}`, parent_id: null, has_children: false }));
-      http.get.mockResolvedValueOnce(page1).mockResolvedValueOnce(page2);
+    it("fetches the full list in a single call (Jubelio ignores pagination params)", async () => {
+      const fullList = Array.from({ length: 147 }, (_, i) => ({ category_id: i + 1, category_name: `C${i + 1}`, parent_id: null, has_children: false }));
+      http.get.mockResolvedValueOnce(fullList);
 
       const result = await svc.fetchAll();
 
-      expect(http.get).toHaveBeenCalledTimes(2);
-      expect(http.get).toHaveBeenNthCalledWith(1, "/inventory/categories/item-categories/", expect.objectContaining({ query: expect.objectContaining({ page: 1, pageSize: 100 }) }));
-      expect(http.get).toHaveBeenNthCalledWith(2, "/inventory/categories/item-categories/", expect.objectContaining({ query: expect.objectContaining({ page: 2, pageSize: 100 }) }));
+      expect(http.get).toHaveBeenCalledTimes(1);
+      expect(http.get).toHaveBeenCalledWith("/inventory/categories/item-categories/");
       expect(result).toHaveLength(147);
     });
 
