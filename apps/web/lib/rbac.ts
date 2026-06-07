@@ -70,6 +70,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/settings/uom': 'settings_uom:view',
   '/backoffice/settings/security': 'settings_security:view',
   '/backoffice/settings/jubelio': 'settings_security:view',
+  '/backoffice/settings/jubelio/categories': 'settings_security:view',
   '/backoffice/settings/rbac': 'settings_rbac:view',
   '/backoffice/jubelio/admin': 'jubelio_admin:view',
   // API routes
@@ -103,6 +104,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/settings/uom',
   '/backoffice/settings/security',
   '/backoffice/settings/jubelio',
+  '/backoffice/settings/jubelio/categories',
   '/backoffice/settings/rbac',
 ];
 

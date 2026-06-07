@@ -230,6 +230,10 @@
       "colParentSku": "SKU induk",
       "colAction": "Aksi",
       "colVariants": "Varian"
+    },
+    "jubelioCategories": {
+      "title": "Kategori Jubelio",
+      "description": "Petakan kategori item Elorae ke kategori Jubelio untuk push produk."
     }
   },
   "tax": {

@@ -230,6 +230,10 @@
       "colParentSku": "Parent SKU",
       "colAction": "Action",
       "colVariants": "Variants"
+    },
+    "jubelioCategories": {
+      "title": "Jubelio Categories",
+      "description": "Map Elorae item categories to Jubelio categories for product push."
     }
   },
   "tax": {
