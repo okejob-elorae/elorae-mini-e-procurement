@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
 
@@ -85,7 +85,17 @@ export class JubelioCategoriesService {
         update: { jubelioCategoryId: r.jubelioCategoryId },
       }),
     );
-    await this.prisma.$transaction(ops);
+    try {
+      await this.prisma.$transaction(ops);
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (code === "P2002") {
+        throw new ConflictException(
+          "One of the chosen Jubelio category ids is already mapped to another ERP category.",
+        );
+      }
+      throw err;
+    }
 
     return { saved: rows.length };
   }

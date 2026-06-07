@@ -93,13 +93,14 @@ describe("JubelioCategoriesService", () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it("rethrows on prisma P2002", async () => {
-      prisma.jubelioCategoryMapping.upsert.mockRejectedValueOnce(
+    it("translates prisma P2002 into ConflictException", async () => {
+      const { ConflictException } = await import("@nestjs/common");
+      prisma.$transaction.mockRejectedValueOnce(
         Object.assign(new Error("Unique constraint"), { code: "P2002" }),
       );
       await expect(
         svc.saveMappings([{ itemCategoryId: "cat_a", jubelioCategoryId: 7278 }]),
-      ).rejects.toThrow(/Unique constraint/);
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 });
