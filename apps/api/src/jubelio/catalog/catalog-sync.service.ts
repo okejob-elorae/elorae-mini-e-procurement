@@ -21,6 +21,30 @@ export type SyncCatalogOptions = {
 /** Per-item persist upserts many Jubelio mappings; Prisma default tx timeout (5s) is too low. */
 const CATALOG_PERSIST_TX_OPTIONS = { maxWait: 10_000, timeout: 60_000 };
 
+const CONCURRENCY = 8;
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<Array<{ ok: true; value: R } | { ok: false; error: unknown }>> {
+  const results: Array<{ ok: true; value: R } | { ok: false; error: unknown }> = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      try {
+        results[i] = { ok: true, value: await fn(items[i], i) };
+      } catch (error) {
+        results[i] = { ok: false, error };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
+
 @Injectable()
 export class JubelioCatalogSyncService {
   private readonly logger = new Logger(JubelioCatalogSyncService.name);
@@ -53,20 +77,31 @@ export class JubelioCatalogSyncService {
     const items: CatalogSyncItemResult[] = [];
     const errors: CatalogSyncError[] = [];
 
-    let processed = 0;
-    for (const draft of drafts) {
-      try {
-        if (!dryRun && !uomId) throw new Error("UOM PCS missing");
-        const { action, warnings } = await this.persistDraft(draft, uomId, dryRun);
-        processed++;
-        if (!dryRun && processed % 25 === 0) {
-          this.logger.log(`${processed}/${drafts.length} items processed`);
-        }
+    // Fix 2: bulk prefetch all existing items in one query
+    const allSkus = drafts.map((d) => d.itemSku);
+    const existingItems = !dryRun
+      ? await this.prisma.item.findMany({
+          where: { sku: { in: allSkus } },
+          select: { id: true, sku: true, description: true, variants: true },
+        })
+      : [];
+    const existingBySku = new Map(existingItems.map((it) => [it.sku, it]));
+
+    // Fix 1: bounded parallel draft processing
+    const settled = await mapWithConcurrency(drafts, CONCURRENCY, async (draft) => {
+      if (!dryRun && !uomId) throw new Error("UOM PCS missing");
+      return this.persistDraft(draft, uomId, dryRun, existingBySku);
+    });
+
+    for (let i = 0; i < settled.length; i++) {
+      const result = settled[i];
+      const draft = drafts[i];
+      if (result.ok) {
+        const { action, warnings } = result.value;
         summary.warnings.push(...warnings);
         if (action === "create") summary.created++;
         else if (action === "update") summary.updated++;
         else summary.skipped++;
-
         items.push({
           parentSku: draft.parentSku,
           itemSku: draft.itemSku,
@@ -74,12 +109,12 @@ export class JubelioCatalogSyncService {
           variantCount: draft.variantless ? 0 : draft.variants.length,
           variantless: draft.variantless,
         });
-      } catch (e) {
+      } else {
         summary.errors++;
         errors.push({
           parentSku: draft.itemSku,
           jubelioItemGroupId: draft.jubelioItemGroupId,
-          message: e instanceof Error ? e.message : String(e),
+          message: result.error instanceof Error ? result.error.message : String(result.error),
         });
       }
     }
@@ -125,6 +160,7 @@ export class JubelioCatalogSyncService {
     return { merged: Array.from(mergedMap.values()), orphaned };
   }
 
+  // Fix 4: createMany skipDuplicates — eliminates per-variant findUnique/findMany round trips
   private async ensureInventoryRows(
     tx: Prisma.TransactionClient,
     itemId: string,
@@ -133,69 +169,63 @@ export class JubelioCatalogSyncService {
     const zeroRow = { qtyOnHand: 0, avgCost: 0, totalValue: 0 };
 
     if (draft.variantless) {
-      const existing = await tx.inventoryValue.findUnique({
-        where: { itemId_variantSku: { itemId, variantSku: "" } },
+      await tx.inventoryValue.createMany({
+        data: [{ itemId, variantSku: "", ...zeroRow }],
+        skipDuplicates: true,
       });
-      if (!existing) {
-        await tx.inventoryValue.create({ data: { itemId, variantSku: "", ...zeroRow } });
-      }
       return;
     }
 
     if (draft.variants.length === 0) return;
 
-    const existing = await tx.inventoryValue.findMany({
-      where: { itemId },
-      select: { variantSku: true },
+    await tx.inventoryValue.createMany({
+      data: draft.variants.map((v) => ({ itemId, variantSku: v.sku, ...zeroRow })),
+      skipDuplicates: true,
     });
-    const have = new Set(existing.map((r) => r.variantSku ?? ""));
-
-    const toCreate = draft.variants
-      .filter((v) => !have.has(v.sku))
-      .map((v) => ({ itemId, variantSku: v.sku, ...zeroRow }));
-
-    if (toCreate.length > 0) {
-      await tx.inventoryValue.createMany({ data: toCreate });
-    }
   }
 
+  // Fix 3: parallel upserts within the same transaction
   private async upsertMappings(
     tx: Prisma.TransactionClient,
     itemId: string,
     draft: CatalogItemDraft,
   ): Promise<void> {
     const now = new Date();
-    for (const sv of draft.sourceVariants) {
-      await tx.jubelioProductMapping.upsert({
-        where: { jubelioItemId: sv.jubelioItemId },
-        create: {
-          itemId,
-          jubelioItemGroupId: sv.jubelioItemGroupId,
-          jubelioItemId: sv.jubelioItemId,
-          jubelioItemCode: sv.jubelioItemCode,
-          erpVariantSku: draft.variantless ? "" : sv.erpVariantSku,
-          lastSyncedAt: now,
-          jubelioLastModified: draft.jubelioLastModified,
-        },
-        update: {
-          itemId,
-          jubelioItemGroupId: sv.jubelioItemGroupId,
-          jubelioItemCode: sv.jubelioItemCode,
-          erpVariantSku: draft.variantless ? "" : sv.erpVariantSku,
-          lastSyncedAt: now,
-          jubelioLastModified: draft.jubelioLastModified,
-        },
-      });
-    }
+    await Promise.all(
+      draft.sourceVariants.map((sv) =>
+        tx.jubelioProductMapping.upsert({
+          where: { jubelioItemId: sv.jubelioItemId },
+          create: {
+            itemId,
+            jubelioItemGroupId: sv.jubelioItemGroupId,
+            jubelioItemId: sv.jubelioItemId,
+            jubelioItemCode: sv.jubelioItemCode,
+            erpVariantSku: draft.variantless ? "" : sv.erpVariantSku,
+            lastSyncedAt: now,
+            jubelioLastModified: draft.jubelioLastModified,
+          },
+          update: {
+            itemId,
+            jubelioItemGroupId: sv.jubelioItemGroupId,
+            jubelioItemCode: sv.jubelioItemCode,
+            erpVariantSku: draft.variantless ? "" : sv.erpVariantSku,
+            lastSyncedAt: now,
+            jubelioLastModified: draft.jubelioLastModified,
+          },
+        }),
+      ),
+    );
   }
 
   private async persistDraft(
     draft: CatalogItemDraft,
     uomId: string,
     dryRun: boolean,
+    existingBySku: Map<string, { id: string; sku: string; description: string | null; variants: Prisma.JsonValue }>,
   ): Promise<{ action: "create" | "update" | "skip"; warnings: string[] }> {
     const warnings: string[] = [];
-    const existing = await this.prisma.item.findUnique({ where: { sku: draft.itemSku } });
+    // Fix 2: use prefetched map instead of per-draft findUnique
+    const existing = existingBySku.get(draft.itemSku) ?? null;
 
     if (dryRun) {
       return { action: existing ? "update" : "create", warnings };
