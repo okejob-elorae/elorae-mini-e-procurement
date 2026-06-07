@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
-import { apiFetch } from "@/lib/internal-api";
+import { apiFetch, extractApiMessage } from "@/lib/internal-api";
 
 export type CategoryMappingRow = {
   erpCategoryId: string;
@@ -57,7 +57,7 @@ export async function fetchJubelioCategoryList(): Promise<JubelioCategoryFlat[]>
     userId: session.user.id,
   });
   if (!r.ok) {
-    throw new Error(`Failed to load Jubelio categories (${r.status}): ${(r.error ?? "").slice(0, 200)}`);
+    throw new Error(extractApiMessage(r.error, `Failed to load Jubelio categories (${r.status})`));
   }
   return r.data ?? [];
 }
@@ -74,7 +74,7 @@ export async function saveJubelioCategoryMappings(
     body: { mappings },
   });
   if (!r.ok) {
-    throw new Error(`Save failed (${r.status}): ${(r.error ?? "").slice(0, 300)}`);
+    throw new Error(extractApiMessage(r.error, `Save failed (${r.status})`));
   }
   revalidatePath("/backoffice/settings/jubelio/categories");
   return r.data ?? { saved: 0 };

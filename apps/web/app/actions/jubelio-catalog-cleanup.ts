@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
-import { apiFetch } from "@/lib/internal-api";
+import { apiFetch, extractApiMessage } from "@/lib/internal-api";
 
 export type CatalogDeleteResult = {
   jubelioGroupId: number;
@@ -22,7 +22,7 @@ export async function deleteJubelioProduct(
     body: { jubelioGroupId },
   });
   if (!r.ok) {
-    throw new Error(`Delete failed (${r.status}): ${(r.error ?? "").slice(0, 200)}`);
+    throw new Error(extractApiMessage(r.error, `Delete failed (${r.status})`));
   }
   revalidatePath("/backoffice/settings/jubelio");
   return r.data as CatalogDeleteResult;
