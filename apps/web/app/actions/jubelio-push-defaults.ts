@@ -70,6 +70,6 @@ export async function saveJubelioPushDefaults(
       updatedById: session.user.id,
     },
   });
-  revalidatePath("/backoffice/settings/jubelio");
+  revalidatePath("/backoffice/jubelio/settings");
   return serialize(row);
 }

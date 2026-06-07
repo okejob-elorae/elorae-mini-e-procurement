@@ -1,5 +1,23 @@
 import { createHmac } from "node:crypto";
 
+/**
+ * Pull a human-friendly message out of an apiFetch error body.
+ * Nest's HttpException serializes as `{statusCode, error, message}` — return `.message`.
+ * Falls back to a truncated raw body, then to the supplied default.
+ */
+export function extractApiMessage(raw: string | undefined, fallback: string): string {
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw) as { message?: unknown };
+    if (typeof parsed.message === "string" && parsed.message.length > 0) {
+      return parsed.message;
+    }
+  } catch {
+    // not JSON — fall through
+  }
+  return raw.slice(0, 300);
+}
+
 function getSecret(): string {
   const s = process.env.INTERNAL_API_SECRET;
   if (!s) {

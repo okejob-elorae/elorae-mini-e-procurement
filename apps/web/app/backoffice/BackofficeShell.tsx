@@ -171,10 +171,15 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.AUDIT_TRAIL_VIEW,
   },
   {
-    labelKey: 'jubelioAdmin',
+    labelKey: 'jubelio',
     href: '/backoffice/jubelio/admin',
     icon: Activity,
     permission: PERMISSIONS.JUBELIO_ADMIN_VIEW,
+    children: [
+      { labelKey: 'navJubelioAdmin', href: '/backoffice/jubelio/admin', permission: PERMISSIONS.JUBELIO_ADMIN_VIEW },
+      { labelKey: 'navJubelioSettings', href: '/backoffice/jubelio/settings', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
+      { labelKey: 'navJubelioCategories', href: '/backoffice/jubelio/categories', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
+    ],
   },
   {
     labelKey: 'settings',
@@ -230,6 +235,7 @@ function Sidebar({
     if (path.startsWith('/backoffice/forecast') || path.startsWith('/backoffice/production')) {
       return '/backoffice/production/planning';
     }
+    if (path.startsWith('/backoffice/jubelio')) return '/backoffice/jubelio/admin';
     return null;
   };
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));

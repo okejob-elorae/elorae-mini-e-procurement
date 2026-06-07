@@ -69,9 +69,10 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/settings/tax': 'settings_tax:view',
   '/backoffice/settings/uom': 'settings_uom:view',
   '/backoffice/settings/security': 'settings_security:view',
-  '/backoffice/settings/jubelio': 'settings_security:view',
   '/backoffice/settings/rbac': 'settings_rbac:view',
   '/backoffice/jubelio/admin': 'jubelio_admin:view',
+  '/backoffice/jubelio/settings': 'settings_security:view',
+  '/backoffice/jubelio/categories': 'settings_security:view',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
@@ -98,11 +99,13 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/vendor-returns',
   '/backoffice/reports/hpp',
   '/backoffice/audit-trail',
+  '/backoffice/jubelio/admin',
+  '/backoffice/jubelio/settings',
+  '/backoffice/jubelio/categories',
   '/backoffice/settings/documents',
   '/backoffice/settings/tax',
   '/backoffice/settings/uom',
   '/backoffice/settings/security',
-  '/backoffice/settings/jubelio',
   '/backoffice/settings/rbac',
 ];
 

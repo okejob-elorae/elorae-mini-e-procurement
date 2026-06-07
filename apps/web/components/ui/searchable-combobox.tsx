@@ -36,6 +36,8 @@ export interface SearchableComboboxProps {
   triggerClassName?: string;
 }
 
+const MAX_VISIBLE = 100;
+
 export function SearchableCombobox({
   options,
   value,
@@ -50,9 +52,19 @@ export function SearchableCombobox({
   triggerClassName,
 }: SearchableComboboxProps) {
   const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
 
   const selectedOption = options.find((opt) => opt.value === value);
   const displayLabel = selectedOption ? selectedOption.label : placeholder;
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((opt) => opt.label.toLowerCase().includes(q));
+  }, [options, query]);
+
+  const visible = filtered.slice(0, MAX_VISIBLE);
+  const truncated = filtered.length > MAX_VISIBLE;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -79,12 +91,16 @@ export function SearchableCombobox({
         className="w-[var(--radix-popover-trigger-width)] min-w-[8rem] p-0"
         align="start"
       >
-        <Command>
-          <CommandInput placeholder={searchPlaceholder} />
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={searchPlaceholder}
+            value={query}
+            onValueChange={setQuery}
+          />
           <CommandList>
             <CommandEmpty>{emptyMessage}</CommandEmpty>
             <CommandGroup>
-              {options.map((opt) => (
+              {visible.map((opt) => (
                 <CommandItem
                   key={opt.value}
                   value={opt.label}
@@ -103,6 +119,11 @@ export function SearchableCombobox({
                 </CommandItem>
               ))}
             </CommandGroup>
+            {truncated && (
+              <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+                Showing {MAX_VISIBLE} of {filtered.length} — refine search
+              </div>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>
