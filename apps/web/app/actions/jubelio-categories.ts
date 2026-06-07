@@ -76,6 +76,6 @@ export async function saveJubelioCategoryMappings(
   if (!r.ok) {
     throw new Error(extractApiMessage(r.error, `Save failed (${r.status})`));
   }
-  revalidatePath("/backoffice/settings/jubelio/categories");
+  revalidatePath("/backoffice/jubelio/categories");
   return r.data ?? { saved: 0 };
 }

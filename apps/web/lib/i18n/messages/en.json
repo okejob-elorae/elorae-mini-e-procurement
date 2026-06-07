@@ -59,6 +59,10 @@
     "hppReport": "HPP (Cost of Goods)",
     "auditTrail": "Audit Trail",
     "jubelioAdmin": "Jubelio API",
+    "jubelio": "Jubelio",
+    "navJubelioAdmin": "Jubelio API",
+    "navJubelioSettings": "Settings",
+    "navJubelioCategories": "Categories",
     "settings": "Settings",
     "masterData": "Master Data"
   },
@@ -202,38 +206,6 @@
       "pickerPrevious": "Previous",
       "pickerNext": "Next",
       "pickerPage": "Page {page} of {totalPages}"
-    },
-    "jubelio": {
-      "title": "Jubelio Session",
-      "description": "Jubelio API access uses a session token stored in the database, refreshed automatically from server environment credentials.",
-      "sessionManagedByEnv": "Credentials are configured via JUBELIO_EMAIL and JUBELIO_PASSWORD on the server. Only the session token is stored in the database.",
-      "refreshSession": "Refresh session",
-      "refreshSuccess": "Jubelio session refreshed",
-      "refreshFailed": "Failed to refresh Jubelio session. Check server credentials.",
-      "tokenLabel": "Stored token",
-      "loadingToken": "Loading token...",
-      "noTokenStored": "No token stored yet. Run Refresh session or start a catalog sync.",
-      "copyToken": "Copy token",
-      "copySuccess": "Token copied to clipboard",
-      "lastUpdated": "Last updated",
-      "loadTokenError": "Failed to load stored Jubelio token",
-      "catalogSyncTitle": "Catalog import",
-      "catalogSyncDescription": "Import finished goods from Jubelio into Items (catalog only, stock starts at 0). Preview with dry run before importing.",
-      "previewSync": "Preview sync (dry run)",
-      "importCatalog": "Import catalog",
-      "importFromSnapshot": "Import from snapshot (dev)",
-      "syncRunning": "Syncing...",
-      "syncSuccess": "Catalog sync completed",
-      "syncFailed": "Catalog sync failed",
-      "syncSummary": "Created: {created}, updated: {updated}, errors: {errors}",
-      "syncResults": "Sync results",
-      "colParentSku": "Parent SKU",
-      "colAction": "Action",
-      "colVariants": "Variants"
-    },
-    "jubelioCategories": {
-      "title": "Jubelio Categories",
-      "description": "Map Elorae item categories to Jubelio categories for product push."
     }
   },
   "tax": {

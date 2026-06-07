@@ -24,6 +24,6 @@ export async function deleteJubelioProduct(
   if (!r.ok) {
     throw new Error(extractApiMessage(r.error, `Delete failed (${r.status})`));
   }
-  revalidatePath("/backoffice/settings/jubelio");
+  revalidatePath("/backoffice/jubelio/settings");
   return r.data as CatalogDeleteResult;
 }

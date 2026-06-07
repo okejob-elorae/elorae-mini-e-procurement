@@ -15,13 +15,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import {
   FileDigit,
-  KeyRound,
   Loader2,
   Palette,
   Percent,
   Ruler,
   Shield,
-  Tags,
   Users,
 } from 'lucide-react';
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
@@ -61,8 +59,6 @@ export default function SettingsPage() {
     { titleKey: 'tax.title' as const, descriptionKey: 'tax.description' as const, href: '/backoffice/settings/tax', icon: Percent },
     { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
     { titleKey: 'rbac.title' as const, descriptionKey: 'rbac.description' as const, href: '/backoffice/settings/rbac', icon: Users },
-    { titleKey: 'jubelio.title' as const, descriptionKey: 'jubelio.description' as const, href: '/backoffice/settings/jubelio', icon: KeyRound },
-    { titleKey: 'jubelioCategories.title' as const, descriptionKey: 'jubelioCategories.description' as const, href: '/backoffice/settings/jubelio/categories', icon: Tags },
   ];
 
   const userId = session?.user?.id ?? null;

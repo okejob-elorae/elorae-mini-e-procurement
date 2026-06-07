@@ -59,6 +59,10 @@
     "hppReport": "HPP (Harga Pokok Produksi)",
     "auditTrail": "Audit Trail",
     "jubelioAdmin": "Jubelio API",
+    "jubelio": "Jubelio",
+    "navJubelioAdmin": "Jubelio API",
+    "navJubelioSettings": "Pengaturan",
+    "navJubelioCategories": "Kategori",
     "settings": "Pengaturan",
     "masterData": "Data Master"
   },
@@ -202,38 +206,6 @@
       "pickerPrevious": "Sebelumnya",
       "pickerNext": "Berikutnya",
       "pickerPage": "Halaman {page} dari {totalPages}"
-    },
-    "jubelio": {
-      "title": "Sesi Jubelio",
-      "description": "Akses API Jubelio memakai token sesi di database, diperbarui otomatis dari kredensial lingkungan server.",
-      "sessionManagedByEnv": "Kredensial dikonfigurasi lewat JUBELIO_EMAIL dan JUBELIO_PASSWORD di server. Hanya token sesi yang disimpan di database.",
-      "refreshSession": "Perbarui sesi",
-      "refreshSuccess": "Sesi Jubelio diperbarui",
-      "refreshFailed": "Gagal memperbarui sesi Jubelio. Periksa kredensial server.",
-      "tokenLabel": "Token tersimpan",
-      "loadingToken": "Memuat token...",
-      "noTokenStored": "Belum ada token tersimpan. Jalankan Perbarui sesi atau mulai sinkronisasi katalog.",
-      "copyToken": "Salin token",
-      "copySuccess": "Token disalin ke clipboard",
-      "lastUpdated": "Terakhir diperbarui",
-      "loadTokenError": "Gagal memuat token Jubelio yang tersimpan",
-      "catalogSyncTitle": "Impor katalog",
-      "catalogSyncDescription": "Impor barang jadi dari Jubelio ke Item (katalog saja, stok awal 0). Pratinjau dengan dry run sebelum impor.",
-      "previewSync": "Pratinjau sync (dry run)",
-      "importCatalog": "Impor katalog",
-      "importFromSnapshot": "Impor dari snapshot (dev)",
-      "syncRunning": "Menyinkronkan...",
-      "syncSuccess": "Sinkronisasi katalog selesai",
-      "syncFailed": "Sinkronisasi katalog gagal",
-      "syncSummary": "Dibuat: {created}, diperbarui: {updated}, error: {errors}",
-      "syncResults": "Hasil sync",
-      "colParentSku": "SKU induk",
-      "colAction": "Aksi",
-      "colVariants": "Varian"
-    },
-    "jubelioCategories": {
-      "title": "Kategori Jubelio",
-      "description": "Petakan kategori item Elorae ke kategori Jubelio untuk push produk."
     }
   },
   "tax": {
