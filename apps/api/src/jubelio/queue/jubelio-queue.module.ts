@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { forwardRef, Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
 import { AdminModule } from "../../admin/admin.module";
 import { PrismaModule } from "../../db/prisma.module";
@@ -17,7 +17,7 @@ import { UnhandledEventHandler } from "../handlers/unhandled.handler";
   imports: [
     PrismaModule,
     AdminModule,
-    JubelioCatalogModule,
+    forwardRef(() => JubelioCatalogModule),
     BullModule.registerQueue({ name: JUBELIO_WEBHOOK_QUEUE }),
   ],
   providers: [
