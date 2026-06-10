@@ -1185,6 +1185,21 @@ model JubelioCategoryMapping {
   @@unique([itemCategoryId])
 }
 
+model JubelioSalesOrderState {
+  id                  String    @id @default(cuid())
+  salesorderId        Int       @unique
+  stockApplied        Boolean   @default(false)
+  lastStatus          String?
+  lastIsCanceled      Boolean   @default(false)
+  appliedAt           DateTime?
+  reversedAt          DateTime?
+  lastWebhookEventId  String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([lastWebhookEventId])
+}
+
 model JubelioApiCall {
   id           String   @id @default(cuid())
   method       String

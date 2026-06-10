@@ -1,8 +1,9 @@
 import { Test } from "@nestjs/testing";
 import { JubelioEventRouter } from "./event-router";
 import { StockWebhookHandler } from "../handlers/stock.handler";
-import { UnhandledEventHandler } from "../handlers/unhandled.handler";
-import { PRISMA } from "../../db/prisma.module";
+import { SalesOrderWebhookHandler } from "../handlers/salesorder.handler";
+import { SalesReturnWebhookHandler } from "../handlers/salesreturn.handler";
+import { ProductWebhookHandler } from "../handlers/product.handler";
 import { SKIP_REASONS } from "./webhook-status";
 
 function row(event: string) {
@@ -16,15 +17,22 @@ function row(event: string) {
 describe("JubelioEventRouter", () => {
   let router: JubelioEventRouter;
   let stockHandler: { handle: jest.Mock };
+  let salesOrderHandler: { handle: jest.Mock };
+  let salesReturnHandler: { handle: jest.Mock };
+  let productHandler: { handle: jest.Mock };
 
   beforeEach(async () => {
     stockHandler = { handle: jest.fn().mockResolvedValue({ kind: "processed" }) };
+    salesOrderHandler = { handle: jest.fn() };
+    salesReturnHandler = { handle: jest.fn() };
+    productHandler = { handle: jest.fn() };
     const mod = await Test.createTestingModule({
       providers: [
         JubelioEventRouter,
         { provide: StockWebhookHandler, useValue: stockHandler },
-        UnhandledEventHandler,
-        { provide: PRISMA, useValue: {} },
+        { provide: SalesOrderWebhookHandler, useValue: salesOrderHandler },
+        { provide: SalesReturnWebhookHandler, useValue: salesReturnHandler },
+        { provide: ProductWebhookHandler, useValue: productHandler },
       ],
     }).compile();
     router = mod.get(JubelioEventRouter);
@@ -36,14 +44,26 @@ describe("JubelioEventRouter", () => {
     expect(result).toEqual({ kind: "processed" });
   });
 
-  it.each(["salesorder", "salesreturn", "product"])(
-    "routes `%s` to SKIPPED unhandled_event_type",
-    async (event) => {
-      const result = await router.route(row(event));
-      expect(stockHandler.handle).not.toHaveBeenCalled();
-      expect(result).toEqual({ kind: "skipped", reason: SKIP_REASONS.UNHANDLED_EVENT_TYPE });
-    },
-  );
+  it("routes salesorder to SalesOrderWebhookHandler", async () => {
+    salesOrderHandler.handle.mockResolvedValue({ kind: "processed" });
+    const result = await router.route(row("salesorder"));
+    expect(salesOrderHandler.handle).toHaveBeenCalled();
+    expect(result).toEqual({ kind: "processed" });
+  });
+
+  it("routes salesreturn to SalesReturnWebhookHandler", async () => {
+    salesReturnHandler.handle.mockResolvedValue({ kind: "skipped", reason: "awaiting_samples" });
+    const result = await router.route(row("salesreturn"));
+    expect(salesReturnHandler.handle).toHaveBeenCalled();
+    expect(result.kind).toBe("skipped");
+  });
+
+  it("routes product to ProductWebhookHandler", async () => {
+    productHandler.handle.mockResolvedValue({ kind: "processed" });
+    const result = await router.route(row("product"));
+    expect(productHandler.handle).toHaveBeenCalled();
+    expect(result).toEqual({ kind: "processed" });
+  });
 
   it("routes unknown event type to SKIPPED unknown_event:<x>", async () => {
     const result = await router.route(row("mystery"));
