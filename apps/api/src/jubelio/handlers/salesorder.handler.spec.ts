@@ -314,4 +314,97 @@ describe("SalesOrderWebhookHandler", () => {
     expect(createArgs.data[1].itemId).toBeNull();
     expect(createArgs.data[1].jubelioItemCode).toBe("SKU-B");
   });
+
+  it("upsert is idempotent — re-receiving same payload calls upsert once per webhook with same key", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    const r1 = row(makePayload()) as any;
+    const r2 = row(makePayload()) as any;
+    await handler.handle(r1);
+    await handler.handle(r2);
+
+    expect(prisma.salesOrder.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].where).toEqual({ salesorderId: 23043 });
+    expect(prisma.salesOrder.upsert.mock.calls[1][0].where).toEqual({ salesorderId: 23043 });
+  });
+
+  it("replaces SalesOrderItem set on re-receive (delete-then-createMany)", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    const firstPayload = makePayload({
+      items: [
+        { salesorder_detail_id: 1, item_id: 10, item_code: "A", item_group_id: 1, qty: "1", is_canceled_item: null },
+        { salesorder_detail_id: 2, item_id: 11, item_code: "B", item_group_id: 1, qty: "1", is_canceled_item: null },
+      ],
+    });
+    await handler.handle(row(firstPayload) as any);
+
+    expect(prisma.salesOrderItem.deleteMany).toHaveBeenCalledWith({ where: { salesOrderId: "so1" } });
+    expect(prisma.salesOrderItem.createMany.mock.calls[0][0].data).toHaveLength(2);
+
+    prisma.salesOrderItem.createMany.mockClear();
+    prisma.salesOrderItem.deleteMany.mockClear();
+
+    const secondPayload = makePayload({
+      items: [
+        { salesorder_detail_id: 1, item_id: 10, item_code: "A", item_group_id: 1, qty: "1", is_canceled_item: null },
+      ],
+    });
+    await handler.handle(row(secondPayload) as any);
+
+    expect(prisma.salesOrderItem.deleteMany).toHaveBeenCalledWith({ where: { salesOrderId: "so1" } });
+    expect(prisma.salesOrderItem.createMany.mock.calls[0][0].data).toHaveLength(1);
+  });
+
+  it("logs WARN and persists OTHER channel for unknown source_name", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+    const warn = jest.spyOn((handler as any).logger, "warn").mockImplementation(() => {});
+
+    await handler.handle(row(makePayload({ source_name: "Shop | Lazada" })) as any);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Lazada"));
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].create.channel).toBe("OTHER");
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].create.sourceName).toBe("Shop | Lazada");
+    warn.mockRestore();
+  });
+
+  it("falls back to created_date when transaction_date missing", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload({
+      transaction_date: null,
+      created_date: "2026-06-11T08:00:00.000Z",
+    })) as any);
+
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].create.transactionDate)
+      .toEqual(new Date("2026-06-11T08:00:00.000Z"));
+  });
+
+  it("falls back to now() with WARN when both transaction_date and created_date missing", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+    const warn = jest.spyOn((handler as any).logger, "warn").mockImplementation(() => {});
+    const before = Date.now();
+
+    await handler.handle(row(makePayload({ transaction_date: null, created_date: null })) as any);
+
+    const txDate = prisma.salesOrder.upsert.mock.calls[0][0].create.transactionDate as Date;
+    expect(txDate.getTime()).toBeGreaterThanOrEqual(before);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("missing transaction_date"));
+    warn.mockRestore();
+  });
+
+  it("rolls back the whole transaction if salesOrderItem.createMany throws", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+    prisma.salesOrderItem.createMany.mockRejectedValueOnce(new Error("createMany boom"));
+
+    await expect(handler.handle(row(makePayload()) as any)).rejects.toThrow("createMany boom");
+
+    expect(prisma.jubelioSalesOrderState.update).not.toHaveBeenCalled();
+  });
 });
