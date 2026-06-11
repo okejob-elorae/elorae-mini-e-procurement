@@ -66,3 +66,23 @@ export const SupplierStatus = {
   REJECTED: 'REJECTED',
 } as const;
 export type SupplierStatus = (typeof SupplierStatus)[keyof typeof SupplierStatus];
+
+export const SalesChannel = {
+  SHOPEE: "SHOPEE",
+  TOKOPEDIA: "TOKOPEDIA",
+  TIKTOK: "TIKTOK",
+  OTHER: "OTHER",
+} as const;
+export type SalesChannel = (typeof SalesChannel)[keyof typeof SalesChannel];
+export const SALES_CHANNEL_VALUES = Object.values(SalesChannel);
+
+export const SalesOrderStatus = {
+  NEW: "NEW",
+  PROCESSING: "PROCESSING",
+  SHIPPED: "SHIPPED",
+  COMPLETED: "COMPLETED",
+  CANCELLED: "CANCELLED",
+  RETURNED: "RETURNED",
+} as const;
+export type SalesOrderStatus = (typeof SalesOrderStatus)[keyof typeof SalesOrderStatus];
+export const SALES_ORDER_STATUS_VALUES = Object.values(SalesOrderStatus);
