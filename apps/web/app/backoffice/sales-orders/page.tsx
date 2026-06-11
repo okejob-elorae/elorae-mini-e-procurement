@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { SALES_CHANNEL_VALUES, SALES_ORDER_STATUS_VALUES } from "@/lib/constants/enums";
 import type { SalesChannel, SalesOrderStatus } from "@/lib/constants/enums";
+import { parseDateOnly } from "@/lib/date-only";
 import { listSalesOrders } from "@/lib/sales-orders/queries";
 import { SalesOrdersPageClient } from "./SalesOrdersPageClient";
 
@@ -33,10 +34,16 @@ function parseStatus(raw: string | undefined): SalesOrderStatus | undefined {
     : undefined;
 }
 
-function parseDate(raw: string | undefined): Date | undefined {
-  if (!raw) return undefined;
-  const d = new Date(raw);
-  return Number.isNaN(d.getTime()) ? undefined : d;
+function parseDateFrom(raw: string | undefined): Date | undefined {
+  return raw ? parseDateOnly(raw) : undefined;
+}
+
+function parseDateTo(raw: string | undefined): Date | undefined {
+  const d = raw ? parseDateOnly(raw) : undefined;
+  if (!d) return undefined;
+  // Inclusive end-of-day in local time so the chosen day's orders are not excluded.
+  d.setHours(23, 59, 59, 999);
+  return d;
 }
 
 export default async function SalesOrdersPage({ searchParams }: PageProps) {
@@ -48,8 +55,8 @@ export default async function SalesOrdersPage({ searchParams }: PageProps) {
     search: sp.search?.trim() || undefined,
     channel: parseChannel(sp.channel),
     status: parseStatus(sp.status),
-    dateFrom: parseDate(sp.dateFrom),
-    dateTo: parseDate(sp.dateTo),
+    dateFrom: parseDateFrom(sp.dateFrom),
+    dateTo: parseDateTo(sp.dateTo),
   };
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
 
