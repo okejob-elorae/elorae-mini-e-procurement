@@ -8,6 +8,7 @@ import {
   getSuppliersForReportFilter,
 } from '@/lib/dashboard/queries';
 import { getOverduePOs } from '@/lib/purchase-orders/queries';
+import { getMarketplaceKpi } from '@/lib/sales-orders/queries';
 import { serializeDashboardStats, toIso } from '@/lib/dashboard/serialize';
 import { DashboardPageClient } from './DashboardPageClient';
 
@@ -17,7 +18,7 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session) redirect('/login');
 
-  const [stats, overduePOs, suppliers, cogsRawVsFinished, rawMaterialShortage, woStatusCounts] =
+  const [stats, overduePOs, suppliers, cogsRawVsFinished, rawMaterialShortage, woStatusCounts, marketplaceKpi] =
     await Promise.all([
       getDashboardStats(),
       getOverduePOs(),
@@ -25,6 +26,7 @@ export default async function DashboardPage() {
       getCOGSRawVsFinished(),
       getRawMaterialShortage(),
       getWorkOrderCountByStatus(),
+      getMarketplaceKpi(),
     ]);
 
   return (
@@ -38,6 +40,7 @@ export default async function DashboardPage() {
       initialCogsRawVsFinished={cogsRawVsFinished}
       initialRawMaterialShortage={rawMaterialShortage}
       initialWoStatusCounts={woStatusCounts}
+      marketplaceKpi={marketplaceKpi}
     />
   );
 }
