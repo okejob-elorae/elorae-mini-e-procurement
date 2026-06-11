@@ -118,10 +118,13 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.INVENTORY_VIEW,
   },
   {
-    labelKey: 'salesOrders',
+    labelKey: 'sales',
     href: '/backoffice/sales-orders',
     icon: Store,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
+    children: [
+      { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
+    ],
   },
   {
     labelKey: 'workOrders',
