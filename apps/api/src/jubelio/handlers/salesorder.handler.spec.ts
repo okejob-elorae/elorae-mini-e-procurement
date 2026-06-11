@@ -63,6 +63,13 @@ describe("SalesOrderWebhookHandler", () => {
       inventoryValue: {
         findUnique: jest.fn(),
       },
+      salesOrder: {
+        upsert: jest.fn().mockResolvedValue({ id: "so1" }),
+      },
+      salesOrderItem: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       $transaction: jest.fn(async (fn: any) => fn(prisma)),
     };
     admin = { write: jest.fn() };
@@ -87,9 +94,11 @@ describe("SalesOrderWebhookHandler", () => {
       id: "st1", salesorderId: 23043, stockApplied: false, lastStatus: null, lastIsCanceled: false,
       appliedAt: null, reversedAt: null, lastWebhookEventId: "wh_1",
     });
-    prisma.jubelioProductMapping.findFirst
-      .mockResolvedValueOnce({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 })
-      .mockResolvedValueOnce({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
+    prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
+      if (where.jubelioItemId === 1721) return Promise.resolve({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
+      if (where.jubelioItemId === 1688) return Promise.resolve({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
+      return Promise.resolve(null);
+    });
     prisma.inventoryValue.findUnique
       .mockResolvedValueOnce({ qtyOnHand: 10 })
       .mockResolvedValueOnce({ qtyOnHand: 5 });
@@ -140,9 +149,11 @@ describe("SalesOrderWebhookHandler", () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: true,
     });
-    prisma.jubelioProductMapping.findFirst
-      .mockResolvedValueOnce({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 })
-      .mockResolvedValueOnce({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
+    prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
+      if (where.jubelioItemId === 1721) return Promise.resolve({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
+      if (where.jubelioItemId === 1688) return Promise.resolve({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
+      return Promise.resolve(null);
+    });
     prisma.inventoryValue.findUnique
       .mockResolvedValueOnce({ qtyOnHand: 9 })
       .mockResolvedValueOnce({ qtyOnHand: 3 });
@@ -164,9 +175,11 @@ describe("SalesOrderWebhookHandler", () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: false,
     });
-    prisma.jubelioProductMapping.findFirst
-      .mockResolvedValueOnce({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 })
-      .mockResolvedValueOnce({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
+    prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
+      if (where.jubelioItemId === 1721) return Promise.resolve({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
+      if (where.jubelioItemId === 1688) return Promise.resolve({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
+      return Promise.resolve(null);
+    });
     prisma.inventoryValue.findUnique
       .mockResolvedValueOnce({ qtyOnHand: 10 })
       .mockResolvedValueOnce({ qtyOnHand: 5 });
@@ -187,9 +200,10 @@ describe("SalesOrderWebhookHandler", () => {
   it("unmapped item_id -> AdminNotification fired, mapped lines still processed", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
     prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });
-    prisma.jubelioProductMapping.findFirst
-      .mockResolvedValueOnce({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 })
-      .mockResolvedValueOnce(null);
+    prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
+      if (where.jubelioItemId === 1721) return Promise.resolve({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
+      return Promise.resolve(null);
+    });
     prisma.inventoryValue.findUnique.mockResolvedValueOnce({ qtyOnHand: 10 });
     applyMock.mockResolvedValue({});
 
@@ -209,7 +223,10 @@ describe("SalesOrderWebhookHandler", () => {
   it("line with is_canceled_item=true is skipped, other lines processed", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
     prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });
-    prisma.jubelioProductMapping.findFirst.mockResolvedValueOnce({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
+    prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
+      if (where.jubelioItemId === 1721) return Promise.resolve({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
+      return Promise.resolve(null);
+    });
     prisma.inventoryValue.findUnique.mockResolvedValueOnce({ qtyOnHand: 10 });
     applyMock.mockResolvedValue({});
     const payload = makePayload();
@@ -218,7 +235,8 @@ describe("SalesOrderWebhookHandler", () => {
     await handler.handle(row(payload) as any);
 
     expect(applyMock).toHaveBeenCalledTimes(1);
-    expect(prisma.jubelioProductMapping.findFirst).toHaveBeenCalledTimes(1);
+    // Note: findFirst is called 3 times — once per line in upsertSalesOrder (2x), plus once for the mapped line in applyAdjustments.
+    expect(prisma.jubelioProductMapping.findFirst).toHaveBeenCalledTimes(3);
   });
 
   it("all lines unmapped -> one AdminNotification, no stock writes, state still updates", async () => {
@@ -231,5 +249,69 @@ describe("SalesOrderWebhookHandler", () => {
     expect(applyMock).not.toHaveBeenCalled();
     expect(admin.write).toHaveBeenCalledTimes(1);
     expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalled();
+  });
+
+  it("upserts SalesOrder + SalesOrderItem on first webhook (happy path)", async () => {
+    prisma.salesOrder.upsert.mockResolvedValue({ id: "so1" });
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
+    prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });
+    prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
+      if (where.jubelioItemId === 1721) {
+        return Promise.resolve({ id: "m1", itemId: "i1", erpVariantSku: "SKU-A", jubelioItemId: 1721, jubelioItemGroupId: 96, jubelioItemCode: "SKU-A" });
+      }
+      return Promise.resolve(null);
+    });
+    prisma.inventoryValue.findUnique.mockResolvedValueOnce({ qtyOnHand: 10 });
+    applyMock.mockResolvedValue({});
+
+    const payload = makePayload({
+      source_name: "Shop | Tokopedia",
+      customer_name: "Alice",
+      shipping_province: "Jakarta",
+      shipping_city: "Jakarta Selatan",
+      sub_total: "100000",
+      total_disc: "5000",
+      total_tax: "0",
+      grand_total: "97000",
+      shipping_cost: "2000",
+      transaction_date: "2026-06-11T10:00:00.000Z",
+      items: [
+        { salesorder_detail_id: 25193, item_id: 1721, item_code: "SKU-A", item_group_id: 96, item_name: "Item A", qty: "1.0000", qty_in_base: "1.0000", is_canceled_item: null, sell_price: "100000", price: "97000", disc_amount: "3000", tax_amount: "0", amount: "97000" },
+        { salesorder_detail_id: 25194, item_id: 1688, item_code: "SKU-B", item_group_id: 96, item_name: "Item B", qty: "2.0000", qty_in_base: "2.0000", is_canceled_item: null, sell_price: "50000", price: "50000", disc_amount: "0", tax_amount: "0", amount: "100000" },
+      ],
+    });
+
+    const r = await handler.handle(row(payload) as any);
+
+    expect(r).toEqual({ kind: "processed" });
+    expect(prisma.salesOrder.upsert).toHaveBeenCalledTimes(1);
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.where).toEqual({ salesorderId: 23043 });
+    expect(upsertArgs.create.channel).toBe("TOKOPEDIA");
+    expect(upsertArgs.create.sourceName).toBe("Shop | Tokopedia");
+    expect(upsertArgs.create.customerName).toBe("Alice");
+    expect(upsertArgs.create.shippingProvince).toBe("Jakarta");
+    expect(upsertArgs.create.grandTotal).toBe("97000");
+    expect(upsertArgs.create.transactionDate).toEqual(new Date("2026-06-11T10:00:00.000Z"));
+    expect(upsertArgs.create.lastWebhookEventId).toBe("wh_1");
+
+    expect(prisma.salesOrderItem.deleteMany).toHaveBeenCalledWith({ where: { salesOrderId: "so1" } });
+    expect(prisma.salesOrderItem.createMany).toHaveBeenCalledTimes(1);
+    const createArgs = prisma.salesOrderItem.createMany.mock.calls[0][0];
+    expect(createArgs.data).toHaveLength(2);
+    expect(createArgs.data[0]).toMatchObject({
+      salesOrderId: "so1",
+      salesorderDetailId: 25193,
+      jubelioItemId: 1721,
+      jubelioItemCode: "SKU-A",
+      itemId: "i1",
+      productName: "Item A",
+      qty: "1.0000",
+      unitPrice: "100000",
+      pricePaid: "97000",
+      lineTotal: "97000",
+    });
+    expect(createArgs.data[1].itemId).toBeNull();
+    expect(createArgs.data[1].jubelioItemCode).toBe("SKU-B");
   });
 });
