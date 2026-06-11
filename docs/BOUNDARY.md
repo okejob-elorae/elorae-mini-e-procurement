@@ -108,8 +108,8 @@ contract for the migrations that will introduce them.
 | `Production*`                  | web                         | api (read FG receipts)      | ✅ |
 | `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
 | `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
-| `SalesOrder`                   | **both** — see §3.2         |                             | ✅ schema; 🟡 ownership guard ⏳ |
-| `SalesOrderItem`               | api                         | web (read)                  | ✅ schema; api writer ⏳ |
+| `SalesOrder`                   | api                         | web (read)                  | ✅ schema + api writer (see §3.2) |
+| `SalesOrderItem`               | api                         | web (read)                  | ✅ schema + api writer |
 | `SalesReturn`                  | api                         | web (read)                  | ⏳ |
 | `JubelioProductMapping`        | api                         | web (read)                  | ✅ |
 | `JubelioCategoryMapping`       | api                         | web (read)                  | ✅ schema; writer ⏳ (currently seed-only, no runtime writer) |
@@ -134,17 +134,18 @@ contract for the migrations that will introduce them.
 Both writes go through a shared helper in `@elorae/db` to enforce the columns:
 `source ('ERP' | 'JUBELIO_WEBHOOK')`, `externalRef`, `idempotencyKey`.
 
-### 3.2 Sales writes — two writers (⏳ planned)
+### 3.2 Sales writes (api-only as of 2026-06-11)
 
-- **api** creates `SalesOrder` rows from Jubelio (ingest endpoint or webhook
-  `salesorder`). It owns Jubelio-mirrored fields: marketplace metadata, AWB,
-  Jubelio status.
-- **web** updates `SalesOrder` only for fields it owns: internal status,
-  picking notes, fulfillment user. When a web-owned change must mirror back to
-  Jubelio (e.g. mark-as-complete), web inserts a `JubelioOutbox` row.
+- **api** creates and updates `SalesOrder` + `SalesOrderItem` rows from the
+  Jubelio `salesorder` webhook (`SalesOrderWebhookHandler.upsertSalesOrder`).
+  It owns every column: marketplace metadata, totals, fees, buyer + shipping,
+  status (raw + derived), timestamps. Upsert is keyed on `salesorder_id`;
+  lines are replaced as a set on every webhook.
+- **web** is read-only for both tables. No write paths today.
 
-Field-level ownership is enforced by Prisma client middleware in
-`@elorae/db/sales-order-guard.ts`.
+If a future ERP workflow needs to write back (e.g. internal pick/pack notes,
+fulfillment user), introduce a dual-writer split via an `@elorae/db` helper at
+that point — don't widen the ownership without a concrete consumer.
 
 ### 3.3 `Item` writes — two writers (resolved 2026-05-25)
 
