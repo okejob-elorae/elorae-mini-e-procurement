@@ -26,6 +26,7 @@ import {
   Palette,
   CalendarDays,
   Activity,
+  Store,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -115,6 +116,15 @@ const navItems: NavItem[] = [
     href: '/backoffice/inventory',
     icon: Package,
     permission: PERMISSIONS.INVENTORY_VIEW,
+  },
+  {
+    labelKey: 'sales',
+    href: '/backoffice/sales-orders',
+    icon: Store,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+    children: [
+      { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
+    ],
   },
   {
     labelKey: 'workOrders',

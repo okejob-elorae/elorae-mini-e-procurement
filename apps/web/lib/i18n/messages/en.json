@@ -36,6 +36,8 @@
     "suppliers": "Suppliers",
     "masterSuppliers": "Master Suppliers",
     "supplierType": "Supplier Type",
+    "sales": "Sales",
+    "navSalesOrders": "Sales Orders",
     "items": "Items",
     "navItemsAll": "All Items",
     "navItemsCategory": "Category",
@@ -1004,5 +1006,96 @@
       "delta": "Delta",
       "action": "Action"
     }
+  },
+  "salesOrders": {
+    "pageTitle": "Sales Orders",
+    "pageSubtitle": "Marketplace orders received via Jubelio",
+    "empty": "No marketplace orders yet — orders appear here as Jubelio webhooks arrive.",
+    "emptyFiltered": "No orders match these filters.",
+    "filter": {
+      "searchPlaceholder": "Search by order # or buyer name",
+      "channel": "Channel",
+      "status": "Status",
+      "dateRange": "Date range",
+      "reset": "Reset",
+      "all": "All"
+    },
+    "table": {
+      "orderNo": "Order #",
+      "channel": "Channel",
+      "buyer": "Buyer",
+      "total": "Total",
+      "status": "Status",
+      "date": "Date"
+    },
+    "detail": {
+      "back": "Back to list",
+      "section": {
+        "buyer": "Buyer",
+        "orderMeta": "Order info",
+        "lineItems": "Line items",
+        "totals": "Totals",
+        "rawStatus": "Status (raw)",
+        "feeBreakdown": "Fee breakdown"
+      },
+      "field": {
+        "customerName": "Name",
+        "customerPhone": "Phone",
+        "customerEmail": "Email",
+        "shippingAddress": "Shipping address",
+        "transactionDate": "Transaction date",
+        "paymentMethod": "Payment method",
+        "paymentDate": "Paid at",
+        "courier": "Courier",
+        "trackingNumber": "Tracking #",
+        "channelStatus": "Channel status",
+        "internalStatus": "Internal status",
+        "wmsStatus": "WMS status",
+        "isCanceled": "Canceled",
+        "isPaid": "Paid",
+        "markedAsComplete": "Marked complete",
+        "subTotal": "Subtotal",
+        "totalDisc": "Discount",
+        "totalTax": "Tax",
+        "shippingCost": "Shipping",
+        "grandTotal": "Grand total"
+      },
+      "lineCol": {
+        "sku": "SKU",
+        "product": "Product",
+        "qty": "Qty",
+        "unitPrice": "Unit price",
+        "discount": "Discount",
+        "lineTotal": "Line total"
+      }
+    },
+    "channel": {
+      "shopee": "Shopee",
+      "tokopedia": "Tokopedia",
+      "tiktok": "TikTok",
+      "other": "Other"
+    },
+    "status": {
+      "NEW": "New",
+      "PROCESSING": "Processing",
+      "SHIPPED": "Shipped",
+      "COMPLETED": "Completed",
+      "CANCELLED": "Cancelled",
+      "RETURNED": "Returned"
+    },
+    "fee": {
+      "insurance_cost": "Insurance",
+      "add_fee": "Additional fee",
+      "add_disc": "Additional discount",
+      "service_fee": "Service fee",
+      "escrow_amount": "Escrow",
+      "voucher_amount": "Voucher",
+      "cod_fee": "COD fee",
+      "order_processing_fee": "Order processing",
+      "shipping_tax": "Shipping tax",
+      "total_amount_mp": "Marketplace total"
+    },
+    "yes": "Yes",
+    "no": "No"
   }
 }

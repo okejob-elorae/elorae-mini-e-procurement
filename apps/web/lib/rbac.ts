@@ -56,6 +56,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/purchase-orders': 'purchase_orders:view',
   '/backoffice/supplier-payments': 'supplier_payments:view',
   '/backoffice/inventory': 'inventory:view',
+  '/backoffice/sales-orders': 'sales_orders:view',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
   '/backoffice/forecast': 'forecast:view',
@@ -94,6 +95,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/supplier-payments',
   '/backoffice/inventory',
   '/backoffice/work-orders',
+  '/backoffice/sales-orders',
   '/backoffice/forecast',
   '/backoffice/production/planning',
   '/backoffice/production/colors',
@@ -168,6 +170,8 @@ export const PERMISSIONS = {
   ITEMS_CREATE: 'items:create',
   ITEMS_EDIT: 'items:edit',
   ITEMS_DELETE: 'items:delete',
+  // Sales Orders
+  SALES_ORDERS_VIEW: 'sales_orders:view',
   // Purchase Orders
   PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
   PURCHASE_ORDERS_CREATE: 'purchase_orders:create',
