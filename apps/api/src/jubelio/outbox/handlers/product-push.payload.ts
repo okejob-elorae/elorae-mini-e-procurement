@@ -38,7 +38,7 @@ export type ItemSlice = {
 
 export type MappingSlice = Pick<
   JubelioProductMapping,
-  "id" | "erpVariantSku" | "jubelioItemId" | "jubelioItemGroupId"
+  "id" | "erpVariantSku" | "jubelioItemId" | "jubelioItemGroupId" | "jubelioItemCode"
 >;
 
 export type ProductSkuEntry = {

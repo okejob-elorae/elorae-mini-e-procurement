@@ -59,8 +59,8 @@ describe("buildCreateProductRequest", () => {
       defaults,
       categoryJubelioId: 454,
       mappings: [
-        { id: "m1", erpVariantSku: "SKU-1-RED", jubelioItemId: 11, jubelioItemGroupId: 7 },
-        { id: "m2", erpVariantSku: "SKU-1-BLU", jubelioItemId: 12, jubelioItemGroupId: 7 },
+        { id: "m1", erpVariantSku: "SKU-1-RED", jubelioItemId: 11, jubelioItemGroupId: 7, jubelioItemCode: "SKU-1-RED" },
+        { id: "m2", erpVariantSku: "SKU-1-BLU", jubelioItemId: 12, jubelioItemGroupId: 7, jubelioItemCode: "SKU-1-BLU" },
       ],
     });
     expect(body.item_group_id).toBe(7);
@@ -74,8 +74,8 @@ describe("buildCreateProductRequest", () => {
       defaults,
       categoryJubelioId: 454,
       mappings: [
-        { id: "m1", erpVariantSku: "SKU-1-RED", jubelioItemId: 11, jubelioItemGroupId: 7 },
-        { id: "m2", erpVariantSku: "SKU-1-BLU", jubelioItemId: 12, jubelioItemGroupId: 7 },
+        { id: "m1", erpVariantSku: "SKU-1-RED", jubelioItemId: 11, jubelioItemGroupId: 7, jubelioItemCode: "SKU-1-RED" },
+        { id: "m2", erpVariantSku: "SKU-1-BLU", jubelioItemId: 12, jubelioItemGroupId: 7, jubelioItemCode: "SKU-1-BLU" },
       ],
     });
     expect(body.product_skus.find((s) => s.item_code === "SKU-1-GRN")?.item_id).toBe(0);
@@ -88,7 +88,7 @@ describe("buildCreateProductRequest", () => {
       defaults,
       categoryJubelioId: 454,
       mappings: [
-        { id: "m1", erpVariantSku: "", jubelioItemId: 99, jubelioItemGroupId: 7 },
+        { id: "m1", erpVariantSku: "", jubelioItemId: 99, jubelioItemGroupId: 7, jubelioItemCode: "SKU-1" },
       ],
     });
     expect(body.product_skus).toHaveLength(1);
