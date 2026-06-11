@@ -36,6 +36,7 @@
     "suppliers": "Pemasok",
     "masterSuppliers": "Master Pemasok",
     "supplierType": "Jenis Pemasok",
+    "salesOrders": "Pesanan",
     "items": "Item",
     "navItemsAll": "Semua Item",
     "navItemsCategory": "Kategori",
@@ -1004,5 +1005,96 @@
       "delta": "Delta",
       "action": "Action"
     }
+  },
+  "salesOrders": {
+    "pageTitle": "Pesanan",
+    "pageSubtitle": "Pesanan dari marketplace via Jubelio",
+    "empty": "Belum ada pesanan marketplace — pesanan akan muncul di sini setelah webhook Jubelio diterima.",
+    "emptyFiltered": "Tidak ada pesanan yang cocok dengan filter ini.",
+    "filter": {
+      "searchPlaceholder": "Cari berdasarkan nomor pesanan atau nama pembeli",
+      "channel": "Channel",
+      "status": "Status",
+      "dateRange": "Rentang tanggal",
+      "reset": "Reset",
+      "all": "Semua"
+    },
+    "table": {
+      "orderNo": "No. Pesanan",
+      "channel": "Channel",
+      "buyer": "Pembeli",
+      "total": "Total",
+      "status": "Status",
+      "date": "Tanggal"
+    },
+    "detail": {
+      "back": "Kembali ke daftar",
+      "section": {
+        "buyer": "Pembeli",
+        "orderMeta": "Info Pesanan",
+        "lineItems": "Item Pesanan",
+        "totals": "Total",
+        "rawStatus": "Status (mentah)",
+        "feeBreakdown": "Rincian Biaya"
+      },
+      "field": {
+        "customerName": "Nama",
+        "customerPhone": "Telepon",
+        "customerEmail": "Email",
+        "shippingAddress": "Alamat pengiriman",
+        "transactionDate": "Tanggal transaksi",
+        "paymentMethod": "Metode pembayaran",
+        "paymentDate": "Dibayar pada",
+        "courier": "Kurir",
+        "trackingNumber": "No. Resi",
+        "channelStatus": "Status channel",
+        "internalStatus": "Status internal",
+        "wmsStatus": "Status WMS",
+        "isCanceled": "Dibatalkan",
+        "isPaid": "Lunas",
+        "markedAsComplete": "Ditandai selesai",
+        "subTotal": "Subtotal",
+        "totalDisc": "Diskon",
+        "totalTax": "Pajak",
+        "shippingCost": "Ongkos kirim",
+        "grandTotal": "Total"
+      },
+      "lineCol": {
+        "sku": "SKU",
+        "product": "Produk",
+        "qty": "Jml",
+        "unitPrice": "Harga satuan",
+        "discount": "Diskon",
+        "lineTotal": "Total baris"
+      }
+    },
+    "channel": {
+      "shopee": "Shopee",
+      "tokopedia": "Tokopedia",
+      "tiktok": "TikTok",
+      "other": "Lainnya"
+    },
+    "status": {
+      "NEW": "Baru",
+      "PROCESSING": "Diproses",
+      "SHIPPED": "Dikirim",
+      "COMPLETED": "Selesai",
+      "CANCELLED": "Dibatalkan",
+      "RETURNED": "Dikembalikan"
+    },
+    "fee": {
+      "insurance_cost": "Asuransi",
+      "add_fee": "Biaya tambahan",
+      "add_disc": "Diskon tambahan",
+      "service_fee": "Biaya layanan",
+      "escrow_amount": "Escrow",
+      "voucher_amount": "Voucher",
+      "cod_fee": "Biaya COD",
+      "order_processing_fee": "Biaya pemrosesan",
+      "shipping_tax": "Pajak pengiriman",
+      "total_amount_mp": "Total marketplace"
+    },
+    "yes": "Ya",
+    "no": "Tidak"
   }
 }
