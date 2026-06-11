@@ -6,6 +6,7 @@ import { AdminNotificationService } from "../../admin/notification.service";
 import { SKIP_REASONS } from "../queue/webhook-status";
 import type { HandlerOutcome, WebhookEventHandler } from "./handler.types";
 import type { SalesOrderLine, SalesOrderPayload } from "./salesorder.payload";
+import { resolveItemMapping } from "./_shared/mapping-lookup";
 
 type UnmappedLine = { item_code: string; item_id: number; qty: string | number };
 
@@ -96,9 +97,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     for (const line of items) {
       if (line.is_canceled_item) continue;
 
-      const mapping = await this.prisma.jubelioProductMapping.findFirst({
-        where: { jubelioItemId: line.item_id },
-      });
+      const mapping = await resolveItemMapping(this.prisma, line.item_id);
       if (!mapping) {
         unmapped.push({ item_code: line.item_code, item_id: line.item_id, qty: line.qty });
         continue;
