@@ -201,3 +201,44 @@ export async function getSalesOrderById(
 
   return { order, items };
 }
+
+export type MarketplaceKpi = {
+  pendingFulfillmentCount: number;
+  todaySalesCount: number;
+  todaySalesTotal: string;
+};
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfToday(): Date {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+export async function getMarketplaceKpi(): Promise<MarketplaceKpi> {
+  const [pendingCount, todayAgg] = await Promise.all([
+    prisma.salesOrder.count({
+      where: { status: { in: ["NEW", "PROCESSING"] } },
+    }),
+    prisma.salesOrder.aggregate({
+      where: {
+        transactionDate: { gte: startOfToday(), lte: endOfToday() },
+        status: { notIn: ["CANCELLED", "RETURNED"] },
+      },
+      _count: { _all: true },
+      _sum: { grandTotal: true },
+    }),
+  ]);
+
+  const sum = todayAgg._sum?.grandTotal;
+  return {
+    pendingFulfillmentCount: pendingCount,
+    todaySalesCount: todayAgg._count._all,
+    todaySalesTotal: sum ? sum.toString() : "0",
+  };
+}

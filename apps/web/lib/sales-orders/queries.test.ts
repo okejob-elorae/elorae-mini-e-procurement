@@ -6,6 +6,7 @@ vi.mock("@elorae/db", () => ({
       findMany: vi.fn(),
       count: vi.fn(),
       findUnique: vi.fn(),
+      aggregate: vi.fn(),
     },
   },
 }));
@@ -163,5 +164,84 @@ describe("getSalesOrderById", () => {
     expect(r!.order.subTotal).toBe("100000");
     expect(r!.items[0].qty).toBe("1.0000");
     expect(r!.items[0].lineTotal).toBe("97000");
+  });
+});
+
+import { getMarketplaceKpi } from "./queries";
+
+describe("getMarketplaceKpi", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns zeros when no orders exist", async () => {
+    (prisma.salesOrder.count as any).mockResolvedValue(0);
+    (prisma.salesOrder.aggregate as any).mockResolvedValue({
+      _count: { _all: 0 },
+      _sum: { grandTotal: null },
+    });
+
+    const r = await getMarketplaceKpi();
+
+    expect(r).toEqual({
+      pendingFulfillmentCount: 0,
+      todaySalesCount: 0,
+      todaySalesTotal: "0",
+    });
+  });
+
+  it("queries pending with status IN [NEW, PROCESSING]", async () => {
+    (prisma.salesOrder.count as any).mockResolvedValue(7);
+    (prisma.salesOrder.aggregate as any).mockResolvedValue({
+      _count: { _all: 0 },
+      _sum: { grandTotal: null },
+    });
+
+    await getMarketplaceKpi();
+
+    const countArgs = (prisma.salesOrder.count as any).mock.calls[0][0];
+    expect(countArgs.where.status).toEqual({ in: ["NEW", "PROCESSING"] });
+  });
+
+  it("queries today's sales between local-day boundaries excluding cancelled/returned", async () => {
+    (prisma.salesOrder.count as any).mockResolvedValue(0);
+    (prisma.salesOrder.aggregate as any).mockResolvedValue({
+      _count: { _all: 3 },
+      _sum: { grandTotal: { toString: () => "250000" } },
+    });
+
+    await getMarketplaceKpi();
+
+    const aggArgs = (prisma.salesOrder.aggregate as any).mock.calls[0][0];
+    expect(aggArgs.where.status).toEqual({ notIn: ["CANCELLED", "RETURNED"] });
+    expect(aggArgs.where.transactionDate.gte).toBeInstanceOf(Date);
+    expect(aggArgs.where.transactionDate.lte).toBeInstanceOf(Date);
+    const gte = aggArgs.where.transactionDate.gte as Date;
+    const lte = aggArgs.where.transactionDate.lte as Date;
+    expect(gte.getHours()).toBe(0);
+    expect(gte.getMinutes()).toBe(0);
+    expect(gte.getSeconds()).toBe(0);
+    expect(lte.getHours()).toBe(23);
+    expect(lte.getMinutes()).toBe(59);
+    expect(lte.getSeconds()).toBe(59);
+    expect(gte.getFullYear()).toBe(lte.getFullYear());
+    expect(gte.getMonth()).toBe(lte.getMonth());
+    expect(gte.getDate()).toBe(lte.getDate());
+  });
+
+  it("serialises grandTotal Decimal to string", async () => {
+    (prisma.salesOrder.count as any).mockResolvedValue(2);
+    (prisma.salesOrder.aggregate as any).mockResolvedValue({
+      _count: { _all: 3 },
+      _sum: { grandTotal: { toString: () => "12345600" } },
+    });
+
+    const r = await getMarketplaceKpi();
+
+    expect(r).toEqual({
+      pendingFulfillmentCount: 2,
+      todaySalesCount: 3,
+      todaySalesTotal: "12345600",
+    });
   });
 });
