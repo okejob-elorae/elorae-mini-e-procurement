@@ -87,32 +87,30 @@ export class ProductPushHandler implements OutboxHandler {
 
     const response = await this.http.post<CatalogPostResponse>("/inventory/catalog/", body);
 
-    const existingSkus = new Set(mappings.map((m) => m.erpVariantSku));
-    const newMappings: Array<{
-      itemId: string;
-      jubelioItemGroupId: number;
-      jubelioItemId: number;
-      jubelioItemCode: string;
-      erpVariantSku: string;
-    }> = [];
-
-    for (let i = 0; i < body.product_skus.length; i++) {
-      const sku = body.product_skus[i];
+    const upserts = body.product_skus.map((sku, i) => {
       const jubelioItemId = response.item_ids[i];
       const erpVariantSku = hasVariants ? sku.item_code : "";
-      if (!existingSkus.has(erpVariantSku)) {
-        newMappings.push({
+      return this.prisma.jubelioProductMapping.upsert({
+        where: { jubelioItemCode: sku.item_code },
+        create: {
           itemId: item.id,
           jubelioItemGroupId: response.id,
           jubelioItemId,
           jubelioItemCode: sku.item_code,
           erpVariantSku,
-        });
-      }
-    }
-    if (newMappings.length > 0) {
-      await this.prisma.jubelioProductMapping.createMany({ data: newMappings });
-    }
+        },
+        update: {
+          itemId: item.id,
+          jubelioItemGroupId: response.id,
+          jubelioItemId,
+          erpVariantSku,
+        },
+      });
+    });
+    await this.prisma.$transaction(upserts);
+
+    const existingCodes = new Set(mappings.map((m) => m.jubelioItemCode));
+    const newCount = body.product_skus.filter((s) => !existingCodes.has(s.item_code)).length;
 
     const desiredSkuSet = new Set(
       hasVariants ? variantsArr!.map((v) => v.sku) : [""],
@@ -129,7 +127,7 @@ export class ProductPushHandler implements OutboxHandler {
     }
 
     this.logger.log(
-      `Pushed item ${item.id} (group=${response.id}, +${newMappings.length} mappings, -${removed.length})`,
+      `Pushed item ${item.id} (group=${response.id}, +${newCount} mappings, -${removed.length})`,
     );
     return { kind: "processed" };
   }

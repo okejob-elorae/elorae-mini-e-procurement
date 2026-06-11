@@ -54,9 +54,10 @@ describe("ProductPushHandler", () => {
   beforeEach(async () => {
     prisma = {
       item: { findUnique: jest.fn() },
-      jubelioProductMapping: { findMany: jest.fn(), createMany: jest.fn(), deleteMany: jest.fn() },
+      jubelioProductMapping: { findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
       jubelioPushDefaults: { findFirst: jest.fn() },
       jubelioCategoryMapping: { findFirst: jest.fn() },
+      $transaction: jest.fn(async (ops: Promise<any>[]) => Promise.all(ops)),
     };
     http = { post: jest.fn(), delete: jest.fn() };
     const mod = await Test.createTestingModule({
@@ -119,15 +120,12 @@ describe("ProductPushHandler", () => {
     expect(http.post).toHaveBeenCalledWith("/inventory/catalog/", expect.objectContaining({
       item_group_id: 0,
     }));
-    expect(prisma.jubelioProductMapping.createMany).toHaveBeenCalledWith({
-      data: [{
-        itemId: "item_1",
-        jubelioItemGroupId: 7,
-        jubelioItemId: 11,
-        jubelioItemCode: "SKU-1",
-        erpVariantSku: "",
-      }],
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledWith({
+      where: { jubelioItemCode: "SKU-1" },
+      create: { itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 11, jubelioItemCode: "SKU-1", erpVariantSku: "" },
+      update: { itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 11, erpVariantSku: "" },
     });
+    expect(prisma.$transaction).toHaveBeenCalled();
     expect(http.delete).not.toHaveBeenCalled();
     expect(r).toEqual({ kind: "processed" });
   });
@@ -141,12 +139,18 @@ describe("ProductPushHandler", () => {
 
     await handler.handle(row() as any);
 
-    expect(prisma.jubelioProductMapping.createMany).toHaveBeenCalledWith({
-      data: [
-        { itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 11, jubelioItemCode: "SKU-1-RED", erpVariantSku: "SKU-1-RED" },
-        { itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 12, jubelioItemCode: "SKU-1-BLU", erpVariantSku: "SKU-1-BLU" },
-      ],
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledWith({
+      where: { jubelioItemCode: "SKU-1-RED" },
+      create: { itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 11, jubelioItemCode: "SKU-1-RED", erpVariantSku: "SKU-1-RED" },
+      update: { itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 11, erpVariantSku: "SKU-1-RED" },
     });
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledWith({
+      where: { jubelioItemCode: "SKU-1-BLU" },
+      create: { itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 12, jubelioItemCode: "SKU-1-BLU", erpVariantSku: "SKU-1-BLU" },
+      update: { itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 12, erpVariantSku: "SKU-1-BLU" },
+    });
+    expect(prisma.$transaction).toHaveBeenCalled();
   });
 
   it("EDITS existing: reuses item_group_id, no new mappings, no DELETE", async () => {
@@ -163,7 +167,8 @@ describe("ProductPushHandler", () => {
     expect(http.post).toHaveBeenCalledWith("/inventory/catalog/", expect.objectContaining({
       item_group_id: 7,
     }));
-    expect(prisma.jubelioProductMapping.createMany).not.toHaveBeenCalled();
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalled();
     expect(prisma.jubelioProductMapping.deleteMany).not.toHaveBeenCalled();
     expect(http.delete).not.toHaveBeenCalled();
   });
@@ -179,10 +184,44 @@ describe("ProductPushHandler", () => {
 
     await handler.handle(row() as any);
 
-    expect(prisma.jubelioProductMapping.createMany).toHaveBeenCalledWith({
-      data: [{ itemId: "item_1", jubelioItemGroupId: 7, jubelioItemId: 13, jubelioItemCode: "SKU-1-GRN", erpVariantSku: "SKU-1-GRN" }],
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledWith({
+      where: { jubelioItemCode: "SKU-1-RED" },
+      create: expect.objectContaining({ jubelioItemCode: "SKU-1-RED" }),
+      update: expect.objectContaining({ jubelioItemGroupId: 7, jubelioItemId: 11 }),
     });
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledWith({
+      where: { jubelioItemCode: "SKU-1-GRN" },
+      create: expect.objectContaining({ jubelioItemCode: "SKU-1-GRN", jubelioItemId: 13 }),
+      update: expect.objectContaining({ jubelioItemGroupId: 7, jubelioItemId: 13 }),
+    });
+    expect(prisma.$transaction).toHaveBeenCalled();
     expect(http.delete).not.toHaveBeenCalled();
+  });
+
+  it("heals stale orphan row: upsert updates jubelioItemId + itemId when code already exists", async () => {
+    prisma.item.findUnique.mockResolvedValue({ ...baseItem, variants: [{ sku: "SKU-1-RED" }] });
+    prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
+    prisma.jubelioPushDefaults.findFirst.mockResolvedValue(baseDefaults);
+    prisma.jubelioCategoryMapping.findFirst.mockResolvedValue({ jubelioCategoryId: 454 });
+    http.post.mockResolvedValue({ status: "ok", id: 7, item_ids: [11] });
+
+    await handler.handle(row() as any);
+
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledWith({
+      where: { jubelioItemCode: "SKU-1-RED" },
+      create: expect.objectContaining({
+        jubelioItemCode: "SKU-1-RED",
+        jubelioItemGroupId: 7,
+        jubelioItemId: 11,
+      }),
+      update: expect.objectContaining({
+        jubelioItemGroupId: 7,
+        jubelioItemId: 11,
+        itemId: "item_1",
+      }),
+    });
+    expect(prisma.$transaction).toHaveBeenCalled();
   });
 
   it("REMOVES a variant: POST without removed sku + DELETE call + mapping dropped", async () => {
@@ -197,6 +236,13 @@ describe("ProductPushHandler", () => {
 
     await handler.handle(row() as any);
 
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledWith({
+      where: { jubelioItemCode: "SKU-1-RED" },
+      create: expect.objectContaining({ jubelioItemCode: "SKU-1-RED" }),
+      update: expect.objectContaining({ jubelioItemGroupId: 7, jubelioItemId: 11 }),
+    });
+    expect(prisma.$transaction).toHaveBeenCalled();
     expect(http.delete).toHaveBeenCalledWith("/inventory/items/item-variant/", expect.objectContaining({
       body: JSON.stringify({ ids: [12] }),
     }));
