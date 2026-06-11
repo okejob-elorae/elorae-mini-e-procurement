@@ -3,7 +3,6 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
-import Link from "next/link";
 import { SALES_CHANNEL_VALUES, SALES_ORDER_STATUS_VALUES } from "@/lib/constants/enums";
 import type { SalesOrderListRow } from "@/lib/sales-orders/queries";
 import { CHANNEL_BADGE, STATUS_BADGE } from "@/lib/sales-orders/badges";
@@ -178,14 +177,15 @@ export function SalesOrdersPageClient(props: Props) {
               </TableRow>
             ) : (
               props.orders.map((o) => (
-                <TableRow key={o.id} className="cursor-pointer hover:bg-muted/50">
-                  <TableCell>
-                    <Link
-                      href={`/backoffice/sales-orders/${o.id}`}
-                      className="font-mono text-sm"
-                    >
-                      {o.salesorderNo}
-                    </Link>
+                <TableRow
+                  key={o.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() =>
+                    startTransition(() => router.push(`/backoffice/sales-orders/${o.id}`))
+                  }
+                >
+                  <TableCell className="font-mono text-sm">
+                    {o.salesorderNo}
                   </TableCell>
                   <TableCell>
                     <span
