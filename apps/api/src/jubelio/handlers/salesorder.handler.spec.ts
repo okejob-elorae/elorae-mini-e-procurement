@@ -131,6 +131,8 @@ describe("SalesOrderWebhookHandler", () => {
     expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ lastIsCanceled: true }),
     }));
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].create.status).toBe("CANCELLED");
+    expect(prisma.salesOrder.upsert.mock.calls[0][0].create.isCanceled).toBe(true);
     expect(r).toEqual({ kind: "processed" });
   });
 
