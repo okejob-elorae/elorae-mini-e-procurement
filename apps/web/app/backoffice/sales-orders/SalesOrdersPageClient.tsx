@@ -85,61 +85,76 @@ export function SalesOrdersPageClient(props: Props) {
         <p className="text-muted-foreground">{t("pageSubtitle")}</p>
       </div>
 
-      <Card className="p-4 flex flex-wrap gap-3 items-end">
-        <div className="flex-1 min-w-[240px]">
-          <Input
-            placeholder={t("filter.searchPlaceholder")}
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-          />
+      <Card className="p-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-7">
+          <div className="lg:col-span-2">
+            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.searchPlaceholder")}</label>
+            <Input
+              placeholder={t("filter.searchPlaceholder")}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.channel")}</label>
+            <Select
+              value={props.channel || "ALL"}
+              onValueChange={(v) => pushParam("channel", v === "ALL" ? undefined : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t("filter.channel")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("filter.all")}</SelectItem>
+                {SALES_CHANNEL_VALUES.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {t(`channel.${CHANNEL_BADGE[c].labelKey}` as never)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.status")}</label>
+            <Select
+              value={props.status || "ALL"}
+              onValueChange={(v) => pushParam("status", v === "ALL" ? undefined : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t("filter.status")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("filter.all")}</SelectItem>
+                {SALES_ORDER_STATUS_VALUES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`status.${s}` as never)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateRange")}</label>
+            <Input
+              type="date"
+              value={props.dateFrom}
+              onChange={(e) => pushParam("dateFrom", e.target.value || undefined)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">&nbsp;</label>
+            <Input
+              type="date"
+              value={props.dateTo}
+              onChange={(e) => pushParam("dateTo", e.target.value || undefined)}
+            />
+          </div>
+          <div className="flex flex-col justify-end">
+            <Button variant="outline" onClick={reset} className="w-full">
+              {t("filter.reset")}
+            </Button>
+          </div>
         </div>
-        <Select
-          value={props.channel || "ALL"}
-          onValueChange={(v) => pushParam("channel", v === "ALL" ? undefined : v)}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder={t("filter.channel")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">{t("filter.all")}</SelectItem>
-            {SALES_CHANNEL_VALUES.map((c) => (
-              <SelectItem key={c} value={c}>
-                {t(`channel.${CHANNEL_BADGE[c].labelKey}` as never)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={props.status || "ALL"}
-          onValueChange={(v) => pushParam("status", v === "ALL" ? undefined : v)}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder={t("filter.status")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">{t("filter.all")}</SelectItem>
-            {SALES_ORDER_STATUS_VALUES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {t(`status.${s}` as never)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
-          type="date"
-          value={props.dateFrom}
-          onChange={(e) => pushParam("dateFrom", e.target.value || undefined)}
-          className="w-[160px]"
-        />
-        <Input
-          type="date"
-          value={props.dateTo}
-          onChange={(e) => pushParam("dateTo", e.target.value || undefined)}
-          className="w-[160px]"
-        />
-        <Button variant="outline" onClick={reset}>
-          {t("filter.reset")}
-        </Button>
       </Card>
 
       <Card>
@@ -200,21 +215,26 @@ export function SalesOrdersPageClient(props: Props) {
         </Table>
       </Card>
 
-      {props.totalCount > props.pageSize && (
-        <Pager
-          page={props.page}
-          pageSize={props.pageSize}
-          total={props.totalCount}
-          onPageChange={(p) => {
-            const params = new URLSearchParams(sp.toString());
-            params.set("page", String(p));
-            startTransition(() =>
-              router.push(`/backoffice/sales-orders?${params.toString()}`),
-            );
-          }}
-          onPageSizeChange={() => {}}
-        />
-      )}
+      <Pager
+        page={props.page}
+        pageSize={props.pageSize}
+        total={props.totalCount}
+        onPageChange={(p) => {
+          const params = new URLSearchParams(sp.toString());
+          params.set("page", String(p));
+          startTransition(() =>
+            router.push(`/backoffice/sales-orders?${params.toString()}`),
+          );
+        }}
+        onPageSizeChange={(size) => {
+          const params = new URLSearchParams(sp.toString());
+          params.set("pageSize", String(size));
+          params.delete("page");
+          startTransition(() =>
+            router.push(`/backoffice/sales-orders?${params.toString()}`),
+          );
+        }}
+      />
     </div>
   );
 }
