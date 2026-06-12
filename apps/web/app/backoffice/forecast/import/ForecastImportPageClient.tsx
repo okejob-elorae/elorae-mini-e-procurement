@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { ArrowLeft, Info, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,12 +25,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Pagination } from '@/components/ui/pagination';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { DataCoverageBar } from '@/components/forecast/data-coverage-bar';
 import {
   deleteSalesHistoryImport,
   getDataCoverage,
   getSalesHistoryImports,
-  importSalesHistory,
   type DataCoverage,
   type SalesHistoryImportSummary,
 } from '@/app/actions/forecast';
@@ -55,15 +60,12 @@ function yearOptions(): number[] {
   return [current - 2, current - 1, current];
 }
 
-async function fileToBase64(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
-  }
-  return btoa(binary);
-}
+type ImportApiResponse = {
+  success: boolean;
+  imported?: number;
+  skipped?: number;
+  error?: string;
+};
 
 export function ForecastImportPageClient() {
   const t = useTranslations('forecast');
@@ -71,6 +73,7 @@ export function ForecastImportPageClient() {
   const [periodMonth, setPeriodMonth] = useState(String(new Date().getMonth() + 1));
   const [periodYear, setPeriodYear] = useState(String(new Date().getFullYear()));
   const [file, setFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [imports, setImports] = useState<SalesHistoryImportSummary[]>([]);
   const [coverage, setCoverage] = useState<DataCoverage | null>(null);
@@ -108,15 +111,18 @@ export function ForecastImportPageClient() {
     }
     setUploading(true);
     try {
-      const base64 = await fileToBase64(file);
-      const res = await importSalesHistory({
-        base64,
-        fileName: file.name,
-        channel,
-        periodMonth: Number(periodMonth),
-        periodYear: Number(periodYear),
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('channel', channel);
+      formData.append('periodMonth', periodMonth);
+      formData.append('periodYear', periodYear);
+
+      const response = await fetch('/api/forecast/import', {
+        method: 'POST',
+        body: formData,
       });
-      if (!res.success) {
+      const res = (await response.json()) as ImportApiResponse;
+      if (!response.ok || !res.success) {
         toast.error(res.error ?? 'Import failed');
         return;
       }
@@ -127,6 +133,7 @@ export function ForecastImportPageClient() {
         })
       );
       setFile(null);
+      setFileInputKey((k) => k + 1);
       await refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Import failed');
@@ -180,7 +187,7 @@ export function ForecastImportPageClient() {
             <div className="grid gap-2 lg:col-span-2">
               <Label>{t('import.channel')}</Label>
               <Select value={channel} onValueChange={(v) => setChannel(v as 'SHOPEE' | 'TIKTOK')}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -193,7 +200,7 @@ export function ForecastImportPageClient() {
             <div className="grid gap-2 lg:col-span-2">
               <Label>{t('import.period')} (bulan)</Label>
               <Select value={periodMonth} onValueChange={setPeriodMonth}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -209,7 +216,7 @@ export function ForecastImportPageClient() {
             <div className="grid gap-2 lg:col-span-2">
               <Label>Tahun</Label>
               <Select value={periodYear} onValueChange={setPeriodYear}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -225,6 +232,7 @@ export function ForecastImportPageClient() {
             <div className="grid gap-2 lg:col-span-4">
               <Label>File (.xlsx)</Label>
               <Input
+                key={fileInputKey}
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -256,7 +264,27 @@ export function ForecastImportPageClient() {
                 <TableHead>Periode</TableHead>
                 <TableHead>File</TableHead>
                 <TableHead className="text-right">Imported</TableHead>
-                <TableHead className="text-right">Skipped</TableHead>
+                <TableHead className="text-right">
+                  <span className="inline-flex items-center justify-end gap-1">
+                    Skipped
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex text-muted-foreground hover:text-foreground"
+                            aria-label={t('import.skippedHelpAriaLabel')}
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-left">
+                          {t('import.skippedHelp')}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </span>
+                </TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>

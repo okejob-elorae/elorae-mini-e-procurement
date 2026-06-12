@@ -20,6 +20,7 @@ import {
   decryptSupplierBankAccount,
   supplierSchema,
   supplierUpdateSchema,
+  SUPPLIER_DELETE_BLOCKED,
 } from '@/lib/suppliers/mutations';
 
 async function requireSession() {
@@ -109,11 +110,23 @@ export async function updateSupplierAction(
   return supplier;
 }
 
-export async function deleteSupplierAction(id: string) {
+export type DeleteSupplierActionResult =
+  | { success: true }
+  | { success: false; messageKey: 'cannotDeleteSupplierInUse' | 'failedToDeleteSupplier' };
+
+export async function deleteSupplierAction(id: string): Promise<DeleteSupplierActionResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
-  await deleteSupplier(id);
-  revalidatePath('/backoffice/suppliers');
+  try {
+    await deleteSupplier(id);
+    revalidatePath('/backoffice/suppliers');
+    return { success: true };
+  } catch (error) {
+    if (error instanceof Error && error.message === SUPPLIER_DELETE_BLOCKED) {
+      return { success: false, messageKey: 'cannotDeleteSupplierInUse' };
+    }
+    return { success: false, messageKey: 'failedToDeleteSupplier' };
+  }
 }
 
 export async function approveSupplierAction(id: string) {

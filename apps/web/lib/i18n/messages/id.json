@@ -481,6 +481,7 @@
     "failedToCreateSupplier": "Gagal membuat pemasok",
     "anErrorOccurred": "Terjadi kesalahan",
     "supplierDeletedSuccessfully": "Pemasok berhasil dihapus",
+    "cannotDeleteSupplierInUse": "Pemasok ini tidak dapat dihapus karena masih terhubung ke data yang ada, seperti pesanan pembelian atau work order.",
     "failedToDeleteSupplier": "Gagal menghapus pemasok",
     "bankAccountDecrypted": "Rekening bank berhasil didekripsi",
     "failedToDecryptBankAccount": "Gagal mendekripsi rekening bank",
@@ -969,12 +970,17 @@
       "deleteConfirm": "Hapus import {channel} {period}? {count} baris data akan dihapus.",
       "alreadyExists": "Data untuk {channel} {period} sudah diimport. Hapus import sebelumnya jika ingin re-import.",
       "success": "{imported} baris berhasil diimport, {skipped} dilewati.",
+      "skippedHelp": "Baris pesanan selesai yang valid, tetapi tidak disimpan karena channel, ID pesanan, dan SKU yang sama sudah ada (dari import sebelumnya atau baris duplikat dalam file).",
+      "skippedHelpAriaLabel": "Tentang baris dilewati",
       "goToImport": "Import Data"
     },
     "config": {
       "growth": "Growth Factor (%)",
+      "growthHint": "Mengalikan setiap forecast bulanan setelah musiman. % lebih tinggi = permintaan naik; negatif = turun.",
       "lookback": "Lookback (bulan)",
+      "lookbackHint": "Bulan riwayat penjualan untuk baseline. Lebih sedikit = lebih responsif ke tren terbaru; lebih banyak = rata-rata lebih halus.",
       "decay": "Weight Decay",
+      "decayHint": "Seberapa cepat bulan lama memudar dalam lookback (0–1). Lebih rendah = bulan terbaru dominan; mendekati 1.0 = bobot merata.",
       "notes": "Catatan",
       "run": "Jalankan Forecast",
       "running": "Menghitung forecast...",
@@ -988,7 +994,13 @@
       "planTarget": "Target Plan",
       "noPlan": "Belum ada plan",
       "dataCoverage": "Data Coverage",
-      "months": "bulan"
+      "months": "bulan",
+      "summaryTitle": "Ringkasan Forecast",
+      "searchPlaceholder": "Cari SKU atau nama produk…",
+      "empty": "Belum ada hasil forecast. Import data penjualan lalu jalankan forecast.",
+      "noMatch": "Tidak ada artikel yang cocok dengan pencarian.",
+      "abc": "ABC",
+      "xyz": "XYZ"
     },
     "abc": {
       "A": "High Revenue",
@@ -1010,6 +1022,17 @@
       "BZ": "Low priority. Safety stock optional.",
       "CY": "Produce to order. Do not stock.",
       "CZ": "Produce to order only. Do not stock."
+    },
+    "matrixModal": {
+      "title": "{key} — {abc} · {xyz}",
+      "articleCount": "{count} artikel",
+      "empty": "Tidak ada artikel di sel ini.",
+      "parentSku": "Parent SKU",
+      "product": "Produk",
+      "avgMonthly": "Rata-rata/bulan",
+      "annual": "Tahunan",
+      "planTarget": "Target plan",
+      "cv": "CV"
     },
     "bridge": {
       "title": "Suggestion ke Plan Kerja",

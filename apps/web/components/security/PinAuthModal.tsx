@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import { toUserFacingError } from '@/lib/errors/user-facing';
 
 interface PinAuthModalProps {
   isOpen: boolean;
@@ -35,8 +36,8 @@ export function PinAuthModal({ isOpen, onClose, onConfirm, action }: PinAuthModa
       await onConfirm(pin);
       setPin('');
       onClose();
-    } catch (err: any) {
-      setError(err.message || t('pinInvalid'));
+    } catch (err: unknown) {
+      setError(toUserFacingError(err, t('pinInvalid')));
     } finally {
       setLoading(false);
     }

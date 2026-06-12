@@ -318,17 +318,17 @@ export default function SuppliersPage() {
       throw new Error(msg);
     }
 
-    try {
-      const { deleteSupplierAction } = await import('@/app/actions/suppliers');
-      await deleteSupplierAction(deleteTargetId);
-      toast.success(t('supplierDeletedSuccessfully'));
-      fetchSuppliers();
-      setDeletePinModalOpen(false);
-      setDeleteTargetId(null);
-    } catch (e: any) {
-      toast.error(t('failedToDeleteSupplier'));
-      throw e;
+    const { deleteSupplierAction } = await import('@/app/actions/suppliers');
+    const deleteResult = await deleteSupplierAction(deleteTargetId);
+    if (!deleteResult.success) {
+      const msg = t(deleteResult.messageKey);
+      toast.error(msg);
+      throw new Error(msg);
     }
+    toast.success(t('supplierDeletedSuccessfully'));
+    fetchSuppliers();
+    setDeletePinModalOpen(false);
+    setDeleteTargetId(null);
   };
 
   const handleViewBankAccountConfirm = async (pin: string) => {

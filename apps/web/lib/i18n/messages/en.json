@@ -481,6 +481,7 @@
     "failedToCreateSupplier": "Failed to create supplier",
     "anErrorOccurred": "An error occurred",
     "supplierDeletedSuccessfully": "Supplier deleted successfully",
+    "cannotDeleteSupplierInUse": "This supplier cannot be deleted because it is still linked to existing records such as purchase orders or work orders.",
     "failedToDeleteSupplier": "Failed to delete supplier",
     "bankAccountDecrypted": "Bank account decrypted",
     "failedToDecryptBankAccount": "Failed to decrypt bank account",
@@ -969,12 +970,17 @@
       "deleteConfirm": "Delete {channel} {period} import? {count} rows will be removed.",
       "alreadyExists": "Data for {channel} {period} already imported. Delete the existing import to re-import.",
       "success": "{imported} rows imported, {skipped} skipped.",
+      "skippedHelp": "Valid completed order lines that were not saved because the same channel, order ID, and SKU already exists (from a prior import or duplicate rows in the file).",
+      "skippedHelpAriaLabel": "About skipped rows",
       "goToImport": "Import Data"
     },
     "config": {
       "growth": "Growth Factor (%)",
+      "growthHint": "Scales every monthly forecast after seasonality. Higher % raises demand; negative % lowers it.",
       "lookback": "Lookback (months)",
+      "lookbackHint": "Months of sales history for the baseline. Fewer = reacts faster to recent trends; more = smoother average.",
       "decay": "Weight Decay",
+      "decayHint": "How fast older months fade within the lookback (0–1). Lower = recent months dominate; near 1.0 = equal weight.",
       "notes": "Notes",
       "run": "Run Forecast",
       "running": "Running forecast...",
@@ -988,7 +994,13 @@
       "planTarget": "Plan Target",
       "noPlan": "No plan yet",
       "dataCoverage": "Data Coverage",
-      "months": "months"
+      "months": "months",
+      "summaryTitle": "Forecast Summary",
+      "searchPlaceholder": "Search by SKU or product name…",
+      "empty": "No forecast results. Import sales data and run forecast.",
+      "noMatch": "No articles match your search.",
+      "abc": "ABC",
+      "xyz": "XYZ"
     },
     "abc": {
       "A": "High Revenue",
@@ -1010,6 +1022,17 @@
       "BZ": "Low priority. Safety stock optional.",
       "CY": "Produce to order. Do not stock.",
       "CZ": "Produce to order only. Do not stock."
+    },
+    "matrixModal": {
+      "title": "{key} — {abc} · {xyz}",
+      "articleCount": "{count} articles",
+      "empty": "No articles in this cell.",
+      "parentSku": "Parent SKU",
+      "product": "Product",
+      "avgMonthly": "Avg/mo",
+      "annual": "Annual",
+      "planTarget": "Plan target",
+      "cv": "CV"
     },
     "bridge": {
       "title": "Suggestions to Plan Kerja",
