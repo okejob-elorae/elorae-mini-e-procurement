@@ -26,6 +26,7 @@ import {
   Palette,
   CalendarDays,
   Activity,
+  Store,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -117,6 +118,15 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.INVENTORY_VIEW,
   },
   {
+    labelKey: 'sales',
+    href: '/backoffice/sales-orders',
+    icon: Store,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+    children: [
+      { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
+    ],
+  },
+  {
     labelKey: 'workOrders',
     href: '/backoffice/work-orders',
     icon: ClipboardList,
@@ -171,10 +181,16 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.AUDIT_TRAIL_VIEW,
   },
   {
-    labelKey: 'jubelioAdmin',
+    labelKey: 'jubelio',
     href: '/backoffice/jubelio/admin',
     icon: Activity,
     permission: PERMISSIONS.JUBELIO_ADMIN_VIEW,
+    children: [
+      { labelKey: 'navJubelioAdmin', href: '/backoffice/jubelio/admin', permission: PERMISSIONS.JUBELIO_ADMIN_VIEW },
+      { labelKey: 'navJubelioSettings', href: '/backoffice/jubelio/settings', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
+      { labelKey: 'navJubelioCategories', href: '/backoffice/jubelio/categories', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
+      { labelKey: 'navJubelioMigration', href: '/backoffice/jubelio/migration', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
+    ],
   },
   {
     labelKey: 'settings',
@@ -230,6 +246,7 @@ function Sidebar({
     if (path.startsWith('/backoffice/forecast') || path.startsWith('/backoffice/production')) {
       return '/backoffice/production/planning';
     }
+    if (path.startsWith('/backoffice/jubelio')) return '/backoffice/jubelio/admin';
     return null;
   };
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));

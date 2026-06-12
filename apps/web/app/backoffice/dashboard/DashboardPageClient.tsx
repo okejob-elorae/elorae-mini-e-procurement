@@ -42,10 +42,15 @@ import {
   Calendar,
   Download,
   ChevronDown,
+  Info,
+  Store,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Role } from '@/lib/constants/enums';
 import type { SerializedDashboardStats } from '@/lib/dashboard/serialize';
 import type { RawMaterialShortageRow, WorkOrderStatusCount } from '@/lib/dashboard/queries';
+import { formatIDR } from '@/lib/sales-orders/format';
+import type { MarketplaceKpi } from '@/lib/sales-orders/queries';
 import {
   getProcurementReport,
   exportProcurementReport,
@@ -155,6 +160,7 @@ type DashboardPageClientProps = {
   };
   initialRawMaterialShortage: RawMaterialShortageRow[];
   initialWoStatusCounts: WorkOrderStatusCount[];
+  marketplaceKpi: MarketplaceKpi;
 };
 
 export function DashboardPageClient({
@@ -164,6 +170,7 @@ export function DashboardPageClient({
   initialCogsRawVsFinished,
   initialRawMaterialShortage,
   initialWoStatusCounts,
+  marketplaceKpi,
 }: DashboardPageClientProps) {
   const { data: session } = useSession();
   const tDashboard = useTranslations('dashboard');
@@ -481,6 +488,57 @@ export function DashboardPageClient({
         <Badge variant="secondary" className="w-fit">
           {getRoleLabel((session?.user?.role ?? 'ADMIN') as Role)}
         </Badge>
+      </div>
+
+      {/* Marketplace Section */}
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold">{tDashboard('marketplaceSection')}</h2>
+        <TooltipProvider>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-1">
+                  {tDashboard('pendingFulfillmentTitle')}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      {tDashboard('pendingFulfillmentTooltip')}
+                    </TooltipContent>
+                  </Tooltip>
+                </CardTitle>
+                <Package className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{marketplaceKpi.pendingFulfillmentCount}</div>
+                <p className="text-xs text-muted-foreground">{tDashboard('pendingFulfillmentDesc')}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-1">
+                  {tDashboard('todaySalesTitle')}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      {tDashboard('todaySalesTooltip')}
+                    </TooltipContent>
+                  </Tooltip>
+                </CardTitle>
+                <Store className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatIDR(marketplaceKpi.todaySalesTotal)}</div>
+                <p className="text-xs text-muted-foreground">
+                  {tDashboard('todaySalesCount', { count: marketplaceKpi.todaySalesCount })}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </TooltipProvider>
       </div>
 
       {/* Stats Grid */}

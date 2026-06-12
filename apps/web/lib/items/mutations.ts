@@ -268,7 +268,16 @@ export async function updateItem(id: string, data: ItemFormData) {
 
   const existing = await prisma.item.findUnique({
     where: { id },
-    select: { sku: true, categoryId: true },
+    select: {
+      sku: true,
+      categoryId: true,
+      nameId: true,
+      nameEn: true,
+      description: true,
+      sellingPrice: true,
+      variants: true,
+      isActive: true,
+    },
   });
   if (!existing) throw new Error('Item not found');
   const effectiveCategoryId =
@@ -290,7 +299,26 @@ export async function updateItem(id: string, data: ItemFormData) {
     },
   });
 
-  return serializeSingleItem(item);
+  return {
+    item,
+    serialized: serializeSingleItem(item),
+    before: {
+      nameId: existing.nameId,
+      nameEn: existing.nameEn,
+      description: existing.description,
+      sellingPrice: existing.sellingPrice == null ? null : Number(existing.sellingPrice),
+      variants: (existing.variants as Array<Record<string, string>> | null) ?? null,
+      isActive: existing.isActive,
+    },
+    after: {
+      nameId: item.nameId,
+      nameEn: item.nameEn,
+      description: item.description,
+      sellingPrice: item.sellingPrice == null ? null : Number(item.sellingPrice),
+      variants: (item.variants as Array<Record<string, string>> | null) ?? null,
+      isActive: item.isActive,
+    },
+  };
 }
 
 export async function deleteItem(id: string) {

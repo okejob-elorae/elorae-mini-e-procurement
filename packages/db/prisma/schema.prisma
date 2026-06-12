@@ -72,6 +72,7 @@ model User {
   grnsOwnerApproved       GRN[]      @relation("GRNOwnerApproved")
   grnsOwnerDeclined       GRN[]      @relation("GRNOwnerDeclined")
   enqueuedOutbox          JubelioOutbox[] @relation("EnqueuedOutbox")
+  jubelioPushDefaultsUpdates JubelioPushDefaults[] @relation("JubelioPushDefaultsUpdater")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -867,6 +868,17 @@ model ForecastResult {
 enum SalesChannel {
   SHOPEE
   TIKTOK
+  TOKOPEDIA
+  OTHER
+}
+
+enum SalesOrderStatus {
+  NEW
+  PROCESSING
+  SHIPPED
+  COMPLETED
+  CANCELLED
+  RETURNED
 }
 
 enum SalesHistoryStatus {
@@ -1181,7 +1193,22 @@ model JubelioCategoryMapping {
   itemCategory      ItemCategory @relation(fields: [itemCategoryId], references: [id], onDelete: Cascade)
   createdAt         DateTime     @default(now())
 
-  @@index([itemCategoryId])
+  @@unique([itemCategoryId])
+}
+
+model JubelioSalesOrderState {
+  id                  String    @id @default(cuid())
+  salesorderId        Int       @unique
+  stockApplied        Boolean   @default(false)
+  lastStatus          String?
+  lastIsCanceled      Boolean   @default(false)
+  appliedAt           DateTime?
+  reversedAt          DateTime?
+  lastWebhookEventId  String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([lastWebhookEventId])
 }
 
 model JubelioApiCall {
@@ -1220,4 +1247,104 @@ model JubelioOutbox {
   @@index([status, createdAt])
   @@index([entityType, entityId])
   @@index([enqueuedById])
+}
+
+model JubelioPushDefaults {
+  id                       String   @id @default("singleton")
+  sellTaxId                Int      @default(-1)
+  buyTaxId                 Int      @default(-1)
+  salesAcctId              Int      @default(28)
+  cogsAcctId               Int      @default(30)
+  invtAcctId               Int      @default(4)
+  purchAcctId              Int?
+  uomId                    Int      @default(-1)
+  brandId                  String?
+  brandName                String?
+  sellThis                 Boolean  @default(true)
+  buyThis                  Boolean  @default(true)
+  stockThis                Boolean  @default(true)
+  dropshipThis             Boolean  @default(false)
+  isActive                 Boolean  @default(true)
+  sellUnit                 String   @default("Buah")
+  buyUnit                  String   @default("Buah")
+  packageWeight            Int      @default(1000)
+  storePriorityQtyTreshold Int      @default(0)
+  rop                      Int      @default(0)
+  useSingleImageSet        Boolean  @default(false)
+  useSerialNumber          Boolean  @default(false)
+  buyPrice                 Decimal  @default(0) @db.Decimal(15,2)
+  updatedAt                DateTime @updatedAt
+  updatedById              String?
+  updatedBy                User?    @relation("JubelioPushDefaultsUpdater", fields: [updatedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+}
+
+model SalesOrder {
+  id                  String           @id @default(cuid())
+  salesorderId        Int              @unique
+  salesorderNo        String
+  channel             SalesChannel
+  sourceName          String
+  status              SalesOrderStatus
+  channelStatus       String?
+  internalStatus      String?
+  wmsStatus           String?
+  isCanceled          Boolean          @default(false)
+  isPaid              Boolean          @default(false)
+  markedAsComplete    Boolean          @default(false)
+  customerName        String?
+  customerPhone       String?
+  customerEmail       String?
+  shippingProvince    String?
+  shippingCity        String?
+  shippingAddress     Json?
+  subTotal            Decimal          @db.Decimal(15, 2)
+  totalDisc           Decimal          @db.Decimal(15, 2)
+  totalTax            Decimal          @db.Decimal(15, 2)
+  shippingCost        Decimal          @db.Decimal(15, 2)
+  grandTotal          Decimal          @db.Decimal(15, 2)
+  feeBreakdown        Json?
+  paymentMethod       String?
+  paymentDate         DateTime?
+  transactionDate     DateTime
+  createdDateJubelio  DateTime?
+  completedDate       DateTime?
+  cancelDate          DateTime?
+  lastModifiedJubelio DateTime?
+  trackingNumber      String?
+  courier             String?
+  lastWebhookEventId  String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  items               SalesOrderItem[]
+
+  @@index([channel])
+  @@index([status])
+  @@index([transactionDate])
+  @@index([shippingProvince])
+  @@index([shippingCity])
+}
+
+model SalesOrderItem {
+  id                 String     @id @default(cuid())
+  salesOrderId       String
+  salesorderDetailId Int        @unique
+  jubelioItemId      Int
+  jubelioItemCode    String
+  itemId             String?
+  productName        String
+  qty                Decimal    @db.Decimal(15, 4)
+  qtyInBase          Decimal    @db.Decimal(15, 4)
+  returnedQty        Decimal    @db.Decimal(15, 4) @default(0)
+  isCanceledItem     Boolean    @default(false)
+  unitPrice          Decimal    @db.Decimal(15, 2)
+  pricePaid          Decimal    @db.Decimal(15, 2)
+  discAmount         Decimal    @db.Decimal(15, 2)
+  taxAmount          Decimal    @db.Decimal(15, 2)
+  lineTotal          Decimal    @db.Decimal(15, 2)
+  discMarketplace    Decimal    @db.Decimal(15, 2) @default(0)
+  weightInGram       Decimal    @db.Decimal(15, 4) @default(0)
+  salesOrder         SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([jubelioItemCode])
 }
