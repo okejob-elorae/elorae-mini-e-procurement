@@ -8,9 +8,16 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-/** Delegate that must exist after Plan Kerja schema; used to detect stale dev singletons. */
-function hasPlanningDelegates(client: PrismaClient): boolean {
-  return typeof (client as PrismaClient & { planYear?: unknown }).planYear !== "undefined";
+/** Delegates that must exist on the current schema; used to detect stale dev singletons. */
+function hasRequiredDelegates(client: PrismaClient): boolean {
+  const extended = client as PrismaClient & {
+    planYear?: unknown;
+    salesOrder?: unknown;
+  };
+  return (
+    typeof extended.planYear !== "undefined" &&
+    typeof extended.salesOrder !== "undefined"
+  );
 }
 
 function createPrismaClient(): PrismaClient {
@@ -19,7 +26,7 @@ function createPrismaClient(): PrismaClient {
 
 function getPrismaClient(): PrismaClient {
   const cached = globalForPrisma.prisma;
-  if (cached && !hasPlanningDelegates(cached)) {
+  if (cached && !hasRequiredDelegates(cached)) {
     void cached.$disconnect().catch(() => {});
     globalForPrisma.prisma = undefined;
   }

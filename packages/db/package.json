@@ -20,7 +20,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "generate": "prisma generate",
+    "generate": "prisma generate && tsc",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
