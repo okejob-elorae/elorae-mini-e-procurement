@@ -23,7 +23,6 @@ import {
   Monitor,
   Check,
   BarChart2,
-  Palette,
   CalendarDays,
   Activity,
   Store,
