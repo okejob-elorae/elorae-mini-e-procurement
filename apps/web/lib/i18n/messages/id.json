@@ -38,6 +38,7 @@
     "supplierType": "Jenis Pemasok",
     "sales": "Penjualan",
     "navSalesOrders": "Pesanan",
+    "navFulfillment": "Pemenuhan",
     "items": "Item",
     "navItemsAll": "Semua Item",
     "navItemsCategory": "Kategori",
@@ -1160,6 +1161,46 @@
     "toast": {
       "syncSuccess": "Berhasil sinkron {count} kurir.",
       "syncError": "Sinkron gagal. Coba lagi."
+    }
+  },
+  "fulfillmentQueue": {
+    "pageTitle": "Antrian Pemenuhan",
+    "pageSubtitle": "Pesanan marketplace yang menunggu pick, pack, atau pengiriman.",
+    "empty": "Tidak ada pesanan yang cocok dengan filter saat ini.",
+    "filter": {
+      "fulfillmentStatus": "Status pemenuhan",
+      "channel": "Channel",
+      "search": "Cari",
+      "searchPlaceholder": "Nomor pesanan atau nama pembeli",
+      "dateRange": "Rentang tanggal",
+      "reset": "Reset",
+      "all": "Semua"
+    },
+    "fulfillmentStatus": {
+      "PENDING": "Menunggu",
+      "PICKED": "Sudah diambil",
+      "PACKED": "Sudah dikemas",
+      "SHIPPED": "Sudah dikirim"
+    },
+    "table": {
+      "orderNo": "No. Pesanan",
+      "channel": "Channel",
+      "buyer": "Pembeli",
+      "date": "Tanggal",
+      "fulfillmentStatus": "Pemenuhan",
+      "status": "Jubelio"
+    },
+    "batch": {
+      "selectedCount": "{count, plural, other {# dipilih}}",
+      "finishPick": "Selesai Pick",
+      "finishPack": "Selesai Pack",
+      "clear": "Bersihkan",
+      "toast": {
+        "success": "{processed} berhasil diproses.",
+        "successWithSkipped": "{processed} diproses, {skipped} dilewati.",
+        "forbidden": "Akses tidak diizinkan.",
+        "networkError": "Gagal terhubung ke server. Coba lagi."
+      }
     }
   }
 }

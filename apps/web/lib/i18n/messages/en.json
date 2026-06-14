@@ -38,6 +38,7 @@
     "supplierType": "Supplier Type",
     "sales": "Sales",
     "navSalesOrders": "Sales Orders",
+    "navFulfillment": "Fulfillment",
     "items": "Items",
     "navItemsAll": "All Items",
     "navItemsCategory": "Category",
@@ -1160,6 +1161,46 @@
     "toast": {
       "syncSuccess": "Synced {count} couriers.",
       "syncError": "Sync failed. Try again."
+    }
+  },
+  "fulfillmentQueue": {
+    "pageTitle": "Fulfillment Queue",
+    "pageSubtitle": "Marketplace orders awaiting pick, pack, or ship.",
+    "empty": "No orders match the current filters.",
+    "filter": {
+      "fulfillmentStatus": "Fulfillment status",
+      "channel": "Channel",
+      "search": "Search",
+      "searchPlaceholder": "Order # or buyer name",
+      "dateRange": "Date range",
+      "reset": "Reset",
+      "all": "All"
+    },
+    "fulfillmentStatus": {
+      "PENDING": "Pending",
+      "PICKED": "Picked",
+      "PACKED": "Packed",
+      "SHIPPED": "Shipped"
+    },
+    "table": {
+      "orderNo": "Order #",
+      "channel": "Channel",
+      "buyer": "Buyer",
+      "date": "Date",
+      "fulfillmentStatus": "Fulfillment",
+      "status": "Jubelio"
+    },
+    "batch": {
+      "selectedCount": "{count, plural, one {# selected} other {# selected}}",
+      "finishPick": "Finish Pick",
+      "finishPack": "Finish Pack",
+      "clear": "Clear",
+      "toast": {
+        "success": "{processed} processed.",
+        "successWithSkipped": "{processed} processed, {skipped} skipped.",
+        "forbidden": "Insufficient permissions.",
+        "networkError": "Couldn't reach the server. Try again."
+      }
     }
   }
 }
