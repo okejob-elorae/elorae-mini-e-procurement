@@ -108,6 +108,8 @@ interface ItemFormProps {
     reorderPoint?: number;
     overReceiveThreshold?: number;
     sellingPrice?: number;
+    targetMarginPercent?: number;
+    additionalCost?: number;
     consumptionRules?: Array<{
       materialId: string;
       material: {
@@ -198,6 +200,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       reorderPoint: initialData?.reorderPoint ?? 0,
       overReceiveThreshold: initialData?.overReceiveThreshold ?? 0,
       sellingPrice: initialData?.sellingPrice,
+      targetMarginPercent: initialData?.targetMarginPercent,
+      additionalCost: initialData?.additionalCost,
     },
   });
 
@@ -623,25 +627,73 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             )}
           </div>
 
-          {/* Selling Price (Finished goods only) */}
+          {/* Pricing (Finished goods only) */}
           {itemType === ItemType.FINISHED_GOOD && (
-            <div className="space-y-2">
-              <Label htmlFor="sellingPrice">Harga Jual (Selling price)</Label>
-              <Input
-                id="sellingPrice"
-                type="number"
-                step="0.01"
-                min="0"
-                {...register('sellingPrice', { valueAsNumber: true })}
-                placeholder="0.00"
-                aria-invalid={!!errors.sellingPrice}
-                className={errors.sellingPrice ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-              />
-              {errors.sellingPrice && (
-                <p className="text-sm text-destructive" role="alert">
-                  {errors.sellingPrice.message}
+            <div className="space-y-4 border-t pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="sellingPrice">Harga Jual (Selling price)</Label>
+                <Input
+                  id="sellingPrice"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  {...register('sellingPrice', { valueAsNumber: true })}
+                  placeholder="0.00"
+                  aria-invalid={!!errors.sellingPrice}
+                  className={errors.sellingPrice ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                />
+                {errors.sellingPrice && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {errors.sellingPrice.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="targetMarginPercent">
+                  Target Margin (%) <span className="text-xs text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  id="targetMarginPercent"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  {...register("targetMarginPercent", { valueAsNumber: true })}
+                  aria-invalid={!!errors.targetMarginPercent}
+                  className={errors.targetMarginPercent ? "border-destructive focus-visible:ring-destructive/20" : ""}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Leave blank to use the default from Jubelio push settings.
                 </p>
-              )}
+                {errors.targetMarginPercent && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {errors.targetMarginPercent.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="additionalCost">
+                  Additional Cost per pcs (Rp) <span className="text-xs text-muted-foreground">(optional)</span>
+                </Label>
+                <Input
+                  id="additionalCost"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  {...register("additionalCost", { valueAsNumber: true })}
+                  aria-invalid={!!errors.additionalCost}
+                  className={errors.additionalCost ? "border-destructive focus-visible:ring-destructive/20" : ""}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Flat add-on per unit (packaging, etc).
+                </p>
+                {errors.additionalCost && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {errors.additionalCost.message}
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </CardContent>

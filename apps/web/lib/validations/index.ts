@@ -39,6 +39,8 @@ export function createItemSchema(t: ValidationTranslate = defaultT) {
     reorderPoint: numberDefaultZero(),
     overReceiveThreshold: numberDefaultZero(),
     sellingPrice: z.number().min(0).optional(),
+    targetMarginPercent: z.number().min(0).optional(),
+    additionalCost: z.number().min(0).optional(),
   });
 }
 
