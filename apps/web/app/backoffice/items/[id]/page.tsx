@@ -32,6 +32,9 @@ export default async function ItemDetailPage({
     overReceiveThreshold:
       item.overReceiveThreshold != null ? Number(item.overReceiveThreshold) : undefined,
     sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : undefined,
+    targetMarginPercent:
+      item.targetMarginPercent != null ? Number(item.targetMarginPercent) : undefined,
+    additionalCost: item.additionalCost != null ? Number(item.additionalCost) : undefined,
     consumptionRules: (
       item.fgConsumptions as Array<{
         materialId: string;
