@@ -627,7 +627,35 @@
     "confirmDeleteItem": "Yakin ingin menghapus item ini?",
     "noVariants": "Item ini tidak memiliki varian.",
     "noBOM": "Item ini tidak memiliki BOM.",
-    "variantLabel": "Varian {index}:"
+    "variantLabel": "Varian {index}:",
+    "pricing": {
+      "section": "Harga",
+      "sellingPriceLabel": "Harga Jual",
+      "targetMarginLabel": "Target Margin (%)",
+      "targetMarginHint": "Kosongkan untuk pakai default dari pengaturan push Jubelio.",
+      "additionalCostLabel": "Biaya Tambahan per pcs (Rp)",
+      "additionalCostHint": "Tambahan tetap per unit (kemasan, dll).",
+      "computedPreview": "Harga jual otomatis = avgCost × (1 + margin/100) + biaya tambahan"
+    },
+    "priceHistory": {
+      "tab": "Riwayat Harga",
+      "loading": "Memuat riwayat harga…",
+      "empty": "Belum ada perubahan harga tercatat.",
+      "colChangedAt": "Tanggal ubah",
+      "colTrigger": "Pemicu",
+      "colOldPrice": "Harga lama",
+      "colNewPrice": "Harga baru",
+      "colAvgCost": "Basis avgCost",
+      "colMargin": "Margin dipakai",
+      "colSource": "FG Receipt",
+      "colActor": "Pelaku",
+      "trigger": {
+        "FG_RECEIPT": "Penerimaan FG",
+        "MARGIN_CHANGE": "Ubah margin",
+        "DEFAULTS_CHANGE": "Ubah default",
+        "MANUAL_EDIT": "Edit manual"
+      }
+    }
   },
   "workOrders": {
     "draft": "Draft",

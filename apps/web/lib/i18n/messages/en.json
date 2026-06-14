@@ -627,7 +627,35 @@
     "confirmDeleteItem": "Are you sure you want to delete this item?",
     "noVariants": "This item has no variants.",
     "noBOM": "This item has no BOM.",
-    "variantLabel": "Variant {index}:"
+    "variantLabel": "Variant {index}:",
+    "pricing": {
+      "section": "Pricing",
+      "sellingPriceLabel": "Selling Price (Harga Jual)",
+      "targetMarginLabel": "Target Margin (%)",
+      "targetMarginHint": "Leave blank to use the default from Jubelio push settings.",
+      "additionalCostLabel": "Additional Cost per pcs (Rp)",
+      "additionalCostHint": "Flat add-on per unit (packaging, etc).",
+      "computedPreview": "Computed selling price = avgCost × (1 + margin/100) + additionalCost"
+    },
+    "priceHistory": {
+      "tab": "Price History",
+      "loading": "Loading price history…",
+      "empty": "No price changes recorded yet.",
+      "colChangedAt": "Changed at",
+      "colTrigger": "Trigger",
+      "colOldPrice": "Old price",
+      "colNewPrice": "New price",
+      "colAvgCost": "avgCost basis",
+      "colMargin": "Margin used",
+      "colSource": "FG Receipt",
+      "colActor": "Actor",
+      "trigger": {
+        "FG_RECEIPT": "FG Receipt",
+        "MARGIN_CHANGE": "Margin change",
+        "DEFAULTS_CHANGE": "Defaults change",
+        "MANUAL_EDIT": "Manual edit"
+      }
+    }
   },
   "workOrders": {
     "draft": "Draft",
