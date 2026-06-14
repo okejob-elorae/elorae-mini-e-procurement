@@ -1103,6 +1103,40 @@
       "total_amount_mp": "Marketplace total"
     },
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "fulfillment": {
+      "section": "Fulfillment",
+      "status": "Status",
+      "statusValues": {
+        "PENDING": "Pending",
+        "PICKED": "Picked",
+        "PACKED": "Packed",
+        "SHIPPED": "Shipped"
+      },
+      "timeline": "Timeline",
+      "timelinePicked": "Picked",
+      "timelinePacked": "Packed",
+      "timelineShipped": "Shipped",
+      "tracking": "Tracking",
+      "byUser": "by {name}",
+      "cancelledLocked": "Cancelled — fulfillment locked.",
+      "action": {
+        "finishPick": "Finish Pick",
+        "finishPack": "Finish Pack",
+        "ship": "Ship",
+        "courier": "Courier",
+        "courierPlaceholder": "Select courier…",
+        "shipConfirmTitle": "Ship this order?",
+        "shipConfirmBody": "Jubelio will request the AWB from {courier}. This action cannot be undone.",
+        "shipConfirmOk": "Ship",
+        "shipConfirmCancel": "Cancel"
+      },
+      "toast": {
+        "success": "Action completed.",
+        "invalidTransition": "Status already changed. Refresh the page.",
+        "forbidden": "Insufficient permissions.",
+        "networkError": "Couldn't reach the server. Try again."
+      }
+    }
   }
 }
