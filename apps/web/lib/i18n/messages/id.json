@@ -66,6 +66,7 @@
     "navJubelioSettings": "Pengaturan",
     "navJubelioCategories": "Kategori",
     "navJubelioMigration": "Migrasi",
+    "navJubelioCouriers": "Kurir",
     "settings": "Pengaturan",
     "masterData": "Data Master"
   },
@@ -1137,6 +1138,22 @@
         "forbidden": "Akses tidak diizinkan.",
         "networkError": "Gagal terhubung ke server. Coba lagi."
       }
+    }
+  },
+  "jubelioCouriers": {
+    "pageTitle": "Kurir Jubelio",
+    "pageSubtitle": "Daftar kurir cache yang dipakai aksi Kirim di halaman pesanan.",
+    "syncButton": "Sinkron dari Jubelio",
+    "lastSyncedAt": "Sinkron terakhir: {when}",
+    "empty": "Belum ada kurir tercache. Klik \"Sinkron dari Jubelio\" untuk mengisi.",
+    "table": {
+      "id": "ID",
+      "name": "Nama",
+      "syncedAt": "Disinkron pada"
+    },
+    "toast": {
+      "syncSuccess": "Berhasil sinkron {count} kurir.",
+      "syncError": "Sinkron gagal. Coba lagi."
     }
   }
 }

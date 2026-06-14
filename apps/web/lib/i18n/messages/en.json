@@ -66,6 +66,7 @@
     "navJubelioSettings": "Settings",
     "navJubelioCategories": "Categories",
     "navJubelioMigration": "Migration",
+    "navJubelioCouriers": "Couriers",
     "settings": "Settings",
     "masterData": "Master Data"
   },
@@ -1137,6 +1138,22 @@
         "forbidden": "Insufficient permissions.",
         "networkError": "Couldn't reach the server. Try again."
       }
+    }
+  },
+  "jubelioCouriers": {
+    "pageTitle": "Jubelio Couriers",
+    "pageSubtitle": "Cached courier list used by the Ship action on order detail.",
+    "syncButton": "Sync from Jubelio",
+    "lastSyncedAt": "Last synced: {when}",
+    "empty": "No couriers cached yet. Click \"Sync from Jubelio\" to populate.",
+    "table": {
+      "id": "ID",
+      "name": "Name",
+      "syncedAt": "Synced at"
+    },
+    "toast": {
+      "syncSuccess": "Synced {count} couriers.",
+      "syncError": "Sync failed. Try again."
     }
   }
 }
