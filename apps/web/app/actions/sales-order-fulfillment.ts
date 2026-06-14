@@ -11,11 +11,11 @@ import {
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { syncJubelioCouriers } from "@/app/actions/jubelio-couriers";
-
-export const FULFILLMENT_FORBIDDEN_REASON = "forbidden";
-
-export type FulfillmentActionResult = { ok: true } | { ok: false; reason: string };
-export type CourierOption = { id: number; name: string };
+import {
+  FULFILLMENT_FORBIDDEN_REASON,
+  type CourierOption,
+  type FulfillmentActionResult,
+} from "@/lib/sales-orders/fulfillment-result";
 
 type Authorized = { userId: string };
 

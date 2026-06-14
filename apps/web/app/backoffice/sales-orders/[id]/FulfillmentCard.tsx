@@ -23,10 +23,12 @@ import {
   finishPackAction,
   shipOrderAction,
   getCouriersForShipDialog,
+} from "@/app/actions/sales-order-fulfillment";
+import {
   FULFILLMENT_FORBIDDEN_REASON,
   type CourierOption,
   type FulfillmentActionResult,
-} from "@/app/actions/sales-order-fulfillment";
+} from "@/lib/sales-orders/fulfillment-result";
 
 const STATUS_TAILWIND: Record<SalesOrderFulfillmentStatus, string> = {
   PENDING: "bg-zinc-100 text-zinc-700 border-zinc-200",
