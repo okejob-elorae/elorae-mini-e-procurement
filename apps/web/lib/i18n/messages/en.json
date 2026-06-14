@@ -1133,6 +1133,9 @@
         "shipConfirmOk": "Ship",
         "shipConfirmCancel": "Cancel"
       },
+      "printSection": "Print",
+      "printPickList": "Print pick list",
+      "printPackingSlip": "Print packing slip",
       "toast": {
         "success": "Action completed.",
         "invalidTransition": "Status already changed. Refresh the page.",
@@ -1201,6 +1204,30 @@
         "forbidden": "Insufficient permissions.",
         "networkError": "Couldn't reach the server. Try again."
       }
+    }
+  },
+  "salesOrdersPrint": {
+    "pickList": {
+      "title": "Pick List",
+      "orderLabel": "Order:",
+      "channelLabel": "Channel:",
+      "dateLabel": "Date:",
+      "colSku": "SKU",
+      "colProduct": "Product",
+      "colQty": "Qty",
+      "pickedBy": "Picked by:",
+      "dateSigned": "Date:"
+    },
+    "packingSlip": {
+      "title": "PACKING SLIP",
+      "shipToLabel": "Ship to:",
+      "courierLabel": "Courier:",
+      "trackingLabel": "Tracking:",
+      "colSku": "SKU",
+      "colProduct": "Product",
+      "colQty": "Qty",
+      "thankYou": "Thank you for shopping with ELORAÉ!",
+      "questionsContact": "For questions: {email}"
     }
   }
 }

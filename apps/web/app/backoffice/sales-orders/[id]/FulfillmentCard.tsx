@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
+import Link from "next/link";
+import { Printer } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -222,6 +224,24 @@ export function FulfillmentCard(props: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+        <div className="pt-2 border-t">
+          <div className="text-xs text-muted-foreground mb-2">{t("printSection")}</div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/backoffice/sales-orders/${props.orderId}/pick-list`} target="_blank">
+                <Printer className="h-4 w-4 mr-2" />
+                {t("printPickList")}
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/backoffice/sales-orders/${props.orderId}/packing-slip`} target="_blank">
+                <Printer className="h-4 w-4 mr-2" />
+                {t("printPackingSlip")}
+              </Link>
+            </Button>
+          </div>
+        </div>
     </Card>
   );
 }
