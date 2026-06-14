@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@elorae/db";
+import { prisma, type JubelioOutboxEntityType } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { apiFetch } from "@/lib/internal-api";
 import { hasPushableChange, type PushableSnapshot } from "@/lib/items/jubelio-push-diff";
@@ -28,7 +28,7 @@ export async function enqueueProductPushOnCreate(itemId: string): Promise<void> 
   const userId = await currentUserId();
   const row = await prisma.jubelioOutbox.create({
     data: {
-      entityType: "product_push",
+      entityType: "product_push" satisfies JubelioOutboxEntityType,
       entityId: itemId,
       payload: {},
       enqueuedById: userId,
@@ -58,7 +58,7 @@ export async function enqueueProductPushOnUpdate(
   const userId = await currentUserId();
   const row = await prisma.jubelioOutbox.create({
     data: {
-      entityType: "product_push",
+      entityType: "product_push" satisfies JubelioOutboxEntityType,
       entityId: itemId,
       payload: {},
       enqueuedById: userId,

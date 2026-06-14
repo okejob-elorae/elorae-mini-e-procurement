@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@elorae/db";
+import { prisma, type JubelioOutboxEntityType } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { apiFetch } from "@/lib/internal-api";
 
@@ -28,7 +28,7 @@ export async function pushItemStockToJubelio(itemId: string): Promise<{ ok: bool
   if (!(await isAdmin())) return { ok: false };
   const enqueuedById = await currentUserId();
   const row = await prisma.jubelioOutbox.create({
-    data: { entityType: "stock_push", entityId: itemId, payload: {}, enqueuedById },
+    data: { entityType: "stock_push" satisfies JubelioOutboxEntityType, entityId: itemId, payload: {}, enqueuedById },
     select: { id: true },
   });
   void apiFetch("POST", `/jubelio/outbox/enqueue/${row.id}`, {
@@ -49,7 +49,7 @@ export async function bulkPushAllStockToJubelio(): Promise<{ ok: boolean; count:
   if (mappings.length === 0) return { ok: true, count: 0 };
   await prisma.jubelioOutbox.createMany({
     data: mappings.map((m) => ({
-      entityType: "stock_push",
+      entityType: "stock_push" satisfies JubelioOutboxEntityType,
       entityId: m.itemId,
       payload: {},
       enqueuedById,

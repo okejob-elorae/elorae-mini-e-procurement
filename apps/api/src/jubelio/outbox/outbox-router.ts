@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { JubelioOutbox } from "@elorae/db";
+import type { JubelioOutbox, JubelioOutboxEntityType } from "@elorae/db";
 import { StockPushHandler } from "./handlers/stock-push.handler";
 import { ProductPushHandler } from "./handlers/product-push.handler";
 import { SalesOrderPickHandler } from "./handlers/salesorder-pick.handler";
@@ -19,7 +19,8 @@ export class OutboxRouter {
   ) {}
 
   async route(row: JubelioOutbox): Promise<HandlerOutcome> {
-    switch (row.entityType) {
+    const entityType = row.entityType as JubelioOutboxEntityType;
+    switch (entityType) {
       case "stock_push":
         return this.stockPush.handle(row);
       case "product_push":
@@ -30,11 +31,13 @@ export class OutboxRouter {
         return this.salesorderPack.handle(row);
       case "salesorder_ship":
         return this.salesorderShip.handle(row);
-      default:
+      default: {
+        const _exhaustive: never = entityType;
         return {
           kind: "skipped",
-          reason: `${OUTBOX_SKIP_REASONS.UNKNOWN_ENTITY_TYPE}:${row.entityType}`,
+          reason: `${OUTBOX_SKIP_REASONS.UNKNOWN_ENTITY_TYPE}:${String(_exhaustive)}`,
         };
+      }
     }
   }
 }
