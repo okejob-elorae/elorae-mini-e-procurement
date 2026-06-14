@@ -77,7 +77,7 @@ EPIC-01 (Jubelio Integration) + EPIC-02 (Product & Stock Sync) are decomposed in
 |----|-------|--------|--------------|
 | **1** | Inbound webhook queue + stock handler | ✅ shipped (PR #29 merged 2026-05-28) | 01-02 (partial — stock only), 01-03 (inbound half), 02-04 |
 | **2** | Outbound `JubelioOutbox` + first push primitive | ✅ shipped (product + stock handlers, outbox router/poller/processor) | 01-03 (outbound), 02-03 |
-| **3** | Product push + HPP/price sync | 🟡 partial — product push + sell-price delta sync shipped (PRs #37/#42). **HPP→buy_price sync NOT wired** — `buy_price` reads from global `JubelioPushDefaults.buyPrice`, not per-item HPP. Decide: real sync vs. accept global default. | 02-01, 02-02 |
+| **3** | Product push + HPP/price sync | ✅ shipped — product push (PRs #37/#42) + HPP→sellingPrice auto-recalc with audit log (PR #52 merged 2026-06-14). `buy_price` intentionally stays global per decision H3; revisit if Jubelio's buy_price column starts feeding downstream marketplace reporting. | 02-01, 02-02 |
 | **4** | Remaining inbound handlers (salesorder, salesreturn, product webhooks) | 🟡 mostly shipped (PR #40 merged 2026-06-10) — salesorder + product handlers wired; **salesreturn handler is a stub awaiting live payload samples**. | 01-02 (full) |
 | **5** | Initial bulk migration tool | ✅ shipped (PR #41 merged 2026-06-10) | 02-05 |
 
