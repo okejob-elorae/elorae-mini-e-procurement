@@ -124,6 +124,7 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
     children: [
       { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
+      { labelKey: 'navFulfillment', href: '/backoffice/fulfillment' },
     ],
   },
   {
