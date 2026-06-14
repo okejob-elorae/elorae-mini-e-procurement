@@ -15,7 +15,8 @@ export type RecalcSkipReason =
   | "no_change"
   | "no_margin_configured"
   | "ingested_item"
-  | "non_finished_good";
+  | "non_finished_good"
+  | "no_avg_cost_basis";
 
 export type RecalcItemSellingPriceResult =
   | {
@@ -72,16 +73,24 @@ export async function recalcItemSellingPrice(
         ? toNum(defaults.defaultAdditionalCost)
         : 0;
 
-  const newAvgCost =
-    input.newAvgCost != null
-      ? input.newAvgCost
-      : await (async () => {
-          const inv = await tx.inventoryValue.findUnique({
-            where: { itemId_variantSku: { itemId: input.itemId, variantSku: "" } },
-            select: { avgCost: true },
-          });
-          return inv ? toNum(inv.avgCost) : 0;
-        })();
+  let newAvgCost: number;
+  if (input.newAvgCost != null) {
+    newAvgCost = input.newAvgCost;
+  } else {
+    // Variantless InventoryValue rows in this codebase use `variantSku: null`,
+    // not `""` (per actual DB audit). Tolerate both conventions defensively.
+    const inv = await tx.inventoryValue.findFirst({
+      where: {
+        itemId: input.itemId,
+        OR: [{ variantSku: null }, { variantSku: "" }],
+      },
+      select: { avgCost: true },
+    });
+    if (!inv) {
+      return { applied: false, skipped: "no_avg_cost_basis" };
+    }
+    newAvgCost = toNum(inv.avgCost);
+  }
 
   const newSellingPriceRaw = newAvgCost * (1 + effectiveMargin / 100) + effectiveExtras;
   const newSellingPrice = Math.round(newSellingPriceRaw * 100) / 100;

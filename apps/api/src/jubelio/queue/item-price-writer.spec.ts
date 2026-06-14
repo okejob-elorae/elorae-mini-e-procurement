@@ -5,7 +5,7 @@ describe("recalcItemSellingPrice", () => {
     return {
       item: { findUnique: jest.fn(), update: jest.fn() },
       jubelioPushDefaults: { findFirst: jest.fn() },
-      inventoryValue: { findUnique: jest.fn() },
+      inventoryValue: { findUnique: jest.fn(), findFirst: jest.fn() },
       itemPriceChangeLog: { create: jest.fn() },
       jubelioProductMapping: { count: jest.fn() },
       jubelioOutbox: { create: jest.fn() },
@@ -207,5 +207,33 @@ describe("recalcItemSellingPrice", () => {
         changedById: "u1",
       }),
     });
+  });
+
+  it("returns skipped:no_avg_cost_basis when newAvgCost not supplied and variantless InventoryValue row is missing", async () => {
+    const tx = createTx();
+    tx.item.findUnique.mockResolvedValue({
+      id: "i1",
+      type: "FINISHED_GOOD",
+      source: "ERP",
+      sellingPrice: 99999,
+      targetMarginPercent: null,
+      additionalCost: null,
+    });
+    tx.jubelioPushDefaults.findFirst.mockResolvedValue({
+      defaultMarginPercent: 25,
+      defaultAdditionalCost: null,
+    });
+    tx.inventoryValue.findFirst.mockResolvedValue(null);
+
+    const result = await recalcItemSellingPrice(tx, {
+      itemId: "i1",
+      trigger: "DEFAULTS_CHANGE",
+      changedById: "u1",
+    });
+
+    expect(result).toEqual({ applied: false, skipped: "no_avg_cost_basis" });
+    expect(tx.item.update).not.toHaveBeenCalled();
+    expect(tx.itemPriceChangeLog.create).not.toHaveBeenCalled();
+    expect(tx.jubelioOutbox.create).not.toHaveBeenCalled();
   });
 });
