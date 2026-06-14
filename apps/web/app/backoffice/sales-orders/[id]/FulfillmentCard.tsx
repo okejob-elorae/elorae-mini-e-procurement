@@ -23,6 +23,7 @@ import {
   finishPackAction,
   shipOrderAction,
   getCouriersForShipDialog,
+  FULFILLMENT_FORBIDDEN_REASON,
   type CourierOption,
   type FulfillmentActionResult,
 } from "@/app/actions/sales-order-fulfillment";
@@ -36,7 +37,6 @@ const STATUS_TAILWIND: Record<SalesOrderFulfillmentStatus, string> = {
 
 type Props = {
   orderId: string;
-  salesorderNo: string;
   fulfillmentStatus: SalesOrderFulfillmentStatus;
   isLocked: boolean;
   canFulfill: boolean;
@@ -63,6 +63,8 @@ export function FulfillmentCard(props: Props) {
   function handleResult(r: FulfillmentActionResult): void {
     if (r.ok) {
       toast.success(t("toast.success"));
+    } else if (r.reason === FULFILLMENT_FORBIDDEN_REASON) {
+      toast.error(t("toast.forbidden"));
     } else {
       toast.warning(t("toast.invalidTransition"));
     }
@@ -73,13 +75,8 @@ export function FulfillmentCard(props: Props) {
       try {
         const r = await promise;
         handleResult(r);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "";
-        if (message.includes("Forbidden") || message.includes("Insufficient")) {
-          toast.error(t("toast.forbidden"));
-        } else {
-          toast.error(t("toast.networkError"));
-        }
+      } catch {
+        toast.error(t("toast.networkError"));
       }
     });
   }
@@ -135,12 +132,12 @@ export function FulfillmentCard(props: Props) {
         />
       </div>
 
-      {(props.trackingNumber || props.courierName) && (
+      {props.trackingNumber && (
         <div className="text-sm pt-2 border-t">
           <span className="text-muted-foreground">{t("tracking")}: </span>
           <span className="font-mono">
             {props.courierName ? `${props.courierName} · ` : ""}
-            {props.trackingNumber ?? "—"}
+            {props.trackingNumber}
           </span>
         </div>
       )}

@@ -51,7 +51,6 @@ export function SalesOrderDetailClient({ order, items, canFulfill }: Props) {
 
       <FulfillmentCard
         orderId={order.id}
-        salesorderNo={order.salesorderNo}
         fulfillmentStatus={order.fulfillmentStatus}
         isLocked={order.isCanceled || order.status === "CANCELLED" || order.status === "RETURNED"}
         canFulfill={canFulfill}

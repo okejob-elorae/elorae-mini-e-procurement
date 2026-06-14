@@ -71,10 +71,13 @@ describe("finishPickAction", () => {
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 
-  it("throws 403 when user lacks sales_orders:fulfill", async () => {
+  it("returns ok:false with forbidden reason when user lacks sales_orders:fulfill", async () => {
     (auth as any).mockResolvedValue(sessionWithoutFulfill);
 
-    await expect(finishPickAction("so1")).rejects.toThrow(/Forbidden|Insufficient/);
+    const r = await finishPickAction("so1");
+
+    expect(r).toEqual({ ok: false, reason: "forbidden" });
+    expect(markOrderPicked).not.toHaveBeenCalled();
   });
 
   it("throws when no session", async () => {

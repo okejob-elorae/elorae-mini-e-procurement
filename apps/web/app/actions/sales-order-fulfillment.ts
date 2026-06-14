@@ -9,23 +9,34 @@ import {
   InvalidFulfillmentTransition,
 } from "@elorae/db/sales-order-fulfillment-writer";
 import { auth } from "@/lib/auth";
-import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { syncJubelioCouriers } from "@/app/actions/jubelio-couriers";
+
+export const FULFILLMENT_FORBIDDEN_REASON = "forbidden";
 
 export type FulfillmentActionResult = { ok: true } | { ok: false; reason: string };
 export type CourierOption = { id: number; name: string };
 
-async function requireFulfillSession(): Promise<{ userId: string }> {
+type Authorized = { userId: string };
+
+async function authorize(): Promise<Authorized | FulfillmentActionResult> {
   const session = await auth();
   if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SALES_ORDERS_FULFILL);
+  if (!hasPermission(session.user.permissions, PERMISSIONS.SALES_ORDERS_FULFILL)) {
+    return { ok: false, reason: FULFILLMENT_FORBIDDEN_REASON };
+  }
   return { userId: session.user.id };
 }
 
+function isResult(v: Authorized | FulfillmentActionResult): v is FulfillmentActionResult {
+  return "ok" in v;
+}
+
 export async function finishPickAction(orderId: string): Promise<FulfillmentActionResult> {
-  const { userId } = await requireFulfillSession();
+  const auth = await authorize();
+  if (isResult(auth)) return auth;
   try {
-    await markOrderPicked(prisma, { orderId, userId });
+    await markOrderPicked(prisma, { orderId, userId: auth.userId });
   } catch (err) {
     if (err instanceof InvalidFulfillmentTransition) {
       return { ok: false, reason: err.message };
@@ -37,9 +48,10 @@ export async function finishPickAction(orderId: string): Promise<FulfillmentActi
 }
 
 export async function finishPackAction(orderId: string): Promise<FulfillmentActionResult> {
-  const { userId } = await requireFulfillSession();
+  const auth = await authorize();
+  if (isResult(auth)) return auth;
   try {
-    await markOrderPacked(prisma, { orderId, userId });
+    await markOrderPacked(prisma, { orderId, userId: auth.userId });
   } catch (err) {
     if (err instanceof InvalidFulfillmentTransition) {
       return { ok: false, reason: err.message };
@@ -54,9 +66,10 @@ export async function shipOrderAction(
   orderId: string,
   courierId: number,
 ): Promise<FulfillmentActionResult> {
-  const { userId } = await requireFulfillSession();
+  const auth = await authorize();
+  if (isResult(auth)) return auth;
   try {
-    await markOrderShipped(prisma, { orderId, userId, courierId });
+    await markOrderShipped(prisma, { orderId, userId: auth.userId, courierId });
   } catch (err) {
     if (err instanceof InvalidFulfillmentTransition) {
       return { ok: false, reason: err.message };
@@ -68,7 +81,8 @@ export async function shipOrderAction(
 }
 
 export async function getCouriersForShipDialog(): Promise<CourierOption[]> {
-  await requireFulfillSession();
+  const auth = await authorize();
+  if (isResult(auth)) return [];
 
   const count = await prisma.jubelioCourier.count();
   if (count === 0) {
