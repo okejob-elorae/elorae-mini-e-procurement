@@ -24,7 +24,7 @@ export class SalesOrderPackHandler implements OutboxHandler {
     }
 
     try {
-      await this.http.post("/wms/sales/packlist/mark-as-complete", { ids: [order.salesorderId] });
+      await this.http.post("/wms/sales/packlist/mark-as-complete/", { ids: [order.salesorderId] });
     } catch (err) {
       if (isAlreadyInStateError(err)) {
         this.logger.warn(

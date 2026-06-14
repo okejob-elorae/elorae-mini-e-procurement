@@ -2,28 +2,24 @@ import { Test } from "@nestjs/testing";
 import { SalesOrderPickHandler } from "./salesorder-pick.handler";
 import { PRISMA } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
-import { AdminNotificationService } from "../../../admin/notification.service";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
 
 describe("SalesOrderPickHandler", () => {
   let handler: SalesOrderPickHandler;
   let prisma: any;
   let http: { post: jest.Mock };
-  let admin: { write: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
       salesOrder: { findUnique: jest.fn() },
     };
     http = { post: jest.fn() };
-    admin = { write: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         SalesOrderPickHandler,
         { provide: PRISMA, useValue: prisma },
         { provide: JubelioHttpService, useValue: http },
-        { provide: AdminNotificationService, useValue: admin },
       ],
     }).compile();
 

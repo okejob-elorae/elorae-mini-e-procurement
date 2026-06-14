@@ -28,9 +28,9 @@ Reference: `reference/jubelio/jubelio-api-docs.yaml`.
 
 | Action | Endpoint | Method | Notes |
 |--------|----------|--------|-------|
-| Pick | `/wms/sales/picklists/confirm-pick/` | POST | Body carries the salesorder_id and picker id |
-| Pack | `/wms/sales/packlist/mark-as-complete` | POST | Body carries the salesorder_id |
-| Ship | `/wms/shipments/` | POST | Body carries the salesorder_id + courier_new_id. Response includes `shipment_header_id` + `shipment_no`. AWB is later delivered async via salesorder webhook |
+| Pick | `/wms/sales/picklists/` | POST | Body `{ ids: [salesorder_id], is_completed: true }` marks the picklist done. (The yaml lists `/wms/sales/picklists/confirm-pick/` as a separate GET — it's a list endpoint, not the transition.) |
+| Pack | `/wms/sales/packlist/mark-as-complete/` | POST | Body `{ ids: [salesorder_id] }` |
+| Ship | `/wms/shipments/` | POST | Body carries `courier_new_id`, `shipment_header_id: 0` to create, plus shipping metadata. Response is `{ status: "ok" }` — no `shipment_header_id` returned synchronously. `SalesOrder.shipmentJubelioId` stays null after this push; it gets backfilled by sub-A's existing salesorder webhook handler once Jubelio sends the followup with the new shipment details. AWB is also delivered through that webhook. |
 | Courier list | `/wms/couriers` | GET | Returned by Sub-B for the courier select dropdown — out of scope here |
 
 The exact request/response shape for each is verified against the OpenAPI doc during handler implementation. Where ambiguous, the handler logs the raw response so Sub-B can observe the real shape on first live run.
@@ -58,7 +58,7 @@ The existing `SalesOrderStatus` enum (`NEW / PROCESSING / SHIPPED / COMPLETED / 
 |-------|------|-------|
 | `fulfillmentStatus` | `SalesOrderFulfillmentStatus @default(PENDING)` | Indexed for Sub-C's queue filter |
 | `pickedAt` | `DateTime?` | Set by `markOrderPicked` |
-| `pickedById` | `String?` | FK → `User.id`, `onDelete: SetNull`. Audit only — no inverse relation back-ref needed (mirror the existing pattern of `enqueuedById` on `JubelioOutbox`) |
+| `pickedById` | `String?` | Plain opaque ref to `User.id`. No `@relation` directive and no FK constraint at the DB level — audit-only, matches the lightweight `enqueuedById`-style pattern. Sub-B's UI joins to `User` manually if it wants to display the picker's name. |
 | `packedAt` | `DateTime?` | |
 | `packedById` | `String?` | |
 | `shippedAt` | `DateTime?` | Set when "Ship" enqueue succeeds. Distinct from `completedDate` which comes from Jubelio later |
@@ -174,8 +174,8 @@ Each handler:
 
 1. Receives an outbox row (existing infra).
 2. Reads the corresponding `SalesOrder` row.
-3. Calls `JubelioHttpService.apiFetch` against the endpoint with the action-specific body.
-4. On 2xx response: marks outbox row `PROCESSED`. Ship handler additionally updates `SalesOrder.shipmentJubelioId` from the response body.
+3. Calls `JubelioHttpService.post` against the endpoint with the action-specific body.
+4. On 2xx response: marks outbox row `PROCESSED`. `SalesOrder.shipmentJubelioId` is NOT written here — Jubelio's `/wms/shipments/` response is just `{ status: "ok" }`. The column gets backfilled when sub-A's webhook handler receives the follow-up salesorder webhook with the new shipment details.
 5. On 4xx with "already-picked"/"already-shipped" Jubelio error code: marks outbox row `SKIPPED` with reason `jubelio_already_in_state`. Returns success.
 6. On other 4xx: marks outbox row `DEAD` after retries exhausted. Logs the response body. Admin notification fires (existing infra).
 7. On 5xx / network: retries per existing outbox retry policy.
