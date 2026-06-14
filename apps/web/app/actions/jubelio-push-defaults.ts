@@ -123,7 +123,7 @@ export async function saveJubelioPushDefaults(
           });
           if (recalc.applied && recalc.outboxRowId) outboxRowIds.push(recalc.outboxRowId);
         }
-      });
+      }, { timeout: 30000 });
     } else {
       for (let i = 0; i < affected.length; i += BATCH_SIZE) {
         const batch = affected.slice(i, i + BATCH_SIZE);
@@ -136,7 +136,7 @@ export async function saveJubelioPushDefaults(
             });
             if (recalc.applied && recalc.outboxRowId) outboxRowIds.push(recalc.outboxRowId);
           }
-        });
+        }, { timeout: 15000 });
       }
     }
 

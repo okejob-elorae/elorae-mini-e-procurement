@@ -77,6 +77,8 @@ export async function updateItem(id: string, data: ItemFormData) {
       },
     });
     if (!beforeItem) throw new Error("Item not found");
+    // Items with many variants/consumption rules push updateItemLib past Prisma's
+    // 5s default; helper adds a few more ops on top. 15s gives headroom.
 
     const updated = await updateItemLib(tx, id, data);
 
@@ -121,7 +123,7 @@ export async function updateItem(id: string, data: ItemFormData) {
     }
 
     return { updated, outboxRowId };
-  });
+  }, { timeout: 15000 });
 
   if (txResult.outboxRowId) {
     void apiFetch("POST", `/jubelio/outbox/enqueue/${txResult.outboxRowId}`, {
