@@ -1285,6 +1285,15 @@ model JubelioPushDefaults {
   updatedBy                User?    @relation("JubelioPushDefaultsUpdater", fields: [updatedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
 }
 
+model JubelioCourier {
+  id        Int      @id
+  name      String
+  syncedAt  DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
 model SalesOrder {
   id                  String           @id @default(cuid())
   salesorderId        Int              @unique
