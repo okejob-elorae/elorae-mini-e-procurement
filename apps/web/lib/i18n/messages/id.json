@@ -1133,6 +1133,9 @@
         "shipConfirmOk": "Kirim",
         "shipConfirmCancel": "Batal"
       },
+      "printSection": "Cetak",
+      "printPickList": "Cetak daftar pick",
+      "printPackingSlip": "Cetak surat jalan",
       "toast": {
         "success": "Berhasil.",
         "invalidTransition": "Status sudah berubah. Muat ulang halaman.",
@@ -1201,6 +1204,30 @@
         "forbidden": "Akses tidak diizinkan.",
         "networkError": "Gagal terhubung ke server. Coba lagi."
       }
+    }
+  },
+  "salesOrdersPrint": {
+    "pickList": {
+      "title": "Daftar Pick",
+      "orderLabel": "Pesanan:",
+      "channelLabel": "Channel:",
+      "dateLabel": "Tanggal:",
+      "colSku": "SKU",
+      "colProduct": "Produk",
+      "colQty": "Jml",
+      "pickedBy": "Diambil oleh:",
+      "dateSigned": "Tanggal:"
+    },
+    "packingSlip": {
+      "title": "SURAT JALAN",
+      "shipToLabel": "Kirim ke:",
+      "courierLabel": "Kurir:",
+      "trackingLabel": "No. Resi:",
+      "colSku": "SKU",
+      "colProduct": "Produk",
+      "colQty": "Jml",
+      "thankYou": "Terima kasih telah berbelanja di ELORAÉ!",
+      "questionsContact": "Pertanyaan: {email}"
     }
   }
 }

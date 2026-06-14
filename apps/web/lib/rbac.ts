@@ -57,6 +57,8 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/supplier-payments': 'supplier_payments:view',
   '/backoffice/inventory': 'inventory:view',
   '/backoffice/sales-orders': 'sales_orders:view',
+  '/backoffice/sales-orders/[id]/pick-list': 'sales_orders:view',
+  '/backoffice/sales-orders/[id]/packing-slip': 'sales_orders:view',
   '/backoffice/fulfillment': 'sales_orders:view',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
