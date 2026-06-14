@@ -78,8 +78,17 @@ EPIC-01 (Jubelio Integration) + EPIC-02 (Product & Stock Sync) are decomposed in
 | **1** | Inbound webhook queue + stock handler | ✅ shipped (PR #29 merged 2026-05-28) | 01-02 (partial — stock only), 01-03 (inbound half), 02-04 |
 | **2** | Outbound `JubelioOutbox` + first push primitive | ✅ shipped (product + stock handlers, outbox router/poller/processor) | 01-03 (outbound), 02-03 |
 | **3** | Product push + HPP/price sync | 🟡 partial — product push + sell-price delta sync shipped (PRs #37/#42). **HPP→buy_price sync NOT wired** — `buy_price` reads from global `JubelioPushDefaults.buyPrice`, not per-item HPP. Decide: real sync vs. accept global default. | 02-01, 02-02 |
-| **4** | Remaining inbound handlers (salesorder, salesreturn, product webhooks) | 🟡 partial — salesorder inbound has forward-sync to `SHIPPED` (PR #49). Full salesreturn + product webhook handlers pending. | 01-02 (full) |
-| **5** | Initial bulk migration tool | ⏳ | 02-05 |
+| **4** | Remaining inbound handlers (salesorder, salesreturn, product webhooks) | 🟡 mostly shipped (PR #40 merged 2026-06-10) — salesorder + product handlers wired; **salesreturn handler is a stub awaiting live payload samples**. | 01-02 (full) |
+| **5** | Initial bulk migration tool | ✅ shipped (PR #41 merged 2026-06-10) | 02-05 |
+
+EPIC-03 (Sales — Orders) status:
+
+| Story | Scope | Status |
+|-------|-------|--------|
+| 03-01 | Order ingestion via Jubelio salesorder webhook | ✅ shipped (PR #43 merged 2026-06-11) |
+| 03-02 | Order dashboard (list + filters) | ✅ shipped (PR #44 merged 2026-06-11) |
+| 03-03 | Order detail view | ✅ shipped (PR #44) |
+| 03-04 | KPI widgets on beranda | ✅ shipped (PR #45 merged 2026-06-11) |
 
 EPIC-04 (Sales Fulfillment) decomposition (independent of EPIC-01/02 sub-numbering):
 
@@ -90,7 +99,7 @@ EPIC-04 (Sales Fulfillment) decomposition (independent of EPIC-01/02 sub-numberi
 | **C** | Fulfillment Queue page + Jubelio webhook forward-sync to `SHIPPED` | ✅ shipped (PR #49) |
 | **D** | Print views (pick list + packing slip) | ✅ shipped (PR #50 merged 2026-06-14) |
 
-Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`).
+Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
 **Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought.
 
