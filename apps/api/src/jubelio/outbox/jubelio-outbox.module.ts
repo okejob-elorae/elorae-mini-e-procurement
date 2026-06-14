@@ -10,6 +10,9 @@ import { OutboxProcessor } from "./outbox-processor.service";
 import { OutboxRouter } from "./outbox-router";
 import { StockPushHandler } from "./handlers/stock-push.handler";
 import { ProductPushHandler } from "./handlers/product-push.handler";
+import { SalesOrderPickHandler } from "./handlers/salesorder-pick.handler";
+import { SalesOrderPackHandler } from "./handlers/salesorder-pack.handler";
+import { SalesOrderShipHandler } from "./handlers/salesorder-ship.handler";
 
 @Module({
   imports: [
@@ -19,6 +22,15 @@ import { ProductPushHandler } from "./handlers/product-push.handler";
     BullModule.registerQueue({ name: JUBELIO_OUTBOX_QUEUE }),
   ],
   controllers: [JubelioOutboxController],
-  providers: [OutboxPoller, OutboxProcessor, OutboxRouter, StockPushHandler, ProductPushHandler],
+  providers: [
+    OutboxPoller,
+    OutboxProcessor,
+    OutboxRouter,
+    StockPushHandler,
+    ProductPushHandler,
+    SalesOrderPickHandler,
+    SalesOrderPackHandler,
+    SalesOrderShipHandler,
+  ],
 })
 export class JubelioOutboxModule {}
