@@ -2,7 +2,14 @@ export const PRINT_STYLES = `
 @page { size: A4; margin: 12mm; }
 
 @media print {
-  body > :not(.print-root) { display: none !important; }
+  body * { visibility: hidden !important; }
+  .print-root, .print-root * { visibility: visible !important; }
+  .print-root {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+  }
   nav, aside, .quick-action-fab, [data-sonner-toaster] { display: none !important; }
 }
 
