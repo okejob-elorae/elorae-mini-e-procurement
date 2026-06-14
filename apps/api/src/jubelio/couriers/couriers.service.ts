@@ -21,16 +21,19 @@ export class JubelioCouriersService {
     const now = new Date();
     const ids = rows.map((r) => r.courier_id);
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.jubelioCourier.deleteMany({ where: { id: { notIn: ids } } });
-      for (const r of rows) {
-        await tx.jubelioCourier.upsert({
+    // Cache table — no FK consumers, partial replay is safe. Drop the $transaction
+    // wrapper (was timing out at 5s default with 56 sequential upserts on TiDB)
+    // and run delete + upserts concurrently.
+    await this.prisma.jubelioCourier.deleteMany({ where: { id: { notIn: ids } } });
+    await Promise.all(
+      rows.map((r) =>
+        this.prisma.jubelioCourier.upsert({
           where: { id: r.courier_id },
           create: { id: r.courier_id, name: r.courier_name, syncedAt: now },
           update: { name: r.courier_name, syncedAt: now },
-        });
-      }
-    });
+        }),
+      ),
+    );
 
     this.logger.log(`Synced ${rows.length} couriers from Jubelio`);
     return { count: rows.length };
