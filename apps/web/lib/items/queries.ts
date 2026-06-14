@@ -66,6 +66,8 @@ function serializeListItemForClient(item: {
   reorderPoint?: unknown;
   overReceiveThreshold?: unknown;
   sellingPrice?: unknown;
+  targetMarginPercent?: unknown;
+  additionalCost?: unknown;
   inventoryValues?: Array<{ qtyOnHand: unknown; totalValue: unknown; avgCost?: unknown }>;
   [k: string]: unknown;
 }) {
@@ -80,6 +82,9 @@ function serializeListItemForClient(item: {
     overReceiveThreshold:
       item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
     sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
+    targetMarginPercent:
+      item.targetMarginPercent != null ? toNum(item.targetMarginPercent) : null,
+    additionalCost: item.additionalCost != null ? toNum(item.additionalCost) : null,
     inventoryValue: inv,
   };
 }
@@ -137,6 +142,9 @@ export function serializeItemForClient(item: ItemWithRelations | null) {
     overReceiveThreshold:
       item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
     sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
+    targetMarginPercent:
+      item.targetMarginPercent != null ? toNum(item.targetMarginPercent) : null,
+    additionalCost: item.additionalCost != null ? toNum(item.additionalCost) : null,
     inventoryValue: inv,
     createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
     updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt,

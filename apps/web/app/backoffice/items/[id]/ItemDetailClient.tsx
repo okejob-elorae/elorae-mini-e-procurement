@@ -10,10 +10,12 @@ import { pushItemStockToJubelio } from '@/app/actions/jubelio-outbox';
 import type { ItemFormData } from '@/lib/items/mutations';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { ItemType } from '@/lib/constants/enums';
+import { PriceHistoryTable } from './PriceHistoryTable';
 
 type ItemDetailClientProps = {
   initialData: Parameters<typeof ItemForm>[0]['initialData'];
@@ -101,7 +103,24 @@ export function ItemDetailClient({
         </div>
       </div>
 
-      <ItemForm initialData={initialData} onSubmit={handleSubmit} isLoading={isSaving} />
+      <Tabs defaultValue="details" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="price-history">Price History</TabsTrigger>
+        </TabsList>
+        <TabsContent value="details">
+          <ItemForm initialData={initialData} onSubmit={handleSubmit} isLoading={isSaving} />
+        </TabsContent>
+        <TabsContent value="price-history">
+          {initialData?.id ? (
+            <PriceHistoryTable itemId={initialData.id} />
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              Save the item first to see price history.
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

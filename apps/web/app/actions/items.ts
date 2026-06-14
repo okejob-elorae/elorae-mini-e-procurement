@@ -1,8 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { ItemType } from '@elorae/db';
+import { ItemType, prisma, recalcItemSellingPrice } from '@elorae/db';
 import { auth } from '@/lib/auth';
+import { apiFetch } from '@/lib/internal-api';
 import { generateSKU as generateSKUFromLib } from '@/lib/sku-generator';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { getActorName, notifyItemCreated } from '@/app/actions/notifications';
@@ -66,13 +67,75 @@ export async function updateItem(id: string, data: ItemFormData) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.ITEMS_EDIT);
 
-  const result = await updateItemLib(id, data);
+  const txResult = await prisma.$transaction(async (tx) => {
+    const beforeItem = await tx.item.findUnique({
+      where: { id },
+      select: {
+        targetMarginPercent: true,
+        additionalCost: true,
+        sellingPrice: true,
+      },
+    });
+    if (!beforeItem) throw new Error("Item not found");
+    // Items with many variants/consumption rules push updateItemLib past Prisma's
+    // 5s default; helper adds a few more ops on top. 15s gives headroom.
 
-  enqueueProductPushOnUpdate(id, result.before, result.after).catch(() => {});
+    const updated = await updateItemLib(tx, id, data);
+
+    const toNumOrNull = (v: unknown): number | null => (v == null ? null : Number(v));
+    const beforeMargin = toNumOrNull(beforeItem.targetMarginPercent);
+    const afterMargin = toNumOrNull(data.targetMarginPercent);
+    const beforeExtras = toNumOrNull(beforeItem.additionalCost);
+    const afterExtras = toNumOrNull(data.additionalCost);
+    const beforeSelling = toNumOrNull(beforeItem.sellingPrice);
+    const afterSelling = toNumOrNull(data.sellingPrice);
+
+    const marginChanged = beforeMargin !== afterMargin;
+    const extrasChanged = beforeExtras !== afterExtras;
+    const sellingPriceChanged = beforeSelling !== afterSelling;
+
+    let outboxRowId: string | null = null;
+
+    if (marginChanged || extrasChanged) {
+      const recalc = await recalcItemSellingPrice(tx, {
+        itemId: id,
+        trigger: "MARGIN_CHANGE",
+        changedById: session.user.id,
+      });
+      if (recalc.applied) {
+        outboxRowId = recalc.outboxRowId;
+      }
+    } else if (sellingPriceChanged) {
+      await tx.itemPriceChangeLog.create({
+        data: {
+          itemId: id,
+          oldSellingPrice: beforeSelling,
+          newSellingPrice: afterSelling,
+          oldAvgCost: null,
+          newAvgCost: null,
+          marginPercentUsed: null,
+          additionalCostUsed: null,
+          triggerReason: "MANUAL_EDIT",
+          fgReceiptId: null,
+          changedById: session.user.id,
+        },
+      });
+    }
+
+    return { updated, outboxRowId };
+  }, { timeout: 15000 });
+
+  if (txResult.outboxRowId) {
+    void apiFetch("POST", `/jubelio/outbox/enqueue/${txResult.outboxRowId}`, {
+      userId: session.user.id,
+    }).catch(() => {});
+  } else {
+    enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after).catch(() => {});
+  }
 
   revalidatePath('/backoffice/items');
   revalidatePath(`/backoffice/items/${id}`);
-  return result.serialized;
+  return txResult.updated.serialized;
 }
 
 export async function deleteItem(id: string) {

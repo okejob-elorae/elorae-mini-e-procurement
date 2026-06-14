@@ -1,4 +1,4 @@
-import { prisma } from '@elorae/db';
+import { prisma, type Prisma } from '@elorae/db';
 import { generateSKU } from '@/lib/sku-generator';
 
 export type ItemFormData = {
@@ -13,6 +13,8 @@ export type ItemFormData = {
   reorderPoint?: number;
   overReceiveThreshold?: number;
   sellingPrice?: number;
+  targetMarginPercent?: number;
+  additionalCost?: number;
 };
 
 export type SerializedItem = {
@@ -26,6 +28,8 @@ export type SerializedItem = {
   reorderPoint: number | null;
   overReceiveThreshold: number | null;
   sellingPrice: number | null;
+  targetMarginPercent: number | null;
+  additionalCost: number | null;
   [k: string]: unknown;
 };
 
@@ -45,6 +49,15 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   }
   if (p.sellingPrice != null && (Number.isNaN(p.sellingPrice) || p.sellingPrice < 0)) {
     throw new Error('sellingPrice: Must be 0 or greater');
+  }
+  if (
+    p.targetMarginPercent != null &&
+    (Number.isNaN(p.targetMarginPercent) || p.targetMarginPercent < 0)
+  ) {
+    throw new Error('targetMarginPercent: Must be 0 or greater');
+  }
+  if (p.additionalCost != null && (Number.isNaN(p.additionalCost) || p.additionalCost < 0)) {
+    throw new Error('additionalCost: Must be 0 or greater');
   }
 }
 
@@ -148,6 +161,13 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
     sellingPrice === undefined || sellingPrice === null || sellingPrice === ''
       ? undefined
       : Number(sellingPrice);
+  const parseOptionalNonNegative = (val: unknown): number | undefined => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const n = Number(val);
+    return Number.isNaN(n) || n < 0 ? undefined : n;
+  };
+  const targetMarginPercentNum = parseOptionalNonNegative(raw.targetMarginPercent);
+  const additionalCostNum = parseOptionalNonNegative(raw.additionalCost);
   const variants = Array.isArray(raw.variants)
     ? (raw.variants as Array<Record<string, unknown>>).map((record) => {
         const out: Record<string, string> = {};
@@ -174,6 +194,8 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
       sellingPriceNum !== undefined && !Number.isNaN(sellingPriceNum) && sellingPriceNum >= 0
         ? sellingPriceNum
         : undefined,
+    targetMarginPercent: targetMarginPercentNum,
+    additionalCost: additionalCostNum,
     sku: raw.sku != null ? String(raw.sku) : undefined,
   };
 }
@@ -191,6 +213,8 @@ function serializeSingleItem(item: {
   reorderPoint?: unknown;
   overReceiveThreshold?: unknown;
   sellingPrice?: unknown;
+  targetMarginPercent?: unknown;
+  additionalCost?: unknown;
   createdAt?: Date;
   updatedAt?: Date;
   isActive?: boolean;
@@ -210,6 +234,9 @@ function serializeSingleItem(item: {
     overReceiveThreshold:
       item.overReceiveThreshold != null ? Number(item.overReceiveThreshold) : null,
     sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
+    targetMarginPercent:
+      item.targetMarginPercent != null ? Number(item.targetMarginPercent) : null,
+    additionalCost: item.additionalCost != null ? Number(item.additionalCost) : null,
     createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
     updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt,
     isActive: item.isActive,
@@ -241,6 +268,8 @@ export async function createItem(data: ItemFormData) {
         reorderPoint: rest.reorderPoint ?? null,
         overReceiveThreshold: rest.overReceiveThreshold ?? null,
         sellingPrice: rest.sellingPrice ?? null,
+        targetMarginPercent: rest.targetMarginPercent ?? null,
+        additionalCost: rest.additionalCost ?? null,
       },
     });
 
@@ -260,13 +289,18 @@ export async function createItem(data: ItemFormData) {
   return { item, serialized: serializeSingleItem(item) };
 }
 
-export async function updateItem(id: string, data: ItemFormData) {
+export async function updateItem(
+  tx: Prisma.TransactionClient,
+  id: string,
+  data: ItemFormData,
+) {
+  const client = tx;
   const normalized = normalizeItemPayload(data);
   validateItemPayload(normalized);
   const { sku, ...rest } = normalized;
   void sku;
 
-  const existing = await prisma.item.findUnique({
+  const existing = await client.item.findUnique({
     where: { id },
     select: {
       sku: true,
@@ -275,6 +309,8 @@ export async function updateItem(id: string, data: ItemFormData) {
       nameEn: true,
       description: true,
       sellingPrice: true,
+      targetMarginPercent: true,
+      additionalCost: true,
       variants: true,
       isActive: true,
     },
@@ -287,7 +323,7 @@ export async function updateItem(id: string, data: ItemFormData) {
     categoryCode,
   });
 
-  const item = await prisma.item.update({
+  const item = await client.item.update({
     where: { id },
     data: {
       ...rest,
@@ -296,6 +332,8 @@ export async function updateItem(id: string, data: ItemFormData) {
       reorderPoint: rest.reorderPoint ?? null,
       overReceiveThreshold: rest.overReceiveThreshold ?? null,
       sellingPrice: rest.sellingPrice ?? null,
+      targetMarginPercent: rest.targetMarginPercent ?? null,
+      additionalCost: rest.additionalCost ?? null,
     },
   });
 
@@ -307,6 +345,9 @@ export async function updateItem(id: string, data: ItemFormData) {
       nameEn: existing.nameEn,
       description: existing.description,
       sellingPrice: existing.sellingPrice == null ? null : Number(existing.sellingPrice),
+      targetMarginPercent:
+        existing.targetMarginPercent == null ? null : Number(existing.targetMarginPercent),
+      additionalCost: existing.additionalCost == null ? null : Number(existing.additionalCost),
       variants: (existing.variants as Array<Record<string, string>> | null) ?? null,
       isActive: existing.isActive,
     },
@@ -315,6 +356,9 @@ export async function updateItem(id: string, data: ItemFormData) {
       nameEn: item.nameEn,
       description: item.description,
       sellingPrice: item.sellingPrice == null ? null : Number(item.sellingPrice),
+      targetMarginPercent:
+        item.targetMarginPercent == null ? null : Number(item.targetMarginPercent),
+      additionalCost: item.additionalCost == null ? null : Number(item.additionalCost),
       variants: (item.variants as Array<Record<string, string>> | null) ?? null,
       isActive: item.isActive,
     },

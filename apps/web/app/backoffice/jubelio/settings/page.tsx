@@ -13,6 +13,7 @@ import {
 import { deleteJubelioProduct } from '@/app/actions/jubelio-catalog-cleanup';
 import {
   getJubelioPushDefaults,
+  getMarginFallbackItemCount,
   saveJubelioPushDefaults,
   type JubelioPushDefaultsInput,
   type JubelioPushDefaultsState,
@@ -108,11 +109,31 @@ export default function JubelioSettingsPage() {
 
   const handleSaveDefaults = async () => {
     if (!defaultsDraft) return;
+
+    const marginDiff =
+      (defaults?.defaultMarginPercent ?? null) !== (defaultsDraft.defaultMarginPercent ?? null);
+    const extrasDiff =
+      (defaults?.defaultAdditionalCost ?? null) !== (defaultsDraft.defaultAdditionalCost ?? null);
+
+    if (marginDiff || extrasDiff) {
+      try {
+        const count = await getMarginFallbackItemCount();
+        const confirmText =
+          count > 500
+            ? `${count} items will be recalculated and pushed to Jubelio in batches. This may take a few seconds. Continue?`
+            : `${count} items will be recalculated and pushed to Jubelio. Continue?`;
+        if (!confirm(confirmText)) return;
+      } catch (err) {
+        toast.error(`Failed to count affected items: ${(err as Error).message}`);
+        return;
+      }
+    }
+
     setIsSavingDefaults(true);
     try {
       const saved = await saveJubelioPushDefaults(defaultsDraft);
       setDefaults(saved);
-      toast.success('Push defaults saved');
+      toast.success(`Saved. ${saved.fanOutCount} items recalculated.`);
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -281,6 +302,8 @@ export default function JubelioSettingsPage() {
               <StrField label="Buy Unit" value={defaultsDraft.buyUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyUnit: v })} />
               <NumField label="Package Weight (g)" value={defaultsDraft.packageWeight} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, packageWeight: v ?? 0 })} />
               <NumField label="Buy Price (default)" value={defaultsDraft.buyPrice} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyPrice: v ?? 0 })} />
+              <NumField label="Default Margin (%)" value={defaultsDraft.defaultMarginPercent} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultMarginPercent: v ?? null })} nullable />
+              <NumField label="Default Additional Cost (Rp)" value={defaultsDraft.defaultAdditionalCost} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultAdditionalCost: v ?? null })} nullable />
               <NumField label="Re-order Point" value={defaultsDraft.rop} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, rop: v ?? 0 })} />
               <NumField label="Store Priority Treshold" value={defaultsDraft.storePriorityQtyTreshold} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, storePriorityQtyTreshold: v ?? 0 })} />
               <BoolField label="Sell This" value={defaultsDraft.sellThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellThis: v })} />

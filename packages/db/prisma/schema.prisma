@@ -73,6 +73,7 @@ model User {
   grnsOwnerDeclined       GRN[]      @relation("GRNOwnerDeclined")
   enqueuedOutbox          JubelioOutbox[] @relation("EnqueuedOutbox")
   jubelioPushDefaultsUpdates JubelioPushDefaults[] @relation("JubelioPushDefaultsUpdater")
+  priceChangeLogs         ItemPriceChangeLog[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -224,6 +225,8 @@ model Item {
   reorderPoint     Decimal?          @db.Decimal(10,2)
   overReceiveThreshold Decimal?      @db.Decimal(10,2)
   sellingPrice     Decimal?          @db.Decimal(14,2)
+  targetMarginPercent Decimal?       @db.Decimal(5,2)
+  additionalCost   Decimal?          @db.Decimal(15,2)
   defaultPpnIncluded Boolean         @default(true)
   source           ItemSource        @default(ERP)
   createdAt        DateTime          @default(now())
@@ -241,6 +244,7 @@ model Item {
   rejectedGoodsLedger RejectedGoodsLedger[]
   fabricRolls      FabricRoll[]
   jubelioProductMappings JubelioProductMapping[]
+  priceChangeLogs  ItemPriceChangeLog[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -566,6 +570,7 @@ model FGReceipt {
   receivedById   String
   receivedAt     DateTime  @default(now())
   syncStatus     SyncStatus @default(SYNCED)
+  priceChangeLogs ItemPriceChangeLog[]
   @@index([woId])
   @@index([receivedById])
   @@index([receivedAt])
@@ -1280,6 +1285,8 @@ model JubelioPushDefaults {
   useSingleImageSet        Boolean  @default(false)
   useSerialNumber          Boolean  @default(false)
   buyPrice                 Decimal  @default(0) @db.Decimal(15,2)
+  defaultMarginPercent     Decimal? @db.Decimal(5,2)
+  defaultAdditionalCost    Decimal? @db.Decimal(15,2)
   updatedAt                DateTime @updatedAt
   updatedById              String?
   updatedBy                User?    @relation("JubelioPushDefaultsUpdater", fields: [updatedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -1373,4 +1380,32 @@ model SalesOrderItem {
 
   @@index([itemId])
   @@index([jubelioItemCode])
+}
+
+model ItemPriceChangeLog {
+  id                  String   @id @default(cuid())
+  itemId              String
+  item                Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  oldSellingPrice     Decimal? @db.Decimal(14,2)
+  newSellingPrice     Decimal? @db.Decimal(14,2)
+  oldAvgCost          Decimal? @db.Decimal(15,2)
+  newAvgCost          Decimal? @db.Decimal(15,2)
+  marginPercentUsed   Decimal? @db.Decimal(5,2)
+  additionalCostUsed  Decimal? @db.Decimal(15,2)
+  triggerReason       PriceChangeTrigger
+  fgReceiptId         String?
+  fgReceipt           FGReceipt? @relation(fields: [fgReceiptId], references: [id], onDelete: SetNull)
+  changedAt           DateTime @default(now())
+  changedById         String?
+  changedBy           User?    @relation(fields: [changedById], references: [id])
+
+  @@index([itemId, changedAt])
+  @@index([fgReceiptId])
+}
+
+enum PriceChangeTrigger {
+  FG_RECEIPT
+  MARGIN_CHANGE
+  DEFAULTS_CHANGE
+  MANUAL_EDIT
 }
