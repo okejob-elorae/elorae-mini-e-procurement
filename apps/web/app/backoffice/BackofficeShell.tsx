@@ -419,7 +419,7 @@ export function BackofficeShell({
     : session.user.email?.[0].toUpperCase() || 'U';
 
   return (
-    <div className="min-h-screen flex">
+    <div className="h-screen flex overflow-hidden">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:block w-64 border-r border-primary-foreground/10 bg-primary">
         <Sidebar permissions={session.user.permissions} />
