@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
-import { prisma } from '@elorae/db';
+import { prisma, recalcItemSellingPrice } from '@elorae/db';
+import { apiFetch } from "@/lib/internal-api";
 import { generateDocNumber } from '@/lib/docNumber';
 import { generateMaterialPlan } from '@/lib/production/planning';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
@@ -1184,11 +1185,31 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
     }
 
     const woCompleted = newActualQty >= Number(wo.plannedQty);
-    return { receipt, woCompleted };
+
+    let recalcOutboxRowId: string | null = null;
+    if (wo.finishedGoodId && qtyAccepted > 0) {
+      const recalc = await recalcItemSellingPrice(tx, {
+        itemId: wo.finishedGoodId,
+        trigger: "FG_RECEIPT",
+        newAvgCost: avgCostPerUnit.toNumber(),
+        fgReceiptId: receipt.id,
+        changedById: userId,
+      });
+      if (recalc.applied) recalcOutboxRowId = recalc.outboxRowId;
+    }
+
+    return { receipt, woCompleted, recalcOutboxRowId };
   });
 
   if (receiveResult.woCompleted) {
     notifyWOCompleted(data.woId, userId).catch(() => {});
+  }
+  if (receiveResult.recalcOutboxRowId) {
+    void apiFetch("POST", `/jubelio/outbox/enqueue/${receiveResult.recalcOutboxRowId}`, {
+      userId,
+    }).catch(() => {
+      // poller picks it up within ~5s if this fails
+    });
   }
   return receiveResult.receipt;
 }
