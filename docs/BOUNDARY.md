@@ -149,14 +149,21 @@ Both writes go through a shared helper in `@elorae/db` to enforce the columns:
 
 **web-owned columns** (written EXCLUSIVELY via `@elorae/db/sales-order-fulfillment-writer` — never bare prisma):
 
-- `fulfillmentStatus`
+- `fulfillmentStatus` (with api forward-sync exception — see below)
 - `pickedAt`, `pickedById`
 - `packedAt`, `packedById`
-- `shippedAt`, `shippedById`
+- `shippedAt`, `shippedById` (with api forward-sync exception — see below)
 - `shipmentJubelioId`
 - `courierId`
 
 The writer helper enforces the state machine (PENDING → PICKED → PACKED → SHIPPED, no skip, no reverse) and enqueues a `JubelioOutbox` row per transition in the same transaction. Web bare-prisma writes to any fulfillment column are a contract violation.
+
+**api forward-sync exception (added 2026-06-14):** `SalesOrderWebhookHandler.upsertSalesOrder` MAY advance `fulfillmentStatus → SHIPPED` and stamp `shippedAt` when the inbound Jubelio salesorder webhook reports the order shipped (any of `wms_status === "SHIPPED"`, `is_shipped === true`, `marked_as_complete === true`, or `completed_date` present). The advancement is:
+
+- **Forward-only.** Guarded by `where: { fulfillmentStatus: { not: "SHIPPED" } }` — never overwrites an existing SHIPPED audit set by the writer helper (preserves `shippedById` + original `shippedAt`).
+- **No `shippedById` write.** When advanced via webhook, `shippedById` stays null (no user clicked Ship). UI distinguishes "Shipped at … by NAME" vs "Shipped at …" accordingly.
+- **No intermediate cascade.** `pickedAt`/`pickedById`/`packedAt`/`packedById` are NOT backfilled when the webhook arrives directly at SHIPPED — they stay whatever the web writer last set (likely null if the order shipped externally).
+- **Why:** prevents drift between Jubelio-reported `status = SHIPPED` and Elorae-internal `fulfillmentStatus = PENDING/PICKED/PACKED` when operators ship from Jubelio admin UI, the marketplace auto-ships, or any external WMS performs the action.
 
 `SalesOrderItem` remains api-only — web never writes line items.
 

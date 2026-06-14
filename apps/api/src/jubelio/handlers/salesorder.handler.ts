@@ -199,11 +199,44 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       lastWebhookEventId: webhookEventId,
     };
 
+    // Raw "this order shipped" signal — broader than the derived `status` enum,
+    // which collapses ship + delivery into SHIPPED vs COMPLETED. Anything that
+    // implies the package left the warehouse counts.
+    const jubelioReportsShipped =
+      p.wms_status === "SHIPPED" ||
+      p.is_shipped === true ||
+      p.marked_as_complete === true ||
+      !!p.completed_date;
+
+    // For new rows: if Jubelio already reports shipped (backfill of an
+    // already-shipped order), seed fulfillmentStatus on create.
+    const createShippedPatch = jubelioReportsShipped
+      ? {
+          fulfillmentStatus: "SHIPPED" as const,
+          shippedAt: parseDate(p.completed_date) ?? parseDate(p.last_modified) ?? new Date(),
+        }
+      : {};
+
     const order = await tx.salesOrder.upsert({
       where: { salesorderId: p.salesorder_id },
-      create: { salesorderId: p.salesorder_id, ...baseFields },
+      create: { salesorderId: p.salesorder_id, ...baseFields, ...createShippedPatch },
       update: baseFields,
     });
+
+    // Forward-only fulfillmentStatus sync: when Jubelio reports the order shipped
+    // (e.g. operator marked shipped in Jubelio admin UI bypassing the Elorae Ship
+    // button, or marketplace auto-ship), advance fulfillmentStatus → SHIPPED. The
+    // `where` guard prevents overwriting an existing SHIPPED audit (web's Ship
+    // button already stamped shippedById/shippedAt). Idempotent on re-receive.
+    if (jubelioReportsShipped) {
+      await tx.salesOrder.updateMany({
+        where: { id: order.id, fulfillmentStatus: { not: "SHIPPED" } },
+        data: {
+          fulfillmentStatus: "SHIPPED",
+          shippedAt: parseDate(p.completed_date) ?? parseDate(p.last_modified) ?? new Date(),
+        },
+      });
+    }
 
     const items = Array.isArray(p.items) ? p.items : [];
     const lines = [];

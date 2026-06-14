@@ -65,6 +65,7 @@ describe("SalesOrderWebhookHandler", () => {
       },
       salesOrder: {
         upsert: jest.fn().mockResolvedValue({ id: "so1" }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       salesOrderItem: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
@@ -408,5 +409,47 @@ describe("SalesOrderWebhookHandler", () => {
     await expect(handler.handle(row(makePayload()) as any)).rejects.toThrow("createMany boom");
 
     expect(prisma.jubelioSalesOrderState.update).not.toHaveBeenCalled();
+  });
+
+  it("auto-advances fulfillmentStatus to SHIPPED when Jubelio reports shipped", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload({
+      wms_status: "SHIPPED",
+      completed_date: "2026-06-14T10:00:00.000Z",
+    })) as any);
+
+    // upsert path seeds fulfillmentStatus=SHIPPED on CREATE
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.create.fulfillmentStatus).toBe("SHIPPED");
+    expect(upsertArgs.create.shippedAt).toEqual(new Date("2026-06-14T10:00:00.000Z"));
+    // base UPDATE payload does NOT carry the patch — that goes through updateMany guard
+    expect(upsertArgs.update.fulfillmentStatus).toBeUndefined();
+
+    // updateMany applies the forward-only patch with current ≠ SHIPPED guard
+    expect(prisma.salesOrder.updateMany).toHaveBeenCalledWith({
+      where: { id: "so1", fulfillmentStatus: { not: "SHIPPED" } },
+      data: {
+        fulfillmentStatus: "SHIPPED",
+        shippedAt: new Date("2026-06-14T10:00:00.000Z"),
+      },
+    });
+  });
+
+  it("does NOT touch fulfillmentStatus when status is not SHIPPED", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload({ wms_status: "PROCESSING" })) as any);
+
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.create.fulfillmentStatus).toBeUndefined();
+    expect(upsertArgs.update.fulfillmentStatus).toBeUndefined();
+    expect(prisma.salesOrder.updateMany).not.toHaveBeenCalled();
   });
 });
