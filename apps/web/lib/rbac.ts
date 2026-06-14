@@ -172,6 +172,7 @@ export const PERMISSIONS = {
   ITEMS_DELETE: 'items:delete',
   // Sales Orders
   SALES_ORDERS_VIEW: 'sales_orders:view',
+  SALES_ORDERS_FULFILL: 'sales_orders:fulfill',
   // Purchase Orders
   PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
   PURCHASE_ORDERS_CREATE: 'purchase_orders:create',
