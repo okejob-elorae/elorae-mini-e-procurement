@@ -1,17 +1,21 @@
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
-import { PrismaClient } from "../generated/prisma/client";
+import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { getDatabaseUrl } from "./db-connection";
 
 const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL!);
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  prismaSchemaStamp: string | undefined;
 };
 
-/** Delegate that must exist after Plan Kerja schema; used to detect stale dev singletons. */
-function hasPlanningDelegates(client: PrismaClient): boolean {
-  return typeof (client as PrismaClient & { planYear?: unknown }).planYear !== "undefined";
-}
+/**
+ * Fingerprint of the current generated schema (sorted model names). Stamped onto
+ * the dev singleton at creation; a mismatch on reload means the schema changed,
+ * so the cached client is stale and must be recreated. Auto-tracks every model —
+ * no per-delegate edits when the schema grows.
+ */
+const SCHEMA_STAMP = Object.keys(Prisma.ModelName).sort().join(",");
 
 function createPrismaClient(): PrismaClient {
   return new PrismaClient({ adapter });
@@ -19,7 +23,7 @@ function createPrismaClient(): PrismaClient {
 
 function getPrismaClient(): PrismaClient {
   const cached = globalForPrisma.prisma;
-  if (cached && !hasPlanningDelegates(cached)) {
+  if (cached && globalForPrisma.prismaSchemaStamp !== SCHEMA_STAMP) {
     void cached.$disconnect().catch(() => {});
     globalForPrisma.prisma = undefined;
   }
@@ -33,6 +37,7 @@ export const prisma = getPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
+  globalForPrisma.prismaSchemaStamp = SCHEMA_STAMP;
 }
 
 export * from "../generated/prisma/client";
