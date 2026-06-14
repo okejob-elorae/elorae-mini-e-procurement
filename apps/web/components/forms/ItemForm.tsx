@@ -658,7 +658,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   type="number"
                   step="0.01"
                   min={0}
-                  {...register("targetMarginPercent", { valueAsNumber: true })}
+                  {...register("targetMarginPercent", {
+                    setValueAs: (v) => (v === "" || v == null ? undefined : Number(v)),
+                  })}
                   aria-invalid={!!errors.targetMarginPercent}
                   className={errors.targetMarginPercent ? "border-destructive focus-visible:ring-destructive/20" : ""}
                 />
@@ -681,7 +683,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   type="number"
                   step="0.01"
                   min={0}
-                  {...register("additionalCost", { valueAsNumber: true })}
+                  {...register("additionalCost", {
+                    setValueAs: (v) => (v === "" || v == null ? undefined : Number(v)),
+                  })}
                   aria-invalid={!!errors.additionalCost}
                   className={errors.additionalCost ? "border-destructive focus-visible:ring-destructive/20" : ""}
                 />
