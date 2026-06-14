@@ -66,6 +66,7 @@
     "navJubelioSettings": "Settings",
     "navJubelioCategories": "Categories",
     "navJubelioMigration": "Migration",
+    "navJubelioCouriers": "Couriers",
     "settings": "Settings",
     "masterData": "Master Data"
   },
@@ -1103,6 +1104,62 @@
       "total_amount_mp": "Marketplace total"
     },
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "fulfillment": {
+      "section": "Fulfillment",
+      "status": "Status",
+      "statusValues": {
+        "PENDING": "Pending",
+        "PICKED": "Picked",
+        "PACKED": "Packed",
+        "SHIPPED": "Shipped"
+      },
+      "timeline": "Timeline",
+      "timelinePicked": "Picked",
+      "timelinePacked": "Packed",
+      "timelineShipped": "Shipped",
+      "tracking": "Tracking",
+      "byUser": "by {name}",
+      "cancelledLocked": "Cancelled — fulfillment locked.",
+      "action": {
+        "finishPick": "Finish Pick",
+        "finishPack": "Finish Pack",
+        "ship": "Ship",
+        "courier": "Courier",
+        "courierPlaceholder": "Select courier…",
+        "shipConfirmTitle": "Ship this order?",
+        "shipConfirmBody": "Jubelio will request the AWB from {courier}. This action cannot be undone.",
+        "shipConfirmOk": "Ship",
+        "shipConfirmCancel": "Cancel"
+      },
+      "toast": {
+        "success": "Action completed.",
+        "invalidTransition": "Status already changed. Refresh the page.",
+        "forbidden": "Insufficient permissions.",
+        "networkError": "Couldn't reach the server. Try again."
+      }
+    }
+  },
+  "jubelioCouriers": {
+    "pageTitle": "Jubelio Couriers",
+    "pageSubtitle": "Cached courier list used by the Ship action on order detail.",
+    "syncButton": "Sync from Jubelio",
+    "lastSyncedAt": "Last synced: {when}",
+    "empty": "No couriers cached yet. Click \"Sync from Jubelio\" to populate.",
+    "emptyFiltered": "No couriers match this search.",
+    "filter": {
+      "searchLabel": "Search by name",
+      "searchPlaceholder": "JNE, J&T, …",
+      "reset": "Reset"
+    },
+    "table": {
+      "id": "ID",
+      "name": "Name",
+      "syncedAt": "Synced at"
+    },
+    "toast": {
+      "syncSuccess": "Synced {count} couriers.",
+      "syncError": "Sync failed. Try again."
+    }
   }
 }

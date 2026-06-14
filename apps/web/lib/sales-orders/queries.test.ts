@@ -8,6 +8,8 @@ vi.mock("@elorae/db", () => ({
       findUnique: vi.fn(),
       aggregate: vi.fn(),
     },
+    user: { findMany: vi.fn() },
+    jubelioCourier: { findUnique: vi.fn() },
   },
 }));
 
@@ -135,6 +137,15 @@ describe("getSalesOrderById", () => {
       lastModifiedJubelio: null,
       trackingNumber: null,
       courier: null,
+      fulfillmentStatus: "PENDING",
+      pickedAt: null,
+      pickedById: null,
+      packedAt: null,
+      packedById: null,
+      shippedAt: null,
+      shippedById: null,
+      shipmentJubelioId: null,
+      courierId: null,
       items: [
         {
           id: "i1",
@@ -164,6 +175,68 @@ describe("getSalesOrderById", () => {
     expect(r!.order.subTotal).toBe("100000");
     expect(r!.items[0].qty).toBe("1.0000");
     expect(r!.items[0].lineTotal).toBe("97000");
+  });
+
+  it("resolves audit user names and courier name", async () => {
+    (prisma.salesOrder.findUnique as any).mockResolvedValue({
+      id: "so1",
+      salesorderId: 23043,
+      salesorderNo: "TT-001",
+      channel: "TOKOPEDIA",
+      sourceName: "Shop | Tokopedia",
+      status: "NEW",
+      channelStatus: null,
+      internalStatus: null,
+      wmsStatus: null,
+      isCanceled: false,
+      isPaid: false,
+      markedAsComplete: false,
+      customerName: null,
+      customerPhone: null,
+      customerEmail: null,
+      shippingProvince: null,
+      shippingCity: null,
+      shippingAddress: null,
+      subTotal: { toString: () => "0" },
+      totalDisc: { toString: () => "0" },
+      totalTax: { toString: () => "0" },
+      shippingCost: { toString: () => "0" },
+      grandTotal: { toString: () => "0" },
+      feeBreakdown: null,
+      paymentMethod: null,
+      paymentDate: null,
+      transactionDate: new Date(),
+      createdDateJubelio: null,
+      completedDate: null,
+      cancelDate: null,
+      lastModifiedJubelio: null,
+      trackingNumber: null,
+      courier: null,
+      fulfillmentStatus: "SHIPPED",
+      pickedAt: new Date(),
+      pickedById: "u1",
+      packedAt: new Date(),
+      packedById: "u2",
+      shippedAt: new Date(),
+      shippedById: "u3",
+      shipmentJubelioId: 99,
+      courierId: 4,
+      items: [],
+    });
+    (prisma.user.findMany as any).mockResolvedValue([
+      { id: "u1", name: "Alice" },
+      { id: "u2", name: "Bob" },
+      { id: "u3", name: "Carol" },
+    ]);
+    (prisma.jubelioCourier.findUnique as any).mockResolvedValue({ id: 4, name: "SiCepat" });
+
+    const r = await getSalesOrderById("so1");
+
+    expect(r!.order.pickedByName).toBe("Alice");
+    expect(r!.order.packedByName).toBe("Bob");
+    expect(r!.order.shippedByName).toBe("Carol");
+    expect(r!.order.courierName).toBe("SiCepat");
+    expect(r!.order.fulfillmentStatus).toBe("SHIPPED");
   });
 });
 

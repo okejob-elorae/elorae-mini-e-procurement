@@ -86,3 +86,13 @@ export const SalesOrderStatus = {
 } as const;
 export type SalesOrderStatus = (typeof SalesOrderStatus)[keyof typeof SalesOrderStatus];
 export const SALES_ORDER_STATUS_VALUES = Object.values(SalesOrderStatus);
+
+export const SalesOrderFulfillmentStatus = {
+  PENDING: "PENDING",
+  PICKED: "PICKED",
+  PACKED: "PACKED",
+  SHIPPED: "SHIPPED",
+} as const;
+export type SalesOrderFulfillmentStatus =
+  (typeof SalesOrderFulfillmentStatus)[keyof typeof SalesOrderFulfillmentStatus];
+export const SALES_ORDER_FULFILLMENT_STATUS_VALUES = Object.values(SalesOrderFulfillmentStatus);

@@ -66,6 +66,7 @@
     "navJubelioSettings": "Pengaturan",
     "navJubelioCategories": "Kategori",
     "navJubelioMigration": "Migrasi",
+    "navJubelioCouriers": "Kurir",
     "settings": "Pengaturan",
     "masterData": "Data Master"
   },
@@ -1103,6 +1104,62 @@
       "total_amount_mp": "Total marketplace"
     },
     "yes": "Ya",
-    "no": "Tidak"
+    "no": "Tidak",
+    "fulfillment": {
+      "section": "Pemenuhan",
+      "status": "Status",
+      "statusValues": {
+        "PENDING": "Menunggu",
+        "PICKED": "Sudah diambil",
+        "PACKED": "Sudah dikemas",
+        "SHIPPED": "Sudah dikirim"
+      },
+      "timeline": "Linimasa",
+      "timelinePicked": "Diambil",
+      "timelinePacked": "Dikemas",
+      "timelineShipped": "Dikirim",
+      "tracking": "No. Resi",
+      "byUser": "oleh {name}",
+      "cancelledLocked": "Dibatalkan — pemenuhan dikunci.",
+      "action": {
+        "finishPick": "Selesai Pick",
+        "finishPack": "Selesai Pack",
+        "ship": "Kirim",
+        "courier": "Kurir",
+        "courierPlaceholder": "Pilih kurir…",
+        "shipConfirmTitle": "Kirim pesanan ini?",
+        "shipConfirmBody": "Jubelio akan meminta resi dari {courier}. Aksi ini tidak bisa dibatalkan.",
+        "shipConfirmOk": "Kirim",
+        "shipConfirmCancel": "Batal"
+      },
+      "toast": {
+        "success": "Berhasil.",
+        "invalidTransition": "Status sudah berubah. Muat ulang halaman.",
+        "forbidden": "Akses tidak diizinkan.",
+        "networkError": "Gagal terhubung ke server. Coba lagi."
+      }
+    }
+  },
+  "jubelioCouriers": {
+    "pageTitle": "Kurir Jubelio",
+    "pageSubtitle": "Daftar kurir cache yang dipakai aksi Kirim di halaman pesanan.",
+    "syncButton": "Sinkron dari Jubelio",
+    "lastSyncedAt": "Sinkron terakhir: {when}",
+    "empty": "Belum ada kurir tercache. Klik \"Sinkron dari Jubelio\" untuk mengisi.",
+    "emptyFiltered": "Tidak ada kurir yang cocok dengan pencarian ini.",
+    "filter": {
+      "searchLabel": "Cari berdasarkan nama",
+      "searchPlaceholder": "JNE, J&T, …",
+      "reset": "Reset"
+    },
+    "table": {
+      "id": "ID",
+      "name": "Nama",
+      "syncedAt": "Disinkron pada"
+    },
+    "toast": {
+      "syncSuccess": "Berhasil sinkron {count} kurir.",
+      "syncError": "Sinkron gagal. Coba lagi."
+    }
   }
 }

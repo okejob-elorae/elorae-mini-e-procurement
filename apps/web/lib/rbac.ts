@@ -75,6 +75,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/jubelio/settings': 'settings_security:view',
   '/backoffice/jubelio/categories': 'settings_security:view',
   '/backoffice/jubelio/migration': 'settings_security:view',
+  '/backoffice/jubelio/couriers': 'settings_security:view',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
@@ -106,6 +107,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/jubelio/settings',
   '/backoffice/jubelio/categories',
   '/backoffice/jubelio/migration',
+  '/backoffice/jubelio/couriers',
   '/backoffice/settings/documents',
   '/backoffice/settings/tax',
   '/backoffice/settings/uom',
@@ -172,6 +174,7 @@ export const PERMISSIONS = {
   ITEMS_DELETE: 'items:delete',
   // Sales Orders
   SALES_ORDERS_VIEW: 'sales_orders:view',
+  SALES_ORDERS_FULFILL: 'sales_orders:fulfill',
   // Purchase Orders
   PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
   PURCHASE_ORDERS_CREATE: 'purchase_orders:create',

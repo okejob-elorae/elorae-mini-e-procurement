@@ -1,5 +1,5 @@
 import { prisma } from "@elorae/db";
-import type { SalesChannel, SalesOrderStatus } from "@/lib/constants/enums";
+import type { SalesChannel, SalesOrderStatus, SalesOrderFulfillmentStatus } from "@/lib/constants/enums";
 
 export type SalesOrderListFilter = {
   search?: string;
@@ -55,6 +55,19 @@ export type SalesOrderDetail = {
   lastModifiedJubelio: Date | null;
   trackingNumber: string | null;
   courier: string | null;
+  fulfillmentStatus: SalesOrderFulfillmentStatus;
+  pickedAt: Date | null;
+  pickedById: string | null;
+  pickedByName: string | null;
+  packedAt: Date | null;
+  packedById: string | null;
+  packedByName: string | null;
+  shippedAt: Date | null;
+  shippedById: string | null;
+  shippedByName: string | null;
+  courierId: number | null;
+  courierName: string | null;
+  shipmentJubelioId: number | null;
 };
 
 export type SalesOrderItemRow = {
@@ -143,6 +156,24 @@ export async function getSalesOrderById(
   });
   if (!row) return null;
 
+  const userIds = [row.pickedById, row.packedById, row.shippedById].filter(
+    (v): v is string => typeof v === "string" && v.length > 0,
+  );
+  const distinctUserIds = Array.from(new Set(userIds));
+
+  const [users, courier] = await Promise.all([
+    distinctUserIds.length > 0
+      ? prisma.user.findMany({
+          where: { id: { in: distinctUserIds } },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([] as Array<{ id: string; name: string | null }>),
+    row.courierId !== null && row.courierId !== undefined
+      ? prisma.jubelioCourier.findUnique({ where: { id: row.courierId } })
+      : Promise.resolve(null),
+  ]);
+  const nameById = new Map(users.map((u) => [u.id, u.name ?? null]));
+
   const order: SalesOrderDetail = {
     id: row.id,
     salesorderId: row.salesorderId,
@@ -177,6 +208,19 @@ export async function getSalesOrderById(
     lastModifiedJubelio: row.lastModifiedJubelio,
     trackingNumber: row.trackingNumber,
     courier: row.courier,
+    fulfillmentStatus: row.fulfillmentStatus as SalesOrderFulfillmentStatus,
+    pickedAt: row.pickedAt,
+    pickedById: row.pickedById,
+    pickedByName: row.pickedById ? nameById.get(row.pickedById) ?? null : null,
+    packedAt: row.packedAt,
+    packedById: row.packedById,
+    packedByName: row.packedById ? nameById.get(row.packedById) ?? null : null,
+    shippedAt: row.shippedAt,
+    shippedById: row.shippedById,
+    shippedByName: row.shippedById ? nameById.get(row.shippedById) ?? null : null,
+    courierId: row.courierId,
+    courierName: courier?.name ?? null,
+    shipmentJubelioId: row.shipmentJubelioId,
   };
 
   const items: SalesOrderItemRow[] = row.items.map((it: any) => ({

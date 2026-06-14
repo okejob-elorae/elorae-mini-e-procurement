@@ -190,6 +190,7 @@ const navItems: NavItem[] = [
       { labelKey: 'navJubelioSettings', href: '/backoffice/jubelio/settings', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: 'navJubelioCategories', href: '/backoffice/jubelio/categories', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: 'navJubelioMigration', href: '/backoffice/jubelio/migration', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
+      { labelKey: 'navJubelioCouriers', href: '/backoffice/jubelio/couriers', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
     ],
   },
   {
