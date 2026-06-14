@@ -108,7 +108,7 @@ contract for the migrations that will introduce them.
 | `Production*`                  | web                         | api (read FG receipts)      | ✅ |
 | `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
 | `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
-| `SalesOrder`                   | api                         | web (read)                  | ✅ schema + api writer (see §3.2) |
+| `SalesOrder`                   | **both** — see §3.2         | —                           | ✅ api owns Jubelio-derived cols; web owns fulfillment cols via helper |
 | `SalesOrderItem`               | api                         | web (read)                  | ✅ schema + api writer |
 | `SalesReturn`                  | api                         | web (read)                  | ⏳ |
 | `JubelioProductMapping`        | api                         | web (read)                  | ✅ |
@@ -134,18 +134,31 @@ contract for the migrations that will introduce them.
 Both writes go through a shared helper in `@elorae/db` to enforce the columns:
 `source ('ERP' | 'JUBELIO_WEBHOOK')`, `externalRef`, `idempotencyKey`.
 
-### 3.2 Sales writes (api-only as of 2026-06-11)
+### 3.2 Sales writes — dual-writer (as of 2026-06-14)
 
-- **api** creates and updates `SalesOrder` + `SalesOrderItem` rows from the
-  Jubelio `salesorder` webhook (`SalesOrderWebhookHandler.upsertSalesOrder`).
-  It owns every column: marketplace metadata, totals, fees, buyer + shipping,
-  status (raw + derived), timestamps. Upsert is keyed on `salesorder_id`;
-  lines are replaced as a set on every webhook.
-- **web** is read-only for both tables. No write paths today.
+`SalesOrder` is now dual-writer, split by column:
 
-If a future ERP workflow needs to write back (e.g. internal pick/pack notes,
-fulfillment user), introduce a dual-writer split via an `@elorae/db` helper at
-that point — don't widen the ownership without a concrete consumer.
+**api-owned columns** (written by `SalesOrderWebhookHandler.upsertSalesOrder` on every Jubelio webhook):
+
+- All marketplace metadata: `channel`, `sourceName`, `salesorderNo`, etc.
+- Status (raw + derived): `channelStatus`, `internalStatus`, `wmsStatus`, `status`, `isCanceled`, `isPaid`, `markedAsComplete`.
+- Buyer + shipping snapshot: `customerName`, `customerPhone`, `customerEmail`, `shippingProvince`, `shippingCity`, `shippingAddress`.
+- Totals + fees: `subTotal`, `totalDisc`, `totalTax`, `shippingCost`, `grandTotal`, `feeBreakdown`.
+- Timestamps from Jubelio: `transactionDate`, `createdDateJubelio`, `completedDate`, `cancelDate`, `lastModifiedJubelio`, `paymentDate`.
+- `trackingNumber`, `courier`, `paymentMethod`, `lastWebhookEventId`.
+
+**web-owned columns** (written EXCLUSIVELY via `@elorae/db/sales-order-fulfillment-writer` — never bare prisma):
+
+- `fulfillmentStatus`
+- `pickedAt`, `pickedById`
+- `packedAt`, `packedById`
+- `shippedAt`, `shippedById`
+- `shipmentJubelioId`
+- `courierId`
+
+The writer helper enforces the state machine (PENDING → PICKED → PACKED → SHIPPED, no skip, no reverse) and enqueues a `JubelioOutbox` row per transition in the same transaction. Web bare-prisma writes to any fulfillment column are a contract violation.
+
+`SalesOrderItem` remains api-only — web never writes line items.
 
 ### 3.3 `Item` writes — two writers (resolved 2026-05-25)
 
