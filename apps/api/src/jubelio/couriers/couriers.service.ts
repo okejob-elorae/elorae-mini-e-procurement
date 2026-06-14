@@ -19,21 +19,19 @@ export class JubelioCouriersService {
   async sync(): Promise<{ count: number }> {
     const rows = await this.http.get<JubelioCourierRow[]>("/wms/couriers");
     const now = new Date();
-    const ids = rows.map((r) => r.courier_id);
 
-    // Cache table — no FK consumers, partial replay is safe. Drop the $transaction
-    // wrapper (was timing out at 5s default with 56 sequential upserts on TiDB)
-    // and run delete + upserts concurrently.
-    await this.prisma.jubelioCourier.deleteMany({ where: { id: { notIn: ids } } });
-    await Promise.all(
-      rows.map((r) =>
-        this.prisma.jubelioCourier.upsert({
-          where: { id: r.courier_id },
-          create: { id: r.courier_id, name: r.courier_name, syncedAt: now },
-          update: { name: r.courier_name, syncedAt: now },
-        }),
-      ),
-    );
+    // Cache table — no FK consumers, momentary empty window between delete and
+    // create is acceptable. Two queries total (delete-all + createMany) — avoids
+    // both the 5s interactive-tx timeout and the 10-conn mariadb pool exhaustion
+    // that per-row upserts would hit.
+    await this.prisma.jubelioCourier.deleteMany({});
+    await this.prisma.jubelioCourier.createMany({
+      data: rows.map((r) => ({
+        id: r.courier_id,
+        name: r.courier_name,
+        syncedAt: now,
+      })),
+    });
 
     this.logger.log(`Synced ${rows.length} couriers from Jubelio`);
     return { count: rows.length };

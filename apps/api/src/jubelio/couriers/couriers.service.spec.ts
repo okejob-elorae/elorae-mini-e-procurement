@@ -10,10 +10,9 @@ describe("JubelioCouriersService", () => {
 
   beforeEach(async () => {
     prisma = {
-      $transaction: jest.fn(async (cb: any) => cb(prisma)),
       jubelioCourier: {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
-        upsert: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: jest.fn().mockResolvedValue([]),
       },
     };
@@ -30,7 +29,7 @@ describe("JubelioCouriersService", () => {
     svc = mod.get(JubelioCouriersService);
   });
 
-  it("sync: fetches Jubelio + upserts each row + returns count", async () => {
+  it("sync: fetches Jubelio + clears table + bulk inserts rows + returns count", async () => {
     http.get.mockResolvedValue([
       { courier_id: 1, courier_name: "JNE" },
       { courier_id: 2, courier_name: "J&T" },
@@ -40,31 +39,35 @@ describe("JubelioCouriersService", () => {
 
     expect(result).toEqual({ count: 2 });
     expect(http.get).toHaveBeenCalledWith("/wms/couriers");
-    expect(prisma.jubelioCourier.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.jubelioCourier.deleteMany).toHaveBeenCalledWith({});
+    expect(prisma.jubelioCourier.createMany).toHaveBeenCalledTimes(1);
 
-    const firstUpsert = prisma.jubelioCourier.upsert.mock.calls[0][0];
-    expect(firstUpsert.where).toEqual({ id: 1 });
-    expect(firstUpsert.create).toMatchObject({ id: 1, name: "JNE" });
-    expect(firstUpsert.update).toMatchObject({ name: "JNE" });
+    const createArgs = prisma.jubelioCourier.createMany.mock.calls[0][0];
+    expect(createArgs.data).toHaveLength(2);
+    expect(createArgs.data[0]).toMatchObject({ id: 1, name: "JNE" });
+    expect(createArgs.data[1]).toMatchObject({ id: 2, name: "J&T" });
   });
 
-  it("sync: deletes rows missing from latest Jubelio response", async () => {
-    http.get.mockResolvedValue([{ courier_id: 1, courier_name: "JNE" }]);
+  it("sync: stamps syncedAt to a Date on every row", async () => {
+    http.get.mockResolvedValue([
+      { courier_id: 1, courier_name: "JNE" },
+      { courier_id: 2, courier_name: "J&T" },
+    ]);
 
     await svc.sync();
 
-    expect(prisma.jubelioCourier.deleteMany).toHaveBeenCalledWith({
-      where: { id: { notIn: [1] } },
-    });
+    const createArgs = prisma.jubelioCourier.createMany.mock.calls[0][0];
+    expect(createArgs.data[0].syncedAt).toBeInstanceOf(Date);
+    expect(createArgs.data[1].syncedAt).toBeInstanceOf(Date);
   });
 
-  it("sync: stamps syncedAt to a Date", async () => {
-    http.get.mockResolvedValue([{ courier_id: 1, courier_name: "JNE" }]);
+  it("sync: handles empty Jubelio response (clears table, createMany with empty data)", async () => {
+    http.get.mockResolvedValue([]);
 
-    await svc.sync();
+    const result = await svc.sync();
 
-    const upsertArgs = prisma.jubelioCourier.upsert.mock.calls[0][0];
-    expect(upsertArgs.create.syncedAt).toBeInstanceOf(Date);
-    expect(upsertArgs.update.syncedAt).toBeInstanceOf(Date);
+    expect(result).toEqual({ count: 0 });
+    expect(prisma.jubelioCourier.deleteMany).toHaveBeenCalledWith({});
+    expect(prisma.jubelioCourier.createMany).toHaveBeenCalledWith({ data: [] });
   });
 });

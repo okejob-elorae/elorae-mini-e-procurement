@@ -1146,6 +1146,12 @@
     "syncButton": "Sinkron dari Jubelio",
     "lastSyncedAt": "Sinkron terakhir: {when}",
     "empty": "Belum ada kurir tercache. Klik \"Sinkron dari Jubelio\" untuk mengisi.",
+    "emptyFiltered": "Tidak ada kurir yang cocok dengan pencarian ini.",
+    "filter": {
+      "searchLabel": "Cari berdasarkan nama",
+      "searchPlaceholder": "JNE, J&T, …",
+      "reset": "Reset"
+    },
     "table": {
       "id": "ID",
       "name": "Nama",

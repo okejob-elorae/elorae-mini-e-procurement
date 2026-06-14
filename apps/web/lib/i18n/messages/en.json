@@ -1146,6 +1146,12 @@
     "syncButton": "Sync from Jubelio",
     "lastSyncedAt": "Last synced: {when}",
     "empty": "No couriers cached yet. Click \"Sync from Jubelio\" to populate.",
+    "emptyFiltered": "No couriers match this search.",
+    "filter": {
+      "searchLabel": "Search by name",
+      "searchPlaceholder": "JNE, J&T, …",
+      "reset": "Reset"
+    },
     "table": {
       "id": "ID",
       "name": "Name",
