@@ -881,6 +881,13 @@ enum SalesOrderStatus {
   RETURNED
 }
 
+enum SalesOrderFulfillmentStatus {
+  PENDING
+  PICKED
+  PACKED
+  SHIPPED
+}
+
 enum SalesHistoryStatus {
   COMPLETED
   CANCELLED
@@ -1313,6 +1320,15 @@ model SalesOrder {
   trackingNumber      String?
   courier             String?
   lastWebhookEventId  String?
+  fulfillmentStatus   SalesOrderFulfillmentStatus @default(PENDING)
+  pickedAt            DateTime?
+  pickedById          String?
+  packedAt            DateTime?
+  packedById          String?
+  shippedAt           DateTime?
+  shippedById         String?
+  shipmentJubelioId   Int?
+  courierId           Int?
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   items               SalesOrderItem[]
@@ -1322,6 +1338,7 @@ model SalesOrder {
   @@index([transactionDate])
   @@index([shippingProvince])
   @@index([shippingCity])
+  @@index([fulfillmentStatus])
 }
 
 model SalesOrderItem {
