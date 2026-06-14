@@ -1,4 +1,5 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
+import type { StockAdjustmentSource } from "./stock-adjustment-source";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -56,7 +57,7 @@ export async function applyJubelioStockAdjustment(
           newQty: input.newQty,
           prevAvgCost: avgCost,
           newAvgCost: avgCost,
-          source: "JUBELIO_WEBHOOK",
+          source: "JUBELIO_WEBHOOK" satisfies StockAdjustmentSource,
           idempotencyKey: input.idempotencyKey,
           externalRef: input.externalRef,
         },

@@ -54,3 +54,13 @@ export {
   type ApplyJubelioStockAdjustmentInput,
   type ApplyJubelioStockAdjustmentResult,
 } from "./stock-writer";
+export {
+  JUBELIO_OUTBOX_ENTITY_TYPES,
+  isJubelioOutboxEntityType,
+  type JubelioOutboxEntityType,
+} from "./jubelio-outbox";
+export {
+  STOCK_ADJUSTMENT_SOURCES,
+  isStockAdjustmentSource,
+  type StockAdjustmentSource,
+} from "./stock-adjustment-source";
