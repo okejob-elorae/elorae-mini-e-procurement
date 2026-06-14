@@ -9,8 +9,9 @@ import { formatIDR, formatDateTime } from "@/lib/sales-orders/format";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { FulfillmentCard } from "./FulfillmentCard";
 
-type Props = { order: SalesOrderDetail; items: SalesOrderItemRow[] };
+type Props = { order: SalesOrderDetail; items: SalesOrderItemRow[]; canFulfill: boolean };
 
 const KNOWN_FEE_KEYS = new Set([
   "insurance_cost",
@@ -25,7 +26,7 @@ const KNOWN_FEE_KEYS = new Set([
   "total_amount_mp",
 ]);
 
-export function SalesOrderDetailClient({ order, items }: Props) {
+export function SalesOrderDetailClient({ order, items, canFulfill }: Props) {
   const t = useTranslations("salesOrders");
   const locale = useLocale();
 
@@ -47,6 +48,22 @@ export function SalesOrderDetailClient({ order, items }: Props) {
           {t(`status.${order.status}` as never)}
         </span>
       </div>
+
+      <FulfillmentCard
+        orderId={order.id}
+        salesorderNo={order.salesorderNo}
+        fulfillmentStatus={order.fulfillmentStatus}
+        isLocked={order.isCanceled || order.status === "CANCELLED" || order.status === "RETURNED"}
+        canFulfill={canFulfill}
+        pickedAt={order.pickedAt}
+        pickedByName={order.pickedByName}
+        packedAt={order.packedAt}
+        packedByName={order.packedByName}
+        shippedAt={order.shippedAt}
+        shippedByName={order.shippedByName}
+        trackingNumber={order.trackingNumber}
+        courierName={order.courierName}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-4 space-y-2">
