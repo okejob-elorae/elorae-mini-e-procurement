@@ -140,7 +140,7 @@ cd /srv/elorae
 cp .env.production.example .env.production
 nano .env.production
 # Fill: SWAGGER_USER, SWAGGER_PASS, DATABASE_URL (same as apps/web's),
-#       JUBELIO_USER/PASS/WEBHOOK_SECRET, NEXTAUTH_SECRET (same as apps/web's),
+#       JUBELIO_USER/PASS/WEBHOOK_SECRET, INTERNAL_API_SECRET (same as apps/web's),
 #       CORS_ORIGINS (Vercel domain).
 chmod 600 .env.production
 
