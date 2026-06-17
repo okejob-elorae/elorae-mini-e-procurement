@@ -16,7 +16,8 @@ WORKDIR /repo
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
-COPY packages/db/package.json packages/db/
+COPY packages/db/package.json packages/db/prisma.config.ts packages/db/
+COPY packages/db/prisma packages/db/prisma
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
