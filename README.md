@@ -120,6 +120,86 @@ Jubelio webhooks (optional): in the Jubelio dashboard set URL to `https://<your-
 - TiDB cluster is shared between local-dev and client-facing Vercel. A local `prisma migrate dev` or destructive query hits the same data the client sees. Use a separate `elorae_demo` database in the same TiDB cluster if you need isolation.
 - ngrok free tier: 1 reserved domain, 40 connections/min, 20k req/month. Plenty for demos.
 
+## Production deploy — Hostinger VPS
+
+For long-lived prod (replaces the ngrok demo). Runs `apps/api` + Redis + Caddy reverse proxy via Docker Compose. Public webhook URL: `https://api.elorae.cloud`.
+
+**Server side prereqs** (one-time per VPS):
+
+- Ubuntu 24.04 LTS, 2 vCPU / 8 GB RAM
+- DNS A record `api.elorae.cloud → <VPS_IPv4>`
+- Docker Engine + Compose plugin installed
+- ufw allowing 22 + 80 + 443 only
+- Repo cloned to `/srv/elorae` via GitHub deploy key
+
+**First deploy:**
+
+```bash
+ssh elorae@api.elorae.cloud
+cd /srv/elorae
+cp .env.production.example .env.production
+nano .env.production
+# Fill: SWAGGER_USER, SWAGGER_PASS, DATABASE_URL (same as apps/web's),
+#       JUBELIO_USER/PASS/WEBHOOK_SECRET, NEXTAUTH_SECRET (same as apps/web's),
+#       CORS_ORIGINS (Vercel domain).
+chmod 600 .env.production
+
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml ps        # all three should show "Up"
+curl -fsS https://api.elorae.cloud/health           # 200 OK
+```
+
+Caddy obtains a Let's Encrypt cert automatically on first HTTPS request to the domain. First boot may take ~30 s for cert issuance.
+
+**Subsequent deploys** (after a merged PR):
+
+```bash
+ssh elorae@api.elorae.cloud
+cd /srv/elorae
+git pull
+docker compose -f docker-compose.prod.yml up -d --build api
+docker compose -f docker-compose.prod.yml logs -f api    # tail for boot errors
+```
+
+`redis` and `caddy` only restart when their own configs change.
+
+**Cut Jubelio webhook URL over** (after the first deploy reports healthy):
+
+1. Jubelio dashboard → Pengaturan → Developer → Webhook
+2. Set URL to `https://api.elorae.cloud/webhooks/jubelio/<event>` for each event (`salesorder`, `stock`, `salesreturn`, `product`)
+3. Send a test webhook → verify `JubelioWebhookEvent` row appears
+
+**Operational commands:**
+
+```bash
+# logs
+docker compose -f docker-compose.prod.yml logs -f api
+docker compose -f docker-compose.prod.yml logs -f caddy
+docker compose -f docker-compose.prod.yml logs -f redis
+
+# restart one service
+docker compose -f docker-compose.prod.yml restart api
+
+# shell into the api container
+docker compose -f docker-compose.prod.yml exec api sh
+
+# pull only DB migrations (without rebuild)
+docker compose -f docker-compose.prod.yml exec api node -e "require('@elorae/db').prisma.\$queryRaw\`SELECT 1\`.then(console.log)"
+
+# stop everything
+docker compose -f docker-compose.prod.yml down
+
+# wipe Redis (DANGEROUS — also wipes BullMQ queue state)
+docker compose -f docker-compose.prod.yml down -v
+```
+
+**Caveats:**
+
+- `.env.production` lives only on the VPS — never commit it. The example template is committed.
+- Migrations run from a developer machine via `pnpm -F @elorae/db migrate:deploy`, NOT from inside the api container. The container reads existing schema; it doesn't apply migrations on boot.
+- Redis data is in a named Docker volume (`redis-data`). BullMQ retry state survives container restarts but is lost on `docker compose down -v`.
+- Caddy renews certs automatically. No cron needed.
+
 ## Common scripts
 
 | Command | What it does |

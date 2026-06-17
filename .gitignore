@@ -7,3 +7,8 @@ packages/db/generated/
 
 reference/*
 .vercel
+
+# Root-level env files for VPS deploy. Per-app .env files have their own gitignore.
+.env
+.env.*
+!.env.*.example

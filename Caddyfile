@@ -1,0 +1,36 @@
+# Caddy reverse proxy — auto-SSL via Let's Encrypt (HTTP-01 challenge).
+# Public entry point: https://api.elorae.cloud → container `api` on port 3001.
+
+api.elorae.cloud {
+	encode gzip zstd
+
+	# Forward all paths to the api container.
+	# Caddy resolves "api" via Docker's internal DNS on the `internal` network.
+	reverse_proxy api:3001
+
+	# Stricter timeouts for webhook handlers (Jubelio retries non-200 after ~30s).
+	# Keep these slightly above the api's own internal timeout to surface real errors.
+	@long_request path /webhooks/* /jubelio/catalog/sync
+	handle @long_request {
+		reverse_proxy api:3001 {
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 60s
+			}
+		}
+	}
+
+	# Basic security headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Access logs (Caddy writes to stdout; docker logs caddy to view)
+	log {
+		output stdout
+		format json
+	}
+}
