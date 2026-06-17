@@ -51,6 +51,16 @@ Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the Ve
 
 **Restart order:** Redis → api → web. Static ngrok domain is account-bound; Jubelio webhook config keeps working across restarts.
 
+## Production hosts
+
+| Host | Service | Notes |
+|------|---------|-------|
+| Vercel | apps/web | Connected to GitHub; auto-deploys on master. Env vars in Vercel dashboard. |
+| Hostinger VPS (`api.elorae.cloud`) | apps/api + Redis + Caddy (Docker Compose) | Manual deploy: `ssh elorae@api.elorae.cloud && cd /srv/elorae && git pull && docker compose -f docker-compose.prod.yml up -d --build api`. Caddy handles auto-SSL. Webhook URL: `https://api.elorae.cloud/webhooks/jubelio/<event>`. See `README.md §Production deploy` for first-time setup + ops commands. |
+| TiDB Cloud | MySQL-compatible DB | Shared between dev + Vercel + VPS. `DATABASE_URL` lives in each platform's env store. |
+
+ngrok stays available as a fallback for local-only demo work (laptop apps/api + temporary public tunnel). VPS is the authoritative prod target.
+
 ## Env layout
 
 - `apps/web/.env` — Next.js env. Holds the shared `DATABASE_URL` (single source of truth).
@@ -110,7 +120,7 @@ Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit l
 - Don't write to web-owned tables from apps/api (and vice versa) without going through a `@elorae/db` helper — see `docs/BOUNDARY.md §3`.
 - Don't add Prisma model comments. Don't add `Co-Authored-By` trailers to commits.
 - Don't run `prisma migrate dev` against the shared TiDB — that creates throwaway migrations and resets state. Use `migrate:deploy` only.
-- Don't deploy apps/api to Vercel. NestJS needs a persistent process; Vercel functions don't fit (cron, BullMQ workers). Render/Koyeb/local-ngrok are the supported targets.
+- Don't deploy apps/api to Vercel. NestJS needs a persistent process; Vercel functions don't fit (cron, BullMQ workers). Production target is the Hostinger VPS (`api.elorae.cloud`); local-ngrok is the dev/demo fallback.
 
 ## When you need more context
 
