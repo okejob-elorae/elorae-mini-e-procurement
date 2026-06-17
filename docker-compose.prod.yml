@@ -1,0 +1,79 @@
+# Production deploy on Hostinger VPS (or any single-host Docker setup).
+# Brings up: Redis (BullMQ backend) + apps/api (NestJS) + Caddy (auto-SSL reverse proxy).
+#
+# First-time:
+#   cp .env.production.example .env.production
+#   <fill in secrets>
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Subsequent deploys:
+#   git pull
+#   docker compose -f docker-compose.prod.yml up -d --build api
+#
+# Logs:
+#   docker compose -f docker-compose.prod.yml logs -f api
+#   docker compose -f docker-compose.prod.yml logs -f caddy
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: elorae-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: elorae-api
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3001/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: elorae-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+    networks:
+      - internal
+
+volumes:
+  redis-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  internal:
+    driver: bridge
