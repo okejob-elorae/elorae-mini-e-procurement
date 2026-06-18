@@ -44,6 +44,10 @@ function toNum(v: unknown): number {
   return typeof v === "number" ? v : Number(v);
 }
 
+// Concurrency note: callers must serialize concurrent acceptReturnItem calls
+// that resolve to the same (itemId, variantSku). Without serialization the
+// read-then-write on InventoryValue.qtyOnHand can lose updates. Sub-B server
+// actions handle this with row-level locking or per-return-id serialization.
 export async function acceptReturnItem(
   tx: Prisma.TransactionClient,
   input: AcceptReturnItemInput,

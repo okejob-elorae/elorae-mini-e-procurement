@@ -15,7 +15,13 @@ export class ReturnsSweeperService {
 
   @Cron(CronExpression.EVERY_30_MINUTES)
   async sweep(): Promise<void> {
-    const rows = await this.jubelio.listUnprocessedReturns();
+    let rows: Awaited<ReturnType<JubelioHttpClient["listUnprocessedReturns"]>>;
+    try {
+      rows = await this.jubelio.listUnprocessedReturns();
+    } catch (err) {
+      this.logger.warn(`listUnprocessedReturns failed: ${(err as Error).message}`);
+      return;
+    }
     if (rows.length === 0) return;
 
     let ingestedCount = 0;
