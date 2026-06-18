@@ -52,6 +52,26 @@ services:
       retries: 3
       start_period: 30s
 
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: elorae-web
+    restart: unless-stopped
+    env_file:
+      - .env.production.web
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
   caddy:
     image: caddy:2-alpine
     container_name: elorae-caddy
@@ -66,6 +86,7 @@ services:
       - caddy-config:/config
     depends_on:
       - api
+      - web
     networks:
       - internal
 

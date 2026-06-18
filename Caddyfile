@@ -1,5 +1,25 @@
 # Caddy reverse proxy — auto-SSL via Let's Encrypt (HTTP-01 challenge).
-# Public entry point: https://api.elorae.cloud → container `api` on port 3001.
+# Public entry points:
+#   https://elorae.cloud → container `web` on port 3000 (Next.js)
+#   https://api.elorae.cloud → container `api` on port 3001 (NestJS)
+
+elorae.cloud {
+	encode gzip zstd
+
+	reverse_proxy web:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
 
 api.elorae.cloud {
 	encode gzip zstd
