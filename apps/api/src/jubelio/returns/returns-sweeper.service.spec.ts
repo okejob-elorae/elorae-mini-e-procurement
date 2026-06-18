@@ -17,8 +17,8 @@ describe("ReturnsSweeperService", () => {
     jest.clearAllMocks();
     ingest = { upsertFromApiDetail: jest.fn().mockResolvedValue(undefined) } as any;
     client = {
-      listUnprocessedReturns: jest.fn(),
-      getSalesReturn: jest.fn(),
+      listReturnedOrders: jest.fn(),
+      getSalesOrder: jest.fn(),
     } as any;
     const mod = await Test.createTestingModule({
       providers: [
@@ -31,28 +31,28 @@ describe("ReturnsSweeperService", () => {
   });
 
   it("ingests returns that don't exist locally", async () => {
-    client.listUnprocessedReturns.mockResolvedValue([
-      { return_id: 1 } as any,
-      { return_id: 2 } as any,
+    client.listReturnedOrders.mockResolvedValue([
+      { salesorder_id: 1 } as any,
+      { salesorder_id: 2 } as any,
     ]);
-    client.getSalesReturn
-      .mockResolvedValueOnce({ return_id: 1, items: [] } as any)
-      .mockResolvedValueOnce({ return_id: 2, items: [] } as any);
+    client.getSalesOrder
+      .mockResolvedValueOnce({ salesorder_id: 1, items: [] } as any)
+      .mockResolvedValueOnce({ salesorder_id: 2, items: [] } as any);
     (prisma.salesReturn.findUnique as jest.Mock).mockResolvedValue(null);
 
     await service.sweep();
 
-    expect(client.getSalesReturn).toHaveBeenCalledTimes(2);
+    expect(client.getSalesOrder).toHaveBeenCalledTimes(2);
     expect(ingest.upsertFromApiDetail).toHaveBeenCalledTimes(2);
   });
 
   it("skips returns that already exist locally", async () => {
-    client.listUnprocessedReturns.mockResolvedValue([{ return_id: 1 } as any]);
+    client.listReturnedOrders.mockResolvedValue([{ salesorder_id: 1 } as any]);
     (prisma.salesReturn.findUnique as jest.Mock).mockResolvedValue({ id: "r1" });
 
     await service.sweep();
 
-    expect(client.getSalesReturn).not.toHaveBeenCalled();
+    expect(client.getSalesOrder).not.toHaveBeenCalled();
     expect(ingest.upsertFromApiDetail).not.toHaveBeenCalled();
   });
 });

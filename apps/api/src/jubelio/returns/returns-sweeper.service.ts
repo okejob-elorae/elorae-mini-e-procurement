@@ -15,31 +15,31 @@ export class ReturnsSweeperService {
 
   @Cron(CronExpression.EVERY_30_MINUTES)
   async sweep(): Promise<void> {
-    let rows: Awaited<ReturnType<JubelioHttpClient["listUnprocessedReturns"]>>;
+    let rows: Awaited<ReturnType<JubelioHttpClient["listReturnedOrders"]>>;
     try {
-      rows = await this.jubelio.listUnprocessedReturns();
+      rows = await this.jubelio.listReturnedOrders(1, 100);
     } catch (err) {
-      this.logger.warn(`listUnprocessedReturns failed: ${(err as Error).message}`);
+      this.logger.warn(`listReturnedOrders failed: ${(err as Error).message}`);
       return;
     }
     if (rows.length === 0) return;
 
     let ingestedCount = 0;
     for (const row of rows) {
-      if (!row.return_id) continue;
+      if (!row.salesorder_id) continue;
       const exists = await prisma.salesReturn.findUnique({
-        where: { jubelioReturnId: row.return_id },
+        where: { jubelioReturnId: row.salesorder_id },
         select: { id: true },
       });
       if (exists) continue;
 
       try {
-        const detail = await this.jubelio.getSalesReturn(row.return_id);
+        const detail = await this.jubelio.getSalesOrder(row.salesorder_id);
         await this.ingest.upsertFromApiDetail(detail);
         ingestedCount++;
       } catch (err) {
         this.logger.warn(
-          `Backstop ingest failed for return_id=${row.return_id}: ${(err as Error).message}`,
+          `Backstop ingest failed for salesorder ${row.salesorder_id}: ${(err as Error).message}`,
         );
       }
     }

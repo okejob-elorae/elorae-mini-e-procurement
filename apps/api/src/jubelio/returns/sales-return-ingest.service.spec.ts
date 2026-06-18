@@ -36,18 +36,18 @@ describe("SalesReturnIngestService", () => {
     );
 
     await service.upsertFromApiDetail({
-      return_id: 7,
-      return_no: "SR-000000007",
+      salesorder_id: 7,
+      salesorder_no: "SP-7",
       source_name: "Shop | Tokopedia",
       customer_name: "Jane",
       items: [
         {
-          return_detail_id: 11,
+          salesorder_detail_id: 11,
           item_code: "SKU-A",
           item_name: "Product A",
           qty_in_base: "2.0000",
           unit_price: "100.00",
-          subtotal: "200.00",
+          amount: "200.00",
         },
       ],
     });
@@ -72,16 +72,15 @@ describe("SalesReturnIngestService", () => {
     );
 
     await service.upsertFromApiDetail({
-      return_id: 8,
       salesorder_id: 12345,
       source_name: "Shop | Tokopedia",
-      items: [{ return_detail_id: 1, item_code: "SKU-A", item_name: "A", qty_in_base: "1" }],
+      items: [{ salesorder_detail_id: 1, item_code: "SKU-A", item_name: "A", qty_in_base: "1" }],
     });
 
     expect(capturedSalesOrderId).toBe("so-local-1");
   });
 
-  it("creates fresh row each time when return_detail_id missing (no stable key)", async () => {
+  it("creates fresh row each time when salesorder_detail_id missing (no stable key)", async () => {
     const itemUpsert = jest.fn();
     const itemCreate = jest.fn().mockResolvedValue({});
     (prisma.$transaction as jest.Mock).mockImplementation(async (fn) =>
@@ -94,7 +93,7 @@ describe("SalesReturnIngestService", () => {
     );
 
     await service.upsertFromApiDetail({
-      return_id: 9,
+      salesorder_id: 9,
       items: [{ item_code: "SKU-A", item_name: "A", qty_in_base: "1" }],
     });
 

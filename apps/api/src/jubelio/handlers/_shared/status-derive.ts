@@ -13,6 +13,8 @@ const PROCESSING_WMS = new Set(["PROCESSING", "PICKED", "PACKED", "READY_TO_PACK
 
 export function deriveStatus(p: RawStatusInput): SalesOrderStatus {
   if (p.is_canceled === true || p.internal_status === "CANCELED") return "CANCELLED";
+  // Returned takes precedence over completed/shipped: returns happen AFTER ship.
+  if (p.internal_status === "RETURNED" || p.wms_status === "RETURNED") return "RETURNED";
   if (p.marked_as_complete === true || p.internal_status === "COMPLETED" || p.completed_date) {
     return "COMPLETED";
   }
