@@ -6,10 +6,11 @@ import { getRequiredPermission } from './lib/rbac';
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
-  // Allow auth routes, cron, and static files
+  // Allow auth routes, cron, health probe, and static files
   if (
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/cron') ||
+    pathname.startsWith('/api/health') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/static') ||
     pathname.startsWith('/favicon') ||
