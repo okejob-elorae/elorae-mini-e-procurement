@@ -113,8 +113,8 @@ EPIC-05 (Sales Returns) decomposition:
 
 | Sub | Scope | Status |
 |----|-------|--------|
-| **A** | Schema + helpers + Jubelio client methods + ingest service + webhook handler + 30-min backstop sweeper | ✅ shipped (PR #54 merged 2026-06-18). Carries 3 items into sub-B: race-condition serialization on concurrent Accept, variant-SKU fallback lookup in ingest, list endpoint URL fix (`/sales-returns/unprocessed` → `/sales/sales-returns/`). |
-| **B** | Server actions + outbox decision-push handler + per-item Accept/Reject UI on detail page | ⏳ next |
+| **A** | Schema + helpers + Jubelio client methods + ingest service + webhook handler + 30-min backstop sweeper | ✅ shipped (PR #54 merged 2026-06-18) + hotfix PR #55 reorienting the ingest around Jubelio's actual data model (returns ARE SalesOrders; `SalesOrderWebhookHandler` is the authoritative entry point; URL/field corrections). Carries 2 items into sub-B: race-condition serialization on concurrent Accept, variant-SKU fallback lookup in ingest. |
+| **B** | Server actions + per-item Accept/Reject UI on detail page (outbox decision-push handler deferred to sub-B.5 pending Jubelio resolve-endpoint docs) | ⏳ next |
 | **C** | Dashboard list + KPIs + RBAC seed + i18n | ⏳ |
 
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
