@@ -109,6 +109,14 @@ EPIC-04 (Sales Fulfillment) decomposition (independent of EPIC-01/02 sub-numberi
 | **C** | Fulfillment Queue page + Jubelio webhook forward-sync to `SHIPPED` | ✅ shipped (PR #49) |
 | **D** | Print views (pick list + packing slip) | ✅ shipped (PR #50 merged 2026-06-14) |
 
+EPIC-05 (Sales Returns) decomposition:
+
+| Sub | Scope | Status |
+|----|-------|--------|
+| **A** | Schema + helpers + Jubelio client methods + ingest service + webhook handler + 30-min backstop sweeper | ✅ shipped (PR #54 merged 2026-06-18). Carries 3 items into sub-B: race-condition serialization on concurrent Accept, variant-SKU fallback lookup in ingest, list endpoint URL fix (`/sales-returns/unprocessed` → `/sales/sales-returns/`). |
+| **B** | Server actions + outbox decision-push handler + per-item Accept/Reject UI on detail page | ⏳ next |
+| **C** | Dashboard list + KPIs + RBAC seed + i18n | ⏳ |
+
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
 **Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought.
