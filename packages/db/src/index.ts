@@ -71,3 +71,14 @@ export {
   type RecalcSkipReason,
   type PriceChangeTrigger,
 } from "./item-price-writer";
+export {
+  acceptReturnItem,
+  rejectReturnItem,
+  submitReturnDecision,
+  type AcceptReturnItemInput,
+  type AcceptReturnItemResult,
+  type RejectReturnItemInput,
+  type RejectReturnItemResult,
+  type SubmitReturnDecisionInput,
+  type SubmitReturnDecisionResult,
+} from "./sales-return-writer";
