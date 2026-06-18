@@ -10,7 +10,7 @@ describe("SalesReturnWebhookHandler", () => {
 
   beforeEach(async () => {
     ingest = { upsertFromApiDetail: jest.fn().mockResolvedValue(undefined) } as any;
-    client = { getSalesReturn: jest.fn() } as any;
+    client = { getSalesOrder: jest.fn() } as any;
     const mod = await Test.createTestingModule({
       providers: [
         SalesReturnWebhookHandler,
@@ -21,10 +21,10 @@ describe("SalesReturnWebhookHandler", () => {
     handler = mod.get(SalesReturnWebhookHandler);
   });
 
-  it("fetches detail by return_id and calls ingest service", async () => {
-    client.getSalesReturn.mockResolvedValue({
-      return_id: 7,
-      return_no: "SR-000000007",
+  it("fetches salesorder detail by return_id (=salesorder_id) and calls ingest service", async () => {
+    client.getSalesOrder.mockResolvedValue({
+      salesorder_id: 7,
+      salesorder_no: "SP-000000007",
       items: [],
     } as any);
 
@@ -34,9 +34,9 @@ describe("SalesReturnWebhookHandler", () => {
       rawPayload: { action: "new-salesreturn", return_id: 7, return_no: "SR-000000007" },
     } as any);
 
-    expect(client.getSalesReturn).toHaveBeenCalledWith(7);
+    expect(client.getSalesOrder).toHaveBeenCalledWith(7);
     expect(ingest.upsertFromApiDetail).toHaveBeenCalledWith(
-      expect.objectContaining({ return_id: 7 }),
+      expect.objectContaining({ salesorder_id: 7 }),
     );
     expect(result.kind).toBe("processed");
   });
@@ -49,6 +49,6 @@ describe("SalesReturnWebhookHandler", () => {
     } as any);
 
     expect(result.kind).toBe("skipped");
-    expect(client.getSalesReturn).not.toHaveBeenCalled();
+    expect(client.getSalesOrder).not.toHaveBeenCalled();
   });
 });

@@ -19,61 +19,64 @@ describe("JubelioHttpClient", () => {
     client = mod.get(JubelioHttpClient);
   });
 
-  describe("getSalesReturn", () => {
-    it("GETs /sales-returns/:id and returns the JSON body", async () => {
-      http.get.mockResolvedValue({ return_id: 7, return_no: "SR-000000007", items: [] });
+  describe("getSalesOrder", () => {
+    it("GETs /sales/orders/:id and returns the JSON body", async () => {
+      http.get.mockResolvedValue({ salesorder_id: 7, salesorder_no: "SP-7", items: [] });
 
-      const result = await client.getSalesReturn(7);
+      const result = await client.getSalesOrder(7);
 
-      expect(result).toEqual(expect.objectContaining({ return_id: 7 }));
-      expect(http.get).toHaveBeenCalledWith("/sales-returns/7");
+      expect(result).toEqual(expect.objectContaining({ salesorder_id: 7 }));
+      expect(http.get).toHaveBeenCalledWith("/sales/orders/7");
     });
 
     it("forwards the full detail payload including items array", async () => {
       const detail = {
-        return_id: 42,
-        return_no: "SR-000000042",
+        salesorder_id: 42,
+        salesorder_no: "TT-42",
         source_name: "Shop | Tokopedia",
         customer_name: "Jane",
+        internal_status: "RETURNED",
         items: [
           {
-            return_detail_id: 11,
+            salesorder_detail_id: 11,
             item_code: "SKU-A",
             item_name: "Product A",
             qty_in_base: "2.0000",
+            is_return_resolved: null,
+            reject_return_reason: null,
           },
         ],
       };
       http.get.mockResolvedValue(detail);
 
-      const result = await client.getSalesReturn(42);
+      const result = await client.getSalesOrder(42);
 
       expect(result.items).toHaveLength(1);
       expect(result.items[0].item_code).toBe("SKU-A");
     });
   });
 
-  describe("listUnprocessedReturns", () => {
-    it("GETs /sales-returns/unprocessed and unwraps the data array", async () => {
+  describe("listReturnedOrders", () => {
+    it("GETs /sales/orders/returned-list/ with paging and unwraps the data array", async () => {
       http.get.mockResolvedValue({
         data: [
-          { salesorder_id: 100, item_code: "SKU-A", item_name: "A", qty_in_base: "1.0000" },
-          { salesorder_id: 101, item_code: "SKU-B", item_name: "B", qty_in_base: "2.0000" },
+          { salesorder_id: 100, salesorder_no: "SP-100", status: "To Return" },
+          { salesorder_id: 101, salesorder_no: "TT-101", status: "Order Return" },
         ],
         totalCount: 2,
       });
 
-      const result = await client.listUnprocessedReturns();
+      const result = await client.listReturnedOrders(1, 100);
 
       expect(result).toHaveLength(2);
-      expect(result[0].item_code).toBe("SKU-A");
-      expect(http.get).toHaveBeenCalledWith("/sales-returns/unprocessed");
+      expect(result[0].salesorder_id).toBe(100);
+      expect(http.get).toHaveBeenCalledWith("/sales/orders/returned-list/?page=1&pageSize=100");
     });
 
     it("returns [] when data is missing from response", async () => {
       http.get.mockResolvedValue({});
 
-      const result = await client.listUnprocessedReturns();
+      const result = await client.listReturnedOrders();
 
       expect(result).toEqual([]);
     });
@@ -81,9 +84,17 @@ describe("JubelioHttpClient", () => {
     it("returns [] when data is an empty array", async () => {
       http.get.mockResolvedValue({ data: [], totalCount: 0 });
 
-      const result = await client.listUnprocessedReturns();
+      const result = await client.listReturnedOrders();
 
       expect(result).toEqual([]);
+    });
+
+    it("uses default page=1 and pageSize=100 when not specified", async () => {
+      http.get.mockResolvedValue({ data: [], totalCount: 0 });
+
+      await client.listReturnedOrders();
+
+      expect(http.get).toHaveBeenCalledWith("/sales/orders/returned-list/?page=1&pageSize=100");
     });
   });
 });

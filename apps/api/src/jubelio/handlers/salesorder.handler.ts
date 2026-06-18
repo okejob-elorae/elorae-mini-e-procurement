@@ -9,6 +9,8 @@ import type { SalesOrderLine, SalesOrderPayload } from "./salesorder.payload";
 import { resolveItemMapping } from "./_shared/mapping-lookup";
 import { detectChannel } from "./_shared/channel-detect";
 import { deriveStatus } from "./_shared/status-derive";
+import { SalesReturnIngestService } from "../returns/sales-return-ingest.service";
+import type { JubelioSalesOrderDetail } from "../jubelio-http.client";
 
 type UnmappedLine = { item_code: string; item_id: number; qty: string | number };
 
@@ -66,6 +68,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaService,
     private readonly admin: AdminNotificationService,
+    private readonly salesReturnIngest: SalesReturnIngestService,
   ) {}
 
   async handle(row: JubelioWebhookEvent): Promise<HandlerOutcome> {
@@ -131,6 +134,20 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
           lastIsCanceled: !!p.is_canceled,
         },
       });
+    }
+
+    // When the order is in a returned state, mirror to the SalesReturn audit
+    // table. Returns ARE salesorders in Jubelio's data model (no separate
+    // entity), so the salesorder webhook is the authoritative entry point for
+    // creating the SalesReturn row. Idempotent — upsert keyed on salesorder_id.
+    if (p.internal_status === "RETURNED" || p.wms_status === "RETURNED") {
+      try {
+        await this.salesReturnIngest.upsertFromApiDetail(p as unknown as JubelioSalesOrderDetail);
+      } catch (err) {
+        this.logger.warn(
+          `SalesReturn ingest failed for salesorder ${p.salesorder_id}: ${(err as Error).message}`,
+        );
+      }
     }
 
     return { kind: "processed" };

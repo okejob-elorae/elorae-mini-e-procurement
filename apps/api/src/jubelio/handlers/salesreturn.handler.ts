@@ -27,7 +27,10 @@ export class SalesReturnWebhookHandler implements WebhookEventHandler {
       return { kind: "skipped", reason: SKIP_REASONS.MISSING_REQUIRED_FIELD };
     }
 
-    const detail = await this.jubelio.getSalesReturn(payload.return_id);
+    // Returns are SalesOrders in Jubelio's data model. The webhook ping's
+    // `return_id` is the `salesorder_id`. Fetch the full salesorder detail and
+    // route through the same ingest path the salesorder webhook uses.
+    const detail = await this.jubelio.getSalesOrder(payload.return_id);
     await this.ingest.upsertFromApiDetail(detail);
     return { kind: "processed" };
   }

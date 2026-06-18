@@ -1,5 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { SalesOrderWebhookHandler } from "./salesorder.handler";
+import { SalesReturnIngestService } from "../returns/sales-return-ingest.service";
 import { PRISMA } from "../../db/prisma.module";
 import { AdminNotificationService } from "../../admin/notification.service";
 import * as db from "@elorae/db";
@@ -74,11 +75,13 @@ describe("SalesOrderWebhookHandler", () => {
       $transaction: jest.fn(async (fn: any) => fn(prisma)),
     };
     admin = { write: jest.fn() };
+    const salesReturnIngest = { upsertFromApiDetail: jest.fn().mockResolvedValue(undefined) };
     const mod = await Test.createTestingModule({
       providers: [
         SalesOrderWebhookHandler,
         { provide: PRISMA, useValue: prisma },
         { provide: AdminNotificationService, useValue: admin },
+        { provide: SalesReturnIngestService, useValue: salesReturnIngest },
       ],
     }).compile();
     handler = mod.get(SalesOrderWebhookHandler);
