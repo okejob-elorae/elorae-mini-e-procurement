@@ -17,7 +17,7 @@ This README covers running the stack on your laptop and exposing `apps/api` publ
 
 ```
 apps/
-  web/    Next.js 16 App Router, NextAuth, ERP UI + cron + Vercel cron
+  web/    Next.js 16 App Router, NextAuth, ERP UI + node-cron (VPS)
   api/    NestJS 11, Jubelio HTTP client, webhook receivers, catalog sync
 packages/
   db/     Prisma 7 schema + generated client + MariaDB adapter
@@ -98,7 +98,7 @@ pnpm --filter @elorae/api prod:start
 
 ## Client demo via ngrok
 
-Pattern: `apps/web` is deployed to Vercel (always-on). `apps/api` runs on your laptop and is exposed publicly via ngrok with a stable free domain. Same TiDB cluster used by both.
+Pattern: `apps/api` runs on your laptop and is exposed publicly via ngrok with a stable free domain so Jubelio can reach it. Same TiDB cluster as the VPS-deployed web.
 
 ```bash
 # 1. start apps/api locally (dev or prod-mode)
@@ -108,21 +108,21 @@ pnpm --filter @elorae/api dev
 ngrok http --domain=<your-name>.ngrok-free.app 3001
 ```
 
-Set `INTERNAL_API_URL=https://<your-name>.ngrok-free.app` in the Vercel project so the deployed web reaches your local api.
+Set `INTERNAL_API_URL=https://<your-name>.ngrok-free.app` in `apps/web/.env` (or VPS env) so web reaches your local api.
 
-Set `CORS_ORIGINS=https://<your-vercel-domain>` in `apps/api/.env` so the api accepts cross-origin requests from Vercel.
+Set `CORS_ORIGINS=https://<your-web-origin>` in `apps/api/.env` so the api accepts cross-origin requests from the web.
 
 Jubelio webhooks (optional): in the Jubelio dashboard set URL to `https://<your-name>.ngrok-free.app/webhooks/jubelio/<event>` and `JUBELIO_WEBHOOK_SECRET` to match. Only enable during demo windows — when your laptop is off, webhooks drop after 3 Jubelio retries.
 
 ### Demo caveats
 
-- Laptop off = api down → Vercel features that call `INTERNAL_API_URL` error out.
-- TiDB cluster is shared between local-dev and client-facing Vercel. A local `prisma migrate dev` or destructive query hits the same data the client sees. Use a separate `elorae_demo` database in the same TiDB cluster if you need isolation.
+- Laptop off = api down → web features that call `INTERNAL_API_URL` error out (local demo only; VPS is unaffected).
+- TiDB cluster is shared between local-dev and the VPS-deployed web. A local `prisma migrate dev` or destructive query hits the same data the client sees. Use a separate `elorae_demo` database in the same TiDB cluster if you need isolation.
 - ngrok free tier: 1 reserved domain, 40 connections/min, 20k req/month. Plenty for demos.
 
 ## Production deploy — Hostinger VPS
 
-For long-lived prod (replaces the ngrok demo). Runs `apps/api` + Redis + Caddy reverse proxy via Docker Compose. Public webhook URL: `https://api.elorae.cloud`.
+Both `apps/web` and `apps/api` run on the same Hostinger VPS, sharing Redis + Caddy via Docker Compose. Vercel is no longer used (decommissioned 2026-06-18). Public URLs: `https://elorae.cloud` (web) and `https://api.elorae.cloud` (api).
 
 **Server side prereqs** (one-time per VPS):
 
@@ -141,7 +141,7 @@ cp .env.production.example .env.production
 nano .env.production
 # Fill: SWAGGER_USER, SWAGGER_PASS, DATABASE_URL (same as apps/web's),
 #       JUBELIO_USER/PASS/WEBHOOK_SECRET, INTERNAL_API_SECRET (same as apps/web's),
-#       CORS_ORIGINS (Vercel domain).
+#       CORS_ORIGINS (elorae.cloud).
 chmod 600 .env.production
 
 docker compose -f docker-compose.prod.yml up -d --build
@@ -150,6 +150,33 @@ curl -fsS https://api.elorae.cloud/health           # 200 OK
 ```
 
 Caddy obtains a Let's Encrypt cert automatically on first HTTPS request to the domain. First boot may take ~30 s for cert issuance.
+
+### apps/web on VPS
+
+`apps/web` runs as a Docker Compose service (`web`) alongside `apps/api`, exposed by the same Caddy instance at `https://elorae.cloud`.
+
+**First deploy (web):**
+
+```bash
+ssh elorae@api.elorae.cloud
+cd /srv/elorae
+# Ensure .env.production contains NEXTAUTH_SECRET, NEXTAUTH_URL, DATABASE_URL, INTERNAL_API_SECRET
+docker compose -f docker-compose.prod.yml up -d --build web
+docker compose -f docker-compose.prod.yml ps        # web should show "Up"
+curl -fsS https://elorae.cloud/                     # 200 OK
+```
+
+**Subsequent deploys (web):**
+
+```bash
+ssh elorae@api.elorae.cloud
+cd /srv/elorae
+git pull
+docker compose -f docker-compose.prod.yml up -d --build web
+docker compose -f docker-compose.prod.yml logs -f web    # tail for boot errors
+```
+
+Both services share the same `docker compose -f docker-compose.prod.yml` workflow. To rebuild both in one pass: `docker compose -f docker-compose.prod.yml up -d --build api web`.
 
 **Subsequent deploys** (after a merged PR):
 
@@ -216,6 +243,6 @@ docker compose -f docker-compose.prod.yml down -v
 
 - **`Cannot read properties of undefined (reading 'prepareCacheLength')`** — `DATABASE_URL` not loaded. Check `apps/web/.env` exists and contains the URL. Cascade only reads existing files.
 - **`UOM with code PCS not found. Run db seed first.`** — catalog sync needs the `PCS` UOM seeded: `pnpm --filter @elorae/db seed`.
-- **`CORS_ORIGINS not set` warn on api boot** — fine in pure-local dev. Set when exposing via ngrok to Vercel.
+- **`CORS_ORIGINS not set` warn on api boot** — fine in pure-local dev. Set to the web origin when deploying to VPS or exposing via ngrok.
 - **`SWAGGER_USER / SWAGGER_PASS not set` warn** — `/docs` is disabled. Set both in `apps/api/.env` to enable Swagger.
 - **api boots but DB queries fail** — confirm migrations ran against the same `DATABASE_URL` you booted with. Check `_prisma_migrations` table.

@@ -6,6 +6,7 @@ import withPWA from 'next-pwa';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   typescript: {
     ignoreBuildErrors: false,
   },

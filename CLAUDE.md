@@ -7,14 +7,14 @@ Quick orientation for any new Claude Code session in this repo. Read this first,
 pnpm + Turborepo monorepo for an ERP + Jubelio marketplace integration.
 
 ```
-apps/web/        Next.js 16 App Router — the ERP UI + NextAuth + Vercel cron
+apps/web/        Next.js 16 App Router — the ERP UI + NextAuth + node-cron (VPS)
 apps/api/        NestJS 11 — Jubelio integration service (token, webhooks, queue)
 packages/db/     Prisma 7 schema + generated client + MariaDB adapter (shared)
 docs/BOUNDARY.md Service-boundary contract — source of truth for who-writes-what
 reference/       Local-only planning artifacts (gitignored). EPIC todos live here.
 ```
 
-Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the Vercel-deployed web.
+Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the VPS-deployed web.
 
 ## Authoritative docs (read these before changing architecture)
 
@@ -55,9 +55,9 @@ Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the Ve
 
 | Host | Service | Notes |
 |------|---------|-------|
-| Vercel | apps/web | Connected to GitHub; auto-deploys on master. Env vars in Vercel dashboard. |
+| Hostinger VPS (`elorae.cloud`) | apps/web (Next.js, Docker Compose) | Manual deploy: `ssh elorae@api.elorae.cloud && cd /srv/elorae && git pull && docker compose -f docker-compose.prod.yml up -d --build web`. Caddy auto-SSL. Vercel deploy DECOMMISSIONED 2026-06-18. |
 | Hostinger VPS (`api.elorae.cloud`) | apps/api + Redis + Caddy (Docker Compose) | Manual deploy: `ssh elorae@api.elorae.cloud && cd /srv/elorae && git pull && docker compose -f docker-compose.prod.yml up -d --build api`. Caddy handles auto-SSL. Webhook URL: `https://api.elorae.cloud/webhooks/jubelio/<event>`. See `README.md §Production deploy` for first-time setup + ops commands. |
-| TiDB Cloud | MySQL-compatible DB | Shared between dev + Vercel + VPS. `DATABASE_URL` lives in each platform's env store. |
+| TiDB Cloud | MySQL-compatible DB | Shared between dev + VPS. `DATABASE_URL` lives in each platform's env store. |
 
 ngrok stays available as a fallback for local-only demo work (laptop apps/api + temporary public tunnel). VPS is the authoritative prod target.
 
@@ -66,12 +66,12 @@ ngrok stays available as a fallback for local-only demo work (laptop apps/api + 
 - `apps/web/.env` — Next.js env. Holds the shared `DATABASE_URL` (single source of truth).
 - `apps/api/.env` — api-only keys (`JUBELIO_*`, `SWAGGER_*`, `PORT`, `CORS_ORIGINS`, `REDIS_URL`). No `DATABASE_URL` — `apps/api/src/bootstrap-env.ts` cascades it from `apps/web/.env`.
 - Cascade order in api: `apps/api/.env` → `<root>/.env` → `apps/web/.env`. Earlier wins per key (dotenv no-override).
-- In prod (Vercel + Render/Koyeb/local-with-ngrok): each platform injects env from its own store; cascade is irrelevant.
+- In prod (VPS + local-with-ngrok): each platform injects env from its own store; cascade is irrelevant.
 - **Secrets that have appeared in any chat transcript are compromised.** Rotate `DATABASE_URL` password, `JUBELIO_WEBHOOK_SECRET`, `SWAGGER_PASS` if you accidentally paste them.
 
 ## Architecture nuances worth flagging
 
-- **TiDB cluster is shared between local dev and the Vercel-deployed web.** A local destructive query (delete, truncate, bad migration) hits the same data the client demo shows. Run migrations only via `pnpm -F @elorae/db migrate:deploy`; never `migrate dev --create-only` without thinking.
+- **TiDB cluster is shared between local dev and the VPS-deployed web.** A local destructive query (delete, truncate, bad migration) hits the same data the client demo shows. Run migrations only via `pnpm -F @elorae/db migrate:deploy`; never `migrate dev --create-only` without thinking.
 - **`Item` is dual-owner** (web for ERP forms; api for Jubelio catalog ingest). All api writes go through `@elorae/db/item-writer.ts` helpers, stamping `source = JUBELIO_INGEST`. See `docs/BOUNDARY.md §3.3`.
 - **`StockAdjustment` is dual-owner** (web for ERP-driven adjustments; api for Jubelio stock webhooks). Api writes go through `@elorae/db/stock-writer.ts` `applyJubelioStockAdjustment`, stamping `source = JUBELIO_WEBHOOK` + `idempotencyKey`. See `docs/BOUNDARY.md §3.1`.
 - **Jubelio webhook signature is HMAC-SHA256 with header `Sign`** — not plain SHA256 with `webhook-signature`. Jubelio's docs *text* is wrong; their code example is correct. See `docs/BOUNDARY.md §9 Q1`.
@@ -113,8 +113,8 @@ EPIC-05 (Sales Returns) decomposition:
 
 | Sub | Scope | Status |
 |----|-------|--------|
-| **A** | Schema + helpers + Jubelio client methods + ingest service + webhook handler + 30-min backstop sweeper | ✅ shipped (PR #54 merged 2026-06-18). Carries 3 items into sub-B: race-condition serialization on concurrent Accept, variant-SKU fallback lookup in ingest, list endpoint URL fix (`/sales-returns/unprocessed` → `/sales/sales-returns/`). |
-| **B** | Server actions + outbox decision-push handler + per-item Accept/Reject UI on detail page | ⏳ next |
+| **A** | Schema + helpers + Jubelio client methods + ingest service + webhook handler + 30-min backstop sweeper | ✅ shipped (PR #54 merged 2026-06-18) + hotfix PR #55 reorienting the ingest around Jubelio's actual data model (returns ARE SalesOrders; `SalesOrderWebhookHandler` is the authoritative entry point; URL/field corrections). Carries 2 items into sub-B: race-condition serialization on concurrent Accept, variant-SKU fallback lookup in ingest. |
+| **B** | Server actions + per-item Accept/Reject UI on detail page (outbox decision-push handler deferred to sub-B.5 pending Jubelio resolve-endpoint docs) | ⏳ next |
 | **C** | Dashboard list + KPIs + RBAC seed + i18n | ⏳ |
 
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
@@ -128,7 +128,7 @@ Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit l
 - Don't write to web-owned tables from apps/api (and vice versa) without going through a `@elorae/db` helper — see `docs/BOUNDARY.md §3`.
 - Don't add Prisma model comments. Don't add `Co-Authored-By` trailers to commits.
 - Don't run `prisma migrate dev` against the shared TiDB — that creates throwaway migrations and resets state. Use `migrate:deploy` only.
-- Don't deploy apps/api to Vercel. NestJS needs a persistent process; Vercel functions don't fit (cron, BullMQ workers). Production target is the Hostinger VPS (`api.elorae.cloud`); local-ngrok is the dev/demo fallback.
+- Don't deploy apps/api or apps/web to Vercel. Both need persistent processes; Vercel functions don't fit (node-cron, BullMQ workers). Production target is the Hostinger VPS; local-ngrok is the dev/demo fallback.
 
 ## When you need more context
 

@@ -2,8 +2,6 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { getDatabaseUrl } from "./db-connection";
 
-const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL!);
-
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
   prismaSchemaStamp: string | undefined;
@@ -18,6 +16,8 @@ const globalForPrisma = globalThis as unknown as {
 const SCHEMA_STAMP = Object.keys(Prisma.ModelName).sort().join(",");
 
 function createPrismaClient(): PrismaClient {
+  const url = getDatabaseUrl() || process.env.DATABASE_URL || "";
+  const adapter = new PrismaMariaDb(url);
   return new PrismaClient({ adapter });
 }
 
@@ -33,10 +33,15 @@ function getPrismaClient(): PrismaClient {
   return globalForPrisma.prisma;
 }
 
-export const prisma = getPrismaClient();
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getPrismaClient();
+    const value = client[prop as keyof PrismaClient];
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});
 
 if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
   globalForPrisma.prismaSchemaStamp = SCHEMA_STAMP;
 }
 
