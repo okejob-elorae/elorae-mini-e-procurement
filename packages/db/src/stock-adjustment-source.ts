@@ -10,6 +10,7 @@
 export const STOCK_ADJUSTMENT_SOURCES = [
   "ERP",
   "ERP_OPNAME",
+  "ERP_RETURN_ACCEPT",
   "JUBELIO_WEBHOOK",
   "JUBELIO_RECONCILE",
 ] as const;
