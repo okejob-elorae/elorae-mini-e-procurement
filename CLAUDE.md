@@ -19,8 +19,8 @@ Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the Ve
 ## Authoritative docs (read these before changing architecture)
 
 - `docs/BOUNDARY.md` — service responsibilities, data ownership (per-table write owners), communication patterns (sync HTTP vs outbox vs webhooks), auth model, failure modes, anti-patterns, decisions log.
-- `docs/superpowers/specs/` — per-feature design specs.
-- `docs/superpowers/plans/` — per-feature implementation plans.
+- `docs/INTEGRATION-GUIDE.md` — how to use the Jubelio-touching surface (outbox enqueue, stock adjustments, signed channel).
+- `docs/superpowers/specs/` + `docs/superpowers/plans/` — per-feature design specs + implementation plans (local-only, gitignored). Each feature follows brainstorm → spec → plan → implement → PR.
 - `apps/web/README.md` — ERP feature list.
 - `README.md` (root) — local setup, env layout, dev/prod commands, ngrok demo.
 
@@ -34,7 +34,7 @@ Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the Ve
 
 ## Workflow conventions
 
-- **Plan before implementing** any non-trivial feature. Brainstorming → spec doc (`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`) → plan doc (`docs/superpowers/plans/YYYY-MM-DD-<topic>-plan.md`) → implement → PR. The `superpowers:*` skills enforce this when invoked.
+- **Plan before implementing** any non-trivial feature. Brainstorming → spec doc (`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`) → plan doc (`docs/superpowers/plans/YYYY-MM-DD-<topic>-plan.md`) → implement → PR. The `superpowers:*` skills enforce this when invoked. `docs/superpowers/` is local-only (gitignored) — specs/plans never ship in PRs.
 - **TDD for non-trivial logic.** Pure functions, handlers, routers, processors get failing tests first. Module-wiring and infra-glue files are exempt.
 - **Never force-push master.** Past divergence with a teammate's monolith branch was resolved by *recreating* their content in the monorepo, not by force-merging. See `project_master_divergence` memory.
 - **`git check-ignore -v` before staging any dotfile** to confirm it's actually ignored.
@@ -126,5 +126,5 @@ Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit l
 
 - **Architecture/data ownership:** `docs/BOUNDARY.md`.
 - **EPIC story details:** `reference/todo/<NN>.md` (local-only, gitignored).
-- **Past designs/plans:** `docs/superpowers/specs/` and `docs/superpowers/plans/`.
+- **Past designs/plans:** `docs/superpowers/specs/` and `docs/superpowers/plans/` (local-only, gitignored).
 - **What changed and why:** `git log --oneline` (commit messages are descriptive; bodies are rare by convention).
