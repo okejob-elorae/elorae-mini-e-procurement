@@ -13,6 +13,7 @@ export const JUBELIO_OUTBOX_ENTITY_TYPES = [
   "salesorder_pick",
   "salesorder_pack",
   "salesorder_ship",
+  "salesreturn_decision_push",
 ] as const;
 
 export type JubelioOutboxEntityType = (typeof JUBELIO_OUTBOX_ENTITY_TYPES)[number];

@@ -74,6 +74,8 @@ model User {
   enqueuedOutbox          JubelioOutbox[] @relation("EnqueuedOutbox")
   jubelioPushDefaultsUpdates JubelioPushDefaults[] @relation("JubelioPushDefaultsUpdater")
   priceChangeLogs         ItemPriceChangeLog[]
+  salesReturnsDecided     SalesReturn[]     @relation("SalesReturnDecidedBy")
+  salesReturnItemsDecided SalesReturnItem[] @relation("SalesReturnItemDecidedBy")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -245,6 +247,7 @@ model Item {
   fabricRolls      FabricRoll[]
   jubelioProductMappings JubelioProductMapping[]
   priceChangeLogs  ItemPriceChangeLog[]
+  salesReturnItems SalesReturnItem[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -447,6 +450,7 @@ model StockAdjustment {
   idempotencyKey   String?  @unique
   externalRef      String?
   createdAt     DateTime @default(now())
+  salesReturnItem SalesReturnItem?
   @@index([itemId])
   @@index([approvedById])
   @@index([createdById])
@@ -1348,6 +1352,7 @@ model SalesOrder {
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   items               SalesOrderItem[]
+  salesReturns        SalesReturn[]
 
   @@index([channel])
   @@index([status])
@@ -1408,4 +1413,75 @@ enum PriceChangeTrigger {
   MARGIN_CHANGE
   DEFAULTS_CHANGE
   MANUAL_EDIT
+}
+
+model SalesReturn {
+  id                  String   @id @default(cuid())
+  jubelioReturnId     Int      @unique
+  jubelioReturnNo     String?  @unique
+  salesOrderId        String?
+  salesOrder          SalesOrder? @relation(fields: [salesOrderId], references: [id])
+  channel             SalesChannel
+  channelOrderNo      String?
+  status              SalesReturnStatus @default(PENDING)
+  buyerName           String?
+  totalQty            Decimal @db.Decimal(10,2)
+  totalValue          Decimal @default(0) @db.Decimal(15,2)
+  receivedAt          DateTime
+  decidedAt           DateTime?
+  decidedById         String?
+  decidedBy           User?    @relation("SalesReturnDecidedBy", fields: [decidedById], references: [id])
+  pushOutboxRowId     String?
+  rawIngestPayload    Json
+  items               SalesReturnItem[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([status, receivedAt])
+  @@index([channel, status])
+  @@index([salesOrderId])
+}
+
+model SalesReturnItem {
+  id                    String   @id @default(cuid())
+  salesReturnId         String
+  salesReturn           SalesReturn @relation(fields: [salesReturnId], references: [id], onDelete: Cascade)
+  jubelioReturnDetailId Int?     @unique
+  jubelioItemId         Int?
+  salesOrderDetailId    Int?
+  itemId                String?
+  item                  Item?    @relation(fields: [itemId], references: [id])
+  variantSku            String?
+  externalSku           String
+  productName           String
+  qty                   Decimal @db.Decimal(10,2)
+  unitPrice             Decimal @db.Decimal(15,2)
+  subtotal              Decimal @db.Decimal(15,2)
+  itemReason            String?  @db.Text
+  decision              SalesReturnItemDecision @default(PENDING)
+  decidedAt             DateTime?
+  decidedById           String?
+  decidedBy             User?    @relation("SalesReturnItemDecidedBy", fields: [decidedById], references: [id])
+  stockAdjustmentId     String?  @unique
+  stockAdjustment       StockAdjustment? @relation(fields: [stockAdjustmentId], references: [id])
+  evidenceUrls          Json?
+  r2Keys                Json?
+  createdAt             DateTime @default(now())
+
+  @@index([salesReturnId])
+  @@index([itemId])
+  @@index([decision])
+}
+
+enum SalesReturnStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  PARTIAL
+}
+
+enum SalesReturnItemDecision {
+  PENDING
+  ACCEPTED
+  REJECTED
 }

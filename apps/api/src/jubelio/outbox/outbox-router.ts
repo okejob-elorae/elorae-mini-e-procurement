@@ -31,6 +31,9 @@ export class OutboxRouter {
         return this.salesorderPack.handle(row);
       case "salesorder_ship":
         return this.salesorderShip.handle(row);
+      case "salesreturn_decision_push":
+        // Handler deferred to sub-B — stub skip until wired.
+        return { kind: "skipped", reason: `${OUTBOX_SKIP_REASONS.HANDLER_NOT_WIRED}:${entityType}` };
       default: {
         const _exhaustive: never = entityType;
         return {
