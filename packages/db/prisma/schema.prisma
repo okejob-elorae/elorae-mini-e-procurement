@@ -1457,7 +1457,7 @@ model SalesReturnItem {
   qty                   Decimal @db.Decimal(10,2)
   unitPrice             Decimal @db.Decimal(15,2)
   subtotal              Decimal @db.Decimal(15,2)
-  itemReason            String?
+  itemReason            String?  @db.Text
   decision              SalesReturnItemDecision @default(PENDING)
   decidedAt             DateTime?
   decidedById           String?
