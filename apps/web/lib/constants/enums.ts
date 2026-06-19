@@ -96,3 +96,21 @@ export const SalesOrderFulfillmentStatus = {
 export type SalesOrderFulfillmentStatus =
   (typeof SalesOrderFulfillmentStatus)[keyof typeof SalesOrderFulfillmentStatus];
 export const SALES_ORDER_FULFILLMENT_STATUS_VALUES = Object.values(SalesOrderFulfillmentStatus);
+
+export const SalesReturnStatus = {
+  PENDING: "PENDING",
+  ACCEPTED: "ACCEPTED",
+  REJECTED: "REJECTED",
+  PARTIAL: "PARTIAL",
+} as const;
+export type SalesReturnStatus = (typeof SalesReturnStatus)[keyof typeof SalesReturnStatus];
+export const SALES_RETURN_STATUS_VALUES = Object.values(SalesReturnStatus);
+
+export const SalesReturnItemDecision = {
+  PENDING: "PENDING",
+  ACCEPTED: "ACCEPTED",
+  REJECTED: "REJECTED",
+} as const;
+export type SalesReturnItemDecision =
+  (typeof SalesReturnItemDecision)[keyof typeof SalesReturnItemDecision];
+export const SALES_RETURN_ITEM_DECISION_VALUES = Object.values(SalesReturnItemDecision);

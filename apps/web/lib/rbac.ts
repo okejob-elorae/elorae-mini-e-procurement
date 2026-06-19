@@ -67,6 +67,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/production/planning': 'production_planning:view',
   '/backoffice/production/colors': 'production_colors:view',
   '/backoffice/vendor-returns': 'vendor_returns:view',
+  '/backoffice/returns': 'sales_returns:view',
   '/backoffice/returns/[id]': 'sales_returns:view',
   '/backoffice/reports/hpp': 'reports_hpp:view',
   '/backoffice/audit-trail': 'audit_trail:view',
