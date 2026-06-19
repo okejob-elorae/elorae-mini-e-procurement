@@ -142,27 +142,6 @@ export function SalesReturnsPageClient(props: Props) {
           </div>
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">
-              {t("filter.status")}
-            </label>
-            <Select
-              value={props.status || "ALL"}
-              onValueChange={(v) => pushParam("status", v === "ALL" ? undefined : v)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={t("filter.status")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">{t("filter.all")}</SelectItem>
-                {SALES_RETURN_STATUS_VALUES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {t(`status.${RETURN_STATUS_BADGE[s].labelKey}` as never)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">
               {t("filter.channel")}
             </label>
             <Select
@@ -177,6 +156,27 @@ export function SalesReturnsPageClient(props: Props) {
                 {SALES_CHANNEL_VALUES.map((c) => (
                   <SelectItem key={c} value={c}>
                     {tOrders(`channel.${CHANNEL_BADGE[c].labelKey}` as never)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">
+              {t("filter.status")}
+            </label>
+            <Select
+              value={props.status || "ALL"}
+              onValueChange={(v) => pushParam("status", v === "ALL" ? undefined : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t("filter.status")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("filter.all")}</SelectItem>
+                {SALES_RETURN_STATUS_VALUES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`status.${RETURN_STATUS_BADGE[s].labelKey}` as never)}
                   </SelectItem>
                 ))}
               </SelectContent>
