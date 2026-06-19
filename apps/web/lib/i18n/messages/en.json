@@ -1216,6 +1216,7 @@
     },
     "decision": {
       "title": "Sales Return",
+      "back": "Back to list",
       "channel": "Channel",
       "orderNo": "Order No.",
       "buyer": "Buyer",

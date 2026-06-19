@@ -1216,6 +1216,7 @@
     },
     "decision": {
       "title": "Pengembalian",
+      "back": "Kembali ke daftar",
       "channel": "Channel",
       "orderNo": "No. Pesanan",
       "buyer": "Pembeli",

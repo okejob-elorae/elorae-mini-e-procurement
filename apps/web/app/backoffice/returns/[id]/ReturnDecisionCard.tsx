@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
+import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -101,6 +103,12 @@ export function ReturnDecisionCard({ ret, canDecide }: Props) {
 
   return (
     <>
+      <Button variant="ghost" size="sm" asChild className="-ml-3">
+        <Link href="/backoffice/returns">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          {t("back")}
+        </Link>
+      </Button>
       <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">
