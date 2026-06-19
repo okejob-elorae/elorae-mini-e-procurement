@@ -1173,6 +1173,46 @@
     }
   },
   "salesReturns": {
+    "list": {
+      "pageTitle": "Pengembalian Penjualan",
+      "pageSubtitle": "Pengembalian marketplace yang diterima via Jubelio",
+      "empty": "Belum ada pengembalian — pengembalian muncul di sini ketika webhook Jubelio tiba.",
+      "emptyFiltered": "Tidak ada pengembalian yang cocok dengan filter ini.",
+      "filter": {
+        "searchPlaceholder": "Cari no. retur atau nama pembeli",
+        "channel": "Channel",
+        "status": "Status",
+        "dateRange": "Rentang tanggal",
+        "reset": "Reset",
+        "all": "Semua"
+      },
+      "table": {
+        "returnNo": "No. Retur",
+        "channel": "Channel",
+        "orderNo": "No. Pesanan",
+        "buyer": "Pembeli",
+        "qty": "Qty",
+        "value": "Nilai",
+        "status": "Status",
+        "received": "Diterima"
+      },
+      "kpi": {
+        "totalCount": "Total Retur",
+        "totalCountDesc": "30 hari terakhir",
+        "pendingCount": "Menunggu Review",
+        "pendingCountDesc": "Menunggu keputusan",
+        "acceptanceRate": "Tingkat Penerimaan",
+        "acceptanceRateDesc": "Diterima dari yang diputuskan",
+        "totalValue": "Total Nilai",
+        "totalValueDesc": "30 hari terakhir"
+      },
+      "status": {
+        "pending": "Menunggu",
+        "accepted": "Diterima",
+        "rejected": "Ditolak",
+        "partial": "Sebagian"
+      }
+    },
     "decision": {
       "title": "Pengembalian",
       "channel": "Channel",

@@ -1173,6 +1173,46 @@
     }
   },
   "salesReturns": {
+    "list": {
+      "pageTitle": "Sales Returns",
+      "pageSubtitle": "Marketplace returns received via Jubelio",
+      "empty": "No returns yet — returns appear here as Jubelio webhooks arrive.",
+      "emptyFiltered": "No returns match these filters.",
+      "filter": {
+        "searchPlaceholder": "Search by return # or buyer name",
+        "channel": "Channel",
+        "status": "Status",
+        "dateRange": "Date range",
+        "reset": "Reset",
+        "all": "All"
+      },
+      "table": {
+        "returnNo": "Return #",
+        "channel": "Channel",
+        "orderNo": "Order #",
+        "buyer": "Buyer",
+        "qty": "Qty",
+        "value": "Value",
+        "status": "Status",
+        "received": "Received"
+      },
+      "kpi": {
+        "totalCount": "Total Returns",
+        "totalCountDesc": "Last 30 days",
+        "pendingCount": "Pending Review",
+        "pendingCountDesc": "Awaiting decision",
+        "acceptanceRate": "Acceptance Rate",
+        "acceptanceRateDesc": "Accepted of decided",
+        "totalValue": "Total Value",
+        "totalValueDesc": "Last 30 days"
+      },
+      "status": {
+        "pending": "Pending",
+        "accepted": "Accepted",
+        "rejected": "Rejected",
+        "partial": "Partial"
+      }
+    },
     "decision": {
       "title": "Sales Return",
       "channel": "Channel",
