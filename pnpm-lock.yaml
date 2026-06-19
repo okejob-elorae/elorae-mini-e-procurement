@@ -168,6 +168,9 @@ importers:
       html5-qrcode:
         specifier: ^2.3.8
         version: 2.3.8
+      ioredis:
+        specifier: ^5.11.0
+        version: 5.11.0
       lucide-react:
         specifier: ^0.563.0
         version: 0.563.0(react@19.2.3)
