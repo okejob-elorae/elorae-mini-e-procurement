@@ -112,7 +112,7 @@ export async function listSalesReturns(
       channelOrderNo: r.channelOrderNo,
       status: r.status as SalesReturnStatus,
       buyerName: r.buyerName,
-      totalQty: r.totalQty,
+      totalQty: Number(r.totalQty),
       totalValue: decimalToString(r.totalValue),
       receivedAt: r.receivedAt,
       decidedAt: r.decidedAt,
