@@ -124,6 +124,7 @@ const navItems: NavItem[] = [
     children: [
       { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
       { labelKey: 'navFulfillment', href: '/backoffice/fulfillment' },
+      { labelKey: 'navSalesReturns', href: '/backoffice/returns' },
     ],
   },
   {

@@ -39,6 +39,7 @@
     "sales": "Sales",
     "navSalesOrders": "Sales Orders",
     "navFulfillment": "Fulfillment",
+    "navSalesReturns": "Returns",
     "items": "Items",
     "navItemsAll": "All Items",
     "navItemsCategory": "Category",
