@@ -59,15 +59,30 @@ export class SalesReturnIngestService {
       });
 
       for (const apiItem of detail.items) {
-        const itemRow = apiItem.item_code
+        let itemRow = apiItem.item_code
           ? await tx.item.findFirst({
               where: { sku: apiItem.item_code },
               select: { id: true, sku: true },
             })
           : null;
 
+        // Fallback: Jubelio's item_code may be the variant SKU, not the parent SKU.
+        // Look up via InventoryValue.variantSku to find the parent Item.
+        let variantSkuMatch: string | null = null;
+        if (!itemRow && apiItem.item_code) {
+          const inv = await tx.inventoryValue.findFirst({
+            where: { variantSku: apiItem.item_code },
+            select: { itemId: true, variantSku: true },
+          });
+          if (inv) {
+            itemRow = { id: inv.itemId, sku: "" }; // sku unknown via this path; we only need id
+            variantSkuMatch = inv.variantSku ?? null;
+          }
+        }
+
         const variantSku =
-          itemRow && itemRow.sku !== apiItem.item_code ? apiItem.item_code : null;
+          variantSkuMatch ??
+          (itemRow && itemRow.sku !== apiItem.item_code ? apiItem.item_code : null);
 
         if (apiItem.salesorder_detail_id != null) {
           await tx.salesReturnItem.upsert({
