@@ -1172,6 +1172,64 @@
       }
     }
   },
+  "salesReturns": {
+    "decision": {
+      "title": "Pengembalian",
+      "channel": "Channel",
+      "orderNo": "No. Pesanan",
+      "buyer": "Pembeli",
+      "receivedAt": "Diterima",
+      "lockedBanner": "Diajukan pada {when} oleh {who}. Menunggu sinkronisasi Jubelio.",
+      "accept": "Terima",
+      "reject": "Tolak",
+      "submit": "Ajukan keputusan",
+      "defaultAcceptReason": "Pengembalian pelanggan diterima",
+      "defaultRejectReason": "Pengembalian pelanggan ditolak",
+      "status": {
+        "PENDING": "Menunggu review",
+        "ACCEPTED": "Diterima",
+        "REJECTED": "Ditolak",
+        "PARTIAL": "Sebagian"
+      },
+      "itemDecision": {
+        "PENDING": "Menunggu",
+        "ACCEPTED": "Diterima",
+        "REJECTED": "Ditolak"
+      },
+      "col": {
+        "product": "Produk",
+        "sku": "SKU",
+        "qty": "Jumlah",
+        "unitPrice": "Harga satuan",
+        "subtotal": "Subtotal",
+        "decision": "Keputusan",
+        "actions": "Aksi"
+      },
+      "submitConfirm": {
+        "title": "Ajukan keputusan?",
+        "body": "Setelah diajukan, pengembalian ini terkunci dan tidak bisa diubah. Keputusan akan dikirim ke Jubelio.",
+        "cancel": "Batal",
+        "confirm": "Ajukan"
+      },
+      "toast": {
+        "accepted": "Item diterima",
+        "rejected": "Item ditolak",
+        "submitted": "Keputusan diajukan"
+      },
+      "error": {
+        "forbidden": "Anda tidak punya izin memutuskan pengembalian.",
+        "locked": "Admin lain sedang memproses pengembalian ini — coba sebentar lagi.",
+        "already_decided": "Item ini sudah diputuskan.",
+        "unmapped_sku": "SKU tidak terhubung ke item katalog.",
+        "return_locked": "Pengembalian ini sudah diajukan.",
+        "no_inventory_row": "Tidak ada baris inventaris untuk SKU ini.",
+        "items_still_pending": "Beberapa item masih menunggu keputusan.",
+        "no_items": "Pengembalian ini tidak punya item.",
+        "already_submitted": "Pengembalian ini sudah diajukan.",
+        "internal_error": "Terjadi kesalahan. Coba lagi."
+      }
+    }
+  },
   "jubelioCouriers": {
     "pageTitle": "Kurir Jubelio",
     "pageSubtitle": "Daftar kurir cache yang dipakai aksi Kirim di halaman pesanan.",

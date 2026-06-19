@@ -1172,6 +1172,64 @@
       }
     }
   },
+  "salesReturns": {
+    "decision": {
+      "title": "Sales Return",
+      "channel": "Channel",
+      "orderNo": "Order No.",
+      "buyer": "Buyer",
+      "receivedAt": "Received at",
+      "lockedBanner": "Submitted at {when} by {who}. Awaiting Jubelio sync.",
+      "accept": "Accept",
+      "reject": "Reject",
+      "submit": "Submit decision",
+      "defaultAcceptReason": "Customer return accepted",
+      "defaultRejectReason": "Customer return rejected",
+      "status": {
+        "PENDING": "Pending review",
+        "ACCEPTED": "Accepted",
+        "REJECTED": "Rejected",
+        "PARTIAL": "Partial"
+      },
+      "itemDecision": {
+        "PENDING": "Pending",
+        "ACCEPTED": "Accepted",
+        "REJECTED": "Rejected"
+      },
+      "col": {
+        "product": "Product",
+        "sku": "SKU",
+        "qty": "Qty",
+        "unitPrice": "Unit price",
+        "subtotal": "Subtotal",
+        "decision": "Decision",
+        "actions": "Actions"
+      },
+      "submitConfirm": {
+        "title": "Submit return decision?",
+        "body": "Once submitted, this return is locked and cannot be modified. The decision will be pushed to Jubelio.",
+        "cancel": "Cancel",
+        "confirm": "Submit"
+      },
+      "toast": {
+        "accepted": "Item accepted",
+        "rejected": "Item rejected",
+        "submitted": "Decision submitted"
+      },
+      "error": {
+        "forbidden": "You don't have permission to decide returns.",
+        "locked": "Another admin is processing this return — try again in a moment.",
+        "already_decided": "This item was already decided.",
+        "unmapped_sku": "SKU is not mapped to a catalog item.",
+        "return_locked": "This return has already been submitted.",
+        "no_inventory_row": "No inventory row found for this SKU.",
+        "items_still_pending": "Some items are still pending decision.",
+        "no_items": "This return has no items.",
+        "already_submitted": "This return was already submitted.",
+        "internal_error": "Something went wrong. Try again."
+      }
+    }
+  },
   "jubelioCouriers": {
     "pageTitle": "Jubelio Couriers",
     "pageSubtitle": "Cached courier list used by the Ship action on order detail.",
