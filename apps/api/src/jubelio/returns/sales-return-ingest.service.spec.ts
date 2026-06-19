@@ -32,6 +32,7 @@ describe("SalesReturnIngestService", () => {
         salesReturnItem: { upsert: jest.fn().mockResolvedValue({}) },
         salesOrder: { findUnique: jest.fn().mockResolvedValue(null) },
         item: { findFirst: jest.fn().mockResolvedValue(null) },
+        inventoryValue: { findFirst: jest.fn().mockResolvedValue(null) },
       }),
     );
 
@@ -68,6 +69,7 @@ describe("SalesReturnIngestService", () => {
         salesReturnItem: { upsert: jest.fn().mockResolvedValue({}) },
         salesOrder: { findUnique: jest.fn().mockResolvedValue({ id: "so-local-1" }) },
         item: { findFirst: jest.fn().mockResolvedValue(null) },
+        inventoryValue: { findFirst: jest.fn().mockResolvedValue(null) },
       }),
     );
 
@@ -89,6 +91,7 @@ describe("SalesReturnIngestService", () => {
         salesReturnItem: { upsert: itemUpsert, create: itemCreate },
         salesOrder: { findUnique: jest.fn().mockResolvedValue(null) },
         item: { findFirst: jest.fn().mockResolvedValue(null) },
+        inventoryValue: { findFirst: jest.fn().mockResolvedValue(null) },
       }),
     );
 
@@ -99,5 +102,43 @@ describe("SalesReturnIngestService", () => {
 
     expect(itemCreate).toHaveBeenCalledTimes(1);
     expect(itemUpsert).not.toHaveBeenCalled();
+  });
+
+  it("falls back to InventoryValue.variantSku when Item.sku doesn't match", async () => {
+    const itemUpsert = jest.fn().mockResolvedValue({});
+    let capturedItemId: string | null = null;
+    let capturedVariantSku: string | null | undefined = undefined;
+    (prisma.$transaction as jest.Mock).mockImplementation(async (fn) =>
+      fn({
+        salesReturn: { upsert: jest.fn().mockResolvedValue({ id: "r1" }) },
+        salesReturnItem: {
+          upsert: jest.fn().mockImplementation(({ create }) => {
+            capturedItemId = create.itemId;
+            capturedVariantSku = create.variantSku;
+            return Promise.resolve({});
+          }),
+        },
+        salesOrder: { findUnique: jest.fn().mockResolvedValue(null) },
+        item: { findFirst: jest.fn().mockResolvedValue(null) }, // Item.sku miss
+        inventoryValue: {
+          findFirst: jest.fn().mockResolvedValue({ itemId: "i-parent", variantSku: "FAB-002-BLUE" }),
+        },
+      }),
+    );
+
+    await service.upsertFromApiDetail({
+      salesorder_id: 100,
+      items: [
+        {
+          salesorder_detail_id: 1,
+          item_code: "FAB-002-BLUE",
+          item_name: "Item",
+          qty_in_base: "1",
+        },
+      ],
+    } as any);
+
+    expect(capturedItemId).toBe("i-parent");
+    expect(capturedVariantSku).toBe("FAB-002-BLUE");
   });
 });

@@ -67,6 +67,8 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/production/planning': 'production_planning:view',
   '/backoffice/production/colors': 'production_colors:view',
   '/backoffice/vendor-returns': 'vendor_returns:view',
+  '/backoffice/returns': 'sales_returns:view',
+  '/backoffice/returns/[id]': 'sales_returns:view',
   '/backoffice/reports/hpp': 'reports_hpp:view',
   '/backoffice/audit-trail': 'audit_trail:view',
   '/backoffice/settings/documents': 'settings_documents:view',
@@ -224,6 +226,9 @@ export const PERMISSIONS = {
   SETTINGS_SECURITY_MANAGE: 'settings_security:manage',
   SETTINGS_RBAC_VIEW: 'settings_rbac:view',
   SETTINGS_RBAC_MANAGE: 'settings_rbac:manage',
+  // Sales Returns
+  SALES_RETURNS_VIEW: 'sales_returns:view',
+  SALES_RETURNS_DECIDE: 'sales_returns:decide',
   // Jubelio admin — admin-only. Not granted to non-admin roles; only the
   // wildcard '*' (system/admin role) satisfies it.
   JUBELIO_ADMIN_VIEW: 'jubelio_admin:view',

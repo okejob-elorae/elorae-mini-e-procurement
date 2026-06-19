@@ -142,6 +142,9 @@ async function main() {
     { code: 'reports_hpp:view', module: 'reports', action: 'hpp_view', description: 'View HPP reports' },
     // Audit Trail
     { code: 'audit_trail:view', module: 'audit_trail', action: 'view', description: 'View audit trail' },
+    // Sales Returns
+    { code: 'sales_returns:view', module: 'sales_returns', action: 'view', description: 'View sales returns' },
+    { code: 'sales_returns:decide', module: 'sales_returns', action: 'decide', description: 'Accept/reject sales return items' },
     // Settings
     { code: 'settings_documents:view', module: 'settings', action: 'documents_view', description: 'View document settings' },
     { code: 'settings_documents:manage', module: 'settings', action: 'documents_manage', description: 'Manage document settings' },
