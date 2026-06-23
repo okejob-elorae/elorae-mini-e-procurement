@@ -7,3 +7,5 @@ packages/db/generated/
 
 reference/*
 .vercel
+
+other-sources

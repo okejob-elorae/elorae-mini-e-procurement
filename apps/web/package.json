@@ -11,7 +11,9 @@
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
-    "check": "pnpm run type-check && pnpm run lint"
+    "check": "pnpm run type-check && pnpm run lint",
+    "reconcile:umkm": "tsx scripts/reconcile-umkm-opening-stock.ts",
+    "sample:umkm-sku": "tsx scripts/sample-umkm-sku-bridge.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
