@@ -104,6 +104,7 @@ async function main() {
     // Items
     { code: 'items:view', module: 'items', action: 'view', description: 'View items' },
     { code: 'sales_orders:view', module: 'sales_orders', action: 'view', description: 'View marketplace sales orders' },
+    { code: 'sales_orders:fulfill', module: 'sales_orders', action: 'fulfill', description: 'Pick, pack, ship marketplace orders' },
     { code: 'items:create', module: 'items', action: 'create', description: 'Create items' },
     { code: 'items:edit', module: 'items', action: 'edit', description: 'Edit items' },
     { code: 'items:delete', module: 'items', action: 'delete', description: 'Delete items' },
@@ -141,6 +142,9 @@ async function main() {
     { code: 'reports_hpp:view', module: 'reports', action: 'hpp_view', description: 'View HPP reports' },
     // Audit Trail
     { code: 'audit_trail:view', module: 'audit_trail', action: 'view', description: 'View audit trail' },
+    // Sales Returns
+    { code: 'sales_returns:view', module: 'sales_returns', action: 'view', description: 'View sales returns' },
+    { code: 'sales_returns:decide', module: 'sales_returns', action: 'decide', description: 'Accept/reject sales return items' },
     // Settings
     { code: 'settings_documents:view', module: 'settings', action: 'documents_view', description: 'View document settings' },
     { code: 'settings_documents:manage', module: 'settings', action: 'documents_manage', description: 'Manage document settings' },
@@ -232,7 +236,7 @@ async function main() {
     'dashboard:view',
     'suppliers:view', 'suppliers:create',
     'supplier_types:view', 'supplier_types:create', 'supplier_types:edit',
-    'items:view', 'sales_orders:view',
+    'items:view', 'sales_orders:view', 'sales_orders:fulfill',
     'purchase_orders:view', 'purchase_orders:create', 'purchase_orders:edit',
     'supplier_payments:view', 'supplier_payments:create', 'supplier_payments:edit',
     'vendor_returns:view', 'vendor_returns:create', 'vendor_returns:manage',
@@ -259,7 +263,7 @@ async function main() {
   // WAREHOUSE permissions (suppliers:view for GRN supplier list / offline sync)
   const warehousePermissions = [
     'dashboard:view',
-    'items:view', 'sales_orders:view',
+    'items:view', 'sales_orders:view', 'sales_orders:fulfill',
     'suppliers:view',
     'inventory:view', 'inventory:manage',
   ];
@@ -285,7 +289,7 @@ async function main() {
   // PRODUCTION permissions
   const productionPermissions = [
     'dashboard:view',
-    'items:view', 'sales_orders:view',
+    'items:view', 'sales_orders:view', 'sales_orders:fulfill',
     'work_orders:view', 'work_orders:create', 'work_orders:manage',
     'nota_register:view',
     'production_colors:view',

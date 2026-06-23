@@ -8,6 +8,7 @@ import { PrismaModule } from "./db/prisma.module";
 import { HealthModule } from "./health/health.module";
 import { JubelioCatalogModule } from "./jubelio/catalog/catalog.module";
 import { JubelioCategoriesModule } from "./jubelio/categories/categories.module";
+import { JubelioCouriersModule } from "./jubelio/couriers/couriers.module";
 import { JubelioModule } from "./jubelio/jubelio.module";
 import { JubelioOutboxModule } from "./jubelio/outbox/jubelio-outbox.module";
 import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
@@ -33,6 +34,7 @@ import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
     JubelioModule,
     JubelioCatalogModule,
     JubelioCategoriesModule,
+    JubelioCouriersModule,
     JubelioWebhooksModule,
     JubelioOutboxModule,
   ],

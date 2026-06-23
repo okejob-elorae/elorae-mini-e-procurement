@@ -2,6 +2,9 @@ import { Test } from "@nestjs/testing";
 import { OutboxRouter } from "./outbox-router";
 import { StockPushHandler } from "./handlers/stock-push.handler";
 import { ProductPushHandler } from "./handlers/product-push.handler";
+import { SalesOrderPickHandler } from "./handlers/salesorder-pick.handler";
+import { SalesOrderPackHandler } from "./handlers/salesorder-pack.handler";
+import { SalesOrderShipHandler } from "./handlers/salesorder-ship.handler";
 import { PRISMA } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
 import { OUTBOX_SKIP_REASONS } from "./outbox-status";
@@ -19,15 +22,24 @@ describe("OutboxRouter", () => {
   let router: OutboxRouter;
   let stockHandler: { handle: jest.Mock };
   let productHandler: { handle: jest.Mock };
+  let salesorderPick: { handle: jest.Mock };
+  let salesorderPack: { handle: jest.Mock };
+  let salesorderShip: { handle: jest.Mock };
 
   beforeEach(async () => {
     stockHandler = { handle: jest.fn().mockResolvedValue({ kind: "processed" }) };
     productHandler = { handle: jest.fn().mockResolvedValue({ kind: "processed" }) };
+    salesorderPick = { handle: jest.fn().mockResolvedValue({ kind: "processed" }) };
+    salesorderPack = { handle: jest.fn().mockResolvedValue({ kind: "processed" }) };
+    salesorderShip = { handle: jest.fn().mockResolvedValue({ kind: "processed" }) };
     const mod = await Test.createTestingModule({
       providers: [
         OutboxRouter,
         { provide: StockPushHandler, useValue: stockHandler },
         { provide: ProductPushHandler, useValue: productHandler },
+        { provide: SalesOrderPickHandler, useValue: salesorderPick },
+        { provide: SalesOrderPackHandler, useValue: salesorderPack },
+        { provide: SalesOrderShipHandler, useValue: salesorderShip },
         { provide: PRISMA, useValue: {} },
         { provide: JubelioHttpService, useValue: {} },
       ],
@@ -44,6 +56,30 @@ describe("OutboxRouter", () => {
   it("routes product_push to ProductPushHandler", async () => {
     const result = await router.route(row("product_push"));
     expect(productHandler.handle).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ kind: "processed" });
+  });
+
+  it("routes salesorder_pick to SalesOrderPickHandler", async () => {
+    const r = row("salesorder_pick");
+    const result = await router.route(r);
+    expect(salesorderPick.handle).toHaveBeenCalledTimes(1);
+    expect(salesorderPick.handle).toHaveBeenCalledWith(r);
+    expect(result).toEqual({ kind: "processed" });
+  });
+
+  it("routes salesorder_pack to SalesOrderPackHandler", async () => {
+    const r = row("salesorder_pack");
+    const result = await router.route(r);
+    expect(salesorderPack.handle).toHaveBeenCalledTimes(1);
+    expect(salesorderPack.handle).toHaveBeenCalledWith(r);
+    expect(result).toEqual({ kind: "processed" });
+  });
+
+  it("routes salesorder_ship to SalesOrderShipHandler", async () => {
+    const r = row("salesorder_ship");
+    const result = await router.route(r);
+    expect(salesorderShip.handle).toHaveBeenCalledTimes(1);
+    expect(salesorderShip.handle).toHaveBeenCalledWith(r);
     expect(result).toEqual({ kind: "processed" });
   });
 

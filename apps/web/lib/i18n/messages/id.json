@@ -38,6 +38,8 @@
     "supplierType": "Jenis Pemasok",
     "sales": "Penjualan",
     "navSalesOrders": "Pesanan",
+    "navFulfillment": "Pemenuhan",
+    "navSalesReturns": "Pengembalian",
     "items": "Item",
     "navItemsAll": "Semua Item",
     "navItemsCategory": "Kategori",
@@ -66,6 +68,7 @@
     "navJubelioSettings": "Pengaturan",
     "navJubelioCategories": "Kategori",
     "navJubelioMigration": "Migrasi",
+    "navJubelioCouriers": "Kurir",
     "settings": "Pengaturan",
     "masterData": "Data Master"
   },
@@ -626,7 +629,35 @@
     "confirmDeleteItem": "Yakin ingin menghapus item ini?",
     "noVariants": "Item ini tidak memiliki varian.",
     "noBOM": "Item ini tidak memiliki BOM.",
-    "variantLabel": "Varian {index}:"
+    "variantLabel": "Varian {index}:",
+    "pricing": {
+      "section": "Harga",
+      "sellingPriceLabel": "Harga Jual",
+      "targetMarginLabel": "Target Margin (%)",
+      "targetMarginHint": "Kosongkan untuk pakai default dari pengaturan push Jubelio.",
+      "additionalCostLabel": "Biaya Tambahan per pcs (Rp)",
+      "additionalCostHint": "Tambahan tetap per unit (kemasan, dll).",
+      "computedPreview": "Harga jual otomatis = avgCost × (1 + margin/100) + biaya tambahan"
+    },
+    "priceHistory": {
+      "tab": "Riwayat Harga",
+      "loading": "Memuat riwayat harga…",
+      "empty": "Belum ada perubahan harga tercatat.",
+      "colChangedAt": "Tanggal ubah",
+      "colTrigger": "Pemicu",
+      "colOldPrice": "Harga lama",
+      "colNewPrice": "Harga baru",
+      "colAvgCost": "Basis avgCost",
+      "colMargin": "Margin dipakai",
+      "colSource": "FG Receipt",
+      "colActor": "Pelaku",
+      "trigger": {
+        "FG_RECEIPT": "Penerimaan FG",
+        "MARGIN_CHANGE": "Ubah margin",
+        "DEFAULTS_CHANGE": "Ubah default",
+        "MANUAL_EDIT": "Edit manual"
+      }
+    }
   },
   "workOrders": {
     "draft": "Draft",
@@ -1126,6 +1157,228 @@
       "total_amount_mp": "Total marketplace"
     },
     "yes": "Ya",
-    "no": "Tidak"
+    "no": "Tidak",
+    "fulfillment": {
+      "section": "Pemenuhan",
+      "status": "Status",
+      "statusValues": {
+        "PENDING": "Menunggu",
+        "PICKED": "Sudah diambil",
+        "PACKED": "Sudah dikemas",
+        "SHIPPED": "Sudah dikirim"
+      },
+      "timeline": "Linimasa",
+      "timelinePicked": "Diambil",
+      "timelinePacked": "Dikemas",
+      "timelineShipped": "Dikirim",
+      "tracking": "No. Resi",
+      "byUser": "oleh {name}",
+      "cancelledLocked": "Dibatalkan — pemenuhan dikunci.",
+      "action": {
+        "finishPick": "Selesai Pick",
+        "finishPack": "Selesai Pack",
+        "ship": "Kirim",
+        "courier": "Kurir",
+        "courierPlaceholder": "Pilih kurir…",
+        "shipConfirmTitle": "Kirim pesanan ini?",
+        "shipConfirmBody": "Jubelio akan meminta resi dari {courier}. Aksi ini tidak bisa dibatalkan.",
+        "shipConfirmOk": "Kirim",
+        "shipConfirmCancel": "Batal"
+      },
+      "printSection": "Cetak",
+      "printPickList": "Cetak daftar pick",
+      "printPackingSlip": "Cetak surat jalan",
+      "toast": {
+        "success": "Berhasil.",
+        "invalidTransition": "Status sudah berubah. Muat ulang halaman.",
+        "forbidden": "Akses tidak diizinkan.",
+        "networkError": "Gagal terhubung ke server. Coba lagi."
+      }
+    }
+  },
+  "salesReturns": {
+    "list": {
+      "pageTitle": "Pengembalian Penjualan",
+      "pageSubtitle": "Pengembalian marketplace yang diterima via Jubelio",
+      "empty": "Belum ada pengembalian — pengembalian muncul di sini ketika webhook Jubelio tiba.",
+      "emptyFiltered": "Tidak ada pengembalian yang cocok dengan filter ini.",
+      "filter": {
+        "searchPlaceholder": "Cari no. retur atau nama pembeli",
+        "channel": "Channel",
+        "status": "Status",
+        "dateRange": "Rentang tanggal",
+        "reset": "Reset",
+        "all": "Semua"
+      },
+      "table": {
+        "returnNo": "No. Retur",
+        "channel": "Channel",
+        "orderNo": "No. Pesanan",
+        "buyer": "Pembeli",
+        "qty": "Qty",
+        "value": "Nilai",
+        "status": "Status",
+        "received": "Diterima"
+      },
+      "kpi": {
+        "totalCount": "Total Retur",
+        "totalCountDesc": "30 hari terakhir",
+        "pendingCount": "Menunggu Review",
+        "pendingCountDesc": "Menunggu keputusan",
+        "acceptanceRate": "Tingkat Penerimaan",
+        "acceptanceRateDesc": "Diterima dari yang diputuskan",
+        "totalValue": "Total Nilai",
+        "totalValueDesc": "30 hari terakhir"
+      },
+      "status": {
+        "pending": "Menunggu",
+        "accepted": "Diterima",
+        "rejected": "Ditolak",
+        "partial": "Sebagian"
+      }
+    },
+    "decision": {
+      "title": "Pengembalian",
+      "back": "Kembali ke daftar",
+      "channel": "Channel",
+      "orderNo": "No. Pesanan",
+      "buyer": "Pembeli",
+      "receivedAt": "Diterima",
+      "lockedBanner": "Diajukan pada {when} oleh {who}. Menunggu sinkronisasi Jubelio.",
+      "accept": "Terima",
+      "reject": "Tolak",
+      "submit": "Ajukan keputusan",
+      "defaultAcceptReason": "Pengembalian pelanggan diterima",
+      "defaultRejectReason": "Pengembalian pelanggan ditolak",
+      "status": {
+        "PENDING": "Menunggu review",
+        "ACCEPTED": "Diterima",
+        "REJECTED": "Ditolak",
+        "PARTIAL": "Sebagian"
+      },
+      "itemDecision": {
+        "PENDING": "Menunggu",
+        "ACCEPTED": "Diterima",
+        "REJECTED": "Ditolak"
+      },
+      "col": {
+        "product": "Produk",
+        "sku": "SKU",
+        "qty": "Jumlah",
+        "unitPrice": "Harga satuan",
+        "subtotal": "Subtotal",
+        "decision": "Keputusan",
+        "actions": "Aksi"
+      },
+      "submitConfirm": {
+        "title": "Ajukan keputusan?",
+        "body": "Setelah diajukan, pengembalian ini terkunci dan tidak bisa diubah. Keputusan akan dikirim ke Jubelio.",
+        "cancel": "Batal",
+        "confirm": "Ajukan"
+      },
+      "toast": {
+        "accepted": "Item diterima",
+        "rejected": "Item ditolak",
+        "submitted": "Keputusan diajukan"
+      },
+      "error": {
+        "forbidden": "Anda tidak punya izin memutuskan pengembalian.",
+        "locked": "Admin lain sedang memproses pengembalian ini — coba sebentar lagi.",
+        "already_decided": "Item ini sudah diputuskan.",
+        "unmapped_sku": "SKU tidak terhubung ke item katalog.",
+        "return_locked": "Pengembalian ini sudah diajukan.",
+        "no_inventory_row": "Tidak ada baris inventaris untuk SKU ini.",
+        "items_still_pending": "Beberapa item masih menunggu keputusan.",
+        "no_items": "Pengembalian ini tidak punya item.",
+        "already_submitted": "Pengembalian ini sudah diajukan.",
+        "internal_error": "Terjadi kesalahan. Coba lagi."
+      }
+    }
+  },
+  "jubelioCouriers": {
+    "pageTitle": "Kurir Jubelio",
+    "pageSubtitle": "Daftar kurir cache yang dipakai aksi Kirim di halaman pesanan.",
+    "syncButton": "Sinkron dari Jubelio",
+    "lastSyncedAt": "Sinkron terakhir: {when}",
+    "empty": "Belum ada kurir tercache. Klik \"Sinkron dari Jubelio\" untuk mengisi.",
+    "emptyFiltered": "Tidak ada kurir yang cocok dengan pencarian ini.",
+    "filter": {
+      "searchLabel": "Cari berdasarkan nama",
+      "searchPlaceholder": "JNE, J&T, …",
+      "reset": "Reset"
+    },
+    "table": {
+      "id": "ID",
+      "name": "Nama",
+      "syncedAt": "Disinkron pada"
+    },
+    "toast": {
+      "syncSuccess": "Berhasil sinkron {count} kurir.",
+      "syncError": "Sinkron gagal. Coba lagi."
+    }
+  },
+  "fulfillmentQueue": {
+    "pageTitle": "Antrian Pemenuhan",
+    "pageSubtitle": "Pesanan marketplace yang menunggu pick, pack, atau pengiriman.",
+    "empty": "Tidak ada pesanan yang cocok dengan filter saat ini.",
+    "filter": {
+      "fulfillmentStatus": "Status pemenuhan",
+      "channel": "Channel",
+      "search": "Cari",
+      "searchPlaceholder": "Nomor pesanan atau nama pembeli",
+      "dateRange": "Rentang tanggal",
+      "reset": "Reset",
+      "all": "Semua"
+    },
+    "fulfillmentStatus": {
+      "PENDING": "Menunggu",
+      "PICKED": "Sudah diambil",
+      "PACKED": "Sudah dikemas",
+      "SHIPPED": "Sudah dikirim"
+    },
+    "table": {
+      "orderNo": "No. Pesanan",
+      "channel": "Channel",
+      "buyer": "Pembeli",
+      "date": "Tanggal",
+      "fulfillmentStatus": "Pemenuhan",
+      "status": "Jubelio"
+    },
+    "batch": {
+      "selectedCount": "{count, plural, other {# dipilih}}",
+      "finishPick": "Selesai Pick",
+      "finishPack": "Selesai Pack",
+      "clear": "Bersihkan",
+      "toast": {
+        "success": "{processed} berhasil diproses.",
+        "successWithSkipped": "{processed} diproses, {skipped} dilewati.",
+        "forbidden": "Akses tidak diizinkan.",
+        "networkError": "Gagal terhubung ke server. Coba lagi."
+      }
+    }
+  },
+  "salesOrdersPrint": {
+    "pickList": {
+      "title": "Daftar Pick",
+      "orderLabel": "Pesanan:",
+      "channelLabel": "Channel:",
+      "dateLabel": "Tanggal:",
+      "colSku": "SKU",
+      "colProduct": "Produk",
+      "colQty": "Jml",
+      "pickedBy": "Diambil oleh:",
+      "dateSigned": "Tanggal:"
+    },
+    "packingSlip": {
+      "title": "SURAT JALAN",
+      "shipToLabel": "Kirim ke:",
+      "courierLabel": "Kurir:",
+      "trackingLabel": "No. Resi:",
+      "colSku": "SKU",
+      "colProduct": "Produk",
+      "colQty": "Jml",
+      "thankYou": "Terima kasih telah berbelanja di ELORAÉ!",
+      "questionsContact": "Pertanyaan: {email}"
+    }
   }
 }

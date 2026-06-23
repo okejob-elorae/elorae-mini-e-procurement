@@ -1,12 +1,17 @@
 # Service boundary — `apps/web` ↔ `apps/api`
 
-Status: **active** · Owner: backend integration · Last updated: 2026-05-25
+Status: **active** · Owner: backend integration · Last updated: 2026-06-14
 
 This document defines the responsibility split between the Next.js app
 (`apps/web`) and the NestJS Jubelio integration service (`apps/api`) in the
 Elorae monorepo. It is the source of truth for *who writes what* and *how the
 two services talk*. Any PR that violates the rules below must either update
 this document or be rejected.
+
+For day-to-day developer usage of the Jubelio-touching surface (how to enqueue
+a push, which `entityType` and `source` strings to use, which helpers to call),
+see [INTEGRATION-GUIDE.md](./INTEGRATION-GUIDE.md). This file owns the why; the
+guide owns the how.
 
 Legend used throughout: **✅ built** · **🟡 partial** · **⏳ planned**.
 
@@ -26,9 +31,11 @@ Legend used throughout: **✅ built** · **🟡 partial** · **⏳ planned**.
 | Jubelio token | env creds + DB persistence + 12 h TTL + in-memory cache + single-flight refresh + on-demand re-fetch within 5 min of expiry | ✅ |
 | Jubelio token | Proactive scheduled refresh (`@Cron` hourly prewarm) + exponential backoff on `refresh()` failure + `AdminNotification` write on persistent failure | ✅ |
 | Webhooks | Receivers (`salesorder`, `stock`, `salesreturn`, `product`) + signature verify + dedupe via `JubelioWebhookEvent` | ✅ |
+| Webhook handlers | `stock` ✅, `salesorder` ✅ (with forward-sync to `fulfillmentStatus=SHIPPED`), `product` ✅ (triggers single-group catalog re-ingest), `salesreturn` 🟡 (stub awaiting live payload samples) | 🟡 |
 | Catalog ingest | `POST /jubelio/catalog/sync` — Jubelio → ERP (upserts `Item` via `@elorae/db` helper with `source=JUBELIO_INGEST`, `JubelioProductMapping`, zero `InventoryValue`) | ✅ |
-| Outbox queue | `JubelioOutbox` table + BullMQ producer/consumer + DLQ + retry policy | ⏳ |
-| API audit | `JubelioApiCall` audit log + HTTP interceptor + 429 rate-limit handling | ⏳ |
+| Outbox queue | `JubelioOutbox` table + outbox poller + outbox router + handlers (`stock_push`, `product_push`, `salesorder_pick`, `salesorder_pack`, `salesorder_ship`); already-in-state skip; entityType registry at `@elorae/db/jubelio-outbox` | ✅ |
+| Bulk migration | One-shot ERP→Jubelio backfill tool (`/backoffice/jubelio/migration`) — enqueues `product_push` rows, polls outbox status for progress | ✅ |
+| API audit | `JubelioApiCall` audit log + HTTP interceptor + 429 rate-limit handling | ✅ |
 | Admin alerts | `AdminNotification` table + writer in api + read in web admin UI | ✅ schema + api writer; ⏳ web UI consumer |
 | Cross-service auth bridge (NextAuth JWT verify in api) | | ⏳ |
 | Internal `api → web` revalidate endpoint | | ⏳ |
@@ -108,44 +115,96 @@ contract for the migrations that will introduce them.
 | `Production*`                  | web                         | api (read FG receipts)      | ✅ |
 | `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
 | `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
-| `SalesOrder`                   | api                         | web (read)                  | ✅ schema + api writer (see §3.2) |
+| `SalesOrder`                   | **both** — see §3.2         | —                           | ✅ api owns Jubelio-derived cols; web owns fulfillment cols via helper |
 | `SalesOrderItem`               | api                         | web (read)                  | ✅ schema + api writer |
-| `SalesReturn`                  | api                         | web (read)                  | ⏳ |
+| `SalesReturn`                  | api ingest; web decision (planned) | —                    | 🟡 webhook stub shipped; EPIC-05 will introduce web-side Accept/Reject writer + new outbox type `salesreturn_decision_push` |
 | `JubelioProductMapping`        | api                         | web (read)                  | ✅ |
 | `JubelioCategoryMapping`       | api                         | web (read)                  | ✅ schema; writer ⏳ (currently seed-only, no runtime writer) |
-| `JubelioOutbox`                | web insert, api consume/update | —                        | ⏳ |
+| `JubelioOutbox`                | web insert, api consume/update | — | ✅; `entityType` MUST come from `@elorae/db/jubelio-outbox` registry — see §4.2.1 |
 | `JubelioWebhookEvent`          | api                         | —                           | ✅ |
-| `JubelioApiCall`               | api                         | web (read for admin UI)     | ⏳ |
-| `AdminNotification`            | api (writes); web (reads + marks read) | —                | ✅ schema + api writer; web UI ⏳ |
+| `JubelioApiCall`               | api                         | web (read for admin UI)     | ✅ |
+| `AdminNotification`            | **both** — see §3.5; api on integration alerts, web on ERP-detected alerts (negative-available, opname variance, AR overdue) | — | ✅ schema + api writer; web writer expected with EPIC-07/08/21 |
 | `SystemSetting` (Jubelio keys) | api                         | web (read for settings UI)  | ✅ (`JUBELIO_SESSION_TOKEN`) |
 | `SystemSetting` (other keys)   | web                         | —                           | ✅ |
 | `AuditLog`                     | both — shared writer        | —                           | ✅ schema; 🟡 shared writer ⏳ |
 | `Notification`                 | both                        | —                           | ✅ |
 
-### 3.1 Stock writes — two writers (⏳ planned)
+### 3.1 Stock writes — multi-writer
 
 - **web** writes `InventoryValue` and `StockAdjustment` when an ERP action
-  triggers (`receiveFG`, `createGRN`, `createStockAdjustment`,
-  manual adjustment). Same transaction inserts `JubelioOutbox` row of type
-  `stock-adjustment.push`.
+  triggers (`receiveFG`, `createGRN`, manual adjustment, opname approval). Same
+  transaction inserts a `JubelioOutbox` row of type `stock_push` when the
+  change should propagate outbound.
 - **api** writes `InventoryValue` and `StockAdjustment` when the Jubelio
   `stock` webhook arrives (external mutation in Jubelio).
+- **api cron** (EPIC-07-04, ⏳) writes `StockAdjustment` with
+  `source = JUBELIO_RECONCILE` when the reconcile loop auto-corrects a small
+  variance. Lives in apps/api because reading Jubelio inventory is api's
+  responsibility.
 
-Both writes go through a shared helper in `@elorae/db` to enforce the columns:
-`source ('ERP' | 'JUBELIO_WEBHOOK')`, `externalRef`, `idempotencyKey`.
+`StockAdjustment.source` is a free-form `String` column but the allowed values
+are codified in the registry `packages/db/src/stock-adjustment-source.ts`
+(`@elorae/db/stock-adjustment-source`). All callers MUST use
+`satisfies StockAdjustmentSource` to compile-check the string. Audit dashboard
+filters and reconcile-cron logic key off the exact values.
 
-### 3.2 Sales writes (api-only as of 2026-06-11)
+Allowed values today: `ERP`, `ERP_OPNAME`, `JUBELIO_WEBHOOK`, `JUBELIO_RECONCILE`.
 
-- **api** creates and updates `SalesOrder` + `SalesOrderItem` rows from the
-  Jubelio `salesorder` webhook (`SalesOrderWebhookHandler.upsertSalesOrder`).
-  It owns every column: marketplace metadata, totals, fees, buyer + shipping,
-  status (raw + derived), timestamps. Upsert is keyed on `salesorder_id`;
-  lines are replaced as a set on every webhook.
-- **web** is read-only for both tables. No write paths today.
+To add a new source, see [INTEGRATION-GUIDE §2](./INTEGRATION-GUIDE.md).
 
-If a future ERP workflow needs to write back (e.g. internal pick/pack notes,
-fulfillment user), introduce a dual-writer split via an `@elorae/db` helper at
-that point — don't widen the ownership without a concrete consumer.
+### 3.5 `AdminNotification` writes — two writers (planned)
+
+- **api** writes integration alerts: token-refresh failure, outbox DLQ growth,
+  rate-limit exhaustion, webhook signature failure. (✅ shipped where helpers
+  exist.)
+- **web** writes ERP-detected alerts: negative-available stock (EPIC-08-03),
+  opname variance over threshold (EPIC-07-04), AR overdue (EPIC-21-06), konsi
+  sell-through discrepancy (EPIC-22-05). (⏳ ships per EPIC.)
+
+No shared writer helper is mandated yet — the table is simple. If multiple web
+call sites accumulate, lift into a `@elorae/db/admin-notification-writer.ts`
+helper.
+
+### 3.6 Single-owner web tables — default rule
+
+Any table not enumerated in this section is **single-owner web**. This includes
+all ERP-only tables introduced by upcoming EPICs (finance/CoA, journal, AR,
+field sales, settlement, retur management, etc). The enumeration here is
+**Jubelio-touching tables only**. New tables that *do* touch Jubelio (push or
+ingest) must be added to §3 explicitly.
+
+### 3.2 Sales writes — dual-writer (as of 2026-06-14)
+
+`SalesOrder` is now dual-writer, split by column:
+
+**api-owned columns** (written by `SalesOrderWebhookHandler.upsertSalesOrder` on every Jubelio webhook):
+
+- All marketplace metadata: `channel`, `sourceName`, `salesorderNo`, etc.
+- Status (raw + derived): `channelStatus`, `internalStatus`, `wmsStatus`, `status`, `isCanceled`, `isPaid`, `markedAsComplete`.
+- Buyer + shipping snapshot: `customerName`, `customerPhone`, `customerEmail`, `shippingProvince`, `shippingCity`, `shippingAddress`.
+- Totals + fees: `subTotal`, `totalDisc`, `totalTax`, `shippingCost`, `grandTotal`, `feeBreakdown`.
+- Timestamps from Jubelio: `transactionDate`, `createdDateJubelio`, `completedDate`, `cancelDate`, `lastModifiedJubelio`, `paymentDate`.
+- `trackingNumber`, `courier`, `paymentMethod`, `lastWebhookEventId`.
+
+**web-owned columns** (written EXCLUSIVELY via `@elorae/db/sales-order-fulfillment-writer` — never bare prisma):
+
+- `fulfillmentStatus` (with api forward-sync exception — see below)
+- `pickedAt`, `pickedById`
+- `packedAt`, `packedById`
+- `shippedAt`, `shippedById` (with api forward-sync exception — see below)
+- `shipmentJubelioId`
+- `courierId`
+
+The writer helper enforces the state machine (PENDING → PICKED → PACKED → SHIPPED, no skip, no reverse) and enqueues a `JubelioOutbox` row per transition in the same transaction. Web bare-prisma writes to any fulfillment column are a contract violation.
+
+**api forward-sync exception (added 2026-06-14):** `SalesOrderWebhookHandler.upsertSalesOrder` MAY advance `fulfillmentStatus → SHIPPED` and stamp `shippedAt` when the inbound Jubelio salesorder webhook reports the order shipped (any of `wms_status === "SHIPPED"`, `is_shipped === true`, `marked_as_complete === true`, or `completed_date` present). The advancement is:
+
+- **Forward-only.** Guarded by `where: { fulfillmentStatus: { not: "SHIPPED" } }` — never overwrites an existing SHIPPED audit set by the writer helper (preserves `shippedById` + original `shippedAt`).
+- **No `shippedById` write.** When advanced via webhook, `shippedById` stays null (no user clicked Ship). UI distinguishes "Shipped at … by NAME" vs "Shipped at …" accordingly.
+- **No intermediate cascade.** `pickedAt`/`pickedById`/`packedAt`/`packedById` are NOT backfilled when the webhook arrives directly at SHIPPED — they stay whatever the web writer last set (likely null if the order shipped externally).
+- **Why:** prevents drift between Jubelio-reported `status = SHIPPED` and Elorae-internal `fulfillmentStatus = PENDING/PICKED/PACKED` when operators ship from Jubelio admin UI, the marketplace auto-ships, or any external WMS performs the action.
+
+`SalesOrderItem` remains api-only — web never writes line items.
 
 ### 3.3 `Item` writes — two writers (resolved 2026-05-25)
 
@@ -192,25 +251,42 @@ User-facing flows where api must respond inline.
 but are unguarded (any caller can hit them). Auth bridge to apps/web NextAuth
 JWT is pending.
 
-### 4.2 `web → api` (async, write-coupled via outbox) — ⏳ planned
+### 4.2 `web → api` (async, write-coupled via outbox) — ✅ shipped
 
 ERP action commits local write **and** `JubelioOutbox` row in one Prisma
-transaction. api outbox worker (BullMQ + Upstash Redis) drains:
-
-```
-loop every N seconds:
-  rows = SELECT * FROM JubelioOutbox WHERE status='PENDING' ORDER BY id ASC LIMIT 50
-  for each row:
-    try: call Jubelio
-    on success: row.status='DONE', row.completedAt=now
-    on failure: row.attempts++, row.lastError=...,
-                row.status='FAILED' (retried) or 'DEAD_LETTER' (if attempts >= max)
-                next retry delayed by exponential backoff
-```
+transaction. api outbox poller + router + handlers drain. See
+[INTEGRATION-GUIDE §1](./INTEGRATION-GUIDE.md) for the call-site recipe.
 
 - **Idempotency key:** `${entityType}:${entityId}:${version}` — Jubelio call
   must accept this key (or be naturally idempotent).
 - **No sync HTTP call** from a Prisma transaction. Always outbox.
+- **Already-in-state Jubelio responses** are skipped (not retried) — see
+  `OUTBOX_SKIP_REASONS.ALREADY_IN_STATE`.
+
+#### 4.2.1 `entityType` registry
+
+The canonical list lives in `packages/db/src/jubelio-outbox.ts` and is
+exported via `@elorae/db/jubelio-outbox`. Every web insert and every api
+router branch MUST be typed against `JubelioOutboxEntityType`. The router has
+an exhaustiveness guard (`const _exhaustive: never = entityType`) — adding a
+new value to the registry without a handler is a compile error, not a runtime
+silent drop.
+
+Current values: `stock_push`, `product_push`, `salesorder_pick`,
+`salesorder_pack`, `salesorder_ship`.
+
+To add: append to the registry array, run `pnpm -F @elorae/db build`, add a
+handler under `apps/api/src/jubelio/outbox/handlers/`, wire the router case,
+register in the Nest module, add a `.spec.ts`. See
+[INTEGRATION-GUIDE §1](./INTEGRATION-GUIDE.md).
+
+### 4.2.2 `web → api` (async, long-running job) — ✅ shipped (bulk migration)
+
+For jobs that take minutes (e.g. EPIC-02-05 bulk migration), web triggers via
+a server action that batch-inserts `JubelioOutbox` rows. Progress is observed
+by polling the outbox status grouped by `enqueuedById` + `createdAt` window.
+No separate job-state table required when the outbox itself models the unit
+of work.
 
 ### 4.3 `api → web` (rare) — ⏳ planned
 
@@ -220,7 +296,7 @@ Only for cache invalidation:
 
 Avoid otherwise. Prefer api owning its own data and web fetching from api.
 
-### 4.4 Jubelio → api (webhooks) — ⏳ planned
+### 4.4 Jubelio → api (webhooks) — ✅ shipped
 
 - Path: `POST /webhooks/jubelio/:event` (events: `salesorder`, `stock`,
   `salesreturn`, `product`).
@@ -232,6 +308,34 @@ Avoid otherwise. Prefer api owning its own data and web fetching from api.
 - Idempotency: dedupe by Jubelio's `event_id` (or hash of payload if missing).
 - Jubelio retries non-200 responses up to 3 times — return 200 quickly even
   when payload processing is deferred to the queue.
+
+### 4.5 Scheduled jobs — cron home rule
+
+When a scheduled job needs to read from Jubelio or call Jubelio, it lives in
+**apps/api**. Web cron (Vercel) does not have access to the Jubelio token
+cascade and must not be tempted to import the api's Jubelio HTTP client.
+
+When a scheduled job is pure-ERP (no Jubelio touch — e.g. nightly settlement
+parser, AR aging recomputation, FCM cleanup), it lives in **apps/web** via
+Vercel cron, calling a server action.
+
+Cross-service writes from scheduled jobs use the same `@elorae/db` helpers as
+on-demand writes. An api cron that writes a web-owned table goes through the
+helper (e.g. EPIC-07-04 reconcile writes `StockAdjustment` via the same
+`stock-writer.ts` infrastructure, stamping `source = JUBELIO_RECONCILE`).
+
+### 4.6 External integrations beyond Jubelio — punted
+
+Some upcoming EPICs touch external systems other than Jubelio:
+
+- EPIC-21-05: e-Faktur (DJP)
+- EPIC-23 (future): bank reconciliation APIs
+
+Today these are scoped as **manual entry only** — no automation. When the
+first automated external integration lands, choose between (a) extending
+apps/api with a new module per external system, or (b) splitting into a new
+`apps/integrations` service. Decision deferred until the first concrete EPIC
+plan exists.
 
 ---
 
@@ -286,6 +390,24 @@ be closed before any public deploy.
   marked web-owned. `Item` is dual-owned (§3.3) — api writes **only** via
   `@elorae/db/item-writer.ts` helpers, never `prisma.item.create/update`
   directly.
+- ❌ Hardcoding `JubelioOutbox.entityType` or `StockAdjustment.source` strings
+  without `satisfies` against the registry types. A typo becomes a silent
+  runtime drop — the router skips with `unknown_entity_type:…`. See §4.2.1
+  and §3.1.
+- ❌ Pushing virtual-warehouse stock (consignment, canvasser mobile) to
+  Jubelio. The push formula must exclude virtual qty:
+  `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`.
+  EPIC-19 will introduce the warehouse model; EPIC-02-03 push helper must
+  apply the filter.
+- ❌ Reusing marketplace `SalesOrder` for offline `OfflineSalesOrder` writes
+  (EPIC-17/18/22). Marketplace SO is api-owned and Jubelio-shaped; offline SO
+  is web-owned. Either separate model or explicit channel discriminator.
+- ❌ Pre-filling EPIC-24-02 warehouse received qty from salesman claim. The
+  acceptance criterion explicitly forbids it — warehouse independence is the
+  whole point.
+- ❌ Sync HTTP call to non-Jubelio external systems (DJP, payment gateway)
+  from inside a Prisma transaction. Same rule as Jubelio (§4.2) — use
+  outbox or job queue.
 
 ---
 
@@ -319,6 +441,16 @@ script uses `nest start --watch --builder swc` (SWC honours
 | Q4 | Audit log writer | Shared helper in `@elorae/db` (e.g. `writeAuditLog()`). Single Prisma call site. Both services call it. |
 | Q5 | `SystemSetting` namespace | api-owned keys prefixed `JUBELIO_*` (e.g. `JUBELIO_SESSION_TOKEN`). All other keys web-owned. Enforce in a small helper that rejects writes from the wrong owner. |
 | D1 | Outbound queue | **BullMQ + Upstash Redis** (per Q2). All `apps/web` → `apps/api` async writes enqueued; `apps/api` workers drain. |
-| D2 | Admin alert channel | **In-DB `AdminNotification` table.** Written by api on token-refresh failure, outbox-stuck, rate-limit hit, etc. Consumed by apps/web admin UI. |
+| D2 | Admin alert channel | **In-DB `AdminNotification` table.** Written by api on token-refresh failure, outbox-stuck, rate-limit hit, etc. Consumed by apps/web admin UI. Web may also write for ERP-detected alerts — see §3.5. |
 | D3 | Admin dashboard | **Full UI in apps/web** at `/backoffice/jubelio/admin` — queue depth, failed items, audit log, outbox status, retry buttons. api exposes JSON endpoints; apps/web renders. |
 | D4 | Local Redis | **Docker compose** (`redis:7-alpine`) declared in repo-root `docker-compose.dev.yml`. apps/api reads `REDIS_URL` env. Upstash used for staging/prod. |
+| D5 | Stock reconciliation cron home (EPIC-07-04) | **apps/api owns the cron.** Reads Jubelio inventory, compares against `InventoryValue`, writes `StockAdjustment` with `source = JUBELIO_RECONCILE` via the same `stock-writer.ts` helper that the webhook handler uses. Large variance (above threshold) writes `AdminNotification` instead of auto-correcting. Web admin dashboard reads the reconcile log. |
+| D6 | Reservation modeling (EPIC-08) | **Open — EPIC-08 plan decides.** Recommendation: column `reservedQty` on `InventoryValue` (simple) with optional `StockReservation` ledger if audit-per-SO required. Push formula must subtract reserved. Reserve operation must be atomic conditional update. |
+| D7 | Warehouse scope on Jubelio stock push (EPIC-19 + EPIC-02-03) | **Push only main-warehouse availability.** Formula: `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`. Konsi, canvasser-mobile, and any future virtual warehouses are excluded. Codified before EPIC-19 implementation; push helper enforces. |
+| D8 | Offline vs marketplace `SalesOrder` (EPIC-17/18/22) | **Open — first EPIC plan decides.** Two options: (a) single dual-channel `SalesOrder` with `channel = OFFLINE_PUTUS | OFFLINE_KONSI`, (b) separate `OfflineSalesOrder` model. Affects every downstream report; punted until EPIC-17 brainstorm. |
+| D9 | Auto-journal trigger (EPIC-13) | **In-Prisma-TX helper, not outbox queue.** Financial debit=credit invariant cannot be eventually consistent. `withJournal()` helper in `@elorae/db` participates in source transaction. |
+| D10 | External integrations beyond Jubelio | **Punted.** No automation today (e-Faktur, bank reconciliation are manual). First concrete automated integration EPIC reopens this decision. |
+| D11 | Role/permission model | **Open.** Six new roles incoming (SALESMAN, SPG, CANVASSER, COLLECTOR, FINANCE, ADMIN_PAJAK). Migration path: keep `Role` enum for now; revisit when count exceeds ~10 or dynamic role grants become a requirement. |
+| D12 | Bulk migration job control (EPIC-02-05) | **Outbox-as-job-state.** No separate job table. Progress = `groupBy(status) WHERE enqueuedById=… AND createdAt > windowStart`. Cancel = delete PENDING rows for that batch. (Shipped via PR #41.) |
+| D13 | `JubelioOutbox.entityType` registry | **Single source: `packages/db/src/jubelio-outbox.ts`.** Web `satisfies` typed insert + api router `never`-exhaustive switch. Typos = compile error. (Shipped this PR.) |
+| D14 | `StockAdjustment.source` registry | **Single source: `packages/db/src/stock-adjustment-source.ts`.** Same pattern as D13. (Shipped this PR.) |

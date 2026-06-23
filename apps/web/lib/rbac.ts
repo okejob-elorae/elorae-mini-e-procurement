@@ -57,6 +57,9 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/supplier-payments': 'supplier_payments:view',
   '/backoffice/inventory': 'inventory:view',
   '/backoffice/sales-orders': 'sales_orders:view',
+  '/backoffice/sales-orders/[id]/pick-list': 'sales_orders:view',
+  '/backoffice/sales-orders/[id]/packing-slip': 'sales_orders:view',
+  '/backoffice/fulfillment': 'sales_orders:view',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
   '/backoffice/forecast': 'forecast:view',
@@ -64,6 +67,8 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/production/planning': 'production_planning:view',
   '/backoffice/production/colors': 'production_colors:view',
   '/backoffice/vendor-returns': 'vendor_returns:view',
+  '/backoffice/returns': 'sales_returns:view',
+  '/backoffice/returns/[id]': 'sales_returns:view',
   '/backoffice/reports/hpp': 'reports_hpp:view',
   '/backoffice/audit-trail': 'audit_trail:view',
   '/backoffice/settings/documents': 'settings_documents:view',
@@ -75,6 +80,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/jubelio/settings': 'settings_security:view',
   '/backoffice/jubelio/categories': 'settings_security:view',
   '/backoffice/jubelio/migration': 'settings_security:view',
+  '/backoffice/jubelio/couriers': 'settings_security:view',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
@@ -96,6 +102,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/inventory',
   '/backoffice/work-orders',
   '/backoffice/sales-orders',
+  '/backoffice/fulfillment',
   '/backoffice/forecast',
   '/backoffice/production/planning',
   '/backoffice/production/colors',
@@ -106,6 +113,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/jubelio/settings',
   '/backoffice/jubelio/categories',
   '/backoffice/jubelio/migration',
+  '/backoffice/jubelio/couriers',
   '/backoffice/settings/documents',
   '/backoffice/settings/tax',
   '/backoffice/settings/uom',
@@ -172,6 +180,7 @@ export const PERMISSIONS = {
   ITEMS_DELETE: 'items:delete',
   // Sales Orders
   SALES_ORDERS_VIEW: 'sales_orders:view',
+  SALES_ORDERS_FULFILL: 'sales_orders:fulfill',
   // Purchase Orders
   PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
   PURCHASE_ORDERS_CREATE: 'purchase_orders:create',
@@ -217,6 +226,9 @@ export const PERMISSIONS = {
   SETTINGS_SECURITY_MANAGE: 'settings_security:manage',
   SETTINGS_RBAC_VIEW: 'settings_rbac:view',
   SETTINGS_RBAC_MANAGE: 'settings_rbac:manage',
+  // Sales Returns
+  SALES_RETURNS_VIEW: 'sales_returns:view',
+  SALES_RETURNS_DECIDE: 'sales_returns:decide',
   // Jubelio admin — admin-only. Not granted to non-admin roles; only the
   // wildcard '*' (system/admin role) satisfies it.
   JUBELIO_ADMIN_VIEW: 'jubelio_admin:view',

@@ -9,6 +9,8 @@ import type { SalesOrderLine, SalesOrderPayload } from "./salesorder.payload";
 import { resolveItemMapping } from "./_shared/mapping-lookup";
 import { detectChannel } from "./_shared/channel-detect";
 import { deriveStatus } from "./_shared/status-derive";
+import { SalesReturnIngestService } from "../returns/sales-return-ingest.service";
+import type { JubelioSalesOrderDetail } from "../jubelio-http.client";
 
 type UnmappedLine = { item_code: string; item_id: number; qty: string | number };
 
@@ -66,6 +68,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaService,
     private readonly admin: AdminNotificationService,
+    private readonly salesReturnIngest: SalesReturnIngestService,
   ) {}
 
   async handle(row: JubelioWebhookEvent): Promise<HandlerOutcome> {
@@ -131,6 +134,20 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
           lastIsCanceled: !!p.is_canceled,
         },
       });
+    }
+
+    // When the order is in a returned state, mirror to the SalesReturn audit
+    // table. Returns ARE salesorders in Jubelio's data model (no separate
+    // entity), so the salesorder webhook is the authoritative entry point for
+    // creating the SalesReturn row. Idempotent — upsert keyed on salesorder_id.
+    if (p.internal_status === "RETURNED" || p.wms_status === "RETURNED") {
+      try {
+        await this.salesReturnIngest.upsertFromApiDetail(p as unknown as JubelioSalesOrderDetail);
+      } catch (err) {
+        this.logger.warn(
+          `SalesReturn ingest failed for salesorder ${p.salesorder_id}: ${(err as Error).message}`,
+        );
+      }
     }
 
     return { kind: "processed" };
@@ -199,11 +216,44 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       lastWebhookEventId: webhookEventId,
     };
 
+    // Raw "this order shipped" signal — broader than the derived `status` enum,
+    // which collapses ship + delivery into SHIPPED vs COMPLETED. Anything that
+    // implies the package left the warehouse counts.
+    const jubelioReportsShipped =
+      p.wms_status === "SHIPPED" ||
+      p.is_shipped === true ||
+      p.marked_as_complete === true ||
+      !!p.completed_date;
+
+    // For new rows: if Jubelio already reports shipped (backfill of an
+    // already-shipped order), seed fulfillmentStatus on create.
+    const createShippedPatch = jubelioReportsShipped
+      ? {
+          fulfillmentStatus: "SHIPPED" as const,
+          shippedAt: parseDate(p.completed_date) ?? parseDate(p.last_modified) ?? new Date(),
+        }
+      : {};
+
     const order = await tx.salesOrder.upsert({
       where: { salesorderId: p.salesorder_id },
-      create: { salesorderId: p.salesorder_id, ...baseFields },
+      create: { salesorderId: p.salesorder_id, ...baseFields, ...createShippedPatch },
       update: baseFields,
     });
+
+    // Forward-only fulfillmentStatus sync: when Jubelio reports the order shipped
+    // (e.g. operator marked shipped in Jubelio admin UI bypassing the Elorae Ship
+    // button, or marketplace auto-ship), advance fulfillmentStatus → SHIPPED. The
+    // `where` guard prevents overwriting an existing SHIPPED audit (web's Ship
+    // button already stamped shippedById/shippedAt). Idempotent on re-receive.
+    if (jubelioReportsShipped) {
+      await tx.salesOrder.updateMany({
+        where: { id: order.id, fulfillmentStatus: { not: "SHIPPED" } },
+        data: {
+          fulfillmentStatus: "SHIPPED",
+          shippedAt: parseDate(p.completed_date) ?? parseDate(p.last_modified) ?? new Date(),
+        },
+      });
+    }
 
     const items = Array.isArray(p.items) ? p.items : [];
     const lines = [];

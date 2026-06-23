@@ -38,6 +38,8 @@
     "supplierType": "Supplier Type",
     "sales": "Sales",
     "navSalesOrders": "Sales Orders",
+    "navFulfillment": "Fulfillment",
+    "navSalesReturns": "Returns",
     "items": "Items",
     "navItemsAll": "All Items",
     "navItemsCategory": "Category",
@@ -66,6 +68,7 @@
     "navJubelioSettings": "Settings",
     "navJubelioCategories": "Categories",
     "navJubelioMigration": "Migration",
+    "navJubelioCouriers": "Couriers",
     "settings": "Settings",
     "masterData": "Master Data"
   },
@@ -626,7 +629,35 @@
     "confirmDeleteItem": "Are you sure you want to delete this item?",
     "noVariants": "This item has no variants.",
     "noBOM": "This item has no BOM.",
-    "variantLabel": "Variant {index}:"
+    "variantLabel": "Variant {index}:",
+    "pricing": {
+      "section": "Pricing",
+      "sellingPriceLabel": "Selling Price (Harga Jual)",
+      "targetMarginLabel": "Target Margin (%)",
+      "targetMarginHint": "Leave blank to use the default from Jubelio push settings.",
+      "additionalCostLabel": "Additional Cost per pcs (Rp)",
+      "additionalCostHint": "Flat add-on per unit (packaging, etc).",
+      "computedPreview": "Computed selling price = avgCost × (1 + margin/100) + additionalCost"
+    },
+    "priceHistory": {
+      "tab": "Price History",
+      "loading": "Loading price history…",
+      "empty": "No price changes recorded yet.",
+      "colChangedAt": "Changed at",
+      "colTrigger": "Trigger",
+      "colOldPrice": "Old price",
+      "colNewPrice": "New price",
+      "colAvgCost": "avgCost basis",
+      "colMargin": "Margin used",
+      "colSource": "FG Receipt",
+      "colActor": "Actor",
+      "trigger": {
+        "FG_RECEIPT": "FG Receipt",
+        "MARGIN_CHANGE": "Margin change",
+        "DEFAULTS_CHANGE": "Defaults change",
+        "MANUAL_EDIT": "Manual edit"
+      }
+    }
   },
   "workOrders": {
     "draft": "Draft",
@@ -1126,6 +1157,228 @@
       "total_amount_mp": "Marketplace total"
     },
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "fulfillment": {
+      "section": "Fulfillment",
+      "status": "Status",
+      "statusValues": {
+        "PENDING": "Pending",
+        "PICKED": "Picked",
+        "PACKED": "Packed",
+        "SHIPPED": "Shipped"
+      },
+      "timeline": "Timeline",
+      "timelinePicked": "Picked",
+      "timelinePacked": "Packed",
+      "timelineShipped": "Shipped",
+      "tracking": "Tracking",
+      "byUser": "by {name}",
+      "cancelledLocked": "Cancelled — fulfillment locked.",
+      "action": {
+        "finishPick": "Finish Pick",
+        "finishPack": "Finish Pack",
+        "ship": "Ship",
+        "courier": "Courier",
+        "courierPlaceholder": "Select courier…",
+        "shipConfirmTitle": "Ship this order?",
+        "shipConfirmBody": "Jubelio will request the AWB from {courier}. This action cannot be undone.",
+        "shipConfirmOk": "Ship",
+        "shipConfirmCancel": "Cancel"
+      },
+      "printSection": "Print",
+      "printPickList": "Print pick list",
+      "printPackingSlip": "Print packing slip",
+      "toast": {
+        "success": "Action completed.",
+        "invalidTransition": "Status already changed. Refresh the page.",
+        "forbidden": "Insufficient permissions.",
+        "networkError": "Couldn't reach the server. Try again."
+      }
+    }
+  },
+  "salesReturns": {
+    "list": {
+      "pageTitle": "Sales Returns",
+      "pageSubtitle": "Marketplace returns received via Jubelio",
+      "empty": "No returns yet — returns appear here as Jubelio webhooks arrive.",
+      "emptyFiltered": "No returns match these filters.",
+      "filter": {
+        "searchPlaceholder": "Search by return # or buyer name",
+        "channel": "Channel",
+        "status": "Status",
+        "dateRange": "Date range",
+        "reset": "Reset",
+        "all": "All"
+      },
+      "table": {
+        "returnNo": "Return #",
+        "channel": "Channel",
+        "orderNo": "Order #",
+        "buyer": "Buyer",
+        "qty": "Qty",
+        "value": "Value",
+        "status": "Status",
+        "received": "Received"
+      },
+      "kpi": {
+        "totalCount": "Total Returns",
+        "totalCountDesc": "Last 30 days",
+        "pendingCount": "Pending Review",
+        "pendingCountDesc": "Awaiting decision",
+        "acceptanceRate": "Acceptance Rate",
+        "acceptanceRateDesc": "Accepted of decided",
+        "totalValue": "Total Value",
+        "totalValueDesc": "Last 30 days"
+      },
+      "status": {
+        "pending": "Pending",
+        "accepted": "Accepted",
+        "rejected": "Rejected",
+        "partial": "Partial"
+      }
+    },
+    "decision": {
+      "title": "Sales Return",
+      "back": "Back to list",
+      "channel": "Channel",
+      "orderNo": "Order No.",
+      "buyer": "Buyer",
+      "receivedAt": "Received at",
+      "lockedBanner": "Submitted at {when} by {who}. Awaiting Jubelio sync.",
+      "accept": "Accept",
+      "reject": "Reject",
+      "submit": "Submit decision",
+      "defaultAcceptReason": "Customer return accepted",
+      "defaultRejectReason": "Customer return rejected",
+      "status": {
+        "PENDING": "Pending review",
+        "ACCEPTED": "Accepted",
+        "REJECTED": "Rejected",
+        "PARTIAL": "Partial"
+      },
+      "itemDecision": {
+        "PENDING": "Pending",
+        "ACCEPTED": "Accepted",
+        "REJECTED": "Rejected"
+      },
+      "col": {
+        "product": "Product",
+        "sku": "SKU",
+        "qty": "Qty",
+        "unitPrice": "Unit price",
+        "subtotal": "Subtotal",
+        "decision": "Decision",
+        "actions": "Actions"
+      },
+      "submitConfirm": {
+        "title": "Submit return decision?",
+        "body": "Once submitted, this return is locked and cannot be modified. The decision will be pushed to Jubelio.",
+        "cancel": "Cancel",
+        "confirm": "Submit"
+      },
+      "toast": {
+        "accepted": "Item accepted",
+        "rejected": "Item rejected",
+        "submitted": "Decision submitted"
+      },
+      "error": {
+        "forbidden": "You don't have permission to decide returns.",
+        "locked": "Another admin is processing this return — try again in a moment.",
+        "already_decided": "This item was already decided.",
+        "unmapped_sku": "SKU is not mapped to a catalog item.",
+        "return_locked": "This return has already been submitted.",
+        "no_inventory_row": "No inventory row found for this SKU.",
+        "items_still_pending": "Some items are still pending decision.",
+        "no_items": "This return has no items.",
+        "already_submitted": "This return was already submitted.",
+        "internal_error": "Something went wrong. Try again."
+      }
+    }
+  },
+  "jubelioCouriers": {
+    "pageTitle": "Jubelio Couriers",
+    "pageSubtitle": "Cached courier list used by the Ship action on order detail.",
+    "syncButton": "Sync from Jubelio",
+    "lastSyncedAt": "Last synced: {when}",
+    "empty": "No couriers cached yet. Click \"Sync from Jubelio\" to populate.",
+    "emptyFiltered": "No couriers match this search.",
+    "filter": {
+      "searchLabel": "Search by name",
+      "searchPlaceholder": "JNE, J&T, …",
+      "reset": "Reset"
+    },
+    "table": {
+      "id": "ID",
+      "name": "Name",
+      "syncedAt": "Synced at"
+    },
+    "toast": {
+      "syncSuccess": "Synced {count} couriers.",
+      "syncError": "Sync failed. Try again."
+    }
+  },
+  "fulfillmentQueue": {
+    "pageTitle": "Fulfillment Queue",
+    "pageSubtitle": "Marketplace orders awaiting pick, pack, or ship.",
+    "empty": "No orders match the current filters.",
+    "filter": {
+      "fulfillmentStatus": "Fulfillment status",
+      "channel": "Channel",
+      "search": "Search",
+      "searchPlaceholder": "Order # or buyer name",
+      "dateRange": "Date range",
+      "reset": "Reset",
+      "all": "All"
+    },
+    "fulfillmentStatus": {
+      "PENDING": "Pending",
+      "PICKED": "Picked",
+      "PACKED": "Packed",
+      "SHIPPED": "Shipped"
+    },
+    "table": {
+      "orderNo": "Order #",
+      "channel": "Channel",
+      "buyer": "Buyer",
+      "date": "Date",
+      "fulfillmentStatus": "Fulfillment",
+      "status": "Jubelio"
+    },
+    "batch": {
+      "selectedCount": "{count, plural, one {# selected} other {# selected}}",
+      "finishPick": "Finish Pick",
+      "finishPack": "Finish Pack",
+      "clear": "Clear",
+      "toast": {
+        "success": "{processed} processed.",
+        "successWithSkipped": "{processed} processed, {skipped} skipped.",
+        "forbidden": "Insufficient permissions.",
+        "networkError": "Couldn't reach the server. Try again."
+      }
+    }
+  },
+  "salesOrdersPrint": {
+    "pickList": {
+      "title": "Pick List",
+      "orderLabel": "Order:",
+      "channelLabel": "Channel:",
+      "dateLabel": "Date:",
+      "colSku": "SKU",
+      "colProduct": "Product",
+      "colQty": "Qty",
+      "pickedBy": "Picked by:",
+      "dateSigned": "Date:"
+    },
+    "packingSlip": {
+      "title": "PACKING SLIP",
+      "shipToLabel": "Ship to:",
+      "courierLabel": "Courier:",
+      "trackingLabel": "Tracking:",
+      "colSku": "SKU",
+      "colProduct": "Product",
+      "colQty": "Qty",
+      "thankYou": "Thank you for shopping with ELORAÉ!",
+      "questionsContact": "For questions: {email}"
+    }
   }
 }

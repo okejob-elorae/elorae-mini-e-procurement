@@ -21,4 +21,5 @@ export const SKIP_REASONS = {
   AWAITING_SAMPLES: "awaiting_samples",
   MISSING_ITEM_GROUP_ID: "missing_item_group_id",
   MISSING_SALESORDER_ID: "missing_salesorder_id",
+  MISSING_REQUIRED_FIELD: "missing_required_field",
 } as const;
