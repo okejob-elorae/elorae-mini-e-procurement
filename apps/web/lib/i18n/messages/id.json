@@ -241,6 +241,7 @@
       "searchPlaceholder": "Cari berdasarkan kode atau nama…",
       "showInactive": "Tampilkan tidak aktif",
       "hideInactive": "Sembunyikan tidak aktif",
+      "empty": "Belum ada akun. Klik \"Akun Baru\" untuk menambahkan.",
       "col": {
         "code": "Kode",
         "name": "Nama",

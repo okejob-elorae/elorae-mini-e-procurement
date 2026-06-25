@@ -197,7 +197,7 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
 
   function openCreate(parentNode: CoaTreeNode | null) {
     const parentId = parentNode ? parentNode.id : null;
-    const prefix = parentNode ? parentNode.code + "-" : "";
+    const prefix = parentNode ? parentNode.code : "";
     setCreateCode(prefix);
     setCreateName("");
     setCreateType(parentNode ? parentNode.type : "");

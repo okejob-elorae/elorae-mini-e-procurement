@@ -241,6 +241,7 @@
       "searchPlaceholder": "Search by code or name…",
       "showInactive": "Show inactive",
       "hideInactive": "Hide inactive",
+      "empty": "No accounts yet. Click \"New Account\" to add one.",
       "col": {
         "code": "Code",
         "name": "Name",
