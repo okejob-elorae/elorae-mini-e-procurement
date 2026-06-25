@@ -1,0 +1,15 @@
+{
+  "version": "sak-emkm-v1",
+  "accounts": [
+    { "code": "1",    "name": "Aset",         "type": "ASET" },
+    { "code": "11",   "name": "Aset Lancar",  "type": "ASET" },
+    { "code": "1101", "name": "Kas",          "type": "ASET" },
+    { "code": "1102", "name": "Bank",         "type": "ASET" },
+    { "code": "2",    "name": "Liabilitas",   "type": "LIABILITAS" },
+    { "code": "21",   "name": "Utang Lancar", "type": "LIABILITAS" },
+    { "code": "3",    "name": "Ekuitas",      "type": "EKUITAS" },
+    { "code": "4",    "name": "Pendapatan",   "type": "PENDAPATAN" },
+    { "code": "5",    "name": "HPP",          "type": "HPP" },
+    { "code": "6",    "name": "Beban",        "type": "BEBAN" }
+  ]
+}
