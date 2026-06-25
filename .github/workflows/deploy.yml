@@ -45,9 +45,32 @@ jobs:
               - 'docker-compose.prod.yml'
               - 'Caddyfile'
 
+  pull:
+    name: Pull latest master on VPS
+    needs: changes
+    if: |
+      (github.event_name == 'push' && (needs.changes.outputs.web == 'true' || needs.changes.outputs.api == 'true')) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and pull
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 2m
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            cd /srv/elorae
+            git fetch origin master
+            git reset --hard origin/master
+
   deploy-web:
     name: Deploy web
-    needs: changes
+    needs: [changes, pull]
     if: |
       (github.event_name == 'push' && needs.changes.outputs.web == 'true') ||
       (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'web'))
@@ -65,14 +88,12 @@ jobs:
           script: |
             set -euo pipefail
             cd /srv/elorae
-            git fetch origin master
-            git reset --hard origin/master
             docker compose -f docker-compose.prod.yml up -d --build web
             docker image prune -f
 
   deploy-api:
     name: Deploy api
-    needs: changes
+    needs: [changes, pull]
     if: |
       (github.event_name == 'push' && needs.changes.outputs.api == 'true') ||
       (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'api'))
@@ -90,9 +111,7 @@ jobs:
           script: |
             set -euo pipefail
             cd /srv/elorae
-            git fetch origin master
-            git reset --hard origin/master
             docker compose -f docker-compose.prod.yml build api
-            docker compose -f docker-compose.prod.yml run --rm api pnpm -F @elorae/db prisma migrate deploy
+            docker compose -f docker-compose.prod.yml run --rm --entrypoint /app/node_modules/.bin/prisma api migrate deploy --schema=/app/packages/db/prisma/schema.prisma
             docker compose -f docker-compose.prod.yml up -d --no-build api
             docker image prune -f
