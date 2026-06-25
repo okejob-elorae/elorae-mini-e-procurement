@@ -29,7 +29,7 @@ export function validateCreate(input: CreateInput, parent: AccountForValidation 
   if (!/^[0-9]+$/.test(input.code)) return fail("code_format_invalid", "Code must be digits only.");
   if (input.code.length > MAX_CODE_LENGTH) return fail("code_too_long", `Code exceeds ${MAX_CODE_LENGTH} characters.`);
   if (parent === null) {
-    if (input.parentId !== null) return fail("parent_inactive", "Parent not found or inactive.");
+    if (input.parentId !== null) return fail("parent_not_found", "Parent not found.");
     if (!input.type) return fail("root_type_required", "Root accounts must declare a type.");
     return { ok: true };
   }
@@ -45,6 +45,9 @@ export function validateReparent(
   newParent: AccountForValidation | null,
   allAccounts: AccountForValidation[],
 ): ValidationResult {
+  // Children check must run regardless of whether newParent is null (root-promotion).
+  const hasChildren = allAccounts.some((a) => a.parentId === account.id);
+  if (hasChildren) return fail("has_children_reparent_forbidden", "Reparenting an account with children is not supported.");
   if (newParent === null) return { ok: true };
   if (newParent.id === account.id) return fail("cycle_detected", "Cannot reparent under self.");
   // Cycle: walk newParent ancestors; if account.id appears, fail.
@@ -54,9 +57,6 @@ export function validateReparent(
     if (cursor.id === account.id) return fail("cycle_detected", "Cycle detected.");
     cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined;
   }
-  // Now check if account has children (after cycle check).
-  const hasChildren = allAccounts.some((a) => a.parentId === account.id);
-  if (hasChildren) return fail("has_children_reparent_forbidden", "Reparenting an account with children is not supported.");
   if (newParent.type !== account.type) return fail("reparent_type_mismatch", "New parent must share the same type.");
   if (!newParent.isActive) return fail("parent_inactive", "New parent is inactive.");
   if (newParent.depth >= MAX_DEPTH) return fail("max_depth_exceeded", "New parent at max depth.");

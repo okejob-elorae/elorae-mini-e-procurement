@@ -62,7 +62,7 @@ export async function createAccountAction(input: {
       let parentRow: AccountForValidation | null = null;
       if (input.parentId) {
         const p = await tx.chartAccount.findUnique({ where: { id: input.parentId } });
-        if (!p) return { ok: false, code: "parent_inactive", message: "Parent not found." } as ActionResult;
+        if (!p) return { ok: false, code: "parent_not_found", message: "Parent not found." } as ActionResult;
         parentRow = toValidationShape(p);
       }
       const v = validateCreate(input, parentRow);
@@ -104,109 +104,130 @@ export async function updateAccountAction(
   const gate = await requireManage();
   if (!("ok" in gate) || gate.ok !== true) return gate;
 
-  return prisma.$transaction(async (tx) => {
-    const current = await tx.chartAccount.findUnique({ where: { id } });
-    if (!current) return { ok: false, code: "not_found", message: "Account not found." };
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const current = await tx.chartAccount.findUnique({ where: { id } });
+      if (!current) return { ok: false, code: "not_found", message: "Account not found." };
 
-    const childrenCount = await tx.chartAccount.count({ where: { parentId: id } });
+      const childrenCount = await tx.chartAccount.count({ where: { parentId: id } });
 
-    // MVP: forbid code change OR reparent on non-leaf accounts.
-    if (childrenCount > 0) {
-      if (input.code !== undefined) {
-        return {
-          ok: false,
-          code: "has_children_code_change_forbidden",
-          message: "Cannot change code of an account with children.",
-        };
-      }
-      if (input.parentId !== undefined) {
-        return {
-          ok: false,
-          code: "has_children_reparent_forbidden",
-          message: "Cannot reparent an account with children.",
-        };
-      }
-    }
-
-    // Reparent (leaf only by the gate above)
-    if (input.parentId !== undefined) {
-      let newParent: AccountForValidation | null = null;
-      if (input.parentId !== null) {
-        const np = await tx.chartAccount.findUnique({ where: { id: input.parentId } });
-        if (!np) return { ok: false, code: "parent_inactive", message: "New parent not found." };
-        newParent = toValidationShape(np);
-      }
-      const all = await tx.chartAccount.findMany({
-        select: { id: true, code: true, type: true, depth: true, isActive: true, parentId: true },
-      });
-      const v = validateReparent(toValidationShape(current), newParent, all.map(toValidationShape));
-      if (!v.ok) return v;
-    }
-
-    // Code change (leaf only by the gate above)
-    if (input.code !== undefined && input.code !== current.code) {
-      const dup = await tx.chartAccount.findUnique({ where: { code: input.code } });
-      if (dup) return { ok: false, code: "code_duplicate", message: "Code already in use." };
-      // Re-run prefix check against (possibly new) parent
-      const parentId = input.parentId !== undefined ? input.parentId : current.parentId;
-      if (parentId) {
-        const p = await tx.chartAccount.findUnique({ where: { id: parentId } });
-        if (p && !input.code.startsWith(p.code)) {
-          return { ok: false, code: "code_prefix_mismatch", message: "Code must start with parent code." };
+      // MVP: forbid code change OR reparent on non-leaf accounts.
+      if (childrenCount > 0) {
+        if (input.code !== undefined) {
+          return {
+            ok: false,
+            code: "has_children_code_change_forbidden",
+            message: "Cannot change code of an account with children.",
+          };
+        }
+        if (input.parentId !== undefined) {
+          return {
+            ok: false,
+            code: "has_children_reparent_forbidden",
+            message: "Cannot reparent an account with children.",
+          };
         }
       }
-    }
 
-    const updateData: Record<string, unknown> = {};
-    if (input.name !== undefined) updateData.name = input.name;
-    if (input.code !== undefined) updateData.code = input.code;
-    if (input.parentId !== undefined) {
-      updateData.parentId = input.parentId;
-      // recompute depth
-      if (input.parentId === null) {
-        updateData.depth = 1;
-      } else {
-        const p = await tx.chartAccount.findUnique({ where: { id: input.parentId } });
-        if (p) updateData.depth = p.depth + 1;
+      // Reparent (leaf only by the gate above)
+      if (input.parentId !== undefined) {
+        let newParent: AccountForValidation | null = null;
+        if (input.parentId !== null) {
+          const np = await tx.chartAccount.findUnique({ where: { id: input.parentId } });
+          if (!np) return { ok: false, code: "parent_not_found", message: "New parent not found." };
+          newParent = toValidationShape(np);
+        }
+        const all = await tx.chartAccount.findMany({
+          select: { id: true, code: true, type: true, depth: true, isActive: true, parentId: true },
+        });
+        const v = validateReparent(toValidationShape(current), newParent, all.map(toValidationShape));
+        if (!v.ok) return v;
       }
-    }
-    await tx.chartAccount.update({ where: { id }, data: updateData });
 
-    revalidatePath(REVALIDATE);
-    return { ok: true };
-  });
+      // Code change (leaf only by the gate above)
+      if (input.code !== undefined && input.code !== current.code) {
+        const dup = await tx.chartAccount.findUnique({ where: { code: input.code } });
+        if (dup) return { ok: false, code: "code_duplicate", message: "Code already in use." };
+        // Re-run prefix check against (possibly new) parent
+        const parentId = input.parentId !== undefined ? input.parentId : current.parentId;
+        if (parentId) {
+          const p = await tx.chartAccount.findUnique({ where: { id: parentId } });
+          if (p && !input.code.startsWith(p.code)) {
+            return { ok: false, code: "code_prefix_mismatch", message: "Code must start with parent code." };
+          }
+        }
+      }
+
+      const updateData: Record<string, unknown> = {};
+      if (input.name !== undefined) updateData.name = input.name;
+      if (input.code !== undefined) updateData.code = input.code;
+      if (input.parentId !== undefined) {
+        updateData.parentId = input.parentId;
+        // recompute depth
+        if (input.parentId === null) {
+          updateData.depth = 1;
+        } else {
+          const p = await tx.chartAccount.findUnique({ where: { id: input.parentId } });
+          if (p) updateData.depth = p.depth + 1;
+        }
+      }
+      await tx.chartAccount.update({ where: { id }, data: updateData });
+
+      revalidatePath(REVALIDATE);
+      return { ok: true };
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return { ok: false, code: "code_duplicate", message: "Account code already exists." };
+    }
+    throw err;
+  }
 }
 
 export async function deactivateAccountAction(id: string): Promise<ActionResult> {
   const gate = await requireManage();
   if (!("ok" in gate) || gate.ok !== true) return gate;
 
-  const current = await prisma.chartAccount.findUnique({ where: { id } });
-  if (!current) return { ok: false, code: "not_found", message: "Account not found." };
-  const activeChildren = await prisma.chartAccount.count({ where: { parentId: id, isActive: true } });
-  const v = validateDeactivate(toValidationShape(current), activeChildren);
-  if (!v.ok) return v;
-  await prisma.chartAccount.update({ where: { id }, data: { isActive: false } });
-  revalidatePath(REVALIDATE);
-  return { ok: true };
+  try {
+    const current = await prisma.chartAccount.findUnique({ where: { id } });
+    if (!current) return { ok: false, code: "not_found", message: "Account not found." };
+    const activeChildren = await prisma.chartAccount.count({ where: { parentId: id, isActive: true } });
+    const v = validateDeactivate(toValidationShape(current), activeChildren);
+    if (!v.ok) return v;
+    await prisma.chartAccount.update({ where: { id }, data: { isActive: false } });
+    revalidatePath(REVALIDATE);
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return { ok: false, code: "code_duplicate", message: "Account code already exists." };
+    }
+    throw err;
+  }
 }
 
 export async function reactivateAccountAction(id: string): Promise<ActionResult> {
   const gate = await requireManage();
   if (!("ok" in gate) || gate.ok !== true) return gate;
 
-  const current = await prisma.chartAccount.findUnique({ where: { id } });
-  if (!current) return { ok: false, code: "not_found", message: "Account not found." };
+  try {
+    const current = await prisma.chartAccount.findUnique({ where: { id } });
+    if (!current) return { ok: false, code: "not_found", message: "Account not found." };
 
-  // If parent is inactive, refuse — re-activating an orphan-by-design is confusing.
-  if (current.parentId) {
-    const p = await prisma.chartAccount.findUnique({ where: { id: current.parentId } });
-    if (p && !p.isActive) {
-      return { ok: false, code: "parent_inactive", message: "Parent is inactive. Reactivate parent first." };
+    // If parent is inactive, refuse — re-activating an orphan-by-design is confusing.
+    if (current.parentId) {
+      const p = await prisma.chartAccount.findUnique({ where: { id: current.parentId } });
+      if (p && !p.isActive) {
+        return { ok: false, code: "parent_inactive", message: "Parent is inactive. Reactivate parent first." };
+      }
     }
-  }
 
-  await prisma.chartAccount.update({ where: { id }, data: { isActive: true } });
-  revalidatePath(REVALIDATE);
-  return { ok: true };
+    await prisma.chartAccount.update({ where: { id }, data: { isActive: true } });
+    revalidatePath(REVALIDATE);
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return { ok: false, code: "code_duplicate", message: "Account code already exists." };
+    }
+    throw err;
+  }
 }

@@ -580,18 +580,18 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder={t("dialog.parentNone")} />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">{t("dialog.parentNone")}</SelectItem>
-                    {parentCandidatesForType(
-                      editDialog.account?.type ?? "",
-                    )
-                      .filter((n) => n.id !== editDialog.account?.id)
-                      .map((n) => (
-                        <SelectItem key={n.id} value={n.id}>
-                          {n.code} — {n.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
+                  {editDialog.account != null && (
+                    <SelectContent>
+                      <SelectItem value="__none__">{t("dialog.parentNone")}</SelectItem>
+                      {parentCandidatesForType(editDialog.account.type)
+                        .filter((n) => n.id !== editDialog.account!.id)
+                        .map((n) => (
+                          <SelectItem key={n.id} value={n.id}>
+                            {n.code} — {n.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  )}
                 </Select>
               </div>
             )}

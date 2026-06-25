@@ -49,8 +49,9 @@ describe("validateReparent", () => {
   it("rejects reparent if account has children", () => {
     expect(validateReparent(aLancar, aRoot, [aRoot, aLancar, kas])).toMatchObject({ ok: false, code: "has_children_reparent_forbidden" });
   });
-  it("rejects reparent to descendant (cycle)", () => {
-    expect(validateReparent(aLancar, kas, [aRoot, aLancar, kas])).toMatchObject({ ok: false, code: "cycle_detected" });
+  it("rejects reparent to self (cycle)", () => {
+    // kas is a leaf; reparenting it under itself is a direct self-cycle.
+    expect(validateReparent(kas, kas, [aRoot, aLancar, kas])).toMatchObject({ ok: false, code: "cycle_detected" });
   });
   it("rejects reparent across types", () => {
     expect(validateReparent(kas, beban, [aRoot, aLancar, kas, beban])).toMatchObject({ ok: false, code: "reparent_type_mismatch" });
