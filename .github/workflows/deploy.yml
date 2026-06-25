@@ -72,14 +72,10 @@ jobs:
 
   deploy-api:
     name: Deploy api
-    needs: [changes, deploy-web]
+    needs: changes
     if: |
-      always() &&
-      (needs.deploy-web.result == 'success' || needs.deploy-web.result == 'skipped') &&
-      (
-        (github.event_name == 'push' && needs.changes.outputs.api == 'true') ||
-        (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'api'))
-      )
+      (github.event_name == 'push' && needs.changes.outputs.api == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'api'))
     runs-on: ubuntu-latest
     steps:
       - name: SSH and rebuild api
