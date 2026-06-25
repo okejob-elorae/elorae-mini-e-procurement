@@ -40,6 +40,8 @@
     "navSalesOrders": "Pesanan",
     "navFulfillment": "Pemenuhan",
     "navSalesReturns": "Pengembalian",
+    "finance": "Keuangan",
+    "navCoa": "Bagan Akun",
     "items": "Item",
     "navItemsAll": "Semua Item",
     "navItemsCategory": "Kategori",
@@ -231,6 +233,69 @@
     "padding": "Padding",
     "save": "Simpan",
     "loadError": "Gagal memuat konfigurasi"
+  },
+  "finance": {
+    "coa": {
+      "title": "Bagan Akun",
+      "newAccount": "Akun Baru",
+      "searchPlaceholder": "Cari berdasarkan kode atau nama…",
+      "showInactive": "Tampilkan tidak aktif",
+      "hideInactive": "Sembunyikan tidak aktif",
+      "col": {
+        "code": "Kode",
+        "name": "Nama",
+        "type": "Tipe",
+        "status": "Status"
+      },
+      "status": {
+        "active": "Aktif",
+        "inactive": "Tidak Aktif"
+      },
+      "type": {
+        "ASET": "Aset",
+        "LIABILITAS": "Liabilitas",
+        "EKUITAS": "Ekuitas",
+        "PENDAPATAN": "Pendapatan",
+        "HPP": "HPP",
+        "BEBAN": "Beban"
+      },
+      "dialog": {
+        "createTitle": "Akun Baru",
+        "createDescription": "Tambah akun baru di bawah {parent}.",
+        "editTitle": "Edit Akun",
+        "deactivateTitle": "Nonaktifkan Akun",
+        "deactivateDescription": "Akun ini tidak akan muncul saat membuat jurnal baru tapi tetap terlihat di riwayat.",
+        "reactivateTitle": "Aktifkan Kembali Akun",
+        "reactivateDescription": "Akun ini akan tersedia kembali untuk jurnal baru.",
+        "parent": "Induk",
+        "parentNone": "(Akar)",
+        "code": "Kode",
+        "name": "Nama",
+        "type": "Tipe",
+        "save": "Simpan",
+        "cancel": "Batal",
+        "deactivate": "Nonaktifkan",
+        "reactivate": "Aktifkan"
+      },
+      "error": {
+        "forbidden": "Anda tidak memiliki izin untuk melakukan tindakan ini.",
+        "code_duplicate": "Kode akun sudah digunakan.",
+        "code_prefix_mismatch": "Kode harus diawali dengan kode induk.",
+        "code_too_short": "Kode harus lebih panjang dari kode induk.",
+        "code_too_long": "Kode melebihi panjang maksimum.",
+        "code_format_invalid": "Kode hanya boleh berisi angka.",
+        "max_depth_exceeded": "Kedalaman maksimum tercapai.",
+        "parent_inactive": "Akun induk tidak aktif.",
+        "root_type_required": "Akun akar harus memiliki tipe.",
+        "cycle_detected": "Tidak bisa memindahkan ke diri sendiri atau turunan.",
+        "reparent_type_mismatch": "Induk baru harus bertipe sama.",
+        "has_active_children": "Tidak bisa menonaktifkan — masih ada anak aktif.",
+        "has_children_reparent_forbidden": "Tidak bisa memindahkan akun yang memiliki anak.",
+        "has_children_code_change_forbidden": "Tidak bisa mengubah kode akun yang memiliki anak.",
+        "not_found": "Akun tidak ditemukan.",
+        "parent_not_found": "Akun induk tidak ditemukan."
+      }
+    }
   },
   "security": {
     "title": "Keamanan",
