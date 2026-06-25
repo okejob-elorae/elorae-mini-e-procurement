@@ -261,6 +261,8 @@
         "BEBAN": "Beban"
       },
       "dialog": {
+        "codeHintRoot": "1-8 digit, mis. 1 (Aset), 2 (Liabilitas), 3 (Ekuitas), 4 (Pendapatan), 5 (HPP), 6 (Beban).",
+        "codeHintChild": "Harus diawali {prefix}, total {min}-8 digit (hanya angka, tanpa pemisah).",
         "createTitle": "Akun Baru",
         "createDescription": "Tambah akun baru di bawah {parent}.",
         "editTitle": "Edit Akun",

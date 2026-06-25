@@ -261,6 +261,8 @@
         "BEBAN": "Beban"
       },
       "dialog": {
+        "codeHintRoot": "1-8 digits, e.g. 1 (Aset), 2 (Liabilitas), 3 (Ekuitas), 4 (Pendapatan), 5 (HPP), 6 (Beban).",
+        "codeHintChild": "Must start with {prefix} and be {min}-8 digits total (digits only, no separators).",
         "createTitle": "New Account",
         "createDescription": "Add a new account under {parent}.",
         "editTitle": "Edit Account",

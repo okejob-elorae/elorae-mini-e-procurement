@@ -513,6 +513,14 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
                 onChange={(e) => setCreateCode(e.target.value)}
                 placeholder={t("dialog.code")}
               />
+              <p className="text-xs text-muted-foreground">
+                {createDialog.parentNode
+                  ? t("dialog.codeHintChild", {
+                      prefix: createDialog.parentNode.code,
+                      min: createDialog.parentNode.code.length + 1,
+                    })
+                  : t("dialog.codeHintRoot")}
+              </p>
             </div>
             <div className="space-y-1">
               <Label>{t("dialog.name")}</Label>
