@@ -92,5 +92,7 @@ jobs:
             cd /srv/elorae
             git fetch origin master
             git reset --hard origin/master
-            docker compose -f docker-compose.prod.yml up -d --build api
+            docker compose -f docker-compose.prod.yml build api
+            docker compose -f docker-compose.prod.yml run --rm api pnpm -F @elorae/db prisma migrate deploy
+            docker compose -f docker-compose.prod.yml up -d --no-build api
             docker image prune -f
