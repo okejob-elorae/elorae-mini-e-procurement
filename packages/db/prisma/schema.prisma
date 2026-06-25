@@ -1485,3 +1485,33 @@ enum SalesReturnItemDecision {
   ACCEPTED
   REJECTED
 }
+
+// ==========================================
+// FINANCE — CHART OF ACCOUNTS
+// ==========================================
+model ChartAccount {
+  id        String      @id @default(cuid())
+  code      String      @unique
+  name      String
+  type      AccountType
+  parentId  String?
+  parent    ChartAccount?  @relation("CoaParent", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children  ChartAccount[] @relation("CoaParent")
+  depth     Int
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([parentId])
+  @@index([type, isActive])
+  @@index([code])
+}
+
+enum AccountType {
+  ASET
+  LIABILITAS
+  EKUITAS
+  PENDAPATAN
+  HPP
+  BEBAN
+}
