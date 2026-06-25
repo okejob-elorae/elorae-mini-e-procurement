@@ -112,6 +112,6 @@ jobs:
             set -euo pipefail
             cd /srv/elorae
             docker compose -f docker-compose.prod.yml build api
-            docker compose -f docker-compose.prod.yml run --rm --entrypoint /app/packages/db/node_modules/.bin/prisma api migrate deploy --schema=/app/packages/db/prisma/schema.prisma
+            docker compose -f docker-compose.prod.yml run --rm --env-file /srv/elorae/.env.production api /app/packages/db/node_modules/.bin/prisma migrate deploy --schema=/app/packages/db/prisma/schema.prisma
             docker compose -f docker-compose.prod.yml up -d --no-build api
             docker image prune -f
