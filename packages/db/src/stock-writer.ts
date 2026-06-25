@@ -81,8 +81,12 @@ export async function applyJubelioStockAdjustment(
       ) {
         const target = err.meta?.target;
         const targets = Array.isArray(target) ? target : typeof target === "string" ? [target] : [];
-        const isIdempotencyCollision =
-          targets.includes("idempotencyKey") || targets.includes("docNumber");
+        // MySQL/mariadb returns the INDEX NAME (e.g. "StockAdjustment_docNumber_key") in meta.target,
+        // not the column name. Match either form.
+        const isIdempotencyCollision = targets.some((t) => {
+          const s = String(t);
+          return /(^|_)(idempotencyKey|docNumber)(_|$)/.test(s) || s === "idempotencyKey" || s === "docNumber";
+        });
         if (isIdempotencyCollision) {
           return { adjustmentId: null, skipped: true };
         }
