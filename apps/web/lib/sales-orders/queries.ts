@@ -76,6 +76,7 @@ export type SalesOrderItemRow = {
   jubelioItemId: number;
   jubelioItemCode: string;
   itemId: string | null;
+  variantSku: string | null;
   productName: string;
   qty: string;
   qtyInBase: string;
@@ -229,6 +230,7 @@ export async function getSalesOrderById(
     jubelioItemId: it.jubelioItemId,
     jubelioItemCode: it.jubelioItemCode,
     itemId: it.itemId,
+    variantSku: it.variantSku ?? null,
     productName: it.productName,
     qty: it.qty.toString(),
     qtyInBase: it.qtyInBase.toString(),
