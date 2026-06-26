@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { ItemType, Prisma, createItemFromIngest, updateItemFromIngest } from "@elorae/db";
+import { ItemType, Prisma, createItemFromIngest, pruneJubelioOrphans, updateItemFromIngest, upsertJubelioImage } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
 import { buildCatalogDrafts, sellingPriceToDecimal } from "./map-catalog";
@@ -10,6 +10,7 @@ import type {
   CatalogSyncResult,
   CatalogSyncSummary,
   JubelioItemsPayload,
+  JubelioRawImage,
   VariantJson,
 } from "./catalog.types";
 
@@ -235,6 +236,7 @@ export class JubelioCatalogSyncService {
     const variantsJson = draft.variants as Prisma.InputJsonValue;
 
     if (!existing) {
+      let createdItemId = "";
       await this.prisma.$transaction(
         async (tx) => {
           const item = await createItemFromIngest(tx, {
@@ -253,9 +255,11 @@ export class JubelioCatalogSyncService {
           });
           await this.ensureInventoryRows(tx, item.id, draft);
           await this.upsertMappings(tx, item.id, draft);
+          createdItemId = item.id;
         },
         CATALOG_PERSIST_TX_OPTIONS,
       );
+      await this.syncImages(createdItemId, draft);
       return { action: "create", warnings };
     }
 
@@ -281,7 +285,65 @@ export class JubelioCatalogSyncService {
       },
       CATALOG_PERSIST_TX_OPTIONS,
     );
+    await this.syncImages(existing.id, draft);
 
     return { action: "update", warnings };
+  }
+
+  private async syncImages(itemId: string, draft: CatalogItemDraft): Promise<void> {
+    const seenJubelioIds: string[] = [];
+
+    const isValidImage = (entry: unknown): entry is JubelioRawImage & { id: string | number; image_url: string } => {
+      if (typeof entry !== "object" || entry === null) return false;
+      const e = entry as Record<string, unknown>;
+      return (typeof e["id"] === "string" || typeof e["id"] === "number") && typeof e["image_url"] === "string" && e["image_url"] !== "";
+    };
+
+    const productImages = Array.isArray(draft.rawImages) ? draft.rawImages : [];
+    for (const img of productImages) {
+      if (!isValidImage(img)) continue;
+      const jid = String(img.id);
+      seenJubelioIds.push(jid);
+      try {
+        await upsertJubelioImage(this.prisma, {
+          itemId,
+          variantSku: null,
+          url: img.image_url,
+          sortOrder: typeof img.sort_order === "number" ? img.sort_order : 0,
+          jubelioImageId: jid,
+        });
+      } catch (err) {
+        this.logger.warn(`syncImages: failed to upsert product image ${jid} for item ${itemId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    const variantImages = Array.isArray(draft.rawVariantImages) ? draft.rawVariantImages : [];
+    for (const variant of variantImages) {
+      if (typeof variant !== "object" || variant === null) continue;
+      const { item_code, images } = variant as Record<string, unknown>;
+      if (typeof item_code !== "string" || item_code === "" || !Array.isArray(images)) continue;
+      for (const img of images) {
+        if (!isValidImage(img)) continue;
+        const jid = String(img.id);
+        seenJubelioIds.push(jid);
+        try {
+          await upsertJubelioImage(this.prisma, {
+            itemId,
+            variantSku: item_code,
+            url: img.image_url,
+            sortOrder: typeof img.sort_order === "number" ? img.sort_order : 0,
+            jubelioImageId: jid,
+          });
+        } catch (err) {
+          this.logger.warn(`syncImages: failed to upsert variant image ${jid} for item ${itemId} variant ${item_code}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+
+    try {
+      await pruneJubelioOrphans(this.prisma, itemId, seenJubelioIds);
+    } catch (err) {
+      this.logger.warn(`syncImages: failed to prune orphans for item ${itemId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }

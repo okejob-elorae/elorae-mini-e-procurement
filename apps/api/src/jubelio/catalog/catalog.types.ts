@@ -20,6 +20,17 @@ export type JubelioVariantRow = {
   available_qty?: number | null;
 };
 
+export type JubelioRawImage = {
+  id?: string | number;
+  image_url?: string;
+  sort_order?: number;
+};
+
+export type JubelioRawVariantImages = {
+  item_code?: string;
+  images?: JubelioRawImage[];
+};
+
 export type JubelioItemGroup = {
   item_group_id: number;
   item_name: string;
@@ -28,6 +39,8 @@ export type JubelioItemGroup = {
   last_modified?: string;
   variations?: Array<{ label: string; values: string[] }>;
   variants: JubelioVariantRow[];
+  images?: JubelioRawImage[];
+  variation_images?: JubelioRawVariantImages[];
 };
 
 export type JubelioItemsPayload = {
@@ -53,6 +66,8 @@ export type CatalogItemDraft = {
     jubelioItemGroupId: number;
     erpVariantSku: string;
   }>;
+  rawImages: JubelioRawImage[];
+  rawVariantImages: JubelioRawVariantImages[];
 };
 
 export type CatalogSyncItemResult = {
