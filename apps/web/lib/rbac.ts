@@ -176,6 +176,7 @@ export const PERMISSIONS = {
   SUPPLIER_TYPES_DELETE: 'supplier_types:delete',
   // Items
   ITEMS_VIEW: 'items:view',
+  ITEMS_MANAGE: 'items:manage',
   ITEMS_CREATE: 'items:create',
   ITEMS_EDIT: 'items:edit',
   ITEMS_DELETE: 'items:delete',
