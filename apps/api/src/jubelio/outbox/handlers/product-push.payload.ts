@@ -1,5 +1,13 @@
 import type { JubelioProductMapping } from "@elorae/db";
 
+export type ItemImageSlice = {
+  id: string;
+  variantSku: string | null;
+  url: string;
+  sortOrder: number;
+  jubelioImageId: string | null;
+};
+
 export type PushDefaultsSlice = {
   sellTaxId: number;
   buyTaxId: number;
@@ -94,6 +102,31 @@ export type CreateProductRequestBody = {
   product_skus: ProductSkuEntry[];
 };
 
+function buildJubelioImages(images: ItemImageSlice[]): {
+  images: Array<{ image_url: string; sort_order: number }>;
+  variation_images: Array<{ item_code: string; images: Array<{ image_url: string; sort_order: number }> }>;
+} {
+  const productLevel = images
+    .filter((i) => i.variantSku === null)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((i) => ({ image_url: i.url, sort_order: i.sortOrder }));
+
+  const byVariant = new Map<string, ItemImageSlice[]>();
+  for (const i of images) {
+    if (!i.variantSku) continue;
+    const arr = byVariant.get(i.variantSku) ?? [];
+    arr.push(i);
+    byVariant.set(i.variantSku, arr);
+  }
+
+  const variation_images = Array.from(byVariant.entries()).map(([item_code, rows]) => ({
+    item_code,
+    images: rows.sort((a, b) => a.sortOrder - b.sortOrder).map((i) => ({ image_url: i.url, sort_order: i.sortOrder })),
+  }));
+
+  return { images: productLevel, variation_images };
+}
+
 const MIN_DESCRIPTION_LEN = 30;
 
 function padDescription(input: string | null): string {
@@ -107,12 +140,16 @@ export function buildCreateProductRequest(opts: {
   defaults: PushDefaultsSlice;
   categoryJubelioId: number;
   mappings: MappingSlice[];
+  images?: ItemImageSlice[];
 }): CreateProductRequestBody {
   const { item, defaults: d, categoryJubelioId, mappings } = opts;
 
   const groupId = mappings[0]?.jubelioItemGroupId ?? 0;
   const sellPrice = item.sellingPrice ?? 0;
   const mappingBySku = new Map(mappings.map((m) => [m.erpVariantSku, m]));
+
+  const imageResult = buildJubelioImages(opts.images ?? []);
+  const hasVariantImages = imageResult.variation_images.length > 0;
 
   const hasVariants = item.variants !== null && item.variants.length > 0;
   const desiredVariants: Array<{ sku: string }> =
@@ -161,8 +198,8 @@ export function buildCreateProductRequest(opts: {
     min: 0,
     max: 0,
     use_batch_number: false,
-    images: [],
-    variation_images: [],
+    images: imageResult.images,
+    variation_images: imageResult.variation_images,
     variations: [],
     unlimited_stock_store_ids: null,
     sell_price: sellPrice,
@@ -170,7 +207,7 @@ export function buildCreateProductRequest(opts: {
     brand_id: d.brandId,
     brand_name: d.brandName,
     rop: d.rop,
-    use_single_image_set: d.useSingleImageSet,
+    use_single_image_set: hasVariantImages ? false : d.useSingleImageSet,
     use_serial_number: d.useSerialNumber,
     product_skus,
   };

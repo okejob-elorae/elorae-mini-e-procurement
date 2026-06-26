@@ -4,15 +4,31 @@ import { PRISMA, type PrismaService } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
 import type { HandlerOutcome, OutboxHandler } from "./handler.types";
+import { bindJubelioId } from "@elorae/db";
 import {
   buildCreateProductRequest,
+  type ItemImageSlice,
   type MappingSlice,
 } from "./product-push.payload";
+
+type JubelioResponseImage = {
+  image_url: string;
+  id: string;
+  [key: string]: unknown;
+};
+
+type JubelioResponseVariationImages = {
+  item_code: string;
+  images: JubelioResponseImage[];
+  [key: string]: unknown;
+};
 
 type CatalogPostResponse = {
   status: string;
   id: number;
   item_ids: number[];
+  images?: unknown;
+  variation_images?: unknown;
 };
 
 @Injectable()
@@ -55,6 +71,11 @@ export class ProductPushHandler implements OutboxHandler {
     const variantsArr = Array.isArray(item.variants) ? (item.variants as Array<{ sku: string }>) : null;
     const hasVariants = variantsArr !== null && variantsArr.length > 0;
 
+    const images = (await this.prisma.itemImage.findMany({
+      where: { itemId: item.id },
+      select: { id: true, variantSku: true, url: true, sortOrder: true, jubelioImageId: true },
+    })) as ItemImageSlice[];
+
     const body = buildCreateProductRequest({
       item: {
         id: item.id,
@@ -83,6 +104,7 @@ export class ProductPushHandler implements OutboxHandler {
       },
       categoryJubelioId: categoryMap.jubelioCategoryId,
       mappings,
+      images,
     });
 
     const response = await this.http.post<CatalogPostResponse>("/inventory/catalog/", body);
@@ -109,6 +131,8 @@ export class ProductPushHandler implements OutboxHandler {
     });
     await this.prisma.$transaction(upserts);
 
+    await this.bindResponseImages(response, images);
+
     const existingCodes = new Set(mappings.map((m) => m.jubelioItemCode));
     const newCount = body.product_skus.filter((s) => !existingCodes.has(s.item_code)).length;
 
@@ -130,5 +154,57 @@ export class ProductPushHandler implements OutboxHandler {
       `Pushed item ${item.id} (group=${response.id}, +${newCount} mappings, -${removed.length})`,
     );
     return { kind: "processed" };
+  }
+
+  private async bindResponseImages(
+    response: CatalogPostResponse,
+    localImages: ItemImageSlice[],
+  ): Promise<void> {
+    const byUrl = new Map(localImages.map((img) => [img.url, img]));
+
+    const flatResponseImages: Array<{ image_url: string; id: string }> = [];
+
+    if (Array.isArray(response.images)) {
+      for (const entry of response.images as unknown[]) {
+        if (
+          entry !== null &&
+          typeof entry === "object" &&
+          typeof (entry as JubelioResponseImage).image_url === "string" &&
+          typeof (entry as JubelioResponseImage).id === "string"
+        ) {
+          flatResponseImages.push(entry as JubelioResponseImage);
+        }
+      }
+    }
+
+    if (Array.isArray(response.variation_images)) {
+      for (const varEntry of response.variation_images as unknown[]) {
+        if (
+          varEntry !== null &&
+          typeof varEntry === "object" &&
+          Array.isArray((varEntry as JubelioResponseVariationImages).images)
+        ) {
+          for (const entry of (varEntry as JubelioResponseVariationImages).images) {
+            if (
+              typeof entry.image_url === "string" &&
+              typeof entry.id === "string"
+            ) {
+              flatResponseImages.push(entry);
+            }
+          }
+        }
+      }
+    }
+
+    for (const resImg of flatResponseImages) {
+      const local = byUrl.get(resImg.image_url);
+      if (!local) continue;
+      if (local.jubelioImageId === resImg.id) continue;
+      try {
+        await bindJubelioId(this.prisma, local.id, resImg.id);
+      } catch (err) {
+        this.logger.warn(`bindJubelioId failed for image ${local.id}: ${String(err)}`);
+      }
+    }
   }
 }

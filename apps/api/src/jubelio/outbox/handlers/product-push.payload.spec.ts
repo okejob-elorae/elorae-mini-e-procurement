@@ -116,3 +116,133 @@ describe("buildCreateProductRequest", () => {
     expect(body.sell_price).toBe(0);
   });
 });
+
+function imageSlice(overrides: Partial<{
+  id: string;
+  variantSku: string | null;
+  url: string;
+  sortOrder: number;
+  jubelioImageId: string | null;
+}> = {}) {
+  return {
+    id: "img_1",
+    variantSku: null,
+    url: "https://cdn.example.com/img1.jpg",
+    sortOrder: 0,
+    jubelioImageId: null,
+    ...overrides,
+  };
+}
+
+describe("buildCreateProductRequest — images", () => {
+  it("empty images → images and variation_images both empty", () => {
+    const body = buildCreateProductRequest({
+      item: item(),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [],
+      images: [],
+    });
+    expect(body.images).toEqual([]);
+    expect(body.variation_images).toEqual([]);
+  });
+
+  it("product-level images only → populated images, empty variation_images", () => {
+    const body = buildCreateProductRequest({
+      item: item(),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [],
+      images: [
+        imageSlice({ id: "img_1", url: "https://cdn.example.com/a.jpg", sortOrder: 0 }),
+        imageSlice({ id: "img_2", url: "https://cdn.example.com/b.jpg", sortOrder: 1 }),
+      ],
+    });
+    expect(body.images).toEqual([
+      { image_url: "https://cdn.example.com/a.jpg", sort_order: 0 },
+      { image_url: "https://cdn.example.com/b.jpg", sort_order: 1 },
+    ]);
+    expect(body.variation_images).toEqual([]);
+  });
+
+  it("variant-level images only → empty images, populated variation_images", () => {
+    const body = buildCreateProductRequest({
+      item: item({ variants: [{ sku: "SKU-1-RED" }, { sku: "SKU-1-BLU" }] }),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [],
+      images: [
+        imageSlice({ id: "img_1", variantSku: "SKU-1-RED", url: "https://cdn.example.com/red.jpg", sortOrder: 0 }),
+        imageSlice({ id: "img_2", variantSku: "SKU-1-BLU", url: "https://cdn.example.com/blu.jpg", sortOrder: 0 }),
+      ],
+    });
+    expect(body.images).toEqual([]);
+    expect(body.variation_images).toHaveLength(2);
+    const red = body.variation_images.find((v: any) => v.item_code === "SKU-1-RED");
+    expect(red).toMatchObject({
+      item_code: "SKU-1-RED",
+      images: [{ image_url: "https://cdn.example.com/red.jpg", sort_order: 0 }],
+    });
+  });
+
+  it("mixed images → both product-level and variation_images populated with correct grouping", () => {
+    const body = buildCreateProductRequest({
+      item: item({ variants: [{ sku: "SKU-1-RED" }] }),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [],
+      images: [
+        imageSlice({ id: "img_1", variantSku: null, url: "https://cdn.example.com/main.jpg", sortOrder: 0 }),
+        imageSlice({ id: "img_2", variantSku: "SKU-1-RED", url: "https://cdn.example.com/red.jpg", sortOrder: 0 }),
+      ],
+    });
+    expect(body.images).toHaveLength(1);
+    expect(body.images[0]).toMatchObject({ image_url: "https://cdn.example.com/main.jpg" });
+    expect(body.variation_images).toHaveLength(1);
+    expect((body.variation_images[0] as any).item_code).toBe("SKU-1-RED");
+  });
+
+  it("sort order is preserved for product-level images", () => {
+    const body = buildCreateProductRequest({
+      item: item(),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [],
+      images: [
+        imageSlice({ id: "img_b", url: "https://cdn.example.com/b.jpg", sortOrder: 2 }),
+        imageSlice({ id: "img_a", url: "https://cdn.example.com/a.jpg", sortOrder: 0 }),
+        imageSlice({ id: "img_c", url: "https://cdn.example.com/c.jpg", sortOrder: 1 }),
+      ],
+    });
+    const urls = (body.images as Array<{ image_url: string }>).map((i) => i.image_url);
+    expect(urls).toEqual([
+      "https://cdn.example.com/a.jpg",
+      "https://cdn.example.com/c.jpg",
+      "https://cdn.example.com/b.jpg",
+    ]);
+  });
+
+  it("use_single_image_set is false when variant images present, uses defaults value otherwise", () => {
+    const withVariantImages = buildCreateProductRequest({
+      item: item({ variants: [{ sku: "SKU-1-RED" }] }),
+      defaults: { ...defaults, useSingleImageSet: true },
+      categoryJubelioId: 454,
+      mappings: [],
+      images: [
+        imageSlice({ id: "img_1", variantSku: "SKU-1-RED", url: "https://cdn.example.com/red.jpg", sortOrder: 0 }),
+      ],
+    });
+    expect(withVariantImages.use_single_image_set).toBe(false);
+
+    const withoutVariantImages = buildCreateProductRequest({
+      item: item(),
+      defaults: { ...defaults, useSingleImageSet: true },
+      categoryJubelioId: 454,
+      mappings: [],
+      images: [
+        imageSlice({ id: "img_1", variantSku: null, url: "https://cdn.example.com/main.jpg", sortOrder: 0 }),
+      ],
+    });
+    expect(withoutVariantImages.use_single_image_set).toBe(true);
+  });
+});
