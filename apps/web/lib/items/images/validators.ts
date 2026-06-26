@@ -1,4 +1,4 @@
-import { isTrustedHost } from "./trusted-hosts";
+import { isTrustedHost, getR2Host } from "./trusted-hosts";
 import type { ValidationResult } from "./types";
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -40,7 +40,7 @@ export function validateUrlHost(url: string): ValidationResult {
 }
 
 export function validateNewUploadUrl(url: string): ValidationResult {
-  const r2Host = process.env.NEXT_PUBLIC_R2_PUBLIC_HOST;
+  const r2Host = getR2Host();
   if (!r2Host) return fail("image_url_untrusted", "R2 public host not configured.");
   try {
     const u = new URL(url);

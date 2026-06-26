@@ -66,17 +66,17 @@ describe("validateUrlHost", () => {
 });
 
 describe("validateNewUploadUrl", () => {
-  const origHost = process.env.NEXT_PUBLIC_R2_PUBLIC_HOST;
+  const origHost = process.env.R2_PUBLIC_URL;
 
   beforeAll(() => {
-    process.env.NEXT_PUBLIC_R2_PUBLIC_HOST = "pub.r2.example.com";
+    process.env.R2_PUBLIC_URL = "https://pub.r2.example.com";
   });
 
   afterAll(() => {
     if (origHost === undefined) {
-      delete process.env.NEXT_PUBLIC_R2_PUBLIC_HOST;
+      delete process.env.R2_PUBLIC_URL;
     } else {
-      process.env.NEXT_PUBLIC_R2_PUBLIC_HOST = origHost;
+      process.env.R2_PUBLIC_URL = origHost;
     }
   });
 
@@ -103,11 +103,11 @@ describe("validateNewUploadUrl", () => {
   });
 
   it("returns error when R2 host env var is not set", () => {
-    delete process.env.NEXT_PUBLIC_R2_PUBLIC_HOST;
+    delete process.env.R2_PUBLIC_URL;
     expect(validateNewUploadUrl("https://pub.r2.example.com/x.jpg")).toMatchObject({
       ok: false,
       code: "image_url_untrusted",
     });
-    process.env.NEXT_PUBLIC_R2_PUBLIC_HOST = "pub.r2.example.com";
+    process.env.R2_PUBLIC_URL = "https://pub.r2.example.com";
   });
 });

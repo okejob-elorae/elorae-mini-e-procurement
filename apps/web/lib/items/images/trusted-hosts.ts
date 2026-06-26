@@ -1,4 +1,12 @@
-const ENV_R2_HOST = process.env.NEXT_PUBLIC_R2_PUBLIC_HOST;
+function r2HostFromEnv(): string | null {
+  const url = process.env.R2_PUBLIC_URL;
+  if (!url) return null;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
 
 const JUBELIO_HOSTS: ReadonlyArray<string> = [
   "static.jubelio.com",
@@ -7,9 +15,13 @@ const JUBELIO_HOSTS: ReadonlyArray<string> = [
   "img.jubelio.com",
 ];
 
+export function getR2Host(): string | null {
+  return r2HostFromEnv();
+}
+
 export function getTrustedHosts(): ReadonlyArray<string> {
-  const r2 = ENV_R2_HOST ? [ENV_R2_HOST] : [];
-  return [...r2, ...JUBELIO_HOSTS];
+  const r2 = r2HostFromEnv();
+  return r2 ? [r2, ...JUBELIO_HOSTS] : [...JUBELIO_HOSTS];
 }
 
 export function isTrustedHost(url: string): boolean {

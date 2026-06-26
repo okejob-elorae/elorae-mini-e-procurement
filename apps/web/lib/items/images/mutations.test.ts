@@ -4,7 +4,7 @@ import { prisma } from "@elorae/db";
 import { replaceItemImagesAction } from "./mutations";
 
 // Provide an R2 host so validateNewUploadUrl can resolve
-process.env.NEXT_PUBLIC_R2_PUBLIC_HOST = "pub.r2.example.com";
+process.env.R2_PUBLIC_URL = "https://pub.r2.example.com";
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("@elorae/db", () => ({
