@@ -84,3 +84,9 @@ export {
   type SubmitReturnDecisionInput,
   type SubmitReturnDecisionResult,
 } from "./sales-return-writer";
+export {
+  upsertJubelioImage,
+  pruneJubelioOrphans,
+  bindJubelioId,
+  type UpsertJubelioImageInput,
+} from "./item-image-writer";
