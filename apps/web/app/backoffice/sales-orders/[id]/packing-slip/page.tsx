@@ -20,7 +20,7 @@ export default async function PackingSlipPrintPage({ params }: PageProps) {
 
   const linePairs = data.items
     .filter((it) => it.itemId !== null)
-    .map((it) => ({ itemId: it.itemId as string, variantSku: it.variantSku }));
+    .map((it) => ({ itemId: it.itemId as string, variantSku: null }));
   const imageMap = await getPrimaryImagesBatch(linePairs);
   const lineImages: Record<string, string> = Object.fromEntries(imageMap);
 

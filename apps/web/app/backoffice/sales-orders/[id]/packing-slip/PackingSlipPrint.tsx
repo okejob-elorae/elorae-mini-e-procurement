@@ -75,7 +75,7 @@ export function PackingSlipPrint({ order, items, lineImages = {} }: Props) {
           </thead>
           <tbody>
             {liveItems.map((it) => {
-              const imgKey = it.itemId ? `${it.itemId}|${it.variantSku ?? ""}` : null;
+              const imgKey = it.itemId ? `${it.itemId}|` : null;
               const imgUrl = imgKey ? lineImages[imgKey] : undefined;
               return (
                 <tr key={it.id}>
