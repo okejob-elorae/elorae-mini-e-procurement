@@ -70,6 +70,51 @@ describe("applyJubelioStockAdjustment", () => {
     expect(tx.inventoryValue.update).not.toHaveBeenCalled();
   });
 
+  it("returns skipped:true when MariaDB returns index name in target (P2002)", async () => {
+    const { prisma, tx } = buildPrismaMock();
+    tx.inventoryValue.findUnique.mockResolvedValue({ qtyOnHand: 10, avgCost: 100 });
+    const err = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+      code: "P2002",
+      clientVersion: "test",
+      meta: { target: "StockAdjustment_docNumber_key" },
+    });
+    tx.stockAdjustment.create.mockRejectedValue(err);
+
+    const result = await applyJubelioStockAdjustment(prisma as any, {
+      itemId: "item_1",
+      variantSku: "SKU-A",
+      newQty: 5,
+      idempotencyKey: "evt_1",
+      externalRef: "JBLITEM-1",
+      reason: "test",
+    });
+
+    expect(result).toEqual({ adjustmentId: null, skipped: true });
+    expect(tx.inventoryValue.update).not.toHaveBeenCalled();
+  });
+
+  it("returns skipped:true when MariaDB index name matches idempotencyKey", async () => {
+    const { prisma, tx } = buildPrismaMock();
+    tx.inventoryValue.findUnique.mockResolvedValue({ qtyOnHand: 10, avgCost: 100 });
+    const err = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+      code: "P2002",
+      clientVersion: "test",
+      meta: { target: "StockAdjustment_idempotencyKey_key" },
+    });
+    tx.stockAdjustment.create.mockRejectedValue(err);
+
+    const result = await applyJubelioStockAdjustment(prisma as any, {
+      itemId: "item_1",
+      variantSku: "SKU-A",
+      newQty: 5,
+      idempotencyKey: "evt_1",
+      externalRef: "JBLITEM-1",
+      reason: "test",
+    });
+
+    expect(result).toEqual({ adjustmentId: null, skipped: true });
+  });
+
   it("rethrows P2002 with unrelated target", async () => {
     const { prisma, tx } = buildPrismaMock();
     tx.inventoryValue.findUnique.mockResolvedValue({ qtyOnHand: 10, avgCost: 100 });

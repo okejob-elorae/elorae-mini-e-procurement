@@ -25,6 +25,7 @@ import bcrypt from "bcryptjs";
 
 import { getDatabaseUrl } from "../src/db-connection";
 import { seedPantoneColors } from "./seed-pantone-colors";
+import { seedChartAccounts } from "./seed-chart-accounts";
 
 const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL!);
 const prisma = new PrismaClient({ adapter });
@@ -156,6 +157,9 @@ async function main() {
     { code: 'settings_security:manage', module: 'settings', action: 'security_manage', description: 'Manage security settings' },
     { code: 'settings_rbac:view', module: 'settings', action: 'rbac_view', description: 'View RBAC settings' },
     { code: 'settings_rbac:manage', module: 'settings', action: 'rbac_manage', description: 'Manage RBAC settings' },
+    // Chart of Accounts
+    { code: 'coa:view', module: 'coa', action: 'view', description: 'View Chart of Accounts' },
+    { code: 'coa:manage', module: 'coa', action: 'manage', description: 'Create / update / deactivate Chart of Accounts' },
   ];
 
   // Upsert all permissions
@@ -169,6 +173,10 @@ async function main() {
     permissionMap.set(perm.code, created);
   }
   console.log(`Permissions OK (${permissionMap.size} permissions)`);
+
+  // Seed Chart of Accounts
+  const coaSeed = await seedChartAccounts(prisma);
+  console.log(`Chart of Accounts: ${coaSeed.created} created, ${coaSeed.updated} updated`);
 
   // Create default roles
   const adminRole = await prisma.roleDefinition.upsert({

@@ -29,6 +29,7 @@ function getPrismaClient(): PrismaClient {
   }
   if (!globalForPrisma.prisma) {
     globalForPrisma.prisma = createPrismaClient();
+    globalForPrisma.prismaSchemaStamp = SCHEMA_STAMP;
   }
   return globalForPrisma.prisma;
 }
@@ -40,10 +41,6 @@ export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
     return typeof value === "function" ? value.bind(client) : value;
   },
 });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prismaSchemaStamp = SCHEMA_STAMP;
-}
 
 export * from "../generated/prisma/client";
 export { getDatabaseUrl } from "./db-connection";

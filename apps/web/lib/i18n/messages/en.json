@@ -40,6 +40,8 @@
     "navSalesOrders": "Sales Orders",
     "navFulfillment": "Fulfillment",
     "navSalesReturns": "Returns",
+    "finance": "Finance",
+    "navCoa": "Chart of Accounts",
     "items": "Items",
     "navItemsAll": "All Items",
     "navItemsCategory": "Category",
@@ -231,6 +233,72 @@
     "padding": "Padding",
     "save": "Save",
     "loadError": "Failed to load config"
+  },
+  "finance": {
+    "coa": {
+      "title": "Chart of Accounts",
+      "newAccount": "New Account",
+      "searchPlaceholder": "Search by code or name…",
+      "showInactive": "Show inactive",
+      "hideInactive": "Hide inactive",
+      "empty": "No accounts yet. Click \"New Account\" to add one.",
+      "col": {
+        "code": "Code",
+        "name": "Name",
+        "type": "Type",
+        "status": "Status"
+      },
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "type": {
+        "ASET": "Aset",
+        "LIABILITAS": "Liabilitas",
+        "EKUITAS": "Ekuitas",
+        "PENDAPATAN": "Pendapatan",
+        "HPP": "HPP",
+        "BEBAN": "Beban"
+      },
+      "dialog": {
+        "codeHintRoot": "1-8 digits, e.g. 1 (Aset), 2 (Liabilitas), 3 (Ekuitas), 4 (Pendapatan), 5 (HPP), 6 (Beban).",
+        "codeHintChild": "Must start with {prefix} and be {min}-8 digits total (digits only, no separators).",
+        "createTitle": "New Account",
+        "createDescription": "Add a new account under {parent}.",
+        "editTitle": "Edit Account",
+        "deactivateTitle": "Deactivate Account",
+        "deactivateDescription": "This account will be hidden from new journal entries but stay visible in history.",
+        "reactivateTitle": "Reactivate Account",
+        "reactivateDescription": "This account will be visible again in new journal entries.",
+        "parent": "Parent",
+        "parentNone": "(Root)",
+        "code": "Code",
+        "name": "Name",
+        "type": "Type",
+        "save": "Save",
+        "cancel": "Cancel",
+        "deactivate": "Deactivate",
+        "reactivate": "Reactivate"
+      },
+      "error": {
+        "forbidden": "You don't have permission to perform this action.",
+        "code_duplicate": "Account code already exists.",
+        "code_prefix_mismatch": "Code must start with the parent code.",
+        "code_too_short": "Code must be longer than the parent code.",
+        "code_too_long": "Code exceeds the maximum length.",
+        "code_format_invalid": "Code must contain digits only.",
+        "max_depth_exceeded": "Maximum tree depth reached.",
+        "parent_inactive": "Parent account is inactive.",
+        "root_type_required": "Root accounts must declare a type.",
+        "cycle_detected": "Cannot reparent under self or descendant.",
+        "reparent_type_mismatch": "New parent must share the same type.",
+        "has_active_children": "Cannot deactivate — active children exist.",
+        "has_children_reparent_forbidden": "Cannot reparent an account with children.",
+        "has_children_code_change_forbidden": "Cannot change code of an account with children.",
+        "not_found": "Account not found.",
+        "parent_not_found": "Parent account not found."
+      }
+    }
   },
   "security": {
     "title": "Security",

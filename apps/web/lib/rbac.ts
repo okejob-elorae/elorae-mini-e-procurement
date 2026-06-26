@@ -81,6 +81,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/jubelio/categories': 'settings_security:view',
   '/backoffice/jubelio/migration': 'settings_security:view',
   '/backoffice/jubelio/couriers': 'settings_security:view',
+  '/backoffice/finance/coa': 'coa:view',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
@@ -232,4 +233,7 @@ export const PERMISSIONS = {
   // Jubelio admin — admin-only. Not granted to non-admin roles; only the
   // wildcard '*' (system/admin role) satisfies it.
   JUBELIO_ADMIN_VIEW: 'jubelio_admin:view',
+  // Chart of Accounts
+  COA_VIEW: 'coa:view',
+  COA_MANAGE: 'coa:manage',
 } as const;

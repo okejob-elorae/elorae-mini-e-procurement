@@ -1,0 +1,118 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Which service to deploy"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - web
+          - api
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      api: ${{ steps.filter.outputs.api }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'packages/db/**'
+              - 'pnpm-lock.yaml'
+              - 'docker-compose.prod.yml'
+              - 'Caddyfile'
+            api:
+              - 'apps/api/**'
+              - 'packages/db/**'
+              - 'pnpm-lock.yaml'
+              - 'docker-compose.prod.yml'
+              - 'Caddyfile'
+
+  pull:
+    name: Pull latest master on VPS
+    needs: changes
+    if: |
+      (github.event_name == 'push' && (needs.changes.outputs.web == 'true' || needs.changes.outputs.api == 'true')) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and pull
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 2m
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            cd /srv/elorae
+            git fetch origin master
+            git reset --hard origin/master
+
+  deploy-web:
+    name: Deploy web
+    needs: [changes, pull]
+    if: |
+      (github.event_name == 'push' && needs.changes.outputs.web == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'web'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and rebuild web
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 2m
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /srv/elorae
+            docker compose -f docker-compose.prod.yml up -d --build web
+            docker image prune -f
+
+  deploy-api:
+    name: Deploy api
+    needs: [changes, pull]
+    if: |
+      (github.event_name == 'push' && needs.changes.outputs.api == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'api'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and rebuild api
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 2m
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /srv/elorae
+            docker compose -f docker-compose.prod.yml build api
+            set -a; . /srv/elorae/.env.production; set +a
+            docker compose -f docker-compose.prod.yml run --rm -e DATABASE_URL --workdir /app/packages/db api ./node_modules/.bin/prisma migrate deploy
+            docker compose -f docker-compose.prod.yml up -d --no-build api
+            docker image prune -f

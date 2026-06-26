@@ -114,3 +114,14 @@ export const SalesReturnItemDecision = {
 export type SalesReturnItemDecision =
   (typeof SalesReturnItemDecision)[keyof typeof SalesReturnItemDecision];
 export const SALES_RETURN_ITEM_DECISION_VALUES = Object.values(SalesReturnItemDecision);
+
+export const AccountType = {
+  ASET: "ASET",
+  LIABILITAS: "LIABILITAS",
+  EKUITAS: "EKUITAS",
+  PENDAPATAN: "PENDAPATAN",
+  HPP: "HPP",
+  BEBAN: "BEBAN",
+} as const;
+export type AccountType = (typeof AccountType)[keyof typeof AccountType];
+export const ACCOUNT_TYPE_VALUES = Object.values(AccountType);

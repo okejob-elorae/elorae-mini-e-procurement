@@ -26,6 +26,7 @@ import {
   CalendarDays,
   Activity,
   Store,
+  Wallet,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -125,6 +126,15 @@ const navItems: NavItem[] = [
       { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
       { labelKey: 'navFulfillment', href: '/backoffice/fulfillment' },
       { labelKey: 'navSalesReturns', href: '/backoffice/returns' },
+    ],
+  },
+  {
+    labelKey: 'finance',
+    href: '#',
+    icon: Wallet,
+    permission: PERMISSIONS.COA_VIEW,
+    children: [
+      { labelKey: 'navCoa', href: '/backoffice/finance/coa', permission: PERMISSIONS.COA_VIEW },
     ],
   },
   {
