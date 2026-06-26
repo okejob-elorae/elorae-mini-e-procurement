@@ -7,9 +7,8 @@ import { validateMime, validateSize } from "@/lib/items/images/validators";
 
 export const dynamic = "force-dynamic";
 
-function sanitiseFilename(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
-}
+const isValidItemId = (s: string | null): s is string =>
+  s !== null && /^[a-z0-9]{20,40}$/.test(s);
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -26,7 +25,7 @@ export async function POST(request: NextRequest) {
   }
 
   const itemIdParam = new URL(request.url).searchParams.get("itemId");
-  const itemId = itemIdParam || "_pending";
+  const itemId = isValidItemId(itemIdParam) ? itemIdParam : "_pending";
 
   let formData: FormData;
   try {

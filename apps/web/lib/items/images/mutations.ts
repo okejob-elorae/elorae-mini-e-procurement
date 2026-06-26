@@ -7,6 +7,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { deleteFromR2, keyFromUrl } from "@/lib/r2";
 import {
   validateGalleryCount,
+  validateNewUploadUrl,
   validateUrlHost,
   validateVariantSku,
 } from "./validators";
@@ -46,12 +47,13 @@ export async function replaceItemImagesAction(
   if (!item) return { ok: false, code: "item_not_found", message: "Item not found." };
 
   const parentVariants = Array.isArray(item.variants)
-    ? (item.variants as Array<{ sku: string }>)
+    ? (item.variants as Array<{ sku?: unknown }>)
+        .filter((v): v is { sku: string } => typeof v?.sku === "string" && v.sku.length > 0)
     : [];
 
   // Validate every submission
   for (const s of submitted) {
-    const hostCheck = validateUrlHost(s.url);
+    const hostCheck = s.id ? validateUrlHost(s.url) : validateNewUploadUrl(s.url);
     if (!hostCheck.ok) return hostCheck;
     const variantCheck = validateVariantSku(s.variantSku, parentVariants);
     if (!variantCheck.ok) return variantCheck;

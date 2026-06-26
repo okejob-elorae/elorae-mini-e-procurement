@@ -3,6 +3,9 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@elorae/db";
 import { replaceItemImagesAction } from "./mutations";
 
+// Provide an R2 host so validateNewUploadUrl can resolve
+process.env.NEXT_PUBLIC_R2_PUBLIC_HOST = "pub.r2.example.com";
+
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("@elorae/db", () => ({
   prisma: {
@@ -46,7 +49,7 @@ describe("replaceItemImagesAction", () => {
     (auth as any).mockResolvedValue(session(["items:manage"]));
     (prisma.item.findUnique as any).mockResolvedValue({ id: "i1", variants: null });
     const submission = Array.from({ length: 21 }, (_, i) => ({
-      url: "https://static.jubelio.com/" + i + ".jpg",
+      url: "https://pub.r2.example.com/" + i + ".jpg",
       variantSku: null,
       sortOrder: i,
     }));
@@ -67,7 +70,7 @@ describe("replaceItemImagesAction", () => {
     (auth as any).mockResolvedValue(session(["items:manage"]));
     (prisma.item.findUnique as any).mockResolvedValue({ id: "i1", variants: [{ sku: "RED" }] });
     const r = await replaceItemImagesAction("i1", [
-      { url: "https://static.jubelio.com/x.jpg", variantSku: "BLUE", sortOrder: 0 },
+      { url: "https://pub.r2.example.com/x.jpg", variantSku: "BLUE", sortOrder: 0 },
     ]);
     expect(r).toMatchObject({ ok: false, code: "image_variant_unknown" });
   });
@@ -122,7 +125,7 @@ describe("replaceItemImagesAction", () => {
 
     const r = await replaceItemImagesAction("i1", [
       { id: "a", url: "https://static.jubelio.com/a.jpg", variantSku: null, sortOrder: 2 },
-      { url: "https://static.jubelio.com/new.jpg", variantSku: null, sortOrder: 0 },
+      { url: "https://pub.r2.example.com/new.jpg", variantSku: null, sortOrder: 0 },
     ]);
     expect(r).toEqual({ ok: true, counts: { inserted: 1, updated: 1, deleted: 1 } });
   });

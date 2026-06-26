@@ -38,3 +38,15 @@ export function validateUrlHost(url: string): ValidationResult {
   if (!isTrustedHost(url)) return fail("image_url_untrusted", "URL host not in the trust list.");
   return { ok: true };
 }
+
+export function validateNewUploadUrl(url: string): ValidationResult {
+  const r2Host = process.env.NEXT_PUBLIC_R2_PUBLIC_HOST;
+  if (!r2Host) return fail("image_url_untrusted", "R2 public host not configured.");
+  try {
+    const u = new URL(url);
+    if (u.hostname === r2Host || u.hostname.endsWith(`.${r2Host}`)) return { ok: true };
+    return fail("image_url_untrusted", "New uploads must be hosted on our R2.");
+  } catch {
+    return fail("image_url_untrusted", "Invalid URL.");
+  }
+}

@@ -13,7 +13,7 @@ import {
 
 type JubelioResponseImage = {
   image_url: string;
-  id: string;
+  id: string | number;
   [key: string]: unknown;
 };
 
@@ -162,17 +162,24 @@ export class ProductPushHandler implements OutboxHandler {
   ): Promise<void> {
     const byUrl = new Map(localImages.map((img) => [img.url, img]));
 
-    const flatResponseImages: Array<{ image_url: string; id: string }> = [];
+    const flatResponseImages: Array<{ image_url: string; idStr: string }> = [];
+
+    const normaliseId = (raw: unknown): string | null => {
+      if (typeof raw === "string" && raw.length > 0) return raw;
+      if (typeof raw === "number") return String(raw);
+      return null;
+    };
 
     if (Array.isArray(response.images)) {
       for (const entry of response.images as unknown[]) {
         if (
           entry !== null &&
           typeof entry === "object" &&
-          typeof (entry as JubelioResponseImage).image_url === "string" &&
-          typeof (entry as JubelioResponseImage).id === "string"
+          typeof (entry as JubelioResponseImage).image_url === "string"
         ) {
-          flatResponseImages.push(entry as JubelioResponseImage);
+          const idStr = normaliseId((entry as JubelioResponseImage).id);
+          if (idStr === null) continue;
+          flatResponseImages.push({ image_url: (entry as JubelioResponseImage).image_url, idStr });
         }
       }
     }
@@ -185,11 +192,10 @@ export class ProductPushHandler implements OutboxHandler {
           Array.isArray((varEntry as JubelioResponseVariationImages).images)
         ) {
           for (const entry of (varEntry as JubelioResponseVariationImages).images) {
-            if (
-              typeof entry.image_url === "string" &&
-              typeof entry.id === "string"
-            ) {
-              flatResponseImages.push(entry);
+            if (typeof entry.image_url === "string") {
+              const idStr = normaliseId(entry.id);
+              if (idStr === null) continue;
+              flatResponseImages.push({ image_url: entry.image_url, idStr });
             }
           }
         }
@@ -199,9 +205,9 @@ export class ProductPushHandler implements OutboxHandler {
     for (const resImg of flatResponseImages) {
       const local = byUrl.get(resImg.image_url);
       if (!local) continue;
-      if (local.jubelioImageId === resImg.id) continue;
+      if (local.jubelioImageId === resImg.idStr) continue;
       try {
-        await bindJubelioId(this.prisma, local.id, resImg.id);
+        await bindJubelioId(this.prisma, local.id, resImg.idStr);
       } catch (err) {
         this.logger.warn(`bindJubelioId failed for image ${local.id}: ${String(err)}`);
       }
