@@ -18,8 +18,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Pagination } from '@/components/ui/pagination';
-import { runForecast, type ForecastResultDetail } from '@/app/actions/forecast';
+import { runForecast, type DataCoverage, type ForecastResultDetail } from '@/app/actions/forecast';
 import { MonthlyForecastRow } from './monthly-forecast-row';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
 
 const PAGE_SIZE = 25;
@@ -134,6 +135,7 @@ interface OverviewTabProps {
   results: ForecastResultDetail[];
   configSummary: string;
   coverageMonths: number;
+  coverage: DataCoverage | null;
   permissions: string[];
   onRefresh: () => void;
   onEditConfig: () => void;
@@ -144,6 +146,7 @@ export function ForecastOverviewTab({
   results,
   configSummary,
   coverageMonths,
+  coverage,
   permissions,
   onRefresh,
   onEditConfig,
@@ -220,6 +223,12 @@ export function ForecastOverviewTab({
 
   return (
     <div className="space-y-6">
+      {coverage?.unmappedDemandWarn && (
+        <Alert variant="destructive">
+          <AlertDescription>{t('results.unmappedWarn')}</AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-sm text-muted-foreground">{configSummary}</p>
         {canManage && (
@@ -233,11 +242,14 @@ export function ForecastOverviewTab({
             <Button variant="secondary" size="sm" asChild>
               <Link href="/backoffice/forecast/import">{t('import.goToImport')}</Link>
             </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/backoffice/forecast/reconciliation">{t('import.viewReconciliation')}</Link>
+            </Button>
           </>
         )}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">{t('results.totalArticles')}</CardTitle>
@@ -269,6 +281,16 @@ export function ForecastOverviewTab({
           <CardContent>
             <p className="text-2xl font-bold">
               {coverageMonths} {t('results.months')}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">{t('results.mappingCoverage')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">
+              {coverage?.mappingCoveragePercent ?? 0}%
             </p>
           </CardContent>
         </Card>

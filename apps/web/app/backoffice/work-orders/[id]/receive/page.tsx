@@ -82,6 +82,10 @@ export default function WorkOrderReceivePage() {
     }
     const sb = (wo as { skuBreakdown?: unknown })?.skuBreakdown;
     const needsVariantBreakdown = Array.isArray(sb) && sb.length > 1;
+    const singleVariantSku =
+      Array.isArray(sb) && sb.length === 1
+        ? String((sb[0] as { variantSku?: string }).variantSku ?? "")
+        : "";
     if (needsVariantBreakdown) {
       const sumAccepted = variantQtys.reduce((s, x) => s + x.qty, 0);
       if (Math.abs(sumAccepted - accepted) > 0.01) {
@@ -105,7 +109,12 @@ export default function WorkOrderReceivePage() {
           qtyRejected: rejected,
           qcNotes: qcNotes.trim() || undefined,
           qcPhotos: qcPhotos.length > 0 ? qcPhotos : undefined,
-          skuBreakdown: needsVariantBreakdown && variantQtys.length > 0 ? variantQtys : undefined,
+          skuBreakdown:
+            needsVariantBreakdown && variantQtys.length > 0
+              ? variantQtys
+              : singleVariantSku && accepted > 0
+                ? [{ variantSku: singleVariantSku, qty: accepted }]
+                : undefined,
           rejectedSkuBreakdown:
             needsVariantBreakdown && rejected > 0 && rejectedVariantQtys.length > 0
               ? rejectedVariantQtys

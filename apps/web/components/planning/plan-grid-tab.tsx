@@ -151,7 +151,7 @@ export function PlanGridTab(props: PlanGridTabProps) {
       itemOptions={itemOptions}
       supplierOptions={supplierOptions}
       onUpdateTarget={
-        opts.isParentRow && category.children.length > 0
+        opts.isParentRow
           ? (qty) => onUpdateTarget(category.id, qty).then(onRefresh)
           : undefined
       }
@@ -172,7 +172,11 @@ export function PlanGridTab(props: PlanGridTabProps) {
         opts.isParentRow
           ? () =>
               category.children.map((child) =>
-                renderCategoryRow(child, { depth: 1, isParentRow: false })
+                renderCategoryRow(child, {
+                  depth: 1,
+                  isParentRow: false,
+                  parentExpanded: opts.parentExpanded ?? false,
+                })
               )
           : undefined
       }
@@ -243,16 +247,12 @@ export function PlanGridTab(props: PlanGridTabProps) {
           </thead>
           <tbody>
             {filteredCategories.map((parent) => {
-              const hasChildren = parent.children.length > 0;
               const parentExpanded = expandedParents[parent.id] ?? false;
-              if (hasChildren) {
-                return renderCategoryRow(parent, {
-                  depth: 0,
-                  isParentRow: true,
-                  parentExpanded,
-                });
-              }
-              return renderCategoryRow(parent, { depth: 0, isParentRow: false });
+              return renderCategoryRow(parent, {
+                depth: 0,
+                isParentRow: true,
+                parentExpanded,
+              });
             })}
             <tr className="border-t bg-muted/30 font-semibold">
               <td className="p-2" />

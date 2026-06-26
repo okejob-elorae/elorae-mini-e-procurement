@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { SalesChannel } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { executeSalesHistoryImport } from "@/lib/forecast/import-sales-history";
+import { loadReconciliationReport } from "@/lib/sales/load-reconciliation-report";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ const ALLOWED_TYPES = new Set([
 ]);
 const FORECAST_PATH = "/backoffice/forecast";
 const FORECAST_IMPORT_PATH = "/backoffice/forecast/import";
+const FORECAST_RECON_PATH = "/backoffice/forecast/reconciliation";
 
 function parseChannel(value: string | null): SalesChannel | null {
   if (value === "SHOPEE" || value === "TIKTOK") return value;
@@ -105,8 +107,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: 400 });
     }
 
+    try {
+      await loadReconciliationReport({
+        channel,
+        periodMonth,
+        periodYear,
+      });
+    } catch (reconError) {
+      console.warn("Post-import reconciliation skipped:", reconError);
+    }
+
     revalidatePath(FORECAST_PATH);
     revalidatePath(FORECAST_IMPORT_PATH);
+    revalidatePath(FORECAST_RECON_PATH);
 
     return NextResponse.json(result);
   } catch (error) {

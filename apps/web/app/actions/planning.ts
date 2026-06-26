@@ -17,13 +17,22 @@ import {
   getEffectiveTarget,
   getJakartaYearBounds,
   getMonthlyActualQtyFromLookup,
+  getMonthlyTarget,
+  getVariantActualFromLookup,
   validateChildShares,
   type ActualsLookup,
   type PlanningCategoryNode,
   type PlanningMonthlyRow,
 } from "@/lib/planning/calculations";
+import {
+  buildWoPayloadFromCmtRow,
+  stageNameFromAllocation,
+  validateCmtAllocations,
+  validateMonthlyColorAllocations,
+} from "@/lib/planning/allocations";
 import { buildPlanTemplateWorkbook, parsePlanExcelBuffer } from "@/lib/planning/excel-parser";
 import { planCodeFromItemCategory } from "@/lib/planning/item-category";
+import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
 import {
   createPlanCategorySchema,
   createPlanStageSchema,
@@ -34,6 +43,8 @@ import {
   upsertAccessoryPlansSchema,
   upsertCmtAllocationsSchema,
   upsertColorAllocationsSchema,
+  upsertMonthlyCmtAllocationsSchema,
+  upsertMonthlyColorAllocationsSchema,
 } from "@/lib/validations/planning";
 import { createWorkOrder } from "@/app/actions/production";
 import { generateMaterialPlan } from "@/lib/production/planning";
@@ -65,14 +76,32 @@ async function requirePlanningManage() {
   return session;
 }
 
-async function requirePlanYearUnlocked(planYearId: string) {
+async function requirePlanYearEditable(planYearId: string) {
   const planYear = await prisma.planYear.findUnique({
     where: { id: planYearId },
-    select: { id: true, isLocked: true },
+    select: { id: true, isLocked: true, status: true },
   });
   if (!planYear) throw new Error("Plan year not found");
-  if (planYear.isLocked) throw new Error("Plan year is locked");
+  if (planYear.isLocked || planYear.status !== "DRAFT") {
+    throw new Error("Plan year must be in DRAFT status and unlocked for edits");
+  }
   return planYear;
+}
+
+async function requirePlanYearActive(planYearId: string) {
+  const planYear = await prisma.planYear.findUnique({
+    where: { id: planYearId },
+    select: { id: true, isLocked: true, status: true, year: true },
+  });
+  if (!planYear) throw new Error("Plan year not found");
+  if (planYear.status !== "ACTIVE" || !planYear.isLocked) {
+    throw new Error("Plan year must be ACTIVE (locked) to generate work orders");
+  }
+  return planYear;
+}
+
+async function requirePlanYearUnlocked(planYearId: string) {
+  return requirePlanYearEditable(planYearId);
 }
 
 async function validateParentForTwoLevel(parentId: string) {
@@ -129,7 +158,7 @@ async function validateTailorSupplier(supplierId: string | null | undefined) {
 
 async function loadActualsLookup(year: number, itemIds: string[]): Promise<ActualsLookup> {
   if (itemIds.length === 0) {
-    return { yearlyByItem: new Map(), monthlyByItem: new Map() };
+    return { yearlyByItem: new Map(), monthlyByItem: new Map(), monthlyByVariant: new Map() };
   }
   const { start, endExclusive } = getJakartaYearBounds(year);
   const receipts = await prisma.fGReceipt.findMany({
@@ -143,6 +172,7 @@ async function loadActualsLookup(year: number, itemIds: string[]): Promise<Actua
     select: {
       qtyAccepted: true,
       receivedAt: true,
+      skuBreakdown: true,
       wo: { select: { finishedGoodId: true } },
     },
   });
@@ -151,6 +181,7 @@ async function loadActualsLookup(year: number, itemIds: string[]): Promise<Actua
       finishedGoodId: r.wo.finishedGoodId,
       qtyAccepted: r.qtyAccepted,
       receivedAt: r.receivedAt,
+      skuBreakdown: r.skuBreakdown,
     })),
     year
   );
@@ -188,23 +219,29 @@ type RawCategory = {
     name: string;
     targetQty: number;
     targetMonth: number | null;
+    variantSku: string | null;
     supplierId: string | null;
     fabricNotes: string | null;
     colorNotes: string | null;
     workOrderId: string | null;
+    planCmtAllocationId: string | null;
     sortOrder: number;
   }>;
   colorAllocations?: Array<{
     id: string;
-    colorName: string;
-    colorCode: string | null;
+    month: number;
+    variantSku: string;
+    colorLabel: string | null;
     allocatedQty: number;
     notes: string | null;
   }>;
   cmtAllocations?: Array<{
     id: string;
+    month: number;
+    variantSku: string;
     supplierId: string;
     allocatedQty: number;
+    workOrderId: string | null;
     notes: string | null;
   }>;
   accessoryPlans?: Array<{
@@ -259,6 +296,7 @@ interface EnrichedPlanCategory {
   parentSharePercent: number | null;
   itemId: string | null;
   itemName: string | null;
+  itemVariants: Array<{ variantSku: string; label: string }>;
   itemCategoryId: string | null;
   itemCategoryCode: string | null;
   itemCategoryName: string | null;
@@ -280,6 +318,7 @@ interface EnrichedPlanCategory {
     name: string;
     targetQty: number;
     targetMonth: number | null;
+    variantSku: string | null;
     supplierId: string | null;
     fabricNotes: string | null;
     colorNotes: string | null;
@@ -288,6 +327,7 @@ interface EnrichedPlanCategory {
     supplierName: string | null;
     workOrderDocNumber: string | null;
     workOrderStatus: string | null;
+    planCmtAllocationId: string | null;
   }>;
   colorAllocations: NonNullable<RawCategory["colorAllocations"]>;
   cmtAllocations: NonNullable<RawCategory["cmtAllocations"]>;
@@ -305,6 +345,7 @@ function enrichCategoryNode(
   byId: Map<string, RawCategory & { children: RawCategory[] }>,
   lookup: ActualsLookup,
   itemNames: Map<string, string>,
+  itemVariants: Map<string, Array<{ variantSku: string; label: string }>>,
   supplierNames: Map<string, string>,
   workOrders: Map<string, { docNumber: string; status: string }>
 ): EnrichedPlanCategory {
@@ -339,6 +380,7 @@ function enrichCategoryNode(
       byId,
       lookup,
       itemNames,
+      itemVariants,
       supplierNames,
       workOrders
     )
@@ -355,6 +397,7 @@ function enrichCategoryNode(
       node.parentSharePercent != null ? toNumber(node.parentSharePercent) : null,
     itemId: node.itemId,
     itemName: node.itemId ? itemNames.get(node.itemId) ?? null : null,
+    itemVariants: node.itemId ? itemVariants.get(node.itemId) ?? [] : [],
     itemCategoryId: node.itemCategoryId,
     itemCategoryCode: node.itemCategory?.code ?? null,
     itemCategoryName: node.itemCategory?.name ?? null,
@@ -383,6 +426,7 @@ function enrichCategoryNode(
             supplierName: stage.supplierId ? supplierNames.get(stage.supplierId) ?? null : null,
             workOrderDocNumber: wo?.docNumber ?? null,
             workOrderStatus: wo?.status ?? null,
+            planCmtAllocationId: stage.planCmtAllocationId ?? null,
           };
         })
       : [],
@@ -431,15 +475,17 @@ export async function getPlanYear(planYearId: string) {
               name: true,
               targetQty: true,
               targetMonth: true,
+              variantSku: true,
               supplierId: true,
               fabricNotes: true,
               colorNotes: true,
               workOrderId: true,
+              planCmtAllocationId: true,
               sortOrder: true,
             },
           },
-          colorAllocations: true,
-          cmtAllocations: true,
+          colorAllocations: { orderBy: [{ month: "asc" }, { variantSku: "asc" }] },
+          cmtAllocations: { orderBy: [{ month: "asc" }, { variantSku: "asc" }] },
           accessoryPlans: true,
           itemCategory: { select: { id: true, code: true, name: true } },
         },
@@ -458,14 +504,26 @@ export async function getPlanYear(planYearId: string) {
     itemIds.length > 0
       ? await prisma.item.findMany({
           where: { id: { in: itemIds } },
-          select: { id: true, nameId: true },
+          select: { id: true, nameId: true, variants: true },
         })
       : [];
   const itemNames = new Map(items.map((i) => [i.id, i.nameId]));
-
-  const stageWoIds = flatCategories.flatMap((c) =>
-    c.stages.map((s) => s.workOrderId).filter((id): id is string => !!id)
+  const itemVariants = new Map(
+    items.map((i) => [
+      i.id,
+      variantSelectOptions(parseItemVariants(i.variants)).map((option) => ({
+        variantSku: option.sku,
+        label: option.label,
+      })),
+    ])
   );
+
+  const stageWoIds = flatCategories.flatMap((c) => [
+    ...c.stages.map((s) => s.workOrderId).filter((id): id is string => !!id),
+    ...(c.cmtAllocations ?? [])
+      .map((cmt) => cmt.workOrderId)
+      .filter((id): id is string => !!id),
+  ]);
   const workOrdersList =
     stageWoIds.length > 0
       ? await prisma.workOrder.findMany({
@@ -494,7 +552,7 @@ export async function getPlanYear(planYearId: string) {
   const supplierNames = new Map(suppliers.map((s) => [s.id, s.name]));
 
   const categories = roots.map((root) =>
-    enrichCategoryNode(root, byId, lookup, itemNames, supplierNames, workOrders)
+    enrichCategoryNode(root, byId, lookup, itemNames, itemVariants, supplierNames, workOrders)
   );
 
   const totalPlan = categories.reduce((sum, c) => sum + c.effectiveTarget, 0);
@@ -507,6 +565,7 @@ export async function getPlanYear(planYearId: string) {
     year: planYear.year,
     notes: planYear.notes,
     isLocked: planYear.isLocked,
+    status: planYear.status,
     createdAt: planYear.createdAt,
     updatedAt: planYear.updatedAt,
     createdBy: {
@@ -1141,6 +1200,56 @@ export async function getPlanDashboard(planYearId: string) {
     return { month, plan: planQty, actual: actualQtySum };
   });
 
+  const itemIds = collectItemIds(plan.categories);
+  const lookup = await loadActualsLookup(plan.year, itemIds);
+  const variantRows: Array<{
+    categoryId: string;
+    categoryCode: string;
+    categoryName: string;
+    month: number;
+    variantSku: string;
+    colorLabel: string | null;
+    planQty: number;
+    actualQty: number;
+    completionPercent: number;
+    completionBand: "red" | "yellow" | "green";
+  }> = [];
+
+  const visitVariantRows = (nodes: (typeof plan.categories)[number]["children"]) => {
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        visitVariantRows(node.children);
+        continue;
+      }
+      if (!node.itemId) continue;
+      for (const color of node.colorAllocations) {
+        const actualQty = getVariantActualFromLookup(
+          lookup,
+          node.itemId,
+          color.variantSku,
+          color.month
+        );
+        const completionPercent = getCompletionPercent(actualQty, color.allocatedQty);
+        variantRows.push({
+          categoryId: node.id,
+          categoryCode: node.code,
+          categoryName: node.name,
+          month: color.month,
+          variantSku: color.variantSku,
+          colorLabel: color.colorLabel,
+          planQty: color.allocatedQty,
+          actualQty,
+          completionPercent,
+          completionBand: getCompletionBand(completionPercent),
+        });
+      }
+    }
+  };
+  for (const root of plan.categories) {
+    if (root.children.length > 0) visitVariantRows(root.children);
+    else visitVariantRows([root]);
+  }
+
   return {
     year: plan.year,
     kpi: {
@@ -1152,6 +1261,7 @@ export async function getPlanDashboard(planYearId: string) {
       completionBand: plan.totals.completionBand,
     },
     rows,
+    variantRows,
     monthlyTimeline,
     parentChart: plan.categories.map((c) => ({
       code: c.code,
@@ -1162,23 +1272,41 @@ export async function getPlanDashboard(planYearId: string) {
   };
 }
 
-export async function upsertColorAllocations(
+export async function getVariantOptionsForCategory(planCategoryId: string) {
+  await requirePlanningView();
+  const category = await prisma.planCategory.findUnique({
+    where: { id: planCategoryId },
+    select: { item: { select: { variants: true } } },
+  });
+  if (!category?.item) return [];
+  return variantSelectOptions(parseItemVariants(category.item.variants));
+}
+
+export async function upsertMonthlyColorAllocations(
   planCategoryId: string,
+  month: number,
   allocations: Array<{
-    colorName: string;
-    colorCode?: string;
+    variantSku: string;
+    colorLabel?: string;
     allocatedQty: number;
     notes?: string;
   }>
 ) {
   const session = await requirePlanningManage();
-  const parsed = upsertColorAllocationsSchema.parse({ planCategoryId, allocations });
+  const parsed = upsertMonthlyColorAllocationsSchema.parse({
+    planCategoryId,
+    month,
+    allocations,
+  });
   const category = await prisma.planCategory.findUnique({
     where: { id: planCategoryId },
-    include: { parent: true, monthlyTargets: true },
+    include: { parent: true, monthlyTargets: true, planYear: { select: { year: true } } },
   });
   if (!category) throw new Error("Category not found");
-  await requirePlanYearUnlocked(category.planYearId);
+  await requirePlanYearEditable(category.planYearId);
+  if (!category.itemId) {
+    throw new Error("Category must be linked to a finished good before color allocation");
+  }
 
   const planningNode: PlanningCategoryNode = {
     id: category.id,
@@ -1189,16 +1317,24 @@ export async function upsertColorAllocations(
     parent: category.parent ? { targetQty: category.parent.targetQty } : null,
   };
   const effectiveTarget = getEffectiveTarget(planningNode);
-  const sumAllocated = parsed.allocations.reduce((s, a) => s + a.allocatedQty, 0);
+  const monthlyTarget = getMonthlyTarget(effectiveTarget, parsed.month, category.monthlyTargets);
+
+  const validation = validateMonthlyColorAllocations(monthlyTarget, parsed.allocations);
+  if (!validation.valid) {
+    throw new Error(validation.message ?? "Color allocation total does not match monthly target");
+  }
 
   await prisma.$transaction([
-    prisma.planColorAllocation.deleteMany({ where: { planCategoryId } }),
+    prisma.planColorAllocation.deleteMany({
+      where: { planCategoryId, month: parsed.month },
+    }),
     ...parsed.allocations.map((row) =>
       prisma.planColorAllocation.create({
         data: {
           planCategoryId,
-          colorName: row.colorName,
-          colorCode: row.colorCode ?? null,
+          month: parsed.month,
+          variantSku: row.variantSku,
+          colorLabel: row.colorLabel ?? null,
           allocatedQty: row.allocatedQty,
           notes: row.notes ?? null,
         },
@@ -1211,51 +1347,82 @@ export async function upsertColorAllocations(
     action: "UPDATE",
     entityType: "PlanColorAllocation",
     entityId: planCategoryId,
-    metadata: { count: parsed.allocations.length },
+    metadata: { month: parsed.month, count: parsed.allocations.length },
   });
   revalidatePath(PLANNING_PATH);
-
-  const warning =
-    sumAllocated !== effectiveTarget
-      ? `Total alokasi (${sumAllocated}) berbeda dari target (${effectiveTarget})`
-      : undefined;
-  return { success: true as const, warning };
+  return { success: true as const };
 }
 
-export async function upsertCmtAllocations(
+export async function upsertColorAllocations(
   planCategoryId: string,
+  allocations: Array<{
+    variantSku: string;
+    colorLabel?: string;
+    allocatedQty: number;
+    notes?: string;
+  }>,
+  options?: { month?: number }
+) {
+  return upsertMonthlyColorAllocations(planCategoryId, options?.month ?? 1, allocations);
+}
+
+export async function upsertMonthlyCmtAllocations(
+  planCategoryId: string,
+  month: number,
+  variantSku: string,
   allocations: Array<{ supplierId: string; allocatedQty: number; notes?: string }>
 ) {
   const session = await requirePlanningManage();
-  const parsed = upsertCmtAllocationsSchema.parse({ planCategoryId, allocations });
+  const parsed = upsertMonthlyCmtAllocationsSchema.parse({
+    planCategoryId,
+    month,
+    variantSku,
+    allocations,
+  });
   const category = await prisma.planCategory.findUnique({
     where: { id: planCategoryId },
     include: { parent: true },
   });
   if (!category) throw new Error("Category not found");
-  await requirePlanYearUnlocked(category.planYearId);
+  await requirePlanYearEditable(category.planYearId);
 
   for (const row of parsed.allocations) {
     await validateTailorSupplier(row.supplierId);
   }
 
-  const planningNode: PlanningCategoryNode = {
-    id: category.id,
-    parentId: category.parentId,
-    targetQty: category.targetQty,
-    parentSharePercent: category.parentSharePercent,
-    itemId: category.itemId,
-    parent: category.parent ? { targetQty: category.parent.targetQty } : null,
-  };
-  const effectiveTarget = getEffectiveTarget(planningNode);
-  const sumAllocated = parsed.allocations.reduce((s, a) => s + a.allocatedQty, 0);
+  const colorRow = await prisma.planColorAllocation.findUnique({
+    where: {
+      planCategoryId_month_variantSku: {
+        planCategoryId,
+        month: parsed.month,
+        variantSku: parsed.variantSku,
+      },
+    },
+    select: { allocatedQty: true },
+  });
+  if (!colorRow) {
+    throw new Error("Color allocation not found for this month and variant");
+  }
+
+  const validation = validateCmtAllocations(colorRow.allocatedQty, parsed.allocations);
+  if (!validation.valid) {
+    throw new Error(validation.message ?? "CMT allocation total does not match color quantity");
+  }
 
   await prisma.$transaction([
-    prisma.planCmtAllocation.deleteMany({ where: { planCategoryId } }),
+    prisma.planCmtAllocation.deleteMany({
+      where: {
+        planCategoryId,
+        month: parsed.month,
+        variantSku: parsed.variantSku,
+      },
+    }),
     ...parsed.allocations.map((row) =>
       prisma.planCmtAllocation.create({
         data: {
           planCategoryId,
+          month: parsed.month,
+          variantSku: parsed.variantSku,
           supplierId: row.supplierId,
           allocatedQty: row.allocatedQty,
           notes: row.notes ?? null,
@@ -1269,15 +1436,27 @@ export async function upsertCmtAllocations(
     action: "UPDATE",
     entityType: "PlanCmtAllocation",
     entityId: planCategoryId,
-    metadata: { count: parsed.allocations.length },
+    metadata: {
+      month: parsed.month,
+      variantSku: parsed.variantSku,
+      count: parsed.allocations.length,
+    },
   });
   revalidatePath(PLANNING_PATH);
+  return { success: true as const };
+}
 
-  const warning =
-    sumAllocated !== effectiveTarget
-      ? `Total alokasi (${sumAllocated}) berbeda dari target (${effectiveTarget})`
-      : undefined;
-  return { success: true as const, warning };
+export async function upsertCmtAllocations(
+  planCategoryId: string,
+  allocations: Array<{ supplierId: string; allocatedQty: number; notes?: string }>,
+  options?: { month?: number; variantSku?: string }
+) {
+  return upsertMonthlyCmtAllocations(
+    planCategoryId,
+    options?.month ?? 1,
+    options?.variantSku ?? "__LEGACY__",
+    allocations
+  );
 }
 
 export async function upsertAccessoryPlans(
@@ -1392,7 +1571,7 @@ export async function importPlanFromExcel(planYearId: string, base64: string) {
   const session = await requirePlanningManage();
   await requirePlanYearUnlocked(planYearId);
   const buffer = Buffer.from(base64, "base64");
-  const { rows, errors: parseErrors } = parsePlanExcelBuffer(buffer);
+  const { rows, monthlyColors, monthlyCmt, errors: parseErrors } = parsePlanExcelBuffer(buffer);
 
   let created = 0;
   let updated = 0;
@@ -1497,6 +1676,106 @@ export async function importPlanFromExcel(planYearId: string, base64: string) {
     }
   }
 
+  const suppliers = await prisma.supplier.findMany({
+    where: { isActive: true },
+    select: { id: true, code: true },
+  });
+  const supplierCodeToId = new Map(suppliers.map((s) => [s.code, s.id]));
+
+  const colorImportGroups = new Map<string, Map<number, Map<string, number>>>();
+  for (const row of monthlyColors) {
+    const categoryId = codeToId.get(row.code);
+    if (!categoryId) {
+      errors.push({
+        row: row.rowNumber,
+        message: `Category code ${row.code} not found for monthly color row`,
+      });
+      continue;
+    }
+    if (!colorImportGroups.has(categoryId)) {
+      colorImportGroups.set(categoryId, new Map());
+    }
+    const monthMap = colorImportGroups.get(categoryId)!;
+    if (!monthMap.has(row.month)) monthMap.set(row.month, new Map());
+    const variantMap = monthMap.get(row.month)!;
+    variantMap.set(row.variantSku, (variantMap.get(row.variantSku) ?? 0) + row.qty);
+  }
+
+  for (const [categoryId, monthMap] of colorImportGroups.entries()) {
+    for (const [month, variantMap] of monthMap.entries()) {
+      try {
+        await upsertMonthlyColorAllocations(
+          categoryId,
+          month,
+          [...variantMap.entries()].map(([variantSku, allocatedQty]) => ({
+            variantSku,
+            allocatedQty,
+          }))
+        );
+      } catch (err) {
+        errors.push({
+          row: 0,
+          message: err instanceof Error ? err.message : "Monthly color import failed",
+        });
+      }
+    }
+  }
+
+  const cmtImportGroups = new Map<
+    string,
+    Map<number, Map<string, Map<string, number>>>
+  >();
+  for (const row of monthlyCmt) {
+    const categoryId = codeToId.get(row.code);
+    if (!categoryId) {
+      errors.push({
+        row: row.rowNumber,
+        message: `Category code ${row.code} not found for monthly CMT row`,
+      });
+      continue;
+    }
+    const supplierId = supplierCodeToId.get(row.supplierCode);
+    if (!supplierId) {
+      errors.push({
+        row: row.rowNumber,
+        message: `Supplier code ${row.supplierCode} not found`,
+      });
+      continue;
+    }
+    if (!cmtImportGroups.has(categoryId)) {
+      cmtImportGroups.set(categoryId, new Map());
+    }
+    const monthMap = cmtImportGroups.get(categoryId)!;
+    if (!monthMap.has(row.month)) monthMap.set(row.month, new Map());
+    const variantMap = monthMap.get(row.month)!;
+    if (!variantMap.has(row.variantSku)) variantMap.set(row.variantSku, new Map());
+    const supplierMap = variantMap.get(row.variantSku)!;
+    supplierMap.set(supplierId, (supplierMap.get(supplierId) ?? 0) + row.qty);
+  }
+
+  for (const [categoryId, monthMap] of cmtImportGroups.entries()) {
+    for (const [month, variantMap] of monthMap.entries()) {
+      for (const [variantSku, supplierMap] of variantMap.entries()) {
+        try {
+          await upsertMonthlyCmtAllocations(
+            categoryId,
+            month,
+            variantSku,
+            [...supplierMap.entries()].map(([supplierId, allocatedQty]) => ({
+              supplierId,
+              allocatedQty,
+            }))
+          );
+        } catch (err) {
+          errors.push({
+            row: 0,
+            message: err instanceof Error ? err.message : "Monthly CMT import failed",
+          });
+        }
+      }
+    }
+  }
+
   await logAudit({
     userId: session.user.id,
     action: "IMPORT",
@@ -1506,6 +1785,274 @@ export async function importPlanFromExcel(planYearId: string, base64: string) {
   });
   revalidatePath(PLANNING_PATH);
   return { success: errors.length === 0, created, updated, errors };
+}
+
+async function validatePlanYearForActivation(planYearId: string) {
+  const planYear = await prisma.planYear.findUnique({
+    where: { id: planYearId },
+    include: {
+      categories: {
+        include: {
+          parent: true,
+          monthlyTargets: true,
+          colorAllocations: true,
+          cmtAllocations: true,
+        },
+      },
+    },
+  });
+  if (!planYear) throw new Error("Plan year not found");
+
+  const leaves = planYear.categories.filter((c) => {
+    const hasChildren = planYear.categories.some((child) => child.parentId === c.id);
+    return !hasChildren;
+  });
+
+  for (const leaf of leaves) {
+    if (!leaf.itemId) continue;
+
+    const planningNode: PlanningCategoryNode = {
+      id: leaf.id,
+      parentId: leaf.parentId,
+      targetQty: leaf.targetQty,
+      parentSharePercent: leaf.parentSharePercent,
+      itemId: leaf.itemId,
+      parent: leaf.parent ? { targetQty: leaf.parent.targetQty } : null,
+    };
+    const effectiveTarget = getEffectiveTarget(planningNode);
+
+    for (let month = 1; month <= 12; month += 1) {
+      const monthlyTarget = getMonthlyTarget(effectiveTarget, month, leaf.monthlyTargets);
+      if (monthlyTarget <= 0) continue;
+
+      const colorRows = leaf.colorAllocations.filter((row) => row.month === month);
+      const colorValidation = validateMonthlyColorAllocations(monthlyTarget, colorRows);
+      if (!colorValidation.valid) {
+        throw new Error(
+          `${leaf.code} month ${month}: ${colorValidation.message ?? "color allocation mismatch"}`
+        );
+      }
+
+      for (const color of colorRows) {
+        if (color.allocatedQty <= 0) continue;
+        const cmtRows = leaf.cmtAllocations.filter(
+          (row) => row.month === month && row.variantSku === color.variantSku
+        );
+        const cmtValidation = validateCmtAllocations(color.allocatedQty, cmtRows);
+        if (!cmtValidation.valid) {
+          throw new Error(
+            `${leaf.code} ${color.variantSku} month ${month}: ${cmtValidation.message ?? "CMT allocation mismatch"}`
+          );
+        }
+      }
+    }
+  }
+}
+
+export async function activatePlanYear(planYearId: string) {
+  const session = await requirePlanningManage();
+  await requirePlanYearEditable(planYearId);
+  await validatePlanYearForActivation(planYearId);
+
+  const updated = await prisma.planYear.update({
+    where: { id: planYearId },
+    data: { status: "ACTIVE", isLocked: true },
+  });
+
+  await logAudit({
+    userId: session.user.id,
+    action: "UPDATE",
+    entityType: "PlanYear",
+    entityId: planYearId,
+    metadata: { activated: true },
+  });
+  revalidatePath(PLANNING_PATH);
+  return updated;
+}
+
+export async function reopenPlanYear(planYearId: string) {
+  const session = await requirePlanningManage();
+  const updated = await prisma.planYear.update({
+    where: { id: planYearId },
+    data: { status: "DRAFT", isLocked: false },
+  });
+  await logAudit({
+    userId: session.user.id,
+    action: "UPDATE",
+    entityType: "PlanYear",
+    entityId: planYearId,
+    metadata: { reopened: true },
+  });
+  revalidatePath(PLANNING_PATH);
+  return updated;
+}
+
+export async function generateWorkOrderFromCmtAllocation(cmtAllocationId: string) {
+  const session = await requirePlanningManage();
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_CREATE);
+
+  const cmt = await prisma.planCmtAllocation.findUnique({
+    where: { id: cmtAllocationId },
+    include: {
+      supplier: { select: { name: true } },
+      planCategory: {
+        select: {
+          id: true,
+          code: true,
+          itemId: true,
+          planYear: { select: { id: true, year: true, status: true, isLocked: true } },
+        },
+      },
+      planStage: { select: { id: true } },
+    },
+  });
+  if (!cmt) throw new Error("CMT allocation not found");
+  await requirePlanYearActive(cmt.planCategory.planYear.id);
+
+  if (cmt.workOrderId) {
+    const existingWo = await prisma.workOrder.findUnique({
+      where: { id: cmt.workOrderId },
+      select: { docNumber: true, status: true },
+    });
+    if (existingWo && existingWo.status !== "CANCELLED") {
+      return {
+        skipped: true as const,
+        workOrderId: cmt.workOrderId,
+        docNumber: existingWo.docNumber,
+      };
+    }
+  }
+
+  const woPayload = buildWoPayloadFromCmtRow(
+    { itemId: cmt.planCategory.itemId, code: cmt.planCategory.code },
+    {
+      month: cmt.month,
+      variantSku: cmt.variantSku,
+      supplierId: cmt.supplierId,
+      allocatedQty: cmt.allocatedQty,
+      supplierName: cmt.supplier.name,
+    },
+    cmt.planCategory.planYear.year
+  );
+
+  const notes = `Plan Kerja ${cmt.planCategory.planYear.year} · ${cmt.planCategory.code} · M${cmt.month} · ${cmt.variantSku}`;
+  const result = await createWorkOrder(
+    {
+      vendorId: woPayload.vendorId,
+      finishedGoodId: woPayload.finishedGoodId,
+      outputMode: "SKU",
+      plannedQty: woPayload.plannedQty,
+      targetDate: woPayload.targetDate,
+      skuBreakdown: [{ variantSku: woPayload.variantSku, ratioPercent: 100 }],
+      notes,
+    },
+    session.user.id,
+    { skipStockCheck: true }
+  );
+
+  const stageName = stageNameFromAllocation(
+    cmt.planCategory.code,
+    cmt.month,
+    cmt.variantSku,
+    cmt.supplier.name
+  );
+
+  const stage = await prisma.planStage.upsert({
+    where: { planCmtAllocationId: cmt.id },
+    create: {
+      planCategoryId: cmt.planCategory.id,
+      name: stageName,
+      targetQty: cmt.allocatedQty,
+      targetMonth: cmt.month,
+      variantSku: cmt.variantSku,
+      supplierId: cmt.supplierId,
+      workOrderId: result.id,
+      planCmtAllocationId: cmt.id,
+    },
+    update: {
+      name: stageName,
+      targetQty: cmt.allocatedQty,
+      targetMonth: cmt.month,
+      variantSku: cmt.variantSku,
+      supplierId: cmt.supplierId,
+      workOrderId: result.id,
+    },
+  });
+
+  await prisma.planCmtAllocation.update({
+    where: { id: cmt.id },
+    data: { workOrderId: result.id },
+  });
+
+  await logAudit({
+    userId: session.user.id,
+    action: "CREATE",
+    entityType: "WorkOrder",
+    entityId: result.id,
+    metadata: { source: "PlanCmtAllocation", cmtAllocationId, stageId: stage.id },
+  });
+
+  revalidatePath(PLANNING_PATH);
+  return { created: true as const, workOrderId: result.id, docNumber: result.docNumber };
+}
+
+export async function generateWorkOrdersFromPlan(
+  planYearId: string,
+  filters?: { categoryId?: string; month?: number }
+) {
+  await requirePlanningManage();
+  await requirePlanYearActive(planYearId);
+
+  const allocations = await prisma.planCmtAllocation.findMany({
+    where: {
+      planCategory: { planYearId },
+      ...(filters?.categoryId ? { planCategoryId: filters.categoryId } : {}),
+      ...(filters?.month != null ? { month: filters.month } : {}),
+      allocatedQty: { gt: 0 },
+    },
+    select: { id: true },
+    orderBy: [{ planCategoryId: "asc" }, { month: "asc" }, { variantSku: "asc" }],
+  });
+
+  const results: Array<{
+    cmtAllocationId: string;
+    status: "created" | "skipped" | "error";
+    docNumber?: string;
+    message?: string;
+  }> = [];
+
+  for (const row of allocations) {
+    try {
+      const outcome = await generateWorkOrderFromCmtAllocation(row.id);
+      if ("skipped" in outcome && outcome.skipped) {
+        results.push({
+          cmtAllocationId: row.id,
+          status: "skipped",
+          docNumber: outcome.docNumber,
+        });
+      } else if ("created" in outcome && outcome.created) {
+        results.push({
+          cmtAllocationId: row.id,
+          status: "created",
+          docNumber: outcome.docNumber,
+        });
+      }
+    } catch (err) {
+      results.push({
+        cmtAllocationId: row.id,
+        status: "error",
+        message: err instanceof Error ? err.message : "Failed to generate work order",
+      });
+    }
+  }
+
+  return {
+    total: allocations.length,
+    created: results.filter((r) => r.status === "created").length,
+    skipped: results.filter((r) => r.status === "skipped").length,
+    errors: results.filter((r) => r.status === "error").length,
+    results,
+  };
 }
 
 export async function createWorkOrderFromStage(stageId: string) {
@@ -1542,12 +2089,16 @@ export async function createWorkOrderFromStage(stageId: string) {
     {
       vendorId: stage.supplierId,
       finishedGoodId: stage.planCategory.itemId,
-      outputMode: "GENERIC",
+      outputMode: stage.variantSku ? "SKU" : "GENERIC",
       plannedQty: stage.targetQty,
       targetDate: undefined,
+      ...(stage.variantSku
+        ? { skuBreakdown: [{ variantSku: stage.variantSku, ratioPercent: 100 }] }
+        : {}),
       notes: `Created from Plan Kerja stage: ${stage.name}`,
     },
-    session.user.id
+    session.user.id,
+    { skipStockCheck: true }
   );
 
   await prisma.planStage.update({

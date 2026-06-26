@@ -17,6 +17,10 @@
       "types": "./dist/src/pantone/classify.d.ts",
       "default": "./dist/src/pantone/classify.js"
     },
+    "./pantone/book-index": {
+      "types": "./dist/src/pantone/book-index.d.ts",
+      "default": "./dist/src/pantone/book-index.js"
+    },
     "./sales-order-fulfillment-writer": {
       "types": "./dist/src/sales-order-fulfillment-writer.d.ts",
       "default": "./dist/src/sales-order-fulfillment-writer.js"

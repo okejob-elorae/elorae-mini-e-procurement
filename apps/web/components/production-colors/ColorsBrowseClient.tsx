@@ -9,6 +9,7 @@ import {
   ColorsFilterBar,
   FilterSummaryBadges,
   type ColorFiltersState,
+  type FilterFacetCounts,
 } from '@/components/production-colors/ColorsFilterBar';
 import { ColorSwatchGrid } from '@/components/production-colors/ColorSwatchGrid';
 import { PantoneColorDetailDialog } from '@/components/production-colors/PantoneColorDetailDialog';
@@ -22,6 +23,7 @@ type ColorsBrowseClientProps = {
   page: number;
   pageSize?: number;
   initialFilters: ColorFiltersState;
+  facetCounts: FilterFacetCounts;
 };
 
 function buildQueryString(
@@ -48,6 +50,7 @@ export function ColorsBrowseClient({
   page,
   pageSize = COLOR_PAGE_SIZE,
   initialFilters,
+  facetCounts,
 }: ColorsBrowseClientProps) {
   const t = useTranslations('productionColors');
   const router = useRouter();
@@ -76,14 +79,15 @@ export function ColorsBrowseClient({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(280px,320px)_1fr]">
         <Card className="h-fit lg:sticky lg:top-4">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">{t('filtersTitle')}</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-0">
             <ColorsFilterBar
               filters={filters}
+              facetCounts={facetCounts}
               onFiltersChange={(next) => {
                 setFilters(next);
                 navigate(next, 1);
@@ -122,6 +126,15 @@ export function ColorsBrowseClient({
         onSelectSimilar={(tcx) => {
           setDetailTcx(tcx);
           setDetailOpen(true);
+        }}
+        onGoToBook={(pos) => {
+          setDetailOpen(false);
+          const params = new URLSearchParams();
+          params.set('tab', 'book');
+          params.set('section', String(pos.section));
+          params.set('page', String(pos.page));
+          params.set('tcx', pos.tcx);
+          router.push(`${pathname}?${params.toString()}`);
         }}
       />
     </div>

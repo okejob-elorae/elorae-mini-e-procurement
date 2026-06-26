@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import { getItemCategories } from "@/app/actions/item-categories";
 import { getItemsByType } from "@/app/actions/items";
 import { getSuppliersForSelect } from "@/app/actions/suppliers";
 import {
+  activatePlanYear,
   createPlanCategory,
   createPlanStage,
   createPlanYear,
@@ -17,10 +18,12 @@ import {
   deletePlanCategory,
   deletePlanStage,
   downloadPlanTemplate,
+  generateWorkOrdersFromPlan,
   getPlanDashboard,
   getPlanYear,
   getPlanYears,
   importPlanFromExcel,
+  reopenPlanYear,
   resetMonthlyOverride,
   resetMonthlyToAuto,
   setMonthlyOverride,
@@ -29,8 +32,8 @@ import {
   updatePlanCategory,
   updatePlanStage,
   upsertAccessoryPlans,
-  upsertCmtAllocations,
-  upsertColorAllocations,
+  upsertMonthlyCmtAllocations,
+  upsertMonthlyColorAllocations,
 } from "@/app/actions/planning";
 import { PlanningPageShell, PlanningTabPanel } from "@/components/planning/planning-page-shell";
 import { PlanGridTab } from "@/components/planning/plan-grid-tab";
@@ -57,7 +60,9 @@ export function PlanningPageClient() {
     PERMISSIONS.WORK_ORDERS_CREATE
   );
 
-  const [years, setYears] = useState<Array<{ id: string; year: number; isLocked: boolean }>>([]);
+  const [years, setYears] = useState<
+    Array<{ id: string; year: number; isLocked: boolean; status: "DRAFT" | "ACTIVE" }>
+  >([]);
   const [selectedYearId, setSelectedYearId] = useState("");
   const [detail, setDetail] = useState<PlanYearDetail | null>(null);
   const [dashboard, setDashboard] = useState<PlanDashboardData | null>(null);
@@ -71,7 +76,12 @@ export function PlanningPageClient() {
   const refreshAll = async (preferredYearId?: string) => {
     const planYears = await getPlanYears();
     setYears(
-      planYears.map((y) => ({ id: y.id, year: y.year, isLocked: y.isLocked }))
+      planYears.map((y) => ({
+        id: y.id,
+        year: y.year,
+        isLocked: y.isLocked,
+        status: y.status as "DRAFT" | "ACTIVE",
+      }))
     );
     const nextYearId = preferredYearId || selectedYearId || planYears[0]?.id || "";
     setSelectedYearId(nextYearId);
@@ -141,7 +151,30 @@ export function PlanningPageClient() {
     router.replace(`/backoffice/production/planning?${params.toString()}`);
   };
 
-  const disabled = !canManage || (detail?.isLocked ?? false);
+  const disabled = !canManage || detail?.status !== "DRAFT" || (detail?.isLocked ?? false);
+
+  const workOrderLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!detail) return map;
+    const visit = (nodes: PlanYearDetail["categories"]) => {
+      for (const node of nodes) {
+        for (const stage of node.stages) {
+          if (stage.workOrderId && stage.workOrderDocNumber) {
+            map.set(stage.workOrderId, stage.workOrderDocNumber);
+          }
+        }
+        for (const cmt of node.cmtAllocations) {
+          if (cmt.workOrderId) {
+            const stageWo = node.stages.find((s) => s.workOrderId === cmt.workOrderId);
+            if (stageWo?.workOrderDocNumber) map.set(cmt.workOrderId, stageWo.workOrderDocNumber);
+          }
+        }
+        if (node.children.length) visit(node.children);
+      }
+    };
+    visit(detail.categories);
+    return map;
+  }, [detail]);
 
   const handleCreateWo = async (stageId: string) => {
     try {
@@ -159,6 +192,7 @@ export function PlanningPageClient() {
       selectedYearId={selectedYearId}
       onYearChange={setSelectedYearId}
       createdByName={detail?.createdBy.name}
+      planStatus={detail?.status}
       isLocked={detail?.isLocked}
       isAdmin={isAdmin}
       canManage={canManage}
@@ -184,6 +218,26 @@ export function PlanningPageClient() {
         if (!detail || !isAdmin) return;
         await setPlanYearLock(detail.id, !detail.isLocked);
         await refreshAll(detail.id);
+      }}
+      onActivatePlan={async () => {
+        if (!detail || !canManage) return;
+        try {
+          await activatePlanYear(detail.id);
+          await refreshAll(detail.id);
+          toast.success("Plan activated");
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : "Activation failed");
+        }
+      }}
+      onReopenPlan={async () => {
+        if (!detail || !canManage) return;
+        try {
+          await reopenPlanYear(detail.id);
+          await refreshAll(detail.id);
+          toast.success("Plan reopened to draft");
+        } catch (err: unknown) {
+          toast.error(err instanceof Error ? err.message : "Reopen failed");
+        }
       }}
       onDownloadTemplate={async () => {
         try {
@@ -307,9 +361,9 @@ export function PlanningPageClient() {
             detail={detail}
             disabled={disabled}
             onRefresh={() => refreshAll(detail.id)}
-            onSave={async (categoryId, allocations) => {
-              const result = await upsertColorAllocations(categoryId, allocations);
-              return { warning: result.warning };
+            onSave={async (categoryId, month, allocations) => {
+              await upsertMonthlyColorAllocations(categoryId, month, allocations);
+              toast.success("Color allocations saved");
             }}
           />
         )}
@@ -321,10 +375,19 @@ export function PlanningPageClient() {
             detail={detail}
             tailorOptions={tailorOptions}
             disabled={disabled}
+            canGenerateWo={canCreateWorkOrder}
+            workOrderLabels={workOrderLabels}
             onRefresh={() => refreshAll(detail.id)}
-            onSave={async (categoryId, allocations) => {
-              const result = await upsertCmtAllocations(categoryId, allocations);
-              return { warning: result.warning };
+            onSave={async (categoryId, month, variantSku, allocations) => {
+              await upsertMonthlyCmtAllocations(categoryId, month, variantSku, allocations);
+              toast.success("CMT allocations saved");
+            }}
+            onGenerateWorkOrders={async (filters) => {
+              const result = await generateWorkOrdersFromPlan(detail.id, filters);
+              toast.success(
+                `WO generation: ${result.created} created, ${result.skipped} skipped, ${result.errors} errors`
+              );
+              return result;
             }}
           />
         )}

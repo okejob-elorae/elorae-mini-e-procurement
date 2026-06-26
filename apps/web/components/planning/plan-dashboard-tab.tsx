@@ -28,7 +28,8 @@ const bandAccent: Record<string, string> = {
 
 export function PlanDashboardTab({ dashboard }: PlanDashboardTabProps) {
   const td = useTranslations("planning.dashboard");
-  const { kpi, rows, monthlyTimeline, parentChart } = dashboard;
+  const tm = useTranslations("planning.months");
+  const { kpi, rows, monthlyTimeline, parentChart, variantRows } = dashboard;
 
   return (
     <div className="space-y-4">
@@ -112,6 +113,50 @@ export function PlanDashboardTab({ dashboard }: PlanDashboardTabProps) {
           ))}
         </CardContent>
       </Card>
+
+      {variantRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{td("variantProgress")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {variantRows.map((row) => (
+              <div
+                key={`${row.categoryId}-${row.month}-${row.variantSku}`}
+                className="grid gap-2 rounded-md border p-2 md:grid-cols-12"
+              >
+                <div className="md:col-span-4">
+                  <div className="font-medium">
+                    {row.categoryCode} · {tm(String(row.month))} · {row.variantSku}
+                  </div>
+                  {row.colorLabel && (
+                    <div className="text-xs text-muted-foreground">{row.colorLabel}</div>
+                  )}
+                </div>
+                <div className="md:col-span-2 text-sm text-right">
+                  {formatPlanNumber(row.planQty)}
+                </div>
+                <div className="md:col-span-2 text-sm text-right">
+                  {formatPlanNumber(row.actualQty)}
+                </div>
+                <div className="md:col-span-4">
+                  <Progress
+                    value={Math.min(100, Math.max(0, row.completionPercent))}
+                    className={
+                      row.completionBand === "red"
+                        ? "[&>div]:bg-red-500"
+                        : row.completionBand === "yellow"
+                          ? "[&>div]:bg-yellow-500"
+                          : "[&>div]:bg-green-500"
+                    }
+                  />
+                  <div className="text-xs text-right">{row.completionPercent}%</div>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

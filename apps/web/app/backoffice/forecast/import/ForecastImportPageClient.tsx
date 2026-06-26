@@ -64,6 +64,9 @@ type ImportApiResponse = {
   success: boolean;
   imported?: number;
   skipped?: number;
+  mapped?: number;
+  unmapped?: number;
+  unmappedSkus?: string[];
   error?: string;
 };
 
@@ -78,6 +81,7 @@ export function ForecastImportPageClient() {
   const [imports, setImports] = useState<SalesHistoryImportSummary[]>([]);
   const [coverage, setCoverage] = useState<DataCoverage | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
+  const [lastImportSummary, setLastImportSummary] = useState<ImportApiResponse | null>(null);
   const historyPageSize = 10;
 
   const refresh = useCallback(async () => {
@@ -132,6 +136,7 @@ export function ForecastImportPageClient() {
           skipped: String(res.skipped ?? 0),
         })
       );
+      setLastImportSummary(res);
       setFile(null);
       setFileInputKey((k) => k + 1);
       await refresh();
@@ -252,6 +257,34 @@ export function ForecastImportPageClient() {
         </CardContent>
       </Card>
 
+      {lastImportSummary?.success && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('import.mappingSummary', {
+              mapped: String(lastImportSummary.mapped ?? 0),
+              unmapped: String(lastImportSummary.unmapped ?? 0),
+            })}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {(lastImportSummary.unmappedSkus?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-2">{t('import.unmappedSkusTitle')}</p>
+                <ul className="list-inside list-disc text-sm font-mono text-muted-foreground max-h-40 overflow-y-auto">
+                  {lastImportSummary.unmappedSkus!.map((sku) => (
+                    <li key={sku}>{sku}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <Button variant="secondary" size="sm" asChild>
+              <Link href="/backoffice/forecast/reconciliation">
+                {t('import.viewReconciliation')}
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>{t('import.history')}</CardTitle>
@@ -333,6 +366,7 @@ export function ForecastImportPageClient() {
             <DataCoverageBar coverage={coverage} />
             <p className="mt-4 text-sm text-muted-foreground">
               {coverage.totalArticles} articles · {coverage.totalMonthsCovered} months covered
+              · {coverage.mappingCoveragePercent}% SKU mapping
             </p>
           </CardContent>
         </Card>

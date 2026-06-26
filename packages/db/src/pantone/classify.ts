@@ -1,5 +1,5 @@
 /**
- * Heuristic filter classification for Pantone TCX colors (prototype-style chips).
+ * Heuristic filter classification for Pantone TCX colors.
  */
 
 export type FilterTags = {
@@ -50,45 +50,58 @@ function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: n
   return { h: h * 360, s: s * 100, l: l * 100 };
 }
 
-function hueFamily(h: number, s: number, l: number): string[] {
-  if (s < 8 || (l > 92 && s < 15)) return ['Neutrals'];
-  if (s < 18 && l < 25) return ['Neutrals'];
-  if (h < 15 || h >= 345) return ['Red'];
-  if (h < 45) return ['Orange'];
-  if (h < 70) return ['Yellow'];
-  if (h < 165) return ['Green'];
-  if (h < 250) return ['Blue'];
-  if (h < 290) return ['Purple'];
-  return ['Pink'];
+function hueFamily(h: number, s: number, l: number, c: number): string[] {
+  if (l >= 90 && s < 15) return ["White"];
+  if (l <= 12 && s < 20) return ["Black"];
+  if (s < 12 && l > 12 && l < 90) return ["Gray"];
+  if (h >= 35 && h < 58 && s >= 20 && l >= 38) return ["Gold"];
+  if (s < 28 && h >= 12 && h < 55 && l >= 18 && l <= 58) return ["Brown"];
+  if (h >= 345 || h < 25) return ["Red"];
+  if (h < 45) return ["Orange"];
+  if (h < 68) return ["Yellow"];
+  if (h < 145) return ["Green"];
+  if (h < 195) return ["Teal/Cyan"];
+  if (h < 250) return ["Blue"];
+  if (h < 290) return ["Purple"];
+  return ["Pink"];
 }
 
 function temperatureFromLab(a: number, h: number, s: number): string[] {
-  if (s < 10) return ['Neutral'];
-  if (a > 8 || (h >= 15 && h < 90)) return ['Warm'];
-  if (a < -8 || (h >= 165 && h < 290)) return ['Cool'];
-  return ['Neutral'];
+  if (s < 10) return ["Neutral"];
+  if (a > 8 || (h >= 15 && h < 90)) return ["Warm"];
+  if (a < -8 || (h >= 165 && h < 290)) return ["Cool"];
+  return ["Neutral"];
 }
 
-function tintFromLightness(L: number): string[] {
-  if (L >= 82) return ['Tint'];
-  if (L <= 28) return ['Shade'];
-  return ['Mid'];
+function tintFromLightness(l: number): string[] {
+  if (l >= 78) return ["Tint"];
+  if (l <= 32) return ["Shade"];
+  return ["Pure"];
 }
 
-function toneFromChroma(C: number, L: number): string[] {
-  if (C < 12) return L > 70 ? ['Soft'] : ['Muted'];
-  if (C < 28) return ['Soft'];
-  if (C < 45) return ['Balanced'];
-  return ['Bold'];
+function toneMood(c: number, l: number, h: number, s: number): string[] {
+  if (c < 8) return ["Monochrome"];
+
+  const goldMetallic = h >= 38 && h < 58 && s >= 15 && s < 55 && l >= 42 && l <= 72;
+  const silverMetallic = c < 15 && l >= 50 && l <= 85 && s < 20;
+  if (goldMetallic || silverMetallic) return ["Metallic"];
+
+  if (l >= 75 && c < 32 && s < 55) return ["Pastel"];
+  if (c < 14) return ["Neutral"];
+  if (h >= 18 && h < 85 && s < 42 && l >= 22 && l <= 62 && c < 38) return ["Earth Tone"];
+  if (c > 38 && l >= 22 && l <= 52 && s > 38) return ["Jewel Tone"];
+  if (c > 48 && s > 58 && l >= 38 && l <= 78) return ["Vivid/Neon"];
+  if (s < 35 || c < 25) return ["Muted/Dusty"];
+  return ["Neutral"];
 }
 
-function groupNameFromTcxAndLab(tcx: string, L: number, C: number): string {
-  const prefix = parseInt(tcx.split('-')[0] ?? '0', 10);
-  if (L >= 88 || prefix <= 12) return 'Whites';
-  if (L <= 18 || prefix >= 19) return 'Blacks';
-  if (C < 15) return 'Neutrals';
-  if (prefix <= 14) return 'Pastels';
-  return 'Brights';
+function groupNameFromTcxAndLab(tcx: string, l: number, c: number): string {
+  const prefix = parseInt(tcx.split("-")[0] ?? "0", 10);
+  if (l >= 88 || prefix <= 12) return "Whites";
+  if (l <= 18 || prefix >= 19) return "Blacks";
+  if (c < 15) return "Neutrals";
+  if (prefix <= 14) return "Pastels";
+  return "Brights";
 }
 
 export function classifyColor(hex: string, tcx: string): ClassifiedColor {
@@ -98,8 +111,8 @@ export function classifyColor(hex: string, tcx: string): ClassifiedColor {
   const { h, s } = rgbToHsl(r, g, b);
 
   const filterTags: FilterTags = {
-    tone: toneFromChroma(C, L),
-    hue: hueFamily(h, s, L),
+    tone: toneMood(C, L, h, s),
+    hue: hueFamily(h, s, L, C),
     temperature: temperatureFromLab(a, h, s),
     tint: tintFromLightness(L),
   };
@@ -116,15 +129,37 @@ export function classifyColor(hex: string, tcx: string): ClassifiedColor {
   };
 }
 
-/** All distinct chip values for filter UI (seed can also derive from data) */
-export const FILTER_DIMENSIONS = ['tone', 'hue', 'temperature', 'tint'] as const;
+export const FILTER_DIMENSIONS = ["tone", "hue", "temperature", "tint"] as const;
 
 export const DEFAULT_FILTER_OPTIONS: Record<
   (typeof FILTER_DIMENSIONS)[number],
   string[]
 > = {
-  tone: ['Soft', 'Muted', 'Balanced', 'Bold'],
-  hue: ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple', 'Pink', 'Neutrals'],
-  temperature: ['Warm', 'Cool', 'Neutral'],
-  tint: ['Tint', 'Mid', 'Shade'],
+  tone: [
+    "Pastel",
+    "Earth Tone",
+    "Jewel Tone",
+    "Neutral",
+    "Vivid/Neon",
+    "Muted/Dusty",
+    "Monochrome",
+    "Metallic",
+  ],
+  hue: [
+    "Red",
+    "Pink",
+    "Orange",
+    "Yellow",
+    "Green",
+    "Teal/Cyan",
+    "Blue",
+    "Purple",
+    "Brown",
+    "White",
+    "Black",
+    "Gray",
+    "Gold",
+  ],
+  temperature: ["Warm", "Cool", "Neutral"],
+  tint: ["Tint", "Shade", "Pure"],
 };

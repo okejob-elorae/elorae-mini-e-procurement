@@ -83,7 +83,7 @@ export function CategoryTreeRow({
   const [showAddChild, setShowAddChild] = useState(false);
 
   const isLeaf = category.children.length === 0;
-  const canExpandDetail = isLeaf;
+  const canExpandDetail = isLeaf && !isParent;
   const varianceClass =
     category.variance > 0
       ? "text-green-600"
@@ -139,7 +139,7 @@ export function CategoryTreeRow({
           {category.name}
         </td>
         <td className="p-2 text-right">
-          {isParent && !isLeaf && onUpdateTarget ? (
+          {isParent && onUpdateTarget ? (
             <Input
               type="number"
               className="h-8 text-right"

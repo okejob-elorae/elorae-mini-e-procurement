@@ -12,6 +12,10 @@ import {
   type ListPantoneFilters,
   COLOR_PAGE_SIZE,
 } from '@/lib/production-colors/queries';
+import {
+  updatePantoneBookPosition,
+  type BookPositionInput,
+} from '@/lib/production-colors/book-queries';
 
 async function requireSession() {
   const session = await auth();
@@ -58,4 +62,15 @@ export async function getFavoriteCount() {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.PRODUCTION_COLORS_VIEW);
   return countFavorites(session.user.id);
+}
+
+export async function updatePantoneBookPositionAction(
+  tcx: string,
+  position: BookPositionInput | null
+) {
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.PRODUCTION_COLORS_VIEW);
+  const result = await updatePantoneBookPosition(tcx, position);
+  revalidatePath('/backoffice/production/colors');
+  return result;
 }

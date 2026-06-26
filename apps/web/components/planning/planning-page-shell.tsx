@@ -18,10 +18,11 @@ import {
 type PlanningPageShellProps = {
   activeTab: string;
   onTabChange: (tab: string) => void;
-  years: Array<{ id: string; year: number; isLocked: boolean }>;
+  years: Array<{ id: string; year: number; isLocked: boolean; status?: "DRAFT" | "ACTIVE" }>;
   selectedYearId: string;
   onYearChange: (id: string) => void;
   createdByName?: string;
+  planStatus?: "DRAFT" | "ACTIVE";
   isLocked?: boolean;
   isAdmin?: boolean;
   canManage?: boolean;
@@ -29,6 +30,8 @@ type PlanningPageShellProps = {
   onNewYearChange: (value: string) => void;
   onCreateYear: () => void;
   onToggleLock: () => void;
+  onActivatePlan?: () => void;
+  onReopenPlan?: () => void;
   onImportExcel: (file: File) => void;
   onDownloadTemplate: () => void;
   children: React.ReactNode;
@@ -43,6 +46,7 @@ export function PlanningPageShell({
   selectedYearId,
   onYearChange,
   createdByName,
+  planStatus,
   isLocked,
   isAdmin,
   canManage,
@@ -50,6 +54,8 @@ export function PlanningPageShell({
   onNewYearChange,
   onCreateYear,
   onToggleLock,
+  onActivatePlan,
+  onReopenPlan,
   onImportExcel,
   onDownloadTemplate,
   children,
@@ -57,6 +63,7 @@ export function PlanningPageShell({
   const t = useTranslations("planning");
   const tt = useTranslations("planning.tabs");
   const tl = useTranslations("planning.lock");
+  const tls = useTranslations("planning.status");
   const ta = useTranslations("planning.actions");
 
   return (
@@ -141,6 +148,24 @@ export function PlanningPageShell({
                 )}
                 {isLocked ? tl("unlockPlan") : tl("lockPlan")}
               </Button>
+            )}
+
+            {canManage && selectedYearId && planStatus === "DRAFT" && onActivatePlan && (
+              <Button type="button" onClick={onActivatePlan}>
+                {tls("activate")}
+              </Button>
+            )}
+
+            {canManage && selectedYearId && planStatus === "ACTIVE" && onReopenPlan && (
+              <Button type="button" variant="outline" onClick={onReopenPlan}>
+                {tls("reopenDraft")}
+              </Button>
+            )}
+
+            {planStatus != null && (
+              <Badge variant={planStatus === "ACTIVE" ? "default" : "outline"}>
+                {planStatus === "ACTIVE" ? tls("active") : tls("draft")}
+              </Badge>
             )}
 
             {isLocked != null && (

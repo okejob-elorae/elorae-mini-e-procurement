@@ -52,15 +52,22 @@ export interface PlanActualsPrismaClient {
   };
 }
 
+export interface FgReceiptSkuBreakdownItem {
+  variantSku: string;
+  qty: number;
+}
+
 export interface FgReceiptActualRow {
   finishedGoodId: string;
   qtyAccepted: DecimalLike;
   receivedAt: Date;
+  skuBreakdown?: unknown;
 }
 
 export interface ActualsLookup {
   yearlyByItem: Map<string, number>;
   monthlyByItem: Map<string, Map<number, number>>;
+  monthlyByVariant: Map<string, Map<string, Map<number, number>>>;
 }
 
 function toNumber(value: DecimalLike): number {
@@ -68,6 +75,55 @@ function toNumber(value: DecimalLike): number {
   if (typeof value === "number") return value;
   if (typeof value === "string") return Number(value);
   return Number(value.toString());
+}
+
+function parseSkuBreakdown(raw: unknown): FgReceiptSkuBreakdownItem[] {
+  if (raw == null) return [];
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  const rows: FgReceiptSkuBreakdownItem[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "object" || entry == null) continue;
+    const variantSku = (entry as { variantSku?: unknown }).variantSku;
+    const qty = (entry as { qty?: unknown }).qty;
+    if (typeof variantSku !== "string" || variantSku.length === 0) continue;
+    const qtyNum = typeof qty === "number" ? qty : Number(qty);
+    if (!Number.isFinite(qtyNum) || qtyNum <= 0) continue;
+    rows.push({ variantSku, qty: qtyNum });
+  }
+  return rows;
+}
+
+function getWibMonthYear(receivedAt: Date, year: number): { month: number; inYear: boolean } {
+  const wib = new Date(receivedAt.getTime() + 7 * 60 * 60 * 1000);
+  const month = wib.getUTCMonth() + 1;
+  const wibYear = wib.getUTCFullYear();
+  return { month, inYear: wibYear === year };
+}
+
+function addVariantActual(
+  lookup: ActualsLookup,
+  itemId: string,
+  variantSku: string,
+  month: number,
+  qty: number
+): void {
+  if (!lookup.monthlyByVariant.has(itemId)) {
+    lookup.monthlyByVariant.set(itemId, new Map());
+  }
+  const variantMap = lookup.monthlyByVariant.get(itemId)!;
+  if (!variantMap.has(variantSku)) {
+    variantMap.set(variantSku, new Map());
+  }
+  const monthMap = variantMap.get(variantSku)!;
+  monthMap.set(month, (monthMap.get(month) ?? 0) + qty);
 }
 
 export function getEffectiveTarget(category: PlanningCategoryNode): number {
@@ -202,15 +258,37 @@ export function buildActualsLookup(
 ): ActualsLookup {
   const yearlyByItem = new Map<string, number>();
   const monthlyByItem = new Map<string, Map<number, number>>();
+  const monthlyByVariant = new Map<string, Map<string, Map<number, number>>>();
+
+  const lookup: ActualsLookup = { yearlyByItem, monthlyByItem, monthlyByVariant };
 
   for (const receipt of receipts) {
+    const { month: wibMonth, inYear } = getWibMonthYear(receipt.receivedAt, year);
+    if (!inYear) continue;
+
+    const variantRows = parseSkuBreakdown(receipt.skuBreakdown);
+    if (variantRows.length > 0) {
+      let variantTotal = 0;
+      for (const row of variantRows) {
+        variantTotal += row.qty;
+        addVariantActual(lookup, receipt.finishedGoodId, row.variantSku, wibMonth, row.qty);
+      }
+      if (variantTotal === 0) continue;
+
+      yearlyByItem.set(
+        receipt.finishedGoodId,
+        (yearlyByItem.get(receipt.finishedGoodId) ?? 0) + variantTotal
+      );
+      if (!monthlyByItem.has(receipt.finishedGoodId)) {
+        monthlyByItem.set(receipt.finishedGoodId, new Map());
+      }
+      const monthMap = monthlyByItem.get(receipt.finishedGoodId)!;
+      monthMap.set(wibMonth, (monthMap.get(wibMonth) ?? 0) + variantTotal);
+      continue;
+    }
+
     const qty = toNumber(receipt.qtyAccepted);
     if (qty === 0) continue;
-
-    const received = receipt.receivedAt;
-    const wibMonth = new Date(received.getTime() + 7 * 60 * 60 * 1000).getUTCMonth() + 1;
-    const wibYear = new Date(received.getTime() + 7 * 60 * 60 * 1000).getUTCFullYear();
-    if (wibYear !== year) continue;
 
     yearlyByItem.set(
       receipt.finishedGoodId,
@@ -224,7 +302,22 @@ export function buildActualsLookup(
     monthMap.set(wibMonth, (monthMap.get(wibMonth) ?? 0) + qty);
   }
 
-  return { yearlyByItem, monthlyByItem };
+  return lookup;
+}
+
+export function getVariantActualFromLookup(
+  lookup: ActualsLookup,
+  itemId: string | null,
+  variantSku: string,
+  month?: number
+): number {
+  if (!itemId) return 0;
+  const variantMap = lookup.monthlyByVariant.get(itemId);
+  if (!variantMap) return 0;
+  const monthMap = variantMap.get(variantSku);
+  if (!monthMap) return 0;
+  if (month != null) return monthMap.get(month) ?? 0;
+  return [...monthMap.values()].reduce((sum, qty) => sum + qty, 0);
 }
 
 function getLeafActualFromLookup(

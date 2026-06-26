@@ -187,6 +187,9 @@ function StageRow({
           ) : (
             <Badge variant="secondary">—</Badge>
           )}
+          <Badge variant={stage.planCmtAllocationId ? "default" : "secondary"}>
+            {stage.planCmtAllocationId ? t("autoStage") : t("manualStage")}
+          </Badge>
           <span className="text-sm text-muted-foreground">
             {formatPlanNumber(stage.targetQty)}
           </span>

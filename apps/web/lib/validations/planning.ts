@@ -114,26 +114,46 @@ export const updatePlanStageSchema = z.object({
   colorNotes: z.string().nullable().optional(),
 });
 
-export const colorAllocationRowSchema = z.object({
-  colorName: z.string().min(1),
-  colorCode: z.string().optional(),
+export const monthlyColorAllocationRowSchema = z.object({
+  variantSku: z.string().min(1),
+  colorLabel: z.string().optional(),
   allocatedQty: z.number().int().min(0),
   notes: z.string().optional(),
 });
 
+export const upsertMonthlyColorAllocationsSchema = z.object({
+  planCategoryId: z.string().min(1),
+  month: z.number().int().min(1).max(12),
+  allocations: z.array(monthlyColorAllocationRowSchema),
+});
+
+export const colorAllocationRowSchema = monthlyColorAllocationRowSchema;
+
 export const upsertColorAllocationsSchema = z.object({
   planCategoryId: z.string().min(1),
+  month: z.number().int().min(1).max(12).default(1),
   allocations: z.array(colorAllocationRowSchema),
 });
 
-export const cmtAllocationRowSchema = z.object({
+export const monthlyCmtAllocationRowSchema = z.object({
   supplierId: z.string().min(1),
   allocatedQty: z.number().int().min(0),
   notes: z.string().optional(),
 });
 
+export const upsertMonthlyCmtAllocationsSchema = z.object({
+  planCategoryId: z.string().min(1),
+  month: z.number().int().min(1).max(12),
+  variantSku: z.string().min(1),
+  allocations: z.array(monthlyCmtAllocationRowSchema),
+});
+
+export const cmtAllocationRowSchema = monthlyCmtAllocationRowSchema;
+
 export const upsertCmtAllocationsSchema = z.object({
   planCategoryId: z.string().min(1),
+  month: z.number().int().min(1).max(12).default(1),
+  variantSku: z.string().min(1).default("__LEGACY__"),
   allocations: z.array(cmtAllocationRowSchema),
 });
 
@@ -146,6 +166,21 @@ export const accessoryPlanRowSchema = z.object({
 export const upsertAccessoryPlansSchema = z.object({
   planCategoryId: z.string().min(1),
   plans: z.array(accessoryPlanRowSchema),
+});
+
+export const excelMonthlyColorRowSchema = z.object({
+  code: z.string().min(1),
+  month: z.number().int().min(1).max(12),
+  variantSku: z.string().min(1),
+  qty: z.number().int().min(0),
+});
+
+export const excelMonthlyCmtRowSchema = z.object({
+  code: z.string().min(1),
+  month: z.number().int().min(1).max(12),
+  variantSku: z.string().min(1),
+  supplierCode: z.string().min(1),
+  qty: z.number().int().min(0),
 });
 
 export const excelPlanRowSchema = z.object({

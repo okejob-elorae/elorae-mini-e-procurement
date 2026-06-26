@@ -22,6 +22,7 @@ import {
   getDataCoverage,
   getForecastConfig,
   getForecastResults,
+  type DataCoverage,
   type ForecastConfigDetail,
   type ForecastResultDetail,
 } from '@/app/actions/forecast';
@@ -48,6 +49,7 @@ export function ForecastPageClient() {
   const [results, setResults] = useState<ForecastResultDetail[]>([]);
   const [config, setConfig] = useState<ForecastConfigDetail | null>(null);
   const [coverageMonths, setCoverageMonths] = useState(0);
+  const [coverage, setCoverage] = useState<DataCoverage | null>(null);
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
 
@@ -61,6 +63,7 @@ export function ForecastPageClient() {
       setResults(forecastResults);
       setConfig(forecastConfig);
       setCoverageMonths(coverage.totalMonthsCovered);
+      setCoverage(coverage);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load forecast');
     }
@@ -128,6 +131,7 @@ export function ForecastPageClient() {
             results={results}
             configSummary={configSummary}
             coverageMonths={coverageMonths}
+            coverage={coverage}
             permissions={session?.user?.permissions ?? []}
             onRefresh={refresh}
             onEditConfig={() => setConfigOpen(true)}
