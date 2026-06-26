@@ -51,7 +51,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
   const totalCount = 'totalCount' in listResult ? listResult.totalCount : items.length;
 
   const primaryImageMap = await getPrimaryImagesBatch(
-    items.map((it) => ({ itemId: it.id, variantSku: null })),
+    items.map((it) => ({ itemId: (it as unknown as { id: string }).id, variantSku: null })),
   );
   const primaryImages: Record<string, string> = Object.fromEntries(primaryImageMap);
 
