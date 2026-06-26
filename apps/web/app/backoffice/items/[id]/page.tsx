@@ -2,7 +2,10 @@ import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { getItemById } from '@/lib/items/queries';
 import { ItemType } from '@/lib/constants/enums';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { getItemImages } from '@/lib/items/images/queries';
 import { ItemDetailClient } from './ItemDetailClient';
+import { ItemGalleryEditor } from '@/components/items/ItemGalleryEditor';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +16,7 @@ export default async function ItemDetailPage({
 }) {
   const session = await auth();
   if (!session) redirect('/login');
+  const perms = (session.user as { permissions?: string[] }).permissions ?? [];
 
   const { id } = await params;
   const item = await getItemById(id);
@@ -67,13 +71,29 @@ export default async function ItemDetailPage({
       })),
   };
 
+  const images = await getItemImages(item.id);
+  const canManage = hasPermission(perms, PERMISSIONS.ITEMS_MANAGE);
+  const itemVariants = (item.variants as Array<Record<string, string>> | null | undefined) ?? [];
+  const variantSkus = itemVariants
+    .map((v) => v["sku"])
+    .filter((sku): sku is string => typeof sku === "string")
+    .map((sku) => ({ sku }));
+
   return (
-    <ItemDetailClient
-      initialData={initialData}
-      itemType={item.type as ItemType}
-      nameId={item.nameId}
-      nameEn={item.nameEn}
-      isActive={Boolean(item.isActive)}
-    />
+    <>
+      <ItemDetailClient
+        initialData={initialData}
+        itemType={item.type as ItemType}
+        nameId={item.nameId}
+        nameEn={item.nameEn}
+        isActive={Boolean(item.isActive)}
+      />
+      <ItemGalleryEditor
+        itemId={item.id}
+        variants={variantSkus}
+        initial={images}
+        canManage={canManage}
+      />
+    </>
   );
 }
