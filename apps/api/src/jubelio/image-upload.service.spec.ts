@@ -24,7 +24,6 @@ describe("JubelioImageUploadService", () => {
   let service: JubelioImageUploadService;
   let prisma: { itemImage: { update: jest.Mock } };
   let http: { upload: jest.Mock };
-  let uuidSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     prisma = {
@@ -39,11 +38,6 @@ describe("JubelioImageUploadService", () => {
       status: 200,
       blob: () => Promise.resolve(new Blob(["x"])),
     });
-
-    uuidSpy = jest.spyOn(
-      { randomUUID } as unknown as { randomUUID: typeof randomUUID },
-      "randomUUID",
-    );
 
     const mod = await Test.createTestingModule({
       providers: [
