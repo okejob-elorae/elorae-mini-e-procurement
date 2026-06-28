@@ -26,7 +26,8 @@ export class JubelioHttpService {
   async request<T = unknown>(path: string, init: JubelioRequestInit = {}): Promise<T> {
     const url = this.buildUrl(path, init.query);
     const method = init.method ?? "GET";
-    const bodyStr = typeof init.body === "string" ? init.body : undefined;
+    const bodyStr = typeof init.body === "string" ? init.body
+                  : (init.body instanceof FormData ? "<multipart>" : undefined);
     const start = Date.now();
     let rateLimited = false;
 
@@ -123,6 +124,15 @@ export class JubelioHttpService {
     return this.request<T>(path, { ...init, method: "DELETE" });
   }
 
+  upload<T = unknown>(path: string, formData: FormData, init?: JubelioRequestInit): Promise<T> {
+    return this.request<T>(path, {
+      ...init,
+      method: "POST",
+      body: formData as unknown as RequestInit["body"],
+      // intentionally NO Content-Type override
+    });
+  }
+
   private buildUrl(path: string, query?: JubelioRequestInit["query"]): string {
     const base = this.config.baseUrl.replace(/\/$/, "");
     const suffix = path.startsWith("/") ? path : `/${path}`;
@@ -139,7 +149,7 @@ export class JubelioHttpService {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(init.body && typeof init.body === "string" ? { "Content-Type": "application/json" } : {}),
       ...(init.headers ?? {}),
     };
     return fetch(url, { ...init, headers });
