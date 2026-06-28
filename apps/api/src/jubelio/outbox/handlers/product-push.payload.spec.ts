@@ -159,13 +159,13 @@ describe("buildCreateProductRequest — images", () => {
       ],
     });
     expect(body.images).toEqual([
-      { image_url: "https://cdn.example.com/a.jpg", sort_order: 0 },
-      { image_url: "https://cdn.example.com/b.jpg", sort_order: 1 },
+      { url: "https://cdn.example.com/a.jpg", thumbnail: "https://cdn.example.com/a.jpg", file_name: "a", sequence_number: 0 },
+      { url: "https://cdn.example.com/b.jpg", thumbnail: "https://cdn.example.com/b.jpg", file_name: "b", sequence_number: 1 },
     ]);
     expect(body.variation_images).toEqual([]);
   });
 
-  it("variant-level images only → empty images, populated variation_images", () => {
+  it("variant-level images, no mappings → variation_images empty (item_ids unknown on create)", () => {
     const body = buildCreateProductRequest({
       item: item({ variants: [{ sku: "SKU-1-RED" }, { sku: "SKU-1-BLU" }] }),
       defaults,
@@ -177,15 +177,33 @@ describe("buildCreateProductRequest — images", () => {
       ],
     });
     expect(body.images).toEqual([]);
+    expect(body.variation_images).toEqual([]);
+  });
+
+  it("variant-level images with mappings → variation_images keyed by jubelio item_id", () => {
+    const body = buildCreateProductRequest({
+      item: item({ variants: [{ sku: "SKU-1-RED" }, { sku: "SKU-1-BLU" }] }),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [
+        { id: "m1", jubelioItemGroupId: 100, jubelioItemId: 1001, jubelioItemCode: "SKU-1-RED", erpVariantSku: "SKU-1-RED" },
+        { id: "m2", jubelioItemGroupId: 100, jubelioItemId: 1002, jubelioItemCode: "SKU-1-BLU", erpVariantSku: "SKU-1-BLU" },
+      ],
+      images: [
+        imageSlice({ id: "img_1", variantSku: "SKU-1-RED", url: "https://cdn.example.com/red.jpg", sortOrder: 0 }),
+        imageSlice({ id: "img_2", variantSku: "SKU-1-BLU", url: "https://cdn.example.com/blu.jpg", sortOrder: 0 }),
+      ],
+    });
+    expect(body.images).toEqual([]);
     expect(body.variation_images).toHaveLength(2);
-    const red = body.variation_images.find((v: any) => v.item_code === "SKU-1-RED");
+    const red = body.variation_images.find((v: any) => v.item_id === 1001);
     expect(red).toMatchObject({
-      item_code: "SKU-1-RED",
-      images: [{ image_url: "https://cdn.example.com/red.jpg", sort_order: 0 }],
+      item_id: 1001,
+      images: [{ url: "https://cdn.example.com/red.jpg", thumbnail: "https://cdn.example.com/red.jpg", file_name: "red", sequence_number: 0 }],
     });
   });
 
-  it("mixed images → both product-level and variation_images populated with correct grouping", () => {
+  it("mixed images → product-level always populated; variant skipped until mapping exists", () => {
     const body = buildCreateProductRequest({
       item: item({ variants: [{ sku: "SKU-1-RED" }] }),
       defaults,
@@ -197,9 +215,8 @@ describe("buildCreateProductRequest — images", () => {
       ],
     });
     expect(body.images).toHaveLength(1);
-    expect(body.images[0]).toMatchObject({ image_url: "https://cdn.example.com/main.jpg" });
-    expect(body.variation_images).toHaveLength(1);
-    expect((body.variation_images[0] as any).item_code).toBe("SKU-1-RED");
+    expect(body.images[0]).toMatchObject({ url: "https://cdn.example.com/main.jpg", file_name: "main", sequence_number: 0 });
+    expect(body.variation_images).toEqual([]);
   });
 
   it("sort order is preserved for product-level images", () => {
@@ -214,7 +231,7 @@ describe("buildCreateProductRequest — images", () => {
         imageSlice({ id: "img_c", url: "https://cdn.example.com/c.jpg", sortOrder: 1 }),
       ],
     });
-    const urls = (body.images as Array<{ image_url: string }>).map((i) => i.image_url);
+    const urls = (body.images as Array<{ url: string }>).map((i) => i.url);
     expect(urls).toEqual([
       "https://cdn.example.com/a.jpg",
       "https://cdn.example.com/c.jpg",

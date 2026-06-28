@@ -57,6 +57,7 @@ describe("ProductPushHandler", () => {
       jubelioProductMapping: { findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
       jubelioPushDefaults: { findFirst: jest.fn() },
       jubelioCategoryMapping: { findFirst: jest.fn() },
+      itemImage: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(async (ops: Promise<any>[]) => Promise.all(ops)),
     };
     http = { post: jest.fn(), delete: jest.fn() };

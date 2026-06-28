@@ -102,26 +102,50 @@ export type CreateProductRequestBody = {
   product_skus: ProductSkuEntry[];
 };
 
-function buildJubelioImages(images: ItemImageSlice[]): {
-  images: Array<{ image_url: string; sort_order: number }>;
-  variation_images: Array<{ item_code: string; images: Array<{ image_url: string; sort_order: number }> }>;
+function fileNameFromUrl(url: string, fallback: string): string {
+  try {
+    const path = new URL(url).pathname;
+    const base = path.split("/").pop() ?? "";
+    return base.split(".").shift() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+type JubelioImage = { url: string; thumbnail: string; file_name: string; sequence_number: number };
+
+function buildJubelioImages(images: ItemImageSlice[], mappings: MappingSlice[]): {
+  images: JubelioImage[];
+  variation_images: Array<{ item_id: number; images: JubelioImage[] }>;
 } {
+  const toJubelio = (i: ItemImageSlice): JubelioImage => ({
+    url: i.url,
+    thumbnail: i.url,
+    file_name: fileNameFromUrl(i.url, i.id),
+    sequence_number: i.sortOrder,
+  });
+
   const productLevel = images
     .filter((i) => i.variantSku === null)
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((i) => ({ image_url: i.url, sort_order: i.sortOrder }));
+    .map(toJubelio);
 
-  const byVariant = new Map<string, ItemImageSlice[]>();
+  const itemIdBySku = new Map<string, number>(
+    mappings.map((m) => [m.erpVariantSku, m.jubelioItemId]),
+  );
+  const byItemId = new Map<number, ItemImageSlice[]>();
   for (const i of images) {
     if (!i.variantSku) continue;
-    const arr = byVariant.get(i.variantSku) ?? [];
+    const jubelioItemId = itemIdBySku.get(i.variantSku);
+    if (!jubelioItemId) continue;
+    const arr = byItemId.get(jubelioItemId) ?? [];
     arr.push(i);
-    byVariant.set(i.variantSku, arr);
+    byItemId.set(jubelioItemId, arr);
   }
 
-  const variation_images = Array.from(byVariant.entries()).map(([item_code, rows]) => ({
-    item_code,
-    images: rows.sort((a, b) => a.sortOrder - b.sortOrder).map((i) => ({ image_url: i.url, sort_order: i.sortOrder })),
+  const variation_images = Array.from(byItemId.entries()).map(([item_id, rows]) => ({
+    item_id,
+    images: rows.sort((a, b) => a.sortOrder - b.sortOrder).map(toJubelio),
   }));
 
   return { images: productLevel, variation_images };
@@ -148,8 +172,8 @@ export function buildCreateProductRequest(opts: {
   const sellPrice = item.sellingPrice ?? 0;
   const mappingBySku = new Map(mappings.map((m) => [m.erpVariantSku, m]));
 
-  const imageResult = buildJubelioImages(opts.images ?? []);
-  const hasVariantImages = imageResult.variation_images.length > 0;
+  const imageResult = buildJubelioImages(opts.images ?? [], mappings);
+  const hasVariantImages = (opts.images ?? []).some((i) => i.variantSku !== null);
 
   const hasVariants = item.variants !== null && item.variants.length > 0;
   const desiredVariants: Array<{ sku: string }> =
