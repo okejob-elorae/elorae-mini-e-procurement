@@ -6,6 +6,8 @@ export type ItemImageSlice = {
   url: string;
   sortOrder: number;
   jubelioImageId: string | null;
+  jubelioImageKey: string | null;
+  jubelioImageThumbnail: string | null;
 };
 
 export type PushDefaultsSlice = {
@@ -118,17 +120,21 @@ function buildJubelioImages(images: ItemImageSlice[], mappings: MappingSlice[]):
   images: JubelioImage[];
   variation_images: Array<{ item_id: number; images: JubelioImage[] }>;
 } {
-  const toJubelio = (i: ItemImageSlice): JubelioImage => ({
-    url: i.url,
-    thumbnail: i.url,
-    file_name: fileNameFromUrl(i.url, i.id),
-    sequence_number: i.sortOrder,
-  });
+  const toJubelio = (i: ItemImageSlice): JubelioImage | null => {
+    if (!i.jubelioImageKey || !i.jubelioImageThumbnail) return null;
+    return {
+      url: i.jubelioImageKey,
+      thumbnail: i.jubelioImageThumbnail,
+      file_name: fileNameFromUrl(i.url, i.id),
+      sequence_number: i.sortOrder,
+    };
+  };
 
   const productLevel = images
     .filter((i) => i.variantSku === null)
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map(toJubelio);
+    .map(toJubelio)
+    .filter((x): x is JubelioImage => x !== null);
 
   const itemIdBySku = new Map<string, number>(
     mappings.map((m) => [m.erpVariantSku, m.jubelioItemId]),
@@ -145,7 +151,10 @@ function buildJubelioImages(images: ItemImageSlice[], mappings: MappingSlice[]):
 
   const variation_images = Array.from(byItemId.entries()).map(([item_id, rows]) => ({
     item_id,
-    images: rows.sort((a, b) => a.sortOrder - b.sortOrder).map(toJubelio),
+    images: rows
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(toJubelio)
+      .filter((x): x is JubelioImage => x !== null),
   }));
 
   return { images: productLevel, variation_images };

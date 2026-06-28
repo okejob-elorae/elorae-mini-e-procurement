@@ -123,13 +123,18 @@ function imageSlice(overrides: Partial<{
   url: string;
   sortOrder: number;
   jubelioImageId: string | null;
+  jubelioImageKey: string | null;
+  jubelioImageThumbnail: string | null;
 }> = {}) {
+  const id = overrides.id ?? "img_1";
   return {
-    id: "img_1",
+    id,
     variantSku: null,
     url: "https://cdn.example.com/img1.jpg",
     sortOrder: 0,
     jubelioImageId: null,
+    jubelioImageKey: `https://j.blob/${id}.jpeg`,
+    jubelioImageThumbnail: `https://j.blob/${id}_thumb.jpeg`,
     ...overrides,
   };
 }
@@ -147,6 +152,21 @@ describe("buildCreateProductRequest — images", () => {
     expect(body.variation_images).toEqual([]);
   });
 
+  it("image with jubelioImageKey null is skipped (defensive filter)", () => {
+    const body = buildCreateProductRequest({
+      item: item(),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [],
+      images: [
+        imageSlice({ id: "img_1", sortOrder: 0 }),
+        imageSlice({ id: "img_2", sortOrder: 1, jubelioImageKey: null, jubelioImageThumbnail: null }),
+      ],
+    });
+    expect(body.images).toHaveLength(1);
+    expect((body.images[0] as any).url).toBe("https://j.blob/img_1.jpeg");
+  });
+
   it("product-level images only → populated images, empty variation_images", () => {
     const body = buildCreateProductRequest({
       item: item(),
@@ -159,8 +179,8 @@ describe("buildCreateProductRequest — images", () => {
       ],
     });
     expect(body.images).toEqual([
-      { url: "https://cdn.example.com/a.jpg", thumbnail: "https://cdn.example.com/a.jpg", file_name: "a", sequence_number: 0 },
-      { url: "https://cdn.example.com/b.jpg", thumbnail: "https://cdn.example.com/b.jpg", file_name: "b", sequence_number: 1 },
+      { url: "https://j.blob/img_1.jpeg", thumbnail: "https://j.blob/img_1_thumb.jpeg", file_name: "a", sequence_number: 0 },
+      { url: "https://j.blob/img_2.jpeg", thumbnail: "https://j.blob/img_2_thumb.jpeg", file_name: "b", sequence_number: 1 },
     ]);
     expect(body.variation_images).toEqual([]);
   });
@@ -199,7 +219,7 @@ describe("buildCreateProductRequest — images", () => {
     const red = body.variation_images.find((v: any) => v.item_id === 1001);
     expect(red).toMatchObject({
       item_id: 1001,
-      images: [{ url: "https://cdn.example.com/red.jpg", thumbnail: "https://cdn.example.com/red.jpg", file_name: "red", sequence_number: 0 }],
+      images: [{ url: "https://j.blob/img_1.jpeg", thumbnail: "https://j.blob/img_1_thumb.jpeg", file_name: "red", sequence_number: 0 }],
     });
   });
 
@@ -215,7 +235,7 @@ describe("buildCreateProductRequest — images", () => {
       ],
     });
     expect(body.images).toHaveLength(1);
-    expect(body.images[0]).toMatchObject({ url: "https://cdn.example.com/main.jpg", file_name: "main", sequence_number: 0 });
+    expect(body.images[0]).toMatchObject({ url: "https://j.blob/img_1.jpeg", file_name: "main", sequence_number: 0 });
     expect(body.variation_images).toEqual([]);
   });
 
@@ -233,9 +253,9 @@ describe("buildCreateProductRequest — images", () => {
     });
     const urls = (body.images as Array<{ url: string }>).map((i) => i.url);
     expect(urls).toEqual([
-      "https://cdn.example.com/a.jpg",
-      "https://cdn.example.com/c.jpg",
-      "https://cdn.example.com/b.jpg",
+      "https://j.blob/img_a.jpeg",
+      "https://j.blob/img_c.jpeg",
+      "https://j.blob/img_b.jpeg",
     ]);
   });
 
