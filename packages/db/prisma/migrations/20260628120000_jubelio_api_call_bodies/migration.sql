@@ -1,0 +1,3 @@
+ALTER TABLE `JubelioApiCall`
+  ADD COLUMN `requestBody` MEDIUMTEXT NULL,
+  ADD COLUMN `responseBody` MEDIUMTEXT NULL;

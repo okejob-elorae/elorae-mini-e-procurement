@@ -11,7 +11,16 @@ export type ApiCallLogInput = {
   ok: boolean;
   rateLimited?: boolean;
   errorMessage?: string;
+  requestBody?: string;
+  responseBody?: string;
 };
+
+const BODY_CAP = 32 * 1024;
+
+function cap(s: string | undefined): string | null {
+  if (!s) return null;
+  return s.length > BODY_CAP ? `${s.slice(0, BODY_CAP)}…[truncated ${s.length - BODY_CAP}b]` : s;
+}
 
 @Injectable()
 export class JubelioApiCallLogger {
@@ -35,6 +44,8 @@ export class JubelioApiCallLogger {
           ok: input.ok,
           rateLimited: input.rateLimited ?? false,
           errorMessage: input.errorMessage ?? null,
+          requestBody: cap(input.requestBody),
+          responseBody: cap(input.responseBody),
         },
       })
       .catch((err: unknown) => {

@@ -56,12 +56,30 @@ export class JubelioHttpService {
 
       const status = response.status;
       const result = await this.parse<T>(path, response);
-      this.apiLog.record({ method, path, body: bodyStr, statusCode: status, latencyMs: Date.now() - start, ok: true, rateLimited });
+      this.apiLog.record({
+        method, path, body: bodyStr, statusCode: status,
+        latencyMs: Date.now() - start, ok: true, rateLimited,
+        requestBody: bodyStr,
+        responseBody: result === undefined ? undefined : JSON.stringify(result),
+      });
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const statusCode = err instanceof JubelioError ? err.status : undefined;
-      this.apiLog.record({ method, path, body: bodyStr, statusCode, latencyMs: Date.now() - start, ok: false, rateLimited, errorMessage: message });
+      const responseBody = err instanceof JubelioError
+        ? (typeof err.cause === "string" ? err.cause : JSON.stringify(err.cause))
+        : undefined;
+      this.apiLog.record({
+        method, path, body: bodyStr, statusCode,
+        latencyMs: Date.now() - start, ok: false, rateLimited, errorMessage: message,
+        requestBody: bodyStr,
+        responseBody,
+      });
+      if (err instanceof JubelioError) {
+        this.logger.error(
+          `Jubelio ${method} ${path} ${err.status}\n  REQ: ${bodyStr ?? "<no body>"}\n  RES: ${responseBody ?? "<no body>"}`,
+        );
+      }
       throw err;
     }
   }

@@ -1254,6 +1254,8 @@ model JubelioApiCall {
   ok           Boolean
   rateLimited  Boolean  @default(false)
   errorMessage String?  @db.Text
+  requestBody  String?  @db.MediumText
+  responseBody String?  @db.MediumText
   createdAt    DateTime @default(now())
 
   @@index([createdAt])
