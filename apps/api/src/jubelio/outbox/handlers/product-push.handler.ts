@@ -62,14 +62,16 @@ export class ProductPushHandler implements OutboxHandler {
       select: { id: true, variantSku: true, url: true, sortOrder: true, jubelioImageId: true, jubelioImageKey: true, jubelioImageThumbnail: true },
     });
 
+    const needsUpload = images.some((i) => i.jubelioImageKey === null);
     await this.imageUpload.ensureUploaded(
       images.map((i) => ({ id: i.id, url: i.url, jubelioImageKey: i.jubelioImageKey })),
     );
-
-    const refreshedImages = await this.prisma.itemImage.findMany({
-      where: { itemId: item.id },
-      select: { id: true, variantSku: true, url: true, sortOrder: true, jubelioImageId: true, jubelioImageKey: true, jubelioImageThumbnail: true },
-    });
+    const refreshedImages = needsUpload
+      ? await this.prisma.itemImage.findMany({
+          where: { itemId: item.id },
+          select: { id: true, variantSku: true, url: true, sortOrder: true, jubelioImageId: true, jubelioImageKey: true, jubelioImageThumbnail: true },
+        })
+      : images;
 
     const body = buildCreateProductRequest({
       item: {

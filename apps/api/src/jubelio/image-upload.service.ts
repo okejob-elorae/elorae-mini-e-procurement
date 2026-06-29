@@ -25,37 +25,49 @@ export class JubelioImageUploadService {
     if (pending.length === 0) return;
 
     for (const img of pending) {
-      const blob = await this.fetchR2(img.url);
-      const name = fileNameFromUrl(img.url, img.id);
-      const uid = randomUUID();
+      try {
+        const blob = await this.fetchR2(img.url);
+        const name = multipartFileName(img.url, img.id);
+        const uid = randomUUID();
 
-      const fd = new FormData();
-      fd.append("file", blob, name);
-      fd.append("uid", uid);
-      fd.append("name", name);
-      fd.append("TotalFileSize", String(blob.size));
+        const fd = new FormData();
+        fd.append("file", blob, name);
+        fd.append("uid", uid);
+        fd.append("name", name);
+        fd.append("TotalFileSize", String(blob.size));
 
-      const res = await this.http.upload<UploadResponse>("/inventory/upload-image/", fd);
-      await this.prisma.itemImage.update({
-        where: { id: img.id },
-        data: {
-          jubelioImageKey: res.key,
-          jubelioImageThumbnail: res.thumbnail,
-          syncedAt: new Date(),
-        },
-      });
-      this.logger.log(`Uploaded image ${img.id} → ${res.key}`);
+        const res = await this.http.upload<UploadResponse>("/inventory/upload-image/", fd);
+        await this.prisma.itemImage.update({
+          where: { id: img.id },
+          data: {
+            jubelioImageKey: res.key,
+            jubelioImageThumbnail: res.thumbnail,
+            syncedAt: new Date(),
+          },
+        });
+        this.logger.log(`Uploaded image ${img.id} → ${res.key}`);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`upload failed for image ${img.id} (${img.url}): ${message}`);
+      }
     }
   }
 
   private async fetchR2(url: string): Promise<Blob> {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!resp.ok) throw new Error(`R2 fetch failed: ${url} (${resp.status})`);
     return resp.blob();
   }
 }
 
-function fileNameFromUrl(url: string, fallback: string): string {
+/**
+ * Labels the blob for the multipart `name`/`file` fields sent to Jubelio's
+ * upload-image endpoint. Returns `${fallback}.bin` on parse failure so the
+ * upload has a safe non-empty filename.
+ * Kept separate from `fileNameFromUrl` in product-push.payload.ts, which
+ * strips the extension for Jubelio's `file_name` catalog field.
+ */
+function multipartFileName(url: string, fallback: string): string {
   try {
     const path = new URL(url).pathname;
     const base = path.split("/").pop() ?? "";

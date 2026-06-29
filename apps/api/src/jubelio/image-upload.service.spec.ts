@@ -76,7 +76,7 @@ describe("JubelioImageUploadService", () => {
     const img = makeImage();
     await service.ensureUploaded([img]);
 
-    expect(global.fetch).toHaveBeenCalledWith(img.url);
+    expect(global.fetch).toHaveBeenCalledWith(img.url, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(http.upload).toHaveBeenCalledWith(
       "/inventory/upload-image/",
       expect.any(FormData),
@@ -98,7 +98,7 @@ describe("JubelioImageUploadService", () => {
     await service.ensureUploaded([cached, pending]);
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith(pending.url);
+    expect(global.fetch).toHaveBeenCalledWith(pending.url, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(http.upload).toHaveBeenCalledTimes(1);
     expect(prisma.itemImage.update).toHaveBeenCalledTimes(1);
     expect(prisma.itemImage.update).toHaveBeenCalledWith({
@@ -115,7 +115,7 @@ describe("JubelioImageUploadService", () => {
       .mockResolvedValueOnce(UPLOAD_RESPONSE)
       .mockRejectedValueOnce(new Error("Jubelio 500"));
 
-    await expect(service.ensureUploaded([img1, img2])).rejects.toThrow("Jubelio 500");
+    await expect(service.ensureUploaded([img1, img2])).rejects.toThrow(/upload failed for image img_2.*Jubelio 500/);
 
     // first image was persisted before the error
     expect(prisma.itemImage.update).toHaveBeenCalledTimes(1);
@@ -155,7 +155,7 @@ describe("JubelioImageUploadService", () => {
     const img = makeImage({ url: "https://r2.example.com/private.jpeg" });
 
     await expect(service.ensureUploaded([img])).rejects.toThrow(
-      /R2 fetch failed.*private\.jpeg.*403/,
+      /upload failed for image img_1.*R2 fetch failed.*private\.jpeg.*403/,
     );
     expect(http.upload).not.toHaveBeenCalled();
     expect(prisma.itemImage.update).not.toHaveBeenCalled();

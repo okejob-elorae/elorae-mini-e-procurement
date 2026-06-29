@@ -104,6 +104,12 @@ export type CreateProductRequestBody = {
   product_skus: ProductSkuEntry[];
 };
 
+/**
+ * Derives the `file_name` value for Jubelio's catalog image payload — strips
+ * the file extension (Jubelio expects a bare name in this field).
+ * Kept separate from `multipartFileName` in image-upload.service.ts, which
+ * preserves the extension for the multipart upload form.
+ */
 function fileNameFromUrl(url: string, fallback: string): string {
   try {
     const path = new URL(url).pathname;
