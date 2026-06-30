@@ -176,6 +176,9 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml ps        # all should show "Up (healthy)"
 
 # 4. Apply Prisma migrations into the fresh MariaDB.
+#    TLS is disabled on the db container (--skip-ssl in docker-compose.prod.yml)
+#    because Prisma's native connector won't trust MariaDB's self-signed cert.
+#    Plain TCP is fine here — docker internal network + 127.0.0.1-bound port.
 docker compose -f docker-compose.prod.yml run --rm \
   -e DATABASE_URL="mysql://elorae:${DB_PASSWORD}@db:3306/elorae" \
   --workdir /app/packages/db api ./node_modules/.bin/prisma migrate deploy
@@ -270,8 +273,12 @@ One-time when moving from a previous DB (TiDB Cloud, another MariaDB instance, e
 
 ```bash
 # 1. Dump from the source DB (run locally with credentials for the OLD cluster).
-mysqldump --host=<source-host> --port=<source-port> --user=<u> --password=<p> \
-  --ssl --single-transaction --skip-lock-tables --skip-add-locks \
+# MYSQL_PWD avoids the "password on command line" warning. --ssl-mode=REQUIRED
+# is MySQL 8+ client syntax (`--ssl` is MariaDB-only and breaks on mysql-client).
+MYSQL_PWD='<source-password>' mysqldump \
+  --host=<source-host> --port=<source-port> --user=<u> \
+  --ssl-mode=REQUIRED \
+  --single-transaction --skip-lock-tables --skip-add-locks \
   --no-tablespaces --routines --triggers \
   elorae > /tmp/elorae-dump.sql
 
@@ -298,6 +305,7 @@ Flags explained:
 - `--single-transaction` — consistent snapshot without locking InnoDB tables (works on TiDB and MariaDB)
 - `--skip-add-locks` — TiDB doesn't support `LOCK TABLES`; safe to omit since `--single-transaction` already gives consistency
 - `--no-tablespaces` — required on TiDB; harmless on MariaDB
+- `--ssl-mode=REQUIRED` — MySQL 8 client syntax. If using mariadb-client, swap to `--ssl`. Drop the flag entirely if neither is recognised — TiDB Serverless enforces TLS server-side and the client upgrades the connection automatically when its capability bit is set.
 
 After migration, verify counts match between source and target on a few tables (`Item`, `JubelioOutbox`, `User`, etc.) before pointing local dev or DNS at the new DB.
 
