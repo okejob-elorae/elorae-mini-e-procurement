@@ -2,6 +2,7 @@
 
 import { Decimal } from 'decimal.js';
 import { prisma } from '@elorae/db';
+import { serializeForClient } from '@/lib/serialize-for-client';
 
 export interface MaterialRequirement {
   itemId: string;
@@ -88,24 +89,26 @@ export async function saveConsumptionRules(
       });
     }
     
-    return await tx.consumptionRule.findMany({
-      where: { finishedGoodId },
-      include: {
-        material: {
-          select: {
-            sku: true,
-            nameId: true,
-            nameEn: true
-          }
-        }
-      }
-    });
+    return serializeForClient(
+      await tx.consumptionRule.findMany({
+        where: { finishedGoodId },
+        include: {
+          material: {
+            select: {
+              sku: true,
+              nameId: true,
+              nameEn: true,
+            },
+          },
+        },
+      })
+    );
   });
 }
 
 // Get consumption rules for a finished good
 export async function getConsumptionRules(finishedGoodId: string) {
-  return await prisma.consumptionRule.findMany({
+  const rules = await prisma.consumptionRule.findMany({
     where: { finishedGoodId, isActive: true },
     include: {
       material: {
@@ -123,6 +126,7 @@ export async function getConsumptionRules(finishedGoodId: string) {
       },
     },
   });
+  return serializeForClient(rules);
 }
 
 // Check if all materials are available for a work order

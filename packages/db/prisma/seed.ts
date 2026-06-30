@@ -3,7 +3,6 @@
  * Uses upsert for master data; creates transactional data only when count is 0 (guard) to avoid duplicates on re-run.
  */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import {
   PrismaClient,
@@ -24,10 +23,21 @@ import {
 import bcrypt from "bcryptjs";
 
 import { getDatabaseUrl } from "../src/db-connection";
+import { loadDbEnv } from "../src/load-env";
 import { seedPantoneColors } from "./seed-pantone-colors";
 import { seedChartAccounts } from "./seed-chart-accounts";
 
-const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL!);
+loadDbEnv();
+
+const databaseUrl = getDatabaseUrl() || process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error(
+    "DATABASE_URL is not set. Add it to apps/web/.env (or packages/db/.env).",
+  );
+  process.exit(1);
+}
+
+const adapter = new PrismaMariaDb(databaseUrl);
 const prisma = new PrismaClient({ adapter });
 
 const now = new Date();
@@ -121,6 +131,11 @@ async function main() {
     // Inventory
     { code: 'inventory:view', module: 'inventory', action: 'view', description: 'View inventory' },
     { code: 'inventory:manage', module: 'inventory', action: 'manage', description: 'Manage inventory' },
+    { code: 'inventory_opname:view', module: 'inventory_opname', action: 'view', description: 'View stock opname sessions' },
+    { code: 'inventory_opname:count', module: 'inventory_opname', action: 'count', description: 'Create and count stock opname' },
+    { code: 'inventory_opname:approve', module: 'inventory_opname', action: 'approve', description: 'Approve stock opname' },
+    { code: 'inventory_reconciliation:view', module: 'inventory_reconciliation', action: 'view', description: 'View Jubelio reconciliation runs' },
+    { code: 'inventory_reconciliation:manage', module: 'inventory_reconciliation', action: 'manage', description: 'Run and resolve Jubelio reconciliation' },
     // Work Orders
     { code: 'work_orders:view', module: 'work_orders', action: 'view', description: 'View work orders' },
     { code: 'work_orders:create', module: 'work_orders', action: 'create', description: 'Create work orders' },
@@ -274,6 +289,7 @@ async function main() {
     'items:view', 'sales_orders:view', 'sales_orders:fulfill',
     'suppliers:view',
     'inventory:view', 'inventory:manage',
+    'inventory_opname:view', 'inventory_opname:count',
   ];
   for (const code of warehousePermissions) {
     const perm = permissionMap.get(code);
@@ -303,6 +319,7 @@ async function main() {
     'production_colors:view',
     'production_planning:view',
     'forecast:view',
+    'inventory_opname:view',
   ];
   for (const code of productionPermissions) {
     const perm = permissionMap.get(code);
@@ -457,6 +474,7 @@ async function main() {
     { docType: "RET", prefix: "RET/", resetPeriod: "MONTHLY" },
     { docType: "ISSUE", prefix: "ISS/", resetPeriod: "MONTHLY" },
     { docType: "RECEIPT", prefix: "RCPT/", resetPeriod: "MONTHLY" },
+    { docType: "OPN", prefix: "OPN/", resetPeriod: "MONTHLY" },
   ];
   for (const c of docConfigs) {
     await prisma.docNumberConfig.upsert({
@@ -474,6 +492,24 @@ async function main() {
     });
   }
   console.log("DocNumberConfig OK");
+
+  const reconSettings = [
+    { key: "RECON_AUTO_CORRECT_THRESHOLD", value: "0" },
+    { key: "RECON_AUTO_CORRECT_DIRECTION", value: "FLAG_ONLY" },
+    { key: "RECON_CRON_ENABLED", value: "true" },
+    {
+      key: "VARIANT_BARCODE_FORMAT",
+      value: JSON.stringify({ template: "{categoryCode}{parentSeq:6}{attrs}" }),
+    },
+  ];
+  for (const setting of reconSettings) {
+    await prisma.systemSetting.upsert({
+      where: { key: setting.key },
+      update: {},
+      create: setting,
+    });
+  }
+  console.log("Reconciliation SystemSetting defaults OK");
 
   // ---------- 5. Suppliers ----------
   const supplier1 = await prisma.supplier.upsert({

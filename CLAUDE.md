@@ -117,6 +117,18 @@ EPIC-05 (Sales Returns) decomposition:
 | **B** | Server actions + per-item Accept/Reject UI on detail page (outbox decision-push handler deferred to sub-B.5 pending Jubelio resolve-endpoint docs) | ⏳ next |
 | **C** | Dashboard list + KPIs + RBAC seed + i18n | ⏳ |
 
+EPIC-07 (Stock Opname & Reconciliation) decomposition:
+
+| Sub | Scope | Status |
+|----|-------|--------|
+| **1** | Schema, RBAC, SystemSetting defaults, OPN doc type | ✅ shipped (2026-06-28) |
+| **2** | Opname backend (snapshot, count, submit, approve w/ drift, fabric rolls) | ✅ shipped (2026-06-28) |
+| **3** | Opname UI (list, create, scope-branched count, drift modal) | ✅ shipped (2026-06-28) |
+| **4** | Reconciliation engine + API inventory snapshot | ✅ shipped (2026-06-28) |
+| **5** | Cron route + jobs.ts 6h schedule + reconciliation admin UI + docs | ✅ shipped (2026-06-28) |
+
+Launch posture: reconciliation `FLAG_ONLY` + threshold 0; auto-correct directions implemented but dormant until config flip.
+
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
 **Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought.

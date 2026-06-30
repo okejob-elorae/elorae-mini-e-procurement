@@ -57,6 +57,7 @@ export const DocType = {
   RET: 'RET',
   ISSUE: 'ISSUE',
   RECEIPT: 'RECEIPT',
+  OPN: 'OPN',
 } as const;
 export type DocType = (typeof DocType)[keyof typeof DocType];
 

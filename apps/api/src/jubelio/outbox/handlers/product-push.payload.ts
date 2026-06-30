@@ -31,7 +31,7 @@ export type ItemSlice = {
   nameId: string;
   nameEn: string;
   description: string | null;
-  variants: Array<{ sku: string }> | null;
+  variants: Array<{ sku: string; barcode?: string | null }> | null;
   sellingPrice: number | null;
   isActive: boolean;
 };
@@ -115,19 +115,21 @@ export function buildCreateProductRequest(opts: {
   const mappingBySku = new Map(mappings.map((m) => [m.erpVariantSku, m]));
 
   const hasVariants = item.variants !== null && item.variants.length > 0;
-  const desiredVariants: Array<{ sku: string }> =
-    hasVariants ? item.variants!.map((v) => ({ sku: v.sku })) : [{ sku: item.sku }];
+  const desiredVariants: Array<{ sku: string; barcode?: string | null }> = hasVariants
+    ? item.variants!.map((v) => ({ sku: v.sku, barcode: v.barcode }))
+    : [{ sku: item.sku }];
 
   const product_skus: ProductSkuEntry[] = desiredVariants.map((v) => {
     const mappingKey = hasVariants ? v.sku : "";
     const mapping = mappingBySku.get(mappingKey);
+    const barcode = v.barcode?.trim() || null;
     return {
       item_id: mapping?.jubelioItemId ?? 0,
       item_code: v.sku,
       variation_values: [],
       sell_price: sellPrice,
       buy_price: d.buyPrice,
-      barcode: null,
+      barcode,
       is_consignment: false,
     };
   });

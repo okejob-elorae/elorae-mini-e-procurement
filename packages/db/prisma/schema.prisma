@@ -460,6 +460,100 @@ model StockAdjustment {
   @@index([source, createdAt])
 }
 
+model StockOpname {
+  id            String        @id @default(cuid())
+  docNumber     String        @unique
+  scope         OpnameScope
+  status        OpnameStatus  @default(CREATED)
+  notes         String?       @db.Text
+  snapshotAt    DateTime
+  assignedToId  String?
+  createdById   String
+  submittedById String?
+  submittedAt   DateTime?
+  approvedById  String?
+  approvedAt    DateTime?
+  cancelledAt   DateTime?
+  items         StockOpnameItem[]
+  rolls         StockOpnameRoll[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  @@index([scope])
+  @@index([status])
+  @@index([docNumber])
+  @@index([createdById])
+}
+
+model StockOpnameItem {
+  id                   String      @id @default(cuid())
+  opnameId             String
+  opname               StockOpname @relation(fields: [opnameId], references: [id], onDelete: Cascade)
+  itemId               String
+  variantSku           String?
+  itemName             String
+  snapshotQty          Decimal     @db.Decimal(10,2)
+  countedQty           Decimal?    @db.Decimal(10,2)
+  variance             Decimal?    @db.Decimal(10,2)
+  currentQtyAtApproval Decimal?    @db.Decimal(10,2)
+  hadDriftWarning      Boolean     @default(false)
+  adjustmentId         String?
+  notes                String?
+  @@index([opnameId])
+  @@index([itemId])
+}
+
+model StockOpnameRoll {
+  id              String      @id @default(cuid())
+  opnameId        String
+  opname          StockOpname @relation(fields: [opnameId], references: [id], onDelete: Cascade)
+  fabricRollId    String
+  rollCode        String
+  itemName        String
+  snapshotLength  Decimal     @db.Decimal(10,2)
+  countedLength   Decimal?    @db.Decimal(10,2)
+  variance        Decimal?    @db.Decimal(10,2)
+  notes           String?
+  @@index([opnameId])
+  @@index([fabricRollId])
+}
+
+model ReconciliationRun {
+  id            String    @id @default(cuid())
+  triggeredBy   ReconTrigger
+  status        ReconRunStatus @default(RUNNING)
+  totalScanned  Int       @default(0)
+  inSync        Int       @default(0)
+  autoCorrected Int       @default(0)
+  flagged       Int       @default(0)
+  startedById   String?
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  errorMessage  String?   @db.Text
+  results       ReconciliationResult[]
+  @@index([status])
+  @@index([startedAt])
+}
+
+model ReconciliationResult {
+  id                  String            @id @default(cuid())
+  runId               String
+  run                 ReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  itemId              String
+  variantSku          String?
+  itemName            String
+  jubelioItemId       Int?
+  eloraeQty           Decimal           @db.Decimal(10,2)
+  jubelioQty          Decimal           @db.Decimal(10,2)
+  variance            Decimal           @db.Decimal(10,2)
+  action              ReconAction
+  resolvedAt          DateTime?
+  resolvedById        String?
+  resolutionDirection ReconDirection?
+  @@index([runId])
+  @@index([action])
+  @@index([itemId])
+}
+
 // ==========================================
 // PRODUCTION (Phase 4)
 // ==========================================
@@ -1151,6 +1245,44 @@ enum DocType {
   RET
   ISSUE
   RECEIPT
+  OPN
+}
+
+enum OpnameScope {
+  FINISHED_GOOD
+  FABRIC
+  ACCESSORIES
+}
+
+enum OpnameStatus {
+  CREATED
+  COUNTING
+  SUBMITTED
+  APPROVED
+  CANCELLED
+}
+
+enum ReconTrigger {
+  CRON
+  MANUAL
+}
+
+enum ReconRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ReconAction {
+  IN_SYNC
+  AUTO_CORRECTED
+  FLAGGED
+  MANUALLY_RESOLVED
+}
+
+enum ReconDirection {
+  MATCH_JUBELIO
+  REASSERT_ELORAE
 }
 
 // ==========================================

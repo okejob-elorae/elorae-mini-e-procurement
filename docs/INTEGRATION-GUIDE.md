@@ -170,7 +170,15 @@ if (result.skipped) {
 
 **Web cannot call Jubelio directly.** No `JUBELIO_TOKEN` is provided to apps/web. The only path is via apps/api.
 
-For now, no general-purpose read endpoint exists. The reconcile cron (EPIC-07-04) is the first concrete consumer. When you build it, surface a signed-channel endpoint on apps/api (`GET /jubelio/inventory/snapshot?…`) and have web cron call it. Don't reach into Jubelio from web; the secret won't be there and even if you cascade it, you've now leaked a back-office credential to the public-facing surface.
+For now, the signed read endpoint ships on apps/api:
+
+```
+GET /jubelio/inventory/snapshot
+```
+
+Protected by `InternalSignGuard`. Returns `{ rows: [{ itemId, variantSku, jubelioItemId, jubelioQty }] }` for all mapped FG variants (optional `jubelioItemGroupIds` query filter). Web reconciliation (`apps/web/lib/inventory/reconciliation-runner.ts`) calls this via `apiFetch` — do not call Jubelio directly from web.
+
+**Opname FG push:** on opname approval, adjusted FG items enqueue `stock_push` via `JubelioOutbox`. Local `StockAdjustment` with `source = ERP_OPNAME` is never rolled back on push failure.
 
 The endpoint contract:
 - Authentication: `apiFetch` from web with NextAuth JWT (the existing internal-api signed channel). See `apps/web/lib/internal-api.ts`.

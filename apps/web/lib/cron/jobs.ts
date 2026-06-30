@@ -1,5 +1,6 @@
 import cron from "node-cron";
 import { runCheckOverdue } from "./check-overdue";
+import { runReconciliationCron } from "@/app/actions/stock-reconciliation";
 
 let registered = false;
 
@@ -16,6 +17,20 @@ export function registerCronJobs(): void {
         await runCheckOverdue();
       } catch (err) {
         console.error("[cron] check-overdue failed:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  // Every 6 hours — Jubelio stock reconciliation
+  cron.schedule(
+    "0 */6 * * *",
+    async () => {
+      console.log("[cron] reconciliation tick");
+      try {
+        await runReconciliationCron();
+      } catch (err) {
+        console.error("[cron] reconciliation failed:", err);
       }
     },
     { timezone: "Asia/Jakarta" },
