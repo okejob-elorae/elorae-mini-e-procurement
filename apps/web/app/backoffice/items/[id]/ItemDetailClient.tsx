@@ -23,6 +23,7 @@ type ItemDetailClientProps = {
   nameId: string;
   nameEn: string;
   isActive: boolean;
+  gallerySlot?: React.ReactNode;
 };
 
 const itemTypeKeys: Record<ItemType, 'fabric' | 'accessories' | 'finishedGood'> = {
@@ -37,6 +38,7 @@ export function ItemDetailClient({
   nameId,
   nameEn,
   isActive,
+  gallerySlot,
 }: ItemDetailClientProps) {
   const router = useRouter();
   const { data: session } = useSession();
@@ -108,8 +110,9 @@ export function ItemDetailClient({
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="price-history">Price History</TabsTrigger>
         </TabsList>
-        <TabsContent value="details">
+        <TabsContent value="details" className="space-y-4">
           <ItemForm initialData={initialData} onSubmit={handleSubmit} isLoading={isSaving} />
+          {gallerySlot}
         </TabsContent>
         <TabsContent value="price-history">
           {initialData?.id ? (

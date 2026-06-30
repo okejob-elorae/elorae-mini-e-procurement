@@ -80,20 +80,20 @@ export default async function ItemDetailPage({
     .map((sku) => ({ sku }));
 
   return (
-    <>
-      <ItemDetailClient
-        initialData={initialData}
-        itemType={item.type as ItemType}
-        nameId={item.nameId}
-        nameEn={item.nameEn}
-        isActive={Boolean(item.isActive)}
-      />
-      <ItemGalleryEditor
-        itemId={item.id}
-        variants={variantSkus}
-        initial={images}
-        canManage={canManage}
-      />
-    </>
+    <ItemDetailClient
+      initialData={initialData}
+      itemType={item.type as ItemType}
+      nameId={item.nameId}
+      nameEn={item.nameEn}
+      isActive={Boolean(item.isActive)}
+      gallerySlot={
+        <ItemGalleryEditor
+          itemId={item.id}
+          variants={variantSkus}
+          initial={images}
+          canManage={canManage}
+        />
+      }
+    />
   );
 }
