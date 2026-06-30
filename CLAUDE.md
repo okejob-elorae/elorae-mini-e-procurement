@@ -14,7 +14,7 @@ docs/BOUNDARY.md Service-boundary contract — source of truth for who-writes-wh
 reference/       Local-only planning artifacts (gitignored). EPIC todos live here.
 ```
 
-Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the VPS-deployed web.
+Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostinger VPS. Local dev reaches it through an SSH tunnel — same DB, same data, both environments. Migrated off TiDB Cloud Serverless 2026-06-28 after the free tier exhausted its monthly quota.
 
 ## Authoritative docs (read these before changing architecture)
 
@@ -57,7 +57,7 @@ Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the VP
 |------|---------|-------|
 | Hostinger VPS (`elorae.cloud`) | apps/web (Next.js, Docker Compose) | Manual deploy: `ssh elorae@api.elorae.cloud && cd /srv/elorae && git pull && docker compose -f docker-compose.prod.yml up -d --build web`. Caddy auto-SSL. Vercel deploy DECOMMISSIONED 2026-06-18. |
 | Hostinger VPS (`api.elorae.cloud`) | apps/api + Redis + Caddy (Docker Compose) | Manual deploy: `ssh elorae@api.elorae.cloud && cd /srv/elorae && git pull && docker compose -f docker-compose.prod.yml up -d --build api`. Caddy handles auto-SSL. Webhook URL: `https://api.elorae.cloud/webhooks/jubelio/<event>`. See `README.md §Production deploy` for first-time setup + ops commands. |
-| TiDB Cloud | MySQL-compatible DB | Shared between dev + VPS. `DATABASE_URL` lives in each platform's env store. |
+| VPS MariaDB (docker `db` service) | MySQL-compatible DB | Port 3306 bound to 127.0.0.1 on the VPS. Local dev tunnels via `ssh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud`. `DATABASE_URL` lives in each platform's env store. |
 
 ngrok stays available as a fallback for local-only demo work (laptop apps/api + temporary public tunnel). VPS is the authoritative prod target.
 
@@ -71,7 +71,7 @@ ngrok stays available as a fallback for local-only demo work (laptop apps/api + 
 
 ## Architecture nuances worth flagging
 
-- **TiDB cluster is shared between local dev and the VPS-deployed web.** A local destructive query (delete, truncate, bad migration) hits the same data the client demo shows. Run migrations only via `pnpm -F @elorae/db migrate:deploy`; never `migrate dev --create-only` without thinking.
+- **VPS MariaDB is shared between local dev and the VPS-deployed web.** A local destructive query (delete, truncate, bad migration) hits the same data the client demo shows. Run migrations only via `pnpm -F @elorae/db migrate:deploy`; never `migrate dev --create-only` without thinking. No automatic backups — set up daily `mariadb-dump` → R2 separately (TODO).
 - **`Item` is dual-owner** (web for ERP forms; api for Jubelio catalog ingest). All api writes go through `@elorae/db/item-writer.ts` helpers, stamping `source = JUBELIO_INGEST`. See `docs/BOUNDARY.md §3.3`.
 - **`StockAdjustment` is dual-owner** (web for ERP-driven adjustments; api for Jubelio stock webhooks). Api writes go through `@elorae/db/stock-writer.ts` `applyJubelioStockAdjustment`, stamping `source = JUBELIO_WEBHOOK` + `idempotencyKey`. See `docs/BOUNDARY.md §3.1`.
 - **Jubelio webhook signature is HMAC-SHA256 with header `Sign`** — not plain SHA256 with `webhook-signature`. Jubelio's docs *text* is wrong; their code example is correct. See `docs/BOUNDARY.md §9 Q1`.
@@ -127,7 +127,7 @@ Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit l
 - Don't bundle multiple sub-projects into one PR. Each sub-project is its own slice.
 - Don't write to web-owned tables from apps/api (and vice versa) without going through a `@elorae/db` helper — see `docs/BOUNDARY.md §3`.
 - Don't add Prisma model comments. Don't add `Co-Authored-By` trailers to commits.
-- Don't run `prisma migrate dev` against the shared TiDB — that creates throwaway migrations and resets state. Use `migrate:deploy` only.
+- Don't run `prisma migrate dev` against the shared VPS MariaDB — that creates throwaway migrations and resets state. Use `migrate:deploy` only.
 - Don't deploy apps/api or apps/web to Vercel. Both need persistent processes; Vercel functions don't fit (node-cron, BullMQ workers). Production target is the Hostinger VPS; local-ngrok is the dev/demo fallback.
 
 ## When you need more context

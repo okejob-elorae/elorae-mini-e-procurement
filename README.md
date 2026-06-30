@@ -9,7 +9,7 @@ This README covers running the stack on your laptop and exposing `apps/api` publ
 ## Prereqs
 
 - Node `>=22`, pnpm `>=11` (declared in root `package.json` `engines`)
-- A MySQL/MariaDB-compatible database. Recommended: **TiDB Cloud Serverless** (free tier, MySQL wire protocol, sslaccept=strict). Local MySQL/MariaDB also fine.
+- A MySQL/MariaDB-compatible database. Production runs **MariaDB 11.4** in the docker-compose stack on the VPS; local dev reaches the same DB through an SSH tunnel (see Local-dev DB access below).
 - ngrok account (free, no card) — only needed for client demos
 - Jubelio account credentials — only needed to test integration
 
@@ -117,12 +117,26 @@ Jubelio webhooks (optional): in the Jubelio dashboard set URL to `https://<your-
 ### Demo caveats
 
 - Laptop off = api down → web features that call `INTERNAL_API_URL` error out (local demo only; VPS is unaffected).
-- TiDB cluster is shared between local-dev and the VPS-deployed web. A local `prisma migrate dev` or destructive query hits the same data the client sees. Use a separate `elorae_demo` database in the same TiDB cluster if you need isolation.
+- The VPS MariaDB is shared between local-dev (via SSH tunnel) and the VPS-deployed web. A local `prisma migrate dev` or destructive query hits the same data the client sees. Use a separate database (`CREATE DATABASE elorae_demo`) on the same MariaDB instance if you need isolation.
 - ngrok free tier: 1 reserved domain, 40 connections/min, 20k req/month. Plenty for demos.
+
+### Local-dev DB access
+
+```bash
+# Persistent tunnel — leave running in the background.
+ssh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud
+# or with autossh for auto-reconnect:
+autossh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud
+
+# apps/web/.env
+DATABASE_URL=mysql://elorae:<DB_PASSWORD>@127.0.0.1:3306/elorae
+```
+
+The MariaDB port is bound to `127.0.0.1` on the VPS — no public reach, tunnel is mandatory.
 
 ## Production deploy — Hostinger VPS
 
-Both `apps/web` and `apps/api` run on the same Hostinger VPS, sharing Redis + Caddy via Docker Compose. Vercel is no longer used (decommissioned 2026-06-18). Public URLs: `https://elorae.cloud` (web) and `https://api.elorae.cloud` (api).
+Both `apps/web` and `apps/api` run on the same Hostinger VPS alongside MariaDB + Redis + Caddy, all via Docker Compose. Vercel is no longer used (decommissioned 2026-06-18). Public URLs: `https://elorae.cloud` (web) and `https://api.elorae.cloud` (api).
 
 **Server side prereqs** (one-time per VPS):
 
@@ -137,15 +151,35 @@ Both `apps/web` and `apps/api` run on the same Hostinger VPS, sharing Redis + Ca
 ```bash
 ssh elorae@api.elorae.cloud
 cd /srv/elorae
-cp .env.production.example .env.production
-nano .env.production
-# Fill: SWAGGER_USER, SWAGGER_PASS, DATABASE_URL (same as apps/web's),
-#       JUBELIO_USER/PASS/WEBHOOK_SECRET, INTERNAL_API_SECRET (same as apps/web's),
-#       CORS_ORIGINS (elorae.cloud).
-chmod 600 .env.production
 
+# 1. Generate DB credentials for the `db` compose service. These live in the
+#    project .env (auto-read by Compose for variable substitution), NOT in
+#    .env.production (which is loaded into containers as env_file).
+cat > .env <<EOF
+DB_ROOT_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=')
+DB_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=')
+EOF
+chmod 600 .env
+DB_PASSWORD=$(grep ^DB_PASSWORD= .env | cut -d= -f2)
+
+# 2. Fill api + web env files. Inline DB_PASSWORD into DATABASE_URL — env_file
+#    values are NOT interpolated by Compose.
+cp .env.production.example .env.production
+cp .env.production.web.example .env.production.web
+sed -i "s|<DB_PASSWORD>|${DB_PASSWORD}|g" .env.production .env.production.web
+nano .env.production       # fill: SWAGGER_*, JUBELIO_*, INTERNAL_API_SECRET, CORS_ORIGINS
+nano .env.production.web   # fill: NEXTAUTH_*, ENCRYPTION_KEY, FIREBASE_*, R2_*, INTERNAL_API_SECRET
+chmod 600 .env.production .env.production.web
+
+# 3. Bring the stack up. db starts first, api/web wait for db health.
 docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml ps        # all three should show "Up"
+docker compose -f docker-compose.prod.yml ps        # all should show "Up (healthy)"
+
+# 4. Apply Prisma migrations into the fresh MariaDB.
+docker compose -f docker-compose.prod.yml run --rm \
+  -e DATABASE_URL="mysql://elorae:${DB_PASSWORD}@db:3306/elorae" \
+  --workdir /app/packages/db api ./node_modules/.bin/prisma migrate deploy
+
 curl -fsS https://api.elorae.cloud/health           # 200 OK
 ```
 
@@ -222,10 +256,50 @@ docker compose -f docker-compose.prod.yml down -v
 
 **Caveats:**
 
-- `.env.production` lives only on the VPS — never commit it. The example template is committed.
-- Migrations run from a developer machine via `pnpm -F @elorae/db migrate:deploy`, NOT from inside the api container. The container reads existing schema; it doesn't apply migrations on boot.
-- Redis data is in a named Docker volume (`redis-data`). BullMQ retry state survives container restarts but is lost on `docker compose down -v`.
+- `.env.production` + `.env.production.web` + `.env` all live only on the VPS — never commit them. The two `.example` templates are committed.
+- The `.env` file is what Compose substitutes for `${DB_ROOT_PASSWORD}` / `${DB_PASSWORD}` in `docker-compose.prod.yml`. The two `.env.production*` files are loaded into containers as literal env vars (no interpolation).
+- DB password must match in three places: `.env` (DB_PASSWORD), `.env.production` (inside DATABASE_URL), `.env.production.web` (inside DATABASE_URL). Mismatch = api/web can't connect.
+- MariaDB port 3306 is bound to `127.0.0.1` on the VPS — no public access. Local dev tunnels via SSH (see Local-dev DB access above).
+- Migrations apply via `prisma migrate deploy` from inside the `api` container (see the First deploy block). Don't run `prisma migrate dev` against this DB.
+- Redis data + DB data are in named Docker volumes (`redis-data`, `db-data`). Both survive container restarts. `docker compose down -v` wipes them — never run with `-v` in prod.
 - Caddy renews certs automatically. No cron needed.
+
+### Migrating an existing dataset into the VPS MariaDB
+
+One-time when moving from a previous DB (TiDB Cloud, another MariaDB instance, etc.):
+
+```bash
+# 1. Dump from the source DB (run locally with credentials for the OLD cluster).
+mysqldump --host=<source-host> --port=<source-port> --user=<u> --password=<p> \
+  --ssl --single-transaction --skip-lock-tables --skip-add-locks \
+  --no-tablespaces --routines --triggers \
+  elorae > /tmp/elorae-dump.sql
+
+# 2. Ship the dump to the VPS.
+scp /tmp/elorae-dump.sql elorae@api.elorae.cloud:/tmp/
+
+# 3. Import into the running MariaDB container.
+ssh elorae@api.elorae.cloud
+cd /srv/elorae
+DB_ROOT_PASSWORD=$(grep ^DB_ROOT_PASSWORD= .env | cut -d= -f2)
+docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" elorae < /tmp/elorae-dump.sql
+rm /tmp/elorae-dump.sql
+
+# 4. Re-apply Prisma migrations (idempotent — the dump already contains _prisma_migrations).
+docker compose -f docker-compose.prod.yml run --rm \
+  -e DATABASE_URL="mysql://elorae:${DB_PASSWORD}@db:3306/elorae" \
+  --workdir /app/packages/db api ./node_modules/.bin/prisma migrate deploy
+
+# 5. Restart api + web so they pick up the new data.
+docker compose -f docker-compose.prod.yml restart api web
+```
+
+Flags explained:
+- `--single-transaction` — consistent snapshot without locking InnoDB tables (works on TiDB and MariaDB)
+- `--skip-add-locks` — TiDB doesn't support `LOCK TABLES`; safe to omit since `--single-transaction` already gives consistency
+- `--no-tablespaces` — required on TiDB; harmless on MariaDB
+
+After migration, verify counts match between source and target on a few tables (`Item`, `JubelioOutbox`, `User`, etc.) before pointing local dev or DNS at the new DB.
 
 ## Common scripts
 

@@ -1,20 +1,52 @@
 # Production deploy on Hostinger VPS (or any single-host Docker setup).
-# Brings up: Redis (BullMQ backend) + apps/api (NestJS) + Caddy (auto-SSL reverse proxy).
+# Brings up: MariaDB + Redis (BullMQ backend) + apps/api (NestJS) + apps/web (Next.js) + Caddy (auto-SSL reverse proxy).
 #
 # First-time:
 #   cp .env.production.example .env.production
-#   <fill in secrets>
+#   cp .env.production.web.example .env.production.web
+#   <fill in secrets — see DB_ROOT_PASSWORD + DB_PASSWORD>
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Subsequent deploys:
 #   git pull
 #   docker compose -f docker-compose.prod.yml up -d --build api
 #
+# Local dev access to this DB: SSH tunnel from laptop —
+#   ssh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud
+#   Then point apps/web/.env DATABASE_URL at mysql://elorae:<pw>@127.0.0.1:3306/elorae
+#
 # Logs:
 #   docker compose -f docker-compose.prod.yml logs -f api
 #   docker compose -f docker-compose.prod.yml logs -f caddy
+#   docker compose -f docker-compose.prod.yml logs -f db
 
 services:
+  db:
+    image: mariadb:11.4
+    container_name: elorae-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MARIADB_DATABASE: elorae
+      MARIADB_USER: elorae
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=1G
+    volumes:
+      - db-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3306:3306"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uelorae -p$$MARIADB_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   redis:
     image: redis:7-alpine
     container_name: elorae-redis
@@ -41,6 +73,8 @@ services:
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -61,6 +95,8 @@ services:
     env_file:
       - .env.production.web
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
@@ -91,6 +127,7 @@ services:
       - internal
 
 volumes:
+  db-data:
   redis-data:
   caddy-data:
   caddy-config:
