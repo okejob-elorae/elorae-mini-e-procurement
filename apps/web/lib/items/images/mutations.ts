@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { enqueueProductPushOnImageChange } from "@/app/actions/jubelio-product-push";
 import { deleteFromR2, keyFromUrl } from "@/lib/r2";
 import {
   validateGalleryCount,
@@ -126,6 +127,11 @@ export async function replaceItemImagesAction(
         }
       }
     }
+  }
+
+  const totalChanges = diff.inserts.length + diff.updates.length + diff.deletes.length;
+  if (totalChanges > 0) {
+    void enqueueProductPushOnImageChange(itemId);
   }
 
   revalidatePath(`/backoffice/items/${itemId}`);
