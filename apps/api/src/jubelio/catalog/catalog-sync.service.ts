@@ -9,8 +9,8 @@ import type {
   CatalogSyncItemResult,
   CatalogSyncResult,
   CatalogSyncSummary,
+  JubelioItemGroupDetail,
   JubelioItemsPayload,
-  JubelioRawImage,
   VariantJson,
 } from "./catalog.types";
 
@@ -291,51 +291,45 @@ export class JubelioCatalogSyncService {
   }
 
   private async syncImages(itemId: string, draft: CatalogItemDraft): Promise<void> {
-    const seenJubelioIds: string[] = [];
-
-    const isValidImage = (entry: unknown): entry is JubelioRawImage & { id: string | number; image_url: string } => {
-      if (typeof entry !== "object" || entry === null) return false;
-      const e = entry as Record<string, unknown>;
-      return (typeof e["id"] === "string" || typeof e["id"] === "number") && typeof e["image_url"] === "string" && e["image_url"] !== "";
-    };
-
-    const productImages = Array.isArray(draft.rawImages) ? draft.rawImages : [];
-    for (const img of productImages) {
-      if (!isValidImage(img)) continue;
-      const jid = String(img.id);
-      seenJubelioIds.push(jid);
-      try {
-        await upsertJubelioImage(this.prisma, {
-          itemId,
-          variantSku: null,
-          url: img.image_url,
-          sortOrder: typeof img.sort_order === "number" ? img.sort_order : 0,
-          jubelioImageId: jid,
-        });
-      } catch (err) {
-        this.logger.warn(`syncImages: failed to upsert product image ${jid} for item ${itemId}: ${err instanceof Error ? err.message : String(err)}`);
-      }
+    // /inventory/items/ list endpoint only exposes a single `thumbnail` per group/variant —
+    // multi-image arrays live in /inventory/items/group/{id}'s product_skus[].images[].
+    // Fetch the detail per item; image_id is the durable identifier, cloud_key is the URL.
+    let detail: JubelioItemGroupDetail;
+    try {
+      detail = await this.http.get<JubelioItemGroupDetail>(`/inventory/items/group/${draft.jubelioItemGroupId}`);
+    } catch (err) {
+      this.logger.warn(
+        `syncImages: failed to fetch detail for group ${draft.jubelioItemGroupId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
     }
 
-    const variantImages = Array.isArray(draft.rawVariantImages) ? draft.rawVariantImages : [];
-    for (const variant of variantImages) {
-      if (typeof variant !== "object" || variant === null) continue;
-      const { item_code, images } = variant as Record<string, unknown>;
-      if (typeof item_code !== "string" || item_code === "" || !Array.isArray(images)) continue;
+    const seenJubelioIds: string[] = [];
+    const productSkus = Array.isArray(detail.product_skus) ? detail.product_skus : [];
+
+    for (const sku of productSkus) {
+      if (typeof sku !== "object" || sku === null) continue;
+      const variantSku = draft.variantless ? null : (typeof sku.item_code === "string" ? sku.item_code : null);
+      const images = Array.isArray(sku.images) ? sku.images : [];
       for (const img of images) {
-        if (!isValidImage(img)) continue;
-        const jid = String(img.id);
+        if (typeof img !== "object" || img === null) continue;
+        const cloudKey = typeof img.cloud_key === "string" ? img.cloud_key : "";
+        const imageId = typeof img.image_id === "number" ? img.image_id : null;
+        if (!cloudKey || imageId === null) continue;
+        const jid = String(imageId);
         seenJubelioIds.push(jid);
         try {
           await upsertJubelioImage(this.prisma, {
             itemId,
-            variantSku: item_code,
-            url: img.image_url,
-            sortOrder: typeof img.sort_order === "number" ? img.sort_order : 0,
+            variantSku,
+            url: cloudKey,
+            sortOrder: typeof img.sequence_number === "number" ? img.sequence_number : 0,
             jubelioImageId: jid,
           });
         } catch (err) {
-          this.logger.warn(`syncImages: failed to upsert variant image ${jid} for item ${itemId} variant ${item_code}: ${err instanceof Error ? err.message : String(err)}`);
+          this.logger.warn(
+            `syncImages: failed to upsert image ${jid} for item ${itemId} variant=${variantSku ?? "<null>"}: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
     }

@@ -31,6 +31,30 @@ export type JubelioRawVariantImages = {
   images?: JubelioRawImage[];
 };
 
+// Per `getProductResponse` from /inventory/items/group/{id} — the only Jubelio
+// endpoint that exposes per-variant image arrays. Used by catalog-sync to pull
+// images during ingest; the /inventory/items/ list endpoint only returns a
+// single `thumbnail` per group/variant.
+export type JubelioDetailImage = {
+  item_id?: number;
+  image_id?: number;
+  cloud_key?: string;
+  thumbnail?: string;
+  file_name?: string;
+  sequence_number?: number;
+};
+
+export type JubelioDetailProductSku = {
+  item_id: number;
+  item_code: string;
+  images?: JubelioDetailImage[];
+};
+
+export type JubelioItemGroupDetail = {
+  item_group_id: number;
+  product_skus?: JubelioDetailProductSku[];
+};
+
 export type JubelioItemGroup = {
   item_group_id: number;
   item_name: string;
