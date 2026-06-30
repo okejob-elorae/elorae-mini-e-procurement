@@ -51,15 +51,21 @@ export async function getPrimaryImagesBatch(
   const key = (itemId: string, variantSku: string | null) =>
     `${itemId}|${variantSku ?? ""}`;
   const byKey = new Map<string, string>();
+  // Last-resort "first image for this item, any variant" — used when neither the
+  // exact variant nor a product-level image exists. Covers items pulled from
+  // Jubelio where all images live under product_skus[].images[].
+  const firstAny = new Map<string, string>();
   for (const r of rows) {
     const k = key(r.itemId, r.variantSku);
     if (!byKey.has(k)) byKey.set(k, r.url);
+    if (!firstAny.has(r.itemId)) firstAny.set(r.itemId, r.url);
   }
   const out = new Map<string, string>();
   for (const p of pairs) {
     const specific = byKey.get(key(p.itemId, p.variantSku));
     const productLevel = byKey.get(key(p.itemId, null));
-    const url = specific ?? productLevel;
+    const fallback = firstAny.get(p.itemId);
+    const url = specific ?? productLevel ?? fallback;
     if (url) out.set(key(p.itemId, p.variantSku), url);
   }
   return out;
