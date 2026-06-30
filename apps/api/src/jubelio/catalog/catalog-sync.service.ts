@@ -307,9 +307,18 @@ export class JubelioCatalogSyncService {
     const seenJubelioIds: string[] = [];
     const productSkus = Array.isArray(detail.product_skus) ? detail.product_skus : [];
 
+    // Jubelio's product_skus[].item_code uses the raw Jubelio SKU (e.g. "28000005K-CRM-L"),
+    // but ERP item.variants store the canonical ERP sku (e.g. "28000005K-L") after the
+    // color-code is stripped by parse-item-code. Map raw → ERP via sourceVariants so the
+    // gallery editor can group images by the ERP variant sku.
+    const erpSkuByJubelioCode = new Map<string, string>(
+      draft.sourceVariants.map((sv) => [sv.jubelioItemCode, sv.erpVariantSku]),
+    );
+
     for (const sku of productSkus) {
       if (typeof sku !== "object" || sku === null) continue;
-      const variantSku = draft.variantless ? null : (typeof sku.item_code === "string" ? sku.item_code : null);
+      const jubelioCode = typeof sku.item_code === "string" ? sku.item_code : "";
+      const variantSku = draft.variantless ? null : (erpSkuByJubelioCode.get(jubelioCode) ?? jubelioCode);
       const images = Array.isArray(sku.images) ? sku.images : [];
       for (const img of images) {
         if (typeof img !== "object" || img === null) continue;
