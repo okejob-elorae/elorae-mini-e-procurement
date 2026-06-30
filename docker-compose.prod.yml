@@ -48,7 +48,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uelorae -p$$MARIADB_PASSWORD --silent"]
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uelorae -p$$MARIADB_PASSWORD --skip-ssl --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
