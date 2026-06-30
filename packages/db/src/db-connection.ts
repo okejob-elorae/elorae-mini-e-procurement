@@ -1,12 +1,14 @@
 /**
- * True when DATABASE_URL points to local MySQL (localhost / 127.0.0.1).
- * Bypass SSL and long timeout for local dev.
+ * True when DATABASE_URL points to a database the client can reach without SSL —
+ * localhost / 127.0.0.1 (local dev), or the docker-compose service hostname `db`
+ * (prod VPS where MariaDB runs with --skip-ssl on the internal docker network).
+ * Caller bypasses SSL and the long handshake timeout for these hosts.
  */
 function isLocalDatabaseUrl(url: string): boolean {
   try {
     const parsed = new URL(url.replace(/^mysql:\/\//, "https://"));
     const host = (parsed.hostname || "").toLowerCase();
-    return host === "localhost" || host === "127.0.0.1";
+    return host === "localhost" || host === "127.0.0.1" || host === "db";
   } catch {
     return false;
   }
