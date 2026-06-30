@@ -78,7 +78,7 @@ describe("JubelioImageUploadService", () => {
 
     expect(global.fetch).toHaveBeenCalledWith(img.url, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(http.upload).toHaveBeenCalledWith(
-      "/inventory/upload-image/",
+      "/inventory/upload-image",
       expect.any(FormData),
     );
     expect(prisma.itemImage.update).toHaveBeenCalledWith({

@@ -36,7 +36,7 @@ export class JubelioImageUploadService {
         fd.append("name", name);
         fd.append("TotalFileSize", String(blob.size));
 
-        const res = await this.http.upload<UploadResponse>("/inventory/upload-image/", fd);
+        const res = await this.http.upload<UploadResponse>("/inventory/upload-image", fd);
         await this.prisma.itemImage.update({
           where: { id: img.id },
           data: {
