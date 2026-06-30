@@ -176,8 +176,12 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml ps        # all should show "Up (healthy)"
 
 # 4. Apply Prisma migrations into the fresh MariaDB.
+#    sslaccept=accept_invalid_certs — MariaDB serves a self-signed cert by
+#    default; Prisma's native connector auto-upgrades to TLS and would otherwise
+#    fail verification. The docker-internal network is private so the TLS
+#    decision is cosmetic here.
 docker compose -f docker-compose.prod.yml run --rm \
-  -e DATABASE_URL="mysql://elorae:${DB_PASSWORD}@db:3306/elorae" \
+  -e DATABASE_URL="mysql://elorae:${DB_PASSWORD}@db:3306/elorae?sslaccept=accept_invalid_certs" \
   --workdir /app/packages/db api ./node_modules/.bin/prisma migrate deploy
 
 curl -fsS https://api.elorae.cloud/health           # 200 OK
@@ -291,7 +295,7 @@ rm /tmp/elorae-dump.sql
 
 # 4. Re-apply Prisma migrations (idempotent — the dump already contains _prisma_migrations).
 docker compose -f docker-compose.prod.yml run --rm \
-  -e DATABASE_URL="mysql://elorae:${DB_PASSWORD}@db:3306/elorae" \
+  -e DATABASE_URL="mysql://elorae:${DB_PASSWORD}@db:3306/elorae?sslaccept=accept_invalid_certs" \
   --workdir /app/packages/db api ./node_modules/.bin/prisma migrate deploy
 
 # 5. Restart api + web so they pick up the new data.
