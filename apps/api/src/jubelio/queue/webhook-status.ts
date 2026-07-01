@@ -18,8 +18,11 @@ export const SKIP_REASONS = {
   UNHANDLED_EVENT_TYPE: "unhandled_event_type",
   UNKNOWN_EVENT: "unknown_event",
   ORPHAN_SKU: "orphan_sku",
+  ORPHAN_GROUP: "orphan_group",
   AWAITING_SAMPLES: "awaiting_samples",
   MISSING_ITEM_GROUP_ID: "missing_item_group_id",
   MISSING_SALESORDER_ID: "missing_salesorder_id",
   MISSING_REQUIRED_FIELD: "missing_required_field",
+  MISSING_ITEM_IDS: "missing_item_ids",
+  UNSUPPORTED_PAYLOAD_SHAPE: "unsupported_payload_shape",
 } as const;
