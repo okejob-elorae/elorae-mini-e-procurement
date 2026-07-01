@@ -724,6 +724,22 @@
         "DEFAULTS_CHANGE": "Defaults change",
         "MANUAL_EDIT": "Manual edit"
       }
+    },
+    "images": {
+      "productGallery": "Product gallery",
+      "variantGalleries": "Variant galleries",
+      "save": "Save images",
+      "saved": "Images saved",
+      "error": {
+        "forbidden": "You don't have permission to manage images.",
+        "image_mime_invalid": "File type not allowed. Use JPEG, PNG, or WebP.",
+        "image_too_large": "Image exceeds 5 MB.",
+        "image_count_exceeded": "Maximum 20 images per gallery.",
+        "image_variant_unknown": "Variant SKU not found on this product.",
+        "image_url_untrusted": "Image URL host is not trusted.",
+        "image_jubelio_owned": "Cannot delete a Jubelio-managed image. Remove it in Jubelio first.",
+        "item_not_found": "Item not found."
+      }
     }
   },
   "workOrders": {

@@ -26,7 +26,8 @@ export class JubelioHttpService {
   async request<T = unknown>(path: string, init: JubelioRequestInit = {}): Promise<T> {
     const url = this.buildUrl(path, init.query);
     const method = init.method ?? "GET";
-    const bodyStr = typeof init.body === "string" ? init.body : undefined;
+    const bodyStr = typeof init.body === "string" ? init.body
+                  : (init.body instanceof FormData ? "<multipart>" : undefined);
     const start = Date.now();
     let rateLimited = false;
 
@@ -56,12 +57,30 @@ export class JubelioHttpService {
 
       const status = response.status;
       const result = await this.parse<T>(path, response);
-      this.apiLog.record({ method, path, body: bodyStr, statusCode: status, latencyMs: Date.now() - start, ok: true, rateLimited });
+      this.apiLog.record({
+        method, path, body: bodyStr, statusCode: status,
+        latencyMs: Date.now() - start, ok: true, rateLimited,
+        requestBody: bodyStr,
+        responseBody: result === undefined ? undefined : JSON.stringify(result),
+      });
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const statusCode = err instanceof JubelioError ? err.status : undefined;
-      this.apiLog.record({ method, path, body: bodyStr, statusCode, latencyMs: Date.now() - start, ok: false, rateLimited, errorMessage: message });
+      const responseBody = err instanceof JubelioError
+        ? (typeof err.cause === "string" ? err.cause : JSON.stringify(err.cause))
+        : undefined;
+      this.apiLog.record({
+        method, path, body: bodyStr, statusCode,
+        latencyMs: Date.now() - start, ok: false, rateLimited, errorMessage: message,
+        requestBody: bodyStr,
+        responseBody,
+      });
+      if (err instanceof JubelioError) {
+        this.logger.error(
+          `Jubelio ${method} ${path} ${err.status}\n  REQ: ${bodyStr ?? "<no body>"}\n  RES: ${responseBody ?? "<no body>"}`,
+        );
+      }
       throw err;
     }
   }
@@ -105,6 +124,15 @@ export class JubelioHttpService {
     return this.request<T>(path, { ...init, method: "DELETE" });
   }
 
+  upload<T = unknown>(path: string, formData: FormData, init?: JubelioRequestInit): Promise<T> {
+    return this.request<T>(path, {
+      ...init,
+      method: "POST",
+      body: formData as unknown as RequestInit["body"],
+      // intentionally NO Content-Type override
+    });
+  }
+
   private buildUrl(path: string, query?: JubelioRequestInit["query"]): string {
     const base = this.config.baseUrl.replace(/\/$/, "");
     const suffix = path.startsWith("/") ? path : `/${path}`;
@@ -121,7 +149,7 @@ export class JubelioHttpService {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
-      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...(init.body && typeof init.body === "string" ? { "Content-Type": "application/json" } : {}),
       ...(init.headers ?? {}),
     };
     return fetch(url, { ...init, headers });

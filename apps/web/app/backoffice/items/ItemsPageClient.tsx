@@ -88,6 +88,7 @@ type ItemsPageClientProps = {
   typeFilter: ItemType | 'raw' | '';
   page: number;
   pageSize: number;
+  primaryImages?: Record<string, string>;
 };
 
 export function ItemsPageClient({
@@ -98,6 +99,7 @@ export function ItemsPageClient({
   typeFilter,
   page,
   pageSize,
+  primaryImages = {},
 }: ItemsPageClientProps) {
   const locale = useLocale();
   const router = useRouter();
@@ -248,6 +250,7 @@ export function ItemsPageClient({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10"></TableHead>
+                    <TableHead className="w-12"></TableHead>
                     <TableHead>SKU</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Type</TableHead>
@@ -278,6 +281,18 @@ export function ItemsPageClient({
                               <ChevronRight className="h-4 w-4" />
                             )}
                           </Button>
+                        </TableCell>
+                        <TableCell>
+                          {primaryImages[`${item.id}|`] ? (
+                            <img
+                              src={primaryImages[`${item.id}|`]}
+                              alt=""
+                              className="w-10 h-10 rounded object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded bg-muted" />
+                          )}
                         </TableCell>
                         <TableCell className="font-medium">{item.sku}</TableCell>
                         <TableCell>
@@ -339,7 +354,7 @@ export function ItemsPageClient({
                       </TableRow>
                       {expandedId === item.id && (
                         <TableRow>
-                          <TableCell colSpan={10}>
+                          <TableCell colSpan={11}>
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="space-y-1">
                                 <p className="text-sm font-semibold">Variants</p>

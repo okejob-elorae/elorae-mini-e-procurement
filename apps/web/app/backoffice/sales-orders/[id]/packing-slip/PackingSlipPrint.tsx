@@ -6,9 +6,13 @@ import { formatDateTime } from "@/lib/sales-orders/format";
 import { PRINT_STYLES, BRAND } from "@/lib/sales-orders/print-styles";
 import type { SalesOrderDetail, SalesOrderItemRow } from "@/lib/sales-orders/queries";
 
-type Props = { order: SalesOrderDetail; items: SalesOrderItemRow[] };
+type Props = {
+  order: SalesOrderDetail;
+  items: SalesOrderItemRow[];
+  lineImages?: Record<string, string>;
+};
 
-export function PackingSlipPrint({ order, items }: Props) {
+export function PackingSlipPrint({ order, items, lineImages = {} }: Props) {
   const t = useTranslations("salesOrdersPrint.packingSlip");
   const locale = useLocale();
 
@@ -63,19 +67,36 @@ export function PackingSlipPrint({ order, items }: Props) {
         <table>
           <thead>
             <tr>
+              <th style={{ width: "44px" }}></th>
               <th>{t("colSku")}</th>
               <th>{t("colProduct")}</th>
               <th className="num">{t("colQty")}</th>
             </tr>
           </thead>
           <tbody>
-            {liveItems.map((it) => (
-              <tr key={it.id}>
-                <td>{it.jubelioItemCode}</td>
-                <td>{it.productName}</td>
-                <td className="num">{it.qty}</td>
-              </tr>
-            ))}
+            {liveItems.map((it) => {
+              const imgKey = it.itemId ? `${it.itemId}|` : null;
+              const imgUrl = imgKey ? lineImages[imgKey] : undefined;
+              return (
+                <tr key={it.id}>
+                  <td>
+                    {imgUrl ? (
+                      <img
+                        src={imgUrl}
+                        alt=""
+                        style={{ width: "40px", height: "40px", objectFit: "cover", borderRadius: "2px" }}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div style={{ width: "40px", height: "40px", background: "#e5e7eb", borderRadius: "2px" }} />
+                    )}
+                  </td>
+                  <td>{it.jubelioItemCode}</td>
+                  <td>{it.productName}</td>
+                  <td className="num">{it.qty}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 

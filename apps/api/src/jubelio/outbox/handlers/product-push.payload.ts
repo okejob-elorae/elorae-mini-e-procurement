@@ -1,5 +1,15 @@
 import type { JubelioProductMapping } from "@elorae/db";
 
+export type ItemImageSlice = {
+  id: string;
+  variantSku: string | null;
+  url: string;
+  sortOrder: number;
+  jubelioImageId: string | null;
+  jubelioImageKey: string | null;
+  jubelioImageThumbnail: string | null;
+};
+
 export type PushDefaultsSlice = {
   sellTaxId: number;
   buyTaxId: number;
@@ -94,6 +104,68 @@ export type CreateProductRequestBody = {
   product_skus: ProductSkuEntry[];
 };
 
+/**
+ * Derives the `file_name` value for Jubelio's catalog image payload — strips
+ * the file extension (Jubelio expects a bare name in this field).
+ * Kept separate from `multipartFileName` in image-upload.service.ts, which
+ * preserves the extension for the multipart upload form.
+ */
+function fileNameFromUrl(url: string, fallback: string): string {
+  try {
+    const path = new URL(url).pathname;
+    const base = path.split("/").pop() ?? "";
+    return base.split(".").shift() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+type JubelioImage = { url: string; thumbnail: string; file_name: string; sequence_number: number };
+
+function buildJubelioImages(images: ItemImageSlice[], mappings: MappingSlice[]): {
+  images: JubelioImage[];
+  variation_images: Array<{ item_id: number; images: JubelioImage[] }>;
+} {
+  const toJubelio = (i: ItemImageSlice): JubelioImage | null => {
+    if (!i.jubelioImageKey || !i.jubelioImageThumbnail) return null;
+    return {
+      url: i.jubelioImageKey,
+      thumbnail: i.jubelioImageThumbnail,
+      file_name: fileNameFromUrl(i.url, i.id),
+      sequence_number: i.sortOrder,
+    };
+  };
+
+  const productLevel = images
+    .filter((i) => i.variantSku === null)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(toJubelio)
+    .filter((x): x is JubelioImage => x !== null);
+
+  const itemIdBySku = new Map<string, number>(
+    mappings.map((m) => [m.erpVariantSku, m.jubelioItemId]),
+  );
+  const byItemId = new Map<number, ItemImageSlice[]>();
+  for (const i of images) {
+    if (!i.variantSku) continue;
+    const jubelioItemId = itemIdBySku.get(i.variantSku);
+    if (!jubelioItemId) continue;
+    const arr = byItemId.get(jubelioItemId) ?? [];
+    arr.push(i);
+    byItemId.set(jubelioItemId, arr);
+  }
+
+  const variation_images = Array.from(byItemId.entries()).map(([item_id, rows]) => ({
+    item_id,
+    images: rows
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(toJubelio)
+      .filter((x): x is JubelioImage => x !== null),
+  }));
+
+  return { images: productLevel, variation_images };
+}
+
 const MIN_DESCRIPTION_LEN = 30;
 
 function padDescription(input: string | null): string {
@@ -107,12 +179,16 @@ export function buildCreateProductRequest(opts: {
   defaults: PushDefaultsSlice;
   categoryJubelioId: number;
   mappings: MappingSlice[];
+  images?: ItemImageSlice[];
 }): CreateProductRequestBody {
   const { item, defaults: d, categoryJubelioId, mappings } = opts;
 
   const groupId = mappings[0]?.jubelioItemGroupId ?? 0;
   const sellPrice = item.sellingPrice ?? 0;
   const mappingBySku = new Map(mappings.map((m) => [m.erpVariantSku, m]));
+
+  const imageResult = buildJubelioImages(opts.images ?? [], mappings);
+  const hasVariantImages = (opts.images ?? []).some((i) => i.variantSku !== null);
 
   const hasVariants = item.variants !== null && item.variants.length > 0;
   const desiredVariants: Array<{ sku: string }> =
@@ -161,8 +237,8 @@ export function buildCreateProductRequest(opts: {
     min: 0,
     max: 0,
     use_batch_number: false,
-    images: [],
-    variation_images: [],
+    images: imageResult.images,
+    variation_images: imageResult.variation_images,
     variations: [],
     unlimited_stock_store_ids: null,
     sell_price: sellPrice,
@@ -170,7 +246,7 @@ export function buildCreateProductRequest(opts: {
     brand_id: d.brandId,
     brand_name: d.brandName,
     rop: d.rop,
-    use_single_image_set: d.useSingleImageSet,
+    use_single_image_set: hasVariantImages ? false : d.useSingleImageSet,
     use_serial_number: d.useSerialNumber,
     product_skus,
   };

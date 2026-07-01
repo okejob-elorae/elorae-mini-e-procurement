@@ -8,6 +8,8 @@ import type {
   CatalogItemDraft,
   JubelioItemGroup,
   JubelioItemsPayload,
+  JubelioRawImage,
+  JubelioRawVariantImages,
   JubelioVariantRow,
   VariantJson,
 } from "./catalog.types";
@@ -64,6 +66,8 @@ type GroupMeta = {
   sell_price?: string | number;
   last_modified?: string;
   description?: string;
+  images?: JubelioRawImage[];
+  variation_images?: JubelioRawVariantImages[];
 };
 
 export function resolveItemSku(familyCode: string, itemGroupId: number, familyGroupCount: number): string {
@@ -104,6 +108,8 @@ export function buildCatalogDrafts(
           sell_price: group.sell_price,
           last_modified: group.last_modified,
           description: opts?.descriptionsByGroupId?.get(group.item_group_id),
+          images: group.images,
+          variation_images: group.variation_images,
         },
         variants: [],
         familyCode: "",
@@ -191,6 +197,8 @@ export function buildCatalogDrafts(
           erpVariantSku: parseVariantSku(jubelioItemCode),
         };
       }),
+      rawImages: acc.meta.images ?? [],
+      rawVariantImages: acc.meta.variation_images ?? [],
     });
   }
 

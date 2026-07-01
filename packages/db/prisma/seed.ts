@@ -104,6 +104,7 @@ async function main() {
     { code: 'supplier_types:delete', module: 'supplier_types', action: 'delete', description: 'Delete supplier types' },
     // Items
     { code: 'items:view', module: 'items', action: 'view', description: 'View items' },
+    { code: 'items:manage', module: 'items', action: 'manage', description: 'Manage items and upload images' },
     { code: 'sales_orders:view', module: 'sales_orders', action: 'view', description: 'View marketplace sales orders' },
     { code: 'sales_orders:fulfill', module: 'sales_orders', action: 'fulfill', description: 'Pick, pack, ship marketplace orders' },
     { code: 'items:create', module: 'items', action: 'create', description: 'Create items' },

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { ItemType, Prisma, createItemFromIngest, updateItemFromIngest } from "@elorae/db";
+import { ItemType, Prisma, createItemFromIngest, pruneJubelioOrphans, updateItemFromIngest, upsertJubelioImage } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
 import { buildCatalogDrafts, sellingPriceToDecimal } from "./map-catalog";
@@ -9,6 +9,7 @@ import type {
   CatalogSyncItemResult,
   CatalogSyncResult,
   CatalogSyncSummary,
+  JubelioItemGroupDetail,
   JubelioItemsPayload,
   VariantJson,
 } from "./catalog.types";
@@ -235,6 +236,7 @@ export class JubelioCatalogSyncService {
     const variantsJson = draft.variants as Prisma.InputJsonValue;
 
     if (!existing) {
+      let createdItemId = "";
       await this.prisma.$transaction(
         async (tx) => {
           const item = await createItemFromIngest(tx, {
@@ -253,9 +255,11 @@ export class JubelioCatalogSyncService {
           });
           await this.ensureInventoryRows(tx, item.id, draft);
           await this.upsertMappings(tx, item.id, draft);
+          createdItemId = item.id;
         },
         CATALOG_PERSIST_TX_OPTIONS,
       );
+      await this.syncImages(createdItemId, draft);
       return { action: "create", warnings };
     }
 
@@ -281,7 +285,68 @@ export class JubelioCatalogSyncService {
       },
       CATALOG_PERSIST_TX_OPTIONS,
     );
+    await this.syncImages(existing.id, draft);
 
     return { action: "update", warnings };
+  }
+
+  private async syncImages(itemId: string, draft: CatalogItemDraft): Promise<void> {
+    // /inventory/items/ list endpoint only exposes a single `thumbnail` per group/variant —
+    // multi-image arrays live in /inventory/items/group/{id}'s product_skus[].images[].
+    // Fetch the detail per item; image_id is the durable identifier, cloud_key is the URL.
+    let detail: JubelioItemGroupDetail;
+    try {
+      detail = await this.http.get<JubelioItemGroupDetail>(`/inventory/items/group/${draft.jubelioItemGroupId}`);
+    } catch (err) {
+      this.logger.warn(
+        `syncImages: failed to fetch detail for group ${draft.jubelioItemGroupId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+
+    const seenJubelioIds: string[] = [];
+    const productSkus = Array.isArray(detail.product_skus) ? detail.product_skus : [];
+
+    // Jubelio's product_skus[].item_code uses the raw Jubelio SKU (e.g. "28000005K-CRM-L"),
+    // but ERP item.variants store the canonical ERP sku (e.g. "28000005K-L") after the
+    // color-code is stripped by parse-item-code. Map raw → ERP via sourceVariants so the
+    // gallery editor can group images by the ERP variant sku.
+    const erpSkuByJubelioCode = new Map<string, string>(
+      draft.sourceVariants.map((sv) => [sv.jubelioItemCode, sv.erpVariantSku]),
+    );
+
+    for (const sku of productSkus) {
+      if (typeof sku !== "object" || sku === null) continue;
+      const jubelioCode = typeof sku.item_code === "string" ? sku.item_code : "";
+      const variantSku = draft.variantless ? null : (erpSkuByJubelioCode.get(jubelioCode) ?? jubelioCode);
+      const images = Array.isArray(sku.images) ? sku.images : [];
+      for (const img of images) {
+        if (typeof img !== "object" || img === null) continue;
+        const cloudKey = typeof img.cloud_key === "string" ? img.cloud_key : "";
+        const imageId = typeof img.image_id === "number" ? img.image_id : null;
+        if (!cloudKey || imageId === null) continue;
+        const jid = String(imageId);
+        seenJubelioIds.push(jid);
+        try {
+          await upsertJubelioImage(this.prisma, {
+            itemId,
+            variantSku,
+            url: cloudKey,
+            sortOrder: typeof img.sequence_number === "number" ? img.sequence_number : 0,
+            jubelioImageId: jid,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `syncImages: failed to upsert image ${jid} for item ${itemId} variant=${variantSku ?? "<null>"}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
+
+    try {
+      await pruneJubelioOrphans(this.prisma, itemId, seenJubelioIds);
+    } catch (err) {
+      this.logger.warn(`syncImages: failed to prune orphans for item ${itemId}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }

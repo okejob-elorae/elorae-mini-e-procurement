@@ -35,10 +35,17 @@ export class OutboxProcessor extends WorkerHost<Worker<JobPayload>> {
       return;
     }
 
-    await this.prisma.jubelioOutbox.update({
-      where: { id: row.id },
+    // Atomic claim: only proceed if this call wins the PENDING → PROCESSING transition.
+    // Prevents double-fire when BullMQ schedules a retry concurrent with a still-running
+    // attempt, or when the poller re-enqueues a row before the first worker finishes.
+    const claim = await this.prisma.jubelioOutbox.updateMany({
+      where: { id: row.id, status: { in: [OUTBOX_STATUS.PENDING] } },
       data: { status: OUTBOX_STATUS.PROCESSING, attempts: { increment: 1 } },
     });
+    if (claim.count === 0) {
+      this.logger.warn(`row ${row.id} already claimed by another worker; skipping duplicate fire`);
+      return;
+    }
 
     try {
       const outcome = await this.router.route(row);
