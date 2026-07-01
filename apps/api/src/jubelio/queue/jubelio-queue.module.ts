@@ -19,7 +19,7 @@ import { UnhandledEventHandler } from "../handlers/unhandled.handler";
   imports: [
     PrismaModule,
     AdminModule,
-    JubelioModule,
+    forwardRef(() => JubelioModule),
     forwardRef(() => JubelioCatalogModule),
     forwardRef(() => ReturnsModule),
     BullModule.registerQueue({ name: JUBELIO_WEBHOOK_QUEUE }),
