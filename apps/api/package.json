@@ -36,6 +36,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.997.0",
     "@elorae/db": "workspace:*",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.0",
