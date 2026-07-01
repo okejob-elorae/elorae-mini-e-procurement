@@ -87,7 +87,9 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:3001/health || exit 1"]
+      # node:22-slim ships without wget/curl. Use node's native fetch instead —
+      # guaranteed present since it's the runtime.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -109,7 +111,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health || exit 1"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
