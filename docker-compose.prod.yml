@@ -103,6 +103,10 @@ services:
     restart: unless-stopped
     env_file:
       - .env.production.web
+    environment:
+      # Next.js standalone server: bind to all interfaces so the in-container
+      # healthcheck (localhost:3000) works alongside external docker-network access.
+      HOSTNAME: "0.0.0.0"
     depends_on:
       db:
         condition: service_healthy
