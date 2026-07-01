@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from "../generated/prisma/client";
+import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 import { InventoryValueMissingError } from "./stock-writer";
 
@@ -78,4 +78,61 @@ export async function reserveOrder(client: AnyClient, input: ReserveOrderInput):
   return hasTx(client) ? client.$transaction(run) : run(client);
 }
 
-export const _sourceGuard: StockAdjustmentSource = "FULFILLMENT_CONSUME";
+export type ConsumeOrderResult = { consumed: number };
+
+export async function consumeOrder(
+  client: AnyClient,
+  input: { salesorderId: number; salesorderNo: string },
+): Promise<ConsumeOrderResult> {
+  const run = async (tx: Prisma.TransactionClient): Promise<ConsumeOrderResult> => {
+    const rows = await tx.stockReservation.findMany({
+      where: { salesorderId: input.salesorderId, state: "RESERVED" },
+    });
+    let consumed = 0;
+
+    for (const row of rows) {
+      const upd = await tx.stockReservation.updateMany({
+        where: { salesorderDetailId: row.salesorderDetailId, state: "RESERVED" },
+        data: { state: "CONSUMED", resolvedAt: new Date() },
+      });
+      if (upd.count === 0) continue; // lost the race — another trigger consumed it
+
+      const qty = Number(row.qty);
+      const inv = await tx.inventoryValue.findUnique({
+        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
+      });
+      const prevOnHand = inv ? Number(inv.qtyOnHand) : 0;
+      const avgCost = inv ? Number(inv.avgCost) : 0;
+      const prevReserved = inv ? Number(inv.reservedQty) : 0;
+      const newOnHand = prevOnHand - qty;
+      const newReserved = Math.max(0, prevReserved - qty);
+
+      await tx.stockAdjustment.create({
+        data: {
+          docNumber: `CONSUME-${input.salesorderId}-${row.salesorderDetailId}`,
+          itemId: row.itemId,
+          type: AdjustmentType.NEGATIVE,
+          qtyChange: -qty,
+          reason: `Fulfillment ship — salesorder ${input.salesorderNo || input.salesorderId}`,
+          prevQty: prevOnHand,
+          newQty: newOnHand,
+          prevAvgCost: avgCost,
+          newAvgCost: avgCost,
+          source: "FULFILLMENT_CONSUME" satisfies StockAdjustmentSource,
+          idempotencyKey: `salesorder-${input.salesorderId}-consume-line-${row.salesorderDetailId}`,
+          externalRef: `salesorder:${input.salesorderId}`,
+        },
+      });
+
+      await tx.inventoryValue.update({
+        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
+        data: { qtyOnHand: newOnHand, reservedQty: newReserved, totalValue: newOnHand * avgCost, lastUpdated: new Date() },
+      });
+      consumed += 1;
+    }
+
+    return { consumed };
+  };
+
+  return hasTx(client) ? client.$transaction(run) : run(client);
+}
