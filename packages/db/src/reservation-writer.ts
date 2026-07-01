@@ -136,3 +136,40 @@ export async function consumeOrder(
 
   return hasTx(client) ? client.$transaction(run) : run(client);
 }
+
+export type ReleaseOrderResult = { released: number };
+
+export async function releaseOrder(
+  client: AnyClient,
+  input: { salesorderId: number },
+): Promise<ReleaseOrderResult> {
+  const run = async (tx: Prisma.TransactionClient): Promise<ReleaseOrderResult> => {
+    const rows = await tx.stockReservation.findMany({
+      where: { salesorderId: input.salesorderId, state: "RESERVED" },
+    });
+    let released = 0;
+
+    for (const row of rows) {
+      const upd = await tx.stockReservation.updateMany({
+        where: { salesorderDetailId: row.salesorderDetailId, state: "RESERVED" },
+        data: { state: "RELEASED", resolvedAt: new Date() },
+      });
+      if (upd.count === 0) continue;
+
+      const qty = Number(row.qty);
+      const inv = await tx.inventoryValue.findUnique({
+        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
+      });
+      const newReserved = Math.max(0, (inv ? Number(inv.reservedQty) : 0) - qty);
+      await tx.inventoryValue.update({
+        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
+        data: { reservedQty: newReserved, lastUpdated: new Date() },
+      });
+      released += 1;
+    }
+
+    return { released };
+  };
+
+  return hasTx(client) ? client.$transaction(run) : run(client);
+}

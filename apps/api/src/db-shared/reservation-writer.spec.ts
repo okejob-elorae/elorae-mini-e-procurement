@@ -1,4 +1,4 @@
-import { consumeOrder, reserveOrder } from "../../../../packages/db/src/reservation-writer";
+import { consumeOrder, releaseOrder, reserveOrder } from "../../../../packages/db/src/reservation-writer";
 import { InventoryValueMissingError } from "../../../../packages/db/src/stock-writer";
 
 function makeTx(overrides: any = {}) {
@@ -125,6 +125,46 @@ describe("consumeOrder", () => {
     const r = await consumeOrder(tx, { salesorderId: 100, salesorderNo: "SO-100" });
     expect(r.consumed).toBe(0);
     expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
+    expect(tx.inventoryValue.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("releaseOrder", () => {
+  it("releases RESERVED lines: decrements reserved, leaves onHand untouched", async () => {
+    const tx: any = {
+      stockReservation: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: "r1", salesorderDetailId: 5, itemId: "i1", variantSku: "", qty: "3", state: "RESERVED" },
+        ]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      inventoryValue: {
+        findUnique: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "3" }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const r = await releaseOrder(tx, { salesorderId: 100 });
+    expect(r.released).toBe(1);
+    expect(tx.inventoryValue.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ reservedQty: 0 }) }),
+    );
+    // onHand must NOT be in the update payload
+    const call = tx.inventoryValue.update.mock.calls[0][0];
+    expect(call.data.qtyOnHand).toBeUndefined();
+  });
+
+  it("skips lines already CONSUMED (updateMany count 0)", async () => {
+    const tx: any = {
+      stockReservation: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: "r1", salesorderDetailId: 5, itemId: "i1", variantSku: "", qty: "3", state: "RESERVED" },
+        ]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      inventoryValue: { findUnique: jest.fn(), update: jest.fn() },
+    };
+    const r = await releaseOrder(tx, { salesorderId: 100 });
+    expect(r.released).toBe(0);
     expect(tx.inventoryValue.update).not.toHaveBeenCalled();
   });
 });
