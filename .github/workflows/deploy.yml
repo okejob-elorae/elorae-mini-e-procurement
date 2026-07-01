@@ -90,6 +90,7 @@ jobs:
             cd /srv/elorae
             docker compose -f docker-compose.prod.yml up -d --build web
             docker image prune -f
+            docker builder prune -af --filter until=24h
 
   deploy-api:
     name: Deploy api
@@ -145,3 +146,4 @@ jobs:
 
             docker compose -f docker-compose.prod.yml up -d --no-build api
             docker image prune -f
+            docker builder prune -af --filter until=24h
