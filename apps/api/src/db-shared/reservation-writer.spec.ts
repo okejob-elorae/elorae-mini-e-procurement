@@ -1,4 +1,5 @@
 import { reserveOrder } from "../../../../packages/db/src/reservation-writer";
+import { InventoryValueMissingError } from "../../../../packages/db/src/stock-writer";
 
 function makeTx(overrides: any = {}) {
   return {
@@ -66,5 +67,18 @@ describe("reserveOrder", () => {
         data: expect.objectContaining({ category: "STOCK_OVERSELL_RISK", severity: "WARN" }),
       }),
     );
+  });
+
+  it("throws InventoryValueMissingError when no InventoryValue row exists for the line", async () => {
+    const tx = makeTx({
+      inventoryValue: { findUnique: jest.fn().mockResolvedValue(null) },
+    });
+    await expect(
+      reserveOrder(tx, {
+        salesorderId: 100,
+        salesorderNo: "SO-100",
+        lines: [{ salesorderDetailId: 5, itemId: "i1", variantSku: "", qty: 3 }],
+      }),
+    ).rejects.toThrow(InventoryValueMissingError);
   });
 });

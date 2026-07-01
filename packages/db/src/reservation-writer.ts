@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
+import { InventoryValueMissingError } from "./stock-writer";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -47,8 +48,9 @@ export async function reserveOrder(client: AnyClient, input: ReserveOrderInput):
       const inv = await tx.inventoryValue.findUnique({
         where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
       });
-      const onHand = inv ? Number(inv.qtyOnHand) : 0;
-      const newReserved = (inv ? Number(inv.reservedQty) : 0) + line.qty;
+      if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
+      const onHand = Number(inv.qtyOnHand);
+      const newReserved = Number(inv.reservedQty) + line.qty;
       await tx.inventoryValue.update({
         where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
         data: { reservedQty: newReserved, lastUpdated: new Date() },
