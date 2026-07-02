@@ -6,6 +6,7 @@ import {
   getWorkOrderCountByStatus,
   getCOGSRawVsFinished,
   getSuppliersForReportFilter,
+  getOversoldInventory,
 } from '@/lib/dashboard/queries';
 import { getOverduePOs } from '@/lib/purchase-orders/queries';
 import { getMarketplaceKpi } from '@/lib/sales-orders/queries';
@@ -18,7 +19,7 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session) redirect('/login');
 
-  const [stats, overduePOs, suppliers, cogsRawVsFinished, rawMaterialShortage, woStatusCounts, marketplaceKpi] =
+  const [stats, overduePOs, suppliers, cogsRawVsFinished, rawMaterialShortage, woStatusCounts, marketplaceKpi, oversoldInventory] =
     await Promise.all([
       getDashboardStats(),
       getOverduePOs(),
@@ -27,6 +28,7 @@ export default async function DashboardPage() {
       getRawMaterialShortage(),
       getWorkOrderCountByStatus(),
       getMarketplaceKpi(),
+      getOversoldInventory(),
     ]);
 
   return (
@@ -41,6 +43,7 @@ export default async function DashboardPage() {
       initialRawMaterialShortage={rawMaterialShortage}
       initialWoStatusCounts={woStatusCounts}
       marketplaceKpi={marketplaceKpi}
+      initialOversoldInventory={oversoldInventory}
     />
   );
 }

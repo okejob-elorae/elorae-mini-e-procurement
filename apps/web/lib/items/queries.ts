@@ -15,19 +15,23 @@ export type ListItemsOpts = {
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
-/** Aggregate variant-level inventory rows to one item-level { qtyOnHand, avgCost, totalValue }. */
+/** Aggregate variant-level inventory rows to one item-level { qtyOnHand, reservedQty, available, avgCost, totalValue }. */
 export function aggregateInventoryValues(
-  rows: Array<{ qtyOnHand: unknown; totalValue: unknown }> | null | undefined
-): { qtyOnHand: number; avgCost: number; totalValue: number } | null {
+  rows: Array<{ qtyOnHand: unknown; totalValue: unknown; reservedQty?: unknown }> | null | undefined
+): { qtyOnHand: number; reservedQty: number; available: number; avgCost: number; totalValue: number } | null {
   if (!rows?.length) return null;
   let qty = 0;
+  let reserved = 0;
   let totalValue = 0;
   for (const r of rows) {
     qty += toNum(r.qtyOnHand) ?? 0;
+    reserved += toNum(r.reservedQty) ?? 0;
     totalValue += toNum(r.totalValue) ?? 0;
   }
   return {
     qtyOnHand: qty,
+    reservedQty: reserved,
+    available: qty - reserved,
     avgCost: qty > 0 ? totalValue / qty : 0,
     totalValue,
   };
@@ -68,11 +72,11 @@ function serializeListItemForClient(item: {
   sellingPrice?: unknown;
   targetMarginPercent?: unknown;
   additionalCost?: unknown;
-  inventoryValues?: Array<{ qtyOnHand: unknown; totalValue: unknown; avgCost?: unknown }>;
+  inventoryValues?: Array<{ qtyOnHand: unknown; reservedQty?: unknown; totalValue: unknown; avgCost?: unknown }>;
   [k: string]: unknown;
 }) {
   const inv = aggregateInventoryValues(
-    item.inventoryValues as Array<{ qtyOnHand: unknown; totalValue: unknown }> | undefined
+    item.inventoryValues as Array<{ qtyOnHand: unknown; reservedQty?: unknown; totalValue: unknown }> | undefined
   );
   const { inventoryValues: _omit, ...rest } = item;
   void _omit;
@@ -91,7 +95,7 @@ function serializeListItemForClient(item: {
 
 function serializeListItemForClientWithDetails(item: {
   reorderPoint?: unknown;
-  inventoryValues?: Array<{ qtyOnHand: unknown; totalValue: unknown; avgCost?: unknown }>;
+  inventoryValues?: Array<{ qtyOnHand: unknown; reservedQty?: unknown; totalValue: unknown; avgCost?: unknown }>;
   variants?: unknown;
   fgConsumptions?: Array<{
     qtyRequired: unknown;
@@ -225,6 +229,7 @@ export async function listItems(
           inventoryValues: {
             select: {
               qtyOnHand: true,
+              reservedQty: true,
               totalValue: true,
             },
           },
@@ -265,6 +270,7 @@ export async function listItems(
       inventoryValues: {
         select: {
           qtyOnHand: true,
+          reservedQty: true,
           totalValue: true,
         },
       },

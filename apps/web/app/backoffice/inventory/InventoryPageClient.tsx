@@ -55,6 +55,8 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 interface InventoryItem {
   itemId: string;
   qtyOnHand: number;
+  reservedQty: number;
+  available: number;
   avgCost: number;
   totalValue: number;
   item: {
@@ -296,7 +298,7 @@ export function InventoryPageClient({
 
   const isLowStock = (item: InventoryItem) => {
     if (!item.item.reorderPoint) return false;
-    return Number(item.qtyOnHand) <= Number(item.item.reorderPoint);
+    return Number(item.available) <= Number(item.item.reorderPoint);
   };
 
   const filteredInventory = inventory.filter(item =>
@@ -474,7 +476,9 @@ export function InventoryPageClient({
                         <TableHead>SKU</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>UOM</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">On Hand</TableHead>
+                        <TableHead className="text-right">Reserved</TableHead>
+                        <TableHead className="text-right">Available</TableHead>
                         <TableHead className="text-right">Avg Cost</TableHead>
                         <TableHead className="text-right">Value</TableHead>
                       </TableRow>
@@ -497,6 +501,20 @@ export function InventoryPageClient({
                           <TableCell>{item.item.uom.code}</TableCell>
                           <TableCell className="text-right">
                             {Number(item.qtyOnHand).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {Number(item.reservedQty).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span
+                              className={
+                                Number(item.available) < 0
+                                  ? 'font-medium text-red-600 dark:text-red-400'
+                                  : undefined
+                              }
+                            >
+                              {Number(item.available).toLocaleString()}
+                            </span>
                           </TableCell>
                           <TableCell className="text-right">
                             Rp {Number(item.avgCost).toLocaleString()}

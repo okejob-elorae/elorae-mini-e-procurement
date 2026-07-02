@@ -70,21 +70,25 @@ export async function getInventoryReport() {
     orderBy: { item: { sku: 'asc' } }
   });
 
-  const byItem = new Map<string, { qtyOnHand: number; totalValue: number; item: (typeof rows)[0]['item'] }>();
+  const byItem = new Map<string, { qtyOnHand: number; reserved: number; totalValue: number; item: (typeof rows)[0]['item'] }>();
   for (const r of rows) {
     const qty = Number(r.qtyOnHand);
+    const reserved = Number(r.reservedQty);
     const val = Number(r.totalValue);
     const existing = byItem.get(r.itemId);
     if (existing) {
       existing.qtyOnHand += qty;
+      existing.reserved += reserved;
       existing.totalValue += val;
     } else {
-      byItem.set(r.itemId, { qtyOnHand: qty, totalValue: val, item: r.item });
+      byItem.set(r.itemId, { qtyOnHand: qty, reserved, totalValue: val, item: r.item });
     }
   }
   const inventory = Array.from(byItem.entries()).map(([itemId, agg]) => ({
     itemId,
     qtyOnHand: agg.qtyOnHand,
+    reserved: agg.reserved,
+    available: agg.qtyOnHand - agg.reserved,
     totalValue: agg.totalValue,
     avgCost: agg.qtyOnHand > 0 ? agg.totalValue / agg.qtyOnHand : 0,
     item: agg.item,
@@ -97,7 +101,7 @@ export async function getInventoryReport() {
     totalValue,
     totalQty,
     lowStock: inventory.filter(inv =>
-      inv.item.reorderPoint != null && inv.qtyOnHand <= Number(inv.item.reorderPoint)
+      inv.item.reorderPoint != null && inv.available <= Number(inv.item.reorderPoint)
     ).length,
     zeroStock: inventory.filter(inv => inv.qtyOnHand === 0).length
   };
@@ -286,7 +290,7 @@ export async function getDashboardSummary() {
     
     // Inventory Stats
     prisma.inventoryValue.aggregate({
-      _sum: { totalValue: true, qtyOnHand: true }
+      _sum: { totalValue: true, qtyOnHand: true, reservedQty: true }
     }),
     
     // Production Stats
@@ -302,7 +306,7 @@ export async function getDashboardSummary() {
       }
     }),
     
-    // Low stock: items where qtyOnHand <= reorderPoint (compare in JS)
+    // Low stock: items where available <= reorderPoint (compare in JS)
     prisma.inventoryValue.findMany({
       where: { item: { reorderPoint: { not: null } } },
       include: { item: { select: { reorderPoint: true } } },
@@ -316,20 +320,21 @@ export async function getDashboardSummary() {
     })
   ]);
 
-  const inventoryByItem = new Map<string, { qtyOnHand: number; reorderPoint: number | null }>();
+  const inventoryByItem = new Map<string, { qtyOnHand: number; reservedQty: number; reorderPoint: number | null }>();
   for (const r of inventoryWithReorder) {
     const rp = r.item.reorderPoint != null ? Number(r.item.reorderPoint) : null;
     const existing = inventoryByItem.get(r.itemId);
     if (existing) {
       existing.qtyOnHand += Number(r.qtyOnHand);
+      existing.reservedQty += Number(r.reservedQty);
     } else {
-      inventoryByItem.set(r.itemId, { qtyOnHand: Number(r.qtyOnHand), reorderPoint: rp });
+      inventoryByItem.set(r.itemId, { qtyOnHand: Number(r.qtyOnHand), reservedQty: Number(r.reservedQty), reorderPoint: rp });
     }
   }
   const lowStockItems = Array.from(inventoryByItem.values()).filter(
-    (a) => a.reorderPoint != null && a.qtyOnHand <= a.reorderPoint
+    (a) => a.reorderPoint != null && (a.qtyOnHand - a.reservedQty) <= a.reorderPoint
   ).length;
-  
+
   return {
     procurement: {
       totalPOs: poStats._count.id,
@@ -339,6 +344,8 @@ export async function getDashboardSummary() {
     inventory: {
       totalValue: Number(inventoryStats._sum.totalValue ?? 0),
       totalQty: Number(inventoryStats._sum.qtyOnHand ?? 0),
+      reservedQty: Number(inventoryStats._sum.reservedQty ?? 0),
+      available: Number(inventoryStats._sum.qtyOnHand ?? 0) - Number(inventoryStats._sum.reservedQty ?? 0),
       lowStockItems
     },
     production: {
