@@ -124,6 +124,12 @@ EPIC-08 (Reserved Stock) decomposition:
 |----|-------|--------|
 | **A** | `StockReservation` ledger + `InventoryValue.reservedQty` aggregate + `reserveOrder`/`consumeOrder`/`releaseOrder` helpers + `FULFILLMENT_CONSUME` source + Jubelio stock push sends `available` | ✅ shipped (PR #88 merged 2026-07-02). **Post-merge deploy pending:** run `prisma/backfill-reservations.ts --apply` against prod (webhook-quiet window) to reconcile existing orders — see `docs/local-db-testbed.md`. |
 
+EPIC-17 (Field Sales / SFA) decomposition:
+
+| Sub | Scope | Status |
+|----|-------|--------|
+| **1** | PWA scaffold — `SALESMAN` role + `pwa:access` permission + `/pwa/*` route tree + Serwist SW scoped `/pwa/` + post-login redirect + salesman seed user | ✅ shipped (PR #90 merged 2026-07-02) + hotfixes PR #91 (relative Location on login redirect for reverse proxy + server-side redirect + drop theme owner-gate + SALESMAN `isSystem=false` so it doesn't inherit wildcard perms) and PR #92 (webpack builder — Turbopack doesn't run Serwist plugin). Root next-pwa on `/` coexists untouched. |
+
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
 **Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought.
