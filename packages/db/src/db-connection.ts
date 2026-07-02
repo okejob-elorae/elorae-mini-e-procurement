@@ -23,13 +23,9 @@ function isLocalDatabaseUrl(url: string): boolean {
 export function getDatabaseUrl(): string {
   const url = process.env.DATABASE_URL;
   if (!url) return "";
+  if (isLocalDatabaseUrl(url)) return url;
 
-  // Convert mysql:// to mariadb:// format for the MariaDB adapter
-  let converted = url.replace(/^mysql:\/\//, "mariadb://");
-
-  if (isLocalDatabaseUrl(url)) return converted;
-
-  let normalized = converted.replace(/sslaccept=strict/gi, "ssl=true");
+  let normalized = url.replace(/sslaccept=strict/gi, "ssl=true");
   if (!normalized.includes("ssl=true")) {
     normalized += normalized.includes("?") ? "&ssl=true" : "?ssl=true";
   }

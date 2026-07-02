@@ -28,6 +28,7 @@
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
+    "test": "vitest run",
     "seed": "tsx prisma/seed.ts",
     "seed:pantone": "tsx prisma/seed-pantone-colors.ts",
     "seed:production-login": "tsx prisma/seed-production-login.ts",
