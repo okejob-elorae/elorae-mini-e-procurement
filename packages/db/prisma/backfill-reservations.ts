@@ -26,20 +26,11 @@ import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { AdjustmentType, PrismaClient } from "../generated/prisma/client";
 import { getDatabaseUrl } from "../src/db-connection";
-import { classifyForBackfill } from "../src/backfill-reservations-classify";
+import { assertNotProdApply, classifyForBackfill } from "../src/backfill-reservations-classify";
 
 const apply = process.argv.includes("--apply");
 
 const effectiveDatabaseUrl = getDatabaseUrl() || process.env.DATABASE_URL || "";
-
-export function assertNotProdApply(url: string, applyFlag: boolean): void {
-  if (applyFlag && url.includes("3307")) {
-    throw new Error(
-      "Refusing --apply: DATABASE_URL points at port 3307 (the prod SSH tunnel). " +
-        'Run the backfill against the local test DB (port 3308): DATABASE_URL="mysql://elorae:elorae@127.0.0.1:3308/elorae" ... --apply',
-    );
-  }
-}
 
 assertNotProdApply(effectiveDatabaseUrl, apply);
 
@@ -53,6 +44,7 @@ type Summary = {
   skippedAlreadyReserved: number;
   skippedNoItemId: number;
   skippedZeroQty: number;
+  skippedUnresolvedVariant: number;
   totalOnHandDelta: number;
 };
 
@@ -64,13 +56,22 @@ function emptySummary(): Summary {
     skippedAlreadyReserved: 0,
     skippedNoItemId: 0,
     skippedZeroQty: 0,
+    skippedUnresolvedVariant: 0,
     totalOnHandDelta: 0,
   };
 }
 
-async function resolveVariantSku(jubelioItemId: number): Promise<string> {
+/**
+ * Mirrors apps/api's resolveItemMapping (jubelio/handlers/_shared/mapping-lookup.ts):
+ * the ERP variantSku is only known via the JubelioProductMapping row keyed on
+ * jubelioItemId. packages/db cannot import from apps/api, so this queries the
+ * mapping table directly instead. Returns null when unmapped — callers must
+ * skip the line rather than guess "" (that would misattribute qty to the
+ * base-variant InventoryValue bucket for variant items).
+ */
+async function resolveVariantSku(jubelioItemId: number): Promise<string | null> {
   const mapping = await prisma.jubelioProductMapping.findFirst({ where: { jubelioItemId } });
-  return mapping?.erpVariantSku ?? "";
+  return mapping?.erpVariantSku ?? null;
 }
 
 async function main() {
@@ -114,6 +115,16 @@ async function main() {
       const itemId = item.itemId as string;
       const qty = Number(item.qty);
       const variantSku = await resolveVariantSku(item.jubelioItemId);
+
+      if (variantSku === null) {
+        summary.skippedUnresolvedVariant += 1;
+        console.warn(
+          `WARNING: no JubelioProductMapping row for jubelioItemId=${item.jubelioItemId} ` +
+            `(salesorderDetailId=${item.salesorderDetailId}, itemId=${itemId}) — cannot resolve ` +
+            "variantSku, skipping line (refusing to guess \"\").",
+        );
+        return;
+      }
 
       if (decision.action === "reserve-and-restore") {
         summary.reserveAndRestore += 1;
@@ -231,6 +242,7 @@ async function main() {
   console.log(`skipped (already reserved):  ${summary.skippedAlreadyReserved}`);
   console.log(`skipped (no mapped itemId):  ${summary.skippedNoItemId}`);
   console.log(`skipped (qty <= 0):          ${summary.skippedZeroQty}`);
+  console.log(`skipped (unresolved variant):${summary.skippedUnresolvedVariant}`);
   console.log(`total onHand delta (+qty):   ${summary.totalOnHandDelta}`);
   if (!apply) {
     console.log("\nThis was a DRY RUN. No rows were written. Re-run with --apply to commit these changes.");
