@@ -2,6 +2,7 @@ import type { NextConfig } from 'next';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import withPWA from 'next-pwa';
+import withSerwistInit from "@serwist/next";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,4 +51,12 @@ const config = withPWA({
   ],
 })(nextConfig);
 
-export default config;
+const withSerwist = withSerwistInit({
+  swSrc: "app/pwa/sw.ts",
+  swDest: "public/pwa/sw.js",
+  scope: "/pwa/",
+  cacheOnNavigation: false,
+  disable: process.env.NODE_ENV === "development",
+});
+
+export default withSerwist(config);

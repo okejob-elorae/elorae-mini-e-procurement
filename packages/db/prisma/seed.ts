@@ -161,6 +161,8 @@ async function main() {
     // Chart of Accounts
     { code: 'coa:view', module: 'coa', action: 'view', description: 'View Chart of Accounts' },
     { code: 'coa:manage', module: 'coa', action: 'manage', description: 'Create / update / deactivate Chart of Accounts' },
+    // PWA
+    { code: 'pwa:access', module: 'pwa', action: 'access', description: 'Access to the PWA (/pwa/*) route tree' },
   ];
 
   // Upsert all permissions
@@ -216,6 +218,16 @@ async function main() {
     create: {
       name: 'PRODUCTION',
       description: 'Production staff - manages work orders',
+      isSystem: false,
+    },
+  });
+
+  const salesmanRole = await prisma.roleDefinition.upsert({
+    where: { name: 'SALESMAN' },
+    update: { isSystem: false },
+    create: {
+      name: 'SALESMAN',
+      description: 'Field salesman — PWA-only access',
       isSystem: false,
     },
   });
@@ -323,6 +335,27 @@ async function main() {
       });
     }
   }
+
+  // SALESMAN permissions
+  const salesmanPermissions = ["pwa:access"];
+  for (const code of salesmanPermissions) {
+    const perm = permissionMap.get(code);
+    if (perm) {
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: salesmanRole.id,
+            permissionId: perm.id,
+          },
+        },
+        update: {},
+        create: {
+          roleId: salesmanRole.id,
+          permissionId: perm.id,
+        },
+      });
+    }
+  }
   console.log('Role permissions assigned');
 
   // Migrate existing users to use roleId
@@ -341,6 +374,19 @@ async function main() {
   await prisma.user.update({
     where: { id: production.id },
     data: { roleId: productionRole.id },
+  });
+
+  // Create or update salesman user with SALESMAN role
+  await prisma.user.upsert({
+    where: { email: "salesman@elorae.com" },
+    update: { roleId: salesmanRole.id },
+    create: {
+      email: "salesman@elorae.com",
+      name: "Salesman",
+      passwordHash: await bcrypt.hash("salesman123", 10),
+      pinHash: await bcrypt.hash("123456", 10),
+      roleId: salesmanRole.id,
+    },
   });
   console.log('Users migrated to roleId');
 
