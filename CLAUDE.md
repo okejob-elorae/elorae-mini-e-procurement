@@ -136,6 +136,8 @@ Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit l
 - Don't add Prisma model comments. Don't add `Co-Authored-By` trailers to commits.
 - Don't run `prisma migrate dev` against the shared VPS MariaDB — that creates throwaway migrations and resets state. Use `migrate:deploy` only.
 - Don't deploy apps/api or apps/web to Vercel. Both need persistent processes; Vercel functions don't fit (node-cron, BullMQ workers). Production target is the Hostinger VPS; local-ngrok is the dev/demo fallback.
+- **Don't run the whole test suite** (`pnpm -F @elorae/api test` with no filter, or repo-wide). It's slow + wasteful. Scope to the specs you changed: `pnpm -F @elorae/api test -- <pattern> [<pattern>...]` (jest treats each positional arg as a testPathPattern, OR-ed). Only widen if a change plausibly affects unrelated specs.
+- **Don't type-check the whole repo** (turbo/all-package). Scope to the one package you changed: `pnpm -F @elorae/api type-check` only. (`@elorae/web` type-check stays the user's — it saturates disk; never run it.) tsc can't do single-file, so package-scope is the finest partial available.
 
 ## When you need more context
 
