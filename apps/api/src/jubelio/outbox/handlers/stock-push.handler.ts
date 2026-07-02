@@ -29,7 +29,10 @@ export class StockPushHandler implements OutboxHandler {
 
     const items = inventory.map((iv) => ({
       item_code: iv.variantSku || mapping.jubelioItemCode,
-      end_qty: Number(iv.qtyOnHand),
+      // Push AVAILABLE, not on-hand (BOUNDARY §D7). Clamp at 0 — Jubelio cannot
+      // hold negative stock; oversell is surfaced via AdminNotification. Virtual-
+      // warehouse subtraction (EPIC-19) not yet modeled.
+      end_qty: Math.max(0, Number(iv.qtyOnHand) - Number(iv.reservedQty)),
     }));
 
     await this.http.put(`/inventory/items/${mapping.jubelioItemGroupId}/stock`, { items });
