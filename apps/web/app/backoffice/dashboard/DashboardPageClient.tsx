@@ -546,11 +546,13 @@ export function DashboardPageClient({
 
       {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Link
-          href="/backoffice/inventory?tab=stock&oversold=1"
-          className="block transition-colors hover:border-destructive"
-        >
-          <Card className={cn(oversoldInventory.length > 0 && 'border-destructive/50')}>
+        <Link href="/backoffice/inventory?tab=stock&oversold=1" className="block h-full">
+          <Card
+            className={cn(
+              'h-full transition-colors hover:border-destructive',
+              oversoldInventory.length > 0 && 'border-destructive/50',
+            )}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{tDashboard('oversoldTitle')}</CardTitle>
               <AlertTriangle
