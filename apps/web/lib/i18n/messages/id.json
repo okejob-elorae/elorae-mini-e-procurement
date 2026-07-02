@@ -47,6 +47,7 @@
     "navItemsCategory": "Kategori",
     "navItemsRaw": "Barang Mentah",
     "navItemsFinished": "Barang Jadi",
+    "stores": "Toko",
     "purchaseOrders": "Pesanan Pembelian",
     "supplierPayment": "Pembayaran Pemasok",
     "inventory": "Inventori",
@@ -1444,6 +1445,49 @@
       "colQty": "Jml",
       "thankYou": "Terima kasih telah berbelanja di ELORAÉ!",
       "questionsContact": "Pertanyaan: {email}"
+    }
+  },
+  "stores": {
+    "title": "Toko",
+    "new": "Toko baru",
+    "edit": "Ubah toko",
+    "list": {
+      "empty": "Belum ada toko.",
+      "searchPlaceholder": "Cari berdasarkan nama atau kode",
+      "showInactive": "Tampilkan nonaktif"
+    },
+    "form": {
+      "code": "Kode",
+      "name": "Nama",
+      "address": "Alamat",
+      "phone": "Telepon",
+      "contactName": "Kontak person",
+      "termsType": "Tipe terms",
+      "termsPutus": "Putus",
+      "termsKonsi": "Konsi",
+      "paymentTempo": "Tempo pembayaran (hari)",
+      "marginPercent": "Margin (%)",
+      "coords": "Koordinat",
+      "lat": "Latitude",
+      "lng": "Longitude",
+      "pasteCoords": "Tempel koordinat",
+      "pasteCoordsHint": "Tempel \"-6.2088, 106.8456\" untuk mengisi keduanya",
+      "pasteCoordsInvalid": "Gagal parsing. Format: \"lat, lng\"",
+      "isActive": "Aktif",
+      "deactivate": "Nonaktifkan",
+      "deactivateConfirm": "Nonaktifkan toko ini? Toko akan hilang dari daftar salesman.",
+      "save": "Simpan",
+      "cancel": "Batal"
+    },
+    "badge": {
+      "putus": "Putus",
+      "konsi": "Konsi",
+      "inactive": "Nonaktif"
+    },
+    "errors": {
+      "codeUnique": "Kode toko sudah dipakai.",
+      "forbidden": "Akses ditolak.",
+      "notFound": "Toko tidak ditemukan."
     }
   }
 }

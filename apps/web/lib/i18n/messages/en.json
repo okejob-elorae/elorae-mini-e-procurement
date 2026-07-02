@@ -47,6 +47,7 @@
     "navItemsCategory": "Category",
     "navItemsRaw": "Raw Materials",
     "navItemsFinished": "Finished Goods",
+    "stores": "Stores",
     "purchaseOrders": "Purchase Orders",
     "supplierPayment": "Supplier Payment",
     "inventory": "Inventory",
@@ -1444,6 +1445,49 @@
       "colQty": "Qty",
       "thankYou": "Thank you for shopping with ELORAÉ!",
       "questionsContact": "For questions: {email}"
+    }
+  },
+  "stores": {
+    "title": "Stores",
+    "new": "New store",
+    "edit": "Edit store",
+    "list": {
+      "empty": "No stores yet.",
+      "searchPlaceholder": "Search by name or code",
+      "showInactive": "Show inactive"
+    },
+    "form": {
+      "code": "Code",
+      "name": "Name",
+      "address": "Address",
+      "phone": "Phone",
+      "contactName": "Contact person",
+      "termsType": "Terms type",
+      "termsPutus": "Putus",
+      "termsKonsi": "Konsi",
+      "paymentTempo": "Payment tempo (days)",
+      "marginPercent": "Margin (%)",
+      "coords": "Coordinates",
+      "lat": "Latitude",
+      "lng": "Longitude",
+      "pasteCoords": "Paste coords",
+      "pasteCoordsHint": "Paste \"-6.2088, 106.8456\" to fill both",
+      "pasteCoordsInvalid": "Could not parse. Use format: \"lat, lng\"",
+      "isActive": "Active",
+      "deactivate": "Deactivate",
+      "deactivateConfirm": "Deactivate this store? It will disappear from the salesman view.",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "badge": {
+      "putus": "Putus",
+      "konsi": "Konsi",
+      "inactive": "Inactive"
+    },
+    "errors": {
+      "codeUnique": "Store code already exists.",
+      "forbidden": "Permission denied.",
+      "notFound": "Store not found."
     }
   }
 }
