@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { signIn, getSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { computePostLoginRedirect } from '@/lib/auth/post-login-redirect';
+import { computePostLoginRedirect } from "@/lib/auth/post-login-redirect";
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
