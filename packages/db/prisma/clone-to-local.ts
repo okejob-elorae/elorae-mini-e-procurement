@@ -50,12 +50,22 @@ async function batchInsert<T>(
   return inserted;
 }
 
+/**
+ * Ensure a generous connectTimeout. SRC is typically prod reached via an SSH
+ * tunnel on 127.0.0.1:3307 — it "looks" local so no normalization adds a timeout,
+ * but the tunnelled handshake far exceeds the mariadb driver's 1000ms default.
+ */
+function withConnectTimeout(url: string, ms = 30000): string {
+  if (/[?&]connectTimeout=/i.test(url)) return url;
+  return url + (url.includes("?") ? "&" : "?") + `connectTimeout=${ms}`;
+}
+
 async function main() {
   const srcUrl = requireEnv("SRC_DATABASE_URL");
   const destUrl = requireEnv("DEST_DATABASE_URL");
   assertNotProdTunnel(destUrl);
 
-  const src = new PrismaClient({ adapter: new PrismaMariaDb(srcUrl) });
+  const src = new PrismaClient({ adapter: new PrismaMariaDb(withConnectTimeout(srcUrl)) });
   const dst = new PrismaClient({ adapter: new PrismaMariaDb(destUrl) });
 
   try {
