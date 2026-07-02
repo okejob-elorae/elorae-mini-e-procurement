@@ -124,3 +124,25 @@ reserve model. Before running `--apply` against prod:
   delta) before `--apply`. The runner refuses `--apply` against a `3307` (prod tunnel)
   URL — apply is intended for the real prod `DATABASE_URL` from its env store, not the
   local tunnel.
+
+## Seeding a login (users/RBAC) alongside cloned data
+
+`clone-to-local.ts` copies only stock/order tables — NOT `User`/RBAC — so the web
+app can't log in against a freshly-cloned local DB. Seed a login user:
+
+```
+# additive seed (keeps the cloned stock data) — REQUIRED order note below
+SEED_NO_TRUNCATE=1 DATABASE_URL="mysql://elorae:elorae@127.0.0.1:3308/elorae" \
+  pnpm -F @elorae/db seed:production-login
+```
+
+Login: `admin@elorae.com` / `admin123` (PIN `123456`).
+
+- **`SEED_NO_TRUNCATE=1` is required when seeding on top of cloned data** — the
+  default `seed:production-login` truncates ALL tables first (would wipe the clone).
+  It also can't truncate under the pooled MariaDB driver adapter (`SET
+  FOREIGN_KEY_CHECKS=0` is session-scoped and doesn't span pooled connections →
+  "Cannot truncate a table referenced in a foreign key constraint"), so the flag is
+  the reliable path here. All seed writes are `upsert`, so additive is safe.
+- If starting fresh instead: seed FIRST (default truncate — but see the pooled-adapter
+  caveat), then clone, then backfill.
