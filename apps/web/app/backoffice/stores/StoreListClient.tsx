@@ -8,6 +8,7 @@ import type { StoreListItem } from "@/lib/stores/queries";
 export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
   const t = useTranslations("stores");
   const tList = useTranslations("stores.list");
+  const tTable = useTranslations("stores.list.table");
   const tBadge = useTranslations("stores.badge");
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(false);
@@ -40,13 +41,13 @@ export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left border-b">
-              <th className="py-2">Code</th>
-              <th>Name</th>
-              <th>Terms</th>
-              <th>Tempo</th>
-              <th>Margin %</th>
-              <th>Address</th>
-              <th>Status</th>
+              <th className="py-2">{tTable("code")}</th>
+              <th>{tTable("name")}</th>
+              <th>{tTable("terms")}</th>
+              <th>{tTable("tempo")}</th>
+              <th>{tTable("margin")}</th>
+              <th>{tTable("address")}</th>
+              <th>{tTable("status")}</th>
             </tr>
           </thead>
           <tbody>
@@ -58,7 +59,7 @@ export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
                 <td>{s.paymentTempo}d</td>
                 <td>{s.marginPercent ?? "—"}</td>
                 <td className="truncate max-w-[220px]" title={s.address}>{s.address}</td>
-                <td>{s.isActive ? "Active" : tBadge("inactive")}</td>
+                <td>{s.isActive ? tTable("active") : tBadge("inactive")}</td>
               </tr>
             ))}
           </tbody>

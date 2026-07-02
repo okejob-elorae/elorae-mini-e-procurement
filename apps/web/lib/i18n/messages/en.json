@@ -1451,10 +1451,21 @@
     "title": "Stores",
     "new": "New store",
     "edit": "Edit store",
+    "readOnlyBanner": "Read-only — you lack stores:manage permission.",
     "list": {
       "empty": "No stores yet.",
       "searchPlaceholder": "Search by name or code",
-      "showInactive": "Show inactive"
+      "showInactive": "Show inactive",
+      "table": {
+        "code": "Code",
+        "name": "Name",
+        "terms": "Terms",
+        "tempo": "Tempo",
+        "margin": "Margin %",
+        "address": "Address",
+        "status": "Status",
+        "active": "Active"
+      }
     },
     "form": {
       "code": "Code",
@@ -1477,7 +1488,8 @@
       "deactivate": "Deactivate",
       "deactivateConfirm": "Deactivate this store? It will disappear from the salesman view.",
       "save": "Save",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "back": "Back"
     },
     "badge": {
       "putus": "Putus",

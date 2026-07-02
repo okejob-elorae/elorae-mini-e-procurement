@@ -16,10 +16,10 @@ type ActionResult<T = never> = { ok: true; data?: T } | { ok: false; code: strin
 
 const storeInputSchema = z.object({
   code: z.string().min(1).max(64),
-  name: z.string().min(1).max(255),
+  name: z.string().min(1).max(191),
   address: z.string().min(1),
   phone: z.string().max(64).nullable(),
-  contactName: z.string().max(255).nullable(),
+  contactName: z.string().max(191).nullable(),
   termsType: z.enum(["PUTUS", "KONSI"]),
   paymentTempo: z.number().int().min(0),
   marginPercent: z.number().min(0).max(999.99).nullable(),

@@ -1451,10 +1451,21 @@
     "title": "Toko",
     "new": "Toko baru",
     "edit": "Ubah toko",
+    "readOnlyBanner": "Hanya baca — Anda tidak memiliki izin stores:manage.",
     "list": {
       "empty": "Belum ada toko.",
       "searchPlaceholder": "Cari berdasarkan nama atau kode",
-      "showInactive": "Tampilkan nonaktif"
+      "showInactive": "Tampilkan nonaktif",
+      "table": {
+        "code": "Kode",
+        "name": "Nama",
+        "terms": "Terms",
+        "tempo": "Tempo",
+        "margin": "Margin %",
+        "address": "Alamat",
+        "status": "Status",
+        "active": "Aktif"
+      }
     },
     "form": {
       "code": "Kode",
@@ -1477,7 +1488,8 @@
       "deactivate": "Nonaktifkan",
       "deactivateConfirm": "Nonaktifkan toko ini? Toko akan hilang dari daftar salesman.",
       "save": "Simpan",
-      "cancel": "Batal"
+      "cancel": "Batal",
+      "back": "Kembali"
     },
     "badge": {
       "putus": "Putus",

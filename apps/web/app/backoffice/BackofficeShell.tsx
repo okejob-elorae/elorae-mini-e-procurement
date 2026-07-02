@@ -101,8 +101,8 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    labelKey: 'stores',
-    href: '/backoffice/stores',
+    labelKey: "stores",
+    href: "/backoffice/stores",
     icon: MapPin,
     permission: PERMISSIONS.STORES_VIEW,
   },
