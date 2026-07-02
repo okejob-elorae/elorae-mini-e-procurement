@@ -544,53 +544,29 @@ export function DashboardPageClient({
         </TooltipProvider>
       </div>
 
-      {/* Oversold Stock (negative available = reservedQty > qtyOnHand) */}
-      <TooltipProvider>
-        <Card className={oversoldInventory.length > 0 ? 'border-destructive/50' : undefined}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-1">
-              {tDashboard('oversoldTitle')}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs">{tDashboard('oversoldTooltip')}</TooltipContent>
-              </Tooltip>
-            </CardTitle>
-            <AlertTriangle
-              className={`h-4 w-4 ${oversoldInventory.length > 0 ? 'text-destructive' : 'text-muted-foreground'}`}
-            />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${oversoldInventory.length > 0 ? 'text-destructive' : ''}`}>
-              {oversoldInventory.length}
-            </div>
-            <p className="text-xs text-muted-foreground">{tDashboard('oversoldDesc')}</p>
-            {oversoldInventory.length > 0 && (
-              <ul className="mt-3 space-y-1 text-sm">
-                {oversoldInventory.map((row) => (
-                  <li key={`${row.itemId}-${row.variantSku ?? ''}`} className="flex items-center justify-between gap-2">
-                    <Link
-                      href={`/backoffice/items/${row.itemId}`}
-                      className="font-mono text-xs text-primary hover:underline"
-                    >
-                      {row.sku}
-                      {row.variantSku ? ` (${row.variantSku})` : ''}
-                    </Link>
-                    <span className="text-muted-foreground">{row.nameId}</span>
-                    <span className="tabular-nums font-medium text-destructive">
-                      {formatNumber(row.available)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </TooltipProvider>
-
       {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Link href="/backoffice/inventory?tab=stock&oversold=1" className="block h-full">
+          <Card
+            className={cn(
+              'h-full transition-colors hover:border-destructive',
+              oversoldInventory.length > 0 && 'border-destructive/50',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{tDashboard('oversoldTitle')}</CardTitle>
+              <AlertTriangle
+                className={`h-4 w-4 ${oversoldInventory.length > 0 ? 'text-destructive' : 'text-muted-foreground'}`}
+              />
+            </CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold ${oversoldInventory.length > 0 ? 'text-destructive' : ''}`}>
+                {oversoldInventory.length}
+              </div>
+              <p className="text-xs text-muted-foreground">{tDashboard('oversoldDesc')}</p>
+            </CardContent>
+          </Card>
+        </Link>
         {statsCards.map((stat) => {
           const Icon = stat.icon;
           return (

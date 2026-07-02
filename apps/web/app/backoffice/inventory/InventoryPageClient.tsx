@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Fragment } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from "next/navigation";
 import { 
   Plus, 
   Search, 
@@ -126,6 +127,7 @@ export function InventoryPageClient({
   initialAdjustmentItemList,
 }: InventoryPageClientProps) {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
   const [inventory, setInventory] = useState<InventoryItem[]>(initialInventory);
   const [grns, setGRNs] = useState<GRN[]>(initialGrns);
   const [approvingGrnId, setApprovingGrnId] = useState<string | null>(null);
@@ -163,7 +165,8 @@ export function InventoryPageClient({
   const [rollsSearchQuery, setRollsSearchQuery] = useState('');
   const [rollsSearchDebounced, setRollsSearchDebounced] = useState('');
   const rollsSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState('stock');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") ?? "stock");
+  const oversoldOnly = searchParams.get("oversold") === "1";
   const [summary, setSummary] = useState(initialSummary);
   const [stockPage, setStockPage] = useState(1);
   const [stockPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -301,10 +304,12 @@ export function InventoryPageClient({
     return Number(item.available) <= Number(item.item.reorderPoint);
   };
 
-  const filteredInventory = inventory.filter(item =>
-    item.item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.item.nameId.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredInventory = inventory
+    .filter(item =>
+      item.item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.item.nameId.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .filter(item => !oversoldOnly || Number(item.available) < 0);
 
   const q = (s: string) => s.toLowerCase().trim();
   const filteredGrns = grns.filter(
@@ -461,6 +466,20 @@ export function InventoryPageClient({
               className="pl-9"
             />
           </div>
+
+          {oversoldOnly && (
+            <div className="flex items-center gap-2">
+              <Badge variant="destructive">
+                Showing oversold only ({filteredInventory.length})
+              </Badge>
+              <Link
+                href="/backoffice/inventory?tab=stock"
+                className="text-sm text-muted-foreground hover:underline"
+              >
+                Clear filter
+              </Link>
+            </div>
+          )}
 
           <Card>
             <CardContent className="p-0">
