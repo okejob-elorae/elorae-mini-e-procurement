@@ -92,8 +92,12 @@ export {
 } from "./item-image-writer";
 export {
   reserveOrder,
+  consumeOrder,
+  releaseOrder,
   type ReservationLine,
   type OversellAlert,
   type ReserveOrderInput,
   type ReserveOrderResult,
+  type ConsumeOrderResult,
+  type ReleaseOrderResult,
 } from "./reservation-writer";

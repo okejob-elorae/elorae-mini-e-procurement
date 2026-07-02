@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import type { JubelioWebhookEvent } from "@elorae/db";
-import { applyJubelioStockAdjustment } from "@elorae/db";
+import type { JubelioWebhookEvent, ReservationLine } from "@elorae/db";
+import { reserveOrder, releaseOrder, consumeOrder } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { AdminNotificationService } from "../../admin/notification.service";
 import { SKIP_REASONS } from "../queue/webhook-status";
@@ -42,6 +42,18 @@ function buildShippingAddress(p: SalesOrderPayload): Record<string, string> | un
     if (v !== null && v !== undefined && v !== "") fields[k] = v;
   }
   return Object.keys(fields).length > 0 ? fields : undefined;
+}
+
+// Raw "this order shipped" signal — broader than the derived `status` enum,
+// which collapses ship + delivery into SHIPPED vs COMPLETED. Anything that
+// implies the package left the warehouse counts.
+function reportsShipped(p: SalesOrderPayload): boolean {
+  return (
+    p.wms_status === "SHIPPED" ||
+    p.is_shipped === true ||
+    p.marked_as_complete === true ||
+    !!p.completed_date
+  );
 }
 
 function buildFeeBreakdown(p: SalesOrderPayload): Record<string, string> | undefined {
@@ -95,11 +107,47 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       });
     });
 
-    const shouldApply = !p.is_canceled;
     const items = Array.isArray(p.items) ? p.items : [];
+    const isCancel = !!p.is_canceled;
+    const shipped = reportsShipped(p);
 
-    if (shouldApply && !state.stockApplied) {
-      const unmapped = await this.applyAdjustments(items, p.salesorder_id, p.salesorder_no ?? "", -1);
+    if (shipped) {
+      // Consume wins over reserve: goods left the warehouse. A webhook can
+      // arrive already-shipped before any reserve happened (marketplace
+      // auto-ship / backfill) — ensure the ledger rows exist first.
+      if (!state.stockApplied) {
+        const { lines, unmapped } = await this.buildReservationLines(items);
+        await reserveOrder(this.prisma, { salesorderId: p.salesorder_id, salesorderNo: p.salesorder_no ?? "", lines });
+        if (unmapped.length > 0) {
+          await this.notifyUnmappedLines(p.salesorder_id, p.salesorder_no ?? "", unmapped);
+        }
+      }
+      await consumeOrder(this.prisma, { salesorderId: p.salesorder_id, salesorderNo: p.salesorder_no ?? "" });
+      await this.prisma.jubelioSalesOrderState.update({
+        where: { id: state.id },
+        data: {
+          stockApplied: true,
+          appliedAt: new Date(),
+          lastWebhookEventId: row.id,
+          lastStatus: p.channel_status ?? null,
+          lastIsCanceled: isCancel,
+        },
+      });
+    } else if (isCancel && state.stockApplied) {
+      await releaseOrder(this.prisma, { salesorderId: p.salesorder_id });
+      await this.prisma.jubelioSalesOrderState.update({
+        where: { id: state.id },
+        data: {
+          stockApplied: false,
+          reversedAt: new Date(),
+          lastWebhookEventId: row.id,
+          lastStatus: p.channel_status ?? null,
+          lastIsCanceled: true,
+        },
+      });
+    } else if (!isCancel && !state.stockApplied) {
+      const { lines, unmapped } = await this.buildReservationLines(items);
+      await reserveOrder(this.prisma, { salesorderId: p.salesorder_id, salesorderNo: p.salesorder_no ?? "", lines });
       if (unmapped.length > 0) {
         await this.notifyUnmappedLines(p.salesorder_id, p.salesorder_no ?? "", unmapped);
       }
@@ -113,25 +161,13 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
           lastIsCanceled: false,
         },
       });
-    } else if (!shouldApply && state.stockApplied) {
-      await this.applyAdjustments(items, p.salesorder_id, p.salesorder_no ?? "", +1);
-      await this.prisma.jubelioSalesOrderState.update({
-        where: { id: state.id },
-        data: {
-          stockApplied: false,
-          reversedAt: new Date(),
-          lastWebhookEventId: row.id,
-          lastStatus: p.channel_status ?? null,
-          lastIsCanceled: true,
-        },
-      });
     } else {
       await this.prisma.jubelioSalesOrderState.update({
         where: { id: state.id },
         data: {
           lastWebhookEventId: row.id,
           lastStatus: p.channel_status ?? null,
-          lastIsCanceled: !!p.is_canceled,
+          lastIsCanceled: isCancel,
         },
       });
     }
@@ -216,14 +252,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       lastWebhookEventId: webhookEventId,
     };
 
-    // Raw "this order shipped" signal — broader than the derived `status` enum,
-    // which collapses ship + delivery into SHIPPED vs COMPLETED. Anything that
-    // implies the package left the warehouse counts.
-    const jubelioReportsShipped =
-      p.wms_status === "SHIPPED" ||
-      p.is_shipped === true ||
-      p.marked_as_complete === true ||
-      !!p.completed_date;
+    const jubelioReportsShipped = reportsShipped(p);
 
     // For new rows: if Jubelio already reports shipped (backfill of an
     // already-shipped order), seed fulfillmentStatus on create.
@@ -286,14 +315,11 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     }
   }
 
-  private async applyAdjustments(
+  private async buildReservationLines(
     items: SalesOrderLine[],
-    salesorderId: number,
-    salesorderNo: string,
-    sign: 1 | -1,
-  ): Promise<UnmappedLine[]> {
+  ): Promise<{ lines: ReservationLine[]; unmapped: UnmappedLine[] }> {
+    const lines: ReservationLine[] = [];
     const unmapped: UnmappedLine[] = [];
-    const direction = sign === -1 ? "decrement" : "reversal";
 
     for (const line of items) {
       if (line.is_canceled_item) continue;
@@ -304,29 +330,14 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
         continue;
       }
 
-      const inv = await this.prisma.inventoryValue.findUnique({
-        where: { itemId_variantSku: { itemId: mapping.itemId, variantSku: mapping.erpVariantSku } },
+      lines.push({
+        salesorderDetailId: line.salesorder_detail_id,
+        itemId: mapping.itemId,
+        variantSku: mapping.erpVariantSku,
+        qty: Number(line.qty),
       });
-      const currentQty = inv ? Number(inv.qtyOnHand) : 0;
-      const newQty = currentQty + sign * Number(line.qty);
-
-      try {
-        await applyJubelioStockAdjustment(this.prisma, {
-          itemId: mapping.itemId,
-          variantSku: mapping.erpVariantSku,
-          newQty,
-          idempotencyKey: `salesorder-${salesorderId}-${direction}-line-${line.salesorder_detail_id}`,
-          externalRef: `salesorder:${salesorderId}`,
-          reason: `Jubelio salesorder ${salesorderNo} ${direction}`,
-        });
-      } catch (err) {
-        this.logger.warn(
-          `Stock adjustment failed for salesorder ${salesorderId} line ${line.salesorder_detail_id}: ${(err as Error).message}`,
-        );
-        unmapped.push({ item_code: line.item_code, item_id: line.item_id, qty: line.qty });
-      }
     }
-    return unmapped;
+    return { lines, unmapped };
   }
 
   private async notifyUnmappedLines(
@@ -338,7 +349,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
       category: "JUBELIO_UNMAPPED_LINES",
       severity: "WARN",
       title: `Salesorder ${salesorderNo || salesorderId}: ${lines.length} unmapped line(s)`,
-      message: `Lines without JubelioProductMapping. Stock NOT decremented for these.`,
+      message: `Lines without JubelioProductMapping. Stock NOT reserved for these.`,
       metadata: { salesorderId, lines },
     });
   }
