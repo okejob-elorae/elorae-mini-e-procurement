@@ -1518,6 +1518,18 @@
       "stillOpen": "Still open",
       "autoClosedBadge": "Auto-closed",
       "viewCoords": "View coords"
+    },
+    "nearest": {
+      "title": "Nearest stores",
+      "seeAll": "See all stores →",
+      "browse": "Browse stores →",
+      "noActive": "No active visit",
+      "activeAt": "Active at {storeName}",
+      "checkedInAgo": "Checked in {time}",
+      "recent": "Recent stores",
+      "enableChip": "Enable location to see nearest stores",
+      "enableHint": "Enable location in browser settings for a nearest-stores view.",
+      "noStoresWithCoords": "No stores have coordinates yet."
     }
   }
 }

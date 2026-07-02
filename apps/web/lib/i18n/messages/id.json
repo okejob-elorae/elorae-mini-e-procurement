@@ -1518,6 +1518,18 @@
       "stillOpen": "Masih terbuka",
       "autoClosedBadge": "Ditutup otomatis",
       "viewCoords": "Lihat koordinat"
+    },
+    "nearest": {
+      "title": "Toko terdekat",
+      "seeAll": "Lihat semua toko →",
+      "browse": "Jelajah toko →",
+      "noActive": "Tidak ada kunjungan aktif",
+      "activeAt": "Aktif di {storeName}",
+      "checkedInAgo": "Check-in {time}",
+      "recent": "Toko terakhir",
+      "enableChip": "Aktifkan lokasi untuk melihat toko terdekat",
+      "enableHint": "Aktifkan lokasi di pengaturan browser untuk melihat toko terdekat.",
+      "noStoresWithCoords": "Belum ada toko dengan koordinat."
     }
   }
 }
