@@ -78,6 +78,7 @@ ngrok stays available as a fallback for local-only demo work (laptop apps/api + 
 - **Catalog ingest pulls from Jubelio** via `POST /jubelio/catalog/sync` (apps/api). Product push (ERP → Jubelio) is wired via the outbox — see sub-3 below.
 - **Inbound webhook pipeline ships in BullMQ-backed queue.** `JubelioWebhookEvent` carries authoritative status (`RECEIVED → PROCESSING → PROCESSED / SKIPPED / DEAD`). Worker runs in apps/api process, concurrency 1. Sweeper rescues stuck rows every 10 min.
 - **Outbound push pipeline ships in `JubelioOutbox` table + `outbox-poller` + `outbox-processor`.** Handlers in `apps/api/src/jubelio/outbox/handlers/`: `product_push`, `stock_push`, `salesorder_pick`, `salesorder_pack`, `salesorder_ship`. Already-in-state Jubelio responses are skipped (not retried). New push types add: handler file + payload builder + spec + router case.
+- **Marketplace stock is reserve-at-ingest, consume-at-ship, release-on-cancel.** `StockReservation` ledger (one row per `salesorderDetailId`) + aggregate `InventoryValue.reservedQty`, driven by `reserveOrder`/`consumeOrder`/`releaseOrder` in `@elorae/db/reservation-writer.ts`. `available = qtyOnHand - reservedQty`, derived at read time — never stored. `consumeOrder` deducts `qtyOnHand` via a `StockAdjustment` stamped `source = FULFILLMENT_CONSUME`, and is idempotent so the Jubelio ship webhook and the ERP Ship button can both trigger it safely. Jubelio stock push sends `available`, not raw `qtyOnHand`. See `docs/BOUNDARY.md` D6.
 
 ## Integration work — decomposition + status
 
@@ -116,6 +117,12 @@ EPIC-05 (Sales Returns) decomposition:
 | **A** | Schema + helpers + Jubelio client methods + ingest service + webhook handler + 30-min backstop sweeper | ✅ shipped (PR #54 merged 2026-06-18) + hotfix PR #55 reorienting the ingest around Jubelio's actual data model (returns ARE SalesOrders; `SalesOrderWebhookHandler` is the authoritative entry point; URL/field corrections). Carries 2 items into sub-B: race-condition serialization on concurrent Accept, variant-SKU fallback lookup in ingest. |
 | **B** | Server actions + per-item Accept/Reject UI on detail page (outbox decision-push handler deferred to sub-B.5 pending Jubelio resolve-endpoint docs) | ✅ shipped (PR #58 merged 2026-06-19) — includes Redis-lock serialization on concurrent Accept from sub-A carryover |
 | **C** | Dashboard list + KPIs + RBAC seed + i18n | ✅ shipped (PR #58 merged 2026-06-19) — bundled with sub-B. Follow-ups: totalQty Decimal coercion hotfix (PR #59), back-to-list nav polish |
+
+EPIC-08 (Reserved Stock) decomposition:
+
+| Sub | Scope | Status |
+|----|-------|--------|
+| **A** | `StockReservation` ledger + `InventoryValue.reservedQty` aggregate + `reserveOrder`/`consumeOrder`/`releaseOrder` helpers + `FULFILLMENT_CONSUME` source + Jubelio stock push sends `available` | ✅ shipped on branch `feat/reserved-stock` — PR #TBD, merge date TBD (update on merge per maintenance rule below) |
 
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
