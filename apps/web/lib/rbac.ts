@@ -237,4 +237,7 @@ export const PERMISSIONS = {
   // Chart of Accounts
   COA_VIEW: 'coa:view',
   COA_MANAGE: 'coa:manage',
+  // Stores (Field Sales — SFA)
+  STORES_VIEW: "stores:view",
+  STORES_MANAGE: "stores:manage",
 } as const;
