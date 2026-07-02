@@ -122,7 +122,7 @@ EPIC-08 (Reserved Stock) decomposition:
 
 | Sub | Scope | Status |
 |----|-------|--------|
-| **A** | `StockReservation` ledger + `InventoryValue.reservedQty` aggregate + `reserveOrder`/`consumeOrder`/`releaseOrder` helpers + `FULFILLMENT_CONSUME` source + Jubelio stock push sends `available` | ✅ shipped on branch `feat/reserved-stock` — PR #TBD, merge date TBD (update on merge per maintenance rule below) |
+| **A** | `StockReservation` ledger + `InventoryValue.reservedQty` aggregate + `reserveOrder`/`consumeOrder`/`releaseOrder` helpers + `FULFILLMENT_CONSUME` source + Jubelio stock push sends `available` | ✅ shipped (PR #88 merged 2026-07-02). **Post-merge deploy pending:** run `prisma/backfill-reservations.ts --apply` against prod (webhook-quiet window) to reconcile existing orders — see `docs/local-db-testbed.md`. |
 
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
