@@ -101,3 +101,7 @@ export {
   type ConsumeOrderResult,
   type ReleaseOrderResult,
 } from "./reservation-writer";
+export {
+  classifyForBackfill,
+  type BackfillDecision,
+} from "./backfill-reservations-classify";
