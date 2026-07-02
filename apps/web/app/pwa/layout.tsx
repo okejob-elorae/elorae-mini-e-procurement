@@ -15,7 +15,7 @@ export const viewport: Viewport = {
 export default async function PwaLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session) redirect("/login?callbackUrl=/pwa");
-  const perms = (session.user as { permissions?: string[] } | undefined)?.permissions;
+  const perms = session.user.permissions;
   const outcome = pwaAccessGuard(perms);
   if (outcome === "redirect-backoffice") redirect("/backoffice");
   return (

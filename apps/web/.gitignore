@@ -50,5 +50,5 @@ next-env.d.ts
 .cursor
 
 # Serwist-generated service worker (built from app/pwa/sw.ts)
-apps/web/public/pwa/sw.js
-apps/web/public/pwa/swe-worker-*.js
+public/pwa/sw.js
+public/pwa/swe-worker-*.js
