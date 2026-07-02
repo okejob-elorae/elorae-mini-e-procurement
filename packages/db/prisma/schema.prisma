@@ -76,6 +76,7 @@ model User {
   priceChangeLogs         ItemPriceChangeLog[]
   salesReturnsDecided     SalesReturn[]     @relation("SalesReturnDecidedBy")
   salesReturnItemsDecided SalesReturnItem[] @relation("SalesReturnItemDecidedBy")
+  storeVisits   StoreVisit[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -209,6 +210,46 @@ model ItemCategory {
   items            Item[]
   jubelioCategoryMappings JubelioCategoryMapping[]
   planCategories   PlanCategory[]
+}
+
+model Store {
+  id             String         @id @default(cuid())
+  code           String         @unique
+  name           String
+  address        String         @db.Text
+  phone          String?
+  contactName    String?
+  termsType      StoreTermsType
+  paymentTempo   Int            @default(0)
+  marginPercent  Decimal?       @db.Decimal(5, 2)
+  lat            Decimal?       @db.Decimal(10, 7)
+  lng            Decimal?       @db.Decimal(10, 7)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  visits         StoreVisit[]
+
+  @@index([isActive, name])
+}
+
+model StoreVisit {
+  id           String    @id @default(cuid())
+  storeId      String
+  userId       String
+  checkinAt    DateTime  @default(now())
+  checkoutAt   DateTime?
+  checkinLat   Decimal   @db.Decimal(10, 7)
+  checkinLng   Decimal   @db.Decimal(10, 7)
+  checkoutLat  Decimal?  @db.Decimal(10, 7)
+  checkoutLng  Decimal?  @db.Decimal(10, 7)
+  autoClosed   Boolean   @default(false)
+
+  store        Store     @relation(fields: [storeId], references: [id])
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, checkoutAt])
+  @@index([storeId, checkinAt])
 }
 
 model Item {
@@ -1065,6 +1106,11 @@ enum ItemSource {
 enum ItemTypeGroup {
   RAW
   FINISHED
+}
+
+enum StoreTermsType {
+  PUTUS
+  KONSI
 }
 
 model ItemTypeMaster {
