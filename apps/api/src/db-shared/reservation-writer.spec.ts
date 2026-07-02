@@ -10,7 +10,7 @@ function makeTx(overrides: any = {}) {
     },
     inventoryValue: {
       findUnique: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "0" }),
-      update: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "3" }),
       ...overrides.inventoryValue,
     },
     adminNotification: { create: jest.fn().mockResolvedValue({}), ...overrides.adminNotification },
@@ -31,7 +31,7 @@ describe("reserveOrder", () => {
       expect.objectContaining({ data: expect.objectContaining({ salesorderDetailId: 5, state: "RESERVED", qty: 3 }) }),
     );
     expect(tx.inventoryValue.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ reservedQty: 3 }) }),
+      expect.objectContaining({ data: expect.objectContaining({ reservedQty: { increment: 3 } }) }),
     );
     expect(r.oversell).toHaveLength(0);
   });
@@ -53,7 +53,7 @@ describe("reserveOrder", () => {
     const tx = makeTx({
       inventoryValue: {
         findUnique: jest.fn().mockResolvedValue({ qtyOnHand: "2", reservedQty: "0" }),
-        update: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({ qtyOnHand: "2", reservedQty: "3" }),
       },
     });
     const r = await reserveOrder(tx, {
@@ -94,7 +94,7 @@ describe("consumeOrder", () => {
       },
       inventoryValue: {
         findUnique: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "3", avgCost: "2" }),
-        update: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue({ qtyOnHand: "7" }),
       },
       stockAdjustment: { create: jest.fn().mockResolvedValue({ id: "a1" }) },
     };
@@ -107,8 +107,35 @@ describe("consumeOrder", () => {
       expect.objectContaining({ data: expect.objectContaining({ source: "FULFILLMENT_CONSUME", newQty: 7, qtyChange: -3 }) }),
     );
     expect(tx.inventoryValue.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ qtyOnHand: 7, reservedQty: 0 }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          qtyOnHand: { decrement: 3 },
+          reservedQty: { decrement: 3 },
+          totalValue: { decrement: 6 },
+        }),
+      }),
     );
+  });
+
+  it("throws InventoryValueMissingError when no InventoryValue row exists for the reservation", async () => {
+    const tx: any = {
+      stockReservation: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: "r1", salesorderDetailId: 5, itemId: "i1", variantSku: "", qty: "3", state: "RESERVED" },
+        ]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      inventoryValue: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        update: jest.fn(),
+      },
+      stockAdjustment: { create: jest.fn() },
+    };
+    await expect(consumeOrder(tx, { salesorderId: 100, salesorderNo: "SO-100" })).rejects.toThrow(
+      InventoryValueMissingError,
+    );
+    expect(tx.inventoryValue.update).not.toHaveBeenCalled();
+    expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
   });
 
   it("is a no-op when the conditional update matches zero rows (already consumed)", async () => {
@@ -146,11 +173,12 @@ describe("releaseOrder", () => {
     const r = await releaseOrder(tx, { salesorderId: 100 });
     expect(r.released).toBe(1);
     expect(tx.inventoryValue.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ reservedQty: 0 }) }),
+      expect.objectContaining({ data: expect.objectContaining({ reservedQty: { decrement: 3 } }) }),
     );
     // onHand must NOT be in the update payload
     const call = tx.inventoryValue.update.mock.calls[0][0];
     expect(call.data.qtyOnHand).toBeUndefined();
+    expect(call.data.totalValue).toBeUndefined();
   });
 
   it("skips lines already CONSUMED (updateMany count 0)", async () => {

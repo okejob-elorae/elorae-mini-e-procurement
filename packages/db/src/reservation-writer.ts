@@ -49,15 +49,14 @@ export async function reserveOrder(client: AnyClient, input: ReserveOrderInput):
         where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
       });
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
-      const onHand = Number(inv.qtyOnHand);
-      const newReserved = Number(inv.reservedQty) + line.qty;
-      await tx.inventoryValue.update({
+      const updated = await tx.inventoryValue.update({
         where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
-        data: { reservedQty: newReserved, lastUpdated: new Date() },
+        data: { reservedQty: { increment: line.qty }, lastUpdated: new Date() },
+        select: { qtyOnHand: true, reservedQty: true },
       });
       reserved += 1;
 
-      const available = onHand - newReserved;
+      const available = Number(updated.qtyOnHand) - Number(updated.reservedQty);
       if (available < 0) {
         oversell.push({ itemId: line.itemId, variantSku: line.variantSku, available });
         await tx.adminNotification.create({
@@ -101,11 +100,20 @@ export async function consumeOrder(
       const inv = await tx.inventoryValue.findUnique({
         where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
       });
-      const prevOnHand = inv ? Number(inv.qtyOnHand) : 0;
-      const avgCost = inv ? Number(inv.avgCost) : 0;
-      const prevReserved = inv ? Number(inv.reservedQty) : 0;
-      const newOnHand = prevOnHand - qty;
-      const newReserved = Math.max(0, prevReserved - qty);
+      if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
+      const avgCost = Number(inv.avgCost);
+      const updated = await tx.inventoryValue.update({
+        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
+        data: {
+          qtyOnHand: { decrement: qty },
+          reservedQty: { decrement: qty },
+          totalValue: { decrement: qty * avgCost },
+          lastUpdated: new Date(),
+        },
+        select: { qtyOnHand: true },
+      });
+      const newOnHand = Number(updated.qtyOnHand);
+      const prevOnHand = newOnHand + qty;
 
       await tx.stockAdjustment.create({
         data: {
@@ -124,10 +132,6 @@ export async function consumeOrder(
         },
       });
 
-      await tx.inventoryValue.update({
-        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
-        data: { qtyOnHand: newOnHand, reservedQty: newReserved, totalValue: newOnHand * avgCost, lastUpdated: new Date() },
-      });
       consumed += 1;
     }
 
@@ -156,14 +160,13 @@ export async function releaseOrder(
       });
       if (upd.count === 0) continue;
 
-      const qty = Number(row.qty);
       const inv = await tx.inventoryValue.findUnique({
         where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
       });
-      const newReserved = Math.max(0, (inv ? Number(inv.reservedQty) : 0) - qty);
+      if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       await tx.inventoryValue.update({
         where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
-        data: { reservedQty: newReserved, lastUpdated: new Date() },
+        data: { reservedQty: { decrement: Number(row.qty) }, lastUpdated: new Date() },
       });
       released += 1;
     }
