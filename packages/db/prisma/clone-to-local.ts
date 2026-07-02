@@ -131,6 +131,29 @@ async function main() {
       }),
     );
 
+    // ---------- ItemImage ----------
+    // Non-PII; url points at the (public) R2 bucket so images render locally.
+    const itemImages = await src.itemImage.findMany();
+    await batchInsert("ItemImage", itemImages, (batch) =>
+      dst.itemImage.createMany({
+        data: batch.map((img) => ({
+          id: img.id,
+          itemId: img.itemId,
+          variantSku: img.variantSku,
+          url: img.url,
+          sortOrder: img.sortOrder,
+          jubelioImageId: img.jubelioImageId,
+          jubelioImageKey: img.jubelioImageKey,
+          jubelioImageThumbnail: img.jubelioImageThumbnail,
+          syncedAt: img.syncedAt,
+          source: img.source,
+          createdAt: img.createdAt,
+          updatedAt: img.updatedAt,
+        })),
+        skipDuplicates: true,
+      }),
+    );
+
     // ---------- InventoryValue ----------
     // SRC (prod) does NOT have reservedQty yet (the reserved-stock migration is
     // applied to local only until this feature merges + deploys). Select only the
