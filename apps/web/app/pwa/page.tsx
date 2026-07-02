@@ -12,14 +12,16 @@ export default async function PwaHome() {
   const [active, stores, recentVisits] = await Promise.all([
     getActiveVisit(session.user.id),
     listActiveStoresForPwa(),
-    listRecentVisitsForUser(session.user.id, 3),
+    listRecentVisitsForUser(session.user.id, 20),
   ]);
 
   const recentMap = new Map<string, string>();
   for (const v of recentVisits) {
     if (!recentMap.has(v.storeId)) recentMap.set(v.storeId, v.store.name);
   }
-  const recentStores = Array.from(recentMap.entries()).map(([storeId, storeName]) => ({ storeId, storeName }));
+  const recentStores = Array.from(recentMap.entries())
+    .slice(0, 3)
+    .map(([storeId, storeName]) => ({ storeId, storeName }));
 
   return (
     <HomeShell
