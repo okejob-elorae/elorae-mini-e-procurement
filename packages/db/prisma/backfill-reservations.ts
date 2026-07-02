@@ -18,9 +18,9 @@
  * and prints the summary (counts per action + total onHand delta).
  *
  * This writes to a shared database — review the printed summary carefully
- * before passing --apply. Never point this at the prod SSH tunnel (port
- * 3307) without explicit sign-off; run against the local test DB (port 3308)
- * first.
+ * before passing --apply. --apply refuses to run if DATABASE_URL points at
+ * the prod SSH tunnel (port 3307) — run against the local test DB (port
+ * 3308) first. Dry-run (no --apply) is read-only and may run against any url.
  */
 import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
@@ -30,7 +30,20 @@ import { classifyForBackfill } from "../src/backfill-reservations-classify";
 
 const apply = process.argv.includes("--apply");
 
-const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL || "");
+const effectiveDatabaseUrl = getDatabaseUrl() || process.env.DATABASE_URL || "";
+
+export function assertNotProdApply(url: string, applyFlag: boolean): void {
+  if (applyFlag && url.includes("3307")) {
+    throw new Error(
+      "Refusing --apply: DATABASE_URL points at port 3307 (the prod SSH tunnel). " +
+        'Run the backfill against the local test DB (port 3308): DATABASE_URL="mysql://elorae:elorae@127.0.0.1:3308/elorae" ... --apply',
+    );
+  }
+}
+
+assertNotProdApply(effectiveDatabaseUrl, apply);
+
+const adapter = new PrismaMariaDb(effectiveDatabaseUrl);
 const prisma = new PrismaClient({ adapter });
 
 type Summary = {
