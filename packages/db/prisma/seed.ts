@@ -224,11 +224,11 @@ async function main() {
 
   const salesmanRole = await prisma.roleDefinition.upsert({
     where: { name: 'SALESMAN' },
-    update: {},
+    update: { isSystem: false },
     create: {
       name: 'SALESMAN',
       description: 'Field salesman — PWA-only access',
-      isSystem: true,
+      isSystem: false,
     },
   });
   console.log('Roles OK');
