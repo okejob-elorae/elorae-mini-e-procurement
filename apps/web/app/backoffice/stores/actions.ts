@@ -21,7 +21,7 @@ const storeInputSchema = z.object({
   phone: z.string().max(64).nullable(),
   contactName: z.string().max(191).nullable(),
   termsType: z.enum(["PUTUS", "KONSI"]),
-  paymentTempo: z.number().int().min(0),
+  paymentTempo: z.number().int().min(0).max(365),
   marginPercent: z.number().min(0).max(999.99).nullable(),
   lat: z.number().min(-90).max(90).nullable(),
   lng: z.number().min(-180).max(180).nullable(),

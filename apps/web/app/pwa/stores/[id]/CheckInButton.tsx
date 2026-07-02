@@ -36,16 +36,10 @@ export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
     navigator.geolocation.getCurrentPosition(
       pos => {
         startTransition(async () => {
-          try {
-            await checkIn({ storeId, lat: pos.coords.latitude, lng: pos.coords.longitude });
-          } catch (e) {
-            if (e instanceof Error && e.message === "NOT_FOUND") {
-              setError(t("storeInactive"));
-              return;
-            }
-            // Re-throw everything else (including Next's NEXT_REDIRECT digest)
-            // so Next's runtime can complete the redirect navigation.
-            throw e;
+          const result = await checkIn({ storeId, lat: pos.coords.latitude, lng: pos.coords.longitude });
+          if (result && !result.ok) {
+            if (result.code === "NOT_FOUND") setError(t("storeInactive"));
+            return;
           }
         });
       },

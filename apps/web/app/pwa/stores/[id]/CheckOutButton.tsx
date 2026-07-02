@@ -16,13 +16,13 @@ export function CheckOutButton({ visitId }: { visitId: string }) {
     navigator.geolocation.getCurrentPosition(
       pos => {
         startTransition(async () => {
-          try {
-            await checkOut({ visitId, lat: pos.coords.latitude, lng: pos.coords.longitude });
-            router.push("/pwa");
-            router.refresh();
-          } catch {
+          const result = await checkOut({ visitId, lat: pos.coords.latitude, lng: pos.coords.longitude });
+          if ("ok" in result && !result.ok) {
             setError(t("coordsError"));
+            return;
           }
+          router.push("/pwa");
+          router.refresh();
         });
       },
       () => setError(t("coordsError")),

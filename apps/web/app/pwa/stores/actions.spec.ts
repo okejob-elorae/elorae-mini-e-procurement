@@ -113,9 +113,9 @@ describe("checkIn / checkOut server actions", () => {
     expect(visits[0].checkoutAt).toBeNull();
   });
 
-  it("checkIn throws NOT_FOUND for deactivated store", async () => {
+  it("checkIn returns NOT_FOUND for deactivated store", async () => {
     const store = await makeStore("TEST-A", { active: false });
-    await expect(checkIn({ storeId: store.id, lat: 1, lng: 2 })).rejects.toThrow("NOT_FOUND");
+    await expect(checkIn({ storeId: store.id, lat: 1, lng: 2 })).resolves.toEqual({ ok: false, code: "NOT_FOUND" });
   });
 
   it("checkIn zod rejects out-of-range lat", async () => {
@@ -153,7 +153,7 @@ describe("checkIn / checkOut server actions", () => {
     expect(row?.checkoutLat?.toNumber()).toBe(10);
   });
 
-  it("checkOut throws FORBIDDEN for another user's visit", async () => {
+  it("checkOut returns FORBIDDEN for another user's visit", async () => {
     const otherUser = await prisma.user.create({
       data: { email: "other@example.com", passwordHash: "x", name: "Other" },
     });
@@ -167,7 +167,7 @@ describe("checkIn / checkOut server actions", () => {
       },
     });
 
-    await expect(checkOut({ visitId: visit.id, lat: 5, lng: 6 })).rejects.toThrow("FORBIDDEN");
+    await expect(checkOut({ visitId: visit.id, lat: 5, lng: 6 })).resolves.toEqual({ ok: false, code: "FORBIDDEN" });
 
     // Cleanup extra user
     await prisma.storeVisit.deleteMany({ where: { userId: otherUser.id } });
