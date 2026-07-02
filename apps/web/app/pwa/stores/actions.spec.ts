@@ -1,6 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, Prisma } from "@elorae/db";
 
+// Guard: refuse to run against prod tunnel (port 3307) or api.elorae.cloud
+const DB_URL = process.env.DATABASE_URL ?? "";
+if (DB_URL.includes(":3307") || DB_URL.includes("api.elorae.cloud")) {
+  throw new Error(
+    "REFUSING: this integration test writes rows to Store/StoreVisit/User. " +
+    "DATABASE_URL points at prod tunnel :3307 or api.elorae.cloud. " +
+    "Run against the local docker testbed :3308 only.",
+  );
+}
+
 // Mock auth() to return a stable test user session
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({
