@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client";
+import { consumeOrder } from "./reservation-writer";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -116,5 +117,6 @@ export async function markOrderShipped(prisma: AnyClient, opts: MarkShipOpts): P
         enqueuedById: opts.userId,
       },
     });
+    await consumeOrder(tx, { salesorderId: order.salesorderId, salesorderNo: order.salesorderNo });
   });
 }

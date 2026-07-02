@@ -74,8 +74,8 @@ describe("StockPushHandler", () => {
       jubelioItemCode: "SKU-PARENT",
     });
     prisma.inventoryValue.findMany.mockResolvedValue([
-      { variantSku: "SKU-A", qtyOnHand: 5 },
-      { variantSku: "SKU-B", qtyOnHand: 12 },
+      { variantSku: "SKU-A", qtyOnHand: 5, reservedQty: 2 },
+      { variantSku: "SKU-B", qtyOnHand: 12, reservedQty: 0 },
     ]);
     http.put.mockResolvedValue({});
 
@@ -87,10 +87,27 @@ describe("StockPushHandler", () => {
     expect(path).toBe("/inventory/items/42/stock");
     expect(body).toEqual({
       items: [
-        { item_code: "SKU-A", end_qty: 5 },
+        { item_code: "SKU-A", end_qty: 3 },
         { item_code: "SKU-B", end_qty: 12 },
       ],
     });
+  });
+
+  it("clamps end_qty at 0 when reserved exceeds on-hand", async () => {
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue({
+      itemId: "item_1",
+      jubelioItemGroupId: 42,
+      jubelioItemCode: "SKU-PARENT",
+    });
+    prisma.inventoryValue.findMany.mockResolvedValue([
+      { variantSku: "SKU-A", qtyOnHand: 1, reservedQty: 4 },
+    ]);
+    http.put.mockResolvedValue({});
+
+    const result = await handler.handle(row() as any);
+
+    expect(result).toEqual({ kind: "processed" });
+    expect(http.put.mock.calls[0][1].items[0]).toEqual({ item_code: "SKU-A", end_qty: 0 });
   });
 
   it("falls back to parent jubelioItemCode for variantless rows (empty variantSku)", async () => {
@@ -100,7 +117,7 @@ describe("StockPushHandler", () => {
       jubelioItemCode: "SKU-PARENT",
     });
     prisma.inventoryValue.findMany.mockResolvedValue([
-      { variantSku: "", qtyOnHand: 8 },
+      { variantSku: "", qtyOnHand: 8, reservedQty: 0 },
     ]);
     http.put.mockResolvedValue({});
 
@@ -117,7 +134,7 @@ describe("StockPushHandler", () => {
       jubelioItemCode: "SKU-PARENT",
     });
     prisma.inventoryValue.findMany.mockResolvedValue([
-      { variantSku: "SKU-A", qtyOnHand: 1 },
+      { variantSku: "SKU-A", qtyOnHand: 1, reservedQty: 0 },
     ]);
     http.put.mockRejectedValue(new Error("Jubelio 500"));
 

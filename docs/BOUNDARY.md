@@ -115,6 +115,7 @@ contract for the migrations that will introduce them.
 | `Production*`                  | web                         | api (read FG receipts)      | ✅ |
 | `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
 | `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
+| `StockReservation`             | **both** — see §3.1         |                             | ✅ schema + writer — api (salesorder webhook, `reserveOrder`/`consumeOrder`/`releaseOrder`), web (ship button, `consumeOrder`). Written ONLY through `@elorae/db/reservation-writer.ts` — never bare prisma. |
 | `SalesOrder`                   | **both** — see §3.2         | —                           | ✅ api owns Jubelio-derived cols; web owns fulfillment cols via helper |
 | `SalesOrderItem`               | api                         | web (read)                  | ✅ schema + api writer |
 | `SalesReturn`                  | api ingest; web decision (planned) | —                    | 🟡 webhook stub shipped; EPIC-05 will introduce web-side Accept/Reject writer + new outbox type `salesreturn_decision_push` |
@@ -140,7 +141,17 @@ contract for the migrations that will introduce them.
 - **api cron** (EPIC-07-04, ⏳) writes `StockAdjustment` with
   `source = JUBELIO_RECONCILE` when the reconcile loop auto-corrects a small
   variance. Lives in apps/api because reading Jubelio inventory is api's
-  responsibility.
+  responsibility. **Must compare against `available` (`qtyOnHand - reservedQty`),
+  not raw `qtyOnHand` — see D6 note below D5/D7.**
+- **`StockReservation` ledger writes** (resolved 2026-07-02, D6): api's
+  `SalesOrderWebhookHandler` calls `reserveOrder` on ingest and `consumeOrder`
+  on ship-webhook; web's Ship button calls `consumeOrder`. `releaseOrder` on
+  cancel is wired on the api webhook path today; a future web-side cancel action
+  can call it safely (idempotent). All three helpers live in
+  `@elorae/db/reservation-writer.ts` and are the only sanctioned writers of
+  `StockReservation` and `InventoryValue.reservedQty`. `consumeOrder` also
+  writes `StockAdjustment` (`source = FULFILLMENT_CONSUME`) to deduct
+  `qtyOnHand` at ship time — see D6 in §9.
 
 `StockAdjustment.source` is a free-form `String` column but the allowed values
 are codified in the registry `packages/db/src/stock-adjustment-source.ts`
@@ -148,9 +159,17 @@ are codified in the registry `packages/db/src/stock-adjustment-source.ts`
 `satisfies StockAdjustmentSource` to compile-check the string. Audit dashboard
 filters and reconcile-cron logic key off the exact values.
 
-Allowed values today: `ERP`, `ERP_OPNAME`, `JUBELIO_WEBHOOK`, `JUBELIO_RECONCILE`.
+Allowed values today: `ERP`, `ERP_OPNAME`, `ERP_RETURN_ACCEPT`,
+`FULFILLMENT_CONSUME`, `JUBELIO_WEBHOOK`, `JUBELIO_RECONCILE`.
 
 To add a new source, see [INTEGRATION-GUIDE §2](./INTEGRATION-GUIDE.md).
+
+**Reconcile-cron note (relevant to D5/D7, added with D6):** when the
+EPIC-07-04 reconcile cron is built, it must diff Jubelio-reported qty against
+ERP **available** (`qtyOnHand - reservedQty`), never raw `qtyOnHand`. Comparing
+against `qtyOnHand` would treat every open reservation as a variance and fight
+the reservation model — the cron would "correct" stock that is intentionally
+held back from sale.
 
 ### 3.5 `AdminNotification` writes — two writers (planned)
 
@@ -391,9 +410,17 @@ be closed before any public deploy.
   `@elorae/db/item-writer.ts` helpers, never `prisma.item.create/update`
   directly.
 - ❌ Hardcoding `JubelioOutbox.entityType` or `StockAdjustment.source` strings
-  without `satisfies` against the registry types. A typo becomes a silent
-  runtime drop — the router skips with `unknown_entity_type:…`. See §4.2.1
-  and §3.1.
+  (including `FULFILLMENT_CONSUME`) without `satisfies` against the registry
+  types. A typo becomes a silent runtime drop — the router skips with
+  `unknown_entity_type:…`. See §4.2.1 and §3.1.
+- ❌ Writing `StockReservation` rows or `InventoryValue.reservedQty` via bare
+  `prisma.stockReservation.*` / `prisma.inventoryValue.update`. Always go
+  through `reserveOrder`/`consumeOrder`/`releaseOrder` in
+  `@elorae/db/reservation-writer.ts` — see D6.
+- ❌ Comparing Jubelio-reported stock against raw `InventoryValue.qtyOnHand`
+  in any reconcile/audit logic. Use `available` (`qtyOnHand - reservedQty`) or
+  it will "correct" quantity that is intentionally held by an open
+  reservation. See D6 and the reconcile note in §3.1.
 - ❌ Pushing virtual-warehouse stock (consignment, canvasser mobile) to
   Jubelio. The push formula must exclude virtual qty:
   `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`.
@@ -445,7 +472,7 @@ script uses `nest start --watch --builder swc` (SWC honours
 | D3 | Admin dashboard | **Full UI in apps/web** at `/backoffice/jubelio/admin` — queue depth, failed items, audit log, outbox status, retry buttons. api exposes JSON endpoints; apps/web renders. |
 | D4 | Local Redis | **Docker compose** (`redis:7-alpine`) declared in repo-root `docker-compose.dev.yml`. apps/api reads `REDIS_URL` env. Upstash used for staging/prod. |
 | D5 | Stock reconciliation cron home (EPIC-07-04) | **apps/api owns the cron.** Reads Jubelio inventory, compares against `InventoryValue`, writes `StockAdjustment` with `source = JUBELIO_RECONCILE` via the same `stock-writer.ts` helper that the webhook handler uses. Large variance (above threshold) writes `AdminNotification` instead of auto-correcting. Web admin dashboard reads the reconcile log. |
-| D6 | Reservation modeling (EPIC-08) | **Open — EPIC-08 plan decides.** Recommendation: column `reservedQty` on `InventoryValue` (simple) with optional `StockReservation` ledger if audit-per-SO required. Push formula must subtract reserved. Reserve operation must be atomic conditional update. |
+| D6 | Reservation modeling (EPIC-08) | **Resolved.** `StockReservation` ledger — one row per `salesorderDetailId` (unique), `state: ReserveState { RESERVED, CONSUMED, RELEASED }` — plus an aggregate `InventoryValue.reservedQty` (Decimal, default 0) kept in sync by the ledger writes. Three order-level helpers in `@elorae/db/reservation-writer.ts`: `reserveOrder` (webhook ingest — creates ledger rows + bumps `reservedQty`, raises `AdminNotification` on oversell), `consumeOrder` (ship — flips `RESERVED → CONSUMED`, deducts `InventoryValue.qtyOnHand` via a `StockAdjustment` stamped `source = FULFILLMENT_CONSUME`), `releaseOrder` (cancel — flips `RESERVED → RELEASED`, decrements `reservedQty` without touching `qtyOnHand`). Idempotency: unique `salesorderDetailId` on create, and every transition is a conditional `updateMany WHERE state = 'RESERVED'` so the Jubelio ship webhook and the ERP Ship button can both fire — whichever lands first wins, the other is a no-op. Model: **reserve-at-ingest, consume-onHand-at-ship, release-on-cancel**; `available = qtyOnHand - reservedQty`, derived at read time (not stored). Jubelio stock push (`stock-push.handler.ts`) sends `available` (`onHand - reserved`, clamped at 0), not raw `qtyOnHand`. |
 | D7 | Warehouse scope on Jubelio stock push (EPIC-19 + EPIC-02-03) | **Push only main-warehouse availability.** Formula: `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`. Konsi, canvasser-mobile, and any future virtual warehouses are excluded. Codified before EPIC-19 implementation; push helper enforces. |
 | D8 | Offline vs marketplace `SalesOrder` (EPIC-17/18/22) | **Open — first EPIC plan decides.** Two options: (a) single dual-channel `SalesOrder` with `channel = OFFLINE_PUTUS | OFFLINE_KONSI`, (b) separate `OfflineSalesOrder` model. Affects every downstream report; punted until EPIC-17 brainstorm. |
 | D9 | Auto-journal trigger (EPIC-13) | **In-Prisma-TX helper, not outbox queue.** Financial debit=credit invariant cannot be eventually consistent. `withJournal()` helper in `@elorae/db` participates in source transaction. |

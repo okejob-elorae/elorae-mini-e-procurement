@@ -7,10 +7,14 @@ import * as db from "@elorae/db";
 
 jest.mock("@elorae/db", () => ({
   ...jest.requireActual("@elorae/db"),
-  applyJubelioStockAdjustment: jest.fn(),
+  reserveOrder: jest.fn(),
+  releaseOrder: jest.fn(),
+  consumeOrder: jest.fn(),
 }));
 
-const applyMock = (db as any).applyJubelioStockAdjustment as jest.Mock;
+const reserveMock = (db as any).reserveOrder as jest.Mock;
+const releaseMock = (db as any).releaseOrder as jest.Mock;
+const consumeMock = (db as any).consumeOrder as jest.Mock;
 
 function row(payload: any, overrides: any = {}) {
   return {
@@ -51,7 +55,9 @@ describe("SalesOrderWebhookHandler", () => {
   let admin: { write: jest.Mock };
 
   beforeEach(async () => {
-    applyMock.mockReset();
+    reserveMock.mockReset().mockResolvedValue({ reserved: 1, skipped: 0, oversell: [] });
+    releaseMock.mockReset().mockResolvedValue({ released: 1 });
+    consumeMock.mockReset().mockResolvedValue({ consumed: 1 });
     prisma = {
       jubelioSalesOrderState: {
         findUnique: jest.fn(),
@@ -92,7 +98,7 @@ describe("SalesOrderWebhookHandler", () => {
     expect(r).toEqual({ kind: "skipped", reason: "missing_salesorder_id" });
   });
 
-  it("first webhook active state, all lines mapped -> decrements + state created", async () => {
+  it("first webhook, not cancelled, not shipped -> reserveOrder called with mapped lines; consume/release not called", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
     prisma.jubelioSalesOrderState.create.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: false, lastStatus: null, lastIsCanceled: false,
@@ -103,19 +109,20 @@ describe("SalesOrderWebhookHandler", () => {
       if (where.jubelioItemId === 1688) return Promise.resolve({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
       return Promise.resolve(null);
     });
-    prisma.inventoryValue.findUnique
-      .mockResolvedValueOnce({ qtyOnHand: 10 })
-      .mockResolvedValueOnce({ qtyOnHand: 5 });
-    applyMock.mockResolvedValue({});
 
     const r = await handler.handle(row(makePayload()) as any);
 
-    expect(applyMock).toHaveBeenCalledTimes(2);
-    expect(applyMock).toHaveBeenNthCalledWith(1, prisma, expect.objectContaining({
-      itemId: "i_a",
-      variantSku: "SKU-A",
-      idempotencyKey: "salesorder-23043-decrement-line-25193",
-    }));
+    expect(reserveMock).toHaveBeenCalledTimes(1);
+    expect(reserveMock).toHaveBeenCalledWith(prisma, {
+      salesorderId: 23043,
+      salesorderNo: "SO-23043",
+      lines: [
+        { salesorderDetailId: 25193, itemId: "i_a", variantSku: "SKU-A", qty: 1 },
+        { salesorderDetailId: 25194, itemId: "i_b", variantSku: "SKU-B", qty: 2 },
+      ],
+    });
+    expect(consumeMock).not.toHaveBeenCalled();
+    expect(releaseMock).not.toHaveBeenCalled();
     expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ stockApplied: true, lastIsCanceled: false }),
     }));
@@ -123,7 +130,7 @@ describe("SalesOrderWebhookHandler", () => {
     expect(r).toEqual({ kind: "processed" });
   });
 
-  it("first webhook with is_canceled=true -> no decrement, state created with stockApplied=false", async () => {
+  it("first webhook with is_canceled=true -> no reserve, state created with stockApplied=false", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
     prisma.jubelioSalesOrderState.create.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: false,
@@ -131,7 +138,9 @@ describe("SalesOrderWebhookHandler", () => {
 
     const r = await handler.handle(row(makePayload({ is_canceled: true })) as any);
 
-    expect(applyMock).not.toHaveBeenCalled();
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(consumeMock).not.toHaveBeenCalled();
     expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ lastIsCanceled: true }),
     }));
@@ -140,44 +149,37 @@ describe("SalesOrderWebhookHandler", () => {
     expect(r).toEqual({ kind: "processed" });
   });
 
-  it("second webhook still active -> no transition (state.stockApplied already true)", async () => {
+  it("second webhook still active, already reserved -> no transition", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: true,
     });
 
     const r = await handler.handle(row(makePayload()) as any);
 
-    expect(applyMock).not.toHaveBeenCalled();
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(consumeMock).not.toHaveBeenCalled();
     expect(r).toEqual({ kind: "processed" });
   });
 
-  it("cancellation after decrement -> reversal applied, state.stockApplied=false", async () => {
+  it("cancel webhook when already reserved -> releaseOrder called, state.stockApplied=false", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: true,
     });
-    prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
-      if (where.jubelioItemId === 1721) return Promise.resolve({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
-      if (where.jubelioItemId === 1688) return Promise.resolve({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
-      return Promise.resolve(null);
-    });
-    prisma.inventoryValue.findUnique
-      .mockResolvedValueOnce({ qtyOnHand: 9 })
-      .mockResolvedValueOnce({ qtyOnHand: 3 });
-    applyMock.mockResolvedValue({});
 
     const r = await handler.handle(row(makePayload({ is_canceled: true })) as any);
 
-    expect(applyMock).toHaveBeenCalledTimes(2);
-    expect(applyMock).toHaveBeenNthCalledWith(1, prisma, expect.objectContaining({
-      idempotencyKey: "salesorder-23043-reversal-line-25193",
-    }));
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+    expect(releaseMock).toHaveBeenCalledWith(prisma, { salesorderId: 23043 });
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(consumeMock).not.toHaveBeenCalled();
     expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ stockApplied: false, reversedAt: expect.any(Date) }),
     }));
     expect(r).toEqual({ kind: "processed" });
   });
 
-  it("un-cancel after reversal -> re-decrement, state.stockApplied=true again", async () => {
+  it("un-cancel after release -> re-reserve, state.stockApplied=true again", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: false,
     });
@@ -186,36 +188,70 @@ describe("SalesOrderWebhookHandler", () => {
       if (where.jubelioItemId === 1688) return Promise.resolve({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
       return Promise.resolve(null);
     });
-    prisma.inventoryValue.findUnique
-      .mockResolvedValueOnce({ qtyOnHand: 10 })
-      .mockResolvedValueOnce({ qtyOnHand: 5 });
-    applyMock.mockResolvedValue({});
 
     const r = await handler.handle(row(makePayload()) as any);
 
-    expect(applyMock).toHaveBeenCalledTimes(2);
-    expect(applyMock).toHaveBeenNthCalledWith(1, prisma, expect.objectContaining({
-      idempotencyKey: "salesorder-23043-decrement-line-25193",
-    }));
+    expect(reserveMock).toHaveBeenCalledTimes(1);
     expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ stockApplied: true }),
     }));
     expect(r).toEqual({ kind: "processed" });
   });
 
-  it("unmapped item_id -> AdminNotification fired, mapped lines still processed", async () => {
+  it("wms_status SHIPPED while already reserved -> consumeOrder called, reserve not called", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+
+    const r = await handler.handle(row(makePayload({ wms_status: "SHIPPED" })) as any);
+
+    expect(consumeMock).toHaveBeenCalledTimes(1);
+    expect(consumeMock).toHaveBeenCalledWith(prisma, { salesorderId: 23043, salesorderNo: "SO-23043" });
+    expect(reserveMock).not.toHaveBeenCalled();
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ stockApplied: true, appliedAt: expect.any(Date) }),
+    }));
+    expect(r).toEqual({ kind: "processed" });
+  });
+
+  it("shipped-before-reserved (shipped true, stockApplied false) -> reserveOrder then consumeOrder both called", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
+    prisma.jubelioSalesOrderState.create.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: false,
+    });
+    prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
+      if (where.jubelioItemId === 1721) return Promise.resolve({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
+      if (where.jubelioItemId === 1688) return Promise.resolve({ itemId: "i_b", erpVariantSku: "SKU-B", jubelioItemId: 1688 });
+      return Promise.resolve(null);
+    });
+
+    const r = await handler.handle(row(makePayload({ wms_status: "SHIPPED" })) as any);
+
+    expect(reserveMock).toHaveBeenCalledTimes(1);
+    expect(consumeMock).toHaveBeenCalledTimes(1);
+    const reserveOrder = reserveMock.mock.invocationCallOrder[0];
+    const consumeOrder = consumeMock.mock.invocationCallOrder[0];
+    expect(reserveOrder).toBeLessThan(consumeOrder);
+    expect(releaseMock).not.toHaveBeenCalled();
+    expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ stockApplied: true, appliedAt: expect.any(Date) }),
+    }));
+    expect(r).toEqual({ kind: "processed" });
+  });
+
+  it("unmapped item_id on reserve -> AdminNotification fired, mapped lines still included", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
     prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });
     prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
       if (where.jubelioItemId === 1721) return Promise.resolve({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
       return Promise.resolve(null);
     });
-    prisma.inventoryValue.findUnique.mockResolvedValueOnce({ qtyOnHand: 10 });
-    applyMock.mockResolvedValue({});
 
     await handler.handle(row(makePayload()) as any);
 
-    expect(applyMock).toHaveBeenCalledTimes(1);
+    expect(reserveMock).toHaveBeenCalledTimes(1);
+    expect(reserveMock.mock.calls[0][1].lines).toHaveLength(1);
     expect(admin.write).toHaveBeenCalledTimes(1);
     expect(admin.write).toHaveBeenCalledWith(expect.objectContaining({
       category: "JUBELIO_UNMAPPED_LINES",
@@ -226,33 +262,32 @@ describe("SalesOrderWebhookHandler", () => {
     }));
   });
 
-  it("line with is_canceled_item=true is skipped, other lines processed", async () => {
+  it("line with is_canceled_item=true is skipped from reservation lines", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
     prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });
     prisma.jubelioProductMapping.findFirst.mockImplementation(({ where }: any) => {
       if (where.jubelioItemId === 1721) return Promise.resolve({ itemId: "i_a", erpVariantSku: "SKU-A", jubelioItemId: 1721 });
       return Promise.resolve(null);
     });
-    prisma.inventoryValue.findUnique.mockResolvedValueOnce({ qtyOnHand: 10 });
-    applyMock.mockResolvedValue({});
     const payload = makePayload();
     payload.items[1].is_canceled_item = true;
 
     await handler.handle(row(payload) as any);
 
-    expect(applyMock).toHaveBeenCalledTimes(1);
-    // Note: findFirst is called 3 times — once per line in upsertSalesOrder (2x), plus once for the mapped line in applyAdjustments.
-    expect(prisma.jubelioProductMapping.findFirst).toHaveBeenCalledTimes(3);
+    expect(reserveMock).toHaveBeenCalledTimes(1);
+    expect(reserveMock.mock.calls[0][1].lines).toHaveLength(1);
+    expect(admin.write).not.toHaveBeenCalled();
   });
 
-  it("all lines unmapped -> one AdminNotification, no stock writes, state still updates", async () => {
+  it("all lines unmapped -> reserveOrder called with empty lines, one AdminNotification, state still updates", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
     prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });
     prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
 
     await handler.handle(row(makePayload()) as any);
 
-    expect(applyMock).not.toHaveBeenCalled();
+    expect(reserveMock).toHaveBeenCalledTimes(1);
+    expect(reserveMock.mock.calls[0][1].lines).toHaveLength(0);
     expect(admin.write).toHaveBeenCalledTimes(1);
     expect(prisma.jubelioSalesOrderState.update).toHaveBeenCalled();
   });
@@ -267,8 +302,6 @@ describe("SalesOrderWebhookHandler", () => {
       }
       return Promise.resolve(null);
     });
-    prisma.inventoryValue.findUnique.mockResolvedValueOnce({ qtyOnHand: 10 });
-    applyMock.mockResolvedValue({});
 
     const payload = makePayload({
       source_name: "Shop | Tokopedia",

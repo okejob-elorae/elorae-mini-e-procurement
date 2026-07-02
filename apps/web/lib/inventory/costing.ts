@@ -256,26 +256,30 @@ type InventorySnapshotRow = Prisma.InventoryValueGetPayload<{
   include: typeof inventorySnapshotInclude;
 }>;
 
-// Aggregate InventoryValue rows by itemId (one row per item; sum qty/value, weighted avg cost)
+// Aggregate InventoryValue rows by itemId (one row per item; sum qty/reserved/value, weighted avg cost)
 function aggregateSnapshotByItemId(
   values: InventorySnapshotRow[],
   toNum: (v: unknown) => number | null
 ) {
-  const byItem = new Map<string, { qtyOnHand: number; totalValue: number; item: InventorySnapshotRow['item'] }>();
+  const byItem = new Map<string, { qtyOnHand: number; reservedQty: number; totalValue: number; item: InventorySnapshotRow['item'] }>();
   for (const v of values) {
     const qty = toNum(v.qtyOnHand) ?? 0;
+    const reserved = toNum(v.reservedQty) ?? 0;
     const val = toNum(v.totalValue) ?? 0;
     const existing = byItem.get(v.itemId);
     if (existing) {
       existing.qtyOnHand += qty;
+      existing.reservedQty += reserved;
       existing.totalValue += val;
     } else {
-      byItem.set(v.itemId, { qtyOnHand: qty, totalValue: val, item: v.item });
+      byItem.set(v.itemId, { qtyOnHand: qty, reservedQty: reserved, totalValue: val, item: v.item });
     }
   }
   const rows = Array.from(byItem.entries()).map(([itemId, agg]) => ({
     itemId,
     qtyOnHand: agg.qtyOnHand,
+    reservedQty: agg.reservedQty,
+    available: agg.qtyOnHand - agg.reservedQty,
     totalValue: agg.totalValue,
     avgCost: agg.qtyOnHand > 0 ? agg.totalValue / agg.qtyOnHand : 0,
     item: {
@@ -299,7 +303,7 @@ export async function getInventorySnapshot(opts?: { page: number; pageSize: numb
   const allItems = aggregateSnapshotByItemId(values, toNum);
   const totalValue = allItems.reduce((sum, v) => sum + v.totalValue, 0);
   const lowStockItems = allItems.filter(
-    (v) => v.item.reorderPoint != null && v.qtyOnHand <= Number(v.item.reorderPoint)
+    (v) => v.item.reorderPoint != null && v.available <= Number(v.item.reorderPoint)
   ).length;
 
   if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {

@@ -6,5 +6,18 @@ services:
     ports: ["6379:6379"]
     volumes: [redis-data:/data]
 
+  db:
+    image: mariadb:11.4
+    container_name: elorae-dev-db
+    restart: unless-stopped
+    ports: ["3308:3306"]
+    environment:
+      MARIADB_ROOT_PASSWORD: elorae
+      MARIADB_DATABASE: elorae
+      MARIADB_USER: elorae
+      MARIADB_PASSWORD: elorae
+    volumes: [db-data:/var/lib/mysql]
+
 volumes:
   redis-data:
+  db-data:

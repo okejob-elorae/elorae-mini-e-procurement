@@ -90,3 +90,18 @@ export {
   bindJubelioId,
   type UpsertJubelioImageInput,
 } from "./item-image-writer";
+export {
+  reserveOrder,
+  consumeOrder,
+  releaseOrder,
+  type ReservationLine,
+  type OversellAlert,
+  type ReserveOrderInput,
+  type ReserveOrderResult,
+  type ConsumeOrderResult,
+  type ReleaseOrderResult,
+} from "./reservation-writer";
+export {
+  classifyForBackfill,
+  type BackfillDecision,
+} from "./backfill-reservations-classify";

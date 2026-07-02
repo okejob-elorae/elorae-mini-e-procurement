@@ -53,6 +53,8 @@ export type ItemsListRow = {
   };
   inventoryValue: {
     qtyOnHand: number;
+    reservedQty: number;
+    available: number;
     avgCost: number;
     totalValue: number;
   } | null;
@@ -156,7 +158,7 @@ export function ItemsPageClient({
 
   const isLowStock = (item: ItemsListRow) => {
     if (item.reorderPoint == null || !item.inventoryValue) return false;
-    return item.inventoryValue.qtyOnHand <= item.reorderPoint;
+    return item.inventoryValue.available <= item.reorderPoint;
   };
 
   return (
@@ -256,6 +258,7 @@ export function ItemsPageClient({
                     <TableHead>Type</TableHead>
                     <TableHead>UOM</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
+                    <TableHead className="text-right">Available</TableHead>
                     <TableHead className="text-right">Avg Cost</TableHead>
                     <TableHead className="text-right">Value</TableHead>
                     <TableHead className="text-right">Harga Jual</TableHead>
@@ -317,6 +320,17 @@ export function ItemsPageClient({
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
+                          <span
+                            className={
+                              (item.inventoryValue?.available ?? 0) < 0
+                                ? 'font-medium text-red-600 dark:text-red-400'
+                                : undefined
+                            }
+                          >
+                            {Number(item.inventoryValue?.available ?? 0).toLocaleString()}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right">
                           Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right">
@@ -354,7 +368,7 @@ export function ItemsPageClient({
                       </TableRow>
                       {expandedId === item.id && (
                         <TableRow>
-                          <TableCell colSpan={11}>
+                          <TableCell colSpan={12}>
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="space-y-1">
                                 <p className="text-sm font-semibold">Variants</p>

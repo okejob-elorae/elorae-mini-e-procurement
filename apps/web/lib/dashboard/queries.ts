@@ -449,3 +449,33 @@ export async function getCOGSRawVsFinished(): Promise<{
   }
   return { rawValue, finishedValue, rawCount, finishedCount };
 }
+
+export type OversoldInventoryRow = {
+  itemId: string;
+  variantSku: string | null;
+  sku: string;
+  nameId: string;
+  qtyOnHand: number;
+  reservedQty: number;
+  available: number;
+};
+
+/** InventoryValue rows where reservedQty exceeds qtyOnHand (negative available = oversell). */
+export async function getOversoldInventory(): Promise<OversoldInventoryRow[]> {
+  const rows = await prisma.inventoryValue.findMany({
+    where: { reservedQty: { gt: 0 } },
+    include: { item: { select: { sku: true, nameId: true } } },
+  });
+  return rows
+    .map((r) => ({
+      itemId: r.itemId,
+      variantSku: r.variantSku,
+      sku: r.item.sku,
+      nameId: r.item.nameId,
+      qtyOnHand: Number(r.qtyOnHand),
+      reservedQty: Number(r.reservedQty),
+      available: Number(r.qtyOnHand) - Number(r.reservedQty),
+    }))
+    .filter((r) => r.available < 0)
+    .sort((a, b) => a.available - b.available);
+}

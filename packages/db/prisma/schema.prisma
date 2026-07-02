@@ -366,6 +366,7 @@ model InventoryValue {
   variantSku  String?
   item        Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
   qtyOnHand   Decimal  @default(0) @db.Decimal(10,2)
+  reservedQty Decimal  @default(0) @db.Decimal(10,2)
   avgCost     Decimal  @default(0) @db.Decimal(15,2)
   totalValue  Decimal  @default(0) @db.Decimal(15,2)
   lastUpdated DateTime @default(now())
@@ -475,6 +476,21 @@ model StockAdjustment {
   @@index([createdById])
   @@index([docNumber])
   @@index([source, createdAt])
+}
+
+model StockReservation {
+  id                 String       @id @default(cuid())
+  salesorderId       Int
+  salesorderDetailId Int          @unique
+  itemId             String
+  variantSku         String       @default("")
+  qty                Decimal      @db.Decimal(15, 4)
+  state              ReserveState
+  createdAt          DateTime     @default(now())
+  resolvedAt         DateTime?
+
+  @@index([salesorderId])
+  @@index([state])
 }
 
 // ==========================================
@@ -1086,6 +1102,12 @@ enum MoveType {
 enum AdjustmentType {
   POSITIVE
   NEGATIVE
+}
+
+enum ReserveState {
+  RESERVED
+  CONSUMED
+  RELEASED
 }
 
 enum OutputMode {
