@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { computePostLoginRedirect } from '@/lib/auth/post-login-redirect';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -52,7 +53,9 @@ export default function LoginPage() {
       if (result?.error) {
         setError(t('invalidCredentials'));
       } else {
-        router.push('/backoffice');
+        const session = await getSession();
+        const perms = session?.user?.permissions ?? [];
+        router.push(computePostLoginRedirect(perms));
         router.refresh();
       }
     } catch {
