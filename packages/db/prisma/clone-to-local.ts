@@ -122,7 +122,20 @@ async function main() {
     );
 
     // ---------- InventoryValue ----------
-    const inventoryValues = await src.inventoryValue.findMany();
+    // SRC (prod) does NOT have reservedQty yet (the reserved-stock migration is
+    // applied to local only until this feature merges + deploys). Select only the
+    // pre-existing columns from source; local reservedQty defaults to 0.
+    const inventoryValues = await src.inventoryValue.findMany({
+      select: {
+        id: true,
+        itemId: true,
+        variantSku: true,
+        qtyOnHand: true,
+        avgCost: true,
+        totalValue: true,
+        lastUpdated: true,
+      },
+    });
     await batchInsert("InventoryValue", inventoryValues, (batch) =>
       dst.inventoryValue.createMany({
         data: batch.map((v) => ({
@@ -130,7 +143,6 @@ async function main() {
           itemId: v.itemId,
           variantSku: v.variantSku,
           qtyOnHand: v.qtyOnHand,
-          reservedQty: v.reservedQty,
           avgCost: v.avgCost,
           totalValue: v.totalValue,
           lastUpdated: v.lastUpdated,
