@@ -105,3 +105,22 @@ docker volume rm elorae_db-data
 
 (Volume name may be prefixed differently depending on your docker compose
 project name — check `docker volume ls` if `elorae_db-data` isn't found.)
+
+## Production cutover notes (reserved-stock backfill)
+
+The backfill (`prisma/backfill-reservations.ts`) reconciles existing orders to the
+reserve model. Before running `--apply` against prod:
+
+- **Run in a webhook-quiet window.** The backfill classifies each order from its
+  current `status`/`fulfillmentStatus`. There is no lock preventing concurrent live
+  Jubelio ingest, so a webhook mutating an order mid-backfill could disagree with the
+  classification. Pause/drain the webhook worker (or pick a low-traffic window) during
+  the run.
+- **Expect oversell-alert noise.** Any already-shipped order whose webhook re-fires
+  after cutover but before its backfill row is processed will briefly reserve against
+  an already-deducted `onHand`, firing a `STOCK_OVERSELL_RISK` `AdminNotification`.
+  These are transient and self-correct once consume runs — expect and ignore a burst.
+- **Dry-run first, always.** Review the summary (counts per action + total onHand
+  delta) before `--apply`. The runner refuses `--apply` against a `3307` (prod tunnel)
+  URL — apply is intended for the real prod `DATABASE_URL` from its env store, not the
+  local tunnel.

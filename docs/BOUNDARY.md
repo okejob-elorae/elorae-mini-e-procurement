@@ -145,8 +145,9 @@ contract for the migrations that will introduce them.
   not raw `qtyOnHand` — see D6 note below D5/D7.**
 - **`StockReservation` ledger writes** (resolved 2026-07-02, D6): api's
   `SalesOrderWebhookHandler` calls `reserveOrder` on ingest and `consumeOrder`
-  on ship-webhook; web's Ship button calls `consumeOrder`; either side calls
-  `releaseOrder` on cancel. All three helpers live in
+  on ship-webhook; web's Ship button calls `consumeOrder`. `releaseOrder` on
+  cancel is wired on the api webhook path today; a future web-side cancel action
+  can call it safely (idempotent). All three helpers live in
   `@elorae/db/reservation-writer.ts` and are the only sanctioned writers of
   `StockReservation` and `InventoryValue.reservedQty`. `consumeOrder` also
   writes `StockAdjustment` (`source = FULFILLMENT_CONSUME`) to deduct
