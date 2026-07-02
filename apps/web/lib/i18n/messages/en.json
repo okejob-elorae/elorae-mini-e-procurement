@@ -1501,5 +1501,23 @@
       "forbidden": "Permission denied.",
       "notFound": "Store not found."
     }
+  },
+  "pwa": {
+    "checkIn": {
+      "button": "Check in",
+      "buttonAutoClose": "Check in (auto-closes visit at {storeName})",
+      "checkOutButton": "Check out",
+      "openInMaps": "Open in Maps",
+      "permissionDenied": "Location permission required. Enable it in your browser settings, then reload.",
+      "permissionPromptChip": "Enable location for check-in",
+      "coordsRetry": "Retry",
+      "coordsError": "Could not read location. Try again.",
+      "storeInactive": "This store is no longer active.",
+      "history": "Visit history",
+      "historyEmpty": "No visits yet.",
+      "stillOpen": "Still open",
+      "autoClosedBadge": "Auto-closed",
+      "viewCoords": "View coords"
+    }
   }
 }

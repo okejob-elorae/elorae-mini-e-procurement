@@ -1501,5 +1501,23 @@
       "forbidden": "Akses ditolak.",
       "notFound": "Toko tidak ditemukan."
     }
+  },
+  "pwa": {
+    "checkIn": {
+      "button": "Check-in",
+      "buttonAutoClose": "Check-in (menutup kunjungan di {storeName})",
+      "checkOutButton": "Check-out",
+      "openInMaps": "Buka di Peta",
+      "permissionDenied": "Izin lokasi diperlukan. Aktifkan di pengaturan browser lalu muat ulang.",
+      "permissionPromptChip": "Aktifkan lokasi untuk check-in",
+      "coordsRetry": "Coba lagi",
+      "coordsError": "Tidak dapat membaca lokasi. Coba lagi.",
+      "storeInactive": "Toko ini sudah tidak aktif.",
+      "history": "Riwayat kunjungan",
+      "historyEmpty": "Belum ada kunjungan.",
+      "stillOpen": "Masih terbuka",
+      "autoClosedBadge": "Ditutup otomatis",
+      "viewCoords": "Lihat koordinat"
+    }
   }
 }
