@@ -1,9 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { signIn, getSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
-import { computePostLoginRedirect } from "@/lib/auth/post-login-redirect";
+import { signIn } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -20,7 +18,6 @@ export default function LoginPage() {
   const t = useTranslations('auth');
   const tApp = useTranslations('app');
   const tValidation = useTranslations('validation');
-  const router = useRouter();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -53,10 +50,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError(t('invalidCredentials'));
       } else {
-        const session = await getSession();
-        const perms = session?.user?.permissions ?? [];
-        router.push(computePostLoginRedirect(perms));
-        router.refresh();
+        window.location.href = '/login/redirect';
       }
     } catch {
       setError(t('errorOccurred'));

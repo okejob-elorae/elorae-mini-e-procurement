@@ -34,7 +34,6 @@ function normalizeHexColor(value: string): string {
 export async function getUserThemePreference(): Promise<UserThemePreference> {
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_VIEW);
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
