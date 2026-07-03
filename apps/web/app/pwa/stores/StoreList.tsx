@@ -106,8 +106,8 @@ export function StoreList({ stores }: { stores: StoreItem[] }) {
                   href={`/pwa/stores/${store.id}`}
                   className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
-                  <div className="rounded-full bg-primary/10 p-2 shrink-0">
-                    <Store className="h-4 w-4 text-primary" />
+                  <div className="rounded-full bg-primary p-2 shrink-0">
+                    <Store className="h-4 w-4 text-primary-foreground" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="truncate font-medium leading-tight">{store.name}</p>
