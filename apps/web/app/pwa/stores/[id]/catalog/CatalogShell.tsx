@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -21,7 +23,7 @@ type Payload = { items: CatalogItem[] };
 type LoadState = "loading" | "ready" | "error";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 10;
 
 export function CatalogShell({
   storeId,
@@ -36,7 +38,7 @@ export function CatalogShell({
   const [state, setState] = useState<LoadState>("loading");
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string | null>(null);
-  const [visible, setVisible] = useState(PAGE_SIZE);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     let alive = true;
@@ -74,15 +76,25 @@ export function CatalogShell({
     });
   }, [items, q, cat]);
 
-  // Reset paging whenever the filtered set changes (new search or category).
+  // Reset to page 1 whenever the filtered set changes (new search or category).
   useEffect(() => {
-    setVisible(PAGE_SIZE);
+    setPage(1);
   }, [q, cat]);
 
-  const shown = filtered.slice(0, visible);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const shown = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-3 p-4">
+      <header className="-ml-2">
+        <Button asChild variant="ghost" size="sm">
+          <Link href={`/pwa/stores/${storeId}`}>
+            <ArrowLeft className="h-4 w-4" />
+            Kembali
+          </Link>
+        </Button>
+      </header>
+
       <div>
         <h1 className="text-lg font-semibold">{storeName}</h1>
         <p className="text-sm text-muted-foreground">Katalog produk · {termsType}</p>
@@ -124,7 +136,7 @@ export function CatalogShell({
 
       <div className="flex flex-col gap-2">
         {shown.map((it) => (
-          <Card key={it.sku} className="flex items-center gap-3 p-3">
+          <Card key={it.sku} className="flex flex-row items-center gap-3 p-3">
             <div className="h-12 w-12 shrink-0 overflow-hidden rounded bg-muted">
               {it.primaryImageUrl && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -153,10 +165,32 @@ export function CatalogShell({
         ))}
       </div>
 
-      {state === "ready" && filtered.length > shown.length && (
-        <Button variant="outline" onClick={() => setVisible((v) => v + PAGE_SIZE)}>
-          Muat lebih banyak ({filtered.length - shown.length})
-        </Button>
+      {state === "ready" && filtered.length > 0 && (
+        <div className="flex items-center justify-center gap-3 pt-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+            aria-label="Halaman sebelumnya"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm tabular-nums text-muted-foreground">
+            {page} / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+            aria-label="Halaman berikutnya"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       )}
     </div>
   );
