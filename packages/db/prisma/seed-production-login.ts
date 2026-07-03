@@ -60,8 +60,12 @@ async function truncateAllTables() {
 async function main() {
   console.log("Seeding production-login minimal data...");
 
-  await truncateAllTables();
-  console.log("Database truncated (all base tables).");
+  if (process.env.SEED_NO_TRUNCATE === "1") {
+    console.log("SEED_NO_TRUNCATE=1 — skipping truncate (additive seed onto existing data).");
+  } else {
+    await truncateAllTables();
+    console.log("Database truncated (all base tables).");
+  }
 
   // ---------- 1. Users ----------
   const adminPassword = await bcrypt.hash("admin123", 10);

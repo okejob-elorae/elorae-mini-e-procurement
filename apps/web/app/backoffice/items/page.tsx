@@ -4,6 +4,7 @@ import { getItemTypeMasters } from '@/app/actions/item-type-master';
 import { listItems, getItemCounts } from '@/lib/items/queries';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { ItemType } from '@elorae/db';
+import { getPrimaryImagesBatch } from '@/lib/items/images/queries';
 import { ItemsPageClient } from './ItemsPageClient';
 
 export const dynamic = 'force-dynamic';
@@ -51,6 +52,11 @@ export default async function ItemsPage({ searchParams }: PageProps) {
   const items = 'items' in listResult ? listResult.items : [];
   const totalCount = 'totalCount' in listResult ? listResult.totalCount : items.length;
 
+  const primaryImageMap = await getPrimaryImagesBatch(
+    items.map((it) => ({ itemId: (it as unknown as { id: string }).id, variantSku: null })),
+  );
+  const primaryImages: Record<string, string> = Object.fromEntries(primaryImageMap);
+
   return (
     <ItemsPageClient
       items={items as unknown as Parameters<typeof ItemsPageClient>[0]['items']}
@@ -61,6 +67,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
       typeFilter={typeFilter ?? ''}
       page={page}
       pageSize={DEFAULT_PAGE_SIZE}
+      primaryImages={primaryImages}
     />
   );
 }

@@ -473,6 +473,10 @@
     "todaySalesTitle": "Penjualan Hari Ini",
     "todaySalesCount": "{count, plural, other {# pesanan hari ini}}",
     "todaySalesTooltip": "Pesanan yang dibuat hari ini (berdasarkan tanggal transaksi). Tidak termasuk yang dibatalkan atau dikembalikan. Termasuk baru, diproses, dikirim, dan selesai.",
+    "oversoldTitle": "Stok Kelebihan Pesan",
+    "oversoldDesc": "SKU dengan reservasi melebihi stok on-hand",
+    "oversoldTooltip": "Baris inventaris dengan reservedQty > qtyOnHand, artinya stok tersedia bernilai negatif.",
+    "oversoldNone": "Tidak ada SKU kelebihan pesan",
     "overview": "Ringkasan",
     "productionTab": "Produksi",
     "overduePOs": "PO Terlambat",
@@ -746,6 +750,22 @@
         "MARGIN_CHANGE": "Ubah margin",
         "DEFAULTS_CHANGE": "Ubah default",
         "MANUAL_EDIT": "Edit manual"
+      }
+    },
+    "images": {
+      "productGallery": "Galeri produk",
+      "variantGalleries": "Galeri varian",
+      "save": "Simpan gambar",
+      "saved": "Gambar tersimpan",
+      "error": {
+        "forbidden": "Anda tidak memiliki izin untuk mengelola gambar.",
+        "image_mime_invalid": "Format file tidak diizinkan. Gunakan JPEG, PNG, atau WebP.",
+        "image_too_large": "Gambar melebihi 5 MB.",
+        "image_count_exceeded": "Maksimal 20 gambar per galeri.",
+        "image_variant_unknown": "SKU varian tidak ditemukan pada produk ini.",
+        "image_url_untrusted": "Host URL gambar tidak terpercaya.",
+        "image_jubelio_owned": "Tidak dapat menghapus gambar yang dikelola Jubelio. Hapus di Jubelio terlebih dahulu.",
+        "item_not_found": "Item tidak ditemukan."
       }
     }
   },

@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import { ProductPushHandler } from "./product-push.handler";
 import { PRISMA } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
+import { JubelioImageUploadService } from "../../image-upload.service";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
 
 function row(overrides: any = {}) {
@@ -50,6 +51,7 @@ describe("ProductPushHandler", () => {
   let handler: ProductPushHandler;
   let prisma: any;
   let http: { post: jest.Mock; delete: jest.Mock };
+  let imageUpload: { ensureUploaded: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -57,14 +59,17 @@ describe("ProductPushHandler", () => {
       jubelioProductMapping: { findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
       jubelioPushDefaults: { findFirst: jest.fn() },
       jubelioCategoryMapping: { findFirst: jest.fn() },
+      itemImage: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(async (ops: Promise<any>[]) => Promise.all(ops)),
     };
     http = { post: jest.fn(), delete: jest.fn() };
+    imageUpload = { ensureUploaded: jest.fn().mockResolvedValue(undefined) };
     const mod = await Test.createTestingModule({
       providers: [
         ProductPushHandler,
         { provide: PRISMA, useValue: prisma },
         { provide: JubelioHttpService, useValue: http },
+        { provide: JubelioImageUploadService, useValue: imageUpload },
       ],
     }).compile();
     handler = mod.get(ProductPushHandler);
@@ -249,5 +254,32 @@ describe("ProductPushHandler", () => {
     expect(prisma.jubelioProductMapping.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ["m2"] } },
     });
+  });
+
+  it("calls ensureUploaded BEFORE catalog POST", async () => {
+    prisma.item.findUnique.mockResolvedValue(baseItem);
+    prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
+    prisma.jubelioPushDefaults.findFirst.mockResolvedValue(baseDefaults);
+    prisma.jubelioCategoryMapping.findFirst.mockResolvedValue({ jubelioCategoryId: 454 });
+    http.post.mockResolvedValue({ status: "ok", id: 7, item_ids: [11] });
+
+    const callOrder: string[] = [];
+    imageUpload.ensureUploaded.mockImplementation(async () => { callOrder.push("ensureUploaded"); });
+    http.post.mockImplementation(async () => { callOrder.push("http.post"); return { status: "ok", id: 7, item_ids: [11] }; });
+
+    await handler.handle(row() as any);
+
+    expect(callOrder).toEqual(["ensureUploaded", "http.post"]);
+  });
+
+  it("if ensureUploaded rejects, handler throws and catalog POST is never called", async () => {
+    prisma.item.findUnique.mockResolvedValue(baseItem);
+    prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
+    prisma.jubelioPushDefaults.findFirst.mockResolvedValue(baseDefaults);
+    prisma.jubelioCategoryMapping.findFirst.mockResolvedValue({ jubelioCategoryId: 454 });
+    imageUpload.ensureUploaded.mockRejectedValue(new Error("upload failed"));
+
+    await expect(handler.handle(row() as any)).rejects.toThrow("upload failed");
+    expect(http.post).not.toHaveBeenCalled();
   });
 });

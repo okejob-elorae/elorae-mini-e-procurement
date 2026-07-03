@@ -1,20 +1,59 @@
 # Production deploy on Hostinger VPS (or any single-host Docker setup).
-# Brings up: Redis (BullMQ backend) + apps/api (NestJS) + Caddy (auto-SSL reverse proxy).
+# Brings up: MariaDB + Redis (BullMQ backend) + apps/api (NestJS) + apps/web (Next.js) + Caddy (auto-SSL reverse proxy).
 #
 # First-time:
 #   cp .env.production.example .env.production
-#   <fill in secrets>
+#   cp .env.production.web.example .env.production.web
+#   <fill in secrets — see DB_ROOT_PASSWORD + DB_PASSWORD>
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
 # Subsequent deploys:
 #   git pull
 #   docker compose -f docker-compose.prod.yml up -d --build api
 #
+# Local dev access to this DB: SSH tunnel from laptop —
+#   ssh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud
+#   Then point apps/web/.env DATABASE_URL at mysql://elorae:<pw>@127.0.0.1:3306/elorae
+#
 # Logs:
 #   docker compose -f docker-compose.prod.yml logs -f api
 #   docker compose -f docker-compose.prod.yml logs -f caddy
+#   docker compose -f docker-compose.prod.yml logs -f db
 
 services:
+  db:
+    image: mariadb:11.4
+    container_name: elorae-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MARIADB_DATABASE: elorae
+      MARIADB_USER: elorae
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=1G
+      # Disable TLS — the db port is bound to 127.0.0.1 on the VPS, traffic
+      # to api/web travels only over the docker internal network, and the
+      # SSH tunnel for local dev encrypts at the SSH layer. MariaDB ships
+      # with a self-signed cert by default and Prisma's connector fails
+      # verification on it; disabling here is simpler than trusting it
+      # everywhere.
+      - --skip-ssl
+    volumes:
+      - db-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3306:3306"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uelorae -p$$MARIADB_PASSWORD --skip-ssl --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   redis:
     image: redis:7-alpine
     container_name: elorae-redis
@@ -41,12 +80,16 @@ services:
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:3001/health || exit 1"]
+      # node:22-slim ships without wget/curl. Use node's native fetch instead —
+      # guaranteed present since it's the runtime.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -60,13 +103,19 @@ services:
     restart: unless-stopped
     env_file:
       - .env.production.web
+    environment:
+      # Next.js standalone server: bind to all interfaces so the in-container
+      # healthcheck (localhost:3000) works alongside external docker-network access.
+      HOSTNAME: "0.0.0.0"
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health || exit 1"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -91,6 +140,7 @@ services:
       - internal
 
 volumes:
+  db-data:
   redis-data:
   caddy-data:
   caddy-config:

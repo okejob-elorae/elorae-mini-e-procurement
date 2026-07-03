@@ -31,6 +31,8 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json tsconfig*.json .
 COPY packages/db ./packages/db
 COPY apps/web ./apps/web
 ENV NEXT_TELEMETRY_DISABLED=1
+# Bump node heap for the Next.js build — default 2GB OOMs on the apps/web bundle.
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN pnpm --filter @elorae/db generate \
  && pnpm --filter @elorae/db build \
  && pnpm --filter @elorae/web build

@@ -11,7 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FulfillmentCard } from "./FulfillmentCard";
 
-type Props = { order: SalesOrderDetail; items: SalesOrderItemRow[]; canFulfill: boolean };
+type Props = {
+  order: SalesOrderDetail;
+  items: SalesOrderItemRow[];
+  canFulfill: boolean;
+  lineImages?: Record<string, string>;
+};
 
 const KNOWN_FEE_KEYS = new Set([
   "insurance_cost",
@@ -26,7 +31,7 @@ const KNOWN_FEE_KEYS = new Set([
   "total_amount_mp",
 ]);
 
-export function SalesOrderDetailClient({ order, items, canFulfill }: Props) {
+export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = {} }: Props) {
   const t = useTranslations("salesOrders");
   const locale = useLocale();
 
@@ -93,6 +98,7 @@ export function SalesOrderDetailClient({ order, items, canFulfill }: Props) {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-12"></TableHead>
               <TableHead>{t("detail.lineCol.sku")}</TableHead>
               <TableHead>{t("detail.lineCol.product")}</TableHead>
               <TableHead className="text-right">{t("detail.lineCol.qty")}</TableHead>
@@ -102,20 +108,36 @@ export function SalesOrderDetailClient({ order, items, canFulfill }: Props) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map((it) => (
-              <TableRow key={it.id}>
-                <TableCell className="font-mono text-sm">
-                  {it.itemId
-                    ? <Link href={`/backoffice/items/${it.itemId}`} className="hover:underline">{it.jubelioItemCode}</Link>
-                    : it.jubelioItemCode}
-                </TableCell>
-                <TableCell>{it.productName}</TableCell>
-                <TableCell className="text-right">{it.qty}</TableCell>
-                <TableCell className="text-right">{formatIDR(it.unitPrice)}</TableCell>
-                <TableCell className="text-right">{formatIDR(it.discAmount)}</TableCell>
-                <TableCell className="text-right">{formatIDR(it.lineTotal)}</TableCell>
-              </TableRow>
-            ))}
+            {items.map((it) => {
+              const imgKey = it.itemId ? `${it.itemId}|` : null;
+              const imgUrl = imgKey ? lineImages[imgKey] : undefined;
+              return (
+                <TableRow key={it.id}>
+                  <TableCell>
+                    {imgUrl ? (
+                      <img
+                        src={imgUrl}
+                        alt=""
+                        className="w-10 h-10 rounded object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded bg-muted" />
+                    )}
+                  </TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {it.itemId
+                      ? <Link href={`/backoffice/items/${it.itemId}`} className="hover:underline">{it.jubelioItemCode}</Link>
+                      : it.jubelioItemCode}
+                  </TableCell>
+                  <TableCell>{it.productName}</TableCell>
+                  <TableCell className="text-right">{it.qty}</TableCell>
+                  <TableCell className="text-right">{formatIDR(it.unitPrice)}</TableCell>
+                  <TableCell className="text-right">{formatIDR(it.discAmount)}</TableCell>
+                  <TableCell className="text-right">{formatIDR(it.lineTotal)}</TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </Card>

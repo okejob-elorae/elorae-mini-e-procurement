@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, Fragment } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from "next/navigation";
 import { 
   Plus, 
   Search, 
@@ -55,6 +56,8 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 interface InventoryItem {
   itemId: string;
   qtyOnHand: number;
+  reservedQty: number;
+  available: number;
   avgCost: number;
   totalValue: number;
   item: {
@@ -124,6 +127,7 @@ export function InventoryPageClient({
   initialAdjustmentItemList,
 }: InventoryPageClientProps) {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
   const [inventory, setInventory] = useState<InventoryItem[]>(initialInventory);
   const [grns, setGRNs] = useState<GRN[]>(initialGrns);
   const [approvingGrnId, setApprovingGrnId] = useState<string | null>(null);
@@ -161,7 +165,8 @@ export function InventoryPageClient({
   const [rollsSearchQuery, setRollsSearchQuery] = useState('');
   const [rollsSearchDebounced, setRollsSearchDebounced] = useState('');
   const rollsSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [activeTab, setActiveTab] = useState('stock');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") ?? "stock");
+  const oversoldOnly = searchParams.get("oversold") === "1";
   const [summary, setSummary] = useState(initialSummary);
   const [stockPage, setStockPage] = useState(1);
   const [stockPageSize] = useState(DEFAULT_PAGE_SIZE);
@@ -296,13 +301,15 @@ export function InventoryPageClient({
 
   const isLowStock = (item: InventoryItem) => {
     if (!item.item.reorderPoint) return false;
-    return Number(item.qtyOnHand) <= Number(item.item.reorderPoint);
+    return Number(item.available) <= Number(item.item.reorderPoint);
   };
 
-  const filteredInventory = inventory.filter(item =>
-    item.item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.item.nameId.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredInventory = inventory
+    .filter(item =>
+      item.item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.item.nameId.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .filter(item => !oversoldOnly || Number(item.available) < 0);
 
   const q = (s: string) => s.toLowerCase().trim();
   const filteredGrns = grns.filter(
@@ -460,6 +467,20 @@ export function InventoryPageClient({
             />
           </div>
 
+          {oversoldOnly && (
+            <div className="flex items-center gap-2">
+              <Badge variant="destructive">
+                Showing oversold only ({filteredInventory.length})
+              </Badge>
+              <Link
+                href="/backoffice/inventory?tab=stock"
+                className="text-sm text-muted-foreground hover:underline"
+              >
+                Clear filter
+              </Link>
+            </div>
+          )}
+
           <Card>
             <CardContent className="p-0">
               {isLoading ? (
@@ -474,7 +495,9 @@ export function InventoryPageClient({
                         <TableHead>SKU</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>UOM</TableHead>
-                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">On Hand</TableHead>
+                        <TableHead className="text-right">Reserved</TableHead>
+                        <TableHead className="text-right">Available</TableHead>
                         <TableHead className="text-right">Avg Cost</TableHead>
                         <TableHead className="text-right">Value</TableHead>
                       </TableRow>
@@ -497,6 +520,20 @@ export function InventoryPageClient({
                           <TableCell>{item.item.uom.code}</TableCell>
                           <TableCell className="text-right">
                             {Number(item.qtyOnHand).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {Number(item.reservedQty).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span
+                              className={
+                                Number(item.available) < 0
+                                  ? 'font-medium text-red-600 dark:text-red-400'
+                                  : undefined
+                              }
+                            >
+                              {Number(item.available).toLocaleString()}
+                            </span>
                           </TableCell>
                           <TableCell className="text-right">
                             Rp {Number(item.avgCost).toLocaleString()}

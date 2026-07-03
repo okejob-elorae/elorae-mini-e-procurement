@@ -250,10 +250,29 @@ model Item {
   salesReturnItems SalesReturnItem[]
   salesHistoryRows   SalesHistory[]
   forecastResults    ForecastResult[]
+  images           ItemImage[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
   @@index([categoryId])
+}
+
+model ItemImage {
+  id                      String    @id @default(cuid())
+  itemId                  String
+  item                    Item      @relation(fields: [itemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  variantSku              String?
+  url                     String    @db.VarChar(500)
+  sortOrder               Int       @default(0)
+  jubelioImageId          String?   @unique
+  jubelioImageKey         String?   @db.VarChar(500)
+  jubelioImageThumbnail   String?   @db.VarChar(500)
+  syncedAt                DateTime?
+  source                  String    @default("ERP_UPLOAD")
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  @@index([itemId, variantSku, sortOrder])
+  @@index([itemId, jubelioImageId])
 }
 
 model ConsumptionRule {
@@ -349,6 +368,7 @@ model InventoryValue {
   variantSku  String?
   item        Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
   qtyOnHand   Decimal  @default(0) @db.Decimal(10,2)
+  reservedQty Decimal  @default(0) @db.Decimal(10,2)
   avgCost     Decimal  @default(0) @db.Decimal(15,2)
   totalValue  Decimal  @default(0) @db.Decimal(15,2)
   lastUpdated DateTime @default(now())
@@ -552,6 +572,21 @@ model ReconciliationResult {
   @@index([runId])
   @@index([action])
   @@index([itemId])
+}
+
+model StockReservation {
+  id                 String       @id @default(cuid())
+  salesorderId       Int
+  salesorderDetailId Int          @unique
+  itemId             String
+  variantSku         String       @default("")
+  qty                Decimal      @db.Decimal(15, 4)
+  state              ReserveState
+  createdAt          DateTime     @default(now())
+  resolvedAt         DateTime?
+
+  @@index([salesorderId])
+  @@index([state])
 }
 
 // ==========================================
@@ -1199,6 +1234,12 @@ enum PlanYearStatus {
   ACTIVE
 }
 
+enum ReserveState {
+  RESERVED
+  CONSUMED
+  RELEASED
+}
+
 enum OutputMode {
   GENERIC
   SKU
@@ -1410,6 +1451,8 @@ model JubelioApiCall {
   ok           Boolean
   rateLimited  Boolean  @default(false)
   errorMessage String?  @db.Text
+  requestBody  String?  @db.MediumText
+  responseBody String?  @db.MediumText
   createdAt    DateTime @default(now())
 
   @@index([createdAt])

@@ -67,3 +67,30 @@ export async function enqueueProductPushOnUpdate(
   });
   void fireDirectEnqueue(row.id, userId ?? "");
 }
+
+// Image-only edits don't flow through PushableSnapshot diff (image change isn't
+// in the field set). Same gating as Update otherwise — FINISHED_GOOD + mapping
+// or ERP-source. Caller decides whether anything actually changed (counts > 0).
+export async function enqueueProductPushOnImageChange(itemId: string): Promise<void> {
+  const item = await prisma.item.findUnique({
+    where: { id: itemId },
+    select: { id: true, type: true, source: true },
+  });
+  if (!item) return;
+  if (item.type !== "FINISHED_GOOD") return;
+
+  const hasMapping = (await prisma.jubelioProductMapping.count({ where: { itemId } })) > 0;
+  if (!hasMapping && item.source !== "ERP") return;
+
+  const userId = await currentUserId();
+  const row = await prisma.jubelioOutbox.create({
+    data: {
+      entityType: "product_push" satisfies JubelioOutboxEntityType,
+      entityId: itemId,
+      payload: {},
+      enqueuedById: userId,
+    },
+    select: { id: true },
+  });
+  void fireDirectEnqueue(row.id, userId ?? "");
+}

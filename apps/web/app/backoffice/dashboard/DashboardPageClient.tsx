@@ -48,7 +48,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Role } from '@/lib/constants/enums';
 import type { SerializedDashboardStats } from '@/lib/dashboard/serialize';
-import type { RawMaterialShortageRow, WorkOrderStatusCount } from '@/lib/dashboard/queries';
+import type { RawMaterialShortageRow, WorkOrderStatusCount, OversoldInventoryRow } from '@/lib/dashboard/queries';
 import { formatIDR } from '@/lib/sales-orders/format';
 import type { MarketplaceKpi } from '@/lib/sales-orders/queries';
 import {
@@ -161,6 +161,7 @@ type DashboardPageClientProps = {
   initialRawMaterialShortage: RawMaterialShortageRow[];
   initialWoStatusCounts: WorkOrderStatusCount[];
   marketplaceKpi: MarketplaceKpi;
+  initialOversoldInventory: OversoldInventoryRow[];
 };
 
 export function DashboardPageClient({
@@ -171,6 +172,7 @@ export function DashboardPageClient({
   initialRawMaterialShortage,
   initialWoStatusCounts,
   marketplaceKpi,
+  initialOversoldInventory,
 }: DashboardPageClientProps) {
   const { data: session } = useSession();
   const tDashboard = useTranslations('dashboard');
@@ -183,6 +185,7 @@ export function DashboardPageClient({
   const [rawMaterialShortage] = useState(initialRawMaterialShortage);
   const [shortageRowsOpen, setShortageRowsOpen] = useState<Set<string>>(() => new Set());
   const [woStatusCounts] = useState(initialWoStatusCounts);
+  const [oversoldInventory] = useState(initialOversoldInventory);
 
   const toggleShortageRow = (itemId: string) => {
     setShortageRowsOpen((prev) => {
@@ -543,6 +546,27 @@ export function DashboardPageClient({
 
       {/* Stats Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Link href="/backoffice/inventory?tab=stock&oversold=1" className="block h-full">
+          <Card
+            className={cn(
+              'h-full transition-colors hover:border-destructive',
+              oversoldInventory.length > 0 && 'border-destructive/50',
+            )}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{tDashboard('oversoldTitle')}</CardTitle>
+              <AlertTriangle
+                className={`h-4 w-4 ${oversoldInventory.length > 0 ? 'text-destructive' : 'text-muted-foreground'}`}
+              />
+            </CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold ${oversoldInventory.length > 0 ? 'text-destructive' : ''}`}>
+                {oversoldInventory.length}
+              </div>
+              <p className="text-xs text-muted-foreground">{tDashboard('oversoldDesc')}</p>
+            </CardContent>
+          </Card>
+        </Link>
         {statsCards.map((stat) => {
           const Icon = stat.icon;
           return (

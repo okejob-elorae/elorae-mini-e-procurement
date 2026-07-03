@@ -14,7 +14,7 @@ docs/BOUNDARY.md Service-boundary contract — source of truth for who-writes-wh
 reference/       Local-only planning artifacts (gitignored). EPIC todos live here.
 ```
 
-Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the VPS-deployed web.
+Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostinger VPS. Local dev reaches it through an SSH tunnel — same DB, same data, both environments. Migrated off TiDB Cloud Serverless 2026-06-28 after the free tier exhausted its monthly quota.
 
 ## Authoritative docs (read these before changing architecture)
 
@@ -57,7 +57,7 @@ Database: TiDB Cloud (MySQL-compatible). Same cluster used by local dev + the VP
 |------|---------|-------|
 | Hostinger VPS (`elorae.cloud`) | apps/web (Next.js, Docker Compose) | Manual deploy: `ssh elorae@api.elorae.cloud && cd /srv/elorae && git pull && docker compose -f docker-compose.prod.yml up -d --build web`. Caddy auto-SSL. Vercel deploy DECOMMISSIONED 2026-06-18. |
 | Hostinger VPS (`api.elorae.cloud`) | apps/api + Redis + Caddy (Docker Compose) | Manual deploy: `ssh elorae@api.elorae.cloud && cd /srv/elorae && git pull && docker compose -f docker-compose.prod.yml up -d --build api`. Caddy handles auto-SSL. Webhook URL: `https://api.elorae.cloud/webhooks/jubelio/<event>`. See `README.md §Production deploy` for first-time setup + ops commands. |
-| TiDB Cloud | MySQL-compatible DB | Shared between dev + VPS. `DATABASE_URL` lives in each platform's env store. |
+| VPS MariaDB (docker `db` service) | MySQL-compatible DB | Port 3306 bound to 127.0.0.1 on the VPS. Local dev tunnels via `ssh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud`. `DATABASE_URL` lives in each platform's env store. |
 
 ngrok stays available as a fallback for local-only demo work (laptop apps/api + temporary public tunnel). VPS is the authoritative prod target.
 
@@ -71,13 +71,14 @@ ngrok stays available as a fallback for local-only demo work (laptop apps/api + 
 
 ## Architecture nuances worth flagging
 
-- **TiDB cluster is shared between local dev and the VPS-deployed web.** A local destructive query (delete, truncate, bad migration) hits the same data the client demo shows. Run migrations only via `pnpm -F @elorae/db migrate:deploy`; never `migrate dev --create-only` without thinking.
+- **VPS MariaDB is shared between local dev and the VPS-deployed web.** A local destructive query (delete, truncate, bad migration) hits the same data the client demo shows. Run migrations only via `pnpm -F @elorae/db migrate:deploy`; never `migrate dev --create-only` without thinking. No automatic backups — set up daily `mariadb-dump` → R2 separately (TODO).
 - **`Item` is dual-owner** (web for ERP forms; api for Jubelio catalog ingest). All api writes go through `@elorae/db/item-writer.ts` helpers, stamping `source = JUBELIO_INGEST`. See `docs/BOUNDARY.md §3.3`.
 - **`StockAdjustment` is dual-owner** (web for ERP-driven adjustments; api for Jubelio stock webhooks). Api writes go through `@elorae/db/stock-writer.ts` `applyJubelioStockAdjustment`, stamping `source = JUBELIO_WEBHOOK` + `idempotencyKey`. See `docs/BOUNDARY.md §3.1`.
 - **Jubelio webhook signature is HMAC-SHA256 with header `Sign`** — not plain SHA256 with `webhook-signature`. Jubelio's docs *text* is wrong; their code example is correct. See `docs/BOUNDARY.md §9 Q1`.
 - **Catalog ingest pulls from Jubelio** via `POST /jubelio/catalog/sync` (apps/api). Product push (ERP → Jubelio) is wired via the outbox — see sub-3 below.
-- **Inbound webhook pipeline ships in BullMQ-backed queue.** `JubelioWebhookEvent` carries authoritative status (`RECEIVED → PROCESSING → PROCESSED / SKIPPED / DEAD`). Worker runs in apps/api process, concurrency 1. Sweeper rescues stuck rows every 10 min.
+- **Inbound webhook pipeline ships in BullMQ-backed queue.** `JubelioWebhookEvent` carries authoritative status (`RECEIVED → PROCESSING → PROCESSED / SKIPPED / DEAD`). Worker runs in apps/api process, concurrency 4 by default (`JUBELIO_WORKER_CONCURRENCY`). Sweeper rescues stuck rows every 10 min. Note: shared-state writers (e.g. `InventoryValue` aggregates) must use atomic Prisma `increment`/`decrement`, never read-modify-write — the worker is concurrent and the ERP-ship path races the ship-webhook across processes.
 - **Outbound push pipeline ships in `JubelioOutbox` table + `outbox-poller` + `outbox-processor`.** Handlers in `apps/api/src/jubelio/outbox/handlers/`: `product_push`, `stock_push`, `salesorder_pick`, `salesorder_pack`, `salesorder_ship`. Already-in-state Jubelio responses are skipped (not retried). New push types add: handler file + payload builder + spec + router case.
+- **Marketplace stock is reserve-at-ingest, consume-at-ship, release-on-cancel.** `StockReservation` ledger (one row per `salesorderDetailId`) + aggregate `InventoryValue.reservedQty`, driven by `reserveOrder`/`consumeOrder`/`releaseOrder` in `@elorae/db/reservation-writer.ts`. `available = qtyOnHand - reservedQty`, derived at read time — never stored. `consumeOrder` deducts `qtyOnHand` via a `StockAdjustment` stamped `source = FULFILLMENT_CONSUME`, and is idempotent so the Jubelio ship webhook and the ERP Ship button can both trigger it safely. Jubelio stock push sends `available`, not raw `qtyOnHand`. See `docs/BOUNDARY.md` D6.
 
 ## Integration work — decomposition + status
 
@@ -114,8 +115,20 @@ EPIC-05 (Sales Returns) decomposition:
 | Sub | Scope | Status |
 |----|-------|--------|
 | **A** | Schema + helpers + Jubelio client methods + ingest service + webhook handler + 30-min backstop sweeper | ✅ shipped (PR #54 merged 2026-06-18) + hotfix PR #55 reorienting the ingest around Jubelio's actual data model (returns ARE SalesOrders; `SalesOrderWebhookHandler` is the authoritative entry point; URL/field corrections). Carries 2 items into sub-B: race-condition serialization on concurrent Accept, variant-SKU fallback lookup in ingest. |
-| **B** | Server actions + per-item Accept/Reject UI on detail page (outbox decision-push handler deferred to sub-B.5 pending Jubelio resolve-endpoint docs) | ⏳ next |
-| **C** | Dashboard list + KPIs + RBAC seed + i18n | ⏳ |
+| **B** | Server actions + per-item Accept/Reject UI on detail page (outbox decision-push handler deferred to sub-B.5 pending Jubelio resolve-endpoint docs) | ✅ shipped (PR #58 merged 2026-06-19) — includes Redis-lock serialization on concurrent Accept from sub-A carryover |
+| **C** | Dashboard list + KPIs + RBAC seed + i18n | ✅ shipped (PR #58 merged 2026-06-19) — bundled with sub-B. Follow-ups: totalQty Decimal coercion hotfix (PR #59), back-to-list nav polish |
+
+EPIC-08 (Reserved Stock) decomposition:
+
+| Sub | Scope | Status |
+|----|-------|--------|
+| **A** | `StockReservation` ledger + `InventoryValue.reservedQty` aggregate + `reserveOrder`/`consumeOrder`/`releaseOrder` helpers + `FULFILLMENT_CONSUME` source + Jubelio stock push sends `available` | ✅ shipped (PR #88 merged 2026-07-02). **Post-merge deploy pending:** run `prisma/backfill-reservations.ts --apply` against prod (webhook-quiet window) to reconcile existing orders — see `docs/local-db-testbed.md`. |
+
+EPIC-17 (Field Sales / SFA) decomposition:
+
+| Sub | Scope | Status |
+|----|-------|--------|
+| **1** | PWA scaffold — `SALESMAN` role + `pwa:access` permission + `/pwa/*` route tree + Serwist SW scoped `/pwa/` + post-login redirect + salesman seed user | ✅ shipped (PR #90 merged 2026-07-02) + hotfixes PR #91 (relative Location on login redirect for reverse proxy + server-side redirect + drop theme owner-gate + SALESMAN `isSystem=false` so it doesn't inherit wildcard perms) and PR #92 (webpack builder — Turbopack doesn't run Serwist plugin). Root next-pwa on `/` coexists untouched. |
 
 EPIC-07 (Stock Opname & Reconciliation) decomposition:
 
@@ -139,8 +152,10 @@ Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit l
 - Don't bundle multiple sub-projects into one PR. Each sub-project is its own slice.
 - Don't write to web-owned tables from apps/api (and vice versa) without going through a `@elorae/db` helper — see `docs/BOUNDARY.md §3`.
 - Don't add Prisma model comments. Don't add `Co-Authored-By` trailers to commits.
-- Don't run `prisma migrate dev` against the shared TiDB — that creates throwaway migrations and resets state. Use `migrate:deploy` only.
+- Don't run `prisma migrate dev` against the shared VPS MariaDB — that creates throwaway migrations and resets state. Use `migrate:deploy` only.
 - Don't deploy apps/api or apps/web to Vercel. Both need persistent processes; Vercel functions don't fit (node-cron, BullMQ workers). Production target is the Hostinger VPS; local-ngrok is the dev/demo fallback.
+- **Don't run the whole test suite** (`pnpm -F @elorae/api test` with no filter, or repo-wide). It's slow + wasteful. Scope to the specs you changed: `pnpm -F @elorae/api test -- <pattern> [<pattern>...]` (jest treats each positional arg as a testPathPattern, OR-ed). Only widen if a change plausibly affects unrelated specs.
+- **Don't type-check the whole repo** (turbo/all-package). Scope to the one package you changed: `pnpm -F @elorae/api type-check` only. (`@elorae/web` type-check stays the user's — it saturates disk; never run it.) tsc can't do single-file, so package-scope is the finest partial available.
 
 ## When you need more context
 

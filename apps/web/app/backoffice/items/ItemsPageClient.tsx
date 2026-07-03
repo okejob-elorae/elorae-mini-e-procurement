@@ -55,6 +55,8 @@ export type ItemsListRow = {
   };
   inventoryValue: {
     qtyOnHand: number;
+    reservedQty: number;
+    available: number;
     avgCost: number;
     totalValue: number;
   } | null;
@@ -91,6 +93,7 @@ type ItemsPageClientProps = {
   typeFilter: ItemType | 'raw' | '';
   page: number;
   pageSize: number;
+  primaryImages?: Record<string, string>;
 };
 
 export function ItemsPageClient({
@@ -102,6 +105,7 @@ export function ItemsPageClient({
   typeFilter,
   page,
   pageSize,
+  primaryImages = {},
 }: ItemsPageClientProps) {
   const locale = useLocale();
   const router = useRouter();
@@ -170,7 +174,7 @@ export function ItemsPageClient({
 
   const isLowStock = (item: ItemsListRow) => {
     if (item.reorderPoint == null || !item.inventoryValue) return false;
-    return item.inventoryValue.qtyOnHand <= item.reorderPoint;
+    return item.inventoryValue.available <= item.reorderPoint;
   };
 
   return (
@@ -285,11 +289,13 @@ export function ItemsPageClient({
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10"></TableHead>
+                    <TableHead className="w-12"></TableHead>
                     <TableHead>SKU</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>UOM</TableHead>
                     <TableHead className="text-right">Stock</TableHead>
+                    <TableHead className="text-right">Available</TableHead>
                     <TableHead className="text-right">Avg Cost</TableHead>
                     <TableHead className="text-right">Value</TableHead>
                     <TableHead className="text-right">Harga Jual</TableHead>
@@ -316,6 +322,18 @@ export function ItemsPageClient({
                             )}
                           </Button>
                         </TableCell>
+                        <TableCell>
+                          {primaryImages[`${item.id}|`] ? (
+                            <img
+                              src={primaryImages[`${item.id}|`]}
+                              alt=""
+                              className="w-10 h-10 rounded object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded bg-muted" />
+                          )}
+                        </TableCell>
                         <TableCell className="font-medium">{item.sku}</TableCell>
                         <TableCell>
                           <p className="font-medium">
@@ -337,6 +355,17 @@ export function ItemsPageClient({
                               {Number(item.inventoryValue?.qtyOnHand || 0).toLocaleString()}
                             </span>
                           </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span
+                            className={
+                              (item.inventoryValue?.available ?? 0) < 0
+                                ? 'font-medium text-red-600 dark:text-red-400'
+                                : undefined
+                            }
+                          >
+                            {Number(item.inventoryValue?.available ?? 0).toLocaleString()}
+                          </span>
                         </TableCell>
                         <TableCell className="text-right">
                           Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString()}
@@ -376,7 +405,7 @@ export function ItemsPageClient({
                       </TableRow>
                       {expandedId === item.id && (
                         <TableRow>
-                          <TableCell colSpan={10}>
+                          <TableCell colSpan={12}>
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="space-y-1">
                                 <p className="text-sm font-semibold">Variants</p>

@@ -27,8 +27,8 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       api: ${{ steps.filter.outputs.api }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -90,6 +90,7 @@ jobs:
             cd /srv/elorae
             docker compose -f docker-compose.prod.yml up -d --build web
             docker image prune -f
+            docker builder prune -af --filter until=24h
 
   deploy-api:
     name: Deploy api
@@ -112,7 +113,37 @@ jobs:
             set -euo pipefail
             cd /srv/elorae
             docker compose -f docker-compose.prod.yml build api
-            set -a; . /srv/elorae/.env.production; set +a
-            docker compose -f docker-compose.prod.yml run --rm -e DATABASE_URL --workdir /app/packages/db api ./node_modules/.bin/prisma migrate deploy
+
+            # Apply pending Prisma migrations via mariadb client (skip prisma migrate engine —
+            # it refuses to connect to the --skip-ssl MariaDB regardless of URL params).
+            # Idempotent: reads applied names from _prisma_migrations, applies + records the diff.
+            DB_ROOT_PASSWORD=$(grep ^DB_ROOT_PASSWORD= .env | cut -d= -f2)
+            docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae <<'SQL'
+            CREATE TABLE IF NOT EXISTS _prisma_migrations (
+              id varchar(36) NOT NULL PRIMARY KEY,
+              checksum varchar(64) NOT NULL,
+              finished_at datetime(3) DEFAULT NULL,
+              migration_name varchar(255) NOT NULL,
+              logs text,
+              rolled_back_at datetime(3) DEFAULT NULL,
+              started_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+              applied_steps_count int UNSIGNED NOT NULL DEFAULT 0
+            );
+            SQL
+            APPLIED=$(docker exec elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl -N -B -e "SELECT migration_name FROM elorae._prisma_migrations")
+            cd packages/db/prisma/migrations
+            for m in $(ls -d */ | sort); do
+              NAME=$(basename "$m")
+              if ! grep -qx "$NAME" <<< "$APPLIED"; then
+                echo ">>> Applying $NAME"
+                docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae < "${m}migration.sql"
+                CHECKSUM=$(sha256sum "${m}migration.sql" | cut -d' ' -f1)
+                UUID=$(cat /proc/sys/kernel/random/uuid)
+                docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae -e "INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, started_at, applied_steps_count) VALUES ('$UUID', '$CHECKSUM', NOW(3), '$NAME', NOW(3), 1);"
+              fi
+            done
+            cd /srv/elorae
+
             docker compose -f docker-compose.prod.yml up -d --no-build api
             docker image prune -f
+            docker builder prune -af --filter until=24h

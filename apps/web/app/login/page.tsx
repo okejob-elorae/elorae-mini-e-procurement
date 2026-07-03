@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -19,7 +18,6 @@ export default function LoginPage() {
   const t = useTranslations('auth');
   const tApp = useTranslations('app');
   const tValidation = useTranslations('validation');
-  const router = useRouter();
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -52,8 +50,7 @@ export default function LoginPage() {
       if (result?.error) {
         setError(t('invalidCredentials'));
       } else {
-        router.push('/backoffice');
-        router.refresh();
+        window.location.href = '/login/redirect';
       }
     } catch {
       setError(t('errorOccurred'));

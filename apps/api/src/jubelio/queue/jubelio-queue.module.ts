@@ -2,6 +2,7 @@ import { forwardRef, Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
 import { AdminModule } from "../../admin/admin.module";
 import { PrismaModule } from "../../db/prisma.module";
+import { JubelioModule } from "../jubelio.module";
 import { JubelioCatalogModule } from "../catalog/catalog.module";
 import { ReturnsModule } from "../returns/returns.module";
 import { JUBELIO_WEBHOOK_QUEUE } from "./jubelio-queue.config";
@@ -18,6 +19,7 @@ import { UnhandledEventHandler } from "../handlers/unhandled.handler";
   imports: [
     PrismaModule,
     AdminModule,
+    forwardRef(() => JubelioModule),
     forwardRef(() => JubelioCatalogModule),
     forwardRef(() => ReturnsModule),
     BullModule.registerQueue({ name: JUBELIO_WEBHOOK_QUEUE }),

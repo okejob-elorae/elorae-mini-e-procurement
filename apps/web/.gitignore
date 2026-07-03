@@ -48,3 +48,7 @@ next-env.d.ts
 /.playwright-mcp
 
 .cursor
+
+# Serwist-generated service worker (built from app/pwa/sw.ts)
+public/pwa/sw.js
+public/pwa/swe-worker-*.js

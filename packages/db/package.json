@@ -32,6 +32,7 @@
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
+    "test": "vitest run",
     "seed": "tsx prisma/seed.ts",
     "unseed": "tsx prisma/unseed.ts",
     "seed:pantone": "tsx prisma/seed-pantone-colors.ts",
@@ -42,12 +43,14 @@
   "dependencies": {
     "@prisma/adapter-mariadb": "^7.3.0",
     "@prisma/client": "^7.3.0",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^16.6.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
     "prisma": "^7.3.0",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

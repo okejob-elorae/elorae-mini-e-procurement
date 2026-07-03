@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { JubelioOutbox } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
+import { JubelioImageUploadService } from "../../image-upload.service";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
 import type { HandlerOutcome, OutboxHandler } from "./handler.types";
 import {
@@ -22,6 +23,7 @@ export class ProductPushHandler implements OutboxHandler {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaService,
     private readonly http: JubelioHttpService,
+    private readonly imageUpload: JubelioImageUploadService,
   ) {}
 
   async handle(row: JubelioOutbox): Promise<HandlerOutcome> {
@@ -55,6 +57,22 @@ export class ProductPushHandler implements OutboxHandler {
     const variantsArr = Array.isArray(item.variants) ? (item.variants as Array<{ sku: string }>) : null;
     const hasVariants = variantsArr !== null && variantsArr.length > 0;
 
+    const images = await this.prisma.itemImage.findMany({
+      where: { itemId: item.id },
+      select: { id: true, variantSku: true, url: true, sortOrder: true, jubelioImageId: true, jubelioImageKey: true, jubelioImageThumbnail: true },
+    });
+
+    const needsUpload = images.some((i) => i.jubelioImageKey === null);
+    await this.imageUpload.ensureUploaded(
+      images.map((i) => ({ id: i.id, url: i.url, jubelioImageKey: i.jubelioImageKey })),
+    );
+    const refreshedImages = needsUpload
+      ? await this.prisma.itemImage.findMany({
+          where: { itemId: item.id },
+          select: { id: true, variantSku: true, url: true, sortOrder: true, jubelioImageId: true, jubelioImageKey: true, jubelioImageThumbnail: true },
+        })
+      : images;
+
     const body = buildCreateProductRequest({
       item: {
         id: item.id,
@@ -83,6 +101,7 @@ export class ProductPushHandler implements OutboxHandler {
       },
       categoryJubelioId: categoryMap.jubelioCategoryId,
       mappings,
+      images: refreshedImages,
     });
 
     const response = await this.http.post<CatalogPostResponse>("/inventory/catalog/", body);

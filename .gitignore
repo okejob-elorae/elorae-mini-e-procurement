@@ -14,3 +14,14 @@ other-sources
 .env
 .env.*
 !.env.*.example
+
+# Root-level scratchpad artifacts (screenshots, notes, scratch scripts)
+/*.png
+/log.md
+/scratchpad-*.js
+/scratchpad-*.mjs
+
+# TSC build outputs inside lib/ (source is .ts; compiled JS must not ship)
+apps/web/lib/**/*.js
+apps/web/lib/**/*.d.ts
+apps/web/lib/**/*.js.map
