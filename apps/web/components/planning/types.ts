@@ -3,6 +3,7 @@ export type PlanStageDetail = {
   name: string;
   targetQty: number;
   targetMonth: number | null;
+  variantSku: string | null;
   supplierId: string | null;
   supplierName: string | null;
   fabricNotes: string | null;
@@ -10,6 +11,7 @@ export type PlanStageDetail = {
   workOrderId: string | null;
   workOrderDocNumber: string | null;
   workOrderStatus: string | null;
+  planCmtAllocationId: string | null;
   sortOrder: number;
 };
 
@@ -23,6 +25,7 @@ export type PlanCategoryDetail = {
   parentSharePercent: number | null;
   itemId: string | null;
   itemName: string | null;
+  itemVariants: Array<{ variantSku: string; label: string }>;
   itemCategoryId: string | null;
   itemCategoryCode: string | null;
   itemCategoryName: string | null;
@@ -47,15 +50,19 @@ export type PlanCategoryDetail = {
   stages: PlanStageDetail[];
   colorAllocations: Array<{
     id: string;
-    colorName: string;
-    colorCode: string | null;
+    month: number;
+    variantSku: string;
+    colorLabel: string | null;
     allocatedQty: number;
     notes: string | null;
   }>;
   cmtAllocations: Array<{
     id: string;
+    month: number;
+    variantSku: string;
     supplierId: string;
     allocatedQty: number;
+    workOrderId: string | null;
     notes: string | null;
   }>;
   accessoryPlans: Array<{
@@ -71,6 +78,7 @@ export type PlanYearDetail = {
   id: string;
   year: number;
   notes: string | null;
+  status: "DRAFT" | "ACTIVE";
   isLocked: boolean;
   createdBy: { id: string; name: string };
   categories: PlanCategoryDetail[];
@@ -108,6 +116,18 @@ export type PlanDashboardData = {
   }>;
   monthlyTimeline: Array<{ month: number; plan: number; actual: number }>;
   parentChart: Array<{ code: string; name: string; plan: number; actual: number }>;
+  variantRows: Array<{
+    categoryId: string;
+    categoryCode: string;
+    categoryName: string;
+    month: number;
+    variantSku: string;
+    colorLabel: string | null;
+    planQty: number;
+    actualQty: number;
+    completionPercent: number;
+    completionBand: "red" | "yellow" | "green";
+  }>;
 };
 
 export type ComboboxOption = { value: string; label: string };

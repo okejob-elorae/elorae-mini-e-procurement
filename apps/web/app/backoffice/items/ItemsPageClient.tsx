@@ -35,8 +35,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import { deleteItem } from '@/app/actions/items';
+import type { ItemTypeMasterRow } from '@/app/actions/item-type-master';
 import { ItemType } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export type ItemsListRow = {
   id: string;
@@ -86,6 +88,7 @@ type ItemsPageClientProps = {
   items: ItemsListRow[];
   totalCount: number;
   counts: ItemCounts;
+  itemTypeMasters: ItemTypeMasterRow[];
   search: string;
   typeFilter: ItemType | 'raw' | '';
   page: number;
@@ -97,6 +100,7 @@ export function ItemsPageClient({
   items,
   totalCount,
   counts,
+  itemTypeMasters,
   search: initialSearch,
   typeFilter,
   page,
@@ -107,6 +111,7 @@ export function ItemsPageClient({
   const router = useRouter();
   const pathname = usePathname();
   const t = useTranslations('toasts');
+  const tNav = useTranslations('navigation');
   const tItems = useTranslations('items');
   const tPlaceholders = useTranslations('placeholders');
   const itemTypeLabels: Record<ItemType, string> = {
@@ -118,16 +123,23 @@ export function ItemsPageClient({
   const [searchInput, setSearchInput] = useState(initialSearch);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  const activeTab =
+    typeFilter && typeFilter !== 'raw' ? typeFilter : 'all';
+
+  const typeTabLabel = (master: ItemTypeMasterRow) =>
+    locale === 'en' ? master.nameEn : master.nameId;
+
   useEffect(() => {
     setSearchInput(initialSearch);
   }, [initialSearch]);
 
   const pushParams = useCallback(
-    (updates: { search?: string; page?: number }) => {
+    (updates: { search?: string; page?: number; type?: ItemType | 'raw' | '' }) => {
       const params = new URLSearchParams();
       const search = updates.search ?? initialSearch;
       const nextPage = updates.page ?? page;
-      if (typeFilter) params.set('type', typeFilter);
+      const nextType = updates.type !== undefined ? updates.type : typeFilter;
+      if (nextType) params.set('type', nextType);
       if (search.trim()) params.set('search', search.trim());
       if (nextPage > 1) params.set('page', String(nextPage));
       const qs = params.toString();
@@ -135,6 +147,10 @@ export function ItemsPageClient({
     },
     [initialSearch, page, pathname, router, typeFilter]
   );
+
+  const handleTabChange = (value: string) => {
+    pushParams({ type: value === 'all' ? '' : (value as ItemType | 'raw'), page: 1 });
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -165,10 +181,8 @@ export function ItemsPageClient({
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{tItems('title')}</h1>
-          <p className="text-muted-foreground">
-            Manage fabric, accessories, and finished goods
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">{tNav('navItemsAll')}</h1>
+          <p className="text-muted-foreground">{tItems('subtitle')}</p>
         </div>
         <Link href="/backoffice/items/new">
           <Button>
@@ -220,6 +234,29 @@ export function ItemsPageClient({
           </CardContent>
         </Card>
       </div>
+
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="flex flex-wrap h-auto gap-1">
+          <TabsTrigger value="all">
+            {tItems('tabAll')}
+            <Badge variant="secondary" className="ml-1.5 tabular-nums">
+              {counts.total}
+            </Badge>
+          </TabsTrigger>
+          {itemTypeMasters.map((master) => {
+            const code = master.code as ItemType;
+            const count = counts.byType[code] ?? 0;
+            return (
+              <TabsTrigger key={master.code} value={master.code}>
+                {typeTabLabel(master)}
+                <Badge variant="secondary" className="ml-1.5 tabular-nums">
+                  {count}
+                </Badge>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </Tabs>
 
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1 max-w-sm">

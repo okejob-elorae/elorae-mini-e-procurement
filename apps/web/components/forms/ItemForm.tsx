@@ -5,7 +5,7 @@ import { useForm, Controller, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createItemSchema, itemSchema, consumptionRuleSchema } from '@/lib/validations';
 import { ItemType } from '@/lib/constants/enums';
-import { generateSKU } from '@/app/actions/items';
+import { generateSKU, getVariantBarcodeFormatConfig } from '@/app/actions/items';
 import { getUOMs } from '@/app/actions/uom';
 import { getItems } from '@/app/actions/items';
 import { getItemTypeMasters } from '@/app/actions/item-type-master';
@@ -29,6 +29,10 @@ import { Plus, Trash2, Loader2, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import type { z } from 'zod';
+import {
+  buildVariantBarcode,
+  type VariantBarcodeFormatConfig,
+} from '@/lib/items/variant-barcode';
 
 type ItemFormData = z.infer<typeof itemSchema>;
 type ConsumptionRuleData = z.infer<typeof consumptionRuleSchema>;
@@ -164,8 +168,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     const map = new Map<string, Set<string>>();
     normalizedVariants.forEach((variant) => {
       Object.entries(variant).forEach(([key, value]) => {
-        // Exclude 'sku' — it is the variant SKU code, not an attribute name
-        if (key === 'sku') return;
+        // Exclude reserved keys — not variant attributes
+        if (key === 'sku' || key === 'barcode') return;
         if (!map.has(key)) map.set(key, new Set());
         map.get(key)!.add(value);
       });
@@ -179,6 +183,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     initialAttributes
   );
   const [variantSkus, setVariantSkus] = useState<string[]>([]);
+  const [variantBarcodes, setVariantBarcodes] = useState<string[]>([]);
+  const [barcodeFormatConfig, setBarcodeFormatConfig] = useState<VariantBarcodeFormatConfig | null>(
+    null
+  );
   const [itemTypeMasters, setItemTypeMasters] = useState<Awaited<ReturnType<typeof getItemTypeMasters>>>([]);
 
   const {
@@ -220,6 +228,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     getUOMs().then(setUOMs).catch(() => toast.error(tToasts('failedToLoadUOMs')));
     getItemTypeMasters().then(setItemTypeMasters).catch(() => {});
     getItemCategories(true).then((rows) => setItemCategories(rows as ItemCategoryOption[])).catch(() => {});
+    getVariantBarcodeFormatConfig()
+      .then(setBarcodeFormatConfig)
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
   }, []);
 
@@ -324,6 +335,51 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     });
   };
 
+  const applyVariantBarcodeAt = (idx: number) => {
+    if (!barcodeFormatConfig) return;
+    if (!categoryCodePrefix && !parentSku.trim()) {
+      toast.error(tToasts('setParentSkuBeforeBarcode'));
+      return;
+    }
+    const combo = variantCombinations[idx];
+    if (!combo) return;
+    const keys = attributes.map((a) => a.key).filter((k) => k.trim());
+    const code = buildVariantBarcode(barcodeFormatConfig, {
+      parentSku: parentSku.trim(),
+      categoryCode: categoryCodePrefix,
+      combo,
+      orderedAttributeKeys: keys,
+    });
+    setVariantBarcodes((prev) => {
+      const next = [...prev];
+      while (next.length <= idx) next.push('');
+      next[idx] = code;
+      return next;
+    });
+  };
+
+  const applyAllVariantCodes = () => {
+    if (!variantSkuBasePrefix) {
+      toast.error(tToasts('setParentSkuBeforeVariantCode'));
+      return;
+    }
+    if (!barcodeFormatConfig) return;
+    const keys = attributes.map((a) => a.key).filter((k) => k.trim());
+    setVariantSkus(
+      variantCombinations.map((combo) => buildVariantSkuCode(variantSkuBasePrefix, combo, keys))
+    );
+    setVariantBarcodes(
+      variantCombinations.map((combo) =>
+        buildVariantBarcode(barcodeFormatConfig, {
+          parentSku: parentSku.trim(),
+          categoryCode: categoryCodePrefix,
+          combo,
+          orderedAttributeKeys: keys,
+        })
+      )
+    );
+  };
+
   const variantCombinationsKey = useMemo(
     () => variantCombinations.map((c) => JSON.stringify(c)).join('|'),
     [variantCombinations]
@@ -331,6 +387,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   useEffect(() => {
     if (variantCombinations.length === 0) {
       setVariantSkus([]);
+      setVariantBarcodes([]);
       return;
     }
     setVariantSkus((prev) => {
@@ -341,11 +398,28 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       return trimmed.map((current, idx) => {
         const combo = variantCombinations[idx];
         const match = normalizedVariants.find((v) => {
-          const { sku, ...rest } = v;
+          const { sku, barcode, ...rest } = v;
           void sku;
+          void barcode;
           return Object.keys(combo).every((k) => rest[k] === combo[k]);
         });
         return match?.sku?.trim() ?? current;
+      });
+    });
+    setVariantBarcodes((prev) => {
+      const next = [...prev];
+      while (next.length < variantCombinations.length) next.push('');
+      const trimmed = next.slice(0, variantCombinations.length);
+      if (!normalizedVariants.length) return trimmed;
+      return trimmed.map((current, idx) => {
+        const combo = variantCombinations[idx];
+        const match = normalizedVariants.find((v) => {
+          const { sku, barcode, ...rest } = v;
+          void sku;
+          void barcode;
+          return Object.keys(combo).every((k) => rest[k] === combo[k]);
+        });
+        return match?.barcode?.trim() ?? current;
       });
     });
   }, [variantCombinationsKey, variantCombinations, normalizedVariants]);
@@ -377,6 +451,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       variantCombinations.length > 0
         ? variantCombinations.map((combo, i) => {
             let variantSku = variantSkus[i]?.trim() || '';
+            const variantBarcode = variantBarcodes[i]?.trim() || '';
             const autoBase = variantSkuBasePrefix;
             if (variantSku && autoBase) {
               const hasValidPrefix = variantSkuPrefixes.some((p) => variantSku.startsWith(p));
@@ -390,6 +465,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             return {
               ...combo,
               ...(variantSku ? { sku: variantSku } : {}),
+              ...(variantBarcode ? { barcode: variantBarcode } : {}),
             };
           })
         : undefined;
@@ -761,21 +837,36 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
           {variantCombinations.length > 0 && (
             <div className="space-y-2 pt-2 border-t">
-              <p className="text-sm text-muted-foreground">
-                Variant SKU must start with the category code
-                {categoryCodePrefix ? ` (${categoryCodePrefix})` : ' (when the category has one)'} or the parent item SKU
-                {parentSku ? ` (${parentSku})` : ''}. Leave empty to save and the server will auto-fill using the same
-                base. Use <span className="font-medium text-foreground">Generate code</span> for{' '}
-                <code className="rounded bg-muted px-1 py-0.5 text-xs">{`{base}-{attr1}-…-{attrN}`}</code>
-                {variantSkuBasePrefix ? (
-                  <>
-                    {' '}
-                    (e.g. {variantSkuBasePrefix}-RED-S).
-                  </>
-                ) : (
-                  <> (pick a category with a code or set the item SKU first).</>
-                )}
-              </p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Variant SKU must start with the category code
+                  {categoryCodePrefix ? ` (${categoryCodePrefix})` : ' (when the category has one)'} or the parent item SKU
+                  {parentSku ? ` (${parentSku})` : ''}. Leave empty to save and the server will auto-fill using the same
+                  base. Use <span className="font-medium text-foreground">Generate code</span> for{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs">{`{base}-{attr1}-…-{attrN}`}</code>
+                  {variantSkuBasePrefix ? (
+                    <>
+                      {' '}
+                      (e.g. {variantSkuBasePrefix}-RED-S).
+                    </>
+                  ) : (
+                    <> (pick a category with a code or set the item SKU first).</>
+                  )}
+                  {' '}Barcodes follow the format in{' '}
+                  <span className="font-medium text-foreground">Settings → Item codes</span>.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={applyAllVariantCodes}
+                  disabled={!variantSkuBasePrefix || !barcodeFormatConfig}
+                >
+                  <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                  Generate all
+                </Button>
+              </div>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -783,6 +874,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                       <TableHead key={attr.key}>{attr.key}</TableHead>
                     ))}
                     <TableHead className="min-w-56">Variant SKU</TableHead>
+                    <TableHead className="min-w-56">Barcode</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -816,6 +908,33 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                                 ? `Build ${variantSkuBasePrefix}-{values}`
                                 : 'Select a category with code or set item SKU'
                             }
+                          >
+                            <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                            Generate code
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <Input
+                            className="min-w-0 flex-1 font-mono text-sm"
+                            value={variantBarcodes[idx] ?? ''}
+                            onChange={(e) => {
+                              const next = [...variantBarcodes];
+                              while (next.length <= idx) next.push('');
+                              next[idx] = e.target.value;
+                              setVariantBarcodes(next);
+                            }}
+                            placeholder="e.g. 0224000016T03"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => applyVariantBarcodeAt(idx)}
+                            disabled={!barcodeFormatConfig}
+                            title="Build barcode from global format template"
                           >
                             <Wand2 className="mr-1.5 h-3.5 w-3.5" />
                             Generate code

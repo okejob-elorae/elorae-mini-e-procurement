@@ -45,6 +45,10 @@ function formatMovementDescription(refType: string): string {
       return 'Retur';
     case 'VENDOR_RETURN':
       return 'Pengembalian Vendor';
+    case 'OPNAME':
+      return 'Stock Opname';
+    case 'RECON':
+      return 'Rekonsiliasi Jubelio';
     case 'GRN_OWNER_DECLINE':
       return 'GRN ditolak owner (pembatalan penerimaan)';
     default:

@@ -10,14 +10,24 @@
  * - No work orders / inventory
  */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient, DocType, Role } from "../generated/prisma/client";
 import bcrypt from "bcryptjs";
 
 import { getDatabaseUrl } from "../src/db-connection";
+import { loadDbEnv } from "../src/load-env";
 
-const adapter = new PrismaMariaDb(getDatabaseUrl() || process.env.DATABASE_URL!);
+loadDbEnv();
+
+const databaseUrl = getDatabaseUrl() || process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error(
+    "DATABASE_URL is not set. Add it to apps/web/.env (or packages/db/.env).",
+  );
+  process.exit(1);
+}
+
+const adapter = new PrismaMariaDb(databaseUrl);
 const prisma = new PrismaClient({ adapter });
 
 const now = new Date();
@@ -156,6 +166,11 @@ async function main() {
     // Inventory
     { code: "inventory:view", module: "inventory", action: "view", description: "View inventory" },
     { code: "inventory:manage", module: "inventory", action: "manage", description: "Manage inventory" },
+    { code: "inventory_opname:view", module: "inventory_opname", action: "view", description: "View stock opname sessions" },
+    { code: "inventory_opname:count", module: "inventory_opname", action: "count", description: "Create and count stock opname sessions" },
+    { code: "inventory_opname:approve", module: "inventory_opname", action: "approve", description: "Approve stock opname sessions" },
+    { code: "inventory_reconciliation:view", module: "inventory_reconciliation", action: "view", description: "View Jubelio reconciliation runs" },
+    { code: "inventory_reconciliation:manage", module: "inventory_reconciliation", action: "manage", description: "Run and resolve Jubelio reconciliation" },
 
     // Work Orders
     { code: "work_orders:view", module: "work_orders", action: "view", description: "View work orders" },
@@ -279,7 +294,15 @@ async function main() {
     });
   }
 
-  const warehousePermissions = ["dashboard:view", "items:view", "suppliers:view", "inventory:view", "inventory:manage"];
+  const warehousePermissions = [
+    "dashboard:view",
+    "items:view",
+    "suppliers:view",
+    "inventory:view",
+    "inventory:manage",
+    "inventory_opname:view",
+    "inventory_opname:count",
+  ];
   for (const code of warehousePermissions) {
     const perm = permissionMap.get(code);
     if (!perm) continue;
@@ -290,7 +313,15 @@ async function main() {
     });
   }
 
-  const productionPermissions = ["dashboard:view", "items:view", "work_orders:view", "work_orders:create", "work_orders:manage", "nota_register:view"];
+  const productionPermissions = [
+    "dashboard:view",
+    "items:view",
+    "work_orders:view",
+    "work_orders:create",
+    "work_orders:manage",
+    "nota_register:view",
+    "inventory_opname:view",
+  ];
   for (const code of productionPermissions) {
     const perm = permissionMap.get(code);
     if (!perm) continue;
@@ -350,6 +381,7 @@ async function main() {
     { docType: "RET", prefix: "RET/", resetPeriod: "MONTHLY" },
     { docType: "ISSUE", prefix: "ISS/", resetPeriod: "MONTHLY" },
     { docType: "RECEIPT", prefix: "RCPT/", resetPeriod: "MONTHLY" },
+    { docType: "OPN", prefix: "OPN/", resetPeriod: "MONTHLY" },
   ];
   for (const c of docConfigs) {
     await prisma.docNumberConfig.upsert({
@@ -364,6 +396,19 @@ async function main() {
         year,
         month,
       },
+    });
+  }
+
+  const reconSettings = [
+    { key: "RECON_AUTO_CORRECT_THRESHOLD", value: "0" },
+    { key: "RECON_AUTO_CORRECT_DIRECTION", value: "FLAG_ONLY" },
+    { key: "RECON_CRON_ENABLED", value: "true" },
+  ];
+  for (const setting of reconSettings) {
+    await prisma.systemSetting.upsert({
+      where: { key: setting.key },
+      update: {},
+      create: setting,
     });
   }
 

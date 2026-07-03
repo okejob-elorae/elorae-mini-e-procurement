@@ -1,7 +1,9 @@
 import { Prisma } from '@elorae/db';
 import { prisma } from '@elorae/db';
 import type { FilterTags } from "@elorae/db/pantone";
+import { DEFAULT_FILTER_OPTIONS, FILTER_DIMENSIONS } from "@elorae/db/pantone";
 import { COLOR_PAGE_SIZE } from '@/lib/production-colors/constants';
+import type { FilterFacetCounts } from '@/components/production-colors/ColorsFilterBar';
 
 export { COLOR_PAGE_SIZE };
 
@@ -210,4 +212,45 @@ export async function toggleFavorite(
 
 export async function countFavorites(userId: string): Promise<number> {
   return prisma.pantoneColorFavorite.count({ where: { userId } });
+}
+
+function emptyFacetCounts(): FilterFacetCounts {
+  const counts = {} as FilterFacetCounts;
+  for (const dim of FILTER_DIMENSIONS) {
+    counts[dim] = {};
+    for (const opt of DEFAULT_FILTER_OPTIONS[dim]) {
+      counts[dim][opt] = 0;
+    }
+  }
+  return counts;
+}
+
+export async function getPantoneFilterFacetCounts(opts?: {
+  userId?: string;
+}): Promise<FilterFacetCounts> {
+  const counts = emptyFacetCounts();
+
+  const rows = opts?.userId
+    ? await prisma.pantoneColor.findMany({
+        where: {
+          favorites: { some: { userId: opts.userId } },
+        },
+        select: { filterTags: true },
+      })
+    : await prisma.pantoneColor.findMany({
+        select: { filterTags: true },
+      });
+
+  for (const row of rows) {
+    const tags = row.filterTags as FilterTags;
+    for (const dim of FILTER_DIMENSIONS) {
+      for (const value of tags[dim] ?? []) {
+        if (value in counts[dim]) {
+          counts[dim][value] += 1;
+        }
+      }
+    }
+  }
+
+  return counts;
 }

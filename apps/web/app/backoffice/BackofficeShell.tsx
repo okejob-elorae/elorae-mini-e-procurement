@@ -96,8 +96,6 @@ const navItems: NavItem[] = [
     children: [
       { labelKey: 'navItemsAll', href: '/backoffice/items' },
       { labelKey: 'navItemsCategory', href: '/backoffice/items/categories' },
-      { labelKey: 'navItemsRaw', href: '/backoffice/items?type=raw' },
-      { labelKey: 'navItemsFinished', href: '/backoffice/items?type=FINISHED_GOOD' },
     ],
   },
   {
@@ -123,6 +121,19 @@ const navItems: NavItem[] = [
     href: '/backoffice/inventory',
     icon: Package,
     permission: PERMISSIONS.INVENTORY_VIEW,
+    children: [
+      { labelKey: 'inventory', href: '/backoffice/inventory' },
+      {
+        labelKey: 'navStockOpname',
+        href: '/backoffice/inventory/stock-opname',
+        permission: PERMISSIONS.INVENTORY_OPNAME_VIEW,
+      },
+      {
+        labelKey: 'navStockReconciliation',
+        href: '/backoffice/inventory/reconciliation',
+        permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW,
+      },
+    ],
   },
   {
     labelKey: 'sales',
@@ -260,6 +271,7 @@ function Sidebar({
   const getOpenKeyFromPath = (path: string) => {
     if (path.startsWith('/backoffice/suppliers')) return '/backoffice/suppliers';
     if (path.startsWith('/backoffice/items')) return '/backoffice/items';
+    if (path.startsWith('/backoffice/inventory')) return '/backoffice/inventory';
     if (path.startsWith('/backoffice/work-orders')) return '/backoffice/work-orders';
     if (path.startsWith('/backoffice/forecast')) return '/backoffice/production/planning';
     if (path.startsWith('/backoffice/forecast') || path.startsWith('/backoffice/production')) {
@@ -337,8 +349,18 @@ function Sidebar({
                           !child.permission || hasPermission(permissions, child.permission)
                       )
                       .map((child) => {
-                      const isChildActive =
-                        pathname === child.href || pathname.startsWith(`${child.href}/`);
+                      const isChildActive = (() => {
+                        if (child.href === '/backoffice/items') {
+                          return (
+                            pathname === '/backoffice/items' ||
+                            (pathname.startsWith('/backoffice/items/') &&
+                              !pathname.startsWith('/backoffice/items/categories'))
+                          );
+                        }
+                        return (
+                          pathname === child.href || pathname.startsWith(`${child.href}/`)
+                        );
+                      })();
                       return (
                         <Link
                           key={child.href}

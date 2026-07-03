@@ -16,7 +16,7 @@ export function variantDetailForSku(
   const row = rows.find((v) => (v.sku ?? '').trim() === variantSku.trim());
   if (!row) return null;
   const parts = Object.entries(row)
-    .filter(([k, v]) => k !== 'sku' && v != null && String(v).trim() !== '')
+    .filter(([k, v]) => k !== 'sku' && k !== 'barcode' && v != null && String(v).trim() !== '')
     .map(([k, v]) => `${k}: ${String(v).trim()}`);
   return parts.length > 0 ? parts.join(' · ') : null;
 }

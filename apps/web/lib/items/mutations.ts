@@ -71,7 +71,7 @@ function slugVariantAttributeValue(value: string): string {
 
 function variantSuffixFromRecord(v: Record<string, string>): string {
   const segments = Object.entries(v)
-    .filter(([key]) => key !== 'sku')
+    .filter(([key]) => key !== 'sku' && key !== 'barcode')
     .map(([, value]) => slugVariantAttributeValue(value))
     .filter((s) => s.length > 0);
   if (segments.length > 0) return segments.join('-');
@@ -121,12 +121,21 @@ function validateAndNormalizeVariants(
   });
 
   const seen = new Set<string>();
+  const seenBarcodes = new Set<string>();
   for (const row of normalized) {
     const key = row.sku.toLowerCase();
     if (seen.has(key)) {
       throw new Error(`Duplicate variant SKU "${row.sku}"`);
     }
     seen.add(key);
+    const barcode = (row.barcode ?? '').trim();
+    if (barcode) {
+      const barcodeKey = barcode.toLowerCase();
+      if (seenBarcodes.has(barcodeKey)) {
+        throw new Error(`Duplicate variant barcode "${barcode}"`);
+      }
+      seenBarcodes.add(barcodeKey);
+    }
   }
 
   return normalized;

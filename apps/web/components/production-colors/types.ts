@@ -24,4 +24,10 @@ export type PantoneDetail = {
   gradient: string[];
   similar: PantoneMatch[];
   isFavorite: boolean;
+  bookPosition: {
+    section: number;
+    page: number;
+    column: number;
+    row: number;
+  } | null;
 };

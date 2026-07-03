@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Progress } from '@/components/ui/progress';
 import {
   Table,
@@ -15,52 +14,35 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 interface MonthlyForecastRowProps {
   parentSku: string;
-  productName: string;
   monthlyForecast: number[];
   seasonalIndices: number[];
 }
 
 export function MonthlyForecastRow({
   parentSku,
-  productName,
   monthlyForecast,
   seasonalIndices,
 }: MonthlyForecastRowProps) {
-  const [open, setOpen] = useState(false);
   const maxQty = Math.max(...monthlyForecast, 1);
 
-  if (!open) {
-    return (
-      <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => setOpen(true)}>
-        <TableCell colSpan={8} className="text-xs text-muted-foreground">
-          ▶ {parentSku} — {productName} (click for monthly breakdown)
-        </TableCell>
-      </TableRow>
-    );
-  }
-
   return (
-    <>
-      <TableRow className="bg-muted/30" onClick={() => setOpen(false)}>
-        <TableCell colSpan={8} className="text-xs font-medium">
-          ▼ Monthly forecast — {parentSku}
-        </TableCell>
-      </TableRow>
-      <TableRow className="bg-muted/20">
-        <TableCell colSpan={8} className="p-4">
-          <div className="grid grid-cols-6 gap-2 md:grid-cols-12">
-            {MONTHS.map((label, i) => (
-              <div key={label} className="space-y-1 text-center text-xs">
-                <div className="font-medium">{label}</div>
-                <div>{monthlyForecast[i]?.toLocaleString() ?? 0}</div>
-                <Progress value={((monthlyForecast[i] ?? 0) / maxQty) * 100} className="h-1" />
-                <div className="text-muted-foreground">SI {(seasonalIndices[i] ?? 1).toFixed(2)}</div>
-              </div>
-            ))}
-          </div>
-        </TableCell>
-      </TableRow>
-    </>
+    <TableRow className="bg-muted/20 hover:bg-muted/20">
+      <TableCell colSpan={8} className="p-4">
+        <p className="mb-3 text-xs font-medium text-muted-foreground">
+          Monthly forecast — {parentSku}
+        </p>
+        <div className="grid grid-cols-6 gap-2 md:grid-cols-12">
+          {MONTHS.map((label, i) => (
+            <div key={label} className="space-y-1 text-center text-xs">
+              <div className="font-medium">{label}</div>
+              <div>{monthlyForecast[i]?.toLocaleString() ?? 0}</div>
+              <Progress value={((monthlyForecast[i] ?? 0) / maxQty) * 100} className="h-1" />
+              <div className="text-muted-foreground">SI {(seasonalIndices[i] ?? 1).toFixed(2)}</div>
+            </div>
+          ))}
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
 

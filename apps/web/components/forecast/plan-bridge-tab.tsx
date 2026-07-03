@@ -1,21 +1,21 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { toast } from "sonner";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -23,15 +23,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   applyPlanSuggestions,
   getItemCategoriesForForecast,
   getPlanYearsForForecast,
   suggestPlanTargets,
   type PlanTargetSuggestion,
-} from '@/app/actions/forecast';
-import { PERMISSIONS, hasPermission } from '@/lib/rbac';
+} from "@/app/actions/forecast";
+import { PERMISSIONS, hasPermission } from "@/lib/rbac";
 
 interface PlanBridgeTabProps {
   forecastYear: number;
@@ -45,25 +45,36 @@ type EditableSuggestion = PlanTargetSuggestion & {
 };
 
 function actionBadge(action: string) {
-  if (action === 'CREATE') return <Badge className="bg-green-600">{action}</Badge>;
-  if (action === 'UPDATE') return <Badge className="bg-yellow-600 text-black">{action}</Badge>;
+  if (action === "CREATE") return <Badge className="bg-green-600">{action}</Badge>;
+  if (action === "UPDATE") return <Badge className="bg-yellow-600 text-black">{action}</Badge>;
   return <Badge variant="secondary">{action}</Badge>;
 }
 
+function sortSuggestions(rows: EditableSuggestion[]): EditableSuggestion[] {
+  return [...rows].sort((a, b) => {
+    const catA = a.itemCategoryName ?? a.itemCategoryCode ?? "";
+    const catB = b.itemCategoryName ?? b.itemCategoryCode ?? "";
+    if (catA !== catB) return catA.localeCompare(catB);
+    return a.parentSku.localeCompare(b.parentSku);
+  });
+}
+
 export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeTabProps) {
-  const t = useTranslations('forecast.bridge');
+  const t = useTranslations("forecast.bridge");
   const canApply =
     hasPermission(permissions, PERMISSIONS.FORECAST_MANAGE) &&
     hasPermission(permissions, PERMISSIONS.PRODUCTION_PLANNING_MANAGE);
 
   const [planYears, setPlanYears] = useState<Array<{ id: string; year: number; isLocked: boolean }>>([]);
-  const [planYearId, setPlanYearId] = useState('');
+  const [planYearId, setPlanYearId] = useState("");
   const [suggestions, setSuggestions] = useState<EditableSuggestion[]>([]);
   const [itemCategories, setItemCategories] = useState<
     Array<{ id: string; code: string | null; name: string }>
   >([]);
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
+
+  const sortedSuggestions = useMemo(() => sortSuggestions(suggestions), [suggestions]);
 
   useEffect(() => {
     Promise.all([getPlanYearsForForecast(), getItemCategoriesForForecast()])
@@ -74,7 +85,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
         if (match) setPlanYearId(match.id);
         else if (years[0]) setPlanYearId(years[0].id);
       })
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Failed to load'));
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Failed to load"));
   }, [forecastYear]);
 
   const handleGenerate = async () => {
@@ -83,73 +94,82 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
     try {
       const res = await suggestPlanTargets({ forecastYear, planYearId });
       if (!res.success || !res.suggestions) {
-        toast.error(res.error ?? 'Failed to generate suggestions');
+        toast.error(res.error ?? "Failed to generate suggestions");
         return;
       }
       setSuggestions(
         res.suggestions.map((s) => ({
           ...s,
-          selected: s.action !== 'SKIP',
+          selected: s.action !== "SKIP",
           adjustedQty: s.forecastAnnual,
           overrideItemCategoryId: s.itemCategoryId,
         }))
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(err instanceof Error ? err.message : "Failed");
     } finally {
       setLoading(false);
     }
   };
 
   const handleApply = async () => {
-    const selected = suggestions.filter((s) => s.selected && s.action !== 'SKIP');
-    const payload = selected
+    const payload = suggestions
+      .filter((s) => s.selected && s.action !== "SKIP")
       .map((s) => {
         const itemCategoryId = s.overrideItemCategoryId ?? s.itemCategoryId;
-        if (s.action === 'CREATE' && !itemCategoryId) return null;
+        if (!itemCategoryId || !s.itemId) return null;
         return {
           parentSku: s.parentSku,
-          action: s.action as 'CREATE' | 'UPDATE',
-          targetQty: s.adjustedQty,
-          itemCategoryId: itemCategoryId ?? undefined,
-          itemId: s.itemId ?? undefined,
-          categoryId: s.existingCategoryId ?? undefined,
+          adjustedQty: s.adjustedQty,
+          itemCategoryId,
+          itemId: s.itemId,
+          action: s.action,
         };
       })
-      .filter(Boolean) as Parameters<typeof applyPlanSuggestions>[0]['suggestions'];
+      .filter(Boolean) as Parameters<typeof applyPlanSuggestions>[0]["suggestions"];
 
     if (payload.length === 0) {
-      toast.error('No valid suggestions selected');
+      toast.error("No valid suggestions selected");
       return;
     }
 
     setApplying(true);
     try {
       const res = await applyPlanSuggestions({ planYearId, suggestions: payload });
-      if (!res.success) {
-        toast.error(res.error ?? 'Apply failed');
+      const year = planYears.find((y) => y.id === planYearId)?.year ?? forecastYear;
+      const count = (res.created ?? 0) + (res.updated ?? 0);
+
+      if (!res.success && count === 0) {
+        toast.error(res.error ?? res.errors?.[0]?.message ?? "Apply failed");
         return;
       }
-      const year = planYears.find((y) => y.id === planYearId)?.year ?? forecastYear;
-      toast.success(
-        t('applied', { count: (res.created ?? 0) + (res.updated ?? 0), year: String(year) })
-      );
+
+      if (res.errors?.length) {
+        toast.warning(
+          t("appliedPartial", { count: String(count), skipped: String(res.skipped ?? 0), year: String(year) })
+        );
+        const firstError = res.errors[0]?.message;
+        if (firstError) toast.error(firstError);
+      } else {
+        toast.success(t("applied", { count: String(count), year: String(year) }));
+      }
+
       await handleGenerate();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Apply failed');
+      toast.error(err instanceof Error ? err.message : "Apply failed");
     } finally {
       setApplying(false);
     }
   };
 
-  const selectedCount = suggestions.filter((s) => s.selected && s.action !== 'SKIP').length;
+  const selectedCount = suggestions.filter((s) => s.selected && s.action !== "SKIP").length;
   const planYear = planYears.find((y) => y.id === planYearId);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-2">
-          <label className="text-sm font-medium">{t('planYear')}</label>
+          <label className="text-sm font-medium">{t("planYear")}</label>
           <Select value={planYearId} onValueChange={setPlanYearId}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Plan year" />
@@ -158,7 +178,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
               {planYears.map((y) => (
                 <SelectItem key={y.id} value={y.id} disabled={y.isLocked}>
                   {y.year}
-                  {y.isLocked ? ' (locked)' : ''}
+                  {y.isLocked ? " (locked)" : ""}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -166,16 +186,16 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
         </div>
         {canApply && (
           <Button onClick={handleGenerate} disabled={loading || !planYearId}>
-            {loading ? '...' : t('generate')}
+            {loading ? "..." : t("generate")}
           </Button>
         )}
       </div>
 
-      <p className="text-sm text-muted-foreground">{t('note')}</p>
+      <p className="text-sm text-muted-foreground">{t("note")}</p>
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('title')}</CardTitle>
+          <CardTitle>{t("title")}</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>
@@ -184,28 +204,31 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
                 <TableHead className="w-10" />
                 <TableHead>Article</TableHead>
                 <TableHead>Item Category</TableHead>
-                <TableHead className="text-right">{t('forecast')}</TableHead>
-                <TableHead className="text-right">{t('planNow')}</TableHead>
-                <TableHead className="text-right">{t('delta')}</TableHead>
-                <TableHead>{t('action')}</TableHead>
+                <TableHead className="text-right">{t("forecast")}</TableHead>
+                <TableHead className="text-right">{t("categoryTotal")}</TableHead>
+                <TableHead className="text-right">{t("planNow")}</TableHead>
+                <TableHead className="text-right">{t("delta")}</TableHead>
+                <TableHead>{t("action")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {suggestions.map((s, idx) => {
+              {sortedSuggestions.map((s) => {
+                const rowIndex = suggestions.findIndex((row) => row.parentSku === s.parentSku);
                 const effectiveCategoryId = s.overrideItemCategoryId ?? s.itemCategoryId;
                 const canApplyRow =
-                  s.action === 'UPDATE' ||
-                  (s.action === 'CREATE' && !!effectiveCategoryId);
+                  s.action === "UPDATE" ||
+                  (s.action === "CREATE" && !!effectiveCategoryId);
                 return (
                   <TableRow key={s.parentSku}>
                     <TableCell>
                       <Checkbox
                         checked={s.selected}
-                        disabled={s.action === 'SKIP'}
+                        disabled={s.action === "SKIP" || !s.itemId}
                         onCheckedChange={(checked) => {
+                          if (rowIndex < 0) return;
                           setSuggestions((prev) =>
                             prev.map((row, i) =>
-                              i === idx ? { ...row, selected: !!checked } : row
+                              i === rowIndex ? { ...row, selected: !!checked } : row
                             )
                           );
                         }}
@@ -214,33 +237,37 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
                     <TableCell>
                       <div className="font-medium">{s.productName}</div>
                       <div className="text-xs text-muted-foreground font-mono">{s.parentSku}</div>
+                      {!s.itemId && (
+                        <p className="text-xs text-destructive mt-1">No ERP item mapped</p>
+                      )}
                     </TableCell>
                     <TableCell>
-                      {s.action === 'CREATE' && !s.canCreate ?
+                      {s.action === "CREATE" && !s.canCreate ?
                         <Select
-                          value={s.overrideItemCategoryId ?? ''}
+                          value={s.overrideItemCategoryId ?? ""}
                           onValueChange={(v) => {
+                            if (rowIndex < 0) return;
                             setSuggestions((prev) =>
                               prev.map((row, i) =>
-                                i === idx ? { ...row, overrideItemCategoryId: v } : row
+                                i === rowIndex ? { ...row, overrideItemCategoryId: v } : row
                               )
                             );
                           }}
                         >
                           <SelectTrigger className="h-8">
-                            <SelectValue placeholder={t('selectCategory')} />
+                            <SelectValue placeholder={t("selectCategory")} />
                           </SelectTrigger>
                           <SelectContent>
                             {itemCategories.map((c) => (
                               <SelectItem key={c.id} value={c.id}>
-                                {c.code ? `${c.code} — ` : ''}
+                                {c.code ? `${c.code} — ` : ""}
                                 {c.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       : <span className="text-sm">
-                          {s.itemCategoryCode ?? '—'} {s.itemCategoryName ?? ''}
+                          {s.itemCategoryCode ?? "—"} {s.itemCategoryName ?? ""}
                         </span>
                       }
                     </TableCell>
@@ -249,29 +276,35 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
                         type="number"
                         className="h-8 w-24 ml-auto"
                         value={s.adjustedQty}
-                        disabled={s.action === 'SKIP'}
+                        disabled={s.action === "SKIP"}
                         onChange={(e) => {
+                          if (rowIndex < 0) return;
                           const v = Number(e.target.value);
                           setSuggestions((prev) =>
                             prev.map((row, i) =>
-                              i === idx ? { ...row, adjustedQty: v } : row
+                              i === rowIndex ? { ...row, adjustedQty: v } : row
                             )
                           );
                         }}
                       />
                     </TableCell>
+                    <TableCell className="text-right text-muted-foreground">
+                      {s.categoryForecastTotal != null ?
+                        s.categoryForecastTotal.toLocaleString()
+                      : "—"}
+                    </TableCell>
                     <TableCell className="text-right">
                       {s.existingPlanTarget != null ?
                         s.existingPlanTarget.toLocaleString()
-                      : '—'}
+                      : "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       {(s.adjustedQty - (s.existingPlanTarget ?? 0)).toLocaleString()}
                     </TableCell>
                     <TableCell>
                       {actionBadge(s.action)}
-                      {s.action === 'CREATE' && !canApplyRow && (
-                        <p className="text-xs text-destructive mt-1">{t('selectCategory')}</p>
+                      {s.action === "CREATE" && !canApplyRow && (
+                        <p className="text-xs text-destructive mt-1">{t("selectCategory")}</p>
                       )}
                     </TableCell>
                   </TableRow>
@@ -279,7 +312,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
               })}
               {suggestions.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     Generate suggestions to review plan targets.
                   </TableCell>
                 </TableRow>
@@ -292,7 +325,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
       {canApply && suggestions.length > 0 && (
         <div className="flex items-center gap-4">
           <Button onClick={handleApply} disabled={applying || selectedCount === 0 || planYear?.isLocked}>
-            {applying ? '...' : t('apply')} ({selectedCount})
+            {applying ? "..." : t("apply")} ({selectedCount})
           </Button>
           {planYear && (
             <Button variant="link" asChild>

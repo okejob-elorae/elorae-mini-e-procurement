@@ -138,21 +138,19 @@ export async function DELETE(
     }
     requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
 
-    // Check if supplier has purchase orders
-    const poCount = await prisma.purchaseOrder.count({
-      where: { supplierId: id },
-    });
+    const { deleteSupplier, SUPPLIER_DELETE_BLOCKED } = await import('@/lib/suppliers/mutations');
 
-    if (poCount > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete supplier with existing purchase orders' },
-        { status: 400 }
-      );
+    try {
+      await deleteSupplier(id);
+    } catch (error) {
+      if (error instanceof Error && error.message === SUPPLIER_DELETE_BLOCKED) {
+        return NextResponse.json(
+          { error: 'This supplier cannot be deleted because it is still linked to existing records.' },
+          { status: 400 }
+        );
+      }
+      throw error;
     }
-
-    await prisma.supplier.delete({
-      where: { id },
-    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

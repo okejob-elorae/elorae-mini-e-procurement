@@ -289,6 +289,8 @@ model Item {
   jubelioProductMappings JubelioProductMapping[]
   priceChangeLogs  ItemPriceChangeLog[]
   salesReturnItems SalesReturnItem[]
+  salesHistoryRows   SalesHistory[]
+  forecastResults    ForecastResult[]
   images           ItemImage[]
   @@index([type, isActive])
   @@index([sku])
@@ -519,6 +521,100 @@ model StockAdjustment {
   @@index([source, createdAt])
 }
 
+model StockOpname {
+  id            String        @id @default(cuid())
+  docNumber     String        @unique
+  scope         OpnameScope
+  status        OpnameStatus  @default(CREATED)
+  notes         String?       @db.Text
+  snapshotAt    DateTime
+  assignedToId  String?
+  createdById   String
+  submittedById String?
+  submittedAt   DateTime?
+  approvedById  String?
+  approvedAt    DateTime?
+  cancelledAt   DateTime?
+  items         StockOpnameItem[]
+  rolls         StockOpnameRoll[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  @@index([scope])
+  @@index([status])
+  @@index([docNumber])
+  @@index([createdById])
+}
+
+model StockOpnameItem {
+  id                   String      @id @default(cuid())
+  opnameId             String
+  opname               StockOpname @relation(fields: [opnameId], references: [id], onDelete: Cascade)
+  itemId               String
+  variantSku           String?
+  itemName             String
+  snapshotQty          Decimal     @db.Decimal(10,2)
+  countedQty           Decimal?    @db.Decimal(10,2)
+  variance             Decimal?    @db.Decimal(10,2)
+  currentQtyAtApproval Decimal?    @db.Decimal(10,2)
+  hadDriftWarning      Boolean     @default(false)
+  adjustmentId         String?
+  notes                String?
+  @@index([opnameId])
+  @@index([itemId])
+}
+
+model StockOpnameRoll {
+  id              String      @id @default(cuid())
+  opnameId        String
+  opname          StockOpname @relation(fields: [opnameId], references: [id], onDelete: Cascade)
+  fabricRollId    String
+  rollCode        String
+  itemName        String
+  snapshotLength  Decimal     @db.Decimal(10,2)
+  countedLength   Decimal?    @db.Decimal(10,2)
+  variance        Decimal?    @db.Decimal(10,2)
+  notes           String?
+  @@index([opnameId])
+  @@index([fabricRollId])
+}
+
+model ReconciliationRun {
+  id            String    @id @default(cuid())
+  triggeredBy   ReconTrigger
+  status        ReconRunStatus @default(RUNNING)
+  totalScanned  Int       @default(0)
+  inSync        Int       @default(0)
+  autoCorrected Int       @default(0)
+  flagged       Int       @default(0)
+  startedById   String?
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  errorMessage  String?   @db.Text
+  results       ReconciliationResult[]
+  @@index([status])
+  @@index([startedAt])
+}
+
+model ReconciliationResult {
+  id                  String            @id @default(cuid())
+  runId               String
+  run                 ReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  itemId              String
+  variantSku          String?
+  itemName            String
+  jubelioItemId       Int?
+  eloraeQty           Decimal           @db.Decimal(10,2)
+  jubelioQty          Decimal           @db.Decimal(10,2)
+  variance            Decimal           @db.Decimal(10,2)
+  action              ReconAction
+  resolvedAt          DateTime?
+  resolvedById        String?
+  resolutionDirection ReconDirection?
+  @@index([runId])
+  @@index([action])
+  @@index([itemId])
+}
+
 model StockReservation {
   id                 String       @id @default(cuid())
   salesorderId       Int
@@ -573,6 +669,7 @@ model WorkOrder {
   returns         VendorReturn[]
   steps           WorkOrderStep[]
   planStages      PlanStage[] @relation("PlanStageWorkOrder")
+  planCmtAllocations PlanCmtAllocation[]
   @@index([poId])
   @@index([vendorId])
   @@index([finishedGoodId])
@@ -717,6 +814,7 @@ model PlanYear {
   id          String          @id @default(cuid())
   year        Int             @unique
   notes       String?         @db.Text
+  status      PlanYearStatus  @default(DRAFT)
   isLocked    Boolean         @default(false)
   categories  PlanCategory[]
   createdById String
@@ -774,21 +872,24 @@ model PlanMonthly {
 }
 
 model PlanStage {
-  id                String        @id @default(cuid())
-  planCategoryId    String
-  planCategory      PlanCategory  @relation(fields: [planCategoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  name              String
-  targetQty         Int
-  targetMonth       Int?
-  supplierId        String?
-  supplier          Supplier?     @relation("PlanStageSupplier", fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  fabricNotes       String?
-  colorNotes        String?
-  workOrderId       String?
-  workOrder         WorkOrder?    @relation("PlanStageWorkOrder", fields: [workOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  sortOrder         Int           @default(0)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id                    String              @id @default(cuid())
+  planCategoryId        String
+  planCategory          PlanCategory        @relation(fields: [planCategoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  name                  String
+  targetQty             Int
+  targetMonth           Int?
+  variantSku            String?
+  supplierId            String?
+  supplier              Supplier?           @relation("PlanStageSupplier", fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  fabricNotes           String?
+  colorNotes            String?
+  workOrderId           String?
+  workOrder             WorkOrder?          @relation("PlanStageWorkOrder", fields: [workOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  planCmtAllocationId   String?             @unique
+  planCmtAllocation     PlanCmtAllocation?  @relation(fields: [planCmtAllocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sortOrder             Int                 @default(0)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
 
   @@index([planCategoryId])
   @@index([supplierId])
@@ -799,12 +900,13 @@ model PlanColorAllocation {
   id                String        @id @default(cuid())
   planCategoryId    String
   planCategory      PlanCategory  @relation(fields: [planCategoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  colorName         String
-  colorCode         String?
+  month             Int
+  variantSku        String
+  colorLabel        String?
   allocatedQty      Int
   notes             String?
 
-  @@unique([planCategoryId, colorName])
+  @@unique([planCategoryId, month, variantSku])
   @@index([planCategoryId])
 }
 
@@ -812,13 +914,20 @@ model PlanCmtAllocation {
   id                String        @id @default(cuid())
   planCategoryId    String
   planCategory      PlanCategory  @relation(fields: [planCategoryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  month             Int
+  variantSku        String
   supplierId        String
   supplier          Supplier      @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   allocatedQty      Int
+  workOrderId       String?
+  workOrder         WorkOrder?    @relation(fields: [workOrderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   notes             String?
+  planStage         PlanStage?
 
+  @@unique([planCategoryId, month, variantSku, supplierId])
   @@index([planCategoryId])
   @@index([supplierId])
+  @@index([workOrderId])
 }
 
 model PlanAccessory {
@@ -860,6 +969,11 @@ model SalesHistory {
   province               String?
   city                   String?
   productCategory        String?
+  itemId                 String?
+  item                   Item?              @relation(fields: [itemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  erpVariantSku          String?
+  jubelioItemId          Int?
+  resolutionStatus       ResolutionStatus   @default(UNMAPPED)
   importBatchId          String
   importBatch            SalesHistoryImport @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
   createdAt              DateTime           @default(now())
@@ -870,6 +984,8 @@ model SalesHistory {
   @@index([channel])
   @@index([importBatchId])
   @@index([orderStatus])
+  @@index([itemId])
+  @@index([resolutionStatus])
 }
 
 model SalesHistoryImport {
@@ -910,6 +1026,8 @@ model ForecastConfig {
 model ForecastResult {
   id                     String   @id @default(cuid())
   year                   Int
+  itemId                 String?
+  item                   Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   parentSku              String
   productName            String
   abcClass               ABCClass
@@ -947,7 +1065,14 @@ model ForecastResult {
 
   @@unique([year, parentSku])
   @@index([year])
+  @@index([itemId])
   @@index([abcClass, xyzClass])
+}
+
+enum ResolutionStatus {
+  MAPPED
+  UNMAPPED
+  AMBIGUOUS
 }
 
 enum SalesChannel {
@@ -1150,6 +1275,11 @@ enum AdjustmentType {
   NEGATIVE
 }
 
+enum PlanYearStatus {
+  DRAFT
+  ACTIVE
+}
+
 enum ReserveState {
   RESERVED
   CONSUMED
@@ -1202,6 +1332,44 @@ enum DocType {
   RET
   ISSUE
   RECEIPT
+  OPN
+}
+
+enum OpnameScope {
+  FINISHED_GOOD
+  FABRIC
+  ACCESSORIES
+}
+
+enum OpnameStatus {
+  CREATED
+  COUNTING
+  SUBMITTED
+  APPROVED
+  CANCELLED
+}
+
+enum ReconTrigger {
+  CRON
+  MANUAL
+}
+
+enum ReconRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ReconAction {
+  IN_SYNC
+  AUTO_CORRECTED
+  FLAGGED
+  MANUALLY_RESOLVED
+}
+
+enum ReconDirection {
+  MATCH_JUBELIO
+  REASSERT_ELORAE
 }
 
 // ==========================================
@@ -1219,6 +1387,10 @@ model PantoneColor {
   labL        Float?
   labA        Float?
   labB        Float?
+  bookSection Int?
+  bookPage    Int?
+  bookColumn  Int?
+  bookRow     Int?
   favorites   PantoneColorFavorite[]
   themeUsers  User[]
   createdAt   DateTime @default(now())
@@ -1226,6 +1398,7 @@ model PantoneColor {
 
   @@index([name])
   @@index([groupName])
+  @@index([bookSection, bookPage])
 }
 
 model PantoneColorFavorite {

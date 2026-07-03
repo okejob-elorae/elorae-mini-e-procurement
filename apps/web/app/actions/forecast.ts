@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import {
   ABCClass,
+  ResolutionStatus,
   SalesChannel,
   SalesHistoryStatus,
   XYZClass,
@@ -14,17 +15,25 @@ import {
   buildUnifiedDemandRows,
   runForecastPipeline,
 } from "@/lib/forecast/calculations";
-import { parseShopeeExcel } from "@/lib/forecast/shopee-parser";
-import { parseTikTokExcel } from "@/lib/forecast/tiktok-parser";
-import type { DemandRow, SalesHistoryRow } from "@/lib/forecast/types";
+import type { DemandRow } from "@/lib/forecast/types";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
 import { createPlanCategory, updatePlanCategory } from "@/app/actions/planning";
+import { getEffectiveTarget } from "@/lib/planning/calculations";
+import {
+  buildCategoryApplyPlan,
+  groupSuggestionsByCategory,
+  suggestItemAction,
+  type PlanBridgeChild,
+} from "@/lib/forecast/plan-bridge";
+import {
+  loadResolverIndex,
+  resolveMarketplaceSku,
+} from "@/lib/sales/marketplace-sku-resolver";
 
 const FORECAST_PATH = "/backoffice/forecast";
 const FORECAST_IMPORT_PATH = "/backoffice/forecast/import";
 const PLANNING_PATH = "/backoffice/production/planning";
-
-const PLAN_TOLERANCE_PERCENT = 5;
+const UNMAPPED_DEMAND_WARN_THRESHOLD = 0.1;
 
 function toNumber(value: unknown): number {
   if (value == null) return 0;
@@ -59,37 +68,6 @@ async function requirePlanBridgeManage() {
   return session;
 }
 
-function channelLabel(channel: SalesChannel): string {
-  return channel === "SHOPEE" ? "Shopee" : "TikTok";
-}
-
-function periodLabel(month: number, year: number): string {
-  return `${month}/${year}`;
-}
-
-async function enrichParentSkus(
-  rows: SalesHistoryRow[]
-): Promise<SalesHistoryRow[]> {
-  const variantSkus = [...new Set(rows.map((r) => r.variantSku))];
-  if (variantSkus.length === 0) return rows;
-
-  const mappings = await prisma.jubelioProductMapping.findMany({
-    where: { erpVariantSku: { in: variantSkus } },
-    include: { item: { select: { sku: true } } },
-  });
-  const skuToParent = new Map(
-    mappings.map((m) => [m.erpVariantSku, m.item.sku])
-  );
-
-  return rows.map((row) => {
-    const mapped = skuToParent.get(row.variantSku);
-    if (mapped) {
-      return { ...row, parentSku: mapped };
-    }
-    return row;
-  });
-}
-
 function lookbackWindow(targetYear: number, lookbackMonths: number) {
   const end = new Date(targetYear, 0, 1);
   end.setMilliseconds(end.getMilliseconds() - 1);
@@ -107,13 +85,46 @@ function salesHistoryToDemandRows(
     netQuantity: number;
     lineTotal: unknown;
     orderDate: Date;
+    itemId: string | null;
+    resolutionStatus: ResolutionStatus;
   }>
 ): DemandRow[] {
-  return records.map((r) => ({
+  const grouped = new Map<
+    string,
+    {
+      parentSku: string;
+      productName: string;
+      netQuantity: number;
+      lineTotal: number;
+      orderDate: Date;
+    }
+  >();
+
+  for (const r of records) {
+    const groupKey =
+      r.itemId && r.resolutionStatus === ResolutionStatus.MAPPED ?
+        `item:${r.itemId}`
+      : `sku:${r.parentSku}`;
+    const existing = grouped.get(groupKey);
+    if (existing) {
+      existing.netQuantity += r.netQuantity;
+      existing.lineTotal += toNumber(r.lineTotal);
+    } else {
+      grouped.set(groupKey, {
+        parentSku: r.parentSku,
+        productName: r.productName,
+        netQuantity: r.netQuantity,
+        lineTotal: toNumber(r.lineTotal),
+        orderDate: r.orderDate,
+      });
+    }
+  }
+
+  return [...grouped.values()].map((r) => ({
     parentSku: r.parentSku,
     productName: r.productName,
     netQuantity: r.netQuantity,
-    lineTotal: toNumber(r.lineTotal),
+    lineTotal: r.lineTotal,
     orderDate: r.orderDate,
     month: r.orderDate.getMonth() + 1,
     year: r.orderDate.getFullYear(),
@@ -123,6 +134,7 @@ function salesHistoryToDemandRows(
 const resolvedItemSelect = {
   id: true,
   sku: true,
+  nameId: true,
   categoryId: true,
   category: { select: { id: true, code: true, name: true } },
 } as const;
@@ -130,66 +142,84 @@ const resolvedItemSelect = {
 type ResolvedItem = {
   id: string;
   sku: string;
+  nameId: string;
   categoryId: string | null;
   category: { id: string; code: string | null; name: string } | null;
 };
 
 async function buildItemByParentSkuMap(
-  parentSkus: string[]
+  parentSkus: string[],
+  itemIds: string[] = []
 ): Promise<Map<string, ResolvedItem | null>> {
-  const unique = [...new Set(parentSkus)];
+  const uniqueSkus = [...new Set(parentSkus)];
+  const uniqueItemIds = [...new Set(itemIds.filter(Boolean))];
   const map = new Map<string, ResolvedItem | null>();
-  if (unique.length === 0) return map;
+  if (uniqueSkus.length === 0 && uniqueItemIds.length === 0) return map;
 
-  const [mappings, items] = await Promise.all([
-    prisma.jubelioProductMapping.findMany({
-      where: {
-        OR: [
-          { erpVariantSku: { in: unique } },
-          { item: { sku: { in: unique } } },
-        ],
-      },
-      include: { item: { select: resolvedItemSelect } },
-    }),
-    prisma.item.findMany({
-      where: { sku: { in: unique } },
-      select: resolvedItemSelect,
-    }),
-  ]);
+  const index = await loadResolverIndex(prisma);
 
-  const itemBySku = new Map(items.map((i) => [i.sku, i]));
-  const mappingByVariantSku = new Map<string, (typeof mappings)[number]>();
-  const mappingByItemSku = new Map<string, (typeof mappings)[number]>();
-  for (const m of mappings) {
-    mappingByVariantSku.set(m.erpVariantSku, m);
-    mappingByItemSku.set(m.item.sku, m);
+  const resolvedItemIds = new Set<string>(uniqueItemIds);
+  for (const parentSku of uniqueSkus) {
+    const resolved = resolveMarketplaceSku(
+      { variantSku: parentSku, size: "" },
+      index
+    );
+    if (resolved.itemId) resolvedItemIds.add(resolved.itemId);
   }
 
-  for (const parentSku of unique) {
-    const mapping =
-      mappingByVariantSku.get(parentSku) ?? mappingByItemSku.get(parentSku);
-    if (mapping) {
-      const bySku = itemBySku.get(parentSku);
-      if (bySku && bySku.id !== mapping.itemId) {
-        console.warn(
-          `[forecast] Jubelio mapping overrides Item.sku for ${parentSku}`
-        );
-      }
-      map.set(parentSku, mapping.item);
-    } else {
-      map.set(parentSku, itemBySku.get(parentSku) ?? null);
+  const items = await prisma.item.findMany({
+    where: {
+      OR: [
+        { sku: { in: uniqueSkus } },
+        { id: { in: [...resolvedItemIds] } },
+      ],
+    },
+    select: resolvedItemSelect,
+  });
+
+  const itemById = new Map(items.map((i) => [i.id, i]));
+  const itemBySku = new Map(items.map((i) => [i.sku, i]));
+
+  for (const parentSku of uniqueSkus) {
+    const directItem = itemBySku.get(parentSku);
+    if (directItem) {
+      map.set(parentSku, directItem);
+      continue;
     }
+
+    const resolved = resolveMarketplaceSku(
+      { variantSku: parentSku, size: "" },
+      index
+    );
+    if (resolved.itemId) {
+      const fromResolve = itemById.get(resolved.itemId);
+      map.set(parentSku, fromResolve ?? null);
+      continue;
+    }
+
+    map.set(parentSku, null);
   }
 
   return map;
 }
 
+type PlanRootWithChildren = {
+  id: string;
+  targetQty: number | null;
+  children: Array<{
+    id: string;
+    itemId: string | null;
+    parentSharePercent: unknown;
+    code: string | null;
+  }>;
+};
+
 async function buildPlanRootByItemCategoryId(
   planYearId: string,
   itemCategoryIds: string[]
-): Promise<Map<string, { id: string; targetQty: number | null }>> {
+): Promise<Map<string, PlanRootWithChildren>> {
   const unique = [...new Set(itemCategoryIds)];
-  const map = new Map<string, { id: string; targetQty: number | null }>();
+  const map = new Map<string, PlanRootWithChildren>();
   if (unique.length === 0) return map;
 
   const categories = await prisma.planCategory.findMany({
@@ -198,7 +228,19 @@ async function buildPlanRootByItemCategoryId(
       parentId: null,
       itemCategoryId: { in: unique },
     },
-    select: { id: true, targetQty: true, itemCategoryId: true },
+    select: {
+      id: true,
+      targetQty: true,
+      itemCategoryId: true,
+      children: {
+        select: {
+          id: true,
+          itemId: true,
+          parentSharePercent: true,
+          code: true,
+        },
+      },
+    },
   });
 
   for (const cat of categories) {
@@ -206,6 +248,7 @@ async function buildPlanRootByItemCategoryId(
       map.set(cat.itemCategoryId, {
         id: cat.id,
         targetQty: cat.targetQty,
+        children: cat.children,
       });
     }
   }
@@ -213,20 +256,33 @@ async function buildPlanRootByItemCategoryId(
   return map;
 }
 
-async function resolveItemForParentSku(parentSku: string) {
-  const map = await buildItemByParentSkuMap([parentSku]);
-  return map.get(parentSku) ?? null;
+function toSharePercent(value: unknown): number {
+  return toNumber(value);
 }
 
-function planAction(
-  forecastAnnual: number,
-  existingTarget: number | null
-): "CREATE" | "UPDATE" | "SKIP" {
-  if (existingTarget == null) return "CREATE";
-  if (existingTarget === 0) return "UPDATE";
-  const deltaPct =
-    (Math.abs(forecastAnnual - existingTarget) / existingTarget) * 100;
-  return deltaPct <= PLAN_TOLERANCE_PERCENT ? "SKIP" : "UPDATE";
+function childEffectiveTarget(
+  root: PlanRootWithChildren,
+  child: PlanRootWithChildren["children"][number]
+): number {
+  return getEffectiveTarget({
+    id: child.id,
+    parentId: root.id,
+    targetQty: null,
+    parentSharePercent: toSharePercent(child.parentSharePercent),
+    itemId: child.itemId,
+    parent: { targetQty: root.targetQty },
+  });
+}
+
+function mapPlanBridgeChildren(
+  children: PlanRootWithChildren["children"]
+): PlanBridgeChild[] {
+  return children.map((child) => ({
+    id: child.id,
+    itemId: child.itemId,
+    parentSharePercent: toSharePercent(child.parentSharePercent),
+    code: child.code,
+  }));
 }
 
 export interface SalesHistoryImportSummary {
@@ -239,140 +295,6 @@ export interface SalesHistoryImportSummary {
   skippedRows: number;
   errorRows: number;
   createdAt: Date;
-}
-
-export async function importSalesHistory(data: {
-  base64: string;
-  fileName: string;
-  channel: SalesChannel;
-  periodMonth: number;
-  periodYear: number;
-}): Promise<{
-  success: boolean;
-  imported?: number;
-  skipped?: number;
-  errors?: { row: number; message: string }[];
-  error?: string;
-}> {
-  try {
-    const session = await requireForecastManage();
-
-    const existing = await prisma.salesHistoryImport.findUnique({
-      where: {
-        channel_periodYear_periodMonth: {
-          channel: data.channel,
-          periodYear: data.periodYear,
-          periodMonth: data.periodMonth,
-        },
-      },
-    });
-    if (existing) {
-      return {
-        success: false,
-        error: `Data untuk ${channelLabel(data.channel)} ${periodLabel(data.periodMonth, data.periodYear)} sudah diimport. Hapus import sebelumnya jika ingin re-import.`,
-      };
-    }
-
-    const buffer = Buffer.from(data.base64, "base64");
-    const parsed =
-      data.channel === "SHOPEE"
-        ? parseShopeeExcel(buffer)
-        : parseTikTokExcel(buffer);
-
-    const completed = parsed.rows.filter((r) => r.status === "COMPLETED");
-    const enriched = await enrichParentSkus(completed);
-
-    const importRecord = await prisma.salesHistoryImport.create({
-      data: {
-        channel: data.channel,
-        fileName: data.fileName,
-        periodMonth: data.periodMonth,
-        periodYear: data.periodYear,
-        totalRows: parsed.totalParsed + parsed.totalErrors,
-        importedRows: 0,
-        skippedRows: 0,
-        errorRows: parsed.totalErrors,
-        errors: parsed.errors.length > 0 ? parsed.errors : undefined,
-        uploadedById: session.user.id,
-      },
-    });
-
-    const createPayload = enriched.map((row) => ({
-      channel: data.channel,
-      orderId: row.orderId,
-      orderStatus: SalesHistoryStatus.COMPLETED,
-      variantSku: row.variantSku,
-      parentSku: row.parentSku,
-      productName: row.productName,
-      color: row.color,
-      size: row.size,
-      quantity: row.quantity,
-      returnedQuantity: row.returnedQuantity,
-      netQuantity: row.netQuantity,
-      unitPrice: row.unitPrice,
-      unitPriceAfterDiscount: row.unitPriceAfterDiscount,
-      lineTotal: row.lineTotal,
-      orderTotal: row.orderTotal,
-      orderDate: row.orderDate,
-      completedDate: row.completedDate,
-      province: row.province,
-      city: row.city,
-      productCategory: row.productCategory,
-      importBatchId: importRecord.id,
-    }));
-
-    const beforeCount = await prisma.salesHistory.count({
-      where: { importBatchId: importRecord.id },
-    });
-
-    await prisma.salesHistory.createMany({
-      data: createPayload,
-      skipDuplicates: true,
-    });
-
-    const afterCount = await prisma.salesHistory.count({
-      where: { importBatchId: importRecord.id },
-    });
-    const imported = afterCount - beforeCount;
-    const skipped = Math.max(0, createPayload.length - imported);
-
-    await prisma.salesHistoryImport.update({
-      where: { id: importRecord.id },
-      data: {
-        importedRows: imported,
-        skippedRows: skipped,
-      },
-    });
-
-    await logAudit({
-      userId: session.user.id,
-      action: "CREATE",
-      entityType: "SalesHistoryImport",
-      entityId: importRecord.id,
-      metadata: {
-        channel: data.channel,
-        periodMonth: data.periodMonth,
-        periodYear: data.periodYear,
-        imported,
-        skipped,
-      },
-    });
-
-    revalidatePath(FORECAST_PATH);
-    revalidatePath(FORECAST_IMPORT_PATH);
-
-    return {
-      success: true,
-      imported,
-      skipped,
-      errors: parsed.errors,
-    };
-  } catch (e) {
-    return {
-      success: false,
-      error: e instanceof Error ? e.message : "Import failed",
-    };
-  }
 }
 
 export async function deleteSalesHistoryImport(
@@ -440,6 +362,9 @@ export interface DataCoverage {
   totalArticles: number;
   totalMonthsCovered: number;
   hasMinimumForSeasonal: boolean;
+  mappingCoveragePercent: number;
+  unmappedDemandPercent: number;
+  unmappedDemandWarn: boolean;
 }
 
 export async function getDataCoverage(): Promise<DataCoverage> {
@@ -488,11 +413,37 @@ export async function getDataCoverage(): Promise<DataCoverage> {
     monthKeys.add(`${h.orderDate.getFullYear()}-${h.orderDate.getMonth() + 1}`);
   }
 
+  const mappingAgg = await prisma.salesHistory.aggregate({
+    where: { orderStatus: SalesHistoryStatus.COMPLETED },
+    _count: { id: true },
+    _sum: { netQuantity: true },
+  });
+  const mappedAgg = await prisma.salesHistory.aggregate({
+    where: {
+      orderStatus: SalesHistoryStatus.COMPLETED,
+      resolutionStatus: ResolutionStatus.MAPPED,
+    },
+    _count: { id: true },
+    _sum: { netQuantity: true },
+  });
+  const totalRows = mappingAgg._count.id;
+  const mappedRows = mappedAgg._count.id;
+  const totalQty = mappingAgg._sum.netQuantity ?? 0;
+  const mappedQty = mappedAgg._sum.netQuantity ?? 0;
+  const mappingCoveragePercent =
+    totalRows > 0 ? Math.round((mappedRows / totalRows) * 100) : 0;
+  const unmappedDemandPercent =
+    totalQty > 0 ? (totalQty - mappedQty) / totalQty : 0;
+
   return {
     channels: result,
     totalArticles: articles.length,
     totalMonthsCovered: monthKeys.size,
     hasMinimumForSeasonal: monthKeys.size >= 12,
+    mappingCoveragePercent,
+    unmappedDemandPercent,
+    unmappedDemandWarn:
+      unmappedDemandPercent > UNMAPPED_DEMAND_WARN_THRESHOLD,
   };
 }
 
@@ -629,12 +580,54 @@ export async function runForecast(data: { targetYear: number }) {
         netQuantity: true,
         lineTotal: true,
         orderDate: true,
+        itemId: true,
+        resolutionStatus: true,
       },
     });
 
+    const itemIds = [
+      ...new Set(
+        history
+          .filter(
+            (r) =>
+              r.itemId && r.resolutionStatus === ResolutionStatus.MAPPED
+          )
+          .map((r) => r.itemId as string)
+      ),
+    ];
+    const itemsById =
+      itemIds.length > 0 ?
+        await prisma.item.findMany({
+          where: { id: { in: itemIds } },
+          select: { id: true, sku: true },
+        })
+      : [];
+    const skuByItemId = new Map(itemsById.map((i) => [i.id, i.sku]));
+
+    const normalizedHistory = history.map((r) => {
+      if (r.itemId && r.resolutionStatus === ResolutionStatus.MAPPED) {
+        const itemSku = skuByItemId.get(r.itemId);
+        return {
+          ...r,
+          parentSku: itemSku ?? r.parentSku,
+        };
+      }
+      return r;
+    });
+
     const demandRows = buildUnifiedDemandRows(
-      salesHistoryToDemandRows(history)
+      salesHistoryToDemandRows(normalizedHistory)
     );
+
+    const itemIdByParentSku = new Map<string, string | null>();
+    for (const r of normalizedHistory) {
+      if (r.itemId && r.resolutionStatus === ResolutionStatus.MAPPED) {
+        const sku = skuByItemId.get(r.itemId) ?? r.parentSku;
+        itemIdByParentSku.set(sku, r.itemId);
+      } else if (!itemIdByParentSku.has(r.parentSku)) {
+        itemIdByParentSku.set(r.parentSku, null);
+      }
+    }
 
     const articles = runForecastPipeline(demandRows, {
       targetYear: data.targetYear,
@@ -651,6 +644,7 @@ export async function runForecast(data: { targetYear: number }) {
       await prisma.forecastResult.createMany({
         data: articles.map((a) => ({
           year: data.targetYear,
+          itemId: itemIdByParentSku.get(a.parentSku) ?? null,
           parentSku: a.parentSku,
           productName: a.productName,
           abcClass: a.abcClass as ABCClass,
@@ -708,6 +702,7 @@ export async function runForecast(data: { targetYear: number }) {
 
 export interface ForecastResultDetail {
   id: string;
+  itemId: string | null;
   parentSku: string;
   productName: string;
   abcClass: ABCClass;
@@ -741,22 +736,35 @@ export async function getForecastResults(
 
   const planTargets = new Map<string, number>();
   if (planYear) {
-    const categories = await prisma.planCategory.findMany({
+    const children = await prisma.planCategory.findMany({
       where: {
         planYearId: planYear.id,
-        parentId: null,
-        itemCategoryId: { not: null },
+        parentId: { not: null },
+        itemId: { not: null },
       },
       select: {
+        id: true,
+        parentId: true,
         targetQty: true,
-        itemCategoryId: true,
+        parentSharePercent: true,
+        itemId: true,
         item: { select: { sku: true } },
+        parent: { select: { targetQty: true } },
       },
     });
-    for (const cat of categories) {
-      if (cat.item?.sku && cat.targetQty != null) {
-        planTargets.set(cat.item.sku, cat.targetQty);
-      }
+    for (const child of children) {
+      if (!child.item?.sku) continue;
+      planTargets.set(
+        child.item.sku,
+        getEffectiveTarget({
+          id: child.id,
+          parentId: child.parentId,
+          targetQty: child.targetQty,
+          parentSharePercent: child.parentSharePercent,
+          itemId: child.itemId,
+          parent: child.parent,
+        })
+      );
     }
   }
 
@@ -792,6 +800,7 @@ export async function getForecastResults(
     const planTarget = planTargets.get(r.parentSku) ?? null;
     return {
       id: r.id,
+      itemId: r.itemId,
       parentSku: r.parentSku,
       productName: r.productName,
       abcClass: r.abcClass,
@@ -818,7 +827,9 @@ export interface PlanTargetSuggestion {
   forecastAnnual: number;
   forecastMonthly: number[];
   existingPlanTarget: number | null;
-  existingCategoryId: string | null;
+  existingChildId: string | null;
+  existingParentId: string | null;
+  categoryForecastTotal: number | null;
   itemId: string | null;
   itemCategoryId: string | null;
   itemCategoryCode: string | null;
@@ -844,7 +855,8 @@ export async function suggestPlanTargets(data: {
     });
 
     const parentSkus = results.map((r) => r.parentSku);
-    const itemByParentSku = await buildItemByParentSkuMap(parentSkus);
+    const itemIds = results.map((r) => r.itemId).filter((id): id is string => id != null);
+    const itemByParentSku = await buildItemByParentSkuMap(parentSkus, itemIds);
 
     const categoryIds = [
       ...new Set(
@@ -857,6 +869,17 @@ export async function suggestPlanTargets(data: {
       data.planYearId,
       categoryIds
     );
+
+    const categoryForecastTotals = new Map<string, number>();
+    for (const row of results) {
+      const item = itemByParentSku.get(row.parentSku);
+      const catId = item?.categoryId;
+      if (!catId) continue;
+      categoryForecastTotals.set(
+        catId,
+        (categoryForecastTotals.get(catId) ?? 0) + row.forecastAnnual
+      );
+    }
 
     const suggestions: PlanTargetSuggestion[] = results.map((row) => {
       const monthly = [
@@ -874,7 +897,12 @@ export async function suggestPlanTargets(data: {
         row.forecastMonth12,
       ];
 
-      const item = itemByParentSku.get(row.parentSku) ?? null;
+      const item =
+        row.itemId ?
+          (itemByParentSku.get(row.parentSku) ??
+            [...itemByParentSku.values()].find((i) => i?.id === row.itemId) ??
+            null)
+        : (itemByParentSku.get(row.parentSku) ?? null);
       const itemCategoryId = item?.categoryId ?? null;
       const itemCategory = item?.category ?? null;
 
@@ -883,9 +911,18 @@ export async function suggestPlanTargets(data: {
           (planRootByCategoryId.get(itemCategoryId) ?? null)
         : null;
 
-      const existingCategoryId = rootPlan?.id ?? null;
-      const existingPlanTarget = rootPlan?.targetQty ?? null;
-      const action = planAction(row.forecastAnnual, existingPlanTarget);
+      const existingChild =
+        rootPlan && item?.id ?
+          (rootPlan.children.find((child) => child.itemId === item.id) ?? null)
+        : null;
+
+      const existingChildId = existingChild?.id ?? null;
+      const existingParentId = rootPlan?.id ?? null;
+      const existingPlanTarget =
+        rootPlan && existingChild ?
+          childEffectiveTarget(rootPlan, existingChild)
+        : null;
+      const action = suggestItemAction(row.forecastAnnual, existingPlanTarget);
       const canCreate = Boolean(itemCategoryId);
 
       return {
@@ -895,8 +932,13 @@ export async function suggestPlanTargets(data: {
         forecastAnnual: row.forecastAnnual,
         forecastMonthly: monthly,
         existingPlanTarget,
-        existingCategoryId,
-        itemId: item?.id ?? null,
+        existingChildId,
+        existingParentId,
+        categoryForecastTotal:
+          itemCategoryId ?
+            (categoryForecastTotals.get(itemCategoryId) ?? null)
+          : null,
+        itemId: row.itemId ?? item?.id ?? null,
         itemCategoryId,
         itemCategoryCode: itemCategory?.code ?? null,
         itemCategoryName: itemCategory?.name ?? null,
@@ -918,58 +960,167 @@ export async function applyPlanSuggestions(data: {
   planYearId: string;
   suggestions: {
     parentSku: string;
-    action: "CREATE" | "UPDATE";
-    targetQty: number;
-    itemCategoryId?: string;
-    itemId?: string | null;
-    existingCategoryId?: string | null;
+    adjustedQty: number;
+    itemCategoryId: string;
+    itemId: string;
+    action?: "CREATE" | "UPDATE" | "SKIP";
   }[];
 }): Promise<{
   success: boolean;
   created?: number;
   updated?: number;
+  skipped?: number;
+  errors?: Array<{ categoryId: string; message: string }>;
   error?: string;
 }> {
   try {
     await requirePlanBridgeManage();
 
+    const validRows = data.suggestions.filter(
+      (row) =>
+        row.itemCategoryId &&
+        row.itemId &&
+        row.action !== "SKIP" &&
+        row.adjustedQty > 0
+    );
+
+    if (validRows.length === 0) {
+      return { success: false, error: "No valid suggestions to apply" };
+    }
+
+    const grouped = groupSuggestionsByCategory(validRows);
+    const parentSkus = [...new Set(validRows.map((row) => row.parentSku))];
+    const itemByParentSku = await buildItemByParentSkuMap(parentSkus);
+
     let created = 0;
     let updated = 0;
+    let skipped = 0;
+    const errors: Array<{ categoryId: string; message: string }> = [];
 
-    for (const suggestion of data.suggestions) {
-      if (suggestion.action === "CREATE") {
-        const item = await resolveItemForParentSku(suggestion.parentSku);
-        const itemCategoryId =
-          suggestion.itemCategoryId ?? item?.categoryId ?? null;
-        if (!itemCategoryId) {
-          throw new Error(
-            `Item category required for ${suggestion.parentSku}. Pilih kategori item terlebih dahulu.`
-          );
-        }
-
-        await createPlanCategory({
+    for (const [itemCategoryId, rows] of grouped) {
+      const freshRoot = await prisma.planCategory.findFirst({
+        where: {
           planYearId: data.planYearId,
+          parentId: null,
           itemCategoryId,
-          targetQty: suggestion.targetQty,
-          itemId: suggestion.itemId ?? item?.id ?? null,
-        });
-        created++;
-      } else if (suggestion.action === "UPDATE") {
-        const categoryId = suggestion.existingCategoryId;
-        if (!categoryId) {
-          throw new Error(`No plan category for ${suggestion.parentSku}`);
+        },
+        select: {
+          id: true,
+          targetQty: true,
+          children: {
+            select: {
+              id: true,
+              itemId: true,
+              parentSharePercent: true,
+              code: true,
+            },
+          },
+        },
+      });
+
+      const selectedItems = rows.map((row) => {
+        const item = itemByParentSku.get(row.parentSku);
+        const code = item?.sku ?? row.parentSku;
+        const name = item?.nameId ?? row.parentSku;
+        return {
+          itemId: row.itemId,
+          parentSku: row.parentSku,
+          adjustedQty: row.adjustedQty,
+          action: (row.action ?? "UPDATE") as "CREATE" | "UPDATE" | "SKIP",
+          code: code.slice(0, 50),
+          name: name.slice(0, 200),
+        };
+      });
+
+      const plan = buildCategoryApplyPlan({
+        itemCategoryId,
+        selectedItems,
+        existingRoot:
+          freshRoot ?
+            { id: freshRoot.id, targetQty: freshRoot.targetQty }
+          : null,
+        existingChildren: mapPlanBridgeChildren(freshRoot?.children ?? []),
+      });
+
+      if (plan.skipped) {
+        skipped++;
+        if (plan.error) {
+          errors.push({ categoryId: itemCategoryId, message: plan.error });
         }
-        await updatePlanCategory(categoryId, {
-          targetQty: suggestion.targetQty,
+        continue;
+      }
+
+      try {
+        let rootId = plan.existingParentId;
+
+        if (plan.parentAction === "CREATE") {
+          const root = await createPlanCategory({
+            planYearId: data.planYearId,
+            itemCategoryId,
+            targetQty: plan.parentTargetQty,
+            itemId: null,
+          });
+          rootId = root.id;
+          created++;
+        } else if (rootId) {
+          await updatePlanCategory(rootId, {
+            targetQty: plan.parentTargetQty,
+            itemId: null,
+          });
+          updated++;
+        }
+
+        if (!rootId) {
+          errors.push({
+            categoryId: itemCategoryId,
+            message: "Failed to resolve parent category",
+          });
+          skipped++;
+          continue;
+        }
+
+        for (const child of plan.childUpserts) {
+          if (child.parentSharePercent <= 0) continue;
+
+          if (child.action === "CREATE") {
+            await createPlanCategory({
+              planYearId: data.planYearId,
+              parentId: rootId,
+              code: child.code,
+              name: child.name,
+              itemId: child.itemId,
+              parentSharePercent: child.parentSharePercent,
+            });
+            created++;
+          } else if (child.existingChildId) {
+            await updatePlanCategory(child.existingChildId, {
+              parentSharePercent: child.parentSharePercent,
+            });
+            updated++;
+          }
+        }
+      } catch (categoryError) {
+        skipped++;
+        errors.push({
+          categoryId: itemCategoryId,
+          message:
+            categoryError instanceof Error ?
+              categoryError.message
+            : "Category apply failed",
         });
-        updated++;
       }
     }
 
     revalidatePath(PLANNING_PATH);
     revalidatePath(FORECAST_PATH);
 
-    return { success: true, created, updated };
+    return {
+      success: errors.length === 0 || created > 0 || updated > 0,
+      created,
+      updated,
+      skipped,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   } catch (e) {
     return {
       success: false,

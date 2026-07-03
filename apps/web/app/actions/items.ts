@@ -31,6 +31,21 @@ import {
   enqueueProductPushOnCreate,
   enqueueProductPushOnUpdate,
 } from '@/app/actions/jubelio-product-push';
+import {
+  parseVariantBarcodeFormat,
+  VARIANT_BARCODE_FORMAT_KEY,
+  type VariantBarcodeFormatConfig,
+} from '@/lib/items/variant-barcode';
+
+export async function getVariantBarcodeFormatConfig(): Promise<VariantBarcodeFormatConfig> {
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.ITEMS_VIEW);
+  const row = await prisma.systemSetting.findUnique({
+    where: { key: VARIANT_BARCODE_FORMAT_KEY },
+    select: { value: true },
+  });
+  return parseVariantBarcodeFormat(row?.value);
+}
 
 export async function generateSKU(type: ItemType) {
   await requireSession();

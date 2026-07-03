@@ -13,7 +13,18 @@ export type ListItemsOpts = {
   pageSize: number;
 };
 
-const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
+const toNum = (v: unknown): number | null => {
+  if (v == null) return null;
+  if (
+    typeof v === 'object' &&
+    'toNumber' in v &&
+    typeof (v as { toNumber: unknown }).toNumber === 'function'
+  ) {
+    return (v as { toNumber: () => number }).toNumber();
+  }
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n;
+};
 
 /** Aggregate variant-level inventory rows to one item-level { qtyOnHand, reservedQty, available, avgCost, totalValue }. */
 export function aggregateInventoryValues(
@@ -78,8 +89,9 @@ function serializeListItemForClient(item: {
   const inv = aggregateInventoryValues(
     item.inventoryValues as Array<{ qtyOnHand: unknown; reservedQty?: unknown; totalValue: unknown }> | undefined
   );
-  const { inventoryValues: _omit, ...rest } = item;
+  const { inventoryValues: _omit, fgConsumptions: _omitFg, ...rest } = item;
   void _omit;
+  void _omitFg;
   return {
     ...rest,
     reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,

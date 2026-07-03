@@ -53,6 +53,22 @@ describe("buildCreateProductRequest", () => {
     expect(body.product_skus.every((s) => s.item_id === 0)).toBe(true);
   });
 
+  it("passes variant barcodes to product_skus", () => {
+    const body = buildCreateProductRequest({
+      item: item({
+        variants: [
+          { sku: "SKU-1-RED", barcode: "0224000016T03" },
+          { sku: "SKU-1-BLU", barcode: "0224000017T03" },
+        ],
+      }),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [],
+    });
+    expect(body.product_skus[0].barcode).toBe("0224000016T03");
+    expect(body.product_skus[1].barcode).toBe("0224000017T03");
+  });
+
   it("edits an existing product (item_group_id reused, existing variants carry item_id from mappings)", () => {
     const body = buildCreateProductRequest({
       item: item({ variants: [{ sku: "SKU-1-RED" }, { sku: "SKU-1-BLU" }] }),

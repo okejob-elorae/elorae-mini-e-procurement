@@ -91,11 +91,40 @@ export async function updateSupplier(id: string, input: z.infer<typeof supplierU
   return prisma.supplier.update({ where: { id }, data });
 }
 
+export const SUPPLIER_DELETE_BLOCKED = 'SUPPLIER_DELETE_BLOCKED';
+
 export async function deleteSupplier(id: string) {
-  const poCount = await prisma.purchaseOrder.count({ where: { supplierId: id } });
-  if (poCount > 0) {
-    throw new Error('Cannot delete supplier with existing purchase orders');
+  const [
+    purchaseOrderCount,
+    workOrderCount,
+    workOrderStepCount,
+    grnCount,
+    vendorReturnCount,
+    planCmtAllocationCount,
+    planStageCount,
+  ] = await Promise.all([
+    prisma.purchaseOrder.count({ where: { supplierId: id } }),
+    prisma.workOrder.count({ where: { vendorId: id } }),
+    prisma.workOrderStep.count({ where: { supplierId: id } }),
+    prisma.gRN.count({ where: { supplierId: id } }),
+    prisma.vendorReturn.count({ where: { vendorId: id } }),
+    prisma.planCmtAllocation.count({ where: { supplierId: id } }),
+    prisma.planStage.count({ where: { supplierId: id } }),
+  ]);
+
+  const hasLinkedRecords =
+    purchaseOrderCount > 0 ||
+    workOrderCount > 0 ||
+    workOrderStepCount > 0 ||
+    grnCount > 0 ||
+    vendorReturnCount > 0 ||
+    planCmtAllocationCount > 0 ||
+    planStageCount > 0;
+
+  if (hasLinkedRecords) {
+    throw new Error(SUPPLIER_DELETE_BLOCKED);
   }
+
   await prisma.supplier.delete({ where: { id } });
 }
 

@@ -1,6 +1,6 @@
 # Service boundary — `apps/web` ↔ `apps/api`
 
-Status: **active** · Owner: backend integration · Last updated: 2026-06-14
+Status: **active** · Owner: backend integration · Last updated: 2026-06-24
 
 This document defines the responsibility split between the Next.js app
 (`apps/web`) and the NestJS Jubelio integration service (`apps/api`) in the
@@ -113,11 +113,16 @@ contract for the migrations that will introduce them.
 | `PurchaseOrder`, `POItem`      | web                         | api (read)                  | ✅ |
 | `VendorReturn`                 | web                         | —                           | ✅ |
 | `Production*`                  | web                         | api (read FG receipts)      | ✅ |
+| `PlanYear`, `PlanCategory`, `PlanMonthly`, `PlanColorAllocation`, `PlanAccessory` | web | — | ✅ |
+| `PlanCmtAllocation`, `PlanStage` | web — WO creation via `createWorkOrder` in `apps/web`; `PlanStage` auto-synced when generating from CMT rows (`planCmtAllocationId`) | — | ✅ |
 | `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
 | `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
 | `StockReservation`             | **both** — see §3.1         |                             | ✅ schema + writer — api (salesorder webhook, `reserveOrder`/`consumeOrder`/`releaseOrder`), web (ship button, `consumeOrder`). Written ONLY through `@elorae/db/reservation-writer.ts` — never bare prisma. |
 | `SalesOrder`                   | **both** — see §3.2         | —                           | ✅ api owns Jubelio-derived cols; web owns fulfillment cols via helper |
 | `SalesOrderItem`               | api                         | web (read)                  | ✅ schema + api writer |
+| `SalesHistory`                 | web                         | api (read)                  | ✅ Excel import only; identity fields (`itemId`, `erpVariantSku`, `jubelioItemId`, `resolutionStatus`) stamped at import via `marketplace-sku-resolver` — see §3.7 |
+| `SalesHistoryImport`           | web                         | —                           | ✅ |
+| `ForecastConfig`, `ForecastResult` | web                     | —                           | ✅ `ForecastResult.itemId` for item-centric grouping |
 | `SalesReturn`                  | api ingest; web decision (planned) | —                    | 🟡 webhook stub shipped; EPIC-05 will introduce web-side Accept/Reject writer + new outbox type `salesreturn_decision_push` |
 | `JubelioProductMapping`        | api                         | web (read)                  | ✅ |
 | `JubelioCategoryMapping`       | api                         | web (read)                  | ✅ schema; writer ⏳ (currently seed-only, no runtime writer) |
@@ -191,6 +196,19 @@ all ERP-only tables introduced by upcoming EPICs (finance/CoA, journal, AR,
 field sales, settlement, retur management, etc). The enumeration here is
 **Jubelio-touching tables only**. New tables that *do* touch Jubelio (push or
 ingest) must be added to §3 explicitly.
+
+### 3.7 `SalesHistory` — certified Excel demand (web-owned, 2026-06-24)
+
+`SalesHistory` is **Excel-only certified demand** for S&OP forecast and reconciliation.
+It is never populated from `SalesOrder` or Jubelio webhooks.
+
+- **web** writes all rows via `executeSalesHistoryImport` (`apps/web/lib/forecast/import-sales-history.ts`).
+- At import, each row is resolved through `marketplace-sku-resolver` (same heuristics as `umkm-sku-bridge`): `itemId`, `erpVariantSku`, `jubelioItemId`, `resolutionStatus` (`MAPPED` / `UNMAPPED` / `AMBIGUOUS`).
+- Unmapped rows remain in `SalesHistory` and still contribute to forecast demand (grouped by `parentSku`).
+
+**Reconciliation (read-only report):** `apps/web/lib/sales/sales-reconciliation.ts` compares aggregated Excel `SalesHistory.netQuantity` vs Jubelio `SalesOrderItem.qty` for a channel + calendar month. Default strategy is **B-Aggregate** (per item / period totals). Line-level matching requires a verified marketplace order key (`channelOrderId`) — not shipped until Gate 2 confirms the field.
+
+**Stock non-goal:** Excel import and sales reconciliation **do not** write `InventoryValue`, `StockAdjustment`, or any stock ledger. Operational stock mutations from marketplace sales flow only through Jubelio `SalesOrder` ingest + fulfillment.
 
 ### 3.2 Sales writes — dual-writer (as of 2026-06-14)
 
@@ -471,7 +489,7 @@ script uses `nest start --watch --builder swc` (SWC honours
 | D2 | Admin alert channel | **In-DB `AdminNotification` table.** Written by api on token-refresh failure, outbox-stuck, rate-limit hit, etc. Consumed by apps/web admin UI. Web may also write for ERP-detected alerts — see §3.5. |
 | D3 | Admin dashboard | **Full UI in apps/web** at `/backoffice/jubelio/admin` — queue depth, failed items, audit log, outbox status, retry buttons. api exposes JSON endpoints; apps/web renders. |
 | D4 | Local Redis | **Docker compose** (`redis:7-alpine`) declared in repo-root `docker-compose.dev.yml`. apps/api reads `REDIS_URL` env. Upstash used for staging/prod. |
-| D5 | Stock reconciliation cron home (EPIC-07-04) | **apps/api owns the cron.** Reads Jubelio inventory, compares against `InventoryValue`, writes `StockAdjustment` with `source = JUBELIO_RECONCILE` via the same `stock-writer.ts` helper that the webhook handler uses. Large variance (above threshold) writes `AdminNotification` instead of auto-correcting. Web admin dashboard reads the reconcile log. |
+| D5 | Stock reconciliation cron home (EPIC-07) | **apps/web owns orchestration + persistence.** A secret-guarded `POST /api/cron/reconciliation` (and in-process `node-cron` every 6h on VPS) calls `runReconciliation('CRON')` in web. Config lives in `SystemSetting` (`RECON_AUTO_CORRECT_THRESHOLD`, `RECON_AUTO_CORRECT_DIRECTION`, `RECON_CRON_ENABLED`). Launch posture: `FLAG_ONLY` + threshold 0. **apps/api** exposes signed `GET /jubelio/inventory/snapshot` (InternalSignGuard); web fetches Jubelio qty via `apiFetch`. Auto-correct writes `StockAdjustment` with `source = JUBELIO_RECONCILE` + `StockMovement` `refType = RECON`. FG-only scan (items with `JubelioProductMapping`). Overlap guard skips when a `ReconciliationRun` is already `RUNNING`. |
 | D6 | Reservation modeling (EPIC-08) | **Resolved.** `StockReservation` ledger — one row per `salesorderDetailId` (unique), `state: ReserveState { RESERVED, CONSUMED, RELEASED }` — plus an aggregate `InventoryValue.reservedQty` (Decimal, default 0) kept in sync by the ledger writes. Three order-level helpers in `@elorae/db/reservation-writer.ts`: `reserveOrder` (webhook ingest — creates ledger rows + bumps `reservedQty`, raises `AdminNotification` on oversell), `consumeOrder` (ship — flips `RESERVED → CONSUMED`, deducts `InventoryValue.qtyOnHand` via a `StockAdjustment` stamped `source = FULFILLMENT_CONSUME`), `releaseOrder` (cancel — flips `RESERVED → RELEASED`, decrements `reservedQty` without touching `qtyOnHand`). Idempotency: unique `salesorderDetailId` on create, and every transition is a conditional `updateMany WHERE state = 'RESERVED'` so the Jubelio ship webhook and the ERP Ship button can both fire — whichever lands first wins, the other is a no-op. Model: **reserve-at-ingest, consume-onHand-at-ship, release-on-cancel**; `available = qtyOnHand - reservedQty`, derived at read time (not stored). Jubelio stock push (`stock-push.handler.ts`) sends `available` (`onHand - reserved`, clamped at 0), not raw `qtyOnHand`. |
 | D7 | Warehouse scope on Jubelio stock push (EPIC-19 + EPIC-02-03) | **Push only main-warehouse availability.** Formula: `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`. Konsi, canvasser-mobile, and any future virtual warehouses are excluded. Codified before EPIC-19 implementation; push helper enforces. |
 | D8 | Offline vs marketplace `SalesOrder` (EPIC-17/18/22) | **Open — first EPIC plan decides.** Two options: (a) single dual-channel `SalesOrder` with `channel = OFFLINE_PUTUS | OFFLINE_KONSI`, (b) separate `OfflineSalesOrder` model. Affects every downstream report; punted until EPIC-17 brainstorm. |

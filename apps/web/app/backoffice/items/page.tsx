@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { getItemTypeMasters } from '@/app/actions/item-type-master';
 import { listItems, getItemCounts } from '@/lib/items/queries';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { ItemType } from '@elorae/db';
@@ -36,7 +37,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
   const typeFilter = parseTypeFilter(sp.type);
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
 
-  const [listResult, counts] = await Promise.all([
+  const [listResult, counts, itemTypeMasters] = await Promise.all([
     listItems(
       {
         search: search || undefined,
@@ -45,6 +46,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
       { page, pageSize: DEFAULT_PAGE_SIZE }
     ),
     getItemCounts(),
+    getItemTypeMasters(),
   ]);
 
   const items = 'items' in listResult ? listResult.items : [];
@@ -60,6 +62,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
       items={items as unknown as Parameters<typeof ItemsPageClient>[0]['items']}
       totalCount={totalCount}
       counts={counts}
+      itemTypeMasters={itemTypeMasters}
       search={search}
       typeFilter={typeFilter ?? ''}
       page={page}

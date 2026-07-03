@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
-import { getPantoneColorByTcx, isFavorite } from '@/lib/production-colors/queries';
+import { getPantoneColorByTcx, isFavorite, getFavoriteTcxSet } from '@/lib/production-colors/queries';
 import {
   enrichSimilarWithDeltaE,
   buildGradient,
@@ -29,10 +29,27 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     }
 
     const similar = enrichSimilarWithDeltaE(color.hex, [], 24);
-    const gradient = buildGradient(color.hex, 9);
+    const gradient = buildGradient(color.hex, 10);
     const favorited = await isFavorite(session.user.id, tcx);
+    const favoriteSet = await getFavoriteTcxSet(session.user.id, [
+      tcx,
+      ...similar.map((s) => s.tcx),
+    ]);
 
     const rgb = `${color.rgbR}, ${color.rgbG}, ${color.rgbB}`;
+    const bookPosition =
+      color.bookSection != null &&
+      color.bookPage != null &&
+      color.bookColumn != null &&
+      color.bookRow != null
+        ? {
+            section: color.bookSection,
+            page: color.bookPage,
+            column: color.bookColumn,
+            row: color.bookRow,
+          }
+        : null;
+
     return NextResponse.json({
       tcx: color.tcx,
       name: color.name,
@@ -43,8 +60,12 @@ export async function GET(_req: NextRequest, context: RouteContext) {
       filterTags: color.filterTags as FilterTags,
       lab: color.labL != null ? { L: color.labL, a: color.labA, b: color.labB } : null,
       gradient,
-      similar,
+      similar: similar.map((s) => ({
+        ...s,
+        isFavorite: favoriteSet.has(s.tcx),
+      })),
       isFavorite: favorited,
+      bookPosition,
     });
   } catch (error) {
     const status = (error as { status?: number }).status ?? 500;

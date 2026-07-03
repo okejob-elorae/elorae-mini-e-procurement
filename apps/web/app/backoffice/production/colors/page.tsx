@@ -5,8 +5,11 @@ import {
   listPantoneColors,
   listFavoriteColors,
   getFavoriteTcxSet,
+  getPantoneFilterFacetCounts,
   COLOR_PAGE_SIZE,
 } from "@/lib/production-colors/queries";
+import { resolveBookViewState } from "@/lib/production-colors/book-queries";
+import { parseBookSearchParams } from "@/lib/production-colors/book-url-params";
 import { parseColorSearchParams } from "@/lib/production-colors/url-params";
 import {
   ProductionColorsPageClient,
@@ -16,7 +19,9 @@ import {
 export const dynamic = "force-dynamic";
 
 function parseTab(raw?: string): ProductionColorsTab {
-  if (raw === "favorites" || raw === "photo-analyzer") return raw;
+  if (raw === "book" || raw === "favorites" || raw === "photo-analyzer") {
+    return raw;
+  }
   return "all";
 }
 
@@ -46,17 +51,50 @@ async function ProductionColorsPageContent({ searchParams }: PageProps) {
   const tab = parseTab(sp.tab);
 
   if (tab === "photo-analyzer") {
-    return <ProductionColorsPageClient tab={tab} browseProps={null} />;
+    return (
+      <ProductionColorsPageClient
+        tab={tab}
+        browseProps={null}
+        bookProps={null}
+      />
+    );
+  }
+
+  if (tab === "book") {
+    const { section, page, jumpTcx } = parseBookSearchParams(sp);
+    const bookState = await resolveBookViewState({ section, page, jumpTcx });
+    const favoriteSet = await getFavoriteTcxSet(
+      session.user.id,
+      bookState.swatches.map((s) => s.tcx)
+    );
+
+    return (
+      <ProductionColorsPageClient
+        tab={tab}
+        browseProps={null}
+        bookProps={{
+          sections: bookState.sections,
+          section: bookState.section,
+          page: bookState.page,
+          swatches: bookState.swatches,
+          favoriteTcxSet: [...favoriteSet],
+          highlightTcx: bookState.highlightTcx,
+          positionedCount: bookState.positionedCount,
+        }}
+      />
+    );
   }
 
   const { filters, page, filterState } = parseColorSearchParams(sp);
 
   if (tab === "favorites") {
-    const { colors, totalCount } = await listFavoriteColors(
-      session.user.id,
-      filters,
-      { page, pageSize: COLOR_PAGE_SIZE }
-    );
+    const [{ colors, totalCount }, facetCounts] = await Promise.all([
+      listFavoriteColors(session.user.id, filters, {
+        page,
+        pageSize: COLOR_PAGE_SIZE,
+      }),
+      getPantoneFilterFacetCounts({ userId: session.user.id }),
+    ]);
 
     return (
       <ProductionColorsPageClient
@@ -73,15 +111,20 @@ async function ProductionColorsPageContent({ searchParams }: PageProps) {
           totalCount,
           page,
           initialFilters: filterState,
+          facetCounts,
         }}
+        bookProps={null}
       />
     );
   }
 
-  const { colors, totalCount } = await listPantoneColors(filters, {
-    page,
-    pageSize: COLOR_PAGE_SIZE,
-  });
+  const [{ colors, totalCount }, facetCounts] = await Promise.all([
+    listPantoneColors(filters, {
+      page,
+      pageSize: COLOR_PAGE_SIZE,
+    }),
+    getPantoneFilterFacetCounts(),
+  ]);
 
   const favoriteSet = await getFavoriteTcxSet(
     session.user.id,
@@ -103,7 +146,9 @@ async function ProductionColorsPageContent({ searchParams }: PageProps) {
         totalCount,
         page,
         initialFilters: filterState,
+        facetCounts,
       }}
+      bookProps={null}
     />
   );
 }

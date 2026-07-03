@@ -12,6 +12,7 @@ const DEFAULT_CONFIGS: Record<
   RET: { prefix: 'RET/', resetPeriod: 'MONTHLY', padding: 4 },
   ISSUE: { prefix: 'ISS/', resetPeriod: 'MONTHLY', padding: 4 },
   RECEIPT: { prefix: 'RCPT/', resetPeriod: 'MONTHLY', padding: 4 },
+  OPN: { prefix: 'OPN/', resetPeriod: 'MONTHLY', padding: 4 },
 };
 
 type ConfigRow = {

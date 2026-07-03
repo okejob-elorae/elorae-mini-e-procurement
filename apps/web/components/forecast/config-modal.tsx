@@ -76,14 +76,17 @@ export function ForecastConfigModal({
           <div className="grid gap-2">
             <Label htmlFor="growth">{t('growth')}</Label>
             <Input id="growth" type="number" value={growth} onChange={(e) => setGrowth(e.target.value)} />
+            <p className="text-xs text-muted-foreground">{t('growthHint')}</p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="lookback">{t('lookback')}</Label>
             <Input id="lookback" type="number" value={lookback} onChange={(e) => setLookback(e.target.value)} />
+            <p className="text-xs text-muted-foreground">{t('lookbackHint')}</p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="decay">{t('decay')}</Label>
             <Input id="decay" type="number" step="0.01" value={decay} onChange={(e) => setDecay(e.target.value)} />
+            <p className="text-xs text-muted-foreground">{t('decayHint')}</p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="notes">{t('notes')}</Label>

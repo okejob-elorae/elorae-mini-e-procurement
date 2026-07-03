@@ -37,7 +37,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DocType } from '@/lib/constants/enums';
 
-const DOC_TYPES: DocType[] = ['PO', 'GRN', 'WO', 'ADJ', 'RET', 'ISSUE', 'RECEIPT'];
+const DOC_TYPES: DocType[] = ['PO', 'GRN', 'WO', 'ADJ', 'RET', 'ISSUE', 'RECEIPT', 'OPN'];
 
 const DOC_TYPE_LABELS: Record<DocType, string> = {
   PO: 'Purchase Order',
@@ -47,6 +47,7 @@ const DOC_TYPE_LABELS: Record<DocType, string> = {
   RET: 'Vendor Return',
   ISSUE: 'Material Issue',
   RECEIPT: 'FG Receipt',
+  OPN: 'Stock Opname',
 };
 
 export default function DocumentNumbersSettingsPage() {
