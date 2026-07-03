@@ -1531,6 +1531,9 @@
       "enableHint": "Aktifkan lokasi di pengaturan browser untuk melihat toko terdekat.",
       "noStoresWithCoords": "Belum ada toko dengan koordinat.",
       "loading": "Mencari toko terdekat…"
+    },
+    "nav": {
+      "home": "Beranda"
     }
   }
 }

@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 type PermState = "prompt" | "granted" | "denied" | "unknown";
 type StoreItem = StoreWithCoords & { code: string; termsType: "PUTUS" | "KONSI" };
@@ -14,6 +15,7 @@ type StoreItem = StoreWithCoords & { code: string; termsType: "PUTUS" | "KONSI" 
 export function StoreList({ stores }: { stores: StoreItem[] }) {
   const tBadge = useTranslations("stores.badge");
   const tNearest = useTranslations("pwa.nearest");
+  const tNav = useTranslations("pwa.nav");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [fetchingOrigin, setFetchingOrigin] = useState(false);
@@ -53,6 +55,13 @@ export function StoreList({ stores }: { stores: StoreItem[] }) {
 
   return (
     <div className="p-4 space-y-3">
+      <Button asChild variant="ghost" size="sm" className="-ml-2">
+        <Link href="/pwa">
+          <ArrowLeft className="h-4 w-4" />
+          {tNav("home")}
+        </Link>
+      </Button>
+
       <Input placeholder="Search"
         value={search} onChange={e => setSearch(e.target.value)} />
 

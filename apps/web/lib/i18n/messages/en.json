@@ -1531,6 +1531,9 @@
       "enableHint": "Enable location in browser settings for a nearest-stores view.",
       "noStoresWithCoords": "No stores have coordinates yet.",
       "loading": "Finding nearest stores…"
+    },
+    "nav": {
+      "home": "Home"
     }
   }
 }
