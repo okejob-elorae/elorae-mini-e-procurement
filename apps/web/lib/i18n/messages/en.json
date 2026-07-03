@@ -1532,7 +1532,12 @@
       "enableChip": "Enable location to see nearest stores",
       "enableHint": "Enable location in browser settings for a nearest-stores view.",
       "noStoresWithCoords": "No stores have coordinates yet.",
-      "loading": "Finding nearest stores…"
+      "loading": "Finding nearest stores…",
+      "greeting": "Hello,",
+      "activeBadge": "Active visit",
+      "activeStoreLabel": "You are checked in here",
+      "noActiveHint": "Pick a store to start your visit.",
+      "enableCta": "Enable"
     },
     "nav": {
       "home": "Home"

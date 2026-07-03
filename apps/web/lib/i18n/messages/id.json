@@ -1532,7 +1532,12 @@
       "enableChip": "Aktifkan lokasi untuk melihat toko terdekat",
       "enableHint": "Aktifkan lokasi di pengaturan browser untuk melihat toko terdekat.",
       "noStoresWithCoords": "Belum ada toko dengan koordinat.",
-      "loading": "Mencari toko terdekat…"
+      "loading": "Mencari toko terdekat…",
+      "greeting": "Halo,",
+      "activeBadge": "Kunjungan aktif",
+      "activeStoreLabel": "Kamu sedang check-in di sini",
+      "noActiveHint": "Pilih toko untuk mulai kunjungan.",
+      "enableCta": "Aktifkan"
     },
     "nav": {
       "home": "Beranda"

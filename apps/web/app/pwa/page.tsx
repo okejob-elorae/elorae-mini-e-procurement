@@ -23,8 +23,11 @@ export default async function PwaHome() {
     .slice(0, 3)
     .map(([storeId, storeName]) => ({ storeId, storeName }));
 
+  const userName = session.user.name ?? session.user.email ?? "";
+
   return (
     <HomeShell
+      userName={userName}
       activeVisit={active ? {
         id: active.id,
         storeId: active.storeId,
