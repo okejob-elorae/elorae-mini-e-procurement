@@ -1,4 +1,4 @@
-import { prisma, Prisma } from "@elorae/db";
+import { prisma } from "@elorae/db";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { aggregateInventoryValues } from "@/lib/items/queries";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
@@ -89,5 +89,3 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
 
   return { store: storeCtx, items };
 }
-
-void Prisma;

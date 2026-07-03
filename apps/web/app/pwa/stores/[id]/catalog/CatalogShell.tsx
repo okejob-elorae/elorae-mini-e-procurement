@@ -17,7 +17,7 @@ type CatalogItem = {
   priceLabel: string | null;
 };
 
-type Payload = { store: { id: string }; items: CatalogItem[] };
+type Payload = { items: CatalogItem[] };
 type LoadState = "loading" | "ready" | "error";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -141,7 +141,12 @@ export function CatalogShell({
                 {it.available > 0 ? `${it.available} tersedia` : "Habis"}
               </Badge>
               {it.price != null && (
-                <span className="text-sm font-semibold">{rupiah(it.price)}</span>
+                <>
+                  {it.priceLabel && (
+                    <span className="text-xs text-muted-foreground">{it.priceLabel}</span>
+                  )}
+                  <span className="text-sm font-semibold">{rupiah(it.price)}</span>
+                </>
               )}
             </div>
           </Card>
