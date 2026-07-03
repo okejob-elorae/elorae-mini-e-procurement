@@ -18,6 +18,7 @@ type Props = {
 export function StoreForm({ mode, storeId, readOnly = false, initial }: Props) {
   const t = useTranslations("stores.form");
   const tErr = useTranslations("stores.errors");
+  const tRoot = useTranslations("stores");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +75,10 @@ export function StoreForm({ mode, storeId, readOnly = false, initial }: Props) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 max-w-2xl">
+    <div className="space-y-4 max-w-2xl">
+      <h1 className="text-2xl font-bold">{tRoot(mode === "create" ? "new" : "edit")}</h1>
+      {readOnly && <p className="text-sm text-muted-foreground">{tRoot("readOnlyBanner")}</p>}
+      <form onSubmit={submit} className="space-y-4">
       {error && <div className="text-sm text-destructive">{error}</div>}
 
       <label className="block">
@@ -181,6 +185,7 @@ export function StoreForm({ mode, storeId, readOnly = false, initial }: Props) {
           </Link>
         </div>
       )}
-    </form>
+      </form>
+    </div>
   );
 }

@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { getTranslations } from "next-intl/server";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { StoreForm } from "../StoreForm";
@@ -10,10 +9,8 @@ export default async function NewStorePage() {
   const perms = session.user.permissions ?? [];
   if (!hasPermission(perms, PERMISSIONS.STORES_MANAGE)) redirect("/backoffice/stores");
 
-  const t = await getTranslations("stores");
   return (
     <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold">{t("new")}</h1>
       <StoreForm mode="create" initial={{
         code: "",
         name: "",

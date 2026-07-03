@@ -22,6 +22,7 @@ export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
 
   return (
     <div className="space-y-4">
+      <h1 className="text-2xl font-bold">{t("title")}</h1>
       <div className="flex items-center gap-4">
         <input placeholder={tList("searchPlaceholder")} value={search}
           onChange={e => setSearch(e.target.value)}
