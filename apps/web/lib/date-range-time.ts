@@ -19,7 +19,7 @@ export function startOfLocalDay(date: Date): Date {
   return next;
 }
 
-export function rangeHasExplicitTime(range: DateRange | undefined): boolean {
+export function rangeHasExplicitTime(range: Partial<DateRange> | undefined): boolean {
   if (!range?.from && !range?.to) return false;
   const dates = [range.from, range.to].filter((d): d is Date => d != null);
   return dates.some(
