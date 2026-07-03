@@ -131,7 +131,10 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
         <section className="space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{t("title")}</h2>
-            <Link href="/pwa/stores" className="inline-flex items-center gap-0.5 text-xs text-primary hover:underline">
+            <Link
+              href="/pwa/stores"
+              className="inline-flex items-center gap-1 rounded-full border bg-card px-3 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
               {t("seeAll")} <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
