@@ -1529,7 +1529,8 @@
       "recent": "Recent stores",
       "enableChip": "Enable location to see nearest stores",
       "enableHint": "Enable location in browser settings for a nearest-stores view.",
-      "noStoresWithCoords": "No stores have coordinates yet."
+      "noStoresWithCoords": "No stores have coordinates yet.",
+      "loading": "Finding nearest stores…"
     }
   }
 }

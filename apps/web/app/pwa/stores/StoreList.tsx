@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { Loader2 } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -12,8 +13,10 @@ type StoreItem = StoreWithCoords & { code: string; termsType: "PUTUS" | "KONSI" 
 
 export function StoreList({ stores }: { stores: StoreItem[] }) {
   const tBadge = useTranslations("stores.badge");
+  const tNearest = useTranslations("pwa.nearest");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
+  const [fetchingOrigin, setFetchingOrigin] = useState(false);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -31,10 +34,11 @@ export function StoreList({ stores }: { stores: StoreItem[] }) {
   }, []);
 
   useEffect(() => {
-    if (perm !== "granted") { setOrigin(null); return; }
+    if (perm !== "granted") { setOrigin(null); setFetchingOrigin(false); return; }
+    setFetchingOrigin(true);
     navigator.geolocation.getCurrentPosition(
-      pos => setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setOrigin(null),
+      pos => { setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setFetchingOrigin(false); },
+      () => { setOrigin(null); setFetchingOrigin(false); },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
     );
   }, [perm]);
@@ -51,6 +55,13 @@ export function StoreList({ stores }: { stores: StoreItem[] }) {
     <div className="p-4 space-y-3">
       <Input placeholder="Search"
         value={search} onChange={e => setSearch(e.target.value)} />
+
+      {fetchingOrigin && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>{tNearest("loading")}</span>
+        </div>
+      )}
 
       <ul className="space-y-2">
         {ranked.map(({ store, distanceMeters }) => (

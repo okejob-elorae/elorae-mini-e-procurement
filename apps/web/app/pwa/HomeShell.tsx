@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { Loader2 } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { CheckOutButton } from "./stores/[id]/CheckOutButton";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ export function HomeShell({ activeVisit, stores, recentStores, onLogout }: Props
   const tAuth = useTranslations("auth");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
+  const [fetchingOrigin, setFetchingOrigin] = useState(false);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.permissions) {
@@ -37,10 +39,11 @@ export function HomeShell({ activeVisit, stores, recentStores, onLogout }: Props
   }, []);
 
   useEffect(() => {
-    if (perm !== "granted") { setOrigin(null); return; }
+    if (perm !== "granted") { setOrigin(null); setFetchingOrigin(false); return; }
+    setFetchingOrigin(true);
     navigator.geolocation.getCurrentPosition(
-      pos => setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setOrigin(null),
+      pos => { setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setFetchingOrigin(false); },
+      () => { setOrigin(null); setFetchingOrigin(false); },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
     );
   }, [perm]);
@@ -84,7 +87,14 @@ export function HomeShell({ activeVisit, stores, recentStores, onLogout }: Props
         <p className="text-lg font-semibold">{t("noActive")}</p>
       </div>
 
-      {perm === "granted" && ranked.length > 0 && (
+      {perm === "granted" && fetchingOrigin && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>{t("loading")}</span>
+        </div>
+      )}
+
+      {perm === "granted" && !fetchingOrigin && ranked.length > 0 && (
         <section>
           <h2 className="text-sm font-semibold mb-2">{t("title")}</h2>
           <ul className="space-y-2">
@@ -102,7 +112,7 @@ export function HomeShell({ activeVisit, stores, recentStores, onLogout }: Props
         </section>
       )}
 
-      {perm === "granted" && ranked.length === 0 && (
+      {perm === "granted" && !fetchingOrigin && ranked.length === 0 && (
         <p className="text-sm text-muted-foreground">{t("noStoresWithCoords")}</p>
       )}
 
