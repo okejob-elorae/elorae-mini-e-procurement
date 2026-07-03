@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
+  ChevronRight,
   Clock,
   ExternalLink,
   MapPin,
   Phone,
+  ShoppingBag,
   User as UserIcon,
 } from "lucide-react";
 import { CheckInButton } from "./CheckInButton";
@@ -124,6 +126,14 @@ export function StoreDetailShell({ store, active, history }: Props) {
           </a>
         </Button>
       )}
+
+      <Button asChild variant="outline" className="w-full">
+        <Link href={`/pwa/stores/${store.id}/catalog`}>
+          <ShoppingBag className="h-4 w-4" />
+          Katalog Produk
+          <ChevronRight className="ml-auto h-3 w-3" />
+        </Link>
+      </Button>
 
       {activeAtThisStore ? (
         <CheckOutButton visitId={active.id} />
