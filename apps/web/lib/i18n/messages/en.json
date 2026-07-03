@@ -1541,6 +1541,13 @@
     },
     "nav": {
       "home": "Home"
+    },
+    "stores": {
+      "title": "Stores",
+      "count": "{count, plural, =0 {No stores} one {# store} other {# stores}}",
+      "searchPlaceholder": "Search by name or code",
+      "empty": "No stores yet.",
+      "noSearchResults": "No stores match your search."
     }
   }
 }

@@ -1541,6 +1541,13 @@
     },
     "nav": {
       "home": "Beranda"
+    },
+    "stores": {
+      "title": "Toko",
+      "count": "{count, plural, =0 {Tidak ada toko} other {# toko}}",
+      "searchPlaceholder": "Cari nama atau kode",
+      "empty": "Belum ada toko.",
+      "noSearchResults": "Tidak ada toko yang cocok."
     }
   }
 }
