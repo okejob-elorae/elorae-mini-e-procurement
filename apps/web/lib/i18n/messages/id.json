@@ -1517,7 +1517,9 @@
       "historyEmpty": "Belum ada kunjungan.",
       "stillOpen": "Masih terbuka",
       "autoClosedBadge": "Ditutup otomatis",
-      "viewCoords": "Lihat koordinat"
+      "viewCoords": "Lihat koordinat",
+      "locating": "Mengambil lokasi…",
+      "submitting": "Mengirim…"
     },
     "nearest": {
       "title": "Toko terdekat",

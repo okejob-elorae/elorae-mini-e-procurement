@@ -1517,7 +1517,9 @@
       "historyEmpty": "No visits yet.",
       "stillOpen": "Still open",
       "autoClosedBadge": "Auto-closed",
-      "viewCoords": "View coords"
+      "viewCoords": "View coords",
+      "locating": "Getting location…",
+      "submitting": "Submitting…"
     },
     "nearest": {
       "title": "Nearest stores",
