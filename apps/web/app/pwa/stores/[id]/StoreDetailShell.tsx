@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
+  ChevronRight,
   Clock,
   ExternalLink,
   MapPin,
   Phone,
+  ShoppingBag,
   User as UserIcon,
 } from "lucide-react";
 import { CheckInButton } from "./CheckInButton";
@@ -125,6 +127,14 @@ export function StoreDetailShell({ store, active, history }: Props) {
         </Button>
       )}
 
+      <Button asChild variant="outline" className="w-full">
+        <Link href={`/pwa/stores/${store.id}/catalog`}>
+          <ShoppingBag className="h-4 w-4" />
+          Katalog Produk
+          <ChevronRight className="ml-auto h-3 w-3" />
+        </Link>
+      </Button>
+
       {activeAtThisStore ? (
         <CheckOutButton visitId={active.id} />
       ) : (
@@ -146,39 +156,34 @@ export function StoreDetailShell({ store, active, history }: Props) {
             </CardContent>
           </Card>
         ) : (
-          <ul className="space-y-2">
-            {history.map(v => (
-              <li key={v.id}>
-                <Card>
-                  <CardContent className="p-3 space-y-2 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">
-                        {formatDateTime(v.checkinAtIso)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {v.checkoutAtIso ? formatDateTime(v.checkoutAtIso) : t("stillOpen")}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      {v.autoClosed && (
-                        <Badge variant="secondary">{t("autoClosedBadge")}</Badge>
-                      )}
-                      <a
-                        href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-muted-foreground hover:underline"
-                      >
-                        <MapPin className="h-3 w-3" />
-                        {t("viewCoords")}
-                      </a>
-                      <span className="ml-auto text-muted-foreground">{v.userLabel}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </li>
-            ))}
-          </ul>
+          <Card>
+            <CardContent className="p-0 divide-y">
+              {history.map(v => (
+                <div
+                  key={v.id}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm"
+                >
+                  <span className="font-medium">{formatDateTime(v.checkinAtIso)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    → {v.checkoutAtIso ? formatDateTime(v.checkoutAtIso) : t("stillOpen")}
+                  </span>
+                  {v.autoClosed && (
+                    <Badge variant="secondary">{t("autoClosedBadge")}</Badge>
+                  )}
+                  <a
+                    href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={t("viewCoords")}
+                    className="ml-auto inline-flex items-center text-muted-foreground hover:underline"
+                  >
+                    <MapPin className="h-3.5 w-3.5" />
+                  </a>
+                  <span className="text-xs text-muted-foreground">{v.userLabel}</span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         )}
       </section>
     </div>
