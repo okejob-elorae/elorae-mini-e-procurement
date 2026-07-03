@@ -1523,8 +1523,8 @@
     },
     "nearest": {
       "title": "Nearest stores",
-      "seeAll": "See all stores →",
-      "browse": "Browse stores →",
+      "seeAll": "See all stores",
+      "browse": "Browse stores",
       "noActive": "No active visit",
       "activeAt": "Active at {storeName}",
       "checkedInAgo": "Checked in {time}",

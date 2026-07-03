@@ -1523,8 +1523,8 @@
     },
     "nearest": {
       "title": "Toko terdekat",
-      "seeAll": "Lihat semua toko →",
-      "browse": "Jelajah toko →",
+      "seeAll": "Lihat semua toko",
+      "browse": "Jelajah toko",
       "noActive": "Tidak ada kunjungan aktif",
       "activeAt": "Aktif di {storeName}",
       "checkedInAgo": "Check-in {time}",
