@@ -4,6 +4,19 @@ import { useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { StoreListItem } from "@/lib/stores/queries";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
   const t = useTranslations("stores");
@@ -24,47 +37,55 @@ export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">{t("title")}</h1>
       <div className="flex items-center gap-4">
-        <input placeholder={tList("searchPlaceholder")} value={search}
+        <Input placeholder={tList("searchPlaceholder")} value={search}
           onChange={e => setSearch(e.target.value)}
-          className="border rounded px-2 py-1 w-64" />
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
-          {tList("showInactive")}
-        </label>
-        <Link href="/backoffice/stores/new" className="ml-auto bg-primary text-primary-foreground rounded px-3 py-1">
-          {t("new")}
-        </Link>
+          className="w-64" />
+        <div className="flex items-center gap-2">
+          <Checkbox id="show-inactive" checked={showInactive} onCheckedChange={(checked) => setShowInactive(checked === true)} />
+          <Label htmlFor="show-inactive" className="text-sm font-normal">{tList("showInactive")}</Label>
+        </div>
+        <Button asChild className="ml-auto">
+          <Link href="/backoffice/stores/new">{t("new")}</Link>
+        </Button>
       </div>
 
       {filtered.length === 0 ? (
         <p className="text-muted-foreground text-sm">{tList("empty")}</p>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left border-b">
-              <th className="py-2">{tTable("code")}</th>
-              <th>{tTable("name")}</th>
-              <th>{tTable("terms")}</th>
-              <th>{tTable("tempo")}</th>
-              <th>{tTable("margin")}</th>
-              <th>{tTable("address")}</th>
-              <th>{tTable("status")}</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{tTable("code")}</TableHead>
+              <TableHead>{tTable("name")}</TableHead>
+              <TableHead>{tTable("terms")}</TableHead>
+              <TableHead>{tTable("tempo")}</TableHead>
+              <TableHead>{tTable("margin")}</TableHead>
+              <TableHead>{tTable("address")}</TableHead>
+              <TableHead>{tTable("status")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {filtered.map(s => (
-              <tr key={s.id} className="border-b hover:bg-muted/50">
-                <td className="py-2"><Link href={`/backoffice/stores/${s.id}`} className="underline">{s.code}</Link></td>
-                <td>{s.name}</td>
-                <td>{s.termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}</td>
-                <td>{s.paymentTempo}d</td>
-                <td>{s.marginPercent ?? "—"}</td>
-                <td className="truncate max-w-[220px]" title={s.address}>{s.address}</td>
-                <td>{s.isActive ? tTable("active") : tBadge("inactive")}</td>
-              </tr>
+              <TableRow key={s.id}>
+                <TableCell><Link href={`/backoffice/stores/${s.id}`} className="underline">{s.code}</Link></TableCell>
+                <TableCell>{s.name}</TableCell>
+                <TableCell>
+                  <Badge variant={s.termsType === "PUTUS" ? "outline" : "secondary"}>
+                    {s.termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}
+                  </Badge>
+                </TableCell>
+                <TableCell>{s.paymentTempo}d</TableCell>
+                <TableCell>{s.marginPercent ?? "—"}</TableCell>
+                <TableCell className="truncate max-w-[220px]" title={s.address}>{s.address}</TableCell>
+                <TableCell>
+                  <Badge variant={s.isActive ? "default" : "outline"}>
+                    {s.isActive ? tTable("active") : tBadge("inactive")}
+                  </Badge>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </div>
   );

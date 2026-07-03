@@ -7,6 +7,11 @@ import { useTranslations } from "next-intl";
 import { parseCoordsPaste } from "@/lib/geo/coords";
 import { createStoreAction, updateStoreAction, deactivateStoreAction } from "./actions";
 import type { StoreFields } from "@/lib/stores/queries";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Props = {
   mode: "create" | "edit";
@@ -81,108 +86,107 @@ export function StoreForm({ mode, storeId, readOnly = false, initial }: Props) {
       <form onSubmit={submit} className="space-y-4">
       {error && <div className="text-sm text-destructive">{error}</div>}
 
-      <label className="block">
-        <span className="text-sm font-medium">{t("code")}</span>
-        <input required disabled={pending || readOnly} value={form.code} onChange={e => update("code", e.target.value)}
-          className="w-full mt-1 border rounded px-2 py-1" />
-      </label>
+      <div className="space-y-1">
+        <Label htmlFor="code">{t("code")}</Label>
+        <Input id="code" required disabled={pending || readOnly} value={form.code} onChange={e => update("code", e.target.value)} />
+      </div>
 
-      <label className="block">
-        <span className="text-sm font-medium">{t("name")}</span>
-        <input required disabled={pending || readOnly} value={form.name} onChange={e => update("name", e.target.value)}
-          className="w-full mt-1 border rounded px-2 py-1" />
-      </label>
+      <div className="space-y-1">
+        <Label htmlFor="name">{t("name")}</Label>
+        <Input id="name" required disabled={pending || readOnly} value={form.name} onChange={e => update("name", e.target.value)} />
+      </div>
 
-      <label className="block">
-        <span className="text-sm font-medium">{t("address")}</span>
-        <textarea required disabled={pending || readOnly} value={form.address} onChange={e => update("address", e.target.value)}
-          rows={3} className="w-full mt-1 border rounded px-2 py-1" />
-      </label>
+      <div className="space-y-1">
+        <Label htmlFor="address">{t("address")}</Label>
+        <Textarea id="address" required disabled={pending || readOnly} value={form.address} onChange={e => update("address", e.target.value)}
+          rows={3} />
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <label className="block">
-          <span className="text-sm font-medium">{t("phone")}</span>
-          <input disabled={pending || readOnly} value={form.phone ?? ""} onChange={e => update("phone", e.target.value || null)}
-            className="w-full mt-1 border rounded px-2 py-1" />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">{t("contactName")}</span>
-          <input disabled={pending || readOnly} value={form.contactName ?? ""} onChange={e => update("contactName", e.target.value || null)}
-            className="w-full mt-1 border rounded px-2 py-1" />
-        </label>
+        <div className="space-y-1">
+          <Label htmlFor="phone">{t("phone")}</Label>
+          <Input id="phone" disabled={pending || readOnly} value={form.phone ?? ""} onChange={e => update("phone", e.target.value || null)} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="contactName">{t("contactName")}</Label>
+          <Input id="contactName" disabled={pending || readOnly} value={form.contactName ?? ""} onChange={e => update("contactName", e.target.value || null)} />
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <label className="block">
-          <span className="text-sm font-medium">{t("termsType")}</span>
-          <select required disabled={pending || readOnly} value={form.termsType} onChange={e => update("termsType", e.target.value as "PUTUS" | "KONSI")}
-            className="w-full mt-1 border rounded px-2 py-1">
-            <option value="PUTUS">{t("termsPutus")}</option>
-            <option value="KONSI">{t("termsKonsi")}</option>
-          </select>
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">{t("paymentTempo")}</span>
-          <input required disabled={pending || readOnly} type="number" min={0} value={form.paymentTempo}
-            onChange={e => update("paymentTempo", Number(e.target.value))}
-            className="w-full mt-1 border rounded px-2 py-1" />
-        </label>
-        <label className="block">
-          <span className="text-sm font-medium">{t("marginPercent")}</span>
-          <input disabled={pending || readOnly} type="number" step="0.01" value={form.marginPercent ?? ""}
-            onChange={e => update("marginPercent", e.target.value === "" ? null : Number(e.target.value))}
-            className="w-full mt-1 border rounded px-2 py-1" />
-        </label>
+        <div className="space-y-1">
+          <Label htmlFor="termsType">{t("termsType")}</Label>
+          <Select
+            disabled={pending || readOnly}
+            value={form.termsType}
+            onValueChange={(v) => update("termsType", v as "PUTUS" | "KONSI")}
+          >
+            <SelectTrigger id="termsType" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="PUTUS">{t("termsPutus")}</SelectItem>
+              <SelectItem value="KONSI">{t("termsKonsi")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="paymentTempo">{t("paymentTempo")}</Label>
+          <Input id="paymentTempo" required disabled={pending || readOnly} type="number" min={0} value={form.paymentTempo}
+            onChange={e => update("paymentTempo", Number(e.target.value))} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="marginPercent">{t("marginPercent")}</Label>
+          <Input id="marginPercent" disabled={pending || readOnly} type="number" step="0.01" value={form.marginPercent ?? ""}
+            onChange={e => update("marginPercent", e.target.value === "" ? null : Number(e.target.value))} />
+        </div>
       </div>
 
       <fieldset className="border rounded p-3">
         <legend className="text-sm font-medium px-1">{t("coords")}</legend>
         <div className="grid grid-cols-2 gap-4">
-          <label className="block">
-            <span className="text-sm">{t("lat")}</span>
-            <input disabled={pending || readOnly} type="number" step="0.0000001" value={form.lat ?? ""}
-              onChange={e => update("lat", e.target.value === "" ? null : Number(e.target.value))}
-              className="w-full mt-1 border rounded px-2 py-1" />
-          </label>
-          <label className="block">
-            <span className="text-sm">{t("lng")}</span>
-            <input disabled={pending || readOnly} type="number" step="0.0000001" value={form.lng ?? ""}
-              onChange={e => update("lng", e.target.value === "" ? null : Number(e.target.value))}
-              className="w-full mt-1 border rounded px-2 py-1" />
-          </label>
+          <div className="space-y-1">
+            <Label htmlFor="lat">{t("lat")}</Label>
+            <Input id="lat" disabled={pending || readOnly} type="number" step="0.0000001" value={form.lat ?? ""}
+              onChange={e => update("lat", e.target.value === "" ? null : Number(e.target.value))} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="lng">{t("lng")}</Label>
+            <Input id="lng" disabled={pending || readOnly} type="number" step="0.0000001" value={form.lng ?? ""}
+              onChange={e => update("lng", e.target.value === "" ? null : Number(e.target.value))} />
+          </div>
         </div>
         <div className="mt-2 flex gap-2 items-start">
-          <input disabled={pending || readOnly} placeholder={t("pasteCoordsHint")} value={paste}
+          <Input id="pasteCoords" disabled={pending || readOnly} placeholder={t("pasteCoordsHint")} value={paste}
             onChange={e => { setPaste(e.target.value); setPasteError(null); }}
-            className="flex-1 border rounded px-2 py-1" />
-          <button type="button" onClick={applyPaste} disabled={readOnly} className="border rounded px-3 py-1">
+            className="flex-1" />
+          <Button type="button" variant="outline" onClick={applyPaste} disabled={readOnly}>
             {t("pasteCoords")}
-          </button>
+          </Button>
         </div>
         {pasteError && <div className="text-sm text-destructive mt-1">{pasteError}</div>}
       </fieldset>
 
       {!readOnly && (
         <div className="flex gap-2">
-          <button type="submit" disabled={pending} className="bg-primary text-primary-foreground rounded px-4 py-2">
+          <Button type="submit" disabled={pending}>
             {t("save")}
-          </button>
-          <button type="button" onClick={() => router.back()} className="border rounded px-4 py-2">
+          </Button>
+          <Button type="button" variant="outline" onClick={() => router.back()}>
             {t("cancel")}
-          </button>
+          </Button>
           {mode === "edit" && initial.isActive && (
-            <button type="button" onClick={onDeactivate} disabled={pending}
-              className="ml-auto text-destructive border border-destructive rounded px-4 py-2">
+            <Button type="button" variant="destructive" onClick={onDeactivate} disabled={pending} className="ml-auto">
               {t("deactivate")}
-            </button>
+            </Button>
           )}
         </div>
       )}
       {readOnly && (
         <div className="flex gap-2">
-          <Link href="/backoffice/stores" className="border rounded px-4 py-2">
-            {t("back")}
-          </Link>
+          <Button asChild variant="outline">
+            <Link href="/backoffice/stores">{t("back")}</Link>
+          </Button>
         </div>
       )}
       </form>
