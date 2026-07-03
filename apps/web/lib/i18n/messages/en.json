@@ -1454,6 +1454,7 @@
     "readOnlyBanner": "Read-only — you lack stores:manage permission.",
     "list": {
       "empty": "No stores yet.",
+      "noSearchResults": "No stores match these filters.",
       "count": "{count, plural, =0 {no stores} one {# store} other {# stores}}",
       "subtitle": "Manage store master data and terms",
       "cardTitle": "Store list",
@@ -1492,7 +1493,13 @@
       "deactivateConfirm": "Deactivate this store? It will disappear from the salesman view.",
       "save": "Save",
       "cancel": "Cancel",
-      "back": "Back"
+      "back": "Back",
+      "sections": {
+        "identity": "Identity",
+        "contact": "Contact & location",
+        "terms": "Business terms",
+        "coords": "Map coordinates"
+      }
     },
     "badge": {
       "putus": "Putus",
@@ -1503,6 +1510,27 @@
       "codeUnique": "Store code already exists.",
       "forbidden": "Permission denied.",
       "notFound": "Store not found."
+    },
+    "detail": {
+      "infoTitle": "Store info",
+      "editTitle": "Edit details",
+      "historyTitle": "Visit history",
+      "noVisits": "No visits yet",
+      "openInMaps": "Open in Maps",
+      "stillOpen": "Still open",
+      "autoClosed": "Auto-closed",
+      "stats": {
+        "totalVisits": "Total visits",
+        "lastVisit": "Last visit",
+        "terms": "Business terms"
+      },
+      "visitTable": {
+        "checkin": "Check-in",
+        "checkout": "Check-out",
+        "duration": "Duration",
+        "user": "Salesman",
+        "coords": "Coords"
+      }
     }
   },
   "pwa": {

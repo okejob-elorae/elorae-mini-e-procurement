@@ -1454,6 +1454,7 @@
     "readOnlyBanner": "Hanya baca — Anda tidak memiliki izin stores:manage.",
     "list": {
       "empty": "Belum ada toko.",
+      "noSearchResults": "Tidak ada toko yang cocok.",
       "count": "{count, plural, =0 {tidak ada toko} other {# toko}}",
       "subtitle": "Kelola data master toko dan terms",
       "cardTitle": "Daftar toko",
@@ -1492,7 +1493,13 @@
       "deactivateConfirm": "Nonaktifkan toko ini? Toko akan hilang dari daftar salesman.",
       "save": "Simpan",
       "cancel": "Batal",
-      "back": "Kembali"
+      "back": "Kembali",
+      "sections": {
+        "identity": "Identitas",
+        "contact": "Kontak & lokasi",
+        "terms": "Terms bisnis",
+        "coords": "Koordinat peta"
+      }
     },
     "badge": {
       "putus": "Putus",
@@ -1503,6 +1510,27 @@
       "codeUnique": "Kode toko sudah dipakai.",
       "forbidden": "Akses ditolak.",
       "notFound": "Toko tidak ditemukan."
+    },
+    "detail": {
+      "infoTitle": "Info toko",
+      "editTitle": "Ubah detail",
+      "historyTitle": "Riwayat kunjungan",
+      "noVisits": "Belum ada kunjungan",
+      "openInMaps": "Buka di Peta",
+      "stillOpen": "Masih terbuka",
+      "autoClosed": "Ditutup otomatis",
+      "stats": {
+        "totalVisits": "Total kunjungan",
+        "lastVisit": "Kunjungan terakhir",
+        "terms": "Terms bisnis"
+      },
+      "visitTable": {
+        "checkin": "Check-in",
+        "checkout": "Check-out",
+        "duration": "Durasi",
+        "user": "Salesman",
+        "coords": "Koordinat"
+      }
     }
   },
   "pwa": {

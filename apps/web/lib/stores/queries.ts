@@ -58,7 +58,10 @@ function serializeStore(s: {
   };
 }
 
-export async function listStores(opts: { activeOnly?: boolean; search?: string } = {}) {
+export async function listStores(
+  opts: { activeOnly?: boolean; search?: string } = {},
+  paging?: { page: number; pageSize: number },
+): Promise<{ items: StoreListItem[]; totalCount: number }> {
   const where: Prisma.StoreWhereInput = {};
   if (opts.activeOnly) where.isActive = true;
   if (opts.search && opts.search.trim()) {
@@ -67,8 +70,15 @@ export async function listStores(opts: { activeOnly?: boolean; search?: string }
       { code: { contains: opts.search.trim() } },
     ];
   }
-  const rows = await prisma.store.findMany({ where, orderBy: { name: "asc" } });
-  return rows.map(serializeStore);
+  const [rows, totalCount] = await Promise.all([
+    prisma.store.findMany({
+      where,
+      orderBy: { name: "asc" },
+      ...(paging ? { skip: (paging.page - 1) * paging.pageSize, take: paging.pageSize } : {}),
+    }),
+    prisma.store.count({ where }),
+  ]);
+  return { items: rows.map(serializeStore), totalCount };
 }
 
 export async function listActiveStoresForPwa() {

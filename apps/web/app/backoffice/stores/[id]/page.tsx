@@ -1,8 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { getStore } from "@/lib/stores/queries";
-import { StoreForm } from "../StoreForm";
+import { getStore, listVisitsForStore } from "@/lib/stores/queries";
+import { StoreDetailView } from "./StoreDetailView";
 
 export default async function EditStorePage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -15,20 +15,21 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
   if (!store) notFound();
 
   const canEdit = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
+  const visits = await listVisitsForStore(store.id, 50);
 
   return (
-    <StoreForm mode="edit" storeId={store.id} readOnly={!canEdit} initial={{
-      code: store.code,
-      name: store.name,
-      address: store.address,
-      phone: store.phone,
-      contactName: store.contactName,
-      termsType: store.termsType,
-      paymentTempo: store.paymentTempo,
-      marginPercent: store.marginPercent,
-      lat: store.lat,
-      lng: store.lng,
-      isActive: store.isActive,
-    }} />
+    <StoreDetailView
+      store={store}
+      canEdit={canEdit}
+      visits={visits.map(v => ({
+        id: v.id,
+        checkinAtIso: v.checkinAt.toISOString(),
+        checkoutAtIso: v.checkoutAt ? v.checkoutAt.toISOString() : null,
+        checkinLat: v.checkinLat,
+        checkinLng: v.checkinLng,
+        autoClosed: v.autoClosed,
+        userLabel: v.user.name ?? v.user.email,
+      }))}
+    />
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Plus, Search, Store } from "lucide-react";
@@ -24,30 +25,64 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Pager } from "@/components/Pager";
 
-export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
+type Props = {
+  stores: StoreListItem[];
+  totalCount: number;
+  search: string;
+  showInactive: boolean;
+  page: number;
+  pageSize: number;
+};
+
+export function StoreListClient({
+  stores,
+  totalCount,
+  search,
+  showInactive,
+  page,
+  pageSize,
+}: Props) {
   const t = useTranslations("stores");
   const tList = useTranslations("stores.list");
   const tTable = useTranslations("stores.list.table");
   const tBadge = useTranslations("stores.badge");
-  const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(false);
+  const router = useRouter();
+  const sp = useSearchParams();
+  const [, startTransition] = useTransition();
+  const [searchInput, setSearchInput] = useState(search);
 
-  const filtered = stores.filter(s => {
-    if (!showInactive && !s.isActive) return false;
-    if (!search.trim()) return true;
-    const q = search.trim().toLowerCase();
-    return s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q);
-  });
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      if (searchInput !== search) pushParam("search", searchInput);
+    }, 300);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
+  function pushParam(key: string, value: string | undefined) {
+    const params = new URLSearchParams(sp.toString());
+    if (!value) params.delete(key);
+    else params.set(key, value);
+    params.delete("page");
+    startTransition(() => router.push(`/backoffice/stores?${params.toString()}`));
+  }
+
+  function toggleShowInactive(next: boolean) {
+    const params = new URLSearchParams(sp.toString());
+    if (next) params.set("showInactive", "1");
+    else params.delete("showInactive");
+    params.delete("page");
+    startTransition(() => router.push(`/backoffice/stores?${params.toString()}`));
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <p className="text-muted-foreground">
-            {tList("subtitle")}
-          </p>
+          <p className="text-muted-foreground">{tList("subtitle")}</p>
         </div>
         <Button asChild>
           <Link href="/backoffice/stores/new">
@@ -62,8 +97,8 @@ export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder={tList("searchPlaceholder")}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
             className="pl-9"
           />
         </div>
@@ -71,7 +106,7 @@ export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
           <Checkbox
             id="show-inactive"
             checked={showInactive}
-            onCheckedChange={(checked) => setShowInactive(checked === true)}
+            onCheckedChange={(checked) => toggleShowInactive(checked === true)}
           />
           <Label htmlFor="show-inactive" className="text-sm font-normal cursor-pointer">
             {tList("showInactive")}
@@ -85,15 +120,17 @@ export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
             <Store className="h-5 w-5" />
             {tList("cardTitle")}
             <span className="text-sm font-normal text-muted-foreground ml-2">
-              ({tList("count", { count: filtered.length })})
+              ({tList("count", { count: totalCount })})
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {filtered.length === 0 ? (
+          {stores.length === 0 ? (
             <div className="text-center py-12">
               <Store className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">{tList("empty")}</p>
+              <p className="text-muted-foreground">
+                {search || showInactive ? tList("noSearchResults") : tList("empty")}
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -110,7 +147,7 @@ export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map(s => (
+                  {stores.map(s => (
                     <TableRow key={s.id}>
                       <TableCell className="font-mono text-xs">
                         <Link
@@ -144,6 +181,23 @@ export function StoreListClient({ stores }: { stores: StoreListItem[] }) {
           )}
         </CardContent>
       </Card>
+
+      <Pager
+        page={page}
+        pageSize={pageSize}
+        total={totalCount}
+        onPageChange={(p) => {
+          const params = new URLSearchParams(sp.toString());
+          params.set("page", String(p));
+          startTransition(() => router.push(`/backoffice/stores?${params.toString()}`));
+        }}
+        onPageSizeChange={(size) => {
+          const params = new URLSearchParams(sp.toString());
+          params.set("pageSize", String(size));
+          params.delete("page");
+          startTransition(() => router.push(`/backoffice/stores?${params.toString()}`));
+        }}
+      />
     </div>
   );
 }
