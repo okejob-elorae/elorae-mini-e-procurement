@@ -17,20 +17,18 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
   const canEdit = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
 
   return (
-    <div className="p-6 space-y-4">
-      <StoreForm mode="edit" storeId={store.id} readOnly={!canEdit} initial={{
-        code: store.code,
-        name: store.name,
-        address: store.address,
-        phone: store.phone,
-        contactName: store.contactName,
-        termsType: store.termsType,
-        paymentTempo: store.paymentTempo,
-        marginPercent: store.marginPercent,
-        lat: store.lat,
-        lng: store.lng,
-        isActive: store.isActive,
-      }} />
-    </div>
+    <StoreForm mode="edit" storeId={store.id} readOnly={!canEdit} initial={{
+      code: store.code,
+      name: store.name,
+      address: store.address,
+      phone: store.phone,
+      contactName: store.contactName,
+      termsType: store.termsType,
+      paymentTempo: store.paymentTempo,
+      marginPercent: store.marginPercent,
+      lat: store.lat,
+      lng: store.lng,
+      isActive: store.isActive,
+    }} />
   );
 }

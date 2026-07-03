@@ -13,9 +13,5 @@ export default async function StoresPage() {
   if (!hasPermission(perms, PERMISSIONS.STORES_VIEW)) redirect("/backoffice");
 
   const stores = await listStores({});
-  return (
-    <div className="p-6 space-y-4">
-      <StoreListClient stores={stores} />
-    </div>
-  );
+  return <StoreListClient stores={stores} />;
 }
