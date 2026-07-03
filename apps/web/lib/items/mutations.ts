@@ -128,7 +128,7 @@ function validateAndNormalizeVariants(
       throw new Error(`Duplicate variant SKU "${row.sku}"`);
     }
     seen.add(key);
-    const barcode = (row.barcode ?? '').trim();
+    const barcode = ((row as Record<string, string>).barcode ?? '').trim();
     if (barcode) {
       const barcodeKey = barcode.toLowerCase();
       if (seenBarcodes.has(barcodeKey)) {

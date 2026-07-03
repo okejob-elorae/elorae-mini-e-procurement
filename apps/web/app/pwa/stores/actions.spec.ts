@@ -146,7 +146,8 @@ describe("checkIn / checkOut server actions", () => {
     await checkOut({ visitId: visit.id, lat: 10, lng: 20 });
 
     const second = await checkOut({ visitId: visit.id, lat: 45, lng: 99 });
-    expect(second.alreadyClosed).toBe(true);
+    expect("ok" in second && second.ok === false).toBe(false);
+    expect((second as { alreadyClosed: boolean }).alreadyClosed).toBe(true);
 
     const row = await prisma.storeVisit.findUnique({ where: { id: visit.id } });
     // Second call must not overwrite coords.

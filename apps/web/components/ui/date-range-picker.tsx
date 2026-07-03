@@ -63,9 +63,10 @@ function formatRangeLabel(
 ): string {
   if (!range?.from) return placeholder;
   const fromLabel = toDisplayDate(range.from);
-  const toLabel = range.to ? toDisplayDate(range.to) : null;
+  const toDate = range.to;
+  const toLabel = toDate ? toDisplayDate(toDate) : null;
 
-  if (!toLabel) {
+  if (!toLabel || !toDate) {
     if (showTimeInLabel && rangeHasExplicitTime({ from: range.from })) {
       return `${fromLabel} ${formatTimeDisplay(range.from)}`;
     }
@@ -77,8 +78,8 @@ function formatRangeLabel(
       ? ` ${formatTimeDisplay(range.from)}`
       : "";
   const toTime =
-    showTimeInLabel && rangeHasExplicitTime({ to: range.to })
-      ? ` ${formatTimeDisplay(range.to)}`
+    showTimeInLabel && rangeHasExplicitTime({ to: toDate })
+      ? ` ${formatTimeDisplay(toDate)}`
       : "";
 
   return `${fromLabel}${fromTime} – ${toLabel}${toTime}`;
