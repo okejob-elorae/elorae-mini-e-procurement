@@ -136,8 +136,10 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   const lines = useMemo(() => {
     if (!opname) return [];
     if (isFabric && Array.isArray(opname.rolls)) {
+      // serializeForClient already coerced Decimal → number at runtime; TS still
+      // sees Decimal on the Prisma type, so route through `unknown` to accept.
       return buildRollLines(
-        opname.rolls as Array<{
+        opname.rolls as unknown as Array<{
           id: string;
           rollCode: string;
           itemName: string;
@@ -149,7 +151,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
     }
     if (Array.isArray(opname.items)) {
       return buildItemLines(
-        opname.items as Array<{
+        opname.items as unknown as Array<{
           id: string;
           itemName: string;
           variantSku?: string | null;
