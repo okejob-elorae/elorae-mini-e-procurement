@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { CheckInButton } from "./CheckInButton";
 import { CheckOutButton } from "./CheckOutButton";
+import { Badge } from "@/components/ui/badge";
 
 type StoreProps = {
   id: string;
@@ -55,7 +56,12 @@ export function StoreDetailShell({ store, active, history }: Props) {
     <div className="p-4 space-y-4">
       <h1 className="text-xl font-bold">{store.name}</h1>
       <div className="text-sm space-y-1">
-        <div>{store.code} · {store.termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}</div>
+        <div className="flex items-center gap-2">
+          <span>{store.code}</span>
+          <Badge variant={store.termsType === "PUTUS" ? "outline" : "secondary"}>
+            {store.termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}
+          </Badge>
+        </div>
         <div>{store.address}</div>
         {store.phone && <div>{store.phone}</div>}
         {store.contactName && <div>{store.contactName}</div>}
@@ -89,7 +95,7 @@ export function StoreDetailShell({ store, active, history }: Props) {
                   {new Date(v.checkinAtIso).toLocaleString()} → {v.checkoutAtIso ? new Date(v.checkoutAtIso).toLocaleString() : t("stillOpen")}
                 </div>
                 <div className="flex gap-2 items-center">
-                  {v.autoClosed && <span className="text-xs bg-muted rounded px-2 py-0.5">{t("autoClosedBadge")}</span>}
+                  {v.autoClosed && <Badge variant="secondary">{t("autoClosedBadge")}</Badge>}
                   <a
                     href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
                     target="_blank"

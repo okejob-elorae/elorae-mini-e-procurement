@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { checkOut } from "../actions";
+import { Button } from "@/components/ui/button";
 
 export function CheckOutButton({ visitId }: { visitId: string }) {
   const t = useTranslations("pwa.checkIn");
@@ -32,14 +33,13 @@ export function CheckOutButton({ visitId }: { visitId: string }) {
 
   return (
     <div className="space-y-2">
-      <button onClick={onTap} disabled={pending}
-        className="w-full bg-destructive text-destructive-foreground rounded py-3 text-lg font-medium">
+      <Button type="button" variant="destructive" onClick={onTap} disabled={pending} className="w-full py-3 text-lg font-medium">
         {t("checkOutButton")}
-      </button>
+      </Button>
       {error && (
         <div className="text-sm text-destructive flex items-center gap-2">
           <span>{error}</span>
-          <button onClick={onTap} className="underline">{t("coordsRetry")}</button>
+          <Button type="button" variant="link" size="sm" onClick={onTap}>{t("coordsRetry")}</Button>
         </div>
       )}
     </div>

@@ -3,6 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { checkIn } from "../actions";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 type PermState = "prompt" | "granted" | "denied" | "unknown";
 
@@ -49,7 +51,11 @@ export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
   }
 
   if (perm === "denied") {
-    return <div className="rounded border border-destructive p-3 text-sm">{t("permissionDenied")}</div>;
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>{t("permissionDenied")}</AlertDescription>
+      </Alert>
+    );
   }
 
   const label = autoCloseStoreName
@@ -58,14 +64,13 @@ export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
 
   return (
     <div className="space-y-2">
-      <button onClick={onTap} disabled={pending}
-        className="w-full bg-primary text-primary-foreground rounded py-3 text-lg font-medium">
+      <Button type="button" onClick={onTap} disabled={pending} className="w-full py-3 text-lg font-medium">
         {label}
-      </button>
+      </Button>
       {error && (
         <div className="text-sm text-destructive flex items-center gap-2">
           <span>{error}</span>
-          <button onClick={onTap} className="underline">{t("coordsRetry")}</button>
+          <Button type="button" variant="link" size="sm" onClick={onTap}>{t("coordsRetry")}</Button>
         </div>
       )}
     </div>

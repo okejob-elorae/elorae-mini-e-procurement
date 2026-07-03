@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { CheckOutButton } from "./stores/[id]/CheckOutButton";
+import { Button } from "@/components/ui/button";
 
 type PermState = "prompt" | "granted" | "denied" | "unknown";
 
@@ -54,12 +55,9 @@ export function HomeShell({ activeVisit, stores, recentStores, onLogout }: Props
 
   const logoutFooter = (
     <form action={onLogout} className="pt-2">
-      <button
-        type="submit"
-        className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
-      >
+      <Button type="submit" variant="ghost">
         {tAuth("logout")}
-      </button>
+      </Button>
     </form>
   );
 
@@ -109,15 +107,15 @@ export function HomeShell({ activeVisit, stores, recentStores, onLogout }: Props
       )}
 
       {perm === "prompt" && (
-        <button onClick={requestPermission} className="text-sm underline text-muted-foreground">
+        <Button type="button" variant="link" size="sm" onClick={requestPermission} className="text-muted-foreground">
           {t("enableChip")}
-        </button>
+        </Button>
       )}
 
       {(perm === "denied" || perm === "prompt") && (
-        <Link href="/pwa/stores" className="block border rounded p-3 text-center">
-          {t("browse")}
-        </Link>
+        <Button asChild variant="outline" className="w-full">
+          <Link href="/pwa/stores">{t("browse")}</Link>
+        </Button>
       )}
 
       {perm === "denied" && (

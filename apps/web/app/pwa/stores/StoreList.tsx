@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 type PermState = "prompt" | "granted" | "denied" | "unknown";
 type StoreItem = StoreWithCoords & { code: string; termsType: "PUTUS" | "KONSI" };
@@ -47,9 +49,8 @@ export function StoreList({ stores }: { stores: StoreItem[] }) {
 
   return (
     <div className="p-4 space-y-3">
-      <input placeholder="Search"
-        value={search} onChange={e => setSearch(e.target.value)}
-        className="w-full border rounded px-3 py-2" />
+      <Input placeholder="Search"
+        value={search} onChange={e => setSearch(e.target.value)} />
 
       <ul className="space-y-2">
         {ranked.map(({ store, distanceMeters }) => (
@@ -60,11 +61,11 @@ export function StoreList({ stores }: { stores: StoreItem[] }) {
                 <div className="font-medium">{store.name}</div>
                 <div className="text-xs text-muted-foreground">{(store as StoreItem).code}</div>
               </div>
-              <span className="text-xs rounded px-2 py-0.5 bg-muted">
+              <Badge variant={(store as StoreItem).termsType === "PUTUS" ? "outline" : "secondary"}>
                 {(store as StoreItem).termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}
-              </span>
+              </Badge>
               {distanceMeters !== null && (
-                <span className="text-xs text-muted-foreground">{formatDistance(distanceMeters)}</span>
+                <Badge variant="secondary">{formatDistance(distanceMeters)}</Badge>
               )}
             </Link>
           </li>
