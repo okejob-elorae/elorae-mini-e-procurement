@@ -27,6 +27,7 @@ import {
   Activity,
   Store,
   Wallet,
+  MapPin,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -98,6 +99,12 @@ const navItems: NavItem[] = [
       { labelKey: 'navItemsRaw', href: '/backoffice/items?type=raw' },
       { labelKey: 'navItemsFinished', href: '/backoffice/items?type=FINISHED_GOOD' },
     ],
+  },
+  {
+    labelKey: "stores",
+    href: "/backoffice/stores",
+    icon: MapPin,
+    permission: PERMISSIONS.STORES_VIEW,
   },
   {
     labelKey: 'purchaseOrders',

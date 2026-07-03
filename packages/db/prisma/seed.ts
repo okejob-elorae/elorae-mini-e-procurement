@@ -163,6 +163,9 @@ async function main() {
     { code: 'coa:manage', module: 'coa', action: 'manage', description: 'Create / update / deactivate Chart of Accounts' },
     // PWA
     { code: 'pwa:access', module: 'pwa', action: 'access', description: 'Access to the PWA (/pwa/*) route tree' },
+    // Stores (Field Sales — SFA)
+    { code: 'stores:view', module: 'stores', action: 'view', description: 'View stores' },
+    { code: 'stores:manage', module: 'stores', action: 'manage', description: 'Create, edit, deactivate stores' },
   ];
 
   // Upsert all permissions

@@ -47,6 +47,7 @@
     "navItemsCategory": "Kategori",
     "navItemsRaw": "Barang Mentah",
     "navItemsFinished": "Barang Jadi",
+    "stores": "Toko",
     "purchaseOrders": "Pesanan Pembelian",
     "supplierPayment": "Pembayaran Pemasok",
     "inventory": "Inventori",
@@ -1444,6 +1445,140 @@
       "colQty": "Jml",
       "thankYou": "Terima kasih telah berbelanja di ELORAÉ!",
       "questionsContact": "Pertanyaan: {email}"
+    }
+  },
+  "stores": {
+    "title": "Toko",
+    "new": "Toko baru",
+    "edit": "Ubah toko",
+    "readOnlyBanner": "Hanya baca — Anda tidak memiliki izin stores:manage.",
+    "list": {
+      "empty": "Belum ada toko.",
+      "noSearchResults": "Tidak ada toko yang cocok.",
+      "count": "{count, plural, =0 {tidak ada toko} other {# toko}}",
+      "subtitle": "Kelola data master toko dan terms",
+      "cardTitle": "Daftar toko",
+      "searchPlaceholder": "Cari berdasarkan nama atau kode",
+      "showInactive": "Tampilkan nonaktif",
+      "table": {
+        "code": "Kode",
+        "name": "Nama",
+        "terms": "Terms",
+        "tempo": "Tempo",
+        "margin": "Margin %",
+        "address": "Alamat",
+        "status": "Status",
+        "active": "Aktif"
+      }
+    },
+    "form": {
+      "code": "Kode",
+      "name": "Nama",
+      "address": "Alamat",
+      "phone": "Telepon",
+      "contactName": "Kontak person",
+      "termsType": "Tipe terms",
+      "termsPutus": "Putus",
+      "termsKonsi": "Konsi",
+      "paymentTempo": "Tempo pembayaran (hari)",
+      "marginPercent": "Margin (%)",
+      "coords": "Koordinat",
+      "lat": "Latitude",
+      "lng": "Longitude",
+      "pasteCoords": "Tempel koordinat",
+      "pasteCoordsHint": "Tempel \"-6.2088, 106.8456\" untuk mengisi keduanya",
+      "pasteCoordsInvalid": "Gagal parsing. Format: \"lat, lng\"",
+      "isActive": "Aktif",
+      "deactivate": "Nonaktifkan",
+      "deactivateConfirm": "Nonaktifkan toko ini? Toko akan hilang dari daftar salesman.",
+      "save": "Simpan",
+      "cancel": "Batal",
+      "back": "Kembali",
+      "sections": {
+        "identity": "Identitas",
+        "contact": "Kontak & lokasi",
+        "terms": "Terms bisnis",
+        "coords": "Koordinat peta"
+      }
+    },
+    "badge": {
+      "putus": "Putus",
+      "konsi": "Konsi",
+      "inactive": "Nonaktif"
+    },
+    "errors": {
+      "codeUnique": "Kode toko sudah dipakai.",
+      "forbidden": "Akses ditolak.",
+      "notFound": "Toko tidak ditemukan."
+    },
+    "detail": {
+      "infoTitle": "Info toko",
+      "editTitle": "Ubah detail",
+      "historyTitle": "Riwayat kunjungan",
+      "noVisits": "Belum ada kunjungan",
+      "openInMaps": "Buka di Peta",
+      "stillOpen": "Masih terbuka",
+      "autoClosed": "Ditutup otomatis",
+      "stats": {
+        "totalVisits": "Total kunjungan",
+        "lastVisit": "Kunjungan terakhir",
+        "terms": "Terms bisnis"
+      },
+      "visitTable": {
+        "checkin": "Check-in",
+        "checkout": "Check-out",
+        "duration": "Durasi",
+        "user": "Salesman",
+        "coords": "Koordinat"
+      }
+    }
+  },
+  "pwa": {
+    "checkIn": {
+      "button": "Check-in",
+      "buttonAutoClose": "Check-in (menutup kunjungan di {storeName})",
+      "checkOutButton": "Check-out",
+      "openInMaps": "Buka di Peta",
+      "permissionDenied": "Izin lokasi diperlukan. Aktifkan di pengaturan browser lalu muat ulang.",
+      "permissionPromptChip": "Aktifkan lokasi untuk check-in",
+      "coordsRetry": "Coba lagi",
+      "coordsError": "Tidak dapat membaca lokasi. Coba lagi.",
+      "storeInactive": "Toko ini sudah tidak aktif.",
+      "history": "Riwayat kunjungan",
+      "historyEmpty": "Belum ada kunjungan.",
+      "stillOpen": "Masih terbuka",
+      "autoClosedBadge": "Ditutup otomatis",
+      "viewCoords": "Lihat koordinat",
+      "locating": "Mengambil lokasi…",
+      "submitting": "Mengirim…"
+    },
+    "nearest": {
+      "title": "Toko terdekat",
+      "seeAll": "Lihat semua toko",
+      "browse": "Jelajah toko",
+      "noActive": "Tidak ada kunjungan aktif",
+      "activeAt": "Aktif di {storeName}",
+      "checkedInAgo": "Check-in {time}",
+      "recent": "Toko terakhir",
+      "enableChip": "Aktifkan lokasi untuk melihat toko terdekat",
+      "enableHint": "Aktifkan lokasi di pengaturan browser untuk melihat toko terdekat.",
+      "noStoresWithCoords": "Belum ada toko dengan koordinat.",
+      "loading": "Mencari toko terdekat…",
+      "greeting": "Halo,",
+      "activeBadge": "Kunjungan aktif",
+      "activeStoreLabel": "Kamu sedang check-in di sini",
+      "noActiveHint": "Pilih toko untuk mulai kunjungan.",
+      "enableCta": "Aktifkan"
+    },
+    "nav": {
+      "home": "Beranda"
+    },
+    "stores": {
+      "title": "Toko",
+      "count": "{count, plural, =0 {Tidak ada toko} other {# toko}}",
+      "searchPlaceholder": "Cari nama atau kode",
+      "empty": "Belum ada toko.",
+      "noSearchResults": "Tidak ada toko yang cocok."
     }
   }
 }

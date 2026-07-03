@@ -47,6 +47,7 @@
     "navItemsCategory": "Category",
     "navItemsRaw": "Raw Materials",
     "navItemsFinished": "Finished Goods",
+    "stores": "Stores",
     "purchaseOrders": "Purchase Orders",
     "supplierPayment": "Supplier Payment",
     "inventory": "Inventory",
@@ -1444,6 +1445,140 @@
       "colQty": "Qty",
       "thankYou": "Thank you for shopping with ELORAÉ!",
       "questionsContact": "For questions: {email}"
+    }
+  },
+  "stores": {
+    "title": "Stores",
+    "new": "New store",
+    "edit": "Edit store",
+    "readOnlyBanner": "Read-only — you lack stores:manage permission.",
+    "list": {
+      "empty": "No stores yet.",
+      "noSearchResults": "No stores match these filters.",
+      "count": "{count, plural, =0 {no stores} one {# store} other {# stores}}",
+      "subtitle": "Manage store master data and terms",
+      "cardTitle": "Store list",
+      "searchPlaceholder": "Search by name or code",
+      "showInactive": "Show inactive",
+      "table": {
+        "code": "Code",
+        "name": "Name",
+        "terms": "Terms",
+        "tempo": "Tempo",
+        "margin": "Margin %",
+        "address": "Address",
+        "status": "Status",
+        "active": "Active"
+      }
+    },
+    "form": {
+      "code": "Code",
+      "name": "Name",
+      "address": "Address",
+      "phone": "Phone",
+      "contactName": "Contact person",
+      "termsType": "Terms type",
+      "termsPutus": "Putus",
+      "termsKonsi": "Konsi",
+      "paymentTempo": "Payment tempo (days)",
+      "marginPercent": "Margin (%)",
+      "coords": "Coordinates",
+      "lat": "Latitude",
+      "lng": "Longitude",
+      "pasteCoords": "Paste coords",
+      "pasteCoordsHint": "Paste \"-6.2088, 106.8456\" to fill both",
+      "pasteCoordsInvalid": "Could not parse. Use format: \"lat, lng\"",
+      "isActive": "Active",
+      "deactivate": "Deactivate",
+      "deactivateConfirm": "Deactivate this store? It will disappear from the salesman view.",
+      "save": "Save",
+      "cancel": "Cancel",
+      "back": "Back",
+      "sections": {
+        "identity": "Identity",
+        "contact": "Contact & location",
+        "terms": "Business terms",
+        "coords": "Map coordinates"
+      }
+    },
+    "badge": {
+      "putus": "Putus",
+      "konsi": "Konsi",
+      "inactive": "Inactive"
+    },
+    "errors": {
+      "codeUnique": "Store code already exists.",
+      "forbidden": "Permission denied.",
+      "notFound": "Store not found."
+    },
+    "detail": {
+      "infoTitle": "Store info",
+      "editTitle": "Edit details",
+      "historyTitle": "Visit history",
+      "noVisits": "No visits yet",
+      "openInMaps": "Open in Maps",
+      "stillOpen": "Still open",
+      "autoClosed": "Auto-closed",
+      "stats": {
+        "totalVisits": "Total visits",
+        "lastVisit": "Last visit",
+        "terms": "Business terms"
+      },
+      "visitTable": {
+        "checkin": "Check-in",
+        "checkout": "Check-out",
+        "duration": "Duration",
+        "user": "Salesman",
+        "coords": "Coords"
+      }
+    }
+  },
+  "pwa": {
+    "checkIn": {
+      "button": "Check in",
+      "buttonAutoClose": "Check in (auto-closes visit at {storeName})",
+      "checkOutButton": "Check out",
+      "openInMaps": "Open in Maps",
+      "permissionDenied": "Location permission required. Enable it in your browser settings, then reload.",
+      "permissionPromptChip": "Enable location for check-in",
+      "coordsRetry": "Retry",
+      "coordsError": "Could not read location. Try again.",
+      "storeInactive": "This store is no longer active.",
+      "history": "Visit history",
+      "historyEmpty": "No visits yet.",
+      "stillOpen": "Still open",
+      "autoClosedBadge": "Auto-closed",
+      "viewCoords": "View coords",
+      "locating": "Getting location…",
+      "submitting": "Submitting…"
+    },
+    "nearest": {
+      "title": "Nearest stores",
+      "seeAll": "See all stores",
+      "browse": "Browse stores",
+      "noActive": "No active visit",
+      "activeAt": "Active at {storeName}",
+      "checkedInAgo": "Checked in {time}",
+      "recent": "Recent stores",
+      "enableChip": "Enable location to see nearest stores",
+      "enableHint": "Enable location in browser settings for a nearest-stores view.",
+      "noStoresWithCoords": "No stores have coordinates yet.",
+      "loading": "Finding nearest stores…",
+      "greeting": "Hello,",
+      "activeBadge": "Active visit",
+      "activeStoreLabel": "You are checked in here",
+      "noActiveHint": "Pick a store to start your visit.",
+      "enableCta": "Enable"
+    },
+    "nav": {
+      "home": "Home"
+    },
+    "stores": {
+      "title": "Stores",
+      "count": "{count, plural, =0 {No stores} one {# store} other {# stores}}",
+      "searchPlaceholder": "Search by name or code",
+      "empty": "No stores yet.",
+      "noSearchResults": "No stores match your search."
     }
   }
 }
