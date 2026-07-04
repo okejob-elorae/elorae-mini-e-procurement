@@ -120,32 +120,36 @@ export function CatalogShell({
 
   function onSubmit() {
     startTransition(async () => {
-      const res = await submitFieldSalesOrder({
-        storeId,
-        note: note.trim() || undefined,
-        lines: buildOrderLines(cartLines),
-      });
-      if (res.ok) {
-        toast.success(`Pesanan ${res.orderNo} terkirim`);
-        setCart(new Map());
-        router.push(`/pwa/stores/${storeId}`);
-        return;
-      }
-      let msg: string;
-      if (res.code === "MIN_QTY") {
-        const parts = res.violations.map((v) => {
-          const name = cartLines.find((l) => l.itemId === v.itemId)?.nameId ?? "produk";
-          return `${name} (min ${v.requiredMin})`;
+      try {
+        const res = await submitFieldSalesOrder({
+          storeId,
+          note: note.trim() || undefined,
+          lines: buildOrderLines(cartLines),
         });
-        msg = `Jumlah di bawah minimum: ${parts.join(", ")}.`;
-      } else if (res.code === "NO_ACTIVE_VISIT") {
-        msg = "Check in dulu untuk memesan.";
-      } else if (res.code === "UNAUTHORIZED") {
-        msg = "Sesi berakhir. Masuk lagi.";
-      } else {
-        msg = "Tidak ada item.";
+        if (res.ok) {
+          toast.success(`Pesanan ${res.orderNo} terkirim`);
+          setCart(new Map());
+          router.push(`/pwa/stores/${storeId}`);
+          return;
+        }
+        let msg: string;
+        if (res.code === "MIN_QTY") {
+          const parts = res.violations.map((v) => {
+            const name = cartLines.find((l) => l.itemId === v.itemId)?.nameId ?? "produk";
+            return `${name} (min ${v.requiredMin})`;
+          });
+          msg = `Jumlah di bawah minimum: ${parts.join(", ")}.`;
+        } else if (res.code === "NO_ACTIVE_VISIT") {
+          msg = "Check in dulu untuk memesan.";
+        } else if (res.code === "UNAUTHORIZED") {
+          msg = "Sesi berakhir. Masuk lagi.";
+        } else {
+          msg = "Tidak ada item.";
+        }
+        toast.error(msg);
+      } catch {
+        toast.error("Gagal mengirim pesanan. Coba lagi.");
       }
-      toast.error(msg);
     });
   }
 
