@@ -265,6 +265,9 @@ export function CatalogShell({
                         <span className="text-sm font-semibold tabular-nums">{rupiah(it.price)}</span>
                       </>
                     )}
+                    {it.price == null && it.available > 0 && (
+                      <span className="text-xs italic text-muted-foreground">Harga belum diset</span>
+                    )}
                     {canOrder && hasActiveVisit && (
                       <div className="flex items-center gap-1.5">
                         <Button
