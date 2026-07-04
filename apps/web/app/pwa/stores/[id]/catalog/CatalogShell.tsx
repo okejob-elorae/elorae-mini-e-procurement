@@ -94,7 +94,7 @@ export function CatalogShell({
   }, [showCartBar]);
 
   useLayoutEffect(() => {
-    if (view !== "review") {
+    if (view !== "review" || cartLines.length === 0) {
       setReviewBarHeight(0);
       return;
     }
@@ -426,7 +426,7 @@ export function CatalogShell({
         </>
       )}
 
-      {view === "review" && (
+      {view === "review" && cartLines.length > 0 && (
         <div
           ref={reviewBarRef}
           className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
