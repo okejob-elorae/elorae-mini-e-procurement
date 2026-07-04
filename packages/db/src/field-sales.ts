@@ -51,25 +51,41 @@ export function buildOfflineSalesHistoryRows(input: {
     productCategory: string | null;
   }>;
 }): OfflineSalesHistoryRow[] {
-  return input.lines.map((l) => ({
-    channel: "OFFLINE",
-    orderId: input.orderNo,
-    orderStatus: "COMPLETED",
-    variantSku: l.variantSku,
-    parentSku: l.parentSku,
-    productName: l.productName,
-    quantity: l.qty,
-    returnedQuantity: 0,
-    netQuantity: l.qty,
-    unitPrice: l.unitPrice,
-    unitPriceAfterDiscount: l.unitPrice,
-    lineTotal: l.lineTotal,
-    orderTotal: input.orderTotal,
-    itemId: l.itemId,
-    erpVariantSku: l.variantSku,
-    jubelioItemId: null,
-    resolutionStatus: "MAPPED",
-    importBatchId: null,
-    productCategory: l.productCategory,
-  }));
+  const rowsByVariantSku = new Map<string, OfflineSalesHistoryRow>();
+  const orderedKeys: string[] = [];
+
+  for (const l of input.lines) {
+    const resolvedVariantSku = l.variantSku || l.parentSku;
+    const existing = rowsByVariantSku.get(resolvedVariantSku);
+    if (existing) {
+      existing.quantity += l.qty;
+      existing.netQuantity += l.qty;
+      existing.lineTotal += l.lineTotal;
+      continue;
+    }
+    rowsByVariantSku.set(resolvedVariantSku, {
+      channel: "OFFLINE",
+      orderId: input.orderNo,
+      orderStatus: "COMPLETED",
+      variantSku: resolvedVariantSku,
+      parentSku: l.parentSku,
+      productName: l.productName,
+      quantity: l.qty,
+      returnedQuantity: 0,
+      netQuantity: l.qty,
+      unitPrice: l.unitPrice,
+      unitPriceAfterDiscount: l.unitPrice,
+      lineTotal: l.lineTotal,
+      orderTotal: input.orderTotal,
+      itemId: l.itemId,
+      erpVariantSku: resolvedVariantSku,
+      jubelioItemId: null,
+      resolutionStatus: "MAPPED",
+      importBatchId: null,
+      productCategory: l.productCategory,
+    });
+    orderedKeys.push(resolvedVariantSku);
+  }
+
+  return orderedKeys.map((key) => rowsByVariantSku.get(key)!);
 }
