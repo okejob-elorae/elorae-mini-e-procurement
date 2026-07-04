@@ -11,11 +11,13 @@ d("field-sales lifecycle writers (test bed only)", () => {
   const sku = `TEST-FSW-${Math.random().toString(36).slice(2, 10)}`;
   let uomId = "";
   let itemId = "";
+  let itemId2 = "";
   let storeId = "";
   let salesmanId = "";
   let visitId = "";
 
   beforeEach(async () => {
+    itemId2 = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000 } });
@@ -32,6 +34,10 @@ d("field-sales lifecycle writers (test bed only)", () => {
   afterEach(async () => {
     await prisma.salesHistory.deleteMany({ where: { itemId } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
+    if (itemId2) {
+      await prisma.salesHistory.deleteMany({ where: { itemId: itemId2 } });
+      await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: itemId2 } });
+    }
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
     await prisma.storeVisit.deleteMany({ where: { id: visitId } });
     await prisma.store.deleteMany({ where: { id: storeId } });
@@ -39,6 +45,12 @@ d("field-sales lifecycle writers (test bed only)", () => {
     await prisma.stockAdjustment.deleteMany({ where: { itemId } });
     await prisma.inventoryValue.deleteMany({ where: { itemId } });
     await prisma.item.deleteMany({ where: { id: itemId } });
+    if (itemId2) {
+      await prisma.stockReservation.deleteMany({ where: { itemId: itemId2 } });
+      await prisma.stockAdjustment.deleteMany({ where: { itemId: itemId2 } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: itemId2 } });
+      await prisma.item.deleteMany({ where: { id: itemId2 } });
+    }
     await prisma.uOM.deleteMany({ where: { id: uomId } });
   });
 
@@ -77,6 +89,26 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(hist[0].channel).toBe("OFFLINE");
     expect(hist[0].orderStatus).toBe("COMPLETED");
     expect(hist[0].importBatchId).toBeNull();
+  });
+
+  it("approve of a 2-line order (two distinct non-variant items) writes 2 SalesHistory rows", async () => {
+    const sku2 = `${sku}-B`;
+    const item2 = await prisma.item.create({ data: { sku: sku2, nameId: "T2", nameEn: "T2", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 } });
+    itemId2 = item2.id;
+    await prisma.inventoryValue.create({ data: { itemId: itemId2, variantSku: "", qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 } });
+
+    const { orderId, orderNo } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [line(), { itemId: itemId2, variantSku: "", productName: "T2", qty: 6, unitPrice: 40000 }],
+    });
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+
+    const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
+    expect(hist).toHaveLength(2);
+    expect(hist.map((h) => h.variantSku).sort()).toEqual([sku, sku2].sort());
+    expect(hist.every((h) => h.channel === "OFFLINE" && h.orderStatus === "COMPLETED")).toBe(true);
   });
 
   it("reject releases the hold", async () => {
