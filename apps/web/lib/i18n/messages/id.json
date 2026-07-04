@@ -40,6 +40,7 @@
     "navSalesOrders": "Pesanan",
     "navFulfillment": "Pemenuhan",
     "navSalesReturns": "Pengembalian",
+    "navFieldSalesOrders": "Pesanan Lapangan",
     "finance": "Keuangan",
     "navCoa": "Bagan Akun",
     "items": "Item",
@@ -1906,5 +1907,23 @@
       "empty": "Belum ada toko.",
       "noSearchResults": "Tidak ada toko yang cocok."
     }
+  },
+  "fieldSalesOrders": {
+    "pageTitle": "Pesanan Lapangan",
+    "subtitle": "Pesanan putus dari tim sales lapangan yang menunggu persetujuan",
+    "search": "Cari nomor pesanan atau nama toko",
+    "status": "Status",
+    "statusAll": "Semua",
+    "statusPending": "Menunggu Persetujuan",
+    "statusApproved": "Disetujui",
+    "statusRejected": "Ditolak",
+    "reset": "Reset",
+    "colOrderNo": "No. Pesanan",
+    "colStore": "Toko",
+    "colSalesman": "Sales",
+    "colTotal": "Total",
+    "colCreated": "Dibuat",
+    "colStatus": "Status",
+    "empty": "Belum ada pesanan."
   }
 }

@@ -40,6 +40,7 @@
     "navSalesOrders": "Sales Orders",
     "navFulfillment": "Fulfillment",
     "navSalesReturns": "Returns",
+    "navFieldSalesOrders": "Field Orders",
     "finance": "Finance",
     "navCoa": "Chart of Accounts",
     "items": "Items",
@@ -1906,5 +1907,23 @@
       "empty": "No stores yet.",
       "noSearchResults": "No stores match your search."
     }
+  },
+  "fieldSalesOrders": {
+    "pageTitle": "Field Orders",
+    "subtitle": "Putus orders from field sales awaiting approval",
+    "search": "Search by order number or store name",
+    "status": "Status",
+    "statusAll": "All",
+    "statusPending": "Pending Approval",
+    "statusApproved": "Approved",
+    "statusRejected": "Rejected",
+    "reset": "Reset",
+    "colOrderNo": "Order No.",
+    "colStore": "Store",
+    "colSalesman": "Salesman",
+    "colTotal": "Total",
+    "colCreated": "Created",
+    "colStatus": "Status",
+    "empty": "No orders yet."
   }
 }
