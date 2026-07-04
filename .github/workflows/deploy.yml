@@ -68,15 +68,12 @@ jobs:
             git fetch origin master
             git reset --hard origin/master
 
-  deploy-web:
-    name: Deploy web
-    needs: [changes, pull]
-    if: |
-      (github.event_name == 'push' && needs.changes.outputs.web == 'true') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'web'))
+  migrate:
+    name: Migrate database
+    needs: pull
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and rebuild web
+      - name: SSH and apply migrations
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -84,35 +81,10 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           timeout: 2m
-          command_timeout: 15m
+          command_timeout: 10m
           script: |
             set -euo pipefail
             cd /srv/elorae
-            docker compose -f docker-compose.prod.yml up -d --build web
-            docker image prune -f
-            docker builder prune -af --filter until=24h
-
-  deploy-api:
-    name: Deploy api
-    needs: [changes, pull]
-    if: |
-      (github.event_name == 'push' && needs.changes.outputs.api == 'true') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'api'))
-    runs-on: ubuntu-latest
-    steps:
-      - name: SSH and rebuild api
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          timeout: 2m
-          command_timeout: 15m
-          script: |
-            set -euo pipefail
-            cd /srv/elorae
-            docker compose -f docker-compose.prod.yml build api
 
             # Apply pending Prisma migrations via mariadb client (skip prisma migrate engine —
             # it refuses to connect to the --skip-ssl MariaDB regardless of URL params).
@@ -142,8 +114,59 @@ jobs:
                 docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae -e "INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, started_at, applied_steps_count) VALUES ('$UUID', '$CHECKSUM', NOW(3), '$NAME', NOW(3), 1);"
               fi
             done
-            cd /srv/elorae
 
-            docker compose -f docker-compose.prod.yml up -d --no-build api
+  deploy-api:
+    name: Deploy api
+    needs: [changes, migrate]
+    if: |
+      (github.event_name == 'push' && needs.changes.outputs.api == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'api'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and rebuild api
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 2m
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /srv/elorae
+            docker compose -f docker-compose.prod.yml up -d --build api
+            docker image prune -f
+            docker builder prune -af --filter until=24h
+
+  deploy-web:
+    name: Deploy web
+    needs: [changes, migrate, deploy-api]
+    # Runs after api (sequential). always() lets it evaluate even when deploy-api is
+    # skipped (api unchanged); it still requires migrate to have succeeded and deploy-api
+    # to not have failed, plus web to have changed.
+    if: |
+      always() &&
+      needs.migrate.result == 'success' &&
+      (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped') &&
+      (
+        (github.event_name == 'push' && needs.changes.outputs.web == 'true') ||
+        (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'web'))
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and rebuild web
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 2m
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /srv/elorae
+            docker compose -f docker-compose.prod.yml up -d --build web
             docker image prune -f
             docker builder prune -af --filter until=24h
