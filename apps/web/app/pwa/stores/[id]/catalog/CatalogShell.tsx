@@ -131,11 +131,17 @@ export function CatalogShell({
         router.push(`/pwa/stores/${storeId}`);
         return;
       }
-      const msg =
-        res.code === "MIN_QTY" ? "Jumlah di bawah minimum pesanan." :
-        res.code === "NO_ACTIVE_VISIT" ? "Check in dulu untuk memesan." :
-        res.code === "UNAUTHORIZED" ? "Sesi berakhir. Masuk lagi." :
-        "Tidak ada item.";
+      let msg: string;
+      if (res.code === "MIN_QTY") {
+        const name = cartLines.find((l) => l.itemId === res.itemId)?.nameId;
+        msg = `Jumlah minimum pesanan ${res.requiredMin} pcs${name ? ` untuk ${name}` : ""}.`;
+      } else if (res.code === "NO_ACTIVE_VISIT") {
+        msg = "Check in dulu untuk memesan.";
+      } else if (res.code === "UNAUTHORIZED") {
+        msg = "Sesi berakhir. Masuk lagi.";
+      } else {
+        msg = "Tidak ada item.";
+      }
       toast.error(msg);
     });
   }
