@@ -30,6 +30,7 @@ const DEFAULT_CONFIGS: Record<
   ISSUE: { prefix: 'ISS/', resetPeriod: 'MONTHLY', padding: 4 },
   RECEIPT: { prefix: 'RCPT/', resetPeriod: 'MONTHLY', padding: 4 },
   OPN: { prefix: 'OPN/', resetPeriod: 'MONTHLY', padding: 4 },
+  PUTUS: { prefix: 'PUTUS/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
 export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {

@@ -37,7 +37,7 @@ describe("serializeCatalogItem", () => {
       sellingPrice: null,
       inventoryValues: [],
     };
-    expect(serializeCatalogItem(row, { id: "s1", termsType: "PUTUS", marginPercent: null }, null)).toEqual({
+    expect(serializeCatalogItem(row, { termsType: "PUTUS", marginPercent: null }, null)).toEqual({
       sku: "FG-X",
       nameId: "X",
       categoryId: null,
