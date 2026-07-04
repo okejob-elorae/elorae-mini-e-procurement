@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { cartCount, cartTotal, type CartLine } from "@/lib/field-sales/cart";
 
 type CatalogItem = {
+  itemId: string;
   sku: string;
   nameId: string;
   categoryId: string | null;
@@ -29,16 +31,41 @@ export function CatalogShell({
   storeId,
   storeName,
   termsType,
+  hasActiveVisit,
 }: {
   storeId: string;
   storeName: string;
   termsType: "PUTUS" | "KONSI";
+  hasActiveVisit: boolean;
 }) {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [cart, setCart] = useState<Map<string, CartLine>>(new Map());
+  const [view, setView] = useState<"catalog" | "review">("catalog");
+
+  function setQty(it: CatalogItem, qty: number) {
+    setCart((prev) => {
+      const next = new Map(prev);
+      if (qty <= 0) next.delete(it.sku);
+      else
+        next.set(it.sku, {
+          itemId: it.itemId,
+          variantSku: "",
+          sku: it.sku,
+          nameId: it.nameId,
+          unitPrice: it.price ?? 0,
+          available: it.available,
+          qty,
+        });
+      return next;
+    });
+  }
+
+  const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
+  const showCartBar = cartLines.length > 0 && view === "catalog";
 
   useEffect(() => {
     let alive = true;
@@ -100,96 +127,150 @@ export function CatalogShell({
         <p className="text-sm text-muted-foreground">Katalog produk · {termsType}</p>
       </div>
 
-      <Input
-        placeholder="Cari SKU atau nama"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-      />
+      {view === "catalog" && (
+        <>
+          <Input
+            placeholder="Cari SKU atau nama"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
 
-      {categories.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant={cat === null ? "default" : "outline"} onClick={() => setCat(null)}>
-            Semua
-          </Button>
-          {categories.map((c) => (
-            <Button
-              key={c.id}
-              size="sm"
-              variant={cat === c.id ? "default" : "outline"}
-              onClick={() => setCat(c.id)}
-            >
-              {c.name}
+          {categories.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant={cat === null ? "default" : "outline"} onClick={() => setCat(null)}>
+                Semua
+              </Button>
+              {categories.map((c) => (
+                <Button
+                  key={c.id}
+                  size="sm"
+                  variant={cat === c.id ? "default" : "outline"}
+                  onClick={() => setCat(c.id)}
+                >
+                  {c.name}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          {state === "loading" && <p className="text-sm text-muted-foreground">Memuat katalog…</p>}
+          {state === "error" && (
+            <p className="text-sm text-destructive">
+              Gagal memuat katalog. Periksa koneksi lalu coba lagi.
+            </p>
+          )}
+          {state === "ready" && filtered.length === 0 && (
+            <p className="text-sm text-muted-foreground">Tidak ada produk cocok.</p>
+          )}
+
+          <div className="flex flex-col gap-2">
+            {shown.map((it) => {
+              const qty = cart.get(it.sku)?.qty ?? 0;
+              const canOrder = it.price != null && it.available > 0;
+              return (
+                <Card key={it.sku} className="flex flex-row items-center gap-3 p-3">
+                  <div className="h-12 w-12 shrink-0 overflow-hidden rounded bg-muted">
+                    {it.primaryImageUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={it.primaryImageUrl} alt={it.nameId} className="h-full w-full object-cover" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{it.nameId}</p>
+                    <p className="truncate text-xs text-muted-foreground">{it.sku}</p>
+                    {it.categoryName && <p className="truncate text-xs text-muted-foreground">{it.categoryName}</p>}
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
+                      {it.available > 0 ? `${it.available} tersedia` : "Habis"}
+                    </Badge>
+                    {it.price != null && (
+                      <>
+                        {it.priceLabel && (
+                          <span className="text-xs text-muted-foreground">{it.priceLabel}</span>
+                        )}
+                        <span className="text-sm font-semibold tabular-nums">{rupiah(it.price)}</span>
+                      </>
+                    )}
+                    {canOrder && hasActiveVisit && (
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9"
+                          disabled={qty <= 0}
+                          onClick={() => setQty(it, qty - 1)}
+                          aria-label={`Kurangi ${it.nameId}`}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <span className="w-5 text-center text-sm font-semibold tabular-nums">{qty}</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-9 w-9"
+                          disabled={qty >= it.available}
+                          onClick={() => setQty(it, qty + 1)}
+                          aria-label={`Tambah ${it.nameId}`}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                    {canOrder && !hasActiveVisit && (
+                      <span className="text-xs text-muted-foreground">Check in untuk pesan</span>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+
+          {state === "ready" && filtered.length > 0 && (
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+                aria-label="Halaman sebelumnya"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm tabular-nums text-muted-foreground">
+                {page} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                aria-label="Halaman berikutnya"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {showCartBar && <div aria-hidden className="h-20" />}
+        </>
+      )}
+
+      {showCartBar && (
+        <div className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">
+              {cartCount(cartLines)} item · <span className="tabular-nums">{rupiah(cartTotal(cartLines))}</span>
+            </p>
+            <Button onClick={() => setView("review")}>
+              Tinjau
+              <ArrowRight className="h-4 w-4" />
             </Button>
-          ))}
-        </div>
-      )}
-
-      {state === "loading" && <p className="text-sm text-muted-foreground">Memuat katalog…</p>}
-      {state === "error" && (
-        <p className="text-sm text-destructive">
-          Gagal memuat katalog. Periksa koneksi lalu coba lagi.
-        </p>
-      )}
-      {state === "ready" && filtered.length === 0 && (
-        <p className="text-sm text-muted-foreground">Tidak ada produk cocok.</p>
-      )}
-
-      <div className="flex flex-col gap-2">
-        {shown.map((it) => (
-          <Card key={it.sku} className="flex flex-row items-center gap-3 p-3">
-            <div className="h-12 w-12 shrink-0 overflow-hidden rounded bg-muted">
-              {it.primaryImageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={it.primaryImageUrl} alt={it.nameId} className="h-full w-full object-cover" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{it.nameId}</p>
-              <p className="truncate text-xs text-muted-foreground">{it.sku}</p>
-              {it.categoryName && <p className="truncate text-xs text-muted-foreground">{it.categoryName}</p>}
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
-                {it.available > 0 ? `${it.available} tersedia` : "Habis"}
-              </Badge>
-              {it.price != null && (
-                <>
-                  {it.priceLabel && (
-                    <span className="text-xs text-muted-foreground">{it.priceLabel}</span>
-                  )}
-                  <span className="text-sm font-semibold">{rupiah(it.price)}</span>
-                </>
-              )}
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {state === "ready" && filtered.length > 0 && (
-        <div className="flex items-center justify-center gap-3 pt-1">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-            aria-label="Halaman sebelumnya"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-sm tabular-nums text-muted-foreground">
-            {page} / {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-            aria-label="Halaman berikutnya"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+          </div>
         </div>
       )}
     </div>
