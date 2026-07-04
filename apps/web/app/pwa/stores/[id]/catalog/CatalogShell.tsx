@@ -133,8 +133,11 @@ export function CatalogShell({
       }
       let msg: string;
       if (res.code === "MIN_QTY") {
-        const name = cartLines.find((l) => l.itemId === res.itemId)?.nameId;
-        msg = `Jumlah minimum pesanan ${res.requiredMin} pcs${name ? ` untuk ${name}` : ""}.`;
+        const parts = res.violations.map((v) => {
+          const name = cartLines.find((l) => l.itemId === v.itemId)?.nameId ?? "produk";
+          return `${name} (min ${v.requiredMin})`;
+        });
+        msg = `Jumlah di bawah minimum: ${parts.join(", ")}.`;
       } else if (res.code === "NO_ACTIVE_VISIT") {
         msg = "Check in dulu untuk memesan.";
       } else if (res.code === "UNAUTHORIZED") {

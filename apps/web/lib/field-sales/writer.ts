@@ -14,7 +14,7 @@ export async function createFieldSalesOrder(input: {
   lines: CreateLine[];
   note?: string;
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[] }> {
-  if (input.lines.length === 0) throw new MinQtyViolationError("", 1, 0);
+  if (input.lines.length === 0) throw new MinQtyViolationError([]);
   return prisma.$transaction(async (tx) => {
     const active = await tx.storeVisit.findFirst({
       where: { storeId: input.storeId, userId: input.salesmanId, checkoutAt: null },
@@ -27,8 +27,8 @@ export async function createFieldSalesOrder(input: {
     const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
     const globalMin = globalRow ? Number(globalRow.value) : 6;
     const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
-    const violation = validateMinQtyLines(input.lines, minByItemId);
-    if (violation) throw new MinQtyViolationError(violation.itemId, violation.requiredMin, violation.actualQty);
+    const violations = validateMinQtyLines(input.lines, minByItemId);
+    if (violations.length > 0) throw new MinQtyViolationError(violations);
 
     const orderNo = await generateDocNumber("PUTUS", tx);
     const linesData = input.lines.map((l) => ({ ...l, lineTotal: l.qty * l.unitPrice }));

@@ -64,7 +64,11 @@ d("submitFieldSalesOrder (test bed only)", () => {
 
   it("qty below minimum returns MIN_QTY", async () => {
     const result = await submitFieldSalesOrder({ storeId, lines: [{ ...line(), qty: 3 }] });
-    expect(result).toEqual({ ok: false, code: "MIN_QTY", itemId, requiredMin: 6 });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure result");
+    expect(result.code).toBe("MIN_QTY");
+    if (result.code !== "MIN_QTY") throw new Error("expected MIN_QTY code");
+    expect(result.violations.some((v) => v.itemId === itemId)).toBe(true);
   });
 
   it("no active visit returns NO_ACTIVE_VISIT", async () => {

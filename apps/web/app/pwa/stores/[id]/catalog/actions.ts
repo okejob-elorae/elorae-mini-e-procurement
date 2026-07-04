@@ -20,7 +20,8 @@ const schema = z.object({
 
 export type SubmitResult =
   | { ok: true; orderNo: string }
-  | { ok: false; code: "UNAUTHORIZED" | "EMPTY" | "NO_ACTIVE_VISIT" | "MIN_QTY"; itemId?: string; requiredMin?: number };
+  | { ok: false; code: "UNAUTHORIZED" | "EMPTY" | "NO_ACTIVE_VISIT" }
+  | { ok: false; code: "MIN_QTY"; violations: Array<{ itemId: string; requiredMin: number; actualQty: number }> };
 
 export async function submitFieldSalesOrder(input: {
   storeId: string;
@@ -44,7 +45,7 @@ export async function submitFieldSalesOrder(input: {
     return { ok: true, orderNo };
   } catch (e) {
     if (e instanceof NoActiveVisitError) return { ok: false, code: "NO_ACTIVE_VISIT" };
-    if (e instanceof MinQtyViolationError) return { ok: false, code: "MIN_QTY", itemId: e.itemId, requiredMin: e.requiredMin };
+    if (e instanceof MinQtyViolationError) return { ok: false, code: "MIN_QTY", violations: e.violations };
     throw e;
   }
 }

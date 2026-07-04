@@ -5,14 +5,13 @@ export function effectiveMinQty(itemMinOrderQty: number | null, globalMin: numbe
 export function validateMinQtyLines(
   lines: Array<{ itemId: string; qty: number }>,
   minByItemId: Map<string, number>,
-): { itemId: string; requiredMin: number; actualQty: number } | null {
+): Array<{ itemId: string; requiredMin: number; actualQty: number }> {
+  const violations: Array<{ itemId: string; requiredMin: number; actualQty: number }> = [];
   for (const line of lines) {
     const requiredMin = minByItemId.get(line.itemId) ?? 0;
-    if (line.qty < requiredMin) {
-      return { itemId: line.itemId, requiredMin, actualQty: line.qty };
-    }
+    if (line.qty < requiredMin) violations.push({ itemId: line.itemId, requiredMin, actualQty: line.qty });
   }
-  return null;
+  return violations;
 }
 
 export type OfflineSalesHistoryRow = {
