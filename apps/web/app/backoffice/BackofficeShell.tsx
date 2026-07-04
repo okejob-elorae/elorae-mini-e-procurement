@@ -144,6 +144,11 @@ const navItems: NavItem[] = [
       { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
       { labelKey: 'navFulfillment', href: '/backoffice/fulfillment' },
       { labelKey: 'navSalesReturns', href: '/backoffice/returns' },
+      {
+        labelKey: 'navFieldSalesOrders',
+        href: '/backoffice/field-sales-orders',
+        permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+      },
     ],
   },
   {
