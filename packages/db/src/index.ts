@@ -94,12 +94,16 @@ export {
   reserveOrder,
   consumeOrder,
   releaseOrder,
+  reserveFieldSalesOrder,
+  consumeFieldSalesOrder,
+  releaseFieldSalesOrder,
   type ReservationLine,
   type OversellAlert,
   type ReserveOrderInput,
   type ReserveOrderResult,
   type ConsumeOrderResult,
   type ReleaseOrderResult,
+  type FieldSalesReservationLine,
 } from "./reservation-writer";
 export {
   classifyForBackfill,

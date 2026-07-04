@@ -561,6 +561,12 @@ async function main() {
   }
   console.log("Reconciliation SystemSetting defaults OK");
 
+  await prisma.systemSetting.upsert({
+    where: { key: "putus.minOrderQty" },
+    update: {},
+    create: { key: "putus.minOrderQty", value: "6" },
+  });
+
   // ---------- 5. Suppliers ----------
   const supplier1 = await prisma.supplier.upsert({
     where: { code: "SUP0001" },

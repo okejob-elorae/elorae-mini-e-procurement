@@ -77,6 +77,7 @@ model User {
   salesReturnsDecided     SalesReturn[]     @relation("SalesReturnDecidedBy")
   salesReturnItemsDecided SalesReturnItem[] @relation("SalesReturnItemDecidedBy")
   storeVisits   StoreVisit[]
+  fieldSalesOrders FieldSalesOrder[] @relation("FieldSalesOrderSalesman")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -229,6 +230,7 @@ model Store {
   updatedAt      DateTime       @updatedAt
 
   visits         StoreVisit[]
+  fieldSalesOrders FieldSalesOrder[]
 
   @@index([isActive, name])
 }
@@ -247,9 +249,62 @@ model StoreVisit {
 
   store        Store     @relation(fields: [storeId], references: [id])
   user         User      @relation(fields: [userId], references: [id])
+  fieldSalesOrders FieldSalesOrder[]
 
   @@index([userId, checkoutAt])
   @@index([storeId, checkinAt])
+}
+
+model FieldSalesOrder {
+  id            String                @id @default(cuid())
+  orderNo       String                @unique
+  storeId       String
+  salesmanId    String
+  visitId       String?
+  status        FieldSalesOrderStatus @default(PENDING_APPROVAL)
+  subtotal      Decimal               @db.Decimal(15, 2)
+  total         Decimal               @db.Decimal(15, 2)
+  note          String?               @db.Text
+  approvedAt    DateTime?
+  approvedById  String?
+  rejectedAt    DateTime?
+  rejectedById  String?
+  rejectReason  String?               @db.Text
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  store         Store                 @relation(fields: [storeId], references: [id])
+  salesman      User                  @relation("FieldSalesOrderSalesman", fields: [salesmanId], references: [id])
+  visit         StoreVisit?           @relation(fields: [visitId], references: [id])
+  lines         FieldSalesOrderLine[]
+  @@index([status, createdAt])
+  @@index([storeId, createdAt])
+  @@index([salesmanId, createdAt])
+}
+
+model FieldSalesOrderLine {
+  id           String          @id @default(cuid())
+  orderId      String
+  itemId       String
+  variantSku   String          @default("")
+  productName  String
+  qty          Int
+  unitPrice    Decimal         @db.Decimal(15, 2)
+  lineTotal    Decimal         @db.Decimal(15, 2)
+  order        FieldSalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item         Item            @relation(fields: [itemId], references: [id])
+  @@index([orderId])
+  @@index([itemId])
+}
+
+enum FieldSalesOrderStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum ReserveSource {
+  JUBELIO
+  FIELD_SALES
 }
 
 model Item {
@@ -271,6 +326,7 @@ model Item {
   targetMarginPercent Decimal?       @db.Decimal(5,2)
   additionalCost   Decimal?          @db.Decimal(15,2)
   defaultPpnIncluded Boolean         @default(true)
+  minOrderQty      Int?
   source           ItemSource        @default(ERP)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
@@ -292,6 +348,7 @@ model Item {
   salesHistoryRows   SalesHistory[]
   forecastResults    ForecastResult[]
   images           ItemImage[]
+  fieldSalesLines  FieldSalesOrderLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -616,16 +673,17 @@ model ReconciliationResult {
 }
 
 model StockReservation {
-  id                 String       @id @default(cuid())
-  salesorderId       Int
-  salesorderDetailId Int          @unique
+  id                 String        @id @default(cuid())
+  source             ReserveSource @default(JUBELIO)
+  salesorderId       Int?
+  salesorderDetailId Int?          @unique
+  fieldSalesLineId   String?       @unique
   itemId             String
-  variantSku         String       @default("")
-  qty                Decimal      @db.Decimal(15, 4)
+  variantSku         String        @default("")
+  qty                Decimal       @db.Decimal(15, 4)
   state              ReserveState
-  createdAt          DateTime     @default(now())
+  createdAt          DateTime      @default(now())
   resolvedAt         DateTime?
-
   @@index([salesorderId])
   @@index([state])
 }
@@ -974,8 +1032,8 @@ model SalesHistory {
   erpVariantSku          String?
   jubelioItemId          Int?
   resolutionStatus       ResolutionStatus   @default(UNMAPPED)
-  importBatchId          String
-  importBatch            SalesHistoryImport @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  importBatchId          String?
+  importBatch            SalesHistoryImport? @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
   createdAt              DateTime           @default(now())
 
   @@unique([channel, orderId, variantSku])
@@ -1080,6 +1138,7 @@ enum SalesChannel {
   TIKTOK
   TOKOPEDIA
   OTHER
+  OFFLINE
 }
 
 enum SalesOrderStatus {
@@ -1333,6 +1392,7 @@ enum DocType {
   ISSUE
   RECEIPT
   OPN
+  PUTUS
 }
 
 enum OpnameScope {
