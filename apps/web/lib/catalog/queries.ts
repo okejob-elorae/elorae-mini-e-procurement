@@ -4,6 +4,7 @@ import { aggregateInventoryValues } from "@/lib/items/queries";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
 
 export type CatalogItem = {
+  itemId: string;
   sku: string;
   nameId: string;
   categoryId: string | null;
@@ -20,6 +21,7 @@ export type CatalogPayload = {
 };
 
 type CatalogRow = {
+  id: string;
   sku: string;
   nameId: string;
   categoryId: string | null;
@@ -42,6 +44,7 @@ export function serializeCatalogItem(
     marginPercent: store.marginPercent,
   });
   return {
+    itemId: row.id,
     sku: row.sku,
     nameId: row.nameId,
     categoryId: row.categoryId,
