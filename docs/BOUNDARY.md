@@ -24,7 +24,8 @@ Legend used throughout: **✅ built** · **🟡 partial** · **⏳ planned**.
 | Monorepo | `apps/web` + `apps/api` + `packages/db` + `reference/jubelio` + `docs/` | ✅ |
 | Monorepo | pnpm workspaces + Turborepo (`turbo.json`, `pnpm-workspace.yaml`) | ✅ |
 | `@elorae/db` | Prisma schema, migrations, generated client, MariaDB adapter | ✅ |
-| `@elorae/db` | Shared helpers (`writeAuditLog`, stock writer, sales-order guard, `SystemSetting` namespace enforcement) | ⏳ |
+| `@elorae/db` | Stock writer (§3.1), sales-order fulfillment writer (§3.2) | ✅ |
+| `@elorae/db` | Shared helpers (`writeAuditLog`, `SystemSetting` namespace enforcement) | ⏳ |
 | `apps/web` | Existing Next.js ERP (untouched by carve, imports `@elorae/db`) | ✅ |
 | `apps/api` | NestJS scaffold (`PrismaModule`, `HealthModule`, `JubelioModule`) | ✅ |
 | `apps/api` | Swagger `/docs` behind HTTP Basic auth (`SWAGGER_USER`/`SWAGGER_PASS`) | ✅ |
@@ -37,7 +38,7 @@ Legend used throughout: **✅ built** · **🟡 partial** · **⏳ planned**.
 | Bulk migration | One-shot ERP→Jubelio backfill tool (`/backoffice/jubelio/migration`) — enqueues `product_push` rows, polls outbox status for progress | ✅ |
 | API audit | `JubelioApiCall` audit log + HTTP interceptor + 429 rate-limit handling | ✅ |
 | Admin alerts | `AdminNotification` table + writer in api + read in web admin UI | ✅ schema + api writer; ⏳ web UI consumer |
-| Cross-service auth bridge (NextAuth JWT verify in api) | | ⏳ |
+| Cross-service auth bridge (HMAC-signed internal channel, `InternalSignGuard`) | | ✅ |
 | Internal `api → web` revalidate endpoint | | ⏳ |
 | Render deployment + Upstash Redis provisioning + CI for migrations lint | | ⏳ |
 | `@elorae/types` shared package (Zod schemas, permission constants re-export) | | ⏳ |
@@ -275,19 +276,22 @@ continuous).
 
 ## 4. Communication patterns
 
-### 4.1 `web → api` (sync, low-volume) — ⏳ planned
+### 4.1 `web → api` (sync, low-volume) — ✅ shipped
 
 User-facing flows where api must respond inline.
 
 - Use cases: "Push catalog now" button, fetch WMS list for UI, fetch Jubelio
-  token state, manual sync trigger.
-- Auth: NextAuth JWT in cookie → forwarded by web server action as
-  `Authorization: Bearer <jwt>` → Nest verifies with shared `NEXTAUTH_SECRET`.
+  token state, manual sync trigger, signed `GET /jubelio/inventory/snapshot`
+  (D5).
+- Auth: HMAC-signed internal channel, not NextAuth JWT — see §5. Web signs
+  each request via `signInternalRequest()` in `apps/web/lib/internal-api.ts`;
+  api verifies via the global `InternalSignGuard`.
 - Latency budget: 200 ms guard at gateway. Errors surfaced to user.
 
-**Current state:** api endpoints `/jubelio/status` and `/jubelio/refresh` exist
-but are unguarded (any caller can hit them). Auth bridge to apps/web NextAuth
-JWT is pending.
+**Current state:** all api endpoints are gated by `InternalSignGuard`
+(registered globally via `APP_GUARD` in `apps/api/src/auth/auth.module.ts`),
+except `health.controller.ts` and `webhooks.controller.ts` which opt out via
+`@Public()`. See D16.
 
 ### 4.2 `web → api` (async, write-coupled via outbox) — ✅ shipped
 
@@ -381,9 +385,9 @@ plan exists.
 
 | Endpoint type           | Mechanism                                              | State |
 | ----------------------- | ------------------------------------------------------ | :---: |
-| api: user-facing        | NextAuth JWT (shared secret) + RBAC guard              | ⏳ |
-| api: webhook receivers  | Jubelio `Sign` header (sha256 scheme)                  | ⏳ |
-| api: internal (web→api) | Shared bearer JWT (same `NEXTAUTH_SECRET`)             | ⏳ |
+| api: user-facing        | HMAC-signed internal channel (`InternalSignGuard`, global `APP_GUARD`) — see D16 | ✅ |
+| api: webhook receivers  | Jubelio `Sign` header (HMAC-SHA256 scheme, `@Public()`) | ✅ |
+| api: internal (web→api) | `InternalSignGuard` — HMAC-SHA256 over method+path+userId+rawBody, keyed by `INTERNAL_API_SECRET` (headers `x-internal-sign`/`x-user-id`), `timingSafeEqual` compare | ✅ |
 | api → web revalidate    | Shared `INTERNAL_API_KEY` (env, rotated quarterly)     | ⏳ |
 | api: `/docs`            | HTTP Basic (`SWAGGER_USER`/`SWAGGER_PASS`) — disabled if env missing | ✅ |
 
@@ -392,9 +396,10 @@ plan exists.
 - RBAC matrix in `apps/web/lib/rbac.ts` is the single source. api imports it
   via `@elorae/types` re-export (⏳).
 
-**Current state:** apps/api routes are open to any caller on the network. Token
-refresh and status endpoints are NOT gated. Acceptable for local-only dev; must
-be closed before any public deploy.
+**Current state:** all `apps/api` routes are gated by `InternalSignGuard`,
+registered globally via `APP_GUARD` in `apps/api/src/auth/auth.module.ts`.
+Only `health.controller.ts` and `webhooks.controller.ts` opt out via
+`@Public()`. Shipped 2026-05-28 (commit `188752f`) — see D16.
 
 ---
 
@@ -445,9 +450,10 @@ be closed before any public deploy.
   `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`.
   EPIC-19 will introduce the warehouse model; EPIC-02-03 push helper must
   apply the filter.
-- ❌ Reusing marketplace `SalesOrder` for offline `OfflineSalesOrder` writes
-  (EPIC-17/18/22). Marketplace SO is api-owned and Jubelio-shaped; offline SO
-  is web-owned. Either separate model or explicit channel discriminator.
+- ❌ Reusing marketplace `SalesOrder` for offline field-sales writes
+  (EPIC-17/18/22). Marketplace SO is api-owned and Jubelio-shaped; offline
+  orders use the dedicated web-owned `FieldSalesOrder`/`FieldSalesOrderLine`
+  model — see D8.
 - ❌ Pre-filling EPIC-24-02 warehouse received qty from salesman claim. The
   acceptance criterion explicitly forbids it — warehouse independence is the
   whole point.
@@ -493,7 +499,7 @@ script uses `nest start --watch --builder swc` (SWC honours
 | D5 | Stock reconciliation cron home (EPIC-07) | **apps/web owns orchestration + persistence.** A secret-guarded `POST /api/cron/reconciliation` (and in-process `node-cron` every 6h on VPS) calls `runReconciliation('CRON')` in web. Config lives in `SystemSetting` (`RECON_AUTO_CORRECT_THRESHOLD`, `RECON_AUTO_CORRECT_DIRECTION`, `RECON_CRON_ENABLED`). Launch posture: `FLAG_ONLY` + threshold 0. **apps/api** exposes signed `GET /jubelio/inventory/snapshot` (InternalSignGuard); web fetches Jubelio qty via `apiFetch`. Auto-correct writes `StockAdjustment` with `source = JUBELIO_RECONCILE` + `StockMovement` `refType = RECON`. FG-only scan (items with `JubelioProductMapping`). Overlap guard skips when a `ReconciliationRun` is already `RUNNING`. |
 | D6 | Reservation modeling (EPIC-08) | **Resolved.** `StockReservation` ledger — one row per `salesorderDetailId` (unique), `state: ReserveState { RESERVED, CONSUMED, RELEASED }` — plus an aggregate `InventoryValue.reservedQty` (Decimal, default 0) kept in sync by the ledger writes. Three order-level helpers in `@elorae/db/reservation-writer.ts`: `reserveOrder` (webhook ingest — creates ledger rows + bumps `reservedQty`, raises `AdminNotification` on oversell), `consumeOrder` (ship — flips `RESERVED → CONSUMED`, deducts `InventoryValue.qtyOnHand` via a `StockAdjustment` stamped `source = FULFILLMENT_CONSUME`), `releaseOrder` (cancel — flips `RESERVED → RELEASED`, decrements `reservedQty` without touching `qtyOnHand`). Idempotency: unique `salesorderDetailId` on create, and every transition is a conditional `updateMany WHERE state = 'RESERVED'` so the Jubelio ship webhook and the ERP Ship button can both fire — whichever lands first wins, the other is a no-op. Model: **reserve-at-ingest, consume-onHand-at-ship, release-on-cancel**; `available = qtyOnHand - reservedQty`, derived at read time (not stored). Jubelio stock push (`stock-push.handler.ts`) sends `available` (`onHand - reserved`, clamped at 0), not raw `qtyOnHand`. |
 | D7 | Warehouse scope on Jubelio stock push (EPIC-19 + EPIC-02-03) | **Push only main-warehouse availability.** Formula: `pushable = mainWarehouse.onHand - reserved - virtualWarehouseQty`. Konsi, canvasser-mobile, and any future virtual warehouses are excluded. Codified before EPIC-19 implementation; push helper enforces. |
-| D8 | Offline vs marketplace `SalesOrder` (EPIC-17/18/22) | **Open — first EPIC plan decides.** Two options: (a) single dual-channel `SalesOrder` with `channel = OFFLINE_PUTUS | OFFLINE_KONSI`, (b) separate `OfflineSalesOrder` model. Affects every downstream report; punted until EPIC-17 brainstorm. |
+| D8 | Offline vs marketplace `SalesOrder` (EPIC-17/18/22) | **Resolved (2026-07-04, EPIC-17 sub-4a, PR #98)** — option (b), narrower: dedicated `FieldSalesOrder`/`FieldSalesOrderLine` model (not a generic `OfflineSalesOrder`), web-owned, item-level per D15. |
 | D9 | Auto-journal trigger (EPIC-13) | **In-Prisma-TX helper, not outbox queue.** Financial debit=credit invariant cannot be eventually consistent. `withJournal()` helper in `@elorae/db` participates in source transaction. |
 | D10 | External integrations beyond Jubelio | **Punted.** No automation today (e-Faktur, bank reconciliation are manual). First concrete automated integration EPIC reopens this decision. |
 | D11 | Role/permission model | **Open.** Six new roles incoming (SALESMAN, SPG, CANVASSER, COLLECTOR, FINANCE, ADMIN_PAJAK). Migration path: keep `Role` enum for now; revisit when count exceeds ~10 or dynamic role grants become a requirement. |
@@ -501,3 +507,4 @@ script uses `nest start --watch --builder swc` (SWC honours
 | D13 | `JubelioOutbox.entityType` registry | **Single source: `packages/db/src/jubelio-outbox.ts`.** Web `satisfies` typed insert + api router `never`-exhaustive switch. Typos = compile error. (Shipped this PR.) |
 | D14 | `StockAdjustment.source` registry | **Single source: `packages/db/src/stock-adjustment-source.ts`.** Same pattern as D13. (Shipped this PR.) |
 | D15 | Putus order granularity (EPIC-17-03) | **Item-level, not per-variant.** The PWA catalog + putus order lines operate at the `Item` level (order lines carry `variantSku = ""`, resolved to the variantless `InventoryValue` row) — even though Jubelio-ingested Items declare variants (size/color in `Item.variants`, e.g. `FG-JEANS-001` → sizes 30/32/34/36). Rationale: `InventoryValue` is tracked **item-level** (one `variantSku: null` row per item; no per-variant stock split at ingest), so item-level reserve/consume matches the stock model. Convention: variantless `InventoryValue` rows use `variantSku: null` (NOT `""`) — the field-sales reservation helpers (`reserveFieldSalesOrder`/`consumeFieldSalesOrder`/`releaseFieldSalesOrder`) look up inventory tolerating null-or-empty. **Consequence:** a putus order captures product + qty but NOT which variant (e.g. total jeans qty, not per-size). Accepted for now — variant selection deferred to fulfillment/picking. If per-variant putus orders become required, it needs a variant-aware PWA catalog/order (expand item → pick variant) + order lines carrying the real `variantSku` (reservation already supports it) + likely per-variant `InventoryValue` — a separate slice. |
+| D16 | Cross-service auth bridge (§4.1, §5) | **Resolved (shipped 2026-05-28, commit `188752f`) — pivoted from the original plan.** Original plan was NextAuth-JWT forwarding (web signs a `Bearer <jwt>` with shared `NEXTAUTH_SECRET`, api verifies). Shipped instead as an **HMAC-signed internal channel**: `apps/web/lib/internal-api.ts` (`signInternalRequest`) computes `HMAC-SHA256(method+path+userId+rawBody)` keyed by `INTERNAL_API_SECRET`, sent as `x-internal-sign`/`x-user-id` headers; api's `InternalSignGuard` (`apps/api/src/auth/internal-sign.guard.ts`) verifies with `timingSafeEqual` and is registered globally via `APP_GUARD` in `apps/api/src/auth/auth.module.ts`. Only `health.controller.ts` and `webhooks.controller.ts` opt out via `@Public()`. Simpler than JWT forwarding — no shared session-secret coupling, no token expiry to juggle for service-to-service calls. |
