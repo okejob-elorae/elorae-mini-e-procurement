@@ -117,13 +117,14 @@ contract for the migrations that will introduce them.
 | `PlanCmtAllocation`, `PlanStage` | web — WO creation via `createWorkOrder` in `apps/web`; `PlanStage` auto-synced when generating from CMT rows (`planCmtAllocationId`) | — | ✅ |
 | `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
 | `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
-| `StockReservation`             | **both** — see §3.1         |                             | ✅ schema + writer — api (salesorder webhook, `reserveOrder`/`consumeOrder`/`releaseOrder`), web (ship button, `consumeOrder`). Written ONLY through `@elorae/db/reservation-writer.ts` — never bare prisma. |
+| `StockReservation`             | **both** — see §3.1         |                             | ✅ schema + writer — api (Jubelio salesorder webhook via `reserveOrder`/`consumeOrder`/`releaseOrder` with `source=JUBELIO`), web (ship button `consumeOrder`, field-sales putus orders via `reserveFieldSalesOrder`/`consumeFieldSalesOrder`/`releaseFieldSalesOrder` with `source=FIELD_SALES`). Written ONLY through `@elorae/db/reservation-writer.ts` — never bare prisma. |
 | `SalesOrder`                   | **both** — see §3.2         | —                           | ✅ api owns Jubelio-derived cols; web owns fulfillment cols via helper |
 | `SalesOrderItem`               | api                         | web (read)                  | ✅ schema + api writer |
-| `SalesHistory`                 | web                         | api (read)                  | ✅ Excel import only; identity fields (`itemId`, `erpVariantSku`, `jubelioItemId`, `resolutionStatus`) stamped at import via `marketplace-sku-resolver` — see §3.7 |
+| `SalesHistory`                 | web                         | api (read)                  | ✅ Excel import (`channel=MARKETPLACE`) + putus approval (`channel=OFFLINE`); identity fields (`itemId`, `erpVariantSku`, `jubelioItemId`, `resolutionStatus`) stamped at import via `marketplace-sku-resolver` — see §3.7 |
 | `SalesHistoryImport`           | web                         | —                           | ✅ |
 | `ForecastConfig`, `ForecastResult` | web                     | —                           | ✅ `ForecastResult.itemId` for item-centric grouping |
 | `SalesReturn`                  | api ingest; web decision (planned) | —                    | 🟡 webhook stub shipped; EPIC-05 will introduce web-side Accept/Reject writer + new outbox type `salesreturn_decision_push` |
+| `FieldSalesOrder`, `FieldSalesOrderLine` | web           | api (read)                  | ✅ schema; web-written putus orders (ERP-originated), api never writes |
 | `JubelioProductMapping`        | api                         | web (read)                  | ✅ |
 | `JubelioCategoryMapping`       | api                         | web (read)                  | ✅ schema; writer ⏳ (currently seed-only, no runtime writer) |
 | `JubelioOutbox`                | web insert, api consume/update | — | ✅; `entityType` MUST come from `@elorae/db/jubelio-outbox` registry — see §4.2.1 |
