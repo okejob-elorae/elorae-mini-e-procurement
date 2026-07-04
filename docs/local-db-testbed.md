@@ -8,20 +8,21 @@ backfill and its webhook handler) without touching the shared prod MariaDB.
 The default `DATABASE_URL` (in `apps/web/.env`) is:
 
 ```
-mysql://elorae:<pw>@127.0.0.1:3307/elorae
+mysql://elorae:elorae@127.0.0.1:3308/elorae
 ```
 
-**Port 3307 is an SSH tunnel to the PROD VPS MariaDB.** It is the same
-database the live ERP and Jubelio integration use. Any command that relies on
-the default env — `pnpm -F @elorae/db migrate:deploy`, a backfill script run
-with `--apply`, `prisma studio`, etc. — run without overriding `DATABASE_URL`
-will hit **prod**, not the test bed.
+**This already points at the local test bed** (docker container
+`elorae-dev-db`, port 3308) — it is safe to run `pnpm -F @elorae/db
+migrate:deploy`, seeds, tests, or a backfill script with `--apply` without any
+override.
 
-The local test bed lives on **port 3308** (docker container `elorae-dev-db`,
-mapped from container port 3306) specifically so it can coexist with the 3307
-tunnel without colliding. Every command below that touches the local DB
-explicitly sets `DATABASE_URL` (or `SRC_DATABASE_URL`/`DEST_DATABASE_URL`) to
-point at 3308. Never drop that override.
+`apps/web/.env` also has `DATABASE_URL_PROD` (port 3307, the SSH tunnel to the
+PROD VPS MariaDB) — but **no code reads that variable**; it's an inert
+bookmark. To deliberately target prod you must set `DATABASE_URL` yourself
+(the real prod URL lives in the VPS env store, not in this repo). Commands
+below that need the 3307 tunnel (e.g. cloning prod data down) set it
+explicitly via `SRC_DATABASE_URL`/`DEST_DATABASE_URL` — never rely on an
+ambient `DATABASE_URL=...3307...` since that's not the default.
 
 ## Command sequence
 
