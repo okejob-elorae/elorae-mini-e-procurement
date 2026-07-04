@@ -67,4 +67,71 @@ d("field-sales reservation fns (test bed only)", () => {
     expect(Number(inv!.qtyOnHand)).toBe(100);
     expect(Number(inv!.reservedQty)).toBe(0);
   });
+
+  describe("variantless InventoryValue row keyed with variantSku: null (real-world convention)", () => {
+    let nullItemId: string;
+    let nullUomId: string;
+    const nullSku = `TEST-FS-NULL-${Math.random().toString(36).slice(2, 10)}`;
+
+    beforeEach(async () => {
+      const uom = await prisma.uOM.create({
+        data: { code: `TEST-UOM-${nullSku}`, nameId: "test", nameEn: "test" },
+      });
+      nullUomId = uom.id;
+      const item = await prisma.item.create({
+        data: { sku: nullSku, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId: nullUomId },
+      });
+      nullItemId = item.id;
+      await prisma.inventoryValue.create({
+        data: { itemId: nullItemId, variantSku: null, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
+      });
+    });
+
+    afterEach(async () => {
+      await prisma.stockReservation.deleteMany({ where: { itemId: nullItemId } });
+      await prisma.stockAdjustment.deleteMany({ where: { itemId: nullItemId } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: nullItemId } });
+      await prisma.item.deleteMany({ where: { id: nullItemId } });
+      await prisma.uOM.deleteMany({ where: { id: nullUomId } });
+    });
+
+    it("reserve, consume, and release all succeed against a variantSku: null row", async () => {
+      const lineId = `line-${nullSku}-1`;
+
+      const r1 = await reserveFieldSalesOrder(prisma, {
+        orderNo: "PUTUS-T-NULL-1",
+        lines: [{ fieldSalesLineId: lineId, itemId: nullItemId, variantSku: "", qty: 6 }],
+      });
+      expect(r1.reserved).toBe(1);
+      let inv = await prisma.inventoryValue.findFirst({
+        where: { itemId: nullItemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+      });
+      expect(Number(inv!.reservedQty)).toBe(6);
+      expect(Number(inv!.qtyOnHand)).toBe(100);
+
+      const consumeRes = await consumeFieldSalesOrder(prisma, { orderNo: "PUTUS-T-NULL-1", fieldSalesLineIds: [lineId] });
+      expect(consumeRes.consumed).toBe(1);
+      inv = await prisma.inventoryValue.findFirst({
+        where: { itemId: nullItemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+      });
+      expect(Number(inv!.qtyOnHand)).toBe(94);
+      expect(Number(inv!.reservedQty)).toBe(0);
+      const adj = await prisma.stockAdjustment.findFirst({ where: { itemId: nullItemId, source: "FIELD_SALES_CONSUME" } });
+      expect(adj).not.toBeNull();
+      expect(Number(adj!.qtyChange)).toBe(-6);
+
+      const lineId2 = `line-${nullSku}-2`;
+      await reserveFieldSalesOrder(prisma, {
+        orderNo: "PUTUS-T-NULL-2",
+        lines: [{ fieldSalesLineId: lineId2, itemId: nullItemId, variantSku: "", qty: 4 }],
+      });
+      const releaseRes = await releaseFieldSalesOrder(prisma, { fieldSalesLineIds: [lineId2] });
+      expect(releaseRes.released).toBe(1);
+      inv = await prisma.inventoryValue.findFirst({
+        where: { itemId: nullItemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+      });
+      expect(Number(inv!.qtyOnHand)).toBe(94);
+      expect(Number(inv!.reservedQty)).toBe(0);
+    });
+  });
 });

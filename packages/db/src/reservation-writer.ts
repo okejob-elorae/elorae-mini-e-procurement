@@ -19,6 +19,13 @@ function hasTx(client: AnyClient): client is PrismaClient {
   return typeof (client as PrismaClient).$transaction === "function";
 }
 
+async function findFieldSalesInventory(tx: Prisma.TransactionClient, itemId: string, variantSku: string) {
+  // Variantless rows use variantSku: null in this codebase (not ""); tolerate both.
+  return variantSku === ""
+    ? tx.inventoryValue.findFirst({ where: { itemId, OR: [{ variantSku: null }, { variantSku: "" }] } })
+    : tx.inventoryValue.findFirst({ where: { itemId, variantSku } });
+}
+
 export async function reserveOrder(client: AnyClient, input: ReserveOrderInput): Promise<ReserveOrderResult> {
   const run = async (tx: Prisma.TransactionClient): Promise<ReserveOrderResult> => {
     let reserved = 0;
@@ -205,12 +212,10 @@ export async function reserveFieldSalesOrder(
           state: "RESERVED",
         },
       });
-      const inv = await tx.inventoryValue.findUnique({
-        where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
-      });
+      const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       const updated = await tx.inventoryValue.update({
-        where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
+        where: { id: inv.id },
         data: { reservedQty: { increment: line.qty }, lastUpdated: new Date() },
         select: { qtyOnHand: true, reservedQty: true },
       });
@@ -250,13 +255,11 @@ export async function consumeFieldSalesOrder(
       });
       if (upd.count === 0) continue;
       const qty = Number(row.qty);
-      const inv = await tx.inventoryValue.findUnique({
-        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
-      });
+      const inv = await findFieldSalesInventory(tx, row.itemId, row.variantSku);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       const avgCost = Number(inv.avgCost);
       const updated = await tx.inventoryValue.update({
-        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
+        where: { id: inv.id },
         data: {
           qtyOnHand: { decrement: qty },
           reservedQty: { decrement: qty },
@@ -305,12 +308,10 @@ export async function releaseFieldSalesOrder(
         data: { state: "RELEASED", resolvedAt: new Date() },
       });
       if (upd.count === 0) continue;
-      const inv = await tx.inventoryValue.findUnique({
-        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
-      });
+      const inv = await findFieldSalesInventory(tx, row.itemId, row.variantSku);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       await tx.inventoryValue.update({
-        where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
+        where: { id: inv.id },
         data: { reservedQty: { decrement: Number(row.qty) }, lastUpdated: new Date() },
       });
       released += 1;
