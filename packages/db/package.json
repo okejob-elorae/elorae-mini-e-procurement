@@ -25,6 +25,10 @@
       "types": "./dist/src/pricing.d.ts",
       "default": "./dist/src/pricing.js"
     },
+    "./field-sales": {
+      "types": "./dist/src/field-sales.d.ts",
+      "default": "./dist/src/field-sales.js"
+    },
     "./sales-order-fulfillment-writer": {
       "types": "./dist/src/sales-order-fulfillment-writer.d.ts",
       "default": "./dist/src/sales-order-fulfillment-writer.js"
