@@ -1392,6 +1392,7 @@ enum DocType {
   ISSUE
   RECEIPT
   OPN
+  PUTUS
 }
 
 enum OpnameScope {

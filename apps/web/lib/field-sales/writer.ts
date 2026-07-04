@@ -1,27 +1,11 @@
-import { randomUUID } from "node:crypto";
 import { prisma, Prisma, reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, type OversellAlert } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines, buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
+import { generateDocNumber } from "@/lib/docNumber";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError } from "./errors";
 
 const SER = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable } as const;
 
 type CreateLine = { itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number };
-
-/**
- * `generateDocNumber` (@/lib/docNumber) can't be reused here: its `type` param is the
- * Prisma `DocType` enum, which is a native MySQL ENUM column (DocNumberConfig/DocumentNumber)
- * and does not include "PUTUS". Extending that enum is a packages/db schema + migration
- * change outside this writer's scope, so putus order numbers get their own self-contained,
- * collision-safe generator instead of going through DocNumberConfig.
- */
-function generatePutusOrderNo(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const suffix = randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
-  return `PUTUS/${y}${m}${d}/${suffix}`;
-}
 
 export async function createFieldSalesOrder(input: {
   storeId: string;
@@ -46,7 +30,7 @@ export async function createFieldSalesOrder(input: {
     const violation = validateMinQtyLines(input.lines, minByItemId);
     if (violation) throw new MinQtyViolationError(violation.itemId, violation.requiredMin, violation.actualQty);
 
-    const orderNo = generatePutusOrderNo();
+    const orderNo = await generateDocNumber("PUTUS", tx);
     const linesData = input.lines.map((l) => ({ ...l, lineTotal: l.qty * l.unitPrice }));
     const subtotal = linesData.reduce((s, l) => s + l.lineTotal, 0);
 
