@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, Store } from "lucide-react";
+import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Store } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { CheckOutButton } from "./stores/[id]/CheckOutButton";
 import { Button } from "@/components/ui/button";
@@ -97,6 +97,12 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
             </div>
           </CardContent>
         </Card>
+        <Button asChild className="w-full">
+          <Link href={`/pwa/stores/${activeVisit.storeId}/catalog`}>
+            <ShoppingBag className="h-4 w-4" />
+            Katalog Produk
+          </Link>
+        </Button>
         <CheckOutButton visitId={activeVisit.id} />
       </div>
     );
