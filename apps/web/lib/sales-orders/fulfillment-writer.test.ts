@@ -15,6 +15,10 @@ type MockPrisma = {
   jubelioOutbox: {
     create: ReturnType<typeof vi.fn>;
   };
+  stockReservation: {
+    findMany: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+  };
 };
 
 function makePrismaMock(orderRow: Record<string, unknown> | null): MockPrisma {
@@ -26,6 +30,12 @@ function makePrismaMock(orderRow: Record<string, unknown> | null): MockPrisma {
     },
     jubelioOutbox: {
       create: vi.fn().mockResolvedValue({ id: "ob1" }),
+    },
+    // consumeOrder (invoked by markOrderShipped) sweeps reservations; no reserved
+    // rows in these unit tests, so findMany returns [] and the consume loop is a no-op.
+    stockReservation: {
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   };
   return inner;
