@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getStore } from "@/lib/stores/queries";
+import { getStore, getActiveVisit } from "@/lib/stores/queries";
 import { CatalogShell } from "./CatalogShell";
 
 export const dynamic = "force-dynamic";
@@ -12,5 +12,15 @@ export default async function PwaStoreCatalog({ params }: { params: Promise<{ id
   const store = await getStore(id);
   if (!store) notFound();
 
-  return <CatalogShell storeId={store.id} storeName={store.name} termsType={store.termsType} />;
+  const active = await getActiveVisit(session.user.id);
+  const hasActiveVisit = active?.storeId === store.id;
+
+  return (
+    <CatalogShell
+      storeId={store.id}
+      storeName={store.name}
+      termsType={store.termsType}
+      hasActiveVisit={hasActiveVisit}
+    />
+  );
 }

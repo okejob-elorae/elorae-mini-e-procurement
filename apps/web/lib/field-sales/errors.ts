@@ -4,8 +4,9 @@ export class NoActiveVisitError extends Error {
     this.name = "NoActiveVisitError";
   }
 }
+export type MinQtyViolation = { itemId: string; requiredMin: number; actualQty: number };
 export class MinQtyViolationError extends Error {
-  constructor(public itemId: string, public requiredMin: number, public actualQty: number) {
+  constructor(public violations: MinQtyViolation[]) {
     super("MIN_QTY_VIOLATION");
     this.name = "MinQtyViolationError";
   }

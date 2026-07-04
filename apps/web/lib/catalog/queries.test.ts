@@ -6,6 +6,7 @@ const store = { id: "s1", termsType: "KONSI" as const, marginPercent: 20 };
 describe("serializeCatalogItem", () => {
   it("maps fields, computes available and konsi gross-up price", () => {
     const row = {
+      id: "i1",
       sku: "FG-RED-M",
       nameId: "Kaos Merah M",
       categoryId: "c1",
@@ -17,6 +18,7 @@ describe("serializeCatalogItem", () => {
       ],
     };
     expect(serializeCatalogItem(row, store, "https://cdn/x.jpg")).toEqual({
+      itemId: "i1",
       sku: "FG-RED-M",
       nameId: "Kaos Merah M",
       categoryId: "c1",
@@ -30,6 +32,7 @@ describe("serializeCatalogItem", () => {
 
   it("null category, no image, no inventory, null price all serialize safely", () => {
     const row = {
+      id: "i2",
       sku: "FG-X",
       nameId: "X",
       categoryId: null,
@@ -38,6 +41,7 @@ describe("serializeCatalogItem", () => {
       inventoryValues: [],
     };
     expect(serializeCatalogItem(row, { termsType: "PUTUS", marginPercent: null }, null)).toEqual({
+      itemId: "i2",
       sku: "FG-X",
       nameId: "X",
       categoryId: null,

@@ -15,15 +15,18 @@ describe("effectiveMinQty", () => {
 
 describe("validateMinQtyLines", () => {
   const mins = new Map([["a", 6], ["b", 10]]);
-  it("returns null when all lines meet their minimum", () => {
-    expect(validateMinQtyLines([{ itemId: "a", qty: 6 }, { itemId: "b", qty: 10 }], mins)).toBeNull();
+  it("all lines meet minimum → returns []", () => {
+    expect(validateMinQtyLines([{ itemId: "a", qty: 6 }, { itemId: "b", qty: 10 }], mins)).toEqual([]);
   });
-  it("returns the first violation", () => {
-    expect(validateMinQtyLines([{ itemId: "a", qty: 6 }, { itemId: "b", qty: 4 }], mins))
-      .toEqual({ itemId: "b", requiredMin: 10, actualQty: 4 });
+  it("returns EVERY violation", () => {
+    expect(validateMinQtyLines([{ itemId: "a", qty: 2 }, { itemId: "b", qty: 4 }], mins))
+      .toEqual([
+        { itemId: "a", requiredMin: 6, actualQty: 2 },
+        { itemId: "b", requiredMin: 10, actualQty: 4 },
+      ]);
   });
-  it("uses 0 min when itemId absent from the map (no minimum)", () => {
-    expect(validateMinQtyLines([{ itemId: "z", qty: 1 }], mins)).toBeNull();
+  it("itemId absent from map → no violation for it", () => {
+    expect(validateMinQtyLines([{ itemId: "z", qty: 0 }], mins)).toEqual([]);
   });
 });
 
