@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Minus, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -45,6 +45,8 @@ export function CatalogShell({
   const [page, setPage] = useState(1);
   const [cart, setCart] = useState<Map<string, CartLine>>(new Map());
   const [view, setView] = useState<"catalog" | "review">("catalog");
+  const cartBarRef = useRef<HTMLDivElement | null>(null);
+  const [cartBarHeight, setCartBarHeight] = useState(0);
 
   function setQty(it: CatalogItem, qty: number) {
     setCart((prev) => {
@@ -66,6 +68,20 @@ export function CatalogShell({
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
   const showCartBar = cartLines.length > 0 && view === "catalog";
+
+  useLayoutEffect(() => {
+    if (!showCartBar) {
+      setCartBarHeight(0);
+      return;
+    }
+    const el = cartBarRef.current;
+    if (!el) return;
+    const measure = () => setCartBarHeight(el.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [showCartBar]);
 
   useEffect(() => {
     let alive = true;
@@ -197,8 +213,7 @@ export function CatalogShell({
                         <Button
                           type="button"
                           variant="outline"
-                          size="icon"
-                          className="h-9 w-9"
+                          size="icon-lg"
                           disabled={qty <= 0}
                           onClick={() => setQty(it, qty - 1)}
                           aria-label={`Kurangi ${it.nameId}`}
@@ -209,8 +224,7 @@ export function CatalogShell({
                         <Button
                           type="button"
                           variant="outline"
-                          size="icon"
-                          className="h-9 w-9"
+                          size="icon-lg"
                           disabled={qty >= it.available}
                           onClick={() => setQty(it, qty + 1)}
                           aria-label={`Tambah ${it.nameId}`}
@@ -256,14 +270,17 @@ export function CatalogShell({
             </div>
           )}
 
-          {showCartBar && <div aria-hidden className="h-20" />}
+          {showCartBar && <div aria-hidden style={{ height: cartBarHeight }} />}
         </>
       )}
 
       {showCartBar && (
-        <div className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium">
+        <div
+          ref={cartBarRef}
+          className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+        >
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <p className="truncate text-sm font-medium">
               {cartCount(cartLines)} item · <span className="tabular-nums">{rupiah(cartTotal(cartLines))}</span>
             </p>
             <Button onClick={() => setView("review")}>
