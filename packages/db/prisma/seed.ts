@@ -117,6 +117,8 @@ async function main() {
     { code: 'items:manage', module: 'items', action: 'manage', description: 'Manage items and upload images' },
     { code: 'sales_orders:view', module: 'sales_orders', action: 'view', description: 'View marketplace sales orders' },
     { code: 'sales_orders:fulfill', module: 'sales_orders', action: 'fulfill', description: 'Pick, pack, ship marketplace orders' },
+    { code: 'field_sales_orders:view', module: 'field_sales_orders', action: 'view', description: 'View field-sales (putus) orders' },
+    { code: 'field_sales_orders:approve', module: 'field_sales_orders', action: 'approve', description: 'Approve or reject field-sales (putus) orders' },
     { code: 'items:create', module: 'items', action: 'create', description: 'Create items' },
     { code: 'items:edit', module: 'items', action: 'edit', description: 'Edit items' },
     { code: 'items:delete', module: 'items', action: 'delete', description: 'Delete items' },

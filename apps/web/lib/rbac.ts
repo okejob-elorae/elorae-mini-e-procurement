@@ -62,6 +62,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/sales-orders/[id]/pick-list': 'sales_orders:view',
   '/backoffice/sales-orders/[id]/packing-slip': 'sales_orders:view',
   '/backoffice/fulfillment': 'sales_orders:view',
+  '/backoffice/field-sales-orders': 'field_sales_orders:view',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
   '/backoffice/forecast': 'forecast:view',
@@ -189,6 +190,9 @@ export const PERMISSIONS = {
   // Sales Orders
   SALES_ORDERS_VIEW: 'sales_orders:view',
   SALES_ORDERS_FULFILL: 'sales_orders:fulfill',
+  // Field Sales Orders
+  FIELD_SALES_ORDERS_VIEW: 'field_sales_orders:view',
+  FIELD_SALES_ORDERS_APPROVE: 'field_sales_orders:approve',
   // Purchase Orders
   PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
   PURCHASE_ORDERS_CREATE: 'purchase_orders:create',

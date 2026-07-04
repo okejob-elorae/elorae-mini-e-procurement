@@ -144,6 +144,11 @@ const navItems: NavItem[] = [
       { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
       { labelKey: 'navFulfillment', href: '/backoffice/fulfillment' },
       { labelKey: 'navSalesReturns', href: '/backoffice/returns' },
+      {
+        labelKey: 'navFieldSalesOrders',
+        href: '/backoffice/field-sales-orders',
+        permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+      },
     ],
   },
   {
@@ -278,6 +283,14 @@ function Sidebar({
       return '/backoffice/production/planning';
     }
     if (path.startsWith('/backoffice/jubelio')) return '/backoffice/jubelio/admin';
+    if (
+      path.startsWith('/backoffice/sales-orders') ||
+      path.startsWith('/backoffice/fulfillment') ||
+      path.startsWith('/backoffice/returns') ||
+      path.startsWith('/backoffice/field-sales-orders')
+    ) {
+      return '/backoffice/sales-orders';
+    }
     return null;
   };
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
