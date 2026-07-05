@@ -241,7 +241,7 @@ export function CatalogShell({
             </div>
           )}
 
-          {isKonsi && hasActiveVisit && filtered.some((it) => it.neverSent && it.available > 0) && (
+          {isKonsi && hasActiveVisit && items.some((it) => it.neverSent && it.available > 0 && !cart.has(it.sku)) && (
             <Button
               type="button"
               variant="outline"
@@ -249,6 +249,7 @@ export function CatalogShell({
               onClick={() =>
                 setCart((prev) => {
                   const next = new Map(prev);
+                  let added = 0;
                   for (const it of items) {
                     if (it.neverSent && it.available > 0 && !next.has(it.sku)) {
                       next.set(it.sku, {
@@ -260,8 +261,10 @@ export function CatalogShell({
                         available: it.available,
                         qty: 1,
                       });
+                      added += 1;
                     }
                   }
+                  if (added > 0) toast.success(`${added} produk baru ditambahkan`);
                   return next;
                 })
               }
