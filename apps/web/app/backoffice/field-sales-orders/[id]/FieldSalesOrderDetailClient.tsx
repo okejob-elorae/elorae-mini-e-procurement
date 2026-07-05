@@ -45,6 +45,8 @@ function formatRupiah(value: number): string {
 export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const locale = useLocale();
+  const isKonsi = order.orderType === "KONSI";
+  const showMoney = !isKonsi || order.status === "APPROVED";
 
   const formatDate = (date: Date) =>
     new Intl.DateTimeFormat(locale, {
@@ -68,9 +70,17 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
         <Badge variant={STATUS_BADGE_VARIANT[order.status]}>
           {t(STATUS_LABEL_KEY[order.status])}
         </Badge>
+        <Badge variant="outline">{isKonsi ? t("typeKonsi") : t("typePutus")}</Badge>
       </div>
 
-      {canApprove && <ApproveRejectCard orderId={order.id} status={order.status} canApprove={canApprove} />}
+      {canApprove && (
+        <ApproveRejectCard
+          orderId={order.id}
+          status={order.status}
+          canApprove={canApprove}
+          orderType={order.orderType}
+        />
+      )}
 
       <Card className="p-4 space-y-2">
         <h2 className="font-semibold">{t("detailTitle")}</h2>
@@ -89,14 +99,20 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
       </Card>
 
       <Card className="p-4">
+        {isKonsi && <p className="text-xs text-muted-foreground mb-2">{t("konsiTransferNote")}</p>}
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>{t("colProduct")}</TableHead>
               <TableHead>{t("colVariant")}</TableHead>
               <TableHead className="text-right">{t("colQty")}</TableHead>
-              <TableHead className="text-right">{t("colUnitPrice")}</TableHead>
-              <TableHead className="text-right">{t("colLineTotal")}</TableHead>
+              <TableHead className="text-right">{t("colAvailable")}</TableHead>
+              {showMoney && (
+                <>
+                  <TableHead className="text-right">{t("colUnitPrice")}</TableHead>
+                  <TableHead className="text-right">{t("colLineTotal")}</TableHead>
+                </>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -105,23 +121,34 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
                 <TableCell>{line.productName}</TableCell>
                 <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
                 <TableCell className="text-right">{line.qty}</TableCell>
-                <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>
-                <TableCell className="text-right">{formatRupiah(line.lineTotal)}</TableCell>
+                <TableCell className="text-right">{line.available}</TableCell>
+                {showMoney && (
+                  <>
+                    <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>
+                    <TableCell className="text-right">{formatRupiah(line.lineTotal)}</TableCell>
+                  </>
+                )}
               </TableRow>
             ))}
           </TableBody>
         </Table>
 
-        <div className="mt-3 flex flex-col items-end gap-1 text-sm">
-          <div className="flex w-56 justify-between">
-            <span className="text-muted-foreground">{t("subtotal")}</span>
-            <span>{formatRupiah(order.subtotal)}</span>
+        {showMoney && (
+          <div className="mt-3 flex flex-col items-end gap-1 text-sm">
+            <div className="flex w-56 justify-between">
+              <span className="text-muted-foreground">{t("subtotal")}</span>
+              <span>{formatRupiah(order.subtotal)}</span>
+            </div>
+            <div className="flex w-56 justify-between border-t pt-1 font-semibold">
+              <span>{t("total")}</span>
+              <span>{formatRupiah(order.total)}</span>
+            </div>
           </div>
-          <div className="flex w-56 justify-between border-t pt-1 font-semibold">
-            <span>{t("total")}</span>
-            <span>{formatRupiah(order.total)}</span>
-          </div>
-        </div>
+        )}
+
+        {isKonsi && order.status === "APPROVED" && (order.marginPercent === null || order.marginPercent < 0 || order.marginPercent >= 100) && (
+          <p className="mt-2 text-right text-xs text-amber-600">{t("konsiMarginUnset")}</p>
+        )}
       </Card>
     </div>
   );

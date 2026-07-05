@@ -11,6 +11,7 @@ type PageProps = {
   searchParams: Promise<{
     search?: string;
     status?: string;
+    orderType?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -32,6 +33,10 @@ function parseStatus(raw: string | undefined): FieldSalesOrderStatus | undefined
   return "PENDING_APPROVAL";
 }
 
+function parseOrderType(raw: string | undefined): "PUTUS" | "KONSI" | undefined {
+  return raw === "PUTUS" || raw === "KONSI" ? raw : undefined;
+}
+
 export default async function FieldSalesOrdersPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -40,6 +45,7 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
   const filter = {
     search: sp.search?.trim() || undefined,
     status: parseStatus(sp.status),
+    orderType: parseOrderType(sp.orderType),
   };
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
@@ -55,6 +61,7 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
       totalCount={totalCount}
       search={filter.search ?? ""}
       status={filter.status ?? "ALL"}
+      orderType={sp.orderType === "PUTUS" || sp.orderType === "KONSI" ? sp.orderType : "ALL"}
       page={page}
       pageSize={pageSize}
     />

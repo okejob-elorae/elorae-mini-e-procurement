@@ -1910,7 +1910,7 @@
   },
   "fieldSalesOrders": {
     "pageTitle": "Pesanan Lapangan",
-    "subtitle": "Pesanan putus dari tim sales lapangan yang menunggu persetujuan",
+    "subtitle": "Pesanan putus & transfer konsi dari tim sales lapangan yang menunggu persetujuan",
     "search": "Cari nomor pesanan atau nama toko",
     "status": "Status",
     "statusAll": "Semua",
@@ -1951,6 +1951,17 @@
     "errNotFound": "Pesanan tidak ditemukan.",
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
     "approved": "Pesanan disetujui.",
-    "rejected": "Pesanan ditolak."
+    "rejected": "Pesanan ditolak.",
+    "orderType": "Tipe",
+    "typeAll": "Semua",
+    "typePutus": "Putus",
+    "typeKonsi": "Konsi",
+    "colType": "Tipe",
+    "colAvailable": "Tersedia",
+    "konsiTransferNote": "Transfer konsinyasi — bukan penjualan; stok direservasi saat disetujui.",
+    "konsiMarginUnset": "Margin toko tidak valid atau belum diset — harga gross-up memakai harga jual apa adanya.",
+    "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Stok akan direservasi (bukan dijual).",
+    "rejectConfirmKonsi": "Tolak transfer konsinyasi ini?",
+    "errInsufficientStock": "Stok tidak cukup untuk direservasi."
   }
 }

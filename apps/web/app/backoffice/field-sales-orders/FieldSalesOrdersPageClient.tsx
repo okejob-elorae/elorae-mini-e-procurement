@@ -32,6 +32,7 @@ type Props = {
   totalCount: number;
   search: string;
   status: StatusFilter;
+  orderType: "ALL" | "PUTUS" | "KONSI";
   page: number;
   pageSize: number;
 };
@@ -103,7 +104,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
             <Input
@@ -126,6 +127,19 @@ export function FieldSalesOrdersPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("orderType")}</label>
+            <Select value={props.orderType} onValueChange={(v) => pushParam("orderType", v === "ALL" ? undefined : v)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t("orderType")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("typeAll")}</SelectItem>
+                <SelectItem value="PUTUS">{t("typePutus")}</SelectItem>
+                <SelectItem value="KONSI">{t("typeKonsi")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex flex-col justify-end">
             <Button variant="outline" onClick={reset} className="w-full">
               {t("reset")}
@@ -139,6 +153,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
           <TableHeader>
             <TableRow>
               <TableHead>{t("colOrderNo")}</TableHead>
+              <TableHead>{t("colType")}</TableHead>
               <TableHead>{t("colStore")}</TableHead>
               <TableHead>{t("colSalesman")}</TableHead>
               <TableHead className="text-right">{t("colTotal")}</TableHead>
@@ -149,7 +164,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
           <TableBody>
             {props.orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                   {t("empty")}
                 </TableCell>
               </TableRow>
@@ -163,6 +178,11 @@ export function FieldSalesOrdersPageClient(props: Props) {
                   }
                 >
                   <TableCell className="font-mono text-sm">{o.orderNo}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">
+                      {o.orderType === "KONSI" ? t("typeKonsi") : t("typePutus")}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="max-w-[200px] truncate">{o.storeName}</TableCell>
                   <TableCell className="max-w-[160px] truncate">{o.salesmanName}</TableCell>
                   <TableCell className="text-right">{formatRupiah(o.total)}</TableCell>
