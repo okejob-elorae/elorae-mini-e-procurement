@@ -85,7 +85,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
               </Badge>
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <Clock className="h-3 w-3" />
-                {new Date(activeVisit.checkinAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {new Date(activeVisit.checkinAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" })}
               </span>
             </div>
             <div className="flex items-start gap-2">
