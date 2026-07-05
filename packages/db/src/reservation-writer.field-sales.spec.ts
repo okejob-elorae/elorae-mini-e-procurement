@@ -213,4 +213,31 @@ d("reserveKonsiFieldSalesOrder (test bed only)", () => {
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
     expect(Number(inv!.reservedQty)).toBe(3);
   });
+
+  it("handles a mixed batch — one reservable line and one short line independently", async () => {
+    await prisma.inventoryValue.update({
+      where: { itemId_variantSku: { itemId, variantSku } },
+      data: { qtyOnHand: 10 },
+    });
+    const okLineId = `konsi-line-${sku}-mixed-ok`;
+    const shortLineId = `konsi-line-${sku}-mixed-short`;
+    const res = await reserveKonsiFieldSalesOrder(prisma, {
+      orderNo: "KONSI/2026/0004",
+      lines: [
+        { fieldSalesLineId: okLineId, itemId, variantSku, qty: 4 },
+        { fieldSalesLineId: shortLineId, itemId, variantSku, qty: 50 },
+      ],
+    });
+    expect(res.reserved).toBe(1);
+    expect(res.skipped).toBe(0);
+    expect(res.shortLines).toHaveLength(1);
+    expect(res.shortLines[0].itemId).toBe(itemId);
+    const okRsv = await prisma.stockReservation.findUnique({ where: { fieldSalesLineId: okLineId } });
+    expect(okRsv).not.toBeNull();
+    expect(okRsv!.state).toBe("RESERVED");
+    const shortRsv = await prisma.stockReservation.findUnique({ where: { fieldSalesLineId: shortLineId } });
+    expect(shortRsv).toBeNull();
+    const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
+    expect(Number(inv!.reservedQty)).toBe(4);
+  });
 });

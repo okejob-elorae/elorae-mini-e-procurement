@@ -321,7 +321,7 @@ export async function releaseFieldSalesOrder(
   return hasTx(client) ? client.$transaction(run) : run(client);
 }
 
-export type KonsiReserveResult = ReserveOrderResult & { shortLines: OversellAlert[] };
+export type KonsiReserveResult = { reserved: number; skipped: number; shortLines: OversellAlert[] };
 
 export async function reserveKonsiFieldSalesOrder(
   client: AnyClient,
@@ -330,7 +330,6 @@ export async function reserveKonsiFieldSalesOrder(
   const run = async (tx: Prisma.TransactionClient): Promise<KonsiReserveResult> => {
     let reserved = 0;
     let skipped = 0;
-    const oversell: OversellAlert[] = [];
     const shortLines: OversellAlert[] = [];
     for (const line of input.lines) {
       const existing = await tx.stockReservation.findUnique({
@@ -342,9 +341,15 @@ export async function reserveKonsiFieldSalesOrder(
       }
       const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
-      const available = Number(inv.qtyOnHand) - Number(inv.reservedQty);
-      if (available < line.qty) {
-        shortLines.push({ itemId: line.itemId, variantSku: line.variantSku, available });
+      // Atomic guard: only increment if available (qtyOnHand - reservedQty) still covers qty.
+      // Prevents the check-then-write race under concurrent approvals.
+      const affected = await tx.$executeRaw`
+        UPDATE InventoryValue
+        SET reservedQty = reservedQty + ${line.qty}, lastUpdated = NOW(3)
+        WHERE id = ${inv.id} AND (qtyOnHand - reservedQty) >= ${line.qty}
+      `;
+      if (affected === 0) {
+        shortLines.push({ itemId: line.itemId, variantSku: line.variantSku, available: Number(inv.qtyOnHand) - Number(inv.reservedQty) });
         continue;
       }
       await tx.stockReservation.create({
@@ -357,13 +362,9 @@ export async function reserveKonsiFieldSalesOrder(
           state: "RESERVED",
         },
       });
-      await tx.inventoryValue.update({
-        where: { id: inv.id },
-        data: { reservedQty: { increment: line.qty }, lastUpdated: new Date() },
-      });
       reserved += 1;
     }
-    return { reserved, skipped, oversell, shortLines };
+    return { reserved, skipped, shortLines };
   };
   return hasTx(client) ? client.$transaction(run) : run(client);
 }
