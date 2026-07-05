@@ -22,21 +22,35 @@ export async function createFieldSalesOrder(input: {
     });
     if (!active) throw new NoActiveVisitError(input.storeId, input.salesmanId);
 
-    const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
-    const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, minOrderQty: true } });
-    const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
-    const globalMin = globalRow ? Number(globalRow.value) : 6;
-    const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
-    const violations = validateMinQtyLines(input.lines, minByItemId);
-    if (violations.length > 0) throw new MinQtyViolationError(violations);
+    const store = await tx.store.findUniqueOrThrow({
+      where: { id: input.storeId },
+      select: { termsType: true },
+    });
+    const isKonsi = store.termsType === "KONSI";
 
-    const orderNo = await generateDocNumber("PUTUS", tx);
-    const linesData = input.lines.map((l) => ({ ...l, lineTotal: l.qty * l.unitPrice }));
+    if (!isKonsi) {
+      const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
+      const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, minOrderQty: true } });
+      const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
+      const globalMin = globalRow ? Number(globalRow.value) : 6;
+      const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
+      const violations = validateMinQtyLines(input.lines, minByItemId);
+      if (violations.length > 0) throw new MinQtyViolationError(violations);
+    }
+
+    const orderNo = await generateDocNumber(isKonsi ? "KONSI" : "PUTUS", tx);
+    // Konsi lines carry no salesman price; gross-up is computed later at approve.
+    const linesData = input.lines.map((l) => ({
+      ...l,
+      unitPrice: isKonsi ? 0 : l.unitPrice,
+      lineTotal: isKonsi ? 0 : l.qty * l.unitPrice,
+    }));
     const subtotal = linesData.reduce((s, l) => s + l.lineTotal, 0);
 
     const order = await tx.fieldSalesOrder.create({
       data: {
         orderNo,
+        orderType: isKonsi ? "KONSI" : "PUTUS",
         storeId: input.storeId,
         salesmanId: input.salesmanId,
         visitId: input.visitId ?? active.id,
@@ -58,18 +72,25 @@ export async function createFieldSalesOrder(input: {
       include: { lines: true },
     });
 
-    const { oversell } = await reserveFieldSalesOrder(tx, {
-      orderNo,
-      lines: order.lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
-    });
+    // Putus reserves at create; konsi reserves at approve (see approveFieldSalesOrder).
+    let oversell: OversellAlert[] = [];
+    if (!isKonsi) {
+      const r = await reserveFieldSalesOrder(tx, {
+        orderNo,
+        lines: order.lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
+      });
+      oversell = r.oversell;
+    }
 
     await tx.adminNotification.create({
       data: {
         category: "PENDING_ORDER_APPROVAL",
         severity: "INFO",
-        title: `Putus order ${orderNo} awaiting approval`,
-        message: `New putus order ${orderNo} (total ${subtotal}) is pending approval.`,
-        metadata: { orderId: order.id, orderNo, storeId: input.storeId, salesmanId: input.salesmanId, total: subtotal },
+        title: `${isKonsi ? "Konsi transfer" : "Putus order"} ${orderNo} awaiting approval`,
+        message: isKonsi
+          ? `New konsi transfer request ${orderNo} is pending approval.`
+          : `New putus order ${orderNo} (total ${subtotal}) is pending approval.`,
+        metadata: { orderId: order.id, orderNo, orderType: isKonsi ? "KONSI" : "PUTUS", storeId: input.storeId, salesmanId: input.salesmanId, total: subtotal },
       },
     });
 
