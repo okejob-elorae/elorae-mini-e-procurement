@@ -180,6 +180,7 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
     if (form.type === "TIERED") {
       if (form.tiers.length === 0) return t("errInvalid");
       if (form.tiers.some((row) => row.minQty === null || row.unitPrice === null)) return t("errInvalid");
+      if (new Set(form.tiers.map((t) => t.minQty)).size !== form.tiers.length) return t("errInvalid");
     } else if (form.value === null) {
       return t("errInvalid");
     }
@@ -441,7 +442,6 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
                   <Label>{t("items")}</Label>
                   <Input
                     placeholder={tCommon("search")}
-                    disabled={fieldsDisabled}
                     value={itemSearch}
                     onChange={(e) => setItemSearch(e.target.value)}
                   />
@@ -492,7 +492,6 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
                   <Label>{t("stores")}</Label>
                   <Input
                     placeholder={tCommon("search")}
-                    disabled={fieldsDisabled}
                     value={storeSearch}
                     onChange={(e) => setStoreSearch(e.target.value)}
                   />
