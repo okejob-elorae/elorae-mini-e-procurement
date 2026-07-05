@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { FieldSalesOrderStatus } from "@/lib/field-sales/queries";
+import type { FieldSalesOrderStatus, FieldSalesOrderType } from "@/lib/field-sales/queries";
 import {
   approveFieldSalesOrderAction,
   rejectFieldSalesOrderAction,
@@ -27,9 +27,10 @@ type Props = {
   orderId: string;
   status: FieldSalesOrderStatus;
   canApprove: boolean;
+  orderType: FieldSalesOrderType;
 };
 
-export function ApproveRejectCard({ orderId, status, canApprove }: Props) {
+export function ApproveRejectCard({ orderId, status, canApprove, orderType }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
   const [isPending, startTransition] = useTransition();
@@ -49,6 +50,8 @@ export function ApproveRejectCard({ orderId, status, canApprove }: Props) {
       toast.error(t("errForbidden"));
     } else if (r.reason === "INVALID_TRANSITION") {
       toast.error(t("errAlreadyDecided"));
+    } else if (r.reason === "INSUFFICIENT_STOCK") {
+      toast.error(t("errInsufficientStock"));
     } else {
       toast.error(t("errNotFound"));
     }
@@ -97,7 +100,9 @@ export function ApproveRejectCard({ orderId, status, canApprove }: Props) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("approve")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("approveConfirm")}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {orderType === "KONSI" ? t("approveConfirmKonsi") : t("approveConfirm")}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
@@ -118,7 +123,9 @@ export function ApproveRejectCard({ orderId, status, canApprove }: Props) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("reject")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("rejectConfirm")}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {orderType === "KONSI" ? t("rejectConfirmKonsi") : t("rejectConfirm")}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">{t("rejectReasonLabel")}</label>

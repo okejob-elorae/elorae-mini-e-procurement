@@ -73,7 +73,14 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
         <Badge variant="outline">{isKonsi ? t("typeKonsi") : t("typePutus")}</Badge>
       </div>
 
-      {canApprove && <ApproveRejectCard orderId={order.id} status={order.status} canApprove={canApprove} />}
+      {canApprove && (
+        <ApproveRejectCard
+          orderId={order.id}
+          status={order.status}
+          canApprove={canApprove}
+          orderType={order.orderType}
+        />
+      )}
 
       <Card className="p-4 space-y-2">
         <h2 className="font-semibold">{t("detailTitle")}</h2>
