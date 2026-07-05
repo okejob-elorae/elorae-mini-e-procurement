@@ -111,6 +111,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
                 <>
                   <TableHead className="text-right">{t("colUnitPrice")}</TableHead>
                   <TableHead className="text-right">{t("colLineTotal")}</TableHead>
+                  <TableHead className="text-right">{t("colDiscount")}</TableHead>
                 </>
               )}
             </TableRow>
@@ -126,6 +127,12 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
                   <>
                     <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>
                     <TableCell className="text-right">{formatRupiah(line.lineTotal)}</TableCell>
+                    <TableCell className="text-right">
+                      {line.discountAmount > 0 ? formatRupiah(line.discountAmount) : "—"}
+                      {line.appliedPromoName && (
+                        <div className="text-xs text-muted-foreground">{line.appliedPromoName}</div>
+                      )}
+                    </TableCell>
                   </>
                 )}
               </TableRow>
@@ -139,6 +146,17 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
               <span className="text-muted-foreground">{t("subtotal")}</span>
               <span>{formatRupiah(order.subtotal)}</span>
             </div>
+            {order.orderDiscountAmount > 0 && (
+              <div className="flex w-56 justify-between">
+                <span className="text-muted-foreground">{t("orderDiscount")}</span>
+                <span>
+                  −{formatRupiah(order.orderDiscountAmount)}
+                  {order.appliedOrderPromoName && (
+                    <div className="text-xs text-muted-foreground text-right">{order.appliedOrderPromoName}</div>
+                  )}
+                </span>
+              </div>
+            )}
             <div className="flex w-56 justify-between border-t pt-1 font-semibold">
               <span>{t("total")}</span>
               <span>{formatRupiah(order.total)}</span>
@@ -148,6 +166,10 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
 
         {isKonsi && order.status === "APPROVED" && (order.marginPercent === null || order.marginPercent < 0 || order.marginPercent >= 100) && (
           <p className="mt-2 text-right text-xs text-amber-600">{t("konsiMarginUnset")}</p>
+        )}
+
+        {showMoney && order.lines.some((line) => line.belowCost) && (
+          <p className="mt-2 text-right text-xs text-amber-600">{t("promoBelowCost")}</p>
         )}
       </Card>
     </div>
