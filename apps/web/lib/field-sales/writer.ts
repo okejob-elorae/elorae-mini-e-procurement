@@ -1,6 +1,8 @@
 import { reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines, buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
+import { computeOrderPromos } from "@elorae/db/promo";
+import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError } from "./errors";
@@ -80,6 +82,30 @@ export async function createFieldSalesOrder(input: {
         lines: order.lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
       });
       oversell = r.oversell;
+
+      // Apply promos (server-authoritative, honor-at-create).
+      const itemMeta = await tx.item.findMany({
+        where: { id: { in: Array.from(new Set(order.lines.map((l) => l.itemId))) } },
+        select: { id: true, inventoryValues: { select: { avgCost: true } } },
+      });
+      const avgCostById = new Map(itemMeta.map((i) => [i.id, i.inventoryValues[0] ? Number(i.inventoryValues[0].avgCost) : 0]));
+      const promos = await fetchActivePromosForStore(input.storeId, new Date(), tx);
+      const result = computeOrderPromos({
+        lines: order.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, unitPrice: Number(l.unitPrice), avgCost: avgCostById.get(l.itemId) ?? 0 })),
+        activePromos: promos,
+      });
+      let netTotal = 0;
+      for (let i = 0; i < order.lines.length; i++) {
+        const l = order.lines[i];
+        const res = result.lines[i];
+        netTotal += Number(l.lineTotal) - res.discountAmount;
+        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { discountAmount: res.discountAmount, appliedPromoId: res.appliedPromoId } });
+      }
+      netTotal -= result.orderDiscountAmount;
+      await tx.fieldSalesOrder.update({
+        where: { id: order.id },
+        data: { total: netTotal, orderDiscountAmount: result.orderDiscountAmount, appliedOrderPromoId: result.appliedOrderPromoId },
+      });
     }
 
     await tx.adminNotification.create({
