@@ -146,7 +146,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
           </div>
         )}
 
-        {isKonsi && order.status === "APPROVED" && (order.marginPercent === null || order.marginPercent >= 100) && (
+        {isKonsi && order.status === "APPROVED" && (order.marginPercent === null || order.marginPercent < 0 || order.marginPercent >= 100) && (
           <p className="mt-2 text-right text-xs text-amber-600">{t("konsiMarginUnset")}</p>
         )}
       </Card>

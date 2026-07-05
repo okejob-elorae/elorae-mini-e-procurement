@@ -1959,7 +1959,7 @@
     "colType": "Type",
     "colAvailable": "Available",
     "konsiTransferNote": "Consignment transfer — not a sale; stock is reserved on approval.",
-    "konsiMarginUnset": "Store margin not set — gross-up uses the raw selling price.",
+    "konsiMarginUnset": "Store margin invalid or not set — gross-up uses the raw selling price.",
     "approveConfirmKonsi": "Approve this consignment transfer? Stock will be reserved (not sold).",
     "rejectConfirmKonsi": "Reject this consignment transfer?",
     "errInsufficientStock": "Not enough stock to reserve."

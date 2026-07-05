@@ -1959,7 +1959,7 @@
     "colType": "Tipe",
     "colAvailable": "Tersedia",
     "konsiTransferNote": "Transfer konsinyasi — bukan penjualan; stok direservasi saat disetujui.",
-    "konsiMarginUnset": "Margin toko belum diset — harga gross-up memakai harga jual apa adanya.",
+    "konsiMarginUnset": "Margin toko tidak valid atau belum diset — harga gross-up memakai harga jual apa adanya.",
     "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Stok akan direservasi (bukan dijual).",
     "rejectConfirmKonsi": "Tolak transfer konsinyasi ini?",
     "errInsufficientStock": "Stok tidak cukup untuk direservasi."
