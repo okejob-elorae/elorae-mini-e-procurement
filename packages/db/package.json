@@ -25,6 +25,10 @@
       "types": "./dist/src/pricing.d.ts",
       "default": "./dist/src/pricing.js"
     },
+    "./promo": {
+      "types": "./dist/src/promo.d.ts",
+      "default": "./dist/src/promo.js"
+    },
     "./field-sales": {
       "types": "./dist/src/field-sales.d.ts",
       "default": "./dist/src/field-sales.js"
