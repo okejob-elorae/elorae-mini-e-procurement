@@ -1,10 +1,9 @@
-import { prisma, Prisma, reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
+import { reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines, buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { generateDocNumber } from "@/lib/docNumber";
+import { runSerializable } from "@/lib/db/tx-retry";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError } from "./errors";
-
-const SER = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable } as const;
 
 type CreateLine = { itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number };
 
@@ -16,7 +15,7 @@ export async function createFieldSalesOrder(input: {
   note?: string;
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[] }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
-  return prisma.$transaction(async (tx) => {
+  return runSerializable(async (tx) => {
     const active = await tx.storeVisit.findFirst({
       where: { storeId: input.storeId, userId: input.salesmanId, checkoutAt: null },
       select: { id: true },
@@ -96,11 +95,11 @@ export async function createFieldSalesOrder(input: {
     });
 
     return { orderId: order.id, orderNo, oversell };
-  }, SER);
+  });
 }
 
 export async function approveFieldSalesOrder(input: { orderId: string; approvedById: string }): Promise<{ ok: true }> {
-  return prisma.$transaction(async (tx) => {
+  return runSerializable(async (tx) => {
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
       include: {
@@ -162,11 +161,11 @@ export async function approveFieldSalesOrder(input: { orderId: string; approvedB
       data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById },
     });
     return { ok: true };
-  }, SER);
+  });
 }
 
 export async function rejectFieldSalesOrder(input: { orderId: string; rejectedById: string; reason?: string }): Promise<{ ok: true }> {
-  return prisma.$transaction(async (tx) => {
+  return runSerializable(async (tx) => {
     const order = await tx.fieldSalesOrder.findUnique({ where: { id: input.orderId }, include: { lines: { select: { id: true } } } });
     if (!order) throw new InvalidOrderTransitionError("MISSING", "REJECTED");
     if (order.status === "REJECTED") return { ok: true };
@@ -178,5 +177,5 @@ export async function rejectFieldSalesOrder(input: { orderId: string; rejectedBy
       data: { status: "REJECTED", rejectedAt: new Date(), rejectedById: input.rejectedById, rejectReason: input.reason },
     });
     return { ok: true };
-  }, SER);
+  });
 }
