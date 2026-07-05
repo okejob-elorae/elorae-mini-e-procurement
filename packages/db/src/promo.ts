@@ -66,7 +66,7 @@ export function computeOrderPromos(input: { lines: PromoOrderLine[]; activePromo
     const best = pickBest(cands);
     const discountAmount = best ? best.discount : 0;
     const netUnit = line.qty > 0 ? (lineTotal - discountAmount) / line.qty : 0;
-    return { discountAmount, appliedPromoId: best ? best.promo.id : null, belowCost: netUnit < line.avgCost };
+    return { discountAmount, appliedPromoId: best ? best.promo.id : null, belowCost: line.qty > 0 && netUnit < line.avgCost };
   });
 
   const subtotal = input.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
@@ -80,6 +80,7 @@ export function computeOrderPromos(input: { lines: PromoOrderLine[]; activePromo
       let discount = 0;
       if (promo.type === "PERCENT" && promo.value !== null) discount = (netSubtotal * promo.value) / 100;
       else if (promo.type === "FIXED" && promo.value !== null) discount = Math.min(promo.value, netSubtotal);
+      // TIERED is line-level only (backoffice validation enforces level=LINE for TIERED); order-level TIERED yields no discount.
       return { promo, discount: Math.min(discount, netSubtotal) };
     });
   const bestOrder = netSubtotal > 0 ? pickBest(orderCands) : null;

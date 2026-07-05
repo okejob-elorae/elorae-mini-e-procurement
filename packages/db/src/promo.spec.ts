@@ -69,4 +69,18 @@ describe("computeOrderPromos", () => {
     expect(r.lines[0].discountAmount).toBe(50); // net unit 50 < cost 70
     expect(r.lines[0].belowCost).toBe(true);
   });
+
+  it("order-level TIERED promo yields no discount", () => {
+    const orderTiered: PromoInput = { id: "ot1", type: "TIERED", level: "ORDER", value: null, minQty: null, minOrderSubtotal: null, minOrderQty: null, priority: 0, itemIds: [], tiers: [{ minQty: 5, unitPrice: 80 }] };
+    const r = computeOrderPromos({ lines: [line({ itemId: "a", qty: 10, unitPrice: 100 })], activePromos: [orderTiered] });
+    expect(r.orderDiscountAmount).toBe(0);
+    expect(r.appliedOrderPromoId).toBeNull();
+  });
+
+  it("qty 0 line never flags belowCost", () => {
+    const promo: PromoInput = { id: "p1", type: "PERCENT", level: "LINE", value: 10, minQty: null, minOrderSubtotal: null, minOrderQty: null, priority: 0, itemIds: ["a"], tiers: [] };
+    const r = computeOrderPromos({ lines: [line({ itemId: "a", qty: 0, unitPrice: 100, avgCost: 50 })], activePromos: [promo] });
+    expect(r.lines[0].belowCost).toBe(false);
+    expect(r.lines[0].discountAmount).toBe(0);
+  });
 });
