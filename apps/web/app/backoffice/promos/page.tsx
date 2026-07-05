@@ -44,6 +44,7 @@ export default async function PromosPage({ searchParams }: PageProps) {
   const filter = {
     type: parseType(sp.type),
     active: parseActive(sp.active),
+    search: sp.search?.trim() || undefined,
   };
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);

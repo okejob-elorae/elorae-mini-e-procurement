@@ -41,12 +41,13 @@ export type PromoDetail = PromoListItem & {
 };
 
 export async function listPromos(
-  filter: { type?: string; active?: boolean },
+  filter: { type?: string; active?: boolean; search?: string },
   paging: { page: number; pageSize: number },
 ): Promise<{ promos: PromoListItem[]; totalCount: number }> {
   const where: Prisma.PromoWhereInput = {};
   if (filter.type === "PERCENT" || filter.type === "FIXED" || filter.type === "TIERED") where.type = filter.type;
   if (typeof filter.active === "boolean") where.isActive = filter.active;
+  if (filter.search && filter.search.trim()) where.name = { contains: filter.search.trim() };
   const [rows, totalCount] = await Promise.all([
     prisma.promo.findMany({ where, orderBy: { createdAt: "desc" }, skip: (paging.page - 1) * paging.pageSize, take: paging.pageSize,
       select: { id: true, name: true, type: true, level: true, isActive: true, startsAt: true, endsAt: true } }),

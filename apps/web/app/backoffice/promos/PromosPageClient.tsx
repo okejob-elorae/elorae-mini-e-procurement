@@ -30,6 +30,9 @@ import { Pager } from "@/components/Pager";
 type PromoTypeFilter = "ALL" | "PERCENT" | "FIXED" | "TIERED";
 type ActiveFilter = "ALL" | "true" | "false";
 
+const TYPE_KEY = { PERCENT: "typePercent", FIXED: "typeFixed", TIERED: "typeTiered" } as const;
+const LEVEL_KEY = { LINE: "levelLine", ORDER: "levelOrder" } as const;
+
 type Props = {
   promos: PromoListItem[];
   totalCount: number;
@@ -173,9 +176,11 @@ export function PromosPageClient(props: Props) {
                 >
                   <TableCell className="max-w-[240px] truncate">{p.name}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{p.type}</Badge>
+                    <Badge variant="outline">
+                      {t(TYPE_KEY[p.type as keyof typeof TYPE_KEY] ?? "typePercent")}
+                    </Badge>
                   </TableCell>
-                  <TableCell>{p.level}</TableCell>
+                  <TableCell>{t(LEVEL_KEY[p.level as keyof typeof LEVEL_KEY] ?? "levelLine")}</TableCell>
                   <TableCell>
                     <Badge variant={p.isActive ? "default" : "secondary"}>
                       {p.isActive ? t("activeYes") : t("activeNo")}
