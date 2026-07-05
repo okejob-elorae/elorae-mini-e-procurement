@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, neverSentItemIds } from "./queries";
+import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds } from "./queries";
 import { Prisma, prisma } from "@elorae/db";
 
 describe("serializeListItem", () => {
@@ -124,7 +124,7 @@ d("konsi queries (test bed only)", () => {
     expect(res.orders.map((o) => o.id)).not.toContain(putus.id);
   });
 
-  it("neverSentItemIds includes items on non-rejected konsi lines, excludes rejected-only items", async () => {
+  it("sentItemIds includes items on non-rejected konsi lines, excludes rejected-only items", async () => {
     const item2 = await prisma.item.create({ data: { sku: `${sku}-B`, nameId: "T2", nameEn: "T2", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000 } });
     itemId2 = item2.id;
     await prisma.inventoryValue.create({ data: { itemId: itemId2, variantSku: "", qtyOnHand: 20, reservedQty: 0, avgCost: 1000, totalValue: 20000 } });
@@ -132,7 +132,7 @@ d("konsi queries (test bed only)", () => {
     await seedOrder({ orderType: "KONSI", status: "PENDING_APPROVAL", forItemId: itemId });
     await seedOrder({ orderType: "KONSI", status: "REJECTED", forItemId: itemId2 });
 
-    const sent = await neverSentItemIds(storeId);
+    const sent = await sentItemIds(storeId);
     expect(sent.has(itemId)).toBe(true);
     expect(sent.has(itemId2)).toBe(false);
   });

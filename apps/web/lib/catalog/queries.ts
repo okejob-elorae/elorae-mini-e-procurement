@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { aggregateInventoryValues } from "@/lib/items/queries";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
+import { sentItemIds } from "@/lib/field-sales/queries";
 
 export type CatalogItem = {
   itemId: string;
@@ -13,6 +14,7 @@ export type CatalogItem = {
   available: number;
   price: number | null;
   priceLabel: string | null;
+  neverSent: boolean;
 };
 
 export type CatalogPayload = {
@@ -36,6 +38,7 @@ export function serializeCatalogItem(
   row: CatalogRow,
   store: { termsType: "PUTUS" | "KONSI"; marginPercent: number | null },
   imageUrl: string | null,
+  neverSent: boolean,
 ): CatalogItem {
   const inv = aggregateInventoryValues(row.inventoryValues);
   const { price, label } = computeStorePrice({
@@ -53,6 +56,7 @@ export function serializeCatalogItem(
     available: inv?.available ?? 0,
     price,
     priceLabel: label,
+    neverSent,
   };
 }
 
@@ -68,6 +72,8 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
     termsType: store.termsType,
     marginPercent: store.marginPercent ? store.marginPercent.toNumber() : null,
   };
+
+  const sentSet = store.termsType === "KONSI" ? await sentItemIds(store.id) : new Set<string>();
 
   const rows = await prisma.item.findMany({
     where: { isActive: true, type: "FINISHED_GOOD" },
@@ -87,7 +93,7 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
   const key = (itemId: string) => `${itemId}|`;
 
   const items = rows.map((r) =>
-    serializeCatalogItem(r, storeCtx, images.get(key(r.id)) ?? null),
+    serializeCatalogItem(r, storeCtx, images.get(key(r.id)) ?? null, storeCtx.termsType === "KONSI" ? !sentSet.has(r.id) : false),
   );
 
   return { store: storeCtx, items };
