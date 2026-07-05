@@ -48,6 +48,7 @@ export async function createFieldSalesOrder(input: {
       lineTotal: isKonsi ? 0 : l.qty * l.unitPrice,
     }));
     const subtotal = linesData.reduce((s, l) => s + l.lineTotal, 0);
+    let finalTotal = subtotal;
 
     const order = await tx.fieldSalesOrder.create({
       data: {
@@ -106,6 +107,7 @@ export async function createFieldSalesOrder(input: {
         where: { id: order.id },
         data: { total: netTotal, orderDiscountAmount: result.orderDiscountAmount, appliedOrderPromoId: result.appliedOrderPromoId },
       });
+      finalTotal = netTotal;
     }
 
     await tx.adminNotification.create({
@@ -115,8 +117,8 @@ export async function createFieldSalesOrder(input: {
         title: `${isKonsi ? "Konsi transfer" : "Putus order"} ${orderNo} awaiting approval`,
         message: isKonsi
           ? `New konsi transfer request ${orderNo} is pending approval.`
-          : `New putus order ${orderNo} (total ${subtotal}) is pending approval.`,
-        metadata: { orderId: order.id, orderNo, orderType: isKonsi ? "KONSI" : "PUTUS", storeId: input.storeId, salesmanId: input.salesmanId, total: subtotal },
+          : `New putus order ${orderNo} (total ${finalTotal}) is pending approval.`,
+        metadata: { orderId: order.id, orderNo, orderType: isKonsi ? "KONSI" : "PUTUS", storeId: input.storeId, salesmanId: input.salesmanId, total: finalTotal },
       },
     });
 
