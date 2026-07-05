@@ -1,7 +1,8 @@
-import { prisma, Prisma, reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, type OversellAlert } from "@elorae/db";
+import { prisma, Prisma, reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines, buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
+import { computeStorePrice } from "@elorae/db/pricing";
 import { generateDocNumber } from "@/lib/docNumber";
-import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError } from "./errors";
+import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError } from "./errors";
 
 const SER = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable } as const;
 
@@ -102,14 +103,44 @@ export async function approveFieldSalesOrder(input: { orderId: string; approvedB
   return prisma.$transaction(async (tx) => {
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
-      include: { lines: { include: { item: { select: { sku: true, category: { select: { name: true } } } } } } },
+      include: {
+        store: { select: { marginPercent: true } },
+        lines: { include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } } },
+      },
     });
     if (!order) throw new InvalidOrderTransitionError("MISSING", "APPROVED");
     if (order.status === "APPROVED") return { ok: true };
     if (order.status !== "PENDING_APPROVAL") throw new InvalidOrderTransitionError(order.status, "APPROVED");
 
-    await consumeFieldSalesOrder(tx, { orderNo: order.orderNo, fieldSalesLineIds: order.lines.map((l) => l.id) });
+    if (order.orderType === "KONSI") {
+      const { shortLines } = await reserveKonsiFieldSalesOrder(tx, {
+        orderNo: order.orderNo,
+        lines: order.lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
+      });
+      if (shortLines.length > 0) throw new InsufficientStockError(shortLines);
 
+      const margin = order.store.marginPercent === null ? null : Number(order.store.marginPercent);
+      let total = 0;
+      for (const l of order.lines) {
+        const { price } = computeStorePrice({
+          sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
+          termsType: "KONSI",
+          marginPercent: margin,
+        });
+        const unit = price ?? 0;
+        const lineTotal = unit * l.qty;
+        total += lineTotal;
+        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { unitPrice: unit, lineTotal } });
+      }
+      await tx.fieldSalesOrder.update({
+        where: { id: order.id },
+        data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal: total, total },
+      });
+      return { ok: true };
+    }
+
+    // PUTUS (unchanged): consume + materialize SalesHistory
+    await consumeFieldSalesOrder(tx, { orderNo: order.orderNo, fieldSalesLineIds: order.lines.map((l) => l.id) });
     const now = new Date();
     const rows = buildOfflineSalesHistoryRows({
       orderNo: order.orderNo,
@@ -126,7 +157,6 @@ export async function approveFieldSalesOrder(input: { orderId: string; approvedB
       })),
     }).map((row) => ({ ...row, orderDate: now, completedDate: now }));
     await tx.salesHistory.createMany({ data: rows });
-
     await tx.fieldSalesOrder.update({
       where: { id: order.id },
       data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById },
