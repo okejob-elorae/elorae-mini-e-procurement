@@ -320,3 +320,50 @@ export async function releaseFieldSalesOrder(
   };
   return hasTx(client) ? client.$transaction(run) : run(client);
 }
+
+export type KonsiReserveResult = ReserveOrderResult & { shortLines: OversellAlert[] };
+
+export async function reserveKonsiFieldSalesOrder(
+  client: AnyClient,
+  input: { orderNo: string; lines: FieldSalesReservationLine[] },
+): Promise<KonsiReserveResult> {
+  const run = async (tx: Prisma.TransactionClient): Promise<KonsiReserveResult> => {
+    let reserved = 0;
+    let skipped = 0;
+    const oversell: OversellAlert[] = [];
+    const shortLines: OversellAlert[] = [];
+    for (const line of input.lines) {
+      const existing = await tx.stockReservation.findUnique({
+        where: { fieldSalesLineId: line.fieldSalesLineId },
+      });
+      if (existing) {
+        skipped += 1;
+        continue;
+      }
+      const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
+      if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
+      const available = Number(inv.qtyOnHand) - Number(inv.reservedQty);
+      if (available < line.qty) {
+        shortLines.push({ itemId: line.itemId, variantSku: line.variantSku, available });
+        continue;
+      }
+      await tx.stockReservation.create({
+        data: {
+          source: "FIELD_SALES_KONSI",
+          fieldSalesLineId: line.fieldSalesLineId,
+          itemId: line.itemId,
+          variantSku: line.variantSku,
+          qty: line.qty,
+          state: "RESERVED",
+        },
+      });
+      await tx.inventoryValue.update({
+        where: { id: inv.id },
+        data: { reservedQty: { increment: line.qty }, lastUpdated: new Date() },
+      });
+      reserved += 1;
+    }
+    return { reserved, skipped, oversell, shortLines };
+  };
+  return hasTx(client) ? client.$transaction(run) : run(client);
+}

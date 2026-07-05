@@ -97,6 +97,7 @@ export {
   reserveFieldSalesOrder,
   consumeFieldSalesOrder,
   releaseFieldSalesOrder,
+  reserveKonsiFieldSalesOrder,
   type ReservationLine,
   type OversellAlert,
   type ReserveOrderInput,
@@ -104,6 +105,7 @@ export {
   type ConsumeOrderResult,
   type ReleaseOrderResult,
   type FieldSalesReservationLine,
+  type KonsiReserveResult,
 } from "./reservation-writer";
 export {
   classifyForBackfill,
