@@ -183,6 +183,9 @@ async function main() {
     // Stores (Field Sales — SFA)
     { code: 'stores:view', module: 'stores', action: 'view', description: 'View stores' },
     { code: 'stores:manage', module: 'stores', action: 'manage', description: 'Create, edit, deactivate stores' },
+    // Promos
+    { code: 'promos:view', module: 'promos', action: 'view', description: 'View promos' },
+    { code: 'promos:manage', module: 'promos', action: 'manage', description: 'Create, edit, activate/deactivate promos' },
   ];
 
   // Upsert all permissions
