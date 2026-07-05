@@ -166,22 +166,25 @@ export async function approveFieldSalesOrder(input: { orderId: string; approvedB
       return { ok: true };
     }
 
-    // PUTUS (unchanged): consume + materialize SalesHistory
+    // PUTUS: consume + materialize SalesHistory with NET figures (honor-at-create; no promo recompute here).
     await consumeFieldSalesOrder(tx, { orderNo: order.orderNo, fieldSalesLineIds: order.lines.map((l) => l.id) });
     const now = new Date();
     const rows = buildOfflineSalesHistoryRows({
       orderNo: order.orderNo,
       orderTotal: Number(order.total),
-      lines: order.lines.map((l) => ({
-        itemId: l.itemId,
-        variantSku: l.variantSku,
-        parentSku: l.item.sku,
-        productName: l.productName,
-        qty: l.qty,
-        unitPrice: Number(l.unitPrice),
-        lineTotal: Number(l.lineTotal),
-        productCategory: l.item.category?.name ?? null,
-      })),
+      lines: order.lines.map((l) => {
+        const net = Number(l.lineTotal) - Number(l.discountAmount);
+        return {
+          itemId: l.itemId,
+          variantSku: l.variantSku,
+          parentSku: l.item.sku,
+          productName: l.productName,
+          qty: l.qty,
+          unitPrice: l.qty > 0 ? net / l.qty : 0,
+          lineTotal: net,
+          productCategory: l.item.category?.name ?? null,
+        };
+      }),
     }).map((row) => ({ ...row, orderDate: now, completedDate: now }));
     await tx.salesHistory.createMany({ data: rows });
     await tx.fieldSalesOrder.update({

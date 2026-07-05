@@ -152,6 +152,37 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.subtotal)).toBe(200);
     expect(Number(order!.total)).toBe(180);
   });
+
+  it("putus approve writes net SalesHistory (discounted unit + line total)", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1 } });
+    const promo = await prisma.promo.create({
+      data: {
+        name: `TEST-PROMO-${sku}`,
+        type: "PERCENT",
+        level: "LINE",
+        termsType: "PUTUS",
+        value: 10,
+        allStores: true,
+        isActive: true,
+        items: { create: [{ itemId }] },
+      },
+    });
+    promoId = promo.id;
+
+    const { orderId, orderNo } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ itemId, variantSku: "", productName: "X", qty: 2, unitPrice: 100 }],
+    });
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+
+    const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
+    expect(hist).toHaveLength(1);
+    expect(Number(hist[0].unitPriceAfterDiscount)).toBe(90);
+    expect(Number(hist[0].lineTotal)).toBe(180);
+    expect(Number(hist[0].orderTotal)).toBe(180);
+  });
 });
 
 d("createFieldSalesOrder — konsi", () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds } from "./queries";
+import { createFieldSalesOrder } from "./writer";
 import { Prisma, prisma } from "@elorae/db";
 
 describe("serializeListItem", () => {
@@ -145,5 +146,77 @@ d("konsi queries (test bed only)", () => {
     expect(detail!.orderType).toBe("KONSI");
     expect(detail!.lines).toHaveLength(1);
     expect(detail!.lines[0].available).toBe(15); // qtyOnHand 20 - reservedQty 5
+  });
+});
+
+d("putus detail with promo (test bed only)", () => {
+  const sku = `TEST-FSQ-PUTUS-${Math.random().toString(36).slice(2, 10)}`;
+  let uomId = "";
+  let itemId = "";
+  let storeId = "";
+  let salesmanId = "";
+  let visitId = "";
+  let promoId = "";
+
+  beforeEach(async () => {
+    promoId = "";
+    const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000, minOrderQty: 1 },
+    });
+    itemId = item.id;
+    await prisma.inventoryValue.create({ data: { itemId, variantSku: "", qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 } });
+    const store = await prisma.store.create({ data: { code: `S-${sku}`, name: "T", address: "T", termsType: "PUTUS", isActive: true } });
+    storeId = store.id;
+    const user = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    salesmanId = user!.id;
+    const visit = await prisma.storeVisit.create({ data: { storeId, userId: salesmanId, checkinLat: 0, checkinLng: 0 } });
+    visitId = visit.id;
+  });
+
+  afterEach(async () => {
+    if (promoId) await prisma.promo.deleteMany({ where: { id: promoId } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
+    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
+    await prisma.store.deleteMany({ where: { id: storeId } });
+    await prisma.stockReservation.deleteMany({ where: { itemId } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId } });
+    await prisma.item.deleteMany({ where: { id: itemId } });
+    await prisma.uOM.deleteMany({ where: { id: uomId } });
+  });
+
+  it("getFieldSalesOrderById exposes discountAmount, appliedPromoName, and order discount fields", async () => {
+    const promo = await prisma.promo.create({
+      data: {
+        name: `TEST-PROMO-${sku}`,
+        type: "PERCENT",
+        level: "LINE",
+        termsType: "PUTUS",
+        value: 10,
+        allStores: true,
+        isActive: true,
+        items: { create: [{ itemId }] },
+      },
+    });
+    promoId = promo.id;
+
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ itemId, variantSku: "", productName: "X", qty: 2, unitPrice: 100 }],
+    });
+
+    const detail = await getFieldSalesOrderById(orderId);
+    expect(detail).not.toBeNull();
+    expect(detail!.lines).toHaveLength(1);
+    expect(detail!.lines[0].discountAmount).toBe(20);
+    expect(detail!.lines[0].appliedPromoName).toBe(promo.name);
+    expect(detail!.lines[0].belowCost).toBe(true); // net unit 90 < avgCost 1000
+    expect(detail!.orderDiscountAmount).toBe(0);
+    expect(detail!.appliedOrderPromoName).toBeNull();
   });
 });
