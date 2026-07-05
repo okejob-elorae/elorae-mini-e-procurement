@@ -69,9 +69,7 @@ services:
       retries: 5
 
   api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+    image: ghcr.io/okejob-elorae/elorae-api:${IMAGE_TAG:-master}
     container_name: elorae-api
     restart: unless-stopped
     env_file:
@@ -96,9 +94,7 @@ services:
       start_period: 30s
 
   web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
+    image: ghcr.io/okejob-elorae/elorae-web:${IMAGE_TAG:-master}
     container_name: elorae-web
     restart: unless-stopped
     env_file:

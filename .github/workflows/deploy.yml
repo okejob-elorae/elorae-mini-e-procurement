@@ -14,6 +14,11 @@ on:
           - both
           - web
           - api
+      image_tag:
+        description: "Image tag to deploy (SHA or 'master'). Blank = this run's commit SHA."
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: deploy-vps
@@ -185,37 +190,43 @@ jobs:
 
   deploy-api:
     name: Deploy api
-    needs: [changes, migrate]
+    needs: [changes, build-push-api, migrate]
+    # No always() here on purpose: this if implicitly ANDs with "all needs succeeded",
+    # so a failed/skipped build-push-api or migrate correctly blocks the deploy. Do NOT
+    # add always() without also adding explicit needs.*.result checks (see deploy-web).
     if: |
       (github.event_name == 'push' && needs.changes.outputs.api == 'true') ||
       (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'api'))
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and rebuild api
+      - name: SSH pull + restart api
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          envs: IMAGE_TAG
           timeout: 2m
           command_timeout: 15m
           script: |
             set -euo pipefail
             cd /srv/elorae
-            docker compose -f docker-compose.prod.yml up -d --build api
+            docker compose -f docker-compose.prod.yml pull api
+            docker compose -f docker-compose.prod.yml up -d --no-build api
             docker image prune -f
-            docker builder prune -af --filter until=24h
 
   deploy-web:
     name: Deploy web
-    needs: [changes, migrate, deploy-api]
-    # Runs after api (sequential). always() lets it evaluate even when deploy-api is
-    # skipped (api unchanged); it still requires migrate to have succeeded and deploy-api
-    # to not have failed, plus web to have changed.
+    needs: [changes, build-push-web, migrate, deploy-api]
+    # Sequential after api. always() lets it evaluate when deploy-api is skipped
+    # (api unchanged); still requires migrate + build-push-web success and web changed.
     if: |
       always() &&
       needs.migrate.result == 'success' &&
+      needs.build-push-web.result == 'success' &&
       (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped') &&
       (
         (github.event_name == 'push' && needs.changes.outputs.web == 'true') ||
@@ -223,18 +234,21 @@ jobs:
       )
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and rebuild web
+      - name: SSH pull + restart web
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          envs: IMAGE_TAG
           timeout: 2m
           command_timeout: 15m
           script: |
             set -euo pipefail
             cd /srv/elorae
-            docker compose -f docker-compose.prod.yml up -d --build web
+            docker compose -f docker-compose.prod.yml pull web
+            docker compose -f docker-compose.prod.yml up -d --no-build web
             docker image prune -f
-            docker builder prune -af --filter until=24h
