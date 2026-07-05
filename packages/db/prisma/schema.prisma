@@ -262,6 +262,7 @@ model FieldSalesOrder {
   salesmanId    String
   visitId       String?
   status        FieldSalesOrderStatus @default(PENDING_APPROVAL)
+  orderType     FieldSalesOrderType   @default(PUTUS)
   subtotal      Decimal               @db.Decimal(15, 2)
   total         Decimal               @db.Decimal(15, 2)
   note          String?               @db.Text
@@ -302,9 +303,15 @@ enum FieldSalesOrderStatus {
   REJECTED
 }
 
+enum FieldSalesOrderType {
+  PUTUS
+  KONSI
+}
+
 enum ReserveSource {
   JUBELIO
   FIELD_SALES
+  FIELD_SALES_KONSI
 }
 
 model Item {
@@ -1393,6 +1400,7 @@ enum DocType {
   RECEIPT
   OPN
   PUTUS
+  KONSI
 }
 
 enum OpnameScope {

@@ -17,3 +17,10 @@ export class InvalidOrderTransitionError extends Error {
     this.name = "InvalidOrderTransitionError";
   }
 }
+export type ShortLine = { itemId: string; variantSku: string; available: number };
+export class InsufficientStockError extends Error {
+  constructor(public shortLines: ShortLine[]) {
+    super("INSUFFICIENT_STOCK");
+    this.name = "InsufficientStockError";
+  }
+}

@@ -2,9 +2,12 @@ import { prisma, Prisma } from "@elorae/db";
 
 export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 
+export type FieldSalesOrderType = "PUTUS" | "KONSI";
+
 export type FieldSalesOrderListItem = {
   id: string;
   orderNo: string;
+  orderType: FieldSalesOrderType;
   storeName: string;
   salesmanName: string;
   status: FieldSalesOrderStatus;
@@ -18,7 +21,7 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   approvedAt: Date | null;
   rejectedAt: Date | null;
   rejectReason: string | null;
-  lines: Array<{ id: string; productName: string; variantSku: string; qty: number; unitPrice: number; lineTotal: number }>;
+  lines: Array<{ id: string; productName: string; variantSku: string; qty: number; unitPrice: number; lineTotal: number; available: number }>;
 };
 
 const toNum = (v: Prisma.Decimal | number): number => Number(v);
@@ -26,6 +29,7 @@ const toNum = (v: Prisma.Decimal | number): number => Number(v);
 export function serializeListItem(row: {
   id: string;
   orderNo: string;
+  orderType: FieldSalesOrderType;
   status: FieldSalesOrderStatus;
   total: Prisma.Decimal | number;
   createdAt: Date;
@@ -35,6 +39,7 @@ export function serializeListItem(row: {
   return {
     id: row.id,
     orderNo: row.orderNo,
+    orderType: row.orderType,
     storeName: row.store.name,
     salesmanName: row.salesman.name ?? "—",
     status: row.status,
@@ -44,11 +49,12 @@ export function serializeListItem(row: {
 }
 
 export async function listFieldSalesOrders(
-  filter: { status?: FieldSalesOrderStatus; search?: string },
+  filter: { status?: FieldSalesOrderStatus; search?: string; orderType?: FieldSalesOrderType },
   paging: { page: number; pageSize: number },
 ): Promise<{ orders: FieldSalesOrderListItem[]; totalCount: number }> {
   const where: Prisma.FieldSalesOrderWhereInput = {};
   if (filter.status) where.status = filter.status;
+  if (filter.orderType) where.orderType = filter.orderType;
   if (filter.search && filter.search.trim()) {
     const s = filter.search.trim();
     where.OR = [{ orderNo: { contains: s } }, { store: { name: { contains: s } } }];
@@ -60,7 +66,7 @@ export async function listFieldSalesOrders(
       skip: (paging.page - 1) * paging.pageSize,
       take: paging.pageSize,
       select: {
-        id: true, orderNo: true, status: true, total: true, createdAt: true,
+        id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true,
         store: { select: { name: true } },
         salesman: { select: { name: true } },
       },
@@ -74,14 +80,20 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   const row = await prisma.fieldSalesOrder.findUnique({
     where: { id },
     select: {
-      id: true, orderNo: true, status: true, total: true, subtotal: true, note: true,
+      id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
-      lines: { select: { id: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true } },
+      lines: { select: { id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true } },
     },
   });
   if (!row) return null;
+  const itemIds = Array.from(new Set(row.lines.map((l) => l.itemId)));
+  const invs = await prisma.inventoryValue.findMany({ where: { itemId: { in: itemIds } }, select: { itemId: true, qtyOnHand: true, reservedQty: true } });
+  const availByItem = new Map<string, number>();
+  for (const iv of invs) {
+    availByItem.set(iv.itemId, (availByItem.get(iv.itemId) ?? 0) + (Number(iv.qtyOnHand) - Number(iv.reservedQty)));
+  }
   return {
     ...serializeListItem(row),
     note: row.note,
@@ -92,6 +104,19 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     lines: row.lines.map((l) => ({
       id: l.id, productName: l.productName, variantSku: l.variantSku,
       qty: l.qty, unitPrice: toNum(l.unitPrice), lineTotal: toNum(l.lineTotal),
+      available: availByItem.get(l.itemId) ?? 0,
     })),
   };
+}
+
+export async function neverSentItemIds(
+  storeId: string,
+  tx: { fieldSalesOrderLine: typeof prisma.fieldSalesOrderLine } = prisma,
+): Promise<Set<string>> {
+  const rows = await tx.fieldSalesOrderLine.findMany({
+    where: { order: { storeId, orderType: "KONSI", status: { not: "REJECTED" } } },
+    select: { itemId: true },
+    distinct: ["itemId"],
+  });
+  return new Set(rows.map((r) => r.itemId));
 }
