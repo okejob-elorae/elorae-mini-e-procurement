@@ -21,6 +21,7 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   approvedAt: Date | null;
   rejectedAt: Date | null;
   rejectReason: string | null;
+  marginPercent: number | null;
   lines: Array<{ id: string; productName: string; variantSku: string; qty: number; unitPrice: number; lineTotal: number; available: number }>;
 };
 
@@ -82,7 +83,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     select: {
       id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
-      store: { select: { name: true } },
+      store: { select: { name: true, marginPercent: true } },
       salesman: { select: { name: true } },
       lines: { select: { id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true } },
     },
@@ -101,6 +102,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     approvedAt: row.approvedAt,
     rejectedAt: row.rejectedAt,
     rejectReason: row.rejectReason,
+    marginPercent: row.store.marginPercent === null ? null : Number(row.store.marginPercent),
     lines: row.lines.map((l) => ({
       id: l.id, productName: l.productName, variantSku: l.variantSku,
       qty: l.qty, unitPrice: toNum(l.unitPrice), lineTotal: toNum(l.lineTotal),
