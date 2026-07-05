@@ -28,6 +28,7 @@ import {
   Store,
   Wallet,
   MapPin,
+  Tag,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -150,6 +151,12 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
       },
     ],
+  },
+  {
+    labelKey: 'promos',
+    href: '/backoffice/promos',
+    icon: Tag,
+    permission: PERMISSIONS.PROMOS_VIEW,
   },
   {
     labelKey: 'finance',
