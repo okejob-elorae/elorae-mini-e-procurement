@@ -149,12 +149,12 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
             {order.orderDiscountAmount > 0 && (
               <div className="flex w-56 justify-between">
                 <span className="text-muted-foreground">{t("orderDiscount")}</span>
-                <span>
+                <div className="text-right">
                   −{formatRupiah(order.orderDiscountAmount)}
                   {order.appliedOrderPromoName && (
-                    <div className="text-xs text-muted-foreground text-right">{order.appliedOrderPromoName}</div>
+                    <div className="text-xs text-muted-foreground">{order.appliedOrderPromoName}</div>
                   )}
-                </span>
+                </div>
               </div>
             )}
             <div className="flex w-56 justify-between border-t pt-1 font-semibold">
