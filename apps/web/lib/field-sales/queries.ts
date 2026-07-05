@@ -149,7 +149,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         available: availByItem.get(l.itemId) ?? 0,
         discountAmount,
         appliedPromoName: l.appliedPromoId ? promoNameById.get(l.appliedPromoId) ?? null : null,
-        belowCost: netUnit < avgCost,
+        belowCost: row.orderType === "PUTUS" && qty > 0 && netUnit < avgCost,
       };
     }),
   };
