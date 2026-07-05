@@ -109,7 +109,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   };
 }
 
-export async function neverSentItemIds(
+export async function sentItemIds(
   storeId: string,
   tx: { fieldSalesOrderLine: typeof prisma.fieldSalesOrderLine } = prisma,
 ): Promise<Set<string>> {

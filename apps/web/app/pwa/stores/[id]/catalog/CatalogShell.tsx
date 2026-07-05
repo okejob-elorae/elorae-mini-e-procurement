@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Loader2, Minus, Plus, WifiOff } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Loader2, Minus, Plus, Sparkles, WifiOff } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ type CatalogItem = {
   available: number;
   price: number | null;
   priceLabel: string | null;
+  neverSent: boolean;
 };
 
 type Payload = { items: CatalogItem[] };
@@ -42,6 +43,7 @@ export function CatalogShell({
   termsType: "PUTUS" | "KONSI";
   hasActiveVisit: boolean;
 }) {
+  const isKonsi = termsType === "KONSI";
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [q, setQ] = useState("");
@@ -68,7 +70,7 @@ export function CatalogShell({
           variantSku: "",
           sku: it.sku,
           nameId: it.nameId,
-          unitPrice: it.price ?? 0,
+          unitPrice: isKonsi ? 0 : (it.price ?? 0),
           available: it.available,
           qty,
         });
@@ -239,6 +241,39 @@ export function CatalogShell({
             </div>
           )}
 
+          {isKonsi && hasActiveVisit && items.some((it) => it.neverSent && it.available > 0 && !cart.has(it.sku)) && (
+            <Button
+              type="button"
+              variant="outline"
+              className="justify-start"
+              onClick={() =>
+                setCart((prev) => {
+                  const next = new Map(prev);
+                  let added = 0;
+                  for (const it of items) {
+                    if (it.neverSent && it.available > 0 && !next.has(it.sku)) {
+                      next.set(it.sku, {
+                        itemId: it.itemId,
+                        variantSku: "",
+                        sku: it.sku,
+                        nameId: it.nameId,
+                        unitPrice: 0,
+                        available: it.available,
+                        qty: 1,
+                      });
+                      added += 1;
+                    }
+                  }
+                  if (added > 0) toast.success(`${added} produk baru ditambahkan`);
+                  return next;
+                })
+              }
+            >
+              <Sparkles className="h-4 w-4" />
+              Sarankan produk baru
+            </Button>
+          )}
+
           {state === "loading" && <p className="text-sm text-muted-foreground">Memuat katalog…</p>}
           {state === "error" && (
             <p className="text-sm text-destructive">
@@ -252,7 +287,7 @@ export function CatalogShell({
           <div className="flex flex-col gap-2">
             {shown.map((it) => {
               const qty = cart.get(it.sku)?.qty ?? 0;
-              const canOrder = it.price != null && it.available > 0;
+              const canOrder = (isKonsi || it.price != null) && it.available > 0;
               return (
                 <Card key={it.sku} className="flex flex-row items-center gap-3 p-3">
                   <div className="h-12 w-12 shrink-0 overflow-hidden rounded bg-muted">
@@ -267,19 +302,32 @@ export function CatalogShell({
                     {it.categoryName && <p className="truncate text-xs text-muted-foreground">{it.categoryName}</p>}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
-                      {it.available > 0 ? `${it.available} tersedia` : "Habis"}
-                    </Badge>
-                    {it.price != null && (
-                      <>
-                        {it.priceLabel && (
-                          <span className="text-xs text-muted-foreground">{it.priceLabel}</span>
-                        )}
-                        <span className="text-sm font-semibold tabular-nums">{rupiah(it.price)}</span>
-                      </>
+                    {isKonsi ? (
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
+                          {it.available > 0 ? `${it.available} tersedia` : "Habis"}
+                        </Badge>
+                        {it.neverSent && <Badge variant="default">Baru</Badge>}
+                      </div>
+                    ) : (
+                      <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
+                        {it.available > 0 ? `${it.available} tersedia` : "Habis"}
+                      </Badge>
                     )}
-                    {it.price == null && it.available > 0 && (
-                      <span className="text-xs italic text-muted-foreground">Harga belum diset</span>
+                    {!isKonsi && (
+                      <>
+                        {it.price != null && (
+                          <>
+                            {it.priceLabel && (
+                              <span className="text-xs text-muted-foreground">{it.priceLabel}</span>
+                            )}
+                            <span className="text-sm font-semibold tabular-nums">{rupiah(it.price)}</span>
+                          </>
+                        )}
+                        {it.price == null && it.available > 0 && (
+                          <span className="text-xs italic text-muted-foreground">Harga belum diset</span>
+                        )}
+                      </>
                     )}
                     {canOrder && hasActiveVisit && (
                       <div className="flex items-center gap-1.5">
@@ -378,15 +426,18 @@ export function CatalogShell({
                       available: line.available,
                       price: line.unitPrice,
                       priceLabel: null,
+                      neverSent: false,
                     };
                   return (
                     <Card key={line.sku} className="flex flex-row items-center gap-3 p-3">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{line.nameId}</p>
                         <p className="truncate text-xs text-muted-foreground">{line.sku}</p>
-                        <p className="text-xs text-muted-foreground tabular-nums">
-                          {rupiah(line.unitPrice)} / pcs
-                        </p>
+                        {!isKonsi && (
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {rupiah(line.unitPrice)} / pcs
+                          </p>
+                        )}
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1.5">
                         <div className="flex items-center gap-1.5">
@@ -411,7 +462,11 @@ export function CatalogShell({
                             <Plus className="h-4 w-4" />
                           </Button>
                         </div>
-                        <span className="text-sm font-semibold tabular-nums">{rupiah(line.qty * line.unitPrice)}</span>
+                        {!isKonsi && (
+                          <span className="text-sm font-semibold tabular-nums">
+                            {rupiah(line.qty * line.unitPrice)}
+                          </span>
+                        )}
                       </div>
                     </Card>
                   );
@@ -431,10 +486,12 @@ export function CatalogShell({
                 />
               </div>
 
-              <div className="flex items-center justify-between border-t pt-3">
-                <span className="text-sm font-medium">Total</span>
-                <span className="text-base font-semibold tabular-nums">{rupiah(cartTotal(cartLines))}</span>
-              </div>
+              {!isKonsi && (
+                <div className="flex items-center justify-between border-t pt-3">
+                  <span className="text-sm font-medium">Total</span>
+                  <span className="text-base font-semibold tabular-nums">{rupiah(cartTotal(cartLines))}</span>
+                </div>
+              )}
             </>
           )}
 
@@ -479,7 +536,13 @@ export function CatalogShell({
         >
           <div className="flex min-w-0 items-center justify-between gap-3">
             <p className="truncate text-sm font-medium">
-              {cartCount(cartLines)} item · <span className="tabular-nums">{rupiah(cartTotal(cartLines))}</span>
+              {isKonsi ? (
+                `${cartCount(cartLines)} item · ${cartLines.length} SKU`
+              ) : (
+                <>
+                  {cartCount(cartLines)} item · <span className="tabular-nums">{rupiah(cartTotal(cartLines))}</span>
+                </>
+              )}
             </p>
             <Button onClick={() => setView("review")}>
               Tinjau
