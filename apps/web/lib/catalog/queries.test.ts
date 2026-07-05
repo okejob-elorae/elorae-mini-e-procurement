@@ -5,20 +5,23 @@ import { prisma } from "@elorae/db";
 const store = { id: "s1", termsType: "KONSI" as const, marginPercent: 20 };
 
 describe("serializeCatalogItem", () => {
-  it("maps fields, computes available and konsi gross-up price", () => {
-    const row = {
-      id: "i1",
-      sku: "FG-RED-M",
-      nameId: "Kaos Merah M",
-      categoryId: "c1",
-      category: { name: "Kaos" },
-      sellingPrice: 10000,
-      inventoryValues: [
-        { qtyOnHand: 8, reservedQty: 3, totalValue: 0 },
-        { qtyOnHand: 2, reservedQty: 0, totalValue: 0 },
-      ],
-    };
-    expect(serializeCatalogItem(row, store, "https://cdn/x.jpg", true)).toEqual({
+  const baseRow = {
+    id: "i1",
+    sku: "FG-RED-M",
+    nameId: "Kaos Merah M",
+    categoryId: "c1",
+    category: { name: "Kaos" },
+    sellingPrice: 10000,
+    inventoryValues: [
+      { qtyOnHand: 8, reservedQty: 3, totalValue: 0 },
+      { qtyOnHand: 2, reservedQty: 0, totalValue: 0 },
+    ],
+  };
+
+  it("maps fields, computes available, and hides price for konsi (spec D9)", () => {
+    // Konsi is a consignment transfer — the salesman sees no pricing; the gross-up
+    // must not even reach the wire, so price/priceLabel are null server-side.
+    expect(serializeCatalogItem(baseRow, store, "https://cdn/x.jpg", true)).toEqual({
       itemId: "i1",
       sku: "FG-RED-M",
       nameId: "Kaos Merah M",
@@ -26,10 +29,19 @@ describe("serializeCatalogItem", () => {
       categoryName: "Kaos",
       primaryImageUrl: "https://cdn/x.jpg",
       available: 7, // (8-3) + (2-0)
-      price: 12500, // 10000 / (1 - 0.20)
-      priceLabel: "Retail (info)",
+      price: null,
+      priceLabel: null,
       neverSent: true,
     });
+  });
+
+  it("returns the real selling price + label for a putus store", () => {
+    const putusStore = { id: "s2", termsType: "PUTUS" as const, marginPercent: null };
+    const out = serializeCatalogItem(baseRow, putusStore, null, false);
+    expect(out.price).toBe(10000);
+    expect(out.priceLabel).toBe("Harga");
+    expect(out.available).toBe(7);
+    expect(out.neverSent).toBe(false);
   });
 
   it("null category, no image, no inventory, null price all serialize safely", () => {

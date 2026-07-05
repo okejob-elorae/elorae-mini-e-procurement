@@ -41,11 +41,16 @@ export function serializeCatalogItem(
   neverSent: boolean,
 ): CatalogItem {
   const inv = aggregateInventoryValues(row.inventoryValues);
-  const { price, label } = computeStorePrice({
-    sellingPrice: toNum(row.sellingPrice),
-    termsType: store.termsType,
-    marginPercent: store.marginPercent,
-  });
+  // Konsi is a consignment transfer, not a sale: the salesman never sees pricing
+  // (spec D6/D9). Keep the gross-up off the wire entirely, not just hidden in the UI.
+  const isKonsi = store.termsType === "KONSI";
+  const { price, label } = isKonsi
+    ? { price: null, label: null }
+    : computeStorePrice({
+        sellingPrice: toNum(row.sellingPrice),
+        termsType: store.termsType,
+        marginPercent: store.marginPercent,
+      });
   return {
     itemId: row.id,
     sku: row.sku,
