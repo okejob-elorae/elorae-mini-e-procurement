@@ -251,9 +251,24 @@ model StoreVisit {
   store        Store     @relation(fields: [storeId], references: [id])
   user         User      @relation(fields: [userId], references: [id])
   fieldSalesOrders FieldSalesOrder[]
+  photos       VisitPhoto[]
 
   @@index([userId, checkoutAt])
   @@index([storeId, checkinAt])
+}
+
+model VisitPhoto {
+  id         String   @id @default(cuid())
+  visitId    String
+  clientId   String   @unique
+  url        String
+  r2Key      String
+  caption    String?
+  capturedAt DateTime
+  createdAt  DateTime @default(now())
+  visit      StoreVisit @relation(fields: [visitId], references: [id])
+
+  @@index([visitId])
 }
 
 model FieldSalesOrder {
