@@ -180,3 +180,27 @@ export async function listRecentVisitsForUser(userId: string, limit: number) {
     store: r.store,
   }));
 }
+
+export async function listVisitPhotos(visitId: string) {
+  return prisma.visitPhoto.findMany({
+    where: { visitId },
+    orderBy: { capturedAt: "asc" },
+    select: { id: true, url: true, caption: true, capturedAt: true },
+  });
+}
+
+export async function listVisitPhotosForVisits(visitIds: string[]) {
+  const map = new Map<string, Array<{ id: string; url: string; caption: string | null; capturedAt: Date }>>();
+  if (visitIds.length === 0) return map;
+  const rows = await prisma.visitPhoto.findMany({
+    where: { visitId: { in: visitIds } },
+    orderBy: { capturedAt: "asc" },
+    select: { id: true, visitId: true, url: true, caption: true, capturedAt: true },
+  });
+  for (const r of rows) {
+    const list = map.get(r.visitId) ?? [];
+    list.push({ id: r.id, url: r.url, caption: r.caption, capturedAt: r.capturedAt });
+    map.set(r.visitId, list);
+  }
+  return map;
+}
