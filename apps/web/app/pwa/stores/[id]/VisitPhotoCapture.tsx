@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Camera, Loader2, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,6 +26,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const router = useRouter();
 
   const total = synced.length + pending.length;
   const atCap = total >= MAX_PER_VISIT;
@@ -66,7 +68,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
       await enqueuePhoto({ localId: newLocalId(), visitId, storeId, blob: compressed, caption: caption.trim() || undefined });
       setCaption("");
       await refresh();
-      void flushPendingPhotos().then(refresh);
+      void flushPendingPhotos().then((r) => { void refresh(); if (r.synced > 0) router.refresh(); });
     } catch {
       // keep the shot context; surface via a toast in the parent if desired
     } finally {
@@ -137,7 +139,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
               {p.syncState === "failed" && (
                 <button
                   type="button"
-                  onClick={() => retryPendingPhoto(p.localId).then(() => flushPendingPhotos()).then(refresh)}
+                  onClick={() => retryPendingPhoto(p.localId).then(() => flushPendingPhotos()).then((r) => { void refresh(); if (r.synced > 0) router.refresh(); })}
                   className="absolute right-0 top-0 bg-black/60 p-0.5"
                   aria-label="Coba lagi"
                 ><RefreshCw className="h-3 w-3 text-white" /></button>
