@@ -52,3 +52,11 @@ next-env.d.ts
 # Serwist-generated service worker (built from app/pwa/sw.ts)
 public/pwa/sw.js
 public/pwa/swe-worker-*.js
+
+# next-pwa-generated root service worker + workbox chunks (build artifacts — never commit;
+# committing them lets a stale workbox-<hash>.js poison the build's precache manifest → 404)
+public/sw.js
+public/sw.js.map
+public/workbox-*.js
+public/worker-*.js
+public/fallback-*.js
