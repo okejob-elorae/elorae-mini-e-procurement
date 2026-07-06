@@ -19,6 +19,7 @@ const schema = z.object({
     qty: z.number().int().positive(),
     unitPrice: z.number().nonnegative(),
   })).min(1),
+  idempotencyKey: z.string().optional(),
 });
 
 export type SubmitResult =
@@ -30,6 +31,7 @@ export async function submitFieldSalesOrder(input: {
   storeId: string;
   note?: string;
   lines: Array<{ itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number }>;
+  idempotencyKey?: string;
 }): Promise<SubmitResult> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
@@ -43,6 +45,7 @@ export async function submitFieldSalesOrder(input: {
       salesmanId: session.user.id,
       note: parsed.data.note,
       lines: parsed.data.lines,
+      idempotencyKey: parsed.data.idempotencyKey,
     });
     revalidatePath(`/pwa/stores/${parsed.data.storeId}`);
     return { ok: true, orderNo };
