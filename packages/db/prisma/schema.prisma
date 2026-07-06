@@ -274,6 +274,7 @@ model FieldSalesOrder {
   rejectedAt    DateTime?
   rejectedById  String?
   rejectReason  String?               @db.Text
+  idempotencyKey String?              @unique
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
   store         Store                 @relation(fields: [storeId], references: [id])

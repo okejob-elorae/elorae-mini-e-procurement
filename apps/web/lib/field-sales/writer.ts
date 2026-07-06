@@ -15,9 +15,15 @@ export async function createFieldSalesOrder(input: {
   visitId?: string;
   lines: CreateLine[];
   note?: string;
+  idempotencyKey?: string;
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[] }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
   return runSerializable(async (tx) => {
+    if (input.idempotencyKey) {
+      const existing = await tx.fieldSalesOrder.findUnique({ where: { idempotencyKey: input.idempotencyKey }, select: { id: true, orderNo: true } });
+      if (existing) return { orderId: existing.id, orderNo: existing.orderNo, oversell: [] as OversellAlert[] };
+    }
+
     const active = await tx.storeVisit.findFirst({
       where: { storeId: input.storeId, userId: input.salesmanId, checkoutAt: null },
       select: { id: true },
@@ -61,6 +67,7 @@ export async function createFieldSalesOrder(input: {
         subtotal,
         total: subtotal,
         note: input.note,
+        idempotencyKey: input.idempotencyKey ?? null,
         lines: {
           create: linesData.map((l) => ({
             itemId: l.itemId,

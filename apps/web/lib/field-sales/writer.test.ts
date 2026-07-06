@@ -183,6 +183,16 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(hist[0].lineTotal)).toBe(180);
     expect(Number(hist[0].orderTotal)).toBe(180);
   });
+
+  it("createFieldSalesOrder dedups on idempotencyKey", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1 } });
+    const key = `idem-${Math.random().toString(36).slice(2)}`;
+    const orderLine = { itemId, variantSku: "", productName: "X", qty: 1, unitPrice: 100 };
+    const a = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [orderLine], idempotencyKey: key });
+    const b = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [orderLine], idempotencyKey: key });
+    expect(b.orderId).toBe(a.orderId);
+    expect(await prisma.fieldSalesOrder.count({ where: { idempotencyKey: key } })).toBe(1);
+  });
 });
 
 d("createFieldSalesOrder — konsi", () => {
