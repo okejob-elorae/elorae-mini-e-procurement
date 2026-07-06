@@ -17,6 +17,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/manifest') ||
     pathname.startsWith('/sw') ||
     pathname.startsWith('/workbox') ||
+    pathname === '/pwa/sw.js' ||
+    pathname.startsWith('/pwa/swe-worker') ||
     pathname.startsWith('/icons')
   ) {
     return NextResponse.next();
