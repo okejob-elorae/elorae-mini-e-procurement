@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
@@ -21,6 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -39,6 +41,7 @@ type Visit = {
   checkinLng: number;
   autoClosed: boolean;
   userLabel: string;
+  photos: Array<{ id: string; url: string; caption: string | null; capturedAtIso: string }>;
 };
 
 type Props = {
@@ -72,6 +75,7 @@ export function StoreDetailView({ store, canEdit, visits }: Props) {
   const tBadge = useTranslations("stores.badge");
   const tDetail = useTranslations("stores.detail");
   const tTable = useTranslations("stores.list.table");
+  const [lightbox, setLightbox] = useState<{ url: string; caption: string | null } | null>(null);
 
   const totalVisits = visits.length;
   const lastVisit = visits[0];
@@ -161,34 +165,55 @@ export function StoreDetailView({ store, canEdit, visits }: Props) {
                     </TableHeader>
                     <TableBody>
                       {visits.map(v => (
-                        <TableRow key={v.id}>
-                          <TableCell className="whitespace-nowrap">{formatDateTime(v.checkinAtIso)}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {v.checkoutAtIso ? (
-                              formatDateTime(v.checkoutAtIso)
-                            ) : (
-                              <Badge variant="secondary">{tDetail("stillOpen")}</Badge>
-                            )}
-                            {v.autoClosed && (
-                              <Badge variant="outline" className="ml-2">{tDetail("autoClosed")}</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="tabular-nums text-muted-foreground">
-                            {formatDuration(v.checkinAtIso, v.checkoutAtIso)}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{v.userLabel}</TableCell>
-                          <TableCell>
-                            <a
-                              href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
-                            >
-                              <MapPin className="h-3 w-3" />
-                              {v.checkinLat.toFixed(4)}, {v.checkinLng.toFixed(4)}
-                            </a>
-                          </TableCell>
-                        </TableRow>
+                        <Fragment key={v.id}>
+                          <TableRow>
+                            <TableCell className="whitespace-nowrap">{formatDateTime(v.checkinAtIso)}</TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {v.checkoutAtIso ? (
+                                formatDateTime(v.checkoutAtIso)
+                              ) : (
+                                <Badge variant="secondary">{tDetail("stillOpen")}</Badge>
+                              )}
+                              {v.autoClosed && (
+                                <Badge variant="outline" className="ml-2">{tDetail("autoClosed")}</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="tabular-nums text-muted-foreground">
+                              {formatDuration(v.checkinAtIso, v.checkoutAtIso)}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">{v.userLabel}</TableCell>
+                            <TableCell>
+                              <a
+                                href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
+                              >
+                                <MapPin className="h-3 w-3" />
+                                {v.checkinLat.toFixed(4)}, {v.checkinLng.toFixed(4)}
+                              </a>
+                            </TableCell>
+                          </TableRow>
+                          {v.photos.length > 0 && (
+                            <TableRow>
+                              <TableCell colSpan={5} className="pt-0">
+                                <div className="flex flex-wrap gap-2">
+                                  {v.photos.map((p) => (
+                                    <button
+                                      key={p.id}
+                                      type="button"
+                                      onClick={() => setLightbox({ url: p.url, caption: p.caption })}
+                                      className="h-16 w-16 overflow-hidden rounded-md border bg-muted"
+                                      aria-label={p.caption ?? "Foto kunjungan"}
+                                    >
+                                      <img src={p.url} alt={p.caption ?? ""} className="h-full w-full object-cover" loading="lazy" />
+                                    </button>
+                                  ))}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
                       ))}
                     </TableBody>
                   </Table>
@@ -278,6 +303,17 @@ export function StoreDetailView({ store, canEdit, visits }: Props) {
           </Card>
         </aside>
       </div>
+
+      <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
+        <DialogContent className="max-w-lg">
+          {lightbox && (
+            <div className="space-y-2">
+              <img src={lightbox.url} alt={lightbox.caption ?? ""} className="max-h-[70vh] w-full rounded-md object-contain" />
+              {lightbox.caption && <p className="text-sm text-muted-foreground">{lightbox.caption}</p>}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

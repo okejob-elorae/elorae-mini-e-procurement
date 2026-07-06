@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { getStore, listVisitsForStore } from "@/lib/stores/queries";
+import { getStore, listVisitsForStore, listVisitPhotosForVisits } from "@/lib/stores/queries";
 import { StoreDetailView } from "./StoreDetailView";
 
 export default async function EditStorePage({ params }: { params: Promise<{ id: string }> }) {
@@ -16,6 +16,7 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
 
   const canEdit = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
   const visits = await listVisitsForStore(store.id, 50);
+  const photosByVisit = await listVisitPhotosForVisits(visits.map((v) => v.id));
 
   return (
     <StoreDetailView
@@ -29,6 +30,9 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
         checkinLng: v.checkinLng,
         autoClosed: v.autoClosed,
         userLabel: v.user.name ?? v.user.email,
+        photos: (photosByVisit.get(v.id) ?? []).map(p => ({
+          id: p.id, url: p.url, caption: p.caption, capturedAtIso: p.capturedAt.toISOString(),
+        })),
       }))}
     />
   );
