@@ -21,6 +21,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   const [caption, setCaption] = useState("");
   const [camOpen, setCamOpen] = useState(false);
   const [camError, setCamError] = useState(false);
+  const [blobUrls, setBlobUrls] = useState<Record<string, string>>({});
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -30,6 +31,13 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
 
   const refresh = () => listPendingPhotosForVisit(visitId).then(setPending);
   useEffect(() => { void refresh(); }, [visitId]);
+
+  useEffect(() => {
+    const map: Record<string, string> = {};
+    for (const p of pending) map[p.localId] = URL.createObjectURL(p.blob);
+    setBlobUrls(map);
+    return () => { Object.values(map).forEach((u) => URL.revokeObjectURL(u)); };
+  }, [pending]);
 
   const stopCam = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -68,7 +76,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
 
   async function shootFromVideo() {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -122,7 +130,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
           ))}
           {pending.map((p) => (
             <div key={p.localId} className="relative h-16 w-16 overflow-hidden rounded-md border bg-muted">
-              <img src={URL.createObjectURL(p.blob)} alt={p.caption ?? ""} className="h-full w-full object-cover opacity-70" />
+              <img src={blobUrls[p.localId]} alt={p.caption ?? ""} className="h-full w-full object-cover opacity-70" />
               <span className="absolute inset-x-0 bottom-0 bg-black/60 text-center text-[10px] text-white">
                 {p.syncState === "failed" ? "gagal" : "menunggu"}
               </span>
