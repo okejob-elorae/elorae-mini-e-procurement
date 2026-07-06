@@ -1884,6 +1884,25 @@
       "promoTag": "Promo",
       "promoOrderDiscount": "Diskon pesanan"
     },
+    "offline": {
+      "pendingTitle": "Pesanan Menunggu",
+      "pendingCount": "{count} pesanan menunggu dikirim",
+      "loading": "Memuat…",
+      "empty": "Tidak ada pesanan tertunda.",
+      "retry": "Coba Lagi",
+      "delete": "Hapus",
+      "statePending": "Menunggu",
+      "stateSyncing": "Mengirim…",
+      "stateFailed": "Gagal",
+      "capturedAt": "Disimpan",
+      "lines": "{count} baris",
+      "back": "Kembali",
+      "errMinQty": "Qty di bawah minimum pemesanan.",
+      "errNoVisit": "Tidak ada kunjungan aktif saat pesanan dibuat.",
+      "errUnauthorized": "Sesi tidak valid. Silakan login ulang.",
+      "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
+      "syncedToast": "{count} pesanan terkirim"
+    },
     "nearest": {
       "title": "Toko terdekat",
       "seeAll": "Lihat semua toko",

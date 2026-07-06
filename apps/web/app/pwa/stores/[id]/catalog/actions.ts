@@ -11,6 +11,7 @@ import { fetchActivePromosForStore } from "@/lib/promos/queries";
 
 const schema = z.object({
   storeId: z.string().min(1),
+  visitId: z.string().optional(),
   note: z.string().optional(),
   lines: z.array(z.object({
     itemId: z.string().min(1),
@@ -19,6 +20,7 @@ const schema = z.object({
     qty: z.number().int().positive(),
     unitPrice: z.number().nonnegative(),
   })).min(1),
+  idempotencyKey: z.string().optional(),
 });
 
 export type SubmitResult =
@@ -28,8 +30,10 @@ export type SubmitResult =
 
 export async function submitFieldSalesOrder(input: {
   storeId: string;
+  visitId?: string;
   note?: string;
   lines: Array<{ itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number }>;
+  idempotencyKey?: string;
 }): Promise<SubmitResult> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
@@ -41,8 +45,10 @@ export async function submitFieldSalesOrder(input: {
     const { orderNo } = await createFieldSalesOrder({
       storeId: parsed.data.storeId,
       salesmanId: session.user.id,
+      visitId: parsed.data.visitId,
       note: parsed.data.note,
       lines: parsed.data.lines,
+      idempotencyKey: parsed.data.idempotencyKey,
     });
     revalidatePath(`/pwa/stores/${parsed.data.storeId}`);
     return { ok: true, orderNo };

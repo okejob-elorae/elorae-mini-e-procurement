@@ -15,14 +15,31 @@ export async function createFieldSalesOrder(input: {
   visitId?: string;
   lines: CreateLine[];
   note?: string;
+  idempotencyKey?: string;
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[] }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
   return runSerializable(async (tx) => {
-    const active = await tx.storeVisit.findFirst({
-      where: { storeId: input.storeId, userId: input.salesmanId, checkoutAt: null },
-      select: { id: true },
-    });
-    if (!active) throw new NoActiveVisitError(input.storeId, input.salesmanId);
+    if (input.idempotencyKey) {
+      const existing = await tx.fieldSalesOrder.findUnique({ where: { idempotencyKey: input.idempotencyKey }, select: { id: true, orderNo: true } });
+      if (existing) return { orderId: existing.id, orderNo: existing.orderNo, oversell: [] as OversellAlert[] };
+    }
+
+    let visitId: string;
+    if (input.visitId) {
+      const v = await tx.storeVisit.findFirst({
+        where: { id: input.visitId, storeId: input.storeId, userId: input.salesmanId },
+        select: { id: true },
+      });
+      if (!v) throw new NoActiveVisitError(input.storeId, input.salesmanId);
+      visitId = v.id;
+    } else {
+      const active = await tx.storeVisit.findFirst({
+        where: { storeId: input.storeId, userId: input.salesmanId, checkoutAt: null },
+        select: { id: true },
+      });
+      if (!active) throw new NoActiveVisitError(input.storeId, input.salesmanId);
+      visitId = active.id;
+    }
 
     const store = await tx.store.findUniqueOrThrow({
       where: { id: input.storeId },
@@ -56,11 +73,12 @@ export async function createFieldSalesOrder(input: {
         orderType: isKonsi ? "KONSI" : "PUTUS",
         storeId: input.storeId,
         salesmanId: input.salesmanId,
-        visitId: input.visitId ?? active.id,
+        visitId,
         status: "PENDING_APPROVAL",
         subtotal,
         total: subtotal,
         note: input.note,
+        idempotencyKey: input.idempotencyKey ?? null,
         lines: {
           create: linesData.map((l) => ({
             itemId: l.itemId,

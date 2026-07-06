@@ -15,6 +15,7 @@ export type CatalogItem = {
   price: number | null;
   priceLabel: string | null;
   neverSent: boolean;
+  minOrderQty: number;
 };
 
 export type CatalogPayload = {
@@ -29,6 +30,7 @@ type CatalogRow = {
   categoryId: string | null;
   category: { name: string } | null;
   sellingPrice: unknown;
+  minOrderQty: number | null;
   inventoryValues: Array<{ qtyOnHand: unknown; reservedQty?: unknown; totalValue: unknown }>;
 };
 
@@ -39,6 +41,7 @@ export function serializeCatalogItem(
   store: { termsType: "PUTUS" | "KONSI"; marginPercent: number | null },
   imageUrl: string | null,
   neverSent: boolean,
+  globalMin: number,
 ): CatalogItem {
   const inv = aggregateInventoryValues(row.inventoryValues);
   // Konsi is a consignment transfer, not a sale: the salesman never sees pricing
@@ -62,6 +65,7 @@ export function serializeCatalogItem(
     price,
     priceLabel: label,
     neverSent,
+    minOrderQty: row.minOrderQty ?? globalMin,
   };
 }
 
@@ -80,6 +84,9 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
 
   const sentSet = store.termsType === "KONSI" ? await sentItemIds(store.id) : new Set<string>();
 
+  const g = await prisma.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
+  const globalMin = g ? Number(g.value) : 6;
+
   const rows = await prisma.item.findMany({
     where: { isActive: true, type: "FINISHED_GOOD" },
     orderBy: { nameId: "asc" },
@@ -90,6 +97,7 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
       categoryId: true,
       category: { select: { name: true } },
       sellingPrice: true,
+      minOrderQty: true,
       inventoryValues: { select: { qtyOnHand: true, reservedQty: true, totalValue: true } },
     },
   });
@@ -98,7 +106,7 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
   const key = (itemId: string) => `${itemId}|`;
 
   const items = rows.map((r) =>
-    serializeCatalogItem(r, storeCtx, images.get(key(r.id)) ?? null, storeCtx.termsType === "KONSI" ? !sentSet.has(r.id) : false),
+    serializeCatalogItem(r, storeCtx, images.get(key(r.id)) ?? null, storeCtx.termsType === "KONSI" ? !sentSet.has(r.id) : false, globalMin),
   );
 
   return { store: storeCtx, items };
