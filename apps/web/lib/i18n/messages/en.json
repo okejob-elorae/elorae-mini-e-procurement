@@ -1900,7 +1900,8 @@
       "errMinQty": "Qty is below the minimum order quantity.",
       "errNoVisit": "No active visit when the order was created.",
       "errUnauthorized": "Session invalid. Please log in again.",
-      "errGeneric": "Something went wrong. Please try again."
+      "errGeneric": "Something went wrong. Please try again.",
+      "syncedToast": "{count} orders synced"
     },
     "nearest": {
       "title": "Nearest stores",

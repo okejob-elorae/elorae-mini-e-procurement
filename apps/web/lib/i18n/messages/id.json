@@ -1900,7 +1900,8 @@
       "errMinQty": "Qty di bawah minimum pemesanan.",
       "errNoVisit": "Tidak ada kunjungan aktif saat pesanan dibuat.",
       "errUnauthorized": "Sesi tidak valid. Silakan login ulang.",
-      "errGeneric": "Terjadi kesalahan. Silakan coba lagi."
+      "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
+      "syncedToast": "{count} pesanan terkirim"
     },
     "nearest": {
       "title": "Toko terdekat",

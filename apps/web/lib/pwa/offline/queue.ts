@@ -15,3 +15,7 @@ export async function listPendingOrders(): Promise<PendingOrder[]> {
 export async function deletePendingOrder(localId: string): Promise<void> {
   await pwaDb.pendingOrders.delete(localId);
 }
+
+export async function retryPendingOrder(localId: string): Promise<void> {
+  await pwaDb.pendingOrders.update(localId, { syncState: "pending", error: undefined });
+}

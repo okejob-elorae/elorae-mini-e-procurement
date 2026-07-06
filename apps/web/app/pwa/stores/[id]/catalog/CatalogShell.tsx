@@ -168,6 +168,7 @@ export function CatalogShell({
           await enqueueOrder({
             localId,
             storeId,
+            storeName,
             visitId: null,
             note: note.trim() || undefined,
             lines: buildOrderLines(cartLines),

@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { ArrowLeft, Loader2, RotateCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { listPendingOrders, deletePendingOrder } from "@/lib/pwa/offline/queue";
+import { listPendingOrders, deletePendingOrder, retryPendingOrder } from "@/lib/pwa/offline/queue";
 import { flushPendingOrders, setupOrderSync } from "@/lib/pwa/offline/sync";
-import { pwaDb, type PendingOrder } from "@/lib/pwa/offline/db";
+import { type PendingOrder } from "@/lib/pwa/offline/db";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,11 +43,9 @@ export function PendingOrdersClient() {
   async function handleRetry(order: PendingOrder) {
     setBusyId(order.localId);
     try {
-      if (order.syncState === "failed") {
-        await pwaDb.pendingOrders.update(order.localId, { syncState: "pending" });
-      }
+      await retryPendingOrder(order.localId);
       const result = await flushPendingOrders();
-      if (result.synced > 0) toast.success(t("retry"));
+      if (result.synced > 0) toast.success(t("syncedToast", { count: result.synced }));
       else if (result.failed > 0) toast.error(t("errGeneric"));
     } finally {
       setBusyId(null);
@@ -103,7 +101,7 @@ export function PendingOrdersClient() {
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate font-medium leading-tight">{order.storeId}</p>
+                        <p className="truncate font-medium leading-tight">{order.storeName}</p>
                         <p className="text-xs text-muted-foreground">
                           {t("lines", { count: order.lines.length })}
                         </p>

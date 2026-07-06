@@ -3,6 +3,7 @@ import Dexie, { Table } from "dexie";
 export interface PendingOrder {
   localId: string;
   storeId: string;
+  storeName: string;
   visitId: string | null;
   note?: string;
   lines: Array<{ itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number }>;
