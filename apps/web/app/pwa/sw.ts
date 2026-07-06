@@ -16,7 +16,7 @@ const PAGES_CACHE = "pwa-pages";
 // Precache the offline fallback at install (the SW installs while online).
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(PAGES_CACHE).then((cache) => cache.add(OFFLINE_URL)),
+    caches.open(PAGES_CACHE).then((cache) => cache.add(OFFLINE_URL)).catch(() => {}),
   );
 });
 
