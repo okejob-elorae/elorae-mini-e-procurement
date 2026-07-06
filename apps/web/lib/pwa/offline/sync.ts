@@ -2,6 +2,7 @@ import { submitFieldSalesOrder } from "@/app/pwa/stores/[id]/catalog/actions";
 import { pwaDb } from "./db";
 import { deletePendingOrder } from "./queue";
 import { classifyResult, type SyncDecision } from "./classify";
+import { flushPendingPhotos } from "./photo-sync";
 
 export { classifyResult, type SyncDecision } from "./classify";
 
@@ -38,7 +39,7 @@ export async function flushPendingOrders(): Promise<{ synced: number; failed: nu
 
 // Fires on reconnect + app foreground. Returns a cleanup fn. onChange lets the UI refresh its pending count.
 export function setupOrderSync(onChange?: () => void): () => void {
-  const run = () => { void flushPendingOrders().then(() => onChange?.()); };
+  const run = () => { void flushPendingOrders().then(() => flushPendingPhotos()).then(() => onChange?.()); };
   const onOnline = () => run();
   const onVisible = () => { if (document.visibilityState === "visible" && navigator.onLine) run(); };
   window.addEventListener("online", onOnline);
