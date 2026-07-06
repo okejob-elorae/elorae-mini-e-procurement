@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyResult } from "./sync";
+import { classifyResult } from "./classify";
 
 describe("classifyResult", () => {
   it("evicts on success", () => { expect(classifyResult({ ok: true, orderNo: "X" })).toBe("evict"); });

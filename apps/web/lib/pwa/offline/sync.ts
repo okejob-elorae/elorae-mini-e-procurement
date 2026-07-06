@@ -1,15 +1,9 @@
-import { submitFieldSalesOrder, type SubmitResult } from "@/app/pwa/stores/[id]/catalog/actions";
+import { submitFieldSalesOrder } from "@/app/pwa/stores/[id]/catalog/actions";
 import { pwaDb } from "./db";
 import { deletePendingOrder } from "./queue";
+import { classifyResult, type SyncDecision } from "./classify";
 
-export type SyncDecision = "evict" | "terminal" | "retry";
-const TERMINAL = new Set(["MIN_QTY", "NO_ACTIVE_VISIT", "EMPTY", "UNAUTHORIZED"]);
-
-export function classifyResult(r: SubmitResult | { thrown: true }): SyncDecision {
-  if ("thrown" in r) return "retry";
-  if (r.ok) return "evict";
-  return TERMINAL.has(r.code) ? "terminal" : "retry";
-}
+export { classifyResult, type SyncDecision } from "./classify";
 
 let running = false;
 
