@@ -20,7 +20,7 @@ export async function flushPendingOrders(): Promise<{ synced: number; failed: nu
       let decision: SyncDecision;
       let reason = "";
       try {
-        const res = await submitFieldSalesOrder({ storeId: o.storeId, note: o.note, lines: o.lines, idempotencyKey: o.localId });
+        const res = await submitFieldSalesOrder({ storeId: o.storeId, visitId: o.visitId ?? undefined, note: o.note, lines: o.lines, idempotencyKey: o.localId });
         decision = classifyResult(res);
         if (!res.ok) reason = res.code;
       } catch {

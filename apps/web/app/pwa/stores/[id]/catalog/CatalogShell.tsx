@@ -40,11 +40,13 @@ export function CatalogShell({
   storeName,
   termsType,
   hasActiveVisit,
+  visitId,
 }: {
   storeId: string;
   storeName: string;
   termsType: "PUTUS" | "KONSI";
   hasActiveVisit: boolean;
+  visitId: string | null;
 }) {
   const t = useTranslations("pwa.catalog");
   const isKonsi = termsType === "KONSI";
@@ -169,7 +171,7 @@ export function CatalogShell({
             localId,
             storeId,
             storeName,
-            visitId: null,
+            visitId,
             note: note.trim() || undefined,
             lines: buildOrderLines(cartLines),
           });
@@ -184,6 +186,7 @@ export function CatalogShell({
 
         const res = await submitFieldSalesOrder({
           storeId,
+          visitId: visitId ?? undefined,
           note: note.trim() || undefined,
           lines: buildOrderLines(cartLines),
           idempotencyKey: localId,

@@ -24,11 +24,22 @@ export async function createFieldSalesOrder(input: {
       if (existing) return { orderId: existing.id, orderNo: existing.orderNo, oversell: [] as OversellAlert[] };
     }
 
-    const active = await tx.storeVisit.findFirst({
-      where: { storeId: input.storeId, userId: input.salesmanId, checkoutAt: null },
-      select: { id: true },
-    });
-    if (!active) throw new NoActiveVisitError(input.storeId, input.salesmanId);
+    let visitId: string;
+    if (input.visitId) {
+      const v = await tx.storeVisit.findFirst({
+        where: { id: input.visitId, storeId: input.storeId, userId: input.salesmanId },
+        select: { id: true },
+      });
+      if (!v) throw new NoActiveVisitError(input.storeId, input.salesmanId);
+      visitId = v.id;
+    } else {
+      const active = await tx.storeVisit.findFirst({
+        where: { storeId: input.storeId, userId: input.salesmanId, checkoutAt: null },
+        select: { id: true },
+      });
+      if (!active) throw new NoActiveVisitError(input.storeId, input.salesmanId);
+      visitId = active.id;
+    }
 
     const store = await tx.store.findUniqueOrThrow({
       where: { id: input.storeId },
@@ -62,7 +73,7 @@ export async function createFieldSalesOrder(input: {
         orderType: isKonsi ? "KONSI" : "PUTUS",
         storeId: input.storeId,
         salesmanId: input.salesmanId,
-        visitId: input.visitId ?? active.id,
+        visitId,
         status: "PENDING_APPROVAL",
         subtotal,
         total: subtotal,

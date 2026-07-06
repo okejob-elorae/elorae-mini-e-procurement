@@ -21,6 +21,7 @@ export default async function PwaStoreCatalog({ params }: { params: Promise<{ id
       storeName={store.name}
       termsType={store.termsType}
       hasActiveVisit={hasActiveVisit}
+      visitId={hasActiveVisit ? active!.id : null}
     />
   );
 }
