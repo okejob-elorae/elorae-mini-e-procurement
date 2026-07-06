@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cartCount, cartTotal, buildOrderLines, type CartLine } from "@/lib/field-sales/cart";
+import { enqueueOrder, newLocalId } from "@/lib/pwa/offline/queue";
 import { submitFieldSalesOrder, previewFieldSalesPromos, type PromoPreviewResult } from "./actions";
 
 type CatalogItem = {
@@ -25,6 +26,7 @@ type CatalogItem = {
   price: number | null;
   priceLabel: string | null;
   neverSent: boolean;
+  minOrderQty: number;
 };
 
 type Payload = { items: CatalogItem[] };
@@ -147,12 +149,40 @@ export function CatalogShell({
   }, [view, cartLines, isKonsi, storeId]);
 
   function onSubmit() {
+    const localId = newLocalId();
     startTransition(async () => {
       try {
+        if (!online) {
+          if (!isKonsi) {
+            const violations = cartLines
+              .map((line) => {
+                const min = items.find((i) => i.itemId === line.itemId)?.minOrderQty ?? 0;
+                return line.qty < min ? `${line.nameId} (min ${min})` : null;
+              })
+              .filter((v): v is string => v !== null);
+            if (violations.length > 0) {
+              toast.error(`Jumlah di bawah minimum: ${violations.join(", ")}.`);
+              return;
+            }
+          }
+          await enqueueOrder({
+            localId,
+            storeId,
+            visitId: null,
+            note: note.trim() || undefined,
+            lines: buildOrderLines(cartLines),
+          });
+          toast.success("Pesanan disimpan — dikirim otomatis saat online");
+          setCart(new Map());
+          router.push(`/pwa/stores/${storeId}`);
+          return;
+        }
+
         const res = await submitFieldSalesOrder({
           storeId,
           note: note.trim() || undefined,
           lines: buildOrderLines(cartLines),
+          idempotencyKey: localId,
         });
         if (res.ok) {
           toast.success(`Pesanan ${res.orderNo} terkirim`);
@@ -456,6 +486,7 @@ export function CatalogShell({
                       price: line.unitPrice,
                       priceLabel: null,
                       neverSent: false,
+                      minOrderQty: 0,
                     };
                   return (
                     <Card key={line.sku} className="flex flex-row items-center gap-3 p-3">
@@ -556,9 +587,9 @@ export function CatalogShell({
           className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
         >
           {!online && (
-            <p className="mb-2 flex items-center gap-1.5 text-xs text-destructive">
+            <p className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
               <WifiOff className="h-3.5 w-3.5 shrink-0" />
-              Sambungkan internet untuk mengirim pesanan
+              Offline — pesanan disimpan & dikirim otomatis saat online
             </p>
           )}
           <Button
@@ -566,7 +597,7 @@ export function CatalogShell({
             className="w-full"
             size="lg"
             onClick={onSubmit}
-            disabled={pending || cartLines.length === 0 || !online}
+            disabled={pending || cartLines.length === 0}
           >
             {pending ? (
               <>
