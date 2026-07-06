@@ -3,7 +3,7 @@ import { WifiOff } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 export default function PwaOfflinePage() {
   return (
