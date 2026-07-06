@@ -1,6 +1,8 @@
 import { reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines, buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
+import { computeOrderPromos } from "@elorae/db/promo";
+import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError } from "./errors";
@@ -46,6 +48,7 @@ export async function createFieldSalesOrder(input: {
       lineTotal: isKonsi ? 0 : l.qty * l.unitPrice,
     }));
     const subtotal = linesData.reduce((s, l) => s + l.lineTotal, 0);
+    let finalTotal = subtotal;
 
     const order = await tx.fieldSalesOrder.create({
       data: {
@@ -80,6 +83,31 @@ export async function createFieldSalesOrder(input: {
         lines: order.lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
       });
       oversell = r.oversell;
+
+      // Apply promos (server-authoritative, honor-at-create).
+      const itemMeta = await tx.item.findMany({
+        where: { id: { in: Array.from(new Set(order.lines.map((l) => l.itemId))) } },
+        select: { id: true, inventoryValues: { select: { avgCost: true } } },
+      });
+      const avgCostById = new Map(itemMeta.map((i) => [i.id, i.inventoryValues[0] ? Number(i.inventoryValues[0].avgCost) : 0]));
+      const promos = await fetchActivePromosForStore(input.storeId, new Date(), tx);
+      const result = computeOrderPromos({
+        lines: order.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, unitPrice: Number(l.unitPrice), avgCost: avgCostById.get(l.itemId) ?? 0 })),
+        activePromos: promos,
+      });
+      let netTotal = 0;
+      for (let i = 0; i < order.lines.length; i++) {
+        const l = order.lines[i];
+        const res = result.lines[i];
+        netTotal += Number(l.lineTotal) - res.discountAmount;
+        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { discountAmount: res.discountAmount, appliedPromoId: res.appliedPromoId } });
+      }
+      netTotal -= result.orderDiscountAmount;
+      await tx.fieldSalesOrder.update({
+        where: { id: order.id },
+        data: { total: netTotal, orderDiscountAmount: result.orderDiscountAmount, appliedOrderPromoId: result.appliedOrderPromoId },
+      });
+      finalTotal = netTotal;
     }
 
     await tx.adminNotification.create({
@@ -89,8 +117,8 @@ export async function createFieldSalesOrder(input: {
         title: `${isKonsi ? "Konsi transfer" : "Putus order"} ${orderNo} awaiting approval`,
         message: isKonsi
           ? `New konsi transfer request ${orderNo} is pending approval.`
-          : `New putus order ${orderNo} (total ${subtotal}) is pending approval.`,
-        metadata: { orderId: order.id, orderNo, orderType: isKonsi ? "KONSI" : "PUTUS", storeId: input.storeId, salesmanId: input.salesmanId, total: subtotal },
+          : `New putus order ${orderNo} (total ${finalTotal}) is pending approval.`,
+        metadata: { orderId: order.id, orderNo, orderType: isKonsi ? "KONSI" : "PUTUS", storeId: input.storeId, salesmanId: input.salesmanId, total: finalTotal },
       },
     });
 
@@ -138,22 +166,25 @@ export async function approveFieldSalesOrder(input: { orderId: string; approvedB
       return { ok: true };
     }
 
-    // PUTUS (unchanged): consume + materialize SalesHistory
+    // PUTUS: consume + materialize SalesHistory with NET figures (honor-at-create; no promo recompute here).
     await consumeFieldSalesOrder(tx, { orderNo: order.orderNo, fieldSalesLineIds: order.lines.map((l) => l.id) });
     const now = new Date();
     const rows = buildOfflineSalesHistoryRows({
       orderNo: order.orderNo,
       orderTotal: Number(order.total),
-      lines: order.lines.map((l) => ({
-        itemId: l.itemId,
-        variantSku: l.variantSku,
-        parentSku: l.item.sku,
-        productName: l.productName,
-        qty: l.qty,
-        unitPrice: Number(l.unitPrice),
-        lineTotal: Number(l.lineTotal),
-        productCategory: l.item.category?.name ?? null,
-      })),
+      lines: order.lines.map((l) => {
+        const net = Number(l.lineTotal) - Number(l.discountAmount);
+        return {
+          itemId: l.itemId,
+          variantSku: l.variantSku,
+          parentSku: l.item.sku,
+          productName: l.productName,
+          qty: l.qty,
+          unitPrice: l.qty > 0 ? net / l.qty : 0,
+          lineTotal: net,
+          productCategory: l.item.category?.name ?? null,
+        };
+      }),
     }).map((row) => ({ ...row, orderDate: now, completedDate: now }));
     await tx.salesHistory.createMany({ data: rows });
     await tx.fieldSalesOrder.update({

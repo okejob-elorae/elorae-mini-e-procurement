@@ -231,6 +231,7 @@ model Store {
 
   visits         StoreVisit[]
   fieldSalesOrders FieldSalesOrder[]
+  promoStores    PromoStore[]
 
   @@index([isActive, name])
 }
@@ -265,6 +266,8 @@ model FieldSalesOrder {
   orderType     FieldSalesOrderType   @default(PUTUS)
   subtotal      Decimal               @db.Decimal(15, 2)
   total         Decimal               @db.Decimal(15, 2)
+  orderDiscountAmount Decimal         @default(0) @db.Decimal(15, 2)
+  appliedOrderPromoId String?
   note          String?               @db.Text
   approvedAt    DateTime?
   approvedById  String?
@@ -291,6 +294,8 @@ model FieldSalesOrderLine {
   qty          Int
   unitPrice    Decimal         @db.Decimal(15, 2)
   lineTotal    Decimal         @db.Decimal(15, 2)
+  discountAmount Decimal       @default(0) @db.Decimal(15, 2)
+  appliedPromoId String?
   order        FieldSalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   item         Item            @relation(fields: [itemId], references: [id])
   @@index([orderId])
@@ -312,6 +317,69 @@ enum ReserveSource {
   JUBELIO
   FIELD_SALES
   FIELD_SALES_KONSI
+}
+
+enum PromoType {
+  PERCENT
+  FIXED
+  TIERED
+}
+
+enum PromoLevel {
+  LINE
+  ORDER
+}
+
+model Promo {
+  id               String         @id @default(cuid())
+  name             String
+  type             PromoType
+  level            PromoLevel
+  termsType        StoreTermsType @default(PUTUS)
+  value            Decimal?       @db.Decimal(15, 2)
+  minQty           Int?
+  minOrderSubtotal Decimal?       @db.Decimal(15, 2)
+  minOrderQty      Int?
+  allStores        Boolean        @default(true)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  priority         Int            @default(0)
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  items            PromoItem[]
+  stores           PromoStore[]
+  tiers            PromoTier[]
+  @@index([isActive, level])
+}
+
+model PromoItem {
+  id      String @id @default(cuid())
+  promoId String
+  itemId  String
+  promo   Promo  @relation(fields: [promoId], references: [id], onDelete: Cascade)
+  item    Item   @relation(fields: [itemId], references: [id])
+  @@unique([promoId, itemId])
+  @@index([itemId])
+}
+
+model PromoStore {
+  id      String @id @default(cuid())
+  promoId String
+  storeId String
+  promo   Promo  @relation(fields: [promoId], references: [id], onDelete: Cascade)
+  store   Store  @relation(fields: [storeId], references: [id])
+  @@unique([promoId, storeId])
+  @@index([storeId])
+}
+
+model PromoTier {
+  id        String  @id @default(cuid())
+  promoId   String
+  minQty    Int
+  unitPrice Decimal @db.Decimal(15, 2)
+  promo     Promo   @relation(fields: [promoId], references: [id], onDelete: Cascade)
+  @@unique([promoId, minQty])
 }
 
 model Item {
@@ -356,6 +424,7 @@ model Item {
   forecastResults    ForecastResult[]
   images           ItemImage[]
   fieldSalesLines  FieldSalesOrderLine[]
+  promoItems       PromoItem[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])

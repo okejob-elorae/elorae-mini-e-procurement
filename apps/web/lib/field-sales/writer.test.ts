@@ -15,9 +15,11 @@ d("field-sales lifecycle writers (test bed only)", () => {
   let storeId = "";
   let salesmanId = "";
   let visitId = "";
+  let promoId = "";
 
   beforeEach(async () => {
     itemId2 = "";
+    promoId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000 } });
@@ -32,6 +34,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
   });
 
   afterEach(async () => {
+    if (promoId) await prisma.promo.deleteMany({ where: { id: promoId } });
     await prisma.salesHistory.deleteMany({ where: { itemId } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
     if (itemId2) {
@@ -118,6 +121,67 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(inv!.reservedQty)).toBe(0);
     const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
     expect(order!.status).toBe("REJECTED");
+  });
+
+  it("putus create applies an active line promo → discountAmount persisted, total is net", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1 } });
+    const promo = await prisma.promo.create({
+      data: {
+        name: `TEST-PROMO-${sku}`,
+        type: "PERCENT",
+        level: "LINE",
+        termsType: "PUTUS",
+        value: 10,
+        allStores: true,
+        isActive: true,
+        items: { create: [{ itemId }] },
+      },
+    });
+    promoId = promo.id;
+
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ itemId, variantSku: "", productName: "X", qty: 2, unitPrice: 100 }],
+    });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+
+    expect(Number(order!.lines[0].discountAmount)).toBe(20);
+    expect(order!.lines[0].appliedPromoId).toBe(promo.id);
+    expect(Number(order!.subtotal)).toBe(200);
+    expect(Number(order!.total)).toBe(180);
+  });
+
+  it("putus approve writes net SalesHistory (discounted unit + line total)", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1 } });
+    const promo = await prisma.promo.create({
+      data: {
+        name: `TEST-PROMO-${sku}`,
+        type: "PERCENT",
+        level: "LINE",
+        termsType: "PUTUS",
+        value: 10,
+        allStores: true,
+        isActive: true,
+        items: { create: [{ itemId }] },
+      },
+    });
+    promoId = promo.id;
+
+    const { orderId, orderNo } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ itemId, variantSku: "", productName: "X", qty: 2, unitPrice: 100 }],
+    });
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+
+    const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
+    expect(hist).toHaveLength(1);
+    expect(Number(hist[0].unitPriceAfterDiscount)).toBe(90);
+    expect(Number(hist[0].lineTotal)).toBe(180);
+    expect(Number(hist[0].orderTotal)).toBe(180);
   });
 });
 

@@ -22,7 +22,20 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   rejectedAt: Date | null;
   rejectReason: string | null;
   marginPercent: number | null;
-  lines: Array<{ id: string; productName: string; variantSku: string; qty: number; unitPrice: number; lineTotal: number; available: number }>;
+  orderDiscountAmount: number;
+  appliedOrderPromoName: string | null;
+  lines: Array<{
+    id: string;
+    productName: string;
+    variantSku: string;
+    qty: number;
+    unitPrice: number;
+    lineTotal: number;
+    available: number;
+    discountAmount: number;
+    appliedPromoName: string | null;
+    belowCost: boolean;
+  }>;
 };
 
 const toNum = (v: Prisma.Decimal | number): number => Number(v);
@@ -83,18 +96,38 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     select: {
       id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
+      orderDiscountAmount: true, appliedOrderPromoId: true,
       store: { select: { name: true, marginPercent: true } },
       salesman: { select: { name: true } },
-      lines: { select: { id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true } },
+      lines: {
+        select: {
+          id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true,
+          discountAmount: true, appliedPromoId: true,
+        },
+      },
     },
   });
   if (!row) return null;
   const itemIds = Array.from(new Set(row.lines.map((l) => l.itemId)));
-  const invs = await prisma.inventoryValue.findMany({ where: { itemId: { in: itemIds } }, select: { itemId: true, qtyOnHand: true, reservedQty: true } });
+  const invs = await prisma.inventoryValue.findMany({
+    where: { itemId: { in: itemIds } },
+    select: { itemId: true, qtyOnHand: true, reservedQty: true, avgCost: true },
+  });
   const availByItem = new Map<string, number>();
+  const avgCostByItem = new Map<string, number>();
   for (const iv of invs) {
     availByItem.set(iv.itemId, (availByItem.get(iv.itemId) ?? 0) + (Number(iv.qtyOnHand) - Number(iv.reservedQty)));
+    if (!avgCostByItem.has(iv.itemId)) avgCostByItem.set(iv.itemId, Number(iv.avgCost));
   }
+
+  const promoIds = Array.from(
+    new Set([row.appliedOrderPromoId, ...row.lines.map((l) => l.appliedPromoId)].filter((v): v is string => v !== null)),
+  );
+  const promos = promoIds.length > 0
+    ? await prisma.promo.findMany({ where: { id: { in: promoIds } }, select: { id: true, name: true } })
+    : [];
+  const promoNameById = new Map(promos.map((p) => [p.id, p.name]));
+
   return {
     ...serializeListItem(row),
     note: row.note,
@@ -103,11 +136,22 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     rejectedAt: row.rejectedAt,
     rejectReason: row.rejectReason,
     marginPercent: row.store.marginPercent === null ? null : Number(row.store.marginPercent),
-    lines: row.lines.map((l) => ({
-      id: l.id, productName: l.productName, variantSku: l.variantSku,
-      qty: l.qty, unitPrice: toNum(l.unitPrice), lineTotal: toNum(l.lineTotal),
-      available: availByItem.get(l.itemId) ?? 0,
-    })),
+    orderDiscountAmount: toNum(row.orderDiscountAmount),
+    appliedOrderPromoName: row.appliedOrderPromoId ? promoNameById.get(row.appliedOrderPromoId) ?? null : null,
+    lines: row.lines.map((l) => {
+      const qty = l.qty;
+      const discountAmount = toNum(l.discountAmount);
+      const netUnit = qty > 0 ? (toNum(l.lineTotal) - discountAmount) / qty : 0;
+      const avgCost = avgCostByItem.get(l.itemId) ?? 0;
+      return {
+        id: l.id, productName: l.productName, variantSku: l.variantSku,
+        qty, unitPrice: toNum(l.unitPrice), lineTotal: toNum(l.lineTotal),
+        available: availByItem.get(l.itemId) ?? 0,
+        discountAmount,
+        appliedPromoName: l.appliedPromoId ? promoNameById.get(l.appliedPromoId) ?? null : null,
+        belowCost: row.orderType === "PUTUS" && qty > 0 && netUnit < avgCost,
+      };
+    }),
   };
 }
 

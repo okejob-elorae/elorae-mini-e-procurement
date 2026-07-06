@@ -2,9 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { prisma } from "@elorae/db";
+import { computeOrderPromos } from "@elorae/db/promo";
 import { auth } from "@/lib/auth";
 import { createFieldSalesOrder } from "@/lib/field-sales/writer";
 import { NoActiveVisitError, MinQtyViolationError } from "@/lib/field-sales/errors";
+import { fetchActivePromosForStore } from "@/lib/promos/queries";
 
 const schema = z.object({
   storeId: z.string().min(1),
@@ -48,4 +51,45 @@ export async function submitFieldSalesOrder(input: {
     if (e instanceof MinQtyViolationError) return { ok: false, code: "MIN_QTY", violations: e.violations };
     throw e;
   }
+}
+
+export type PromoPreviewResult = { lineDiscounts: number[]; orderDiscount: number; netTotal: number };
+
+// Read-only compute (no persist) so the salesman sees the discounted quote before Kirim.
+// Reuses the same computeOrderPromos engine as createFieldSalesOrder's honor-at-create promo block.
+export async function previewFieldSalesPromos(input: {
+  storeId: string;
+  lines: Array<{ itemId: string; qty: number; unitPrice: number }>;
+}): Promise<PromoPreviewResult> {
+  const gross = input.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
+  const zeros: PromoPreviewResult = { lineDiscounts: input.lines.map(() => 0), orderDiscount: 0, netTotal: gross };
+
+  const session = await auth();
+  if (!session?.user?.id) return zeros;
+  if (input.lines.length === 0) return zeros;
+
+  const store = await prisma.store.findUnique({ where: { id: input.storeId }, select: { termsType: true } });
+  if (!store || store.termsType === "KONSI") return zeros;
+
+  const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
+  const invRows = await prisma.inventoryValue.findMany({
+    where: { itemId: { in: itemIds } },
+    select: { itemId: true, avgCost: true },
+  });
+  const avgCostById = new Map<string, number>();
+  for (const row of invRows) {
+    if (!avgCostById.has(row.itemId)) avgCostById.set(row.itemId, Number(row.avgCost));
+  }
+
+  const activePromos = await fetchActivePromosForStore(input.storeId, new Date());
+  const result = computeOrderPromos({
+    lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, unitPrice: l.unitPrice, avgCost: avgCostById.get(l.itemId) ?? 0 })),
+    activePromos,
+  });
+
+  const lineDiscounts = result.lines.map((r) => r.discountAmount);
+  const orderDiscount = result.orderDiscountAmount;
+  const netTotal = gross - lineDiscounts.reduce((s, d) => s + d, 0) - orderDiscount;
+
+  return { lineDiscounts, orderDiscount, netTotal };
 }
