@@ -1884,6 +1884,24 @@
       "promoTag": "Promo",
       "promoOrderDiscount": "Order discount"
     },
+    "offline": {
+      "pendingTitle": "Pending Orders",
+      "pendingCount": "{count} orders waiting to sync",
+      "loading": "Loading…",
+      "empty": "No pending orders.",
+      "retry": "Retry",
+      "delete": "Delete",
+      "statePending": "Pending",
+      "stateSyncing": "Syncing…",
+      "stateFailed": "Failed",
+      "capturedAt": "Saved",
+      "lines": "{count} lines",
+      "back": "Back",
+      "errMinQty": "Qty is below the minimum order quantity.",
+      "errNoVisit": "No active visit when the order was created.",
+      "errUnauthorized": "Session invalid. Please log in again.",
+      "errGeneric": "Something went wrong. Please try again."
+    },
     "nearest": {
       "title": "Nearest stores",
       "seeAll": "See all stores",
