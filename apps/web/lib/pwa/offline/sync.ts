@@ -18,7 +18,9 @@ export async function flushPendingOrders(): Promise<{ synced: number; failed: nu
   running = true;
   let synced = 0, failed = 0, retried = 0;
   try {
-    const pending = (await pwaDb.pendingOrders.where("syncState").equals("pending").toArray()).sort((a, b) => a.capturedAt - b.capturedAt);
+    // Also reclaim "syncing" rows: the run-lock guarantees no concurrent flush, so any row
+    // left "syncing" was orphaned by an app suspend/kill mid-await (common on iOS PWAs).
+    const pending = (await pwaDb.pendingOrders.where("syncState").anyOf(["pending", "syncing"]).toArray()).sort((a, b) => a.capturedAt - b.capturedAt);
     for (const o of pending) {
       await pwaDb.pendingOrders.update(o.localId, { syncState: "syncing" });
       let decision: SyncDecision;
