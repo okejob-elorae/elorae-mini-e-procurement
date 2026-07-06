@@ -175,7 +175,10 @@ export function CatalogShell({
           });
           toast.success("Pesanan disimpan — dikirim otomatis saat online");
           setCart(new Map());
-          router.push(`/pwa/stores/${storeId}`);
+          setNote("");
+          // Offline: stay on the already-loaded catalog (a router.push to the dynamic
+          // store page has no offline cache → Chrome dino). Salesman keeps browsing.
+          setView("catalog");
           return;
         }
 
