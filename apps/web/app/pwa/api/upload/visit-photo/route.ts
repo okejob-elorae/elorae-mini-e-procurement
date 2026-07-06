@@ -33,6 +33,9 @@ export async function POST(req: NextRequest) {
     const already = await prisma.visitPhoto.findUnique({ where: { clientId }, select: { id: true, url: true } });
     if (already) return NextResponse.json(already);
 
+    const owned = await prisma.storeVisit.findFirst({ where: { id: visitId, userId: session.user.id }, select: { id: true } });
+    if (!owned) return NextResponse.json({ error: "visit not found" }, { status: 404 });
+
     const key = `visit-photos/${visitId}/${clientId}.jpg`;
     const buffer = Buffer.from(await file.arrayBuffer());
     const url = await uploadToR2(key, buffer, file.type);

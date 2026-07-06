@@ -22,7 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -306,6 +306,7 @@ export function StoreDetailView({ store, canEdit, visits }: Props) {
 
       <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
         <DialogContent className="max-w-lg">
+          <DialogTitle className="sr-only">Foto kunjungan</DialogTitle>
           {lightbox && (
             <div className="space-y-2">
               <img src={lightbox.url} alt={lightbox.caption ?? ""} className="max-h-[70vh] w-full rounded-md object-contain" />
