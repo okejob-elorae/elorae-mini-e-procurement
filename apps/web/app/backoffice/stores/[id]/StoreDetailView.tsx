@@ -198,12 +198,11 @@ export function StoreDetailView({ store, canEdit, visits }: Props) {
                           <TableCell>
                             {v.photos.length > 0 ? (
                               <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-auto gap-1.5 px-2 text-xs"
+                                variant="outline"
+                                className="gap-1.5"
                                 onClick={() => setGallery({ label: formatDateTime(v.checkinAtIso), photos: v.photos })}
                               >
-                                <Images className="h-3.5 w-3.5" /> {v.photos.length} foto
+                                <Images className="h-4 w-4" /> {v.photos.length} foto
                               </Button>
                             ) : (
                               <span className="text-xs text-muted-foreground">—</span>
