@@ -48,13 +48,23 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   };
   useEffect(() => () => stopCam(), []);
 
+  // Attach the stream once the <video> is actually mounted (camOpen just flipped
+  // true → React has committed the element by the time this effect runs). Doing it
+  // synchronously in openCam races the render and leaves srcObject unset → black feed.
+  useEffect(() => {
+    if (camOpen && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      void videoRef.current.play().catch(() => {});
+    }
+  }, [camOpen]);
+
   async function openCam() {
     setCamError(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       streamRef.current = stream;
       setCamOpen(true);
-      queueMicrotask(() => { if (videoRef.current) videoRef.current.srcObject = stream; });
+      // srcObject is attached by the camOpen effect once the <video> mounts.
     } catch {
       setCamError(true);
       fileRef.current?.click(); // fallback to native camera/file picker
