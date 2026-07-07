@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { Camera, Loader2, RefreshCw, X } from "lucide-react";
+import { Camera, Check, Loader2, RefreshCw, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,12 +16,15 @@ import type { PendingPhoto } from "@/lib/pwa/offline/db";
 const MAX_PER_VISIT = 20;
 
 type SyncedPhoto = { id: string; url: string; caption: string | null; capturedAtIso: string };
+type Mode = "idle" | "live" | "preview";
+type Captured = { blob: Blob; url: string };
 
 export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: string; storeId: string; synced: SyncedPhoto[] }) {
   const [pending, setPending] = useState<PendingPhoto[]>([]);
   const [busy, setBusy] = useState(false);
   const [caption, setCaption] = useState("");
-  const [camOpen, setCamOpen] = useState(false);
+  const [mode, setMode] = useState<Mode>("idle");
+  const [captured, setCaptured] = useState<Captured | null>(null);
   const [camError, setCamError] = useState(false);
   const [blobUrls, setBlobUrls] = useState<Record<string, string>>({});
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -34,6 +38,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   const refresh = () => listPendingPhotosForVisit(visitId).then(setPending);
   useEffect(() => { void refresh(); }, [visitId]);
 
+  // Object URLs for pending thumbnails — revoked on change/unmount.
   useEffect(() => {
     const map: Record<string, string> = {};
     for (const p of pending) map[p.localId] = URL.createObjectURL(p.blob);
@@ -41,62 +46,138 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
     return () => { Object.values(map).forEach((u) => URL.revokeObjectURL(u)); };
   }, [pending]);
 
+  // Revoke the captured-preview URL whenever it changes or on unmount.
+  useEffect(() => {
+    return () => { if (captured) URL.revokeObjectURL(captured.url); };
+  }, [captured]);
+
   const stopCam = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    setCamOpen(false);
   };
   useEffect(() => () => stopCam(), []);
 
-  // Attach the stream once the <video> is actually mounted (camOpen just flipped
-  // true → React has committed the element by the time this effect runs). Doing it
-  // synchronously in openCam races the render and leaves srcObject unset → black feed.
+  // Attach the live stream once the <video> is mounted (mode flipped to "live" →
+  // React has committed the element by the time this effect runs). Doing it
+  // synchronously races the render and leaves srcObject unset → black feed.
   useEffect(() => {
-    if (camOpen && videoRef.current && streamRef.current) {
+    if (mode === "live" && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
       void videoRef.current.play().catch(() => {});
     }
-  }, [camOpen]);
+  }, [mode]);
+
+  function closeOverlay() {
+    stopCam();
+    setCaptured(null);
+    setCaption("");
+    setCamError(false);
+    setMode("idle");
+  }
 
   async function openCam() {
+    if (atCap) return;
     setCamError(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       streamRef.current = stream;
-      setCamOpen(true);
-      // srcObject is attached by the camOpen effect once the <video> mounts.
+      setMode("live");
     } catch {
       setCamError(true);
-      fileRef.current?.click(); // fallback to native camera/file picker
+      fileRef.current?.click(); // fallback to the native camera / file picker
     }
   }
 
-  async function enqueue(blobIn: Blob) {
-    setBusy(true);
-    try {
-      const compressed = await compressImage(blobIn);
-      await enqueuePhoto({ localId: newLocalId(), visitId, storeId, blob: compressed, caption: caption.trim() || undefined });
-      setCaption("");
-      await refresh();
-      void flushPendingPhotos().then((r) => { void refresh(); if (r.synced > 0) router.refresh(); });
-    } catch {
-      // keep the shot context; surface via a toast in the parent if desired
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function shootFromVideo() {
+  function shootFromVideo() {
     const video = videoRef.current;
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     canvas.getContext("2d")?.drawImage(video, 0, 0);
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.92));
-    stopCam();
-    if (blob) await enqueue(blob);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      setCaptured({ blob, url: URL.createObjectURL(blob) }); // stream stays live for a retake
+      setMode("preview");
+    }, "image/jpeg", 0.92);
   }
+
+  function retake() {
+    setCaptured(null);
+    if (streamRef.current) {
+      setMode("live");
+    } else {
+      // File-fallback path: reopen the picker; onChange returns us to preview.
+      setMode("idle");
+      fileRef.current?.click();
+    }
+  }
+
+  async function keep() {
+    if (!captured) return;
+    setBusy(true);
+    try {
+      const compressed = await compressImage(captured.blob);
+      await enqueuePhoto({ localId: newLocalId(), visitId, storeId, blob: compressed, caption: caption.trim() || undefined });
+      await refresh();
+      void flushPendingPhotos().then((r) => { void refresh(); if (r.synced > 0) router.refresh(); });
+      closeOverlay();
+    } catch {
+      // leave the overlay open so the user can retry "Simpan"
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const overlay = mode !== "idle" && typeof document !== "undefined"
+    ? createPortal(
+        <div className="fixed inset-0 z-[100] flex flex-col bg-black">
+          {mode === "live" && (
+            <>
+              <video ref={videoRef} autoPlay playsInline muted className="min-h-0 w-full flex-1 object-cover" />
+              <div className="flex items-center justify-between px-6 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                <Button variant="secondary" size="icon" className="h-11 w-11 rounded-full" onClick={closeOverlay} aria-label="Tutup">
+                  <X className="h-5 w-5" />
+                </Button>
+                <button
+                  type="button"
+                  onClick={shootFromVideo}
+                  aria-label="Ambil foto"
+                  className="h-16 w-16 rounded-full border-4 border-white bg-white/30 transition active:scale-95"
+                />
+                <span className="h-11 w-11" aria-hidden />
+              </div>
+            </>
+          )}
+
+          {mode === "preview" && (
+            <>
+              <div className="flex min-h-0 flex-1 items-center justify-center bg-black">
+                {captured && <img src={captured.url} alt="" className="max-h-full max-w-full object-contain" />}
+              </div>
+              <div className="space-y-3 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                <Input
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder="Keterangan (opsional)"
+                  disabled={busy}
+                  className="border-white/20 bg-white/10 text-white placeholder:text-white/50"
+                />
+                <div className="flex gap-3">
+                  <Button variant="secondary" className="flex-1 py-6 text-base" onClick={retake} disabled={busy}>
+                    <RotateCcw className="mr-2 h-5 w-5" /> Ulangi
+                  </Button>
+                  <Button className="flex-1 py-6 text-base" onClick={() => void keep()} disabled={busy}>
+                    {busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Check className="mr-2 h-5 w-5" />} Simpan
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>,
+        document.body,
+      )
+    : null;
 
   return (
     <Card className="flex-col gap-3 p-4">
@@ -105,23 +186,9 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
         <Badge variant="secondary">{total}/{MAX_PER_VISIT}</Badge>
       </div>
 
-      <Input value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Keterangan (opsional)" disabled={busy || atCap} />
-
-      {camOpen ? (
-        <div className="space-y-2">
-          <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-md bg-black" />
-          <div className="flex gap-2">
-            <Button className="flex-1" onClick={() => void shootFromVideo()} disabled={busy}>
-              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />} Ambil
-            </Button>
-            <Button variant="secondary" onClick={stopCam}><X className="h-4 w-4" /></Button>
-          </div>
-        </div>
-      ) : (
-        <Button onClick={() => void openCam()} disabled={busy || atCap}>
-          <Camera className="mr-2 h-4 w-4" /> {atCap ? "Batas foto tercapai" : "Ambil Foto"}
-        </Button>
-      )}
+      <Button onClick={() => void openCam()} disabled={busy || atCap}>
+        <Camera className="mr-2 h-4 w-4" /> {atCap ? "Batas foto tercapai" : "Ambil Foto"}
+      </Button>
 
       <input
         ref={fileRef}
@@ -129,7 +196,11 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
         accept="image/*"
         capture="environment"
         hidden
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) void enqueue(f); e.target.value = ""; }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) { setCaptured({ blob: f, url: URL.createObjectURL(f) }); setMode("preview"); }
+        }}
       />
       {camError && <p className="text-xs text-muted-foreground">Kamera tidak tersedia — pakai kamera perangkat.</p>}
 
@@ -158,6 +229,8 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
           ))}
         </div>
       )}
+
+      {overlay}
     </Card>
   );
 }
