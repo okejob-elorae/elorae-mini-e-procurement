@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { CheckInButton } from "./CheckInButton";
 import { CheckOutButton } from "./CheckOutButton";
+import { VisitPhotoCapture } from "./VisitPhotoCapture";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,9 +49,12 @@ type HistoryRow = {
   userLabel: string;
 };
 
+type SyncedPhoto = { id: string; url: string; caption: string | null; capturedAtIso: string };
+
 type Props = {
   store: StoreProps;
   active: ActiveProps;
+  activePhotos: SyncedPhoto[];
   history: HistoryRow[];
 };
 
@@ -63,7 +67,7 @@ function formatDateTime(iso: string): string {
   });
 }
 
-export function StoreDetailShell({ store, active, history }: Props) {
+export function StoreDetailShell({ store, active, activePhotos, history }: Props) {
   const t = useTranslations("pwa.checkIn");
   const tBadge = useTranslations("stores.badge");
   const tList = useTranslations("pwa.stores");
@@ -136,7 +140,10 @@ export function StoreDetailShell({ store, active, history }: Props) {
       </Button>
 
       {activeAtThisStore ? (
-        <CheckOutButton visitId={active.id} />
+        <>
+          <CheckOutButton visitId={active.id} />
+          <VisitPhotoCapture visitId={active.id} storeId={store.id} synced={activePhotos} />
+        </>
       ) : (
         <CheckInButton
           storeId={store.id}

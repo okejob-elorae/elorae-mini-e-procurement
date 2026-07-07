@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
 
-  const capturedAt = capturedAtRaw ? new Date(Number(capturedAtRaw)) : new Date();
+  const capturedAtMs = capturedAtRaw ? Number(capturedAtRaw) : NaN;
+  const capturedAt = Number.isFinite(capturedAtMs) ? new Date(capturedAtMs) : new Date();
 
   try {
     const already = await prisma.visitPhoto.findUnique({ where: { clientId }, select: { id: true, url: true } });
@@ -36,7 +37,8 @@ export async function POST(req: NextRequest) {
     const owned = await prisma.storeVisit.findFirst({ where: { id: visitId, userId: session.user.id }, select: { id: true } });
     if (!owned) return NextResponse.json({ error: "visit not found" }, { status: 404 });
 
-    const key = `visit-photos/${visitId}/${clientId}.jpg`;
+    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+    const key = `visit-photos/${visitId}/${clientId}.${ext}`;
     const buffer = Buffer.from(await file.arrayBuffer());
     const url = await uploadToR2(key, buffer, file.type);
     const photo = await prisma.$transaction((tx) =>
