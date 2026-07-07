@@ -1,0 +1,31 @@
+-- CreateTable
+CREATE TABLE `StoreChangeRequest` (
+    `id` VARCHAR(191) NOT NULL,
+    `storeId` VARCHAR(191) NOT NULL,
+    `visitId` VARCHAR(191) NOT NULL,
+    `requestedById` VARCHAR(191) NOT NULL,
+    `status` ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+    `name` VARCHAR(191) NOT NULL,
+    `address` TEXT NOT NULL,
+    `phone` VARCHAR(191) NULL,
+    `contactName` VARCHAR(191) NULL,
+    `lat` DECIMAL(10, 7) NULL,
+    `lng` DECIMAL(10, 7) NULL,
+    `oldName` VARCHAR(191) NOT NULL,
+    `oldAddress` TEXT NOT NULL,
+    `oldPhone` VARCHAR(191) NULL,
+    `oldContactName` VARCHAR(191) NULL,
+    `oldLat` DECIMAL(10, 7) NULL,
+    `oldLng` DECIMAL(10, 7) NULL,
+    `reviewedById` VARCHAR(191) NULL,
+    `reviewedAt` DATETIME(3) NULL,
+    `rejectReason` TEXT NULL,
+    `pendingKey` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `StoreChangeRequest_pendingKey_key`(`pendingKey`),
+    INDEX `StoreChangeRequest_status_createdAt_idx`(`status`, `createdAt`),
+    INDEX `StoreChangeRequest_storeId_status_idx`(`storeId`, `status`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
