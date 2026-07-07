@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Prisma, prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { planCheckIn } from "@/lib/pwa/visit-transitions";
+import { submitStoreChangeRequest } from "@/lib/store-changes/writer";
 
 const checkInSchema = z.object({
   storeId: z.string().min(1),
@@ -90,4 +91,36 @@ export async function checkOut(input: { visitId: string; lat: number; lng: numbe
   revalidatePath("/pwa");
   revalidatePath(`/pwa/stores/${visit.storeId}`);
   return { alreadyClosed: false, storeId: visit.storeId };
+}
+
+const storeChangeSchema = z.object({
+  storeId: z.string().min(1),
+  visitId: z.string().min(1),
+  name: z.string().min(1).max(191),
+  address: z.string().min(1),
+  phone: z.string().max(64).nullable(),
+  contactName: z.string().max(191).nullable(),
+  lat: z.number().min(-90).max(90).nullable(),
+  lng: z.number().min(-180).max(180).nullable(),
+});
+
+export type StoreChangeSubmitActionResult =
+  | { ok: true }
+  | { ok: false; code: "UNAUTHORIZED" | "NO_ACTIVE_VISIT" | "ALREADY_PENDING" | "NO_CHANGES" | "VALIDATION" };
+
+export async function submitStoreChangeRequestAction(input: {
+  storeId: string; visitId: string;
+  name: string; address: string; phone: string | null; contactName: string | null; lat: number | null; lng: number | null;
+}): Promise<StoreChangeSubmitActionResult> {
+  const parsed = storeChangeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, code: "VALIDATION" };
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
+
+  const { storeId, visitId, ...proposed } = parsed.data;
+  const res = await submitStoreChangeRequest({ storeId, visitId, userId: session.user.id, proposed });
+  if (!res.ok) return { ok: false, code: res.code };
+
+  revalidatePath(`/pwa/stores/${storeId}`);
+  return { ok: true };
 }
