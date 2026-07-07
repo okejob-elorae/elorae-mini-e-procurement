@@ -1859,6 +1859,32 @@
         "user": "Salesman",
         "coords": "Coords"
       }
+    },
+    "storeChanges": {
+      "reviewTitle": "Change awaiting approval",
+      "requestedBy": "Requested by {name}",
+      "colField": "Field",
+      "colBefore": "Before",
+      "colAfter": "After",
+      "fieldName": "Name",
+      "fieldAddress": "Address",
+      "fieldPhone": "Phone",
+      "fieldContact": "Contact",
+      "fieldLocation": "Location",
+      "empty": "—",
+      "approve": "Approve",
+      "reject": "Reject",
+      "approveConfirm": "Apply this change to the store data?",
+      "rejectConfirm": "Reject this change?",
+      "rejectReasonLabel": "Rejection reason",
+      "approved": "Change approved",
+      "rejected": "Change rejected",
+      "errForbidden": "You do not have access",
+      "errNotFound": "Request not found",
+      "errInvalidState": "Request already processed",
+      "errStoreGone": "Store not found",
+      "errGeneric": "Something went wrong",
+      "listBadge": "Pending change"
     }
   },
   "pwa": {

@@ -1859,6 +1859,32 @@
         "user": "Salesman",
         "coords": "Koordinat"
       }
+    },
+    "storeChanges": {
+      "reviewTitle": "Perubahan menunggu persetujuan",
+      "requestedBy": "Diajukan oleh {name}",
+      "colField": "Kolom",
+      "colBefore": "Sebelum",
+      "colAfter": "Sesudah",
+      "fieldName": "Nama",
+      "fieldAddress": "Alamat",
+      "fieldPhone": "Telepon",
+      "fieldContact": "Kontak",
+      "fieldLocation": "Lokasi",
+      "empty": "—",
+      "approve": "Setujui",
+      "reject": "Tolak",
+      "approveConfirm": "Terapkan perubahan ini ke data toko?",
+      "rejectConfirm": "Tolak perubahan ini?",
+      "rejectReasonLabel": "Alasan penolakan",
+      "approved": "Perubahan disetujui",
+      "rejected": "Perubahan ditolak",
+      "errForbidden": "Tidak punya akses",
+      "errNotFound": "Permintaan tidak ditemukan",
+      "errInvalidState": "Permintaan sudah diproses",
+      "errStoreGone": "Toko tidak ditemukan",
+      "errGeneric": "Terjadi kesalahan",
+      "listBadge": "Perubahan tertunda"
     }
   },
   "pwa": {
