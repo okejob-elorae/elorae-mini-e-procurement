@@ -62,7 +62,7 @@ export async function checkIn(input: { storeId: string; lat: number; lng: number
 
   revalidatePath("/pwa");
   revalidatePath(`/pwa/stores/${parsed.storeId}`);
-  redirect("/pwa");
+  redirect(`/pwa/stores/${parsed.storeId}`);
 }
 
 export async function checkOut(input: { visitId: string; lat: number; lng: number }): Promise<{ alreadyClosed: boolean; storeId: string } | { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" | "NOT_FOUND" }> {

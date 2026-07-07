@@ -77,7 +77,7 @@ describe("checkIn / checkOut server actions", () => {
   it("checkIn creates a fresh active visit when no prior active", async () => {
     const store = await makeStore("TEST-A");
     await expect(checkIn({ storeId: store.id, lat: 1.2, lng: 3.4 }))
-      .rejects.toThrow("__REDIRECT__:/pwa");
+      .rejects.toThrow(`__REDIRECT__:/pwa/stores/${store.id}`);
     const visits = await prisma.storeVisit.findMany({ where: { userId: TEST_USER_ID } });
     expect(visits.length).toBe(1);
     expect(visits[0].storeId).toBe(store.id);
@@ -89,9 +89,9 @@ describe("checkIn / checkOut server actions", () => {
     const storeA = await makeStore("TEST-A");
     const storeB = await makeStore("TEST-B");
     await expect(checkIn({ storeId: storeA.id, lat: 1.0, lng: 2.0 }))
-      .rejects.toThrow("__REDIRECT__:/pwa");
+      .rejects.toThrow(`__REDIRECT__:/pwa/stores/${storeA.id}`);
     await expect(checkIn({ storeId: storeB.id, lat: 3.0, lng: 4.0 }))
-      .rejects.toThrow("__REDIRECT__:/pwa");
+      .rejects.toThrow(`__REDIRECT__:/pwa/stores/${storeB.id}`);
 
     const visits = await prisma.storeVisit.findMany({ where: { userId: TEST_USER_ID }, orderBy: { checkinAt: "asc" } });
     expect(visits.length).toBe(2);
