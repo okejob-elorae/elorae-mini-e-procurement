@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getStore, listVisitsForStore, getActiveVisit, listVisitPhotos } from "@/lib/stores/queries";
+import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
 import { StoreDetailShell } from "./StoreDetailShell";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
 
   const activeForStore = active && active.storeId === store.id ? active : null;
   const activePhotos = activeForStore ? await listVisitPhotos(activeForStore.id) : [];
+  const pending = await getPendingStoreChangeRequest(store.id);
 
   return (
     <StoreDetailShell
@@ -55,6 +57,7 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
         autoClosed: v.autoClosed,
         userLabel: v.user.name ?? v.user.email,
       }))}
+      pending={pending ? { proposed: pending.proposed, old: pending.old, requestedByLabel: pending.requestedByLabel } : null}
     />
   );
 }
