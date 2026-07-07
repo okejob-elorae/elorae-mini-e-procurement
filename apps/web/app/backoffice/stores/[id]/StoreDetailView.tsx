@@ -1,12 +1,13 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
   Clock,
   ExternalLink,
+  Images,
   MapPin,
   Phone,
   Store,
@@ -76,6 +77,7 @@ export function StoreDetailView({ store, canEdit, visits }: Props) {
   const tDetail = useTranslations("stores.detail");
   const tTable = useTranslations("stores.list.table");
   const [lightbox, setLightbox] = useState<{ url: string; caption: string | null } | null>(null);
+  const [gallery, setGallery] = useState<{ label: string; photos: Array<{ id: string; url: string; caption: string | null; capturedAtIso: string }> } | null>(null);
 
   const totalVisits = visits.length;
   const lastVisit = visits[0];
@@ -161,59 +163,53 @@ export function StoreDetailView({ store, canEdit, visits }: Props) {
                         <TableHead>{tDetail("visitTable.duration")}</TableHead>
                         <TableHead>{tDetail("visitTable.user")}</TableHead>
                         <TableHead>{tDetail("visitTable.coords")}</TableHead>
+                        <TableHead>Foto</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {visits.map(v => (
-                        <Fragment key={v.id}>
-                          <TableRow>
-                            <TableCell className="whitespace-nowrap">{formatDateTime(v.checkinAtIso)}</TableCell>
-                            <TableCell className="whitespace-nowrap">
-                              {v.checkoutAtIso ? (
-                                formatDateTime(v.checkoutAtIso)
-                              ) : (
-                                <Badge variant="secondary">{tDetail("stillOpen")}</Badge>
-                              )}
-                              {v.autoClosed && (
-                                <Badge variant="outline" className="ml-2">{tDetail("autoClosed")}</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="tabular-nums text-muted-foreground">
-                              {formatDuration(v.checkinAtIso, v.checkoutAtIso)}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">{v.userLabel}</TableCell>
-                            <TableCell>
-                              <a
-                                href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
+                        <TableRow key={v.id}>
+                          <TableCell className="whitespace-nowrap">{formatDateTime(v.checkinAtIso)}</TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {v.checkoutAtIso ? (
+                              formatDateTime(v.checkoutAtIso)
+                            ) : (
+                              <Badge variant="secondary">{tDetail("stillOpen")}</Badge>
+                            )}
+                            {v.autoClosed && (
+                              <Badge variant="outline" className="ml-2">{tDetail("autoClosed")}</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="tabular-nums text-muted-foreground">
+                            {formatDuration(v.checkinAtIso, v.checkoutAtIso)}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{v.userLabel}</TableCell>
+                          <TableCell>
+                            <a
+                              href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
+                            >
+                              <MapPin className="h-3 w-3" />
+                              {v.checkinLat.toFixed(4)}, {v.checkinLng.toFixed(4)}
+                            </a>
+                          </TableCell>
+                          <TableCell>
+                            {v.photos.length > 0 ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-auto gap-1.5 px-2 text-xs"
+                                onClick={() => setGallery({ label: formatDateTime(v.checkinAtIso), photos: v.photos })}
                               >
-                                <MapPin className="h-3 w-3" />
-                                {v.checkinLat.toFixed(4)}, {v.checkinLng.toFixed(4)}
-                              </a>
-                            </TableCell>
-                          </TableRow>
-                          {v.photos.length > 0 && (
-                            <TableRow>
-                              <TableCell colSpan={5} className="pt-0">
-                                <div className="flex flex-wrap gap-2">
-                                  {v.photos.map((p) => (
-                                    <button
-                                      key={p.id}
-                                      type="button"
-                                      onClick={() => setLightbox({ url: p.url, caption: p.caption })}
-                                      className="h-16 w-16 overflow-hidden rounded-md border bg-muted"
-                                      aria-label={p.caption ?? "Foto kunjungan"}
-                                    >
-                                      <img src={p.url} alt={p.caption ?? ""} className="h-full w-full object-cover" loading="lazy" />
-                                    </button>
-                                  ))}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </Fragment>
+                                <Images className="h-3.5 w-3.5" /> {v.photos.length} foto
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
                       ))}
                     </TableBody>
                   </Table>
@@ -303,6 +299,30 @@ export function StoreDetailView({ store, canEdit, visits }: Props) {
           </Card>
         </aside>
       </div>
+
+      <Dialog open={!!gallery} onOpenChange={(o) => !o && setGallery(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogTitle>Foto Kunjungan{gallery ? ` — ${gallery.label}` : ""}</DialogTitle>
+          {gallery && (
+            <div className="grid max-h-[70vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
+              {gallery.photos.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setLightbox({ url: p.url, caption: p.caption })}
+                  className="space-y-1 text-left"
+                  aria-label={p.caption ?? "Foto kunjungan"}
+                >
+                  <div className="aspect-square overflow-hidden rounded-md border bg-muted">
+                    <img src={p.url} alt={p.caption ?? ""} className="h-full w-full object-cover" loading="lazy" />
+                  </div>
+                  {p.caption && <p className="truncate text-xs text-muted-foreground">{p.caption}</p>}
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
         <DialogContent className="max-w-lg">
