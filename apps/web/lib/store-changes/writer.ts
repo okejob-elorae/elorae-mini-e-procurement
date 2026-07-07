@@ -113,17 +113,18 @@ export async function approveStoreChangeRequest(input: {
     const store = await tx.store.findUnique({ where: { id: req.storeId }, select: { id: true } });
     if (!store) return { ok: false, code: "STORE_GONE" };
 
-    await tx.store.update({
-      where: { id: req.storeId },
-      data: {
-        name: req.name,
-        address: req.address,
-        phone: req.phone,
-        contactName: req.contactName,
-        lat: req.lat,
-        lng: req.lng,
-      },
-    });
+    // Apply only the fields the salesman actually changed (proposed != submit-time snapshot),
+    // so a concurrent admin edit to an untouched field is not silently reverted.
+    const data: Prisma.StoreUpdateInput = {};
+    if (req.name !== req.oldName) data.name = req.name;
+    if (req.address !== req.oldAddress) data.address = req.address;
+    if (req.phone !== req.oldPhone) data.phone = req.phone;
+    if (req.contactName !== req.oldContactName) data.contactName = req.contactName;
+    if (!coordEq(decToNum(req.lat), decToNum(req.oldLat))) data.lat = req.lat;
+    if (!coordEq(decToNum(req.lng), decToNum(req.oldLng))) data.lng = req.lng;
+    if (Object.keys(data).length > 0) {
+      await tx.store.update({ where: { id: req.storeId }, data });
+    }
     await tx.storeChangeRequest.update({
       where: { id: req.id },
       data: { status: "APPROVED", reviewedById: input.reviewerId, reviewedAt: new Date(), pendingKey: null },

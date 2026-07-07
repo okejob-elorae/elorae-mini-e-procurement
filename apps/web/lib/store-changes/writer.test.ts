@@ -77,6 +77,18 @@ d("store-change lifecycle writer (test bed only)", () => {
     expect(row!.pendingKey).toBeNull();
   });
 
+  it("approve applies only salesman-changed fields, preserving concurrent admin edits", async () => {
+    const proposed: ProposedStoreFields = { name: "New Name", address: "Old Addr", phone: null, contactName: null, lat: null, lng: null };
+    const sub = await submitStoreChangeRequest({ storeId, visitId, userId, proposed });
+    const requestId = (sub as { ok: true; requestId: string }).requestId;
+    await prisma.store.update({ where: { id: storeId }, data: { phone: "0899-admin" } });
+    const res = await approveStoreChangeRequest({ requestId, reviewerId: userId });
+    expect(res).toEqual({ ok: true });
+    const store = await prisma.store.findUnique({ where: { id: storeId } });
+    expect(store!.name).toBe("New Name");
+    expect(store!.phone).toBe("0899-admin");
+  });
+
   it("after approve, a new submit is allowed (pendingKey freed)", async () => {
     const sub = await submitStoreChangeRequest({ storeId, visitId, userId, proposed: base });
     await approveStoreChangeRequest({ requestId: (sub as { ok: true; requestId: string }).requestId, reviewerId: userId });

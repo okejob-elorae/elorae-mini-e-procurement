@@ -40,20 +40,24 @@ export function StoreEditForm({ store, visitId }: Props) {
 
   function submit() {
     startTransition(async () => {
-      const res = await submitStoreChangeRequestAction({
-        storeId: store.id, visitId,
-        name: name.trim(), address: address.trim(),
-        phone: phone.trim() || null, contactName: contactName.trim() || null,
-        lat, lng,
-      });
-      if (res.ok) { toast.success(t("successToast")); setOpen(false); router.refresh(); return; }
-      const map: Record<string, string> = {
-        NO_ACTIVE_VISIT: t("errNoActiveVisit"),
-        ALREADY_PENDING: t("errAlreadyPending"),
-        NO_CHANGES: t("errNoChanges"),
-      };
-      toast.error(map[res.code] ?? t("errGeneric"));
-      if (res.code === "ALREADY_PENDING") router.refresh();
+      try {
+        const res = await submitStoreChangeRequestAction({
+          storeId: store.id, visitId,
+          name: name.trim(), address: address.trim(),
+          phone: phone.trim() || null, contactName: contactName.trim() || null,
+          lat, lng,
+        });
+        if (res.ok) { toast.success(t("successToast")); setOpen(false); router.refresh(); return; }
+        const map: Record<string, string> = {
+          NO_ACTIVE_VISIT: t("errNoActiveVisit"),
+          ALREADY_PENDING: t("errAlreadyPending"),
+          NO_CHANGES: t("errNoChanges"),
+        };
+        toast.error(map[res.code] ?? t("errGeneric"));
+        if (res.code === "ALREADY_PENDING") router.refresh();
+      } catch {
+        toast.error(t("errGeneric"));
+      }
     });
   }
 
