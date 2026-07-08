@@ -152,15 +152,14 @@ export function StoreListClient({
                 </TableHeader>
                 <TableBody>
                   {stores.map(s => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-mono text-xs">
-                        <Link
-                          href={`/backoffice/stores/${s.id}`}
-                          className="hover:underline"
-                        >
-                          {s.code}
-                        </Link>
-                      </TableCell>
+                    <TableRow
+                      key={s.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() =>
+                        startTransition(() => router.push(`/backoffice/stores/${s.id}`))
+                      }
+                    >
+                      <TableCell className="font-mono text-xs">{s.code}</TableCell>
                       <TableCell className="font-medium">
                         <span className="inline-flex items-center gap-2">
                           {s.name}
