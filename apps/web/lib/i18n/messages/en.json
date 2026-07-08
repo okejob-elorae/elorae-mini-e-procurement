@@ -1860,7 +1860,8 @@
         "checkout": "Check-out",
         "duration": "Duration",
         "user": "Salesman",
-        "coords": "Coords"
+        "coords": "Coords",
+        "outOfRadius": "Out of radius"
       }
     },
     "storeChanges": {
@@ -1907,7 +1908,8 @@
       "autoClosedBadge": "Auto-closed",
       "viewCoords": "View coords",
       "locating": "Getting location…",
-      "submitting": "Submitting…"
+      "submitting": "Submitting…",
+      "outOfRadiusWarn": "Checked in ~{meters} m from the store"
     },
     "catalog": {
       "promoTag": "Promo",

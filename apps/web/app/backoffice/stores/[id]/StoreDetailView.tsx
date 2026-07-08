@@ -45,6 +45,8 @@ type Visit = {
   checkinLng: number;
   autoClosed: boolean;
   userLabel: string;
+  checkinOutOfRadius: boolean;
+  checkinDistanceMeters: number | null;
   photos: Array<{ id: string; url: string; caption: string | null; capturedAtIso: string }>;
 };
 
@@ -216,6 +218,11 @@ export function StoreDetailView({ store, canEdit, visits, pendingChange }: Props
                               <MapPin className="h-3 w-3" />
                               {v.checkinLat.toFixed(4)}, {v.checkinLng.toFixed(4)}
                             </a>
+                            {v.checkinOutOfRadius && (
+                              <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-700">
+                                {tDetail("visitTable.outOfRadius")}{v.checkinDistanceMeters !== null ? ` · ${v.checkinDistanceMeters} m` : ""}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell>
                             {v.photos.length > 0 ? (

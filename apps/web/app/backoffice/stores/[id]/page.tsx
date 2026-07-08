@@ -33,6 +33,8 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
         checkinLng: v.checkinLng,
         autoClosed: v.autoClosed,
         userLabel: v.user.name ?? v.user.email,
+        checkinOutOfRadius: v.checkinOutOfRadius,
+        checkinDistanceMeters: v.checkinDistanceMeters,
         photos: (photosByVisit.get(v.id) ?? []).map(p => ({
           id: p.id, url: p.url, caption: p.caption, capturedAtIso: p.capturedAt.toISOString(),
         })),

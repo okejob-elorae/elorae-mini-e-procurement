@@ -41,6 +41,8 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
         id: active.id,
         storeId: active.storeId,
         storeName: active.store.name,
+        checkinOutOfRadius: active.checkinOutOfRadius,
+        checkinDistanceMeters: active.checkinDistanceMeters,
       } : null}
       activePhotos={activePhotos.map((p) => ({
         id: p.id,
