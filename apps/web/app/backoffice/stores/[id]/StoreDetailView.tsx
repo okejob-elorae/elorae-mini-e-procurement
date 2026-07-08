@@ -136,6 +136,7 @@ export function StoreDetailView({ store, canEdit, visits, pendingChange }: Props
             </CardHeader>
             <CardContent>
               <StoreForm
+                key={String(store.updatedAt)}
                 mode="edit"
                 storeId={store.id}
                 readOnly={!canEdit}

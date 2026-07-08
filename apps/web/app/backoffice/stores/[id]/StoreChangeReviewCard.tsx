@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +29,7 @@ function loc(lat: number | null, lng: number | null): string | null {
 export function StoreChangeReviewCard({ requestId, storeId, requestedByLabel, proposed, old, canManage }: Props) {
   const t = useTranslations("stores.storeChanges");
   const tCommon = useTranslations("common");
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -46,7 +48,7 @@ export function StoreChangeReviewCard({ requestId, storeId, requestedByLabel, pr
   push(t("fieldLocation"), loc(old.lat, old.lng), loc(proposed.lat, proposed.lng));
 
   function handle(r: StoreChangeActionResult, success: string) {
-    if (r.ok) { toast.success(success); setApproveOpen(false); setRejectOpen(false); setReason(""); return; }
+    if (r.ok) { toast.success(success); setApproveOpen(false); setRejectOpen(false); setReason(""); router.refresh(); return; }
     const map: Record<string, string> = {
       FORBIDDEN: t("errForbidden"), NOT_FOUND: t("errNotFound"),
       INVALID_STATE: t("errInvalidState"), STORE_GONE: t("errStoreGone"),
