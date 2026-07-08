@@ -36,7 +36,7 @@ export async function checkIn(input: { storeId: string; lat: number; lng: number
   const effectiveRadius = resolveEffectiveRadius(store.checkinRadiusMeters, parseRadiusSetting(globalRow?.value));
   const radius = evaluateCheckinRadius({
     checkin: { lat: parsed.lat, lng: parsed.lng },
-    store: { lat: store.lat === null ? null : Number(store.lat), lng: store.lng === null ? null : Number(store.lng) },
+    store: { lat: store.lat === null ? null : store.lat.toNumber(), lng: store.lng === null ? null : store.lng.toNumber() },
     effectiveRadiusMeters: effectiveRadius,
   });
 
