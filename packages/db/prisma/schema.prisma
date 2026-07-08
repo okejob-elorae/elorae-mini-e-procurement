@@ -227,6 +227,7 @@ model Store {
   marginPercent  Decimal?       @db.Decimal(5, 2)
   lat            Decimal?       @db.Decimal(10, 7)
   lng            Decimal?       @db.Decimal(10, 7)
+  checkinRadiusMeters Int?
   isActive       Boolean        @default(true)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -249,6 +250,8 @@ model StoreVisit {
   checkinLng   Decimal   @db.Decimal(10, 7)
   checkoutLat  Decimal?  @db.Decimal(10, 7)
   checkoutLng  Decimal?  @db.Decimal(10, 7)
+  checkinDistanceMeters Int?
+  checkinOutOfRadius     Boolean   @default(false)
   autoClosed   Boolean   @default(false)
 
   store        Store     @relation(fields: [storeId], references: [id])
