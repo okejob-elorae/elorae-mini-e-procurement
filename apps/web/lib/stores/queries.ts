@@ -144,6 +144,8 @@ export async function getActiveVisit(userId: string) {
     storeId: v.storeId,
     store: v.store,
     checkinAt: v.checkinAt,
+    checkinOutOfRadius: v.checkinOutOfRadius,
+    checkinDistanceMeters: v.checkinDistanceMeters,
   };
 }
 
@@ -163,6 +165,8 @@ export async function listVisitsForStore(storeId: string, limit: number) {
     checkoutLat: r.checkoutLat ? r.checkoutLat.toNumber() : null,
     checkoutLng: r.checkoutLng ? r.checkoutLng.toNumber() : null,
     autoClosed: r.autoClosed,
+    checkinOutOfRadius: r.checkinOutOfRadius,
+    checkinDistanceMeters: r.checkinDistanceMeters,
     user: r.user,
   }));
 }
