@@ -152,6 +152,7 @@ export function StoreDetailView({ store, canEdit, visits, pendingChange }: Props
                   marginPercent: store.marginPercent,
                   lat: store.lat,
                   lng: store.lng,
+                  checkinRadiusMeters: store.checkinRadiusMeters,
                   isActive: store.isActive,
                 }}
               />

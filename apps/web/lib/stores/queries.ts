@@ -11,6 +11,7 @@ export type StoreFields = {
   marginPercent: number | null;
   lat: number | null;
   lng: number | null;
+  checkinRadiusMeters: number | null;
 };
 
 export type StoreListItem = StoreFields & {
@@ -36,6 +37,7 @@ function serializeStore(s: {
   marginPercent: Prisma.Decimal | null;
   lat: Prisma.Decimal | null;
   lng: Prisma.Decimal | null;
+  checkinRadiusMeters: number | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -52,6 +54,7 @@ function serializeStore(s: {
     marginPercent: s.marginPercent ? s.marginPercent.toNumber() : null,
     lat: s.lat ? s.lat.toNumber() : null,
     lng: s.lng ? s.lng.toNumber() : null,
+    checkinRadiusMeters: s.checkinRadiusMeters,
     isActive: s.isActive,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
@@ -104,6 +107,7 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
       marginPercent: toDecimalOrNull(input.marginPercent),
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
+      checkinRadiusMeters: input.checkinRadiusMeters,
     },
   });
   return serializeStore(created);
@@ -123,6 +127,7 @@ export async function updateStore(id: string, input: StoreFields): Promise<Store
       marginPercent: toDecimalOrNull(input.marginPercent),
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
+      checkinRadiusMeters: input.checkinRadiusMeters,
     },
   });
   return serializeStore(updated);
