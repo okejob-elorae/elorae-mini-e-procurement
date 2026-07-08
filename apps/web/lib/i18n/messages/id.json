@@ -1859,6 +1859,32 @@
         "user": "Salesman",
         "coords": "Koordinat"
       }
+    },
+    "storeChanges": {
+      "reviewTitle": "Perubahan menunggu persetujuan",
+      "requestedBy": "Diajukan oleh {name}",
+      "colField": "Kolom",
+      "colBefore": "Sebelum",
+      "colAfter": "Sesudah",
+      "fieldName": "Nama",
+      "fieldAddress": "Alamat",
+      "fieldPhone": "Telepon",
+      "fieldContact": "Kontak",
+      "fieldLocation": "Lokasi",
+      "empty": "—",
+      "approve": "Setujui",
+      "reject": "Tolak",
+      "approveConfirm": "Terapkan perubahan ini ke data toko?",
+      "rejectConfirm": "Tolak perubahan ini?",
+      "rejectReasonLabel": "Alasan penolakan",
+      "approved": "Perubahan disetujui",
+      "rejected": "Perubahan ditolak",
+      "errForbidden": "Tidak punya akses",
+      "errNotFound": "Permintaan tidak ditemukan",
+      "errInvalidState": "Permintaan sudah diproses",
+      "errStoreGone": "Toko tidak ditemukan",
+      "errGeneric": "Terjadi kesalahan",
+      "listBadge": "Perubahan tertunda"
     }
   },
   "pwa": {
@@ -1930,6 +1956,34 @@
       "searchPlaceholder": "Cari nama atau kode",
       "empty": "Belum ada toko.",
       "noSearchResults": "Tidak ada toko yang cocok."
+    },
+    "storeChanges": {
+      "editButton": "Ubah data toko",
+      "title": "Ubah data toko",
+      "nameLabel": "Nama toko",
+      "addressLabel": "Alamat",
+      "phoneLabel": "Telepon",
+      "contactLabel": "Nama kontak",
+      "repinButton": "Perbarui lokasi (GPS)",
+      "repinning": "Mengambil lokasi…",
+      "repinDone": "Lokasi diperbarui",
+      "repinError": "Gagal mengambil lokasi",
+      "submit": "Kirim untuk ditinjau",
+      "submitting": "Mengirim…",
+      "cancel": "Batal",
+      "successToast": "Perubahan dikirim, menunggu persetujuan admin",
+      "errNoActiveVisit": "Check-in dulu untuk mengubah data toko",
+      "errAlreadyPending": "Sudah ada perubahan yang menunggu ditinjau admin",
+      "errNoChanges": "Tidak ada perubahan",
+      "errGeneric": "Gagal mengirim perubahan",
+      "pendingTitle": "Sedang ditinjau admin",
+      "pendingSubtitle": "Perubahan berikut menunggu persetujuan",
+      "fieldName": "Nama",
+      "fieldAddress": "Alamat",
+      "fieldPhone": "Telepon",
+      "fieldContact": "Kontak",
+      "fieldLocation": "Lokasi",
+      "empty": "—"
     }
   },
   "fieldSalesOrders": {

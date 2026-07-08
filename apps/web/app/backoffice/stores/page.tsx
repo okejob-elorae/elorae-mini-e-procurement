@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listStores } from "@/lib/stores/queries";
+import { listPendingStoreChangeStoreIds } from "@/lib/store-changes/queries";
 import { StoreListClient } from "./StoreListClient";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,8 @@ export default async function StoresPage({ searchParams }: PageProps) {
     { page, pageSize },
   );
 
+  const pendingSet = await listPendingStoreChangeStoreIds(items.map((s) => s.id));
+
   return (
     <StoreListClient
       stores={items}
@@ -48,6 +51,7 @@ export default async function StoresPage({ searchParams }: PageProps) {
       showInactive={showInactive}
       page={page}
       pageSize={pageSize}
+      pendingStoreIds={Array.from(pendingSet)}
     />
   );
 }

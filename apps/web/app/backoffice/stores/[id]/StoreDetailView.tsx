@@ -33,6 +33,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StoreForm } from "../StoreForm";
+import { StoreChangeReviewCard } from "./StoreChangeReviewCard";
+
+type PendingChangeFields = { name: string; address: string; phone: string | null; contactName: string | null; lat: number | null; lng: number | null };
 
 type Visit = {
   id: string;
@@ -49,6 +52,12 @@ type Props = {
   store: StoreListItem;
   canEdit: boolean;
   visits: Visit[];
+  pendingChange: {
+    requestId: string;
+    requestedByLabel: string;
+    proposed: PendingChangeFields;
+    old: PendingChangeFields;
+  } | null;
 };
 
 function formatDateTime(iso: string): string {
@@ -71,7 +80,7 @@ function formatDuration(startIso: string, endIso: string | null): string {
   return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`;
 }
 
-export function StoreDetailView({ store, canEdit, visits }: Props) {
+export function StoreDetailView({ store, canEdit, visits, pendingChange }: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
   const tDetail = useTranslations("stores.detail");
@@ -110,12 +119,24 @@ export function StoreDetailView({ store, canEdit, visits }: Props) {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6 min-w-0">
+          {pendingChange && (
+            <StoreChangeReviewCard
+              requestId={pendingChange.requestId}
+              storeId={store.id}
+              requestedByLabel={pendingChange.requestedByLabel}
+              proposed={pendingChange.proposed}
+              old={pendingChange.old}
+              canManage={canEdit}
+            />
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">{tDetail("editTitle")}</CardTitle>
             </CardHeader>
             <CardContent>
               <StoreForm
+                key={String(store.updatedAt)}
                 mode="edit"
                 storeId={store.id}
                 readOnly={!canEdit}

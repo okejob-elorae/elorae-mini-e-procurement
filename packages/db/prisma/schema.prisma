@@ -78,6 +78,8 @@ model User {
   salesReturnItemsDecided SalesReturnItem[] @relation("SalesReturnItemDecidedBy")
   storeVisits   StoreVisit[]
   fieldSalesOrders FieldSalesOrder[] @relation("FieldSalesOrderSalesman")
+  storeChangeRequestsMade      StoreChangeRequest[] @relation("StoreChangeRequestedBy")
+  storeChangeRequestsReviewed  StoreChangeRequest[] @relation("StoreChangeReviewedBy")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -232,6 +234,7 @@ model Store {
   visits         StoreVisit[]
   fieldSalesOrders FieldSalesOrder[]
   promoStores    PromoStore[]
+  storeChangeRequests StoreChangeRequest[]
 
   @@index([isActive, name])
 }
@@ -252,6 +255,7 @@ model StoreVisit {
   user         User      @relation(fields: [userId], references: [id])
   fieldSalesOrders FieldSalesOrder[]
   photos       VisitPhoto[]
+  storeChangeRequests StoreChangeRequest[]
 
   @@index([userId, checkoutAt])
   @@index([storeId, checkinAt])
@@ -269,6 +273,45 @@ model VisitPhoto {
   visit      StoreVisit @relation(fields: [visitId], references: [id])
 
   @@index([visitId])
+}
+
+model StoreChangeRequest {
+  id             String                   @id @default(cuid())
+  storeId        String
+  visitId        String
+  requestedById  String
+  status         StoreChangeRequestStatus @default(PENDING)
+
+  name           String
+  address        String                   @db.Text
+  phone          String?
+  contactName    String?
+  lat            Decimal?                 @db.Decimal(10, 7)
+  lng            Decimal?                 @db.Decimal(10, 7)
+
+  oldName        String
+  oldAddress     String                   @db.Text
+  oldPhone       String?
+  oldContactName String?
+  oldLat         Decimal?                 @db.Decimal(10, 7)
+  oldLng         Decimal?                 @db.Decimal(10, 7)
+
+  reviewedById   String?
+  reviewedAt     DateTime?
+  rejectReason   String?                  @db.Text
+
+  pendingKey     String?                  @unique
+
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  store          Store                    @relation(fields: [storeId], references: [id])
+  visit          StoreVisit               @relation(fields: [visitId], references: [id])
+  requestedBy    User                     @relation("StoreChangeRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy     User?                    @relation("StoreChangeReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([status, createdAt])
+  @@index([storeId, status])
 }
 
 model FieldSalesOrder {
@@ -1387,6 +1430,12 @@ enum ItemTypeGroup {
 enum StoreTermsType {
   PUTUS
   KONSI
+}
+
+enum StoreChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model ItemTypeMaster {

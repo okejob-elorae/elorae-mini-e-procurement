@@ -34,6 +34,7 @@ type Props = {
   showInactive: boolean;
   page: number;
   pageSize: number;
+  pendingStoreIds: string[];
 };
 
 export function StoreListClient({
@@ -43,11 +44,14 @@ export function StoreListClient({
   showInactive,
   page,
   pageSize,
+  pendingStoreIds,
 }: Props) {
   const t = useTranslations("stores");
   const tList = useTranslations("stores.list");
   const tTable = useTranslations("stores.list.table");
   const tBadge = useTranslations("stores.badge");
+  const tChange = useTranslations("stores.storeChanges");
+  const pendingSet = new Set(pendingStoreIds);
   const router = useRouter();
   const sp = useSearchParams();
   const [, startTransition] = useTransition();
@@ -148,16 +152,24 @@ export function StoreListClient({
                 </TableHeader>
                 <TableBody>
                   {stores.map(s => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-mono text-xs">
-                        <Link
-                          href={`/backoffice/stores/${s.id}`}
-                          className="hover:underline"
-                        >
-                          {s.code}
-                        </Link>
+                    <TableRow
+                      key={s.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() =>
+                        startTransition(() => router.push(`/backoffice/stores/${s.id}`))
+                      }
+                    >
+                      <TableCell className="font-mono text-xs">{s.code}</TableCell>
+                      <TableCell className="font-medium">
+                        <span className="inline-flex items-center gap-2">
+                          {s.name}
+                          {pendingSet.has(s.id) && (
+                            <Badge variant="secondary" className="border-amber-500/40 text-amber-700">
+                              {tChange("listBadge")}
+                            </Badge>
+                          )}
+                        </span>
                       </TableCell>
-                      <TableCell className="font-medium">{s.name}</TableCell>
                       <TableCell>
                         <Badge variant={s.termsType === "PUTUS" ? "outline" : "secondary"}>
                           {s.termsType === "PUTUS" ? tBadge("putus") : tBadge("konsi")}

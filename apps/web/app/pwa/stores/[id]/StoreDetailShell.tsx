@@ -15,6 +15,8 @@ import {
 import { CheckInButton } from "./CheckInButton";
 import { CheckOutButton } from "./CheckOutButton";
 import { VisitPhotoCapture } from "./VisitPhotoCapture";
+import { StoreEditForm } from "./StoreEditForm";
+import { StoreChangePendingCard } from "./StoreChangePendingCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -51,11 +53,18 @@ type HistoryRow = {
 
 type SyncedPhoto = { id: string; url: string; caption: string | null; capturedAtIso: string };
 
+type ChangeFields = {
+  name: string; address: string; phone: string | null; contactName: string | null; lat: number | null; lng: number | null;
+};
+
+type PendingProps = { proposed: ChangeFields; old: ChangeFields; requestedByLabel: string } | null;
+
 type Props = {
   store: StoreProps;
   active: ActiveProps;
   activePhotos: SyncedPhoto[];
   history: HistoryRow[];
+  pending: PendingProps;
 };
 
 function formatDateTime(iso: string): string {
@@ -67,7 +76,7 @@ function formatDateTime(iso: string): string {
   });
 }
 
-export function StoreDetailShell({ store, active, activePhotos, history }: Props) {
+export function StoreDetailShell({ store, active, activePhotos, history, pending }: Props) {
   const t = useTranslations("pwa.checkIn");
   const tBadge = useTranslations("stores.badge");
   const tList = useTranslations("pwa.stores");
@@ -143,6 +152,22 @@ export function StoreDetailShell({ store, active, activePhotos, history }: Props
         <>
           <CheckOutButton visitId={active.id} />
           <VisitPhotoCapture visitId={active.id} storeId={store.id} synced={activePhotos} />
+          {pending ? (
+            <StoreChangePendingCard pending={pending} />
+          ) : (
+            <StoreEditForm
+              store={{
+                id: store.id,
+                name: store.name,
+                address: store.address,
+                phone: store.phone,
+                contactName: store.contactName,
+                lat: store.lat,
+                lng: store.lng,
+              }}
+              visitId={active.id}
+            />
+          )}
         </>
       ) : (
         <CheckInButton
