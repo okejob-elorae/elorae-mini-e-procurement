@@ -292,7 +292,7 @@ function aggregateSnapshotByItemId(
 }
 
 // Get inventory snapshot (one row per item, aggregated from variant-level rows)
-export async function getInventorySnapshot(opts?: { page: number; pageSize: number }) {
+export async function getInventorySnapshot(opts?: { page: number; pageSize: number; search?: string }) {
   const toNum = (v: unknown) => (v == null ? null : Number(v));
 
   const values = await prisma.inventoryValue.findMany({
@@ -301,17 +301,26 @@ export async function getInventorySnapshot(opts?: { page: number; pageSize: numb
   });
 
   const allItems = aggregateSnapshotByItemId(values, toNum);
+  // Portfolio summary (value / count / low-stock) is always over the full set.
   const totalValue = allItems.reduce((sum, v) => sum + v.totalValue, 0);
   const lowStockItems = allItems.filter(
     (v) => v.item.reorderPoint != null && v.available <= Number(v.item.reorderPoint)
   ).length;
 
+  // Search filters the paginated list + its count (server-side, across all rows — not just the current page).
+  const q = opts?.search?.trim().toLowerCase();
+  const matched = q
+    ? allItems.filter(
+        (v) => v.item.sku.toLowerCase().includes(q) || v.item.nameId.toLowerCase().includes(q)
+      )
+    : allItems;
+
   if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
     const start = (opts.page - 1) * opts.pageSize;
-    const items = allItems.slice(start, start + opts.pageSize);
+    const items = matched.slice(start, start + opts.pageSize);
     return {
       items,
-      totalCount: allItems.length,
+      totalCount: matched.length,
       totalValue,
       totalItems: allItems.length,
       lowStockItems,
