@@ -6,16 +6,14 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { loadVanAction } from "@/app/actions/canvassing";
-import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
-export type ItemOption = { id: string; sku: string; nameId: string; variants: unknown };
+export type ItemOption = { id: string; sku: string; nameId: string; variants?: unknown };
 
 type LineRow = { id: string; itemId: string; variantSku: string | null; qty: number };
 
@@ -61,22 +59,10 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
 
     setShortLines([]);
 
-    const filled = lines.filter((l) => l.itemId && l.qty > 0);
-
-    // A variant-bearing item must have a variant chosen, else the load would
-    // resolve to a non-existent inventory bucket and fail with a confusing
-    // "not enough stock" message.
-    const missingVariant = filled.some((l) => {
-      const it = itemOptions.find((i) => i.id === l.itemId);
-      const opts = variantSelectOptions(parseItemVariants(it?.variants));
-      return opts.length > 0 && !l.variantSku?.trim();
-    });
-    if (missingVariant) {
-      toast.error(t("errSelectVariant"));
-      return;
-    }
-
-    const validLines = filled.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty }));
+    // Van loading is item-level (stock is tracked per item, not per variant — see BOUNDARY D15).
+    const validLines = lines
+      .filter((l) => l.itemId && l.qty > 0)
+      .map((l) => ({ itemId: l.itemId, variantSku: null, qty: l.qty }));
 
     if (validLines.length === 0) {
       toast.error(t("errEmpty"));
@@ -129,8 +115,6 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
 
       <div className="space-y-3">
         {lines.map((line) => {
-          const selectedItem = itemOptions.find((i) => i.id === line.itemId);
-          const variantOpts = variantSelectOptions(parseItemVariants(selectedItem?.variants));
           return (
             <div key={line.id} className="space-y-2 rounded-md border p-3">
               <div className="space-y-1.5">
@@ -138,34 +122,11 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
                 <SearchableCombobox
                   options={itemOptions.map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
                   value={line.itemId}
-                  onValueChange={(value) => updateLine(line.id, { itemId: value, variantSku: null })}
+                  onValueChange={(value) => updateLine(line.id, { itemId: value })}
                   placeholder={t("selectItem")}
                   disabled={pending}
                 />
               </div>
-
-              {variantOpts.length > 0 && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">{t("colVariant")}</Label>
-                  <Select
-                    disabled={pending}
-                    value={line.variantSku?.trim() ? line.variantSku : "__none__"}
-                    onValueChange={(v) => updateLine(line.id, { variantSku: v === "__none__" ? null : v })}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={t("colVariant")} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">{t("selectVariant")}</SelectItem>
-                      {variantOpts.map((o) => (
-                        <SelectItem key={o.sku} value={o.sku}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
 
               <div className="flex items-end gap-2">
                 <div className="flex-1 space-y-1.5">
