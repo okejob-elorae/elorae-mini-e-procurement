@@ -59,16 +59,29 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
     e.preventDefault();
     if (pending) return;
 
-    const validLines = lines
-      .filter((l) => l.itemId && l.qty > 0)
-      .map((l) => ({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty }));
+    setShortLines([]);
+
+    const filled = lines.filter((l) => l.itemId && l.qty > 0);
+
+    // A variant-bearing item must have a variant chosen, else the load would
+    // resolve to a non-existent inventory bucket and fail with a confusing
+    // "not enough stock" message.
+    const missingVariant = filled.some((l) => {
+      const it = itemOptions.find((i) => i.id === l.itemId);
+      const opts = variantSelectOptions(parseItemVariants(it?.variants));
+      return opts.length > 0 && !l.variantSku?.trim();
+    });
+    if (missingVariant) {
+      toast.error(t("errSelectVariant"));
+      return;
+    }
+
+    const validLines = filled.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty }));
 
     if (validLines.length === 0) {
       toast.error(t("errEmpty"));
       return;
     }
-
-    setShortLines([]);
 
     startTransition(async () => {
       try {
@@ -193,6 +206,7 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
         <Textarea
           id="van-load-note"
           rows={2}
+          maxLength={500}
           disabled={pending}
           value={note}
           onChange={(e) => setNote(e.target.value)}

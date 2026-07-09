@@ -2149,6 +2149,7 @@
     "shortLineDetail": "diminta {requested}, tersedia {available}",
     "errForbidden": "Anda tidak memiliki izin untuk melakukan aksi ini.",
     "errValidation": "Periksa kembali isian formulir.",
+    "errSelectVariant": "Pilih varian untuk item yang punya varian.",
     "errEmpty": "Tambahkan setidaknya satu baris item.",
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi."
   }
