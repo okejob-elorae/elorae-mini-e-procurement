@@ -32,6 +32,7 @@ const DEFAULT_CONFIGS: Record<
   OPN: { prefix: 'OPN/', resetPeriod: 'MONTHLY', padding: 4 },
   PUTUS: { prefix: 'PUTUS/', resetPeriod: 'YEARLY', padding: 4 },
   KONSI: { prefix: 'KONSI/', resetPeriod: 'YEARLY', padding: 4 },
+  VANLOAD: { prefix: 'VLOAD/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
 export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {
