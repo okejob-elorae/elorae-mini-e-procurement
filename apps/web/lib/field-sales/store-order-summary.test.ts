@@ -45,7 +45,7 @@ d("getStoreOrderSummary (test bed only)", () => {
 
     const rows = await getStoreOrderSummary(storeId);
     expect(rows).toHaveLength(5);                       // capped
-    expect(rows.some(r => r.status === "REJECTED")).toBe(false); // rejected excluded
+    expect(rows.some(r => r.orderNo === `${tag}-99`)).toBe(false); // rejected order excluded
     expect(rows[0].orderNo).toBe(`${tag}-6`);           // newest first
     expect(typeof rows[0].total).toBe("number");
     expect(typeof rows[0].createdAtIso).toBe("string");
