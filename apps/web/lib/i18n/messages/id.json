@@ -1889,6 +1889,15 @@
       "errStoreGone": "Toko tidak ditemukan",
       "errGeneric": "Terjadi kesalahan",
       "listBadge": "Perubahan tertunda"
+    },
+    "orders": {
+      "cardTitle": "Order terakhir",
+      "empty": "Belum ada order",
+      "colOrderNo": "No. Order",
+      "colType": "Tipe",
+      "colStatus": "Status",
+      "colDate": "Tanggal",
+      "colTotal": "Total"
     }
   },
   "pwa": {

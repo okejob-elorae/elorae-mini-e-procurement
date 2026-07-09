@@ -1889,6 +1889,15 @@
       "errStoreGone": "Store not found",
       "errGeneric": "Something went wrong",
       "listBadge": "Pending change"
+    },
+    "orders": {
+      "cardTitle": "Recent orders",
+      "empty": "No orders yet",
+      "colOrderNo": "Order No.",
+      "colType": "Type",
+      "colStatus": "Status",
+      "colDate": "Date",
+      "colTotal": "Total"
     }
   },
   "pwa": {

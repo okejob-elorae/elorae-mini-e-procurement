@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
@@ -10,6 +11,7 @@ import {
   Images,
   MapPin,
   Phone,
+  ShoppingBag,
   Store,
   User as UserIcon,
 } from "lucide-react";
@@ -37,6 +39,15 @@ import { StoreChangeReviewCard } from "./StoreChangeReviewCard";
 
 type PendingChangeFields = { name: string; address: string; phone: string | null; contactName: string | null; lat: number | null; lng: number | null };
 
+type OrderRow = {
+  id: string;
+  orderNo: string;
+  orderType: "PUTUS" | "KONSI";
+  status: "PENDING_APPROVAL" | "APPROVED";
+  total: number;
+  createdAtIso: string;
+};
+
 type Visit = {
   id: string;
   checkinAtIso: string;
@@ -54,6 +65,7 @@ type Props = {
   store: StoreListItem;
   canEdit: boolean;
   visits: Visit[];
+  orders: OrderRow[];
   pendingChange: {
     requestId: string;
     requestedByLabel: string;
@@ -72,6 +84,19 @@ function formatDateTime(iso: string): string {
   });
 }
 
+function formatRupiah(value: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+const ORDER_STATUS_LABEL: Record<"PENDING_APPROVAL" | "APPROVED", "statusPending" | "statusApproved"> = {
+  PENDING_APPROVAL: "statusPending",
+  APPROVED: "statusApproved",
+};
+
 function formatDuration(startIso: string, endIso: string | null): string {
   if (!endIso) return "—";
   const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
@@ -82,11 +107,15 @@ function formatDuration(startIso: string, endIso: string | null): string {
   return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`;
 }
 
-export function StoreDetailView({ store, canEdit, visits, pendingChange }: Props) {
+export function StoreDetailView({ store, canEdit, visits, orders, pendingChange }: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
   const tDetail = useTranslations("stores.detail");
   const tTable = useTranslations("stores.list.table");
+  const tOrders = useTranslations("stores.orders");
+  const tFso = useTranslations("fieldSalesOrders");
+  const router = useRouter();
+  const [, startTransition] = useTransition();
   const [lightbox, setLightbox] = useState<{ url: string; caption: string | null } | null>(null);
   const [gallery, setGallery] = useState<{ label: string; photos: Array<{ id: string; url: string; caption: string | null; capturedAtIso: string }> } | null>(null);
 
@@ -237,6 +266,57 @@ export function StoreDetailView({ store, canEdit, visits, pendingChange }: Props
                               <span className="text-xs text-muted-foreground">—</span>
                             )}
                           </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShoppingBag className="h-4 w-4" />
+                {tOrders("cardTitle")}
+                <span className="text-sm font-normal text-muted-foreground ml-2">({orders.length})</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {orders.length === 0 ? (
+                <div className="text-center py-8">
+                  <ShoppingBag className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">{tOrders("empty")}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{tOrders("colOrderNo")}</TableHead>
+                        <TableHead>{tOrders("colType")}</TableHead>
+                        <TableHead>{tOrders("colStatus")}</TableHead>
+                        <TableHead>{tOrders("colDate")}</TableHead>
+                        <TableHead className="text-right">{tOrders("colTotal")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orders.map(o => (
+                        <TableRow
+                          key={o.id}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => startTransition(() => router.push(`/backoffice/field-sales-orders/${o.id}`))}
+                        >
+                          <TableCell className="font-mono text-xs">{o.orderNo}</TableCell>
+                          <TableCell>
+                            <Badge variant={o.orderType === "PUTUS" ? "outline" : "secondary"}>
+                              {o.orderType === "KONSI" ? tFso("typeKonsi") : tFso("typePutus")}
+                            </Badge>
+                          </TableCell>
+                          <TableCell><Badge variant="outline">{tFso(ORDER_STATUS_LABEL[o.status])}</Badge></TableCell>
+                          <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(o.createdAtIso)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatRupiah(o.total)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
