@@ -1918,7 +1918,9 @@
       "viewCoords": "Lihat koordinat",
       "locating": "Mengambil lokasi…",
       "submitting": "Mengirim…",
-      "outOfRadiusWarn": "Check-in ~{meters} m dari lokasi toko"
+      "outOfRadiusWarn": "Check-in ~{meters} m dari lokasi toko",
+      "ordersTitle": "Pesanan terakhir",
+      "ordersEmpty": "Belum ada pesanan"
     },
     "catalog": {
       "promoTag": "Promo",

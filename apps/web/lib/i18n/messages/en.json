@@ -1918,7 +1918,9 @@
       "viewCoords": "View coords",
       "locating": "Getting location…",
       "submitting": "Submitting…",
-      "outOfRadiusWarn": "Checked in ~{meters} m from the store"
+      "outOfRadiusWarn": "Checked in ~{meters} m from the store",
+      "ordersTitle": "Recent orders",
+      "ordersEmpty": "No orders yet"
     },
     "catalog": {
       "promoTag": "Promo",

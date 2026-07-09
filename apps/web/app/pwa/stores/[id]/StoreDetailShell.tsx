@@ -62,12 +62,22 @@ type ChangeFields = {
 
 type PendingProps = { proposed: ChangeFields; old: ChangeFields; requestedByLabel: string } | null;
 
+type OrderRow = {
+  id: string;
+  orderNo: string;
+  orderType: "PUTUS" | "KONSI";
+  status: "PENDING_APPROVAL" | "APPROVED";
+  total: number | null;
+  createdAtIso: string;
+};
+
 type Props = {
   store: StoreProps;
   active: ActiveProps;
   activePhotos: SyncedPhoto[];
   history: HistoryRow[];
   pending: PendingProps;
+  orders: OrderRow[];
 };
 
 function formatDateTime(iso: string): string {
@@ -79,10 +89,20 @@ function formatDateTime(iso: string): string {
   });
 }
 
-export function StoreDetailShell({ store, active, activePhotos, history, pending }: Props) {
+function formatRupiah(value: number): string {
+  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
+}
+
+const ORDER_STATUS_LABEL: Record<"PENDING_APPROVAL" | "APPROVED", "statusPending" | "statusApproved"> = {
+  PENDING_APPROVAL: "statusPending",
+  APPROVED: "statusApproved",
+};
+
+export function StoreDetailShell({ store, active, activePhotos, history, pending, orders }: Props) {
   const t = useTranslations("pwa.checkIn");
   const tBadge = useTranslations("stores.badge");
   const tList = useTranslations("pwa.stores");
+  const tFso = useTranslations("fieldSalesOrders");
 
   const activeAtThisStore = active && active.storeId === store.id;
   const activeAtOtherStore = active && active.storeId !== store.id;
@@ -222,6 +242,38 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
                     <MapPin className="h-3.5 w-3.5" />
                   </a>
                   <span className="text-xs text-muted-foreground">{v.userLabel}</span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+      </section>
+
+      <section className="pt-2 space-y-2">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          <ShoppingBag className="h-4 w-4" />
+          {t("ordersTitle")}
+        </h2>
+        {orders.length === 0 ? (
+          <Card>
+            <CardContent className="p-6 text-center text-sm text-muted-foreground">
+              {t("ordersEmpty")}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="p-0 divide-y">
+              {orders.map(o => (
+                <div key={o.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm">
+                  <span className="font-mono text-xs">{o.orderNo}</span>
+                  <Badge variant={o.orderType === "PUTUS" ? "outline" : "secondary"}>
+                    {o.orderType === "KONSI" ? tFso("typeKonsi") : tFso("typePutus")}
+                  </Badge>
+                  <Badge variant="outline">{tFso(ORDER_STATUS_LABEL[o.status])}</Badge>
+                  <span className="text-xs text-muted-foreground">{formatDateTime(o.createdAtIso)}</span>
+                  {o.total !== null && (
+                    <span className="ml-auto tabular-nums font-medium">{formatRupiah(o.total)}</span>
+                  )}
                 </div>
               ))}
             </CardContent>

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getStore, listVisitsForStore, getActiveVisit, listVisitPhotos } from "@/lib/stores/queries";
 import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
+import { getStoreOrderSummary } from "@/lib/field-sales/queries";
 import { StoreDetailShell } from "./StoreDetailShell";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +14,24 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
   const store = await getStore(id);
   if (!store) notFound();
 
-  const [active, history] = await Promise.all([
+  const [active, history, orderRows] = await Promise.all([
     getActiveVisit(session.user.id),
     listVisitsForStore(store.id, 20),
+    getStoreOrderSummary(store.id),
   ]);
 
   const activeForStore = active && active.storeId === store.id ? active : null;
   const activePhotos = activeForStore ? await listVisitPhotos(activeForStore.id) : [];
   const pending = await getPendingStoreChangeRequest(store.id);
+
+  const orders = orderRows.map(o => ({
+    id: o.id,
+    orderNo: o.orderNo,
+    orderType: o.orderType,
+    status: o.status,
+    total: o.orderType === "KONSI" ? null : o.total,
+    createdAtIso: o.createdAtIso,
+  }));
 
   return (
     <StoreDetailShell
@@ -60,6 +71,7 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
         userLabel: v.user.name ?? v.user.email,
       }))}
       pending={pending ? { proposed: pending.proposed, old: pending.old, requestedByLabel: pending.requestedByLabel } : null}
+      orders={orders}
     />
   );
 }
