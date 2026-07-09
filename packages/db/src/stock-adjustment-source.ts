@@ -15,6 +15,7 @@ export const STOCK_ADJUSTMENT_SOURCES = [
   "FIELD_SALES_CONSUME",
   "JUBELIO_WEBHOOK",
   "JUBELIO_RECONCILE",
+  "VAN_LOAD",
 ] as const;
 
 export type StockAdjustmentSource = (typeof STOCK_ADJUSTMENT_SOURCES)[number];
