@@ -42,6 +42,7 @@
     "navSalesReturns": "Pengembalian",
     "navFieldSalesOrders": "Pesanan Lapangan",
     "navCanvassing": "Canvassing",
+    "navVanSales": "Penjualan Van",
     "promos": "Promo",
     "finance": "Keuangan",
     "navCoa": "Bagan Akun",
@@ -2197,6 +2198,51 @@
     "shareButton": "Bagikan",
     "shareText": "Nota {docNo} · Total {total}",
     "shareError": "Gagal membagikan nota.",
-    "sellAgain": "Jual Lagi"
+    "sellAgain": "Jual Lagi",
+    "backoffice": {
+      "list": {
+        "pageTitle": "Penjualan Van",
+        "subtitle": "Daftar penjualan yang dicatat langsung dari stok mobil",
+        "cardTitle": "Penjualan",
+        "count": "{count, plural, =0 {tidak ada penjualan} other {# penjualan}}",
+        "empty": "Belum ada penjualan van.",
+        "noResults": "Tidak ada penjualan van yang cocok dengan filter.",
+        "filters": {
+          "salesmanLabel": "Salesman",
+          "allSalesmen": "Semua salesman",
+          "searchSalesmanPlaceholder": "Cari salesman",
+          "noSalesmanFound": "Salesman tidak ditemukan.",
+          "fromLabel": "Dari",
+          "toLabel": "Sampai",
+          "reset": "Reset"
+        },
+        "table": {
+          "docNo": "No. Dokumen",
+          "salesman": "Salesman",
+          "buyer": "Pembeli",
+          "total": "Total",
+          "date": "Tanggal"
+        }
+      },
+      "detail": {
+        "summaryTitle": "Ringkasan",
+        "salesmanLabel": "Salesman",
+        "buyerLabel": "Pembeli",
+        "buyerPhoneLabel": "No. telepon",
+        "buyerWalkIn": "Langsung",
+        "dateLabel": "Tanggal",
+        "gpsLabel": "GPS",
+        "openInMaps": "Buka di Maps",
+        "noteLabel": "Catatan",
+        "table": {
+          "product": "Produk",
+          "variant": "Varian",
+          "qty": "Qty",
+          "unitPrice": "Harga Satuan",
+          "unitCost": "Biaya Satuan",
+          "lineTotal": "Total Baris"
+        }
+      }
+    }
   }
 }

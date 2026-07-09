@@ -155,6 +155,11 @@ const navItems: NavItem[] = [
         href: '/backoffice/canvassing',
         permission: PERMISSIONS.CANVASSING_MANAGE,
       },
+      {
+        labelKey: 'navVanSales',
+        href: '/backoffice/van-sales',
+        permission: PERMISSIONS.CANVASSING_MANAGE,
+      },
     ],
   },
   {
@@ -300,7 +305,8 @@ function Sidebar({
       path.startsWith('/backoffice/fulfillment') ||
       path.startsWith('/backoffice/returns') ||
       path.startsWith('/backoffice/field-sales-orders') ||
-      path.startsWith('/backoffice/canvassing')
+      path.startsWith('/backoffice/canvassing') ||
+      path.startsWith('/backoffice/van-sales')
     ) {
       return '/backoffice/sales-orders';
     }

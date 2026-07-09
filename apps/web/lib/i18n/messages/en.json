@@ -42,6 +42,7 @@
     "navSalesReturns": "Returns",
     "navFieldSalesOrders": "Field Orders",
     "navCanvassing": "Canvassing",
+    "navVanSales": "Van Sales",
     "promos": "Promos",
     "finance": "Finance",
     "navCoa": "Chart of Accounts",
@@ -2197,6 +2198,51 @@
     "shareButton": "Share",
     "shareText": "Receipt {docNo} · Total {total}",
     "shareError": "Failed to share the receipt.",
-    "sellAgain": "Sell Again"
+    "sellAgain": "Sell Again",
+    "backoffice": {
+      "list": {
+        "pageTitle": "Van Sales",
+        "subtitle": "Register of sales recorded directly from van stock",
+        "cardTitle": "Sales",
+        "count": "{count, plural, =0 {no sales} other {# sales}}",
+        "empty": "No van sales yet.",
+        "noResults": "No van sales match your filters.",
+        "filters": {
+          "salesmanLabel": "Salesman",
+          "allSalesmen": "All salesmen",
+          "searchSalesmanPlaceholder": "Search salesman",
+          "noSalesmanFound": "No salesman found.",
+          "fromLabel": "From",
+          "toLabel": "To",
+          "reset": "Reset"
+        },
+        "table": {
+          "docNo": "Doc No.",
+          "salesman": "Salesman",
+          "buyer": "Buyer",
+          "total": "Total",
+          "date": "Date"
+        }
+      },
+      "detail": {
+        "summaryTitle": "Summary",
+        "salesmanLabel": "Salesman",
+        "buyerLabel": "Buyer",
+        "buyerPhoneLabel": "Phone number",
+        "buyerWalkIn": "Walk-in",
+        "dateLabel": "Date",
+        "gpsLabel": "GPS",
+        "openInMaps": "Open in Maps",
+        "noteLabel": "Note",
+        "table": {
+          "product": "Product",
+          "variant": "Variant",
+          "qty": "Qty",
+          "unitPrice": "Unit Price",
+          "unitCost": "Unit Cost",
+          "lineTotal": "Line Total"
+        }
+      }
+    }
   }
 }
