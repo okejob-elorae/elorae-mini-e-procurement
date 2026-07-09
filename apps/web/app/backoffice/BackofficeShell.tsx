@@ -150,6 +150,11 @@ const navItems: NavItem[] = [
         href: '/backoffice/field-sales-orders',
         permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
       },
+      {
+        labelKey: 'navCanvassing',
+        href: '/backoffice/canvassing',
+        permission: PERMISSIONS.CANVASSING_MANAGE,
+      },
     ],
   },
   {
@@ -294,7 +299,8 @@ function Sidebar({
       path.startsWith('/backoffice/sales-orders') ||
       path.startsWith('/backoffice/fulfillment') ||
       path.startsWith('/backoffice/returns') ||
-      path.startsWith('/backoffice/field-sales-orders')
+      path.startsWith('/backoffice/field-sales-orders') ||
+      path.startsWith('/backoffice/canvassing')
     ) {
       return '/backoffice/sales-orders';
     }

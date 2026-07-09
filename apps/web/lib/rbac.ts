@@ -64,6 +64,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/fulfillment': 'sales_orders:view',
   '/backoffice/field-sales-orders': 'field_sales_orders:view',
   '/backoffice/promos': 'promos:view',
+  '/backoffice/canvassing': 'canvassing:manage',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
   '/backoffice/forecast': 'forecast:view',
@@ -259,4 +260,6 @@ export const PERMISSIONS = {
   // Promos
   PROMOS_VIEW: "promos:view",
   PROMOS_MANAGE: "promos:manage",
+  // Canvassing (Van Stock)
+  CANVASSING_MANAGE: "canvassing:manage",
 } as const;
