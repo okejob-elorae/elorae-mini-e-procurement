@@ -316,7 +316,9 @@ export function StoreDetailView({ store, canEdit, visits, orders, pendingChange 
                           </TableCell>
                           <TableCell><Badge variant="outline">{tFso(ORDER_STATUS_LABEL[o.status])}</Badge></TableCell>
                           <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(o.createdAtIso)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatRupiah(o.total)}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {o.orderType === "KONSI" && o.status !== "APPROVED" ? "—" : formatRupiah(o.total)}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
