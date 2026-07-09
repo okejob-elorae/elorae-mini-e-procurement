@@ -10,8 +10,11 @@ export default async function VanSaleNotaPage({ params }: { params: Promise<{ sa
   if (!session?.user?.id) throw new Error("Unauthorized");
   const { saleId } = await params;
 
-  const sale = await getVanSaleById(saleId);
+  const sale = await getVanSaleById(saleId, { salesmanId: session.user.id });
   if (!sale) notFound();
 
-  return <NotaView sale={sale} />;
+  // COGS (unitCost) is not shown on the nota — strip it so it never reaches the client payload.
+  const safeSale = { ...sale, lines: sale.lines.map((l) => ({ ...l, unitCost: 0 })) };
+
+  return <NotaView sale={safeSale} />;
 }

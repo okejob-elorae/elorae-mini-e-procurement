@@ -55,6 +55,9 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
   const [buyerPhone, setBuyerPhone] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
   const [shortLines, setShortLines] = useState<ShortLine[]>([]);
+  // Stable across retries so a re-submit after an ambiguous failure dedups server-side;
+  // rotated only after a confirmed success.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   function setQty(row: VanStockRow, qty: number) {
     const key = lineKey(row.itemId, row.variantSku);
@@ -99,10 +102,11 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
         saleLat: position?.lat ?? null,
         saleLng: position?.lng ?? null,
         amountPaid: paid,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey,
         lines: cartLines.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
       });
       if (res.ok) {
+        setIdempotencyKey(crypto.randomUUID()); // rotate for the next sale
         toast.success(t("successToast", { docNo: res.docNo }));
         router.push(`/pwa/van/${res.saleId}/nota`);
         return;

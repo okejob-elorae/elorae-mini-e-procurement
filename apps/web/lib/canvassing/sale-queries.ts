@@ -51,9 +51,9 @@ export async function listVanSales(
   };
 }
 
-export async function getVanSaleById(id: string): Promise<VanSaleDetail | null> {
-  const r = await prisma.vanSale.findUnique({
-    where: { id },
+export async function getVanSaleById(id: string, opts?: { salesmanId?: string }): Promise<VanSaleDetail | null> {
+  const r = await prisma.vanSale.findFirst({
+    where: { id, ...(opts?.salesmanId ? { salesmanId: opts.salesmanId } : {}) },
     include: { salesman: { select: { name: true, email: true } }, store: { select: { name: true } }, lines: true },
   });
   if (!r) return null;
