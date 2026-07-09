@@ -32,12 +32,13 @@ export async function loadVan(input: {
 
   return runSerializable(async (tx) => {
     // read current main inventory for each line
-    const invByKey = new Map<string, { qtyOnHand: Prisma.Decimal; reservedQty: Prisma.Decimal; avgCost: Prisma.Decimal } | null>();
+    const invByKey = new Map<string, { id: string; qtyOnHand: Prisma.Decimal; reservedQty: Prisma.Decimal; avgCost: Prisma.Decimal } | null>();
     for (const l of merged) {
-      const inv = await tx.inventoryValue.findUnique({
-        where: { itemId_variantSku: { itemId: l.itemId, variantSku: l.variantSku ?? "" } },
-        select: { qtyOnHand: true, reservedQty: true, avgCost: true },
-      });
+      // Variantless inventory rows use variantSku: null (not "") in this codebase; tolerate both.
+      const sel = { id: true, qtyOnHand: true, reservedQty: true, avgCost: true } as const;
+      const inv = (l.variantSku ?? "") === ""
+        ? await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, OR: [{ variantSku: null }, { variantSku: "" }] }, select: sel })
+        : await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, variantSku: l.variantSku }, select: sel });
       invByKey.set(`${l.itemId}::${l.variantSku ?? ""}`, inv);
     }
 
@@ -60,7 +61,7 @@ export async function loadVan(input: {
       const newQty = prevQty - l.qty;
 
       await tx.inventoryValue.update({
-        where: { itemId_variantSku: { itemId: l.itemId, variantSku: l.variantSku ?? "" } },
+        where: { id: inv.id },
         data: { qtyOnHand: newQty, totalValue: newQty * avgCost },
       });
 
