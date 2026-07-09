@@ -171,6 +171,8 @@ export function InventoryPageClient({
   const [stockPage, setStockPage] = useState(1);
   const [stockPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [stockTotalCount, setStockTotalCount] = useState(initialStockTotalCount);
+  const [stockSearchDebounced, setStockSearchDebounced] = useState('');
+  const stockSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [grnPage, setGrnPage] = useState(1);
   const [grnPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [grnTotalCount, setGrnTotalCount] = useState(initialGrnTotalCount);
@@ -186,7 +188,7 @@ export function InventoryPageClient({
     setIsLoading(true);
     try {
       const [invData, grnData, adjData] = await Promise.all([
-        getInventorySnapshot({ page: stockPage, pageSize: stockPageSize }),
+        getInventorySnapshot({ page: stockPage, pageSize: stockPageSize, search: stockSearchDebounced.trim() || undefined }),
         getGRNs(undefined, { page: grnPage, pageSize: grnPageSize }),
         getStockAdjustments(adjItemFilter === ADJ_FILTER_ALL ? undefined : adjItemFilter, { page: adjPage, pageSize: adjPageSize })
       ]);
@@ -236,7 +238,7 @@ export function InventoryPageClient({
     }
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchData depends on pagination/filters above
-  }, [stockPage, grnPage, adjPage, adjItemFilter]);
+  }, [stockPage, grnPage, adjPage, adjItemFilter, stockSearchDebounced]);
 
   useEffect(() => {
     if (!expandedGrnId) {
@@ -274,6 +276,18 @@ export function InventoryPageClient({
   }, [rollsSearchQuery]);
 
   useEffect(() => {
+    if (stockSearchDebounceRef.current) clearTimeout(stockSearchDebounceRef.current);
+    stockSearchDebounceRef.current = setTimeout(() => {
+      setStockSearchDebounced(searchQuery);
+      setStockPage(1);
+      stockSearchDebounceRef.current = null;
+    }, 400);
+    return () => {
+      if (stockSearchDebounceRef.current) clearTimeout(stockSearchDebounceRef.current);
+    };
+  }, [searchQuery]);
+
+  useEffect(() => {
     if (activeTab !== 'rolls') return;
     setRollsLoading(true);
     getFabricRolls({
@@ -304,12 +318,9 @@ export function InventoryPageClient({
     return Number(item.available) <= Number(item.item.reorderPoint);
   };
 
-  const filteredInventory = inventory
-    .filter(item =>
-      item.item.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.item.nameId.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-    .filter(item => !oversoldOnly || Number(item.available) < 0);
+  // Search is applied server-side (across all rows) in getInventorySnapshot; only the
+  // oversold view-filter stays client-side here.
+  const filteredInventory = inventory.filter(item => !oversoldOnly || Number(item.available) < 0);
 
   const q = (s: string) => s.toLowerCase().trim();
   const filteredGrns = grns.filter(
