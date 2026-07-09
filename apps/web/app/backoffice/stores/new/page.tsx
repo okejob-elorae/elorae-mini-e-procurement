@@ -21,6 +21,7 @@ export default async function NewStorePage() {
       marginPercent: null,
       lat: null,
       lng: null,
+      checkinRadiusMeters: null,
       isActive: true,
     }} />
   );

@@ -1813,6 +1813,9 @@
       "coords": "Coordinates",
       "lat": "Latitude",
       "lng": "Longitude",
+      "checkinRadius": "Check-in radius (meters)",
+      "checkinRadiusPlaceholder": "Default 100",
+      "checkinRadiusHint": "Leave empty to use the global default. GPS distance tolerance at check-in.",
       "pasteCoords": "Paste coords",
       "pasteCoordsHint": "Paste \"-6.2088, 106.8456\" to fill both",
       "pasteCoordsInvalid": "Could not parse. Use format: \"lat, lng\"",
@@ -1857,7 +1860,8 @@
         "checkout": "Check-out",
         "duration": "Duration",
         "user": "Salesman",
-        "coords": "Coords"
+        "coords": "Coords",
+        "outOfRadius": "Out of radius"
       }
     },
     "storeChanges": {
@@ -1904,7 +1908,8 @@
       "autoClosedBadge": "Auto-closed",
       "viewCoords": "View coords",
       "locating": "Getting location…",
-      "submitting": "Submitting…"
+      "submitting": "Submitting…",
+      "outOfRadiusWarn": "Checked in ~{meters} m from the store"
     },
     "catalog": {
       "promoTag": "Promo",

@@ -17,6 +17,7 @@ import { CheckOutButton } from "./CheckOutButton";
 import { VisitPhotoCapture } from "./VisitPhotoCapture";
 import { StoreEditForm } from "./StoreEditForm";
 import { StoreChangePendingCard } from "./StoreChangePendingCard";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,6 +40,8 @@ type ActiveProps = {
   id: string;
   storeId: string;
   storeName: string;
+  checkinOutOfRadius: boolean;
+  checkinDistanceMeters: number | null;
 } | null;
 
 type HistoryRow = {
@@ -150,6 +153,13 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
 
       {activeAtThisStore ? (
         <>
+          {active.checkinOutOfRadius && (
+            <Alert className="border-amber-500/50 text-amber-700 [&>svg]:text-amber-600">
+              <AlertDescription className="text-amber-700">
+                {t("outOfRadiusWarn", { meters: active.checkinDistanceMeters ?? "?" })}
+              </AlertDescription>
+            </Alert>
+          )}
           <CheckOutButton visitId={active.id} />
           <VisitPhotoCapture visitId={active.id} storeId={store.id} synced={activePhotos} />
           {pending ? (

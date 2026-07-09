@@ -7,6 +7,7 @@ import { Prisma, prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { planCheckIn } from "@/lib/pwa/visit-transitions";
 import { submitStoreChangeRequest } from "@/lib/store-changes/writer";
+import { parseRadiusSetting, resolveEffectiveRadius, evaluateCheckinRadius } from "@/lib/pwa/checkin-radius";
 
 const checkInSchema = z.object({
   storeId: z.string().min(1),
@@ -27,9 +28,17 @@ export async function checkIn(input: { storeId: string; lat: number; lng: number
 
   const store = await prisma.store.findUnique({
     where: { id: parsed.storeId },
-    select: { id: true, isActive: true },
+    select: { id: true, isActive: true, lat: true, lng: true, checkinRadiusMeters: true },
   });
   if (!store || !store.isActive) return { ok: false, code: "NOT_FOUND" };
+
+  const globalRow = await prisma.systemSetting.findUnique({ where: { key: "checkin.radiusMeters" } });
+  const effectiveRadius = resolveEffectiveRadius(store.checkinRadiusMeters, parseRadiusSetting(globalRow?.value));
+  const radius = evaluateCheckinRadius({
+    checkin: { lat: parsed.lat, lng: parsed.lng },
+    store: { lat: store.lat === null ? null : store.lat.toNumber(), lng: store.lng === null ? null : store.lng.toNumber() },
+    effectiveRadiusMeters: effectiveRadius,
+  });
 
   await prisma.$transaction(async (tx) => {
     const active = await tx.storeVisit.findFirst({
@@ -57,6 +66,8 @@ export async function checkIn(input: { storeId: string; lat: number; lng: number
         userId: session.user!.id,
         checkinLat: new Prisma.Decimal(parsed.lat),
         checkinLng: new Prisma.Decimal(parsed.lng),
+        checkinDistanceMeters: radius.distanceMeters,
+        checkinOutOfRadius: radius.outOfRadius,
       },
     });
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

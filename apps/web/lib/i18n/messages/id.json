@@ -1813,6 +1813,9 @@
       "coords": "Koordinat",
       "lat": "Latitude",
       "lng": "Longitude",
+      "checkinRadius": "Radius check-in (meter)",
+      "checkinRadiusPlaceholder": "Default 100",
+      "checkinRadiusHint": "Kosongkan untuk pakai default global. Toleransi jarak GPS saat check-in.",
       "pasteCoords": "Tempel koordinat",
       "pasteCoordsHint": "Tempel \"-6.2088, 106.8456\" untuk mengisi keduanya",
       "pasteCoordsInvalid": "Gagal parsing. Format: \"lat, lng\"",
@@ -1857,7 +1860,8 @@
         "checkout": "Check-out",
         "duration": "Durasi",
         "user": "Salesman",
-        "coords": "Koordinat"
+        "coords": "Koordinat",
+        "outOfRadius": "Di luar radius"
       }
     },
     "storeChanges": {
@@ -1904,7 +1908,8 @@
       "autoClosedBadge": "Ditutup otomatis",
       "viewCoords": "Lihat koordinat",
       "locating": "Mengambil lokasi…",
-      "submitting": "Mengirim…"
+      "submitting": "Mengirim…",
+      "outOfRadiusWarn": "Check-in ~{meters} m dari lokasi toko"
     },
     "catalog": {
       "promoTag": "Promo",

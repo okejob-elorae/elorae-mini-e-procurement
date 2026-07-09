@@ -244,6 +244,19 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               />
             </div>
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="checkinRadiusMeters">{t("checkinRadius")}</Label>
+            <Input
+              id="checkinRadiusMeters"
+              disabled={pending || readOnly}
+              type="number"
+              min={0}
+              value={form.checkinRadiusMeters ?? ""}
+              onChange={e => update("checkinRadiusMeters", e.target.value === "" ? null : Number(e.target.value))}
+              placeholder={t("checkinRadiusPlaceholder")}
+            />
+            <p className="text-xs text-muted-foreground">{t("checkinRadiusHint")}</p>
+          </div>
           <div className="flex gap-2 items-start">
             <Input
               id="pasteCoords"
