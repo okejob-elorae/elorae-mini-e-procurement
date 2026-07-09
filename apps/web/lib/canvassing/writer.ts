@@ -80,16 +80,19 @@ export async function loadVan(input: {
         },
       });
 
+      // Coerce variantless to "" (not null) to match the InventoryValue convention
+      // so the @@unique([userId, itemId, variantSku]) is DB-enforced (MySQL treats NULLs as distinct).
+      const vanVariantSku = l.variantSku ?? "";
       const van = await tx.vanStock.findUnique({
-        where: { userId_itemId_variantSku: { userId: input.canvasserId, itemId: l.itemId, variantSku: l.variantSku } },
+        where: { userId_itemId_variantSku: { userId: input.canvasserId, itemId: l.itemId, variantSku: vanVariantSku } },
         select: { qty: true, avgCost: true },
       });
       const prevVanQty = van ? van.qty.toNumber() : 0;
       const prevVanAvg = van ? van.avgCost.toNumber() : 0;
       const newVanAvg = weightedAvgCost(prevVanQty, prevVanAvg, l.qty, avgCost);
       await tx.vanStock.upsert({
-        where: { userId_itemId_variantSku: { userId: input.canvasserId, itemId: l.itemId, variantSku: l.variantSku } },
-        create: { userId: input.canvasserId, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty, avgCost: avgCost },
+        where: { userId_itemId_variantSku: { userId: input.canvasserId, itemId: l.itemId, variantSku: vanVariantSku } },
+        create: { userId: input.canvasserId, itemId: l.itemId, variantSku: vanVariantSku, qty: l.qty, avgCost: avgCost },
         update: { qty: prevVanQty + l.qty, avgCost: newVanAvg },
       });
     }
@@ -103,7 +106,7 @@ export async function loadVan(input: {
         lines: {
           create: merged.map((l) => ({
             itemId: l.itemId,
-            variantSku: l.variantSku,
+            variantSku: l.variantSku ?? "",
             qty: l.qty,
             unitCost: invByKey.get(`${l.itemId}::${l.variantSku ?? ""}`)!.avgCost.toNumber(),
           })),
