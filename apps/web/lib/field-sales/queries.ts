@@ -155,6 +155,32 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   };
 }
 
+export type StoreOrderSummaryRow = {
+  id: string;
+  orderNo: string;
+  orderType: FieldSalesOrderType;
+  status: "PENDING_APPROVAL" | "APPROVED";
+  total: number;
+  createdAtIso: string;
+};
+
+export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderSummaryRow[]> {
+  const rows = await prisma.fieldSalesOrder.findMany({
+    where: { storeId, status: { not: "REJECTED" } },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+    select: { id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true },
+  });
+  return rows.map(r => ({
+    id: r.id,
+    orderNo: r.orderNo,
+    orderType: r.orderType as FieldSalesOrderType,
+    status: r.status as "PENDING_APPROVAL" | "APPROVED",
+    total: Number(r.total),
+    createdAtIso: r.createdAt.toISOString(),
+  }));
+}
+
 export async function sentItemIds(
   storeId: string,
   tx: { fieldSalesOrderLine: typeof prisma.fieldSalesOrderLine } = prisma,
