@@ -2190,6 +2190,13 @@
     "shortLineDetail": "requested {requested}, available {available}",
     "errUnauthorized": "Session expired. Please sign in again.",
     "errValidation": "Please check the form for errors.",
-    "errGeneric": "Something went wrong. Please try again."
+    "errGeneric": "Something went wrong. Please try again.",
+    "notaTitle": "Sales Receipt",
+    "notaSubtitle": "Receipt {docNo}",
+    "printButton": "Print",
+    "shareButton": "Share",
+    "shareText": "Receipt {docNo} · Total {total}",
+    "shareError": "Failed to share the receipt.",
+    "sellAgain": "Sell Again"
   }
 }

@@ -2190,6 +2190,13 @@
     "shortLineDetail": "diminta {requested}, tersedia {available}",
     "errUnauthorized": "Sesi berakhir. Masuk lagi.",
     "errValidation": "Periksa kembali isian formulir.",
-    "errGeneric": "Terjadi kesalahan. Silakan coba lagi."
+    "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
+    "notaTitle": "Nota Penjualan",
+    "notaSubtitle": "Nota {docNo}",
+    "printButton": "Cetak",
+    "shareButton": "Bagikan",
+    "shareText": "Nota {docNo} · Total {total}",
+    "shareError": "Gagal membagikan nota.",
+    "sellAgain": "Jual Lagi"
   }
 }
