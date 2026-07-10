@@ -24,6 +24,7 @@ import {
   createItem as createItemLib,
   updateItem as updateItemLib,
   deleteItem as deleteItemLib,
+  ITEM_DELETE_BLOCKED,
   type ItemFormData,
   type SerializedItem,
 } from '@/lib/items/mutations';
@@ -153,12 +154,24 @@ export async function updateItem(id: string, data: ItemFormData) {
   return txResult.updated.serialized;
 }
 
-export async function deleteItem(id: string) {
+export type DeleteItemActionResult =
+  | { success: true }
+  | { success: false; messageKey: "cannotDeleteItemInUse" | "failedToDeleteItem" };
+
+export async function deleteItem(id: string): Promise<DeleteItemActionResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.ITEMS_DELETE);
 
-  await deleteItemLib(id);
-  revalidatePath('/backoffice/items');
+  try {
+    await deleteItemLib(id);
+    revalidatePath("/backoffice/items");
+    return { success: true };
+  } catch (error) {
+    if (error instanceof Error && error.message === ITEM_DELETE_BLOCKED) {
+      return { success: false, messageKey: "cannotDeleteItemInUse" };
+    }
+    return { success: false, messageKey: "failedToDeleteItem" };
+  }
 }
 
 export async function getItems(filters?: ListItemsFilters, opts?: ListItemsOpts) {

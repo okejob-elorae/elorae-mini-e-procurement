@@ -1200,6 +1200,7 @@ model SalesHistoryImport {
   skippedRows  Int            @default(0)
   errorRows    Int            @default(0)
   errors       Json?
+  skippedDetails Json?
   uploadedById String
   uploadedBy   User           @relation(fields: [uploadedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdAt    DateTime       @default(now())

@@ -517,6 +517,7 @@
     "failedToLoadIssueForPrint": "Gagal memuat issue untuk cetak",
     "failedToLoadItems": "Gagal memuat item",
     "itemDeletedSuccessfully": "Item berhasil dihapus",
+    "cannotDeleteItemInUse": "Item ini tidak dapat dihapus karena masih terhubung ke data yang ada, seperti work order, pesanan pembelian, atau transaksi stok.",
     "failedToDeleteItem": "Gagal menghapus item",
     "failedToLoadReconciliation": "Gagal memuat rekonsiliasi",
     "qtyReceivedMustBePositive": "Qty diterima harus > 0",
@@ -1000,7 +1001,9 @@
     "createdLabel": "Dibuat",
     "notesLabel": "Catatan",
     "paymentTermsLabel": "Syarat Pembayaran",
-    "cancelReasonDescription": "Masukkan alasan pembatalan PO. Tindakan ini tidak dapat dibatalkan."
+    "cancelReasonDescription": "Masukkan alasan pembatalan PO. Tindakan ini tidak dapat dibatalkan.",
+    "confirmCancelPO": "Yakin ingin membatalkan PO ini?",
+    "pinActionCancelPO": "membatalkan PO ini"
   },
   "workOrdersList": {
     "noWorkOrdersFound": "Tidak ada work order ditemukan"
@@ -1350,10 +1353,24 @@
       "success": "{imported} baris berhasil diimport, {skipped} dilewati.",
       "skippedHelp": "Baris pesanan selesai yang valid, tetapi tidak disimpan karena channel, ID pesanan, dan SKU yang sama sudah ada (dari import sebelumnya atau baris duplikat dalam file).",
       "skippedHelpAriaLabel": "Tentang baris dilewati",
+      "skippedColumn": "Dilewati",
+      "skippedModalTitle": "Baris dilewati",
+      "skippedModalLoading": "Memuat baris dilewati...",
+      "skippedModalUnavailable": "Detail per baris tidak tersedia untuk import yang dibuat sebelum fitur ini ditambahkan.",
+      "skippedModalEmpty": "Tidak ada baris dilewati untuk import ini.",
+      "skippedModalOrderId": "ID Pesanan",
+      "skippedModalVariantSku": "SKU Varian",
+      "skippedModalProduct": "Produk",
+      "skippedModalReason": "Alasan",
+      "skippedReasonDuplicateInBatch": "Duplikat dalam file",
+      "skippedReasonAlreadyExists": "Sudah ada di database",
       "goToImport": "Import Data",
       "mappingSummary": "{mapped} baris terpetakan ke item ERP, {unmapped} belum terpetakan.",
       "viewReconciliation": "Lihat laporan rekonsiliasi",
-      "unmappedSkusTitle": "SKU belum terpetakan"
+      "unmappedSkusTitle": "SKU belum terpetakan",
+      "unmappedSkusColumn": "SKU belum terpetakan",
+      "unmappedSkusHelp": "Jumlah SKU varian marketplace unik dalam import ini yang tidak dapat dicocokkan ke item ERP.",
+      "unmappedSkusHelpAriaLabel": "Tentang SKU belum terpetakan"
     },
     "config": {
       "growth": "Growth Factor (%)",
@@ -1455,6 +1472,12 @@
       "update": "Update Target",
       "skip": "Sudah Sesuai",
       "planYear": "Target Plan Year",
+      "planYearPlaceholder": "Pilih tahun plan",
+      "noPlanYears": "Belum ada tahun plan. Buat dulu di Plan Kerja.",
+      "noEditablePlanYears": "Tidak ada tahun plan yang bisa diedit. Buka kunci plan DRAFT di Plan Kerja, atau buat tahun baru.",
+      "planYearLocked": "terkunci",
+      "planYearActive": "aktif",
+      "noErpItemMapped": "Belum dipetakan ke item ERP",
       "selectCategory": "Pilih kategori item",
       "forecast": "Forecast",
       "planNow": "Plan Sekarang",

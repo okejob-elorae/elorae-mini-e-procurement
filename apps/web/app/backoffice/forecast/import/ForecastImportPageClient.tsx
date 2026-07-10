@@ -31,13 +31,23 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { DataCoverageBar } from '@/components/forecast/data-coverage-bar';
 import {
   deleteSalesHistoryImport,
   getDataCoverage,
+  getSalesHistoryImportSkippedRows,
   getSalesHistoryImports,
   type DataCoverage,
   type SalesHistoryImportSummary,
+  type SalesHistorySkippedRowDetail,
 } from '@/app/actions/forecast';
 
 const MONTHS = [
@@ -82,6 +92,11 @@ export function ForecastImportPageClient() {
   const [coverage, setCoverage] = useState<DataCoverage | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [lastImportSummary, setLastImportSummary] = useState<ImportApiResponse | null>(null);
+  const [skippedModalOpen, setSkippedModalOpen] = useState(false);
+  const [skippedModalLoading, setSkippedModalLoading] = useState(false);
+  const [skippedModalImport, setSkippedModalImport] = useState<SalesHistoryImportSummary | null>(null);
+  const [skippedRows, setSkippedRows] = useState<SalesHistorySkippedRowDetail[]>([]);
+  const [skippedDetailAvailable, setSkippedDetailAvailable] = useState(true);
   const historyPageSize = 10;
 
   const refresh = useCallback(async () => {
@@ -167,6 +182,30 @@ export function ForecastImportPageClient() {
     }
     toast.success('Import deleted');
     await refresh();
+  };
+
+  const handleViewSkipped = async (row: SalesHistoryImportSummary) => {
+    setSkippedModalImport(row);
+    setSkippedModalOpen(true);
+    setSkippedModalLoading(true);
+    setSkippedRows([]);
+    setSkippedDetailAvailable(true);
+    try {
+      const result = await getSalesHistoryImportSkippedRows(row.id);
+      setSkippedRows(result.rows);
+      setSkippedDetailAvailable(result.detailAvailable);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load skipped rows');
+      setSkippedModalOpen(false);
+      setSkippedModalImport(null);
+    } finally {
+      setSkippedModalLoading(false);
+    }
+  };
+
+  const skippedReasonLabel = (reason: SalesHistorySkippedRowDetail['reason']) => {
+    if (reason === 'DUPLICATE_IN_BATCH') return t('import.skippedReasonDuplicateInBatch');
+    return t('import.skippedReasonAlreadyExists');
   };
 
   return (
@@ -299,7 +338,28 @@ export function ForecastImportPageClient() {
                 <TableHead className="text-right">Imported</TableHead>
                 <TableHead className="text-right">
                   <span className="inline-flex items-center justify-end gap-1">
-                    Skipped
+                    {t('import.unmappedSkusColumn')}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex text-muted-foreground hover:text-foreground"
+                            aria-label={t('import.unmappedSkusHelpAriaLabel')}
+                          >
+                            <Info className="h-3.5 w-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-left">
+                          {t('import.unmappedSkusHelp')}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </span>
+                </TableHead>
+                <TableHead className="text-right">
+                  <span className="inline-flex items-center justify-end gap-1">
+                    {t('import.skippedColumn')}
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -330,7 +390,31 @@ export function ForecastImportPageClient() {
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate">{row.fileName}</TableCell>
                   <TableCell className="text-right">{row.importedRows.toLocaleString()}</TableCell>
-                  <TableCell className="text-right">{row.skippedRows.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">
+                    <span
+                      className={
+                        row.unmappedSkuCount > 0
+                          ? "tabular-nums font-medium text-amber-700 dark:text-amber-400"
+                          : "tabular-nums text-muted-foreground"
+                      }
+                    >
+                      {row.unmappedSkuCount.toLocaleString()}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {row.skippedRows > 0 ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-w-10 tabular-nums"
+                        onClick={() => handleViewSkipped(row)}
+                      >
+                        {row.skippedRows.toLocaleString()}
+                      </Button>
+                    ) : (
+                      <span className="tabular-nums text-muted-foreground">0</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" onClick={() => handleDelete(row)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
@@ -349,6 +433,66 @@ export function ForecastImportPageClient() {
           />
         </CardContent>
       </Card>
+
+      <Dialog
+        open={skippedModalOpen}
+        onOpenChange={(open) => {
+          setSkippedModalOpen(open);
+          if (!open) {
+            setSkippedModalImport(null);
+            setSkippedRows([]);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{t('import.skippedModalTitle')}</DialogTitle>
+            <DialogDescription>
+              {skippedModalImport
+                ? `${skippedModalImport.channel} · ${skippedModalImport.periodMonth}/${skippedModalImport.periodYear} · ${skippedModalImport.fileName}`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto">
+            {skippedModalLoading ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">
+                {t('import.skippedModalLoading')}
+              </p>
+            ) : !skippedDetailAvailable ? (
+              <p className="text-sm text-muted-foreground py-6">
+                {t('import.skippedModalUnavailable')}
+              </p>
+            ) : skippedRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6">
+                {t('import.skippedModalEmpty')}
+              </p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('import.skippedModalOrderId')}</TableHead>
+                    <TableHead>{t('import.skippedModalVariantSku')}</TableHead>
+                    <TableHead>{t('import.skippedModalProduct')}</TableHead>
+                    <TableHead>{t('import.skippedModalReason')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {skippedRows.map((skippedRow, index) => (
+                    <TableRow key={`${skippedRow.orderId}-${skippedRow.variantSku}-${index}`}>
+                      <TableCell className="font-mono text-xs">{skippedRow.orderId}</TableCell>
+                      <TableCell className="font-mono text-xs">{skippedRow.variantSku}</TableCell>
+                      <TableCell className="max-w-[240px] truncate">{skippedRow.productName}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{skippedReasonLabel(skippedRow.reason)}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {coverage && (
         <Card>

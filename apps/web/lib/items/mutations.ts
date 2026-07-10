@@ -374,14 +374,44 @@ export async function updateItem(
   };
 }
 
+export const ITEM_DELETE_BLOCKED = "ITEM_DELETE_BLOCKED";
+
 export async function deleteItem(id: string) {
-  const [movements, poItems] = await Promise.all([
+  const [
+    movements,
+    poItems,
+    workOrderFinishedGoodCount,
+    workOrderConsumptionMaterialCount,
+    fabricRollCount,
+    stockAdjustmentCount,
+    rejectedGoodsCount,
+    planAccessoryCount,
+    salesReturnItemCount,
+  ] = await Promise.all([
     prisma.stockMovement.count({ where: { itemId: id } }),
     prisma.pOItem.count({ where: { itemId: id } }),
+    prisma.workOrder.count({ where: { finishedGoodId: id } }),
+    prisma.workOrder.count({ where: { consumptionMaterialId: id } }),
+    prisma.fabricRoll.count({ where: { itemId: id } }),
+    prisma.stockAdjustment.count({ where: { itemId: id } }),
+    prisma.rejectedGoodsLedger.count({ where: { itemId: id } }),
+    prisma.planAccessory.count({ where: { itemId: id } }),
+    prisma.salesReturnItem.count({ where: { itemId: id } }),
   ]);
 
-  if (movements > 0 || poItems > 0) {
-    throw new Error('Cannot delete item with existing transactions');
+  const hasLinkedRecords =
+    movements > 0 ||
+    poItems > 0 ||
+    workOrderFinishedGoodCount > 0 ||
+    workOrderConsumptionMaterialCount > 0 ||
+    fabricRollCount > 0 ||
+    stockAdjustmentCount > 0 ||
+    rejectedGoodsCount > 0 ||
+    planAccessoryCount > 0 ||
+    salesReturnItemCount > 0;
+
+  if (hasLinkedRecords) {
+    throw new Error(ITEM_DELETE_BLOCKED);
   }
 
   await prisma.$transaction(async (tx) => {

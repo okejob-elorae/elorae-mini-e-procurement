@@ -29,6 +29,7 @@ import {
   loadResolverIndex,
   resolveMarketplaceSku,
 } from "@/lib/sales/marketplace-sku-resolver";
+import { countUnmappedSkusByImportBatch } from "@/lib/forecast/import-unmapped-count";
 
 const FORECAST_PATH = "/backoffice/forecast";
 const FORECAST_IMPORT_PATH = "/backoffice/forecast/import";
@@ -293,8 +294,40 @@ export interface SalesHistoryImportSummary {
   fileName: string;
   importedRows: number;
   skippedRows: number;
+  unmappedSkuCount: number;
   errorRows: number;
   createdAt: Date;
+}
+
+export type SalesHistorySkippedRowDetail = {
+  orderId: string;
+  variantSku: string;
+  productName: string;
+  reason: "DUPLICATE_IN_BATCH" | "ALREADY_EXISTS";
+};
+
+export type SalesHistorySkippedRowsResult = {
+  rows: SalesHistorySkippedRowDetail[];
+  detailAvailable: boolean;
+};
+
+export async function getSalesHistoryImportSkippedRows(
+  importId: string,
+): Promise<SalesHistorySkippedRowsResult> {
+  await requireForecastView();
+  const record = await prisma.salesHistoryImport.findUnique({
+    where: { id: importId },
+    select: { skippedDetails: true },
+  });
+  if (!record) {
+    throw new Error("Import not found");
+  }
+
+  const details = record.skippedDetails as SalesHistorySkippedRowDetail[] | null;
+  return {
+    rows: details ?? [],
+    detailAvailable: details !== null,
+  };
 }
 
 export async function deleteSalesHistoryImport(
@@ -338,6 +371,9 @@ export async function getSalesHistoryImports(): Promise<
       { channel: "asc" },
     ],
   });
+  const unmappedSkuCounts = await countUnmappedSkusByImportBatch(
+    rows.map((row) => row.id),
+  );
   return rows.map((r) => ({
     id: r.id,
     channel: r.channel,
@@ -346,6 +382,7 @@ export async function getSalesHistoryImports(): Promise<
     fileName: r.fileName,
     importedRows: r.importedRows,
     skippedRows: r.skippedRows,
+    unmappedSkuCount: unmappedSkuCounts.get(r.id) ?? 0,
     errorRows: r.errorRows,
     createdAt: r.createdAt,
   }));
@@ -1137,7 +1174,7 @@ export async function getPlanYearsForBridge() {
   await requireForecastView();
   return prisma.planYear.findMany({
     orderBy: { year: "desc" },
-    select: { id: true, year: true, isLocked: true },
+    select: { id: true, year: true, isLocked: true, status: true },
   });
 }
 
