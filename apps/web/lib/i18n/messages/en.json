@@ -517,6 +517,7 @@
     "failedToLoadIssueForPrint": "Failed to load issue for print",
     "failedToLoadItems": "Failed to load items",
     "itemDeletedSuccessfully": "Item deleted successfully",
+    "cannotDeleteItemInUse": "This item cannot be deleted because it is still linked to existing records such as work orders, purchase orders, or stock transactions.",
     "failedToDeleteItem": "Failed to delete item",
     "failedToLoadReconciliation": "Failed to load reconciliation",
     "qtyReceivedMustBePositive": "Qty received must be > 0",
@@ -1000,7 +1001,9 @@
     "createdLabel": "Created",
     "notesLabel": "Notes",
     "paymentTermsLabel": "Payment Terms",
-    "cancelReasonDescription": "Enter the reason for cancelling this PO. This action cannot be undone."
+    "cancelReasonDescription": "Enter the reason for cancelling this PO. This action cannot be undone.",
+    "confirmCancelPO": "Are you sure you want to cancel this PO?",
+    "pinActionCancelPO": "cancel this PO"
   },
   "workOrdersList": {
     "noWorkOrdersFound": "No work orders found"
@@ -1350,10 +1353,24 @@
       "success": "{imported} rows imported, {skipped} skipped.",
       "skippedHelp": "Valid completed order lines that were not saved because the same channel, order ID, and SKU already exists (from a prior import or duplicate rows in the file).",
       "skippedHelpAriaLabel": "About skipped rows",
+      "skippedColumn": "Skipped",
+      "skippedModalTitle": "Skipped rows",
+      "skippedModalLoading": "Loading skipped rows...",
+      "skippedModalUnavailable": "Row-level details are not available for imports created before this feature was added.",
+      "skippedModalEmpty": "No skipped rows recorded for this import.",
+      "skippedModalOrderId": "Order ID",
+      "skippedModalVariantSku": "Variant SKU",
+      "skippedModalProduct": "Product",
+      "skippedModalReason": "Reason",
+      "skippedReasonDuplicateInBatch": "Duplicate in file",
+      "skippedReasonAlreadyExists": "Already in database",
       "goToImport": "Import Data",
       "mappingSummary": "{mapped} rows mapped to ERP items, {unmapped} unmapped.",
       "viewReconciliation": "View reconciliation report",
-      "unmappedSkusTitle": "Unmapped SKUs"
+      "unmappedSkusTitle": "Unmapped SKUs",
+      "unmappedSkusColumn": "Unmapped SKUs",
+      "unmappedSkusHelp": "Distinct marketplace variant SKUs in this import that could not be matched to an ERP item.",
+      "unmappedSkusHelpAriaLabel": "About unmapped SKUs"
     },
     "config": {
       "growth": "Growth Factor (%)",
@@ -1455,6 +1472,12 @@
       "update": "Update",
       "skip": "Skip",
       "planYear": "Target Plan Year",
+      "planYearPlaceholder": "Select plan year",
+      "noPlanYears": "No plan years yet. Create one in Plan Kerja first.",
+      "noEditablePlanYears": "No editable plan years. Unlock a DRAFT plan in Plan Kerja, or create a new year.",
+      "planYearLocked": "locked",
+      "planYearActive": "active",
+      "noErpItemMapped": "No ERP item mapped",
       "selectCategory": "Select item category",
       "forecast": "Forecast",
       "planNow": "Plan Now",

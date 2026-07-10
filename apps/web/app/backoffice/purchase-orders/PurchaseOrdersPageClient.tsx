@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
+import { useTranslations } from 'next-intl';
 import { 
   Plus, 
   Search, 
@@ -39,6 +41,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { getPOs, submitPO, cancelPO } from '@/app/actions/purchase-orders';
+import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { POStatus } from '@/lib/constants/enums';
 import { ETABadge } from '@/components/ui/ETABadge';
 import { Progress } from '@/components/ui/progress';
@@ -102,8 +105,19 @@ const statusIcons: Record<POStatus, React.ReactNode> = {
   PARTIAL: <AlertCircle className="h-4 w-4" />,
   CLOSED: <CheckCircle className="h-4 w-4" />,
   OVER: <AlertCircle className="h-4 w-4" />,
-  CANCELLED: <XCircle className="h-4 w-4" />
+  CANCELLED: <XCircle className="h-4 w-4" />,
 };
+
+const SECURITY_MESSAGE_KEYS = new Set([
+  'userNotFound',
+  'pinNotSet',
+  'tooManyAttempts',
+  'pinIncorrect',
+]);
+
+function isSecurityMessageKey(value: string): boolean {
+  return SECURITY_MESSAGE_KEYS.has(value);
+}
 
 export function PurchaseOrdersPageClient({
   initialPOs,
@@ -114,10 +128,16 @@ export function PurchaseOrdersPageClient({
   initialTotalCount?: number;
   initialPage?: number;
 } = {}) {
+  const { data: session } = useSession();
+  const tToasts = useTranslations('toasts');
+  const tSecurity = useTranslations('security');
+  const tPO = useTranslations('purchaseOrders');
   const [pos, setPOs] = useState<PurchaseOrder[]>(initialPOs ?? []);
   const [isLoading, setIsLoading] = useState(!initialPOs);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<POStatus | ''>('');
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
   const [page, setPage] = useState(initialPage);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(initialTotalCount ?? 0);
@@ -154,24 +174,48 @@ export function PurchaseOrdersPageClient({
   }, [statusFilter, page, pageSize]);
 
   const handleSubmit = async (id: string) => {
+    if (!session?.user?.id) {
+      toast.error(tToasts('youMustBeLoggedIn'));
+      return;
+    }
     try {
-      await submitPO(id, 'user-id'); // TODO: Get actual user ID
-      toast.success('PO submitted successfully');
+      await submitPO(id, session.user.id);
+      toast.success(tToasts('poSubmittedSuccessfully'));
       fetchPOs();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to submit PO');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : tToasts('failedToSubmitPO');
+      toast.error(message);
     }
   };
 
-  const handleCancel = async (id: string) => {
-    if (!confirm('Are you sure you want to cancel this PO?')) return;
-    
+  const handleCancel = (id: string) => {
+    if (!session?.user?.id) {
+      toast.error(tToasts('youMustBeLoggedIn'));
+      return;
+    }
+    if (!confirm(tPO('confirmCancelPO'))) return;
+    setCancelTargetId(id);
+    setPinModalOpen(true);
+  };
+
+  const handlePinConfirm = async (pin: string) => {
+    if (!session?.user?.id || !cancelTargetId) return;
+
     try {
-      await cancelPO(id, 'user-id'); // TODO: Get actual user ID
-      toast.success('PO cancelled successfully');
+      await cancelPO(cancelTargetId, session.user.id, 'PO cancelled from list', pin);
+      toast.success(tToasts('poCancelledSuccessfully'));
+      setPinModalOpen(false);
+      setCancelTargetId(null);
       fetchPOs();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to cancel PO');
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error && isSecurityMessageKey(error.message)
+          ? tSecurity(error.message)
+          : error instanceof Error
+            ? error.message
+            : tToasts('failedToCancelPO');
+      toast.error(message);
+      throw error instanceof Error ? error : new Error(message);
     }
   };
 
@@ -391,6 +435,16 @@ export function PurchaseOrdersPageClient({
           )}
         </CardContent>
       </Card>
+
+      <PinAuthModal
+        isOpen={pinModalOpen}
+        onClose={() => {
+          setPinModalOpen(false);
+          setCancelTargetId(null);
+        }}
+        onConfirm={handlePinConfirm}
+        action={tPO('pinActionCancelPO')}
+      />
     </div>
   );
 }

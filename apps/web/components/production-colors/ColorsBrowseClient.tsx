@@ -79,44 +79,42 @@ export function ColorsBrowseClient({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-[minmax(280px,320px)_1fr]">
-        <Card className="h-fit lg:sticky lg:top-4">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{t('filtersTitle')}</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <ColorsFilterBar
-              filters={filters}
-              facetCounts={facetCounts}
-              onFiltersChange={(next) => {
-                setFilters(next);
-                navigate(next, 1);
-              }}
-              onSearchSubmit={() => navigate(filters, 1)}
-            />
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <FilterSummaryBadges filters={filters} />
-          <p className="text-sm text-muted-foreground">
-            {t('colorCount', { count: totalCount })}
-          </p>
-          <ColorSwatchGrid
-            colors={colors}
-            onSelect={openDetail}
-            emptyMessage={emptyMsg}
+      <Card className="w-full">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">{t('filtersTitle')}</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <ColorsFilterBar
+            filters={filters}
+            facetCounts={facetCounts}
+            onFiltersChange={(next) => {
+              setFilters(next);
+              navigate(next, 1);
+            }}
+            onSearchSubmit={() => navigate(filters, 1)}
           />
-          {totalCount > 0 && (
-            <Pagination
-              page={page}
-              totalPages={totalPages}
-              totalCount={totalCount}
-              pageSize={pageSize}
-              onPageChange={(p) => navigate(filters, p)}
-            />
-          )}
-        </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-4">
+        <FilterSummaryBadges filters={filters} />
+        <p className="text-sm text-muted-foreground">
+          {t('colorCount', { count: totalCount })}
+        </p>
+        <ColorSwatchGrid
+          colors={colors}
+          onSelect={openDetail}
+          emptyMessage={emptyMsg}
+        />
+        {totalCount > 0 && (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={pageSize}
+            onPageChange={(p) => navigate(filters, p)}
+          />
+        )}
       </div>
 
       <PantoneColorDetailDialog

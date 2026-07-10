@@ -12,6 +12,10 @@ import {
   resolutionStatusFromResolve,
   resolveMarketplaceSku,
 } from "@/lib/sales/marketplace-sku-resolver";
+import {
+  partitionSalesHistoryImportRows,
+  salesHistoryRowKey,
+} from "@/lib/forecast/import-skip-partition";
 
 function channelLabel(channel: SalesChannel): string {
   return channel === "SHOPEE" ? "Shopee" : "TikTok";
@@ -161,26 +165,44 @@ export async function executeSalesHistoryImport(
     importBatchId: importRecord.id,
   }));
 
-  const beforeCount = await prisma.salesHistory.count({
-    where: { importBatchId: importRecord.id },
-  });
+  const orderIds = [...new Set(createPayload.map((row) => row.orderId))];
+  const existingRows =
+    orderIds.length === 0
+      ? []
+      : await prisma.salesHistory.findMany({
+          where: {
+            channel: data.channel,
+            orderId: { in: orderIds },
+          },
+          select: { orderId: true, variantSku: true },
+        });
+  const existingKeys = new Set(
+    existingRows.map((row) =>
+      salesHistoryRowKey(data.channel, row.orderId, row.variantSku),
+    ),
+  );
 
-  await prisma.salesHistory.createMany({
-    data: createPayload,
-    skipDuplicates: true,
-  });
+  const { toInsert, skipped } = partitionSalesHistoryImportRows(
+    data.channel,
+    createPayload,
+    existingKeys,
+  );
 
-  const afterCount = await prisma.salesHistory.count({
-    where: { importBatchId: importRecord.id },
-  });
-  const imported = afterCount - beforeCount;
-  const skipped = Math.max(0, createPayload.length - imported);
+  if (toInsert.length > 0) {
+    await prisma.salesHistory.createMany({
+      data: toInsert,
+    });
+  }
+
+  const imported = toInsert.length;
+  const skippedRows = skipped.length;
 
   await prisma.salesHistoryImport.update({
     where: { id: importRecord.id },
     data: {
       importedRows: imported,
-      skippedRows: skipped,
+      skippedRows,
+      skippedDetails: skipped.length > 0 ? skipped : undefined,
     },
   });
 
@@ -194,7 +216,7 @@ export async function executeSalesHistoryImport(
       periodMonth: data.periodMonth,
       periodYear: data.periodYear,
       imported,
-      skipped,
+      skipped: skippedRows,
       mapped,
       unmapped,
     },
@@ -203,7 +225,7 @@ export async function executeSalesHistoryImport(
   return {
     success: true,
     imported,
-    skipped,
+    skipped: skippedRows,
     mapped,
     unmapped,
     unmappedSkus,

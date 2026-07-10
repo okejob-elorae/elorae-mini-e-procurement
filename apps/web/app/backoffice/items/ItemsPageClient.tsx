@@ -162,14 +162,13 @@ export function ItemsPageClient({
 
   const handleDelete = async (id: string) => {
     if (!confirm(tItems('confirmDeleteItem'))) return;
-    try {
-      await deleteItem(id);
-      toast.success(t('itemDeletedSuccessfully'));
-      router.refresh();
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : t('failedToDeleteItem');
-      toast.error(message);
+    const result = await deleteItem(id);
+    if (!result.success) {
+      toast.error(t(result.messageKey));
+      return;
     }
+    toast.success(t('itemDeletedSuccessfully'));
+    router.refresh();
   };
 
   const isLowStock = (item: ItemsListRow) => {
