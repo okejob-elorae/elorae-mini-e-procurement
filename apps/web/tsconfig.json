@@ -26,5 +26,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "app/pwa/sw.ts"]
+  "exclude": [
+    "node_modules",
+    "app/pwa/sw.ts",
+    "scripts/import-legacy-master.ts",
+    "scripts/import-legacy-suppliers.ts",
+    "scripts/reconcile-legacy-beli.ts"
+  ]
 }
