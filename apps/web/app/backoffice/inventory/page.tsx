@@ -65,16 +65,27 @@ function serializeAdjustmentRows(
   }));
 }
 
-export default async function InventoryPage() {
+export default async function InventoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; oversold?: string }>;
+}) {
   const session = await auth();
   if (!session) redirect('/login');
 
-  const pageOpts = { page: 1, pageSize: DEFAULT_PAGE_SIZE };
+  const sp = await searchParams;
+  const statusFilter = sp.oversold === "1" ? ("NEGATIF" as const) : undefined;
+  const pageOpts = {
+    page: 1,
+    pageSize: DEFAULT_PAGE_SIZE,
+    ...(statusFilter ? { status: statusFilter } : {}),
+    sort: "stock_desc" as const,
+  };
 
   const [invData, grnData, adjData, adjustmentItemList] = await Promise.all([
     getInventorySnapshot(pageOpts),
-    getGRNs(undefined, pageOpts),
-    getStockAdjustments(undefined, pageOpts),
+    getGRNs(undefined, { page: 1, pageSize: DEFAULT_PAGE_SIZE }),
+    getStockAdjustments(undefined, { page: 1, pageSize: DEFAULT_PAGE_SIZE }),
     getCurrentStockSummary(),
   ]);
 
@@ -86,6 +97,10 @@ export default async function InventoryPage() {
           totalValue?: number;
           totalItems?: number;
           lowStockItems?: number;
+          totalAvailable?: number;
+          menipisCount?: number;
+          habisCount?: number;
+          negatifCount?: number;
         })
       : null;
 
@@ -109,6 +124,10 @@ export default async function InventoryPage() {
         totalItems: inv?.totalItems ?? 0,
         totalValue: inv?.totalValue ?? 0,
         lowStockItems: inv?.lowStockItems ?? 0,
+        totalAvailable: inv?.totalAvailable ?? 0,
+        menipisCount: inv?.menipisCount ?? 0,
+        habisCount: inv?.habisCount ?? 0,
+        negatifCount: inv?.negatifCount ?? 0,
       }}
       initialStockTotalCount={inv?.totalCount ?? inv?.items?.length ?? 0}
       initialGrns={grnResult ? serializeGrnRows(grnResult.items) : []}

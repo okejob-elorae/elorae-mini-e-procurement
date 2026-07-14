@@ -5,7 +5,8 @@ let messaging: admin.messaging.Messaging | null = null;
 function getPrivateKey(): string | undefined {
   const key = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
   if (!key) return undefined;
-  return key.replace(/\\n/g, '\n');
+  // Env stores often wrap the PEM in quotes and escape newlines as \n.
+  return key.replace(/^["']|["']$/g, "").replace(/\\n/g, "\n");
 }
 
 function initFirebaseAdmin(): void {
