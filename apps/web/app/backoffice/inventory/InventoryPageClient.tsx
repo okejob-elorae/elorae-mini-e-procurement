@@ -3,27 +3,24 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from "next/navigation";
-import { 
-  Plus, 
-  Search, 
-  Package, 
+import {
+  Plus,
+  Search,
+  Package,
   ArrowDownLeft,
   ArrowUpRight,
   History,
-  AlertTriangle,
-  TrendingUp,
   ChevronDown,
   ChevronRight,
   Printer,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import {
   Table,
@@ -34,6 +31,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
@@ -47,11 +51,13 @@ import {
   declineGRNByOwner,
 } from '@/app/actions/grn';
 import { getStockAdjustments } from '@/app/actions/inventory';
-import { getCurrentStockSummary } from '@/app/actions/stock-card';
 import { getInventoryValueSnapshot } from '@/app/actions/reports/inventory';
 import { buildInventoryReportPrintHtml } from '@/lib/print/inventory-report-html';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { StockHealthKpis } from '@/components/inventory/StockHealthKpis';
+import { StockItemCard } from '@/components/inventory/StockItemCard';
+import type { StockSort, StockStatus } from '@/lib/inventory/stock-status';
 
 interface InventoryItem {
   itemId: string;
@@ -60,6 +66,13 @@ interface InventoryItem {
   available: number;
   avgCost: number;
   totalValue: number;
+  variants?: Array<{
+    variantSku: string;
+    qtyOnHand: number;
+    reservedQty: number;
+    available: number;
+    label: string;
+  }>;
   item: {
     sku: string;
     nameId: string;
@@ -105,9 +118,19 @@ interface Adjustment {
   approvedBy?: { name: string | null } | null;
 }
 
+type InventorySummary = {
+  totalItems: number;
+  totalValue: number;
+  lowStockItems: number;
+  totalAvailable: number;
+  menipisCount: number;
+  habisCount: number;
+  negatifCount: number;
+};
+
 type InventoryPageClientProps = {
   initialInventory: InventoryItem[];
-  initialSummary: { totalItems: number; totalValue: number; lowStockItems: number };
+  initialSummary: InventorySummary;
   initialStockTotalCount: number;
   initialGrns: GRN[];
   initialGrnTotalCount: number;
@@ -115,6 +138,12 @@ type InventoryPageClientProps = {
   initialAdjTotalCount: number;
   initialAdjustmentItemList: Array<{ itemId: string; item: { sku: string; nameId: string } }>;
 };
+
+const STOCK_STATUS_VALUES: StockStatus[] = ["OK", "MENIPIS", "HABIS", "NEGATIF"];
+
+function isStockStatus(v: string): v is StockStatus {
+  return (STOCK_STATUS_VALUES as string[]).includes(v);
+}
 
 export function InventoryPageClient({
   initialInventory,
@@ -126,6 +155,8 @@ export function InventoryPageClient({
   initialAdjTotalCount,
   initialAdjustmentItemList,
 }: InventoryPageClientProps) {
+  const t = useTranslations("inventory");
+  const tWall = useTranslations("inventory.wallboard");
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const [inventory, setInventory] = useState<InventoryItem[]>(initialInventory);
@@ -166,8 +197,11 @@ export function InventoryPageClient({
   const [rollsSearchDebounced, setRollsSearchDebounced] = useState('');
   const rollsSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") ?? "stock");
-  const oversoldOnly = searchParams.get("oversold") === "1";
-  const [summary, setSummary] = useState(initialSummary);
+  const [stockStatus, setStockStatus] = useState<StockStatus | null>(() =>
+    searchParams.get("oversold") === "1" ? "NEGATIF" : null,
+  );
+  const [stockSort, setStockSort] = useState<StockSort>("stock_desc");
+  const [summary, setSummary] = useState<InventorySummary>(initialSummary);
   const [stockPage, setStockPage] = useState(1);
   const [stockPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [stockTotalCount, setStockTotalCount] = useState(initialStockTotalCount);
@@ -188,19 +222,40 @@ export function InventoryPageClient({
     setIsLoading(true);
     try {
       const [invData, grnData, adjData] = await Promise.all([
-        getInventorySnapshot({ page: stockPage, pageSize: stockPageSize, search: stockSearchDebounced.trim() || undefined }),
+        getInventorySnapshot({
+          page: stockPage,
+          pageSize: stockPageSize,
+          search: stockSearchDebounced.trim() || undefined,
+          status: stockStatus ?? undefined,
+          sort: stockSort,
+        }),
         getGRNs(undefined, { page: grnPage, pageSize: grnPageSize }),
         getStockAdjustments(adjItemFilter === ADJ_FILTER_ALL ? undefined : adjItemFilter, { page: adjPage, pageSize: adjPageSize })
       ]);
 
       if (invData != null && typeof invData === 'object' && 'items' in invData) {
-        setInventory((invData.items ?? []) as unknown as InventoryItem[]);
+        const snap = invData as {
+          items: unknown[];
+          totalCount?: number;
+          totalItems?: number;
+          totalValue?: number;
+          lowStockItems?: number;
+          totalAvailable?: number;
+          menipisCount?: number;
+          habisCount?: number;
+          negatifCount?: number;
+        };
+        setInventory((snap.items ?? []) as unknown as InventoryItem[]);
         setSummary({
-          totalItems: (invData as { totalItems?: number }).totalItems ?? 0,
-          totalValue: (invData as { totalValue?: number }).totalValue ?? 0,
-          lowStockItems: (invData as { lowStockItems?: number }).lowStockItems ?? 0
+          totalItems: snap.totalItems ?? 0,
+          totalValue: snap.totalValue ?? 0,
+          lowStockItems: snap.lowStockItems ?? 0,
+          totalAvailable: snap.totalAvailable ?? 0,
+          menipisCount: snap.menipisCount ?? 0,
+          habisCount: snap.habisCount ?? 0,
+          negatifCount: snap.negatifCount ?? 0,
         });
-        setStockTotalCount((invData as { totalCount?: number }).totalCount ?? invData.items.length);
+        setStockTotalCount(snap.totalCount ?? snap.items.length);
       }
       if (grnData != null && typeof grnData === 'object' && 'items' in grnData && 'totalCount' in grnData) {
         setGRNs((grnData as unknown as { items: GRN[] }).items);
@@ -226,19 +281,23 @@ export function InventoryPageClient({
   };
 
   useEffect(() => {
+    // Skip first paint fetch when SSR already matches current filters (incl. oversold→NEGATIF).
     if (
       skipInitialListFetch.current &&
       stockPage === 1 &&
       grnPage === 1 &&
       adjPage === 1 &&
-      adjItemFilter === ADJ_FILTER_ALL
+      adjItemFilter === ADJ_FILTER_ALL &&
+      stockSort === "stock_desc" &&
+      !stockSearchDebounced
     ) {
       skipInitialListFetch.current = false;
       return;
     }
+    skipInitialListFetch.current = false;
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchData depends on pagination/filters above
-  }, [stockPage, grnPage, adjPage, adjItemFilter, stockSearchDebounced]);
+  }, [stockPage, grnPage, adjPage, adjItemFilter, stockSearchDebounced, stockStatus, stockSort]);
 
   useEffect(() => {
     if (!expandedGrnId) {
@@ -313,15 +372,6 @@ export function InventoryPageClient({
       .finally(() => setRollsLoading(false));
   }, [activeTab, rollsPage, rollsPageSize, rollsFilterGrnId, rollsFilterItemId, rollsSearchDebounced]);
 
-  const isLowStock = (item: InventoryItem) => {
-    if (!item.item.reorderPoint) return false;
-    return Number(item.available) <= Number(item.item.reorderPoint);
-  };
-
-  // Search is applied server-side (across all rows) in getInventorySnapshot; only the
-  // oversold view-filter stays client-side here.
-  const filteredInventory = inventory.filter(item => !oversoldOnly || Number(item.available) < 0);
-
   const q = (s: string) => s.toLowerCase().trim();
   const filteredGrns = grns.filter(
     (grn) =>
@@ -340,14 +390,19 @@ export function InventoryPageClient({
       q(adj.reason).includes(q(adjustmentSearchQuery))
   );
 
+  const setStatusFilter = (status: StockStatus | null) => {
+    setStockStatus(status);
+    setStockPage(1);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
           <p className="text-muted-foreground">
-            Track stock levels, movements, and valuations
+            {t("pageSubtitle")}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -416,157 +471,118 @@ export function InventoryPageClient({
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Items</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summary.totalItems}</div>
-            <p className="text-xs text-muted-foreground">
-              Active SKUs in system
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              Rp {summary.totalValue.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Current inventory value
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summary.lowStockItems}</div>
-            <p className="text-xs text-muted-foreground">
-              Items below reorder point
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <StockHealthKpis
+        summary={summary}
+        activeStatus={stockStatus}
+        onSelectStatus={setStatusFilter}
+      />
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="stock">Stock Levels</TabsTrigger>
-          <TabsTrigger value="grn">Goods Receipts</TabsTrigger>
-          <TabsTrigger value="rolls">By Roll</TabsTrigger>
-          <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
+          <TabsTrigger value="stock">{t("tabStock")}</TabsTrigger>
+          <TabsTrigger value="grn">{t("tabGrn")}</TabsTrigger>
+          <TabsTrigger value="rolls">{t("tabRolls")}</TabsTrigger>
+          <TabsTrigger value="adjustments">{t("tabAdjustments")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="stock" className="space-y-4">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search items..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={tWall("searchPlaceholder")}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="w-full sm:w-48">
+              <label className="text-xs text-muted-foreground mb-1 block">{tWall("filterStatus")}</label>
+              <Select
+                value={stockStatus ?? "__all__"}
+                onValueChange={(v) => {
+                  if (v === "__all__") setStatusFilter(null);
+                  else if (isStockStatus(v)) setStatusFilter(v);
+                }}
+              >
+                <SelectTrigger className="w-full min-h-[44px]">
+                  <SelectValue placeholder={tWall("filterAllStatuses")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">{tWall("filterAllStatuses")}</SelectItem>
+                  {STOCK_STATUS_VALUES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {tWall(`status.${s}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-full sm:w-48">
+              <label className="text-xs text-muted-foreground mb-1 block">{tWall("sortLabel")}</label>
+              <Select
+                value={stockSort}
+                onValueChange={(v) => {
+                  setStockSort(v as StockSort);
+                  setStockPage(1);
+                }}
+              >
+                <SelectTrigger className="w-full min-h-[44px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="stock_desc">{tWall("sortStockDesc")}</SelectItem>
+                  <SelectItem value="stock_asc">{tWall("sortStockAsc")}</SelectItem>
+                  <SelectItem value="sku">{tWall("sortSku")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {oversoldOnly && (
+          {stockStatus && (
             <div className="flex items-center gap-2">
-              <Badge variant="destructive">
-                Showing oversold only ({filteredInventory.length})
+              <Badge variant="secondary">
+                {tWall("showingFilter", { status: tWall(`status.${stockStatus}`) })}
+                {" "}({stockTotalCount})
               </Badge>
               <Link
                 href="/backoffice/inventory?tab=stock"
                 className="text-sm text-muted-foreground hover:underline"
+                onClick={() => setStatusFilter(null)}
               >
-                Clear filter
+                {tWall("clearFilter")}
               </Link>
             </div>
           )}
 
-          <Card>
-            <CardContent className="p-0">
-              {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>SKU</TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>UOM</TableHead>
-                        <TableHead className="text-right">On Hand</TableHead>
-                        <TableHead className="text-right">Reserved</TableHead>
-                        <TableHead className="text-right">Available</TableHead>
-                        <TableHead className="text-right">Avg Cost</TableHead>
-                        <TableHead className="text-right">Value</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredInventory.map((item) => (
-                        <TableRow key={item.itemId}>
-                          <TableCell className="font-medium">{item.item.sku}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {isLowStock(item) && (
-                                <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
-                              )}
-                              <div>
-                                <p className="font-medium">{item.item.nameId}</p>
-                                <p className="text-sm text-muted-foreground">{item.item.nameEn}</p>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>{item.item.uom.code}</TableCell>
-                          <TableCell className="text-right">
-                            {Number(item.qtyOnHand).toLocaleString()}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {Number(item.reservedQty).toLocaleString()}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span
-                              className={
-                                Number(item.available) < 0
-                                  ? 'font-medium text-red-600 dark:text-red-400'
-                                  : undefined
-                              }
-                            >
-                              {Number(item.available).toLocaleString()}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            Rp {Number(item.avgCost).toLocaleString()}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            Rp {Number(item.totalValue).toLocaleString()}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-              <Pagination
-                page={stockPage}
-                totalPages={Math.max(1, Math.ceil(stockTotalCount / stockPageSize))}
-                onPageChange={setStockPage}
-                totalCount={stockTotalCount}
-                pageSize={stockPageSize}
-              />
-            </CardContent>
-          </Card>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+          ) : inventory.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Package className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="font-medium">{tWall("emptyTitle")}</p>
+                <p className="text-sm text-muted-foreground mt-1">{tWall("emptyHint")}</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {inventory.map((item) => (
+                <StockItemCard key={item.itemId} item={item} />
+              ))}
+            </div>
+          )}
+
+          <Pagination
+            page={stockPage}
+            totalPages={Math.max(1, Math.ceil(stockTotalCount / stockPageSize))}
+            onPageChange={setStockPage}
+            totalCount={stockTotalCount}
+            pageSize={stockPageSize}
+          />
         </TabsContent>
 
         <TabsContent value="grn" className="space-y-4">

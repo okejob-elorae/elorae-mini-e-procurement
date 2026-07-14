@@ -3,6 +3,13 @@
 import { Decimal } from 'decimal.js';
 import { Prisma } from '@elorae/db';
 import { prisma } from '@elorae/db';
+import {
+  filterAndSortStockItems,
+  summarizeStockHealth,
+  type StockSort,
+  type StockStatus,
+} from '@/lib/inventory/stock-status';
+import { buildVariantStockChips } from '@/lib/inventory/variant-stock-label';
 
 export interface CostCalculationResult {
   previousQty: Decimal;
@@ -236,6 +243,7 @@ const inventorySnapshotInclude = {
       nameEn: true,
       type: true,
       reorderPoint: true,
+      variants: true,
       uom: {
         select: {
           code: true,
@@ -256,12 +264,28 @@ type InventorySnapshotRow = Prisma.InventoryValueGetPayload<{
   include: typeof inventorySnapshotInclude;
 }>;
 
+type VariantChipAccum = {
+  variantSku: string;
+  qtyOnHand: number;
+  reservedQty: number;
+};
+
 // Aggregate InventoryValue rows by itemId (one row per item; sum qty/reserved/value, weighted avg cost)
+// Preserves factual per-variant chips from non-empty variantSku rows.
 function aggregateSnapshotByItemId(
   values: InventorySnapshotRow[],
   toNum: (v: unknown) => number | null
 ) {
-  const byItem = new Map<string, { qtyOnHand: number; reservedQty: number; totalValue: number; item: InventorySnapshotRow['item'] }>();
+  const byItem = new Map<
+    string,
+    {
+      qtyOnHand: number;
+      reservedQty: number;
+      totalValue: number;
+      item: InventorySnapshotRow['item'];
+      variantRows: VariantChipAccum[];
+    }
+  >();
   for (const v of values) {
     const qty = toNum(v.qtyOnHand) ?? 0;
     const reserved = toNum(v.reservedQty) ?? 0;
@@ -271,28 +295,61 @@ function aggregateSnapshotByItemId(
       existing.qtyOnHand += qty;
       existing.reservedQty += reserved;
       existing.totalValue += val;
+      existing.variantRows.push({
+        variantSku: v.variantSku ?? "",
+        qtyOnHand: qty,
+        reservedQty: reserved,
+      });
     } else {
-      byItem.set(v.itemId, { qtyOnHand: qty, reservedQty: reserved, totalValue: val, item: v.item });
+      byItem.set(v.itemId, {
+        qtyOnHand: qty,
+        reservedQty: reserved,
+        totalValue: val,
+        item: v.item,
+        variantRows: [
+          {
+            variantSku: v.variantSku ?? "",
+            qtyOnHand: qty,
+            reservedQty: reserved,
+          },
+        ],
+      });
     }
   }
-  const rows = Array.from(byItem.entries()).map(([itemId, agg]) => ({
-    itemId,
-    qtyOnHand: agg.qtyOnHand,
-    reservedQty: agg.reservedQty,
-    available: agg.qtyOnHand - agg.reservedQty,
-    totalValue: agg.totalValue,
-    avgCost: agg.qtyOnHand > 0 ? agg.totalValue / agg.qtyOnHand : 0,
-    item: {
-      ...agg.item,
-      reorderPoint: agg.item.reorderPoint != null ? toNum(agg.item.reorderPoint) : null,
-    },
-  }));
-  rows.sort((a, b) => (a.item.sku ?? '').localeCompare(b.item.sku ?? ''));
+  const rows = Array.from(byItem.entries()).map(([itemId, agg]) => {
+    const reorderPoint =
+      agg.item.reorderPoint != null ? toNum(agg.item.reorderPoint) : null;
+    const { variants: itemVariantsJson, ...itemRest } = agg.item;
+    const variants = buildVariantStockChips(agg.variantRows, itemVariantsJson);
+    return {
+      itemId,
+      sku: agg.item.sku ?? "",
+      qtyOnHand: agg.qtyOnHand,
+      reservedQty: agg.reservedQty,
+      available: agg.qtyOnHand - agg.reservedQty,
+      totalValue: agg.totalValue,
+      avgCost: agg.qtyOnHand > 0 ? agg.totalValue / agg.qtyOnHand : 0,
+      reorderPoint,
+      variants,
+      item: {
+        ...itemRest,
+        reorderPoint,
+      },
+    };
+  });
   return rows;
 }
 
+export type GetInventorySnapshotOpts = {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: StockStatus;
+  sort?: StockSort;
+};
+
 // Get inventory snapshot (one row per item, aggregated from variant-level rows)
-export async function getInventorySnapshot(opts?: { page: number; pageSize: number; search?: string }) {
+export async function getInventorySnapshot(opts?: GetInventorySnapshotOpts) {
   const toNum = (v: unknown) => (v == null ? null : Number(v));
 
   const values = await prisma.inventoryValue.findMany({
@@ -301,19 +358,41 @@ export async function getInventorySnapshot(opts?: { page: number; pageSize: numb
   });
 
   const allItems = aggregateSnapshotByItemId(values, toNum);
-  // Portfolio summary (value / count / low-stock) is always over the full set.
+  // Portfolio summary (value / count / health) is always over the full set.
   const totalValue = allItems.reduce((sum, v) => sum + v.totalValue, 0);
-  const lowStockItems = allItems.filter(
-    (v) => v.item.reorderPoint != null && v.available <= Number(v.item.reorderPoint)
-  ).length;
+  const health = summarizeStockHealth(
+    allItems.map((v) => ({
+      available: v.available,
+      reorderPoint: v.item.reorderPoint,
+    })),
+  );
+  // lowStockItems kept for callers; maps to menipis (excludes habis/negatif).
+  const lowStockItems = health.menipisCount;
 
-  // Search filters the paginated list + its count (server-side, across all rows — not just the current page).
+  // Search filters the list (server-side, across all rows — not just the current page).
   const q = opts?.search?.trim().toLowerCase();
-  const matched = q
+  const searched = q
     ? allItems.filter(
-        (v) => v.item.sku.toLowerCase().includes(q) || v.item.nameId.toLowerCase().includes(q)
+        (v) =>
+          v.item.sku.toLowerCase().includes(q) ||
+          v.item.nameId.toLowerCase().includes(q),
       )
     : allItems;
+
+  const matched = filterAndSortStockItems(searched, {
+    status: opts?.status,
+    sort: opts?.sort ?? "stock_desc",
+  });
+
+  const portfolio = {
+    totalValue,
+    totalItems: allItems.length,
+    lowStockItems,
+    totalAvailable: health.totalAvailable,
+    menipisCount: health.menipisCount,
+    habisCount: health.habisCount,
+    negatifCount: health.negatifCount,
+  };
 
   if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
     const start = (opts.page - 1) * opts.pageSize;
@@ -321,16 +400,13 @@ export async function getInventorySnapshot(opts?: { page: number; pageSize: numb
     return {
       items,
       totalCount: matched.length,
-      totalValue,
-      totalItems: allItems.length,
-      lowStockItems,
+      ...portfolio,
     };
   }
 
   return {
-    items: allItems,
-    totalValue,
-    totalItems: allItems.length,
-    lowStockItems,
+    items: matched,
+    totalCount: matched.length,
+    ...portfolio,
   };
 }

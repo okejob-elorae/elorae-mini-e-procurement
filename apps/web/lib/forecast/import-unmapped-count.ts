@@ -18,6 +18,7 @@ export async function countUnmappedSkusByImportBatch(
 
   const counts = new Map<string, number>();
   for (const pair of pairs) {
+    if (pair.importBatchId == null) continue;
     counts.set(pair.importBatchId, (counts.get(pair.importBatchId) ?? 0) + 1);
   }
   return counts;

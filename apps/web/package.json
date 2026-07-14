@@ -13,7 +13,14 @@
     "test": "vitest run",
     "check": "pnpm run type-check && pnpm run lint",
     "reconcile:umkm": "tsx scripts/reconcile-umkm-opening-stock.ts",
-    "sample:umkm-sku": "tsx scripts/sample-umkm-sku-bridge.ts"
+    "sample:umkm-sku": "tsx scripts/sample-umkm-sku-bridge.ts",
+    "legacy:master": "tsx scripts/import-legacy-master.ts",
+    "test:legacy-master": "vitest run ../../scripts/legacy-master/classify.test.ts",
+    "legacy:suppliers:extract": "tsx ../../scripts/legacy-master/extract-suppliers-raw.ts",
+    "legacy:suppliers:review": "tsx ../../scripts/legacy-master/build-supplier-review.ts",
+    "legacy:suppliers": "tsx scripts/import-legacy-suppliers.ts",
+    "legacy:po:flatten": "tsx ../../scripts/legacy-master/flatten-po.ts",
+    "legacy:beli:reconcile": "tsx scripts/reconcile-legacy-beli.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
