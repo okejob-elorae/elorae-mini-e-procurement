@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { variantDetailForSku } from "@/lib/items/variants";
 
 export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 
@@ -28,6 +29,7 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
     id: string;
     productName: string;
     variantSku: string;
+    variantLabel: string | null;
     qty: number;
     unitPrice: number;
     lineTotal: number;
@@ -103,6 +105,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         select: {
           id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true,
           discountAmount: true, appliedPromoId: true,
+          item: { select: { variants: true } },
         },
       },
     },
@@ -111,13 +114,16 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   const itemIds = Array.from(new Set(row.lines.map((l) => l.itemId)));
   const invs = await prisma.inventoryValue.findMany({
     where: { itemId: { in: itemIds } },
-    select: { itemId: true, qtyOnHand: true, reservedQty: true, avgCost: true },
+    select: { itemId: true, variantSku: true, qtyOnHand: true, reservedQty: true, avgCost: true },
   });
-  const availByItem = new Map<string, number>();
-  const avgCostByItem = new Map<string, number>();
+  // Per-variant keyed (matches per-variant order lines). Variantless rows use null → "".
+  const invKey = (itemId: string, variantSku: string | null | undefined) => `${itemId}::${variantSku ?? ""}`;
+  const availByKey = new Map<string, number>();
+  const avgCostByKey = new Map<string, number>();
   for (const iv of invs) {
-    availByItem.set(iv.itemId, (availByItem.get(iv.itemId) ?? 0) + (Number(iv.qtyOnHand) - Number(iv.reservedQty)));
-    if (!avgCostByItem.has(iv.itemId)) avgCostByItem.set(iv.itemId, Number(iv.avgCost));
+    const k = invKey(iv.itemId, iv.variantSku);
+    availByKey.set(k, (availByKey.get(k) ?? 0) + (Number(iv.qtyOnHand) - Number(iv.reservedQty)));
+    if (!avgCostByKey.has(k)) avgCostByKey.set(k, Number(iv.avgCost));
   }
 
   const promoIds = Array.from(
@@ -142,11 +148,12 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       const qty = l.qty;
       const discountAmount = toNum(l.discountAmount);
       const netUnit = qty > 0 ? (toNum(l.lineTotal) - discountAmount) / qty : 0;
-      const avgCost = avgCostByItem.get(l.itemId) ?? 0;
+      const avgCost = avgCostByKey.get(invKey(l.itemId, l.variantSku)) ?? 0;
       return {
         id: l.id, productName: l.productName, variantSku: l.variantSku,
+        variantLabel: variantDetailForSku(l.item.variants, l.variantSku),
         qty, unitPrice: toNum(l.unitPrice), lineTotal: toNum(l.lineTotal),
-        available: availByItem.get(l.itemId) ?? 0,
+        available: availByKey.get(invKey(l.itemId, l.variantSku)) ?? 0,
         discountAmount,
         appliedPromoName: l.appliedPromoId ? promoNameById.get(l.appliedPromoId) ?? null : null,
         belowCost: row.orderType === "PUTUS" && qty > 0 && netUnit < avgCost,
