@@ -3,11 +3,13 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getVanStock, listVanLoads } from "@/lib/canvassing/queries";
+import { getVanForReconcile, listVanReconciles } from "@/lib/canvassing/reconcile-queries";
 import { VanDetailClient } from "./VanDetailClient";
 
 export const dynamic = "force-dynamic";
 
 const LOAD_HISTORY_LIMIT = 20;
+const RECONCILE_HISTORY_PAGE_SIZE = 20;
 
 export default async function CanvasserVanPage({ params }: { params: Promise<{ canvasserId: string }> }) {
   const session = await auth();
@@ -23,7 +25,7 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
   });
   if (!canvasser) notFound();
 
-  const [vanStock, loads, items] = await Promise.all([
+  const [vanStock, loads, items, reconcileRows, reconciles] = await Promise.all([
     getVanStock(canvasserId),
     listVanLoads(canvasserId, LOAD_HISTORY_LIMIT),
     prisma.item.findMany({
@@ -31,6 +33,8 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
       select: { id: true, sku: true, nameId: true, variants: true },
       orderBy: { nameId: "asc" },
     }),
+    getVanForReconcile(canvasserId),
+    listVanReconciles(canvasserId, { page: 1, pageSize: RECONCILE_HISTORY_PAGE_SIZE }),
   ]);
 
   return (
@@ -45,6 +49,8 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
         nameId: i.nameId,
         variants: i.variants,
       }))}
+      reconcileRows={reconcileRows}
+      reconciles={reconciles.items}
     />
   );
 }

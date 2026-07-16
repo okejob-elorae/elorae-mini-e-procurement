@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Clock, Package, Truck } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Clock, Package, Truck } from "lucide-react";
 import type { VanStockRow, VanLoadRow } from "@/lib/canvassing/queries";
+import type { VanReconcileRow, VanReconcileListRow } from "@/lib/canvassing/reconcile-queries";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { LoadVanForm, type ItemOption } from "./LoadVanForm";
+import { ReconcileVanForm } from "./ReconcileVanForm";
 
 type Props = {
   canvasserId: string;
@@ -27,6 +30,8 @@ type Props = {
   vanStock: VanStockRow[];
   loads: VanLoadRow[];
   itemOptions: ItemOption[];
+  reconcileRows: VanReconcileRow[];
+  reconciles: VanReconcileListRow[];
 };
 
 function formatDateTime(iso: string): string {
@@ -39,8 +44,9 @@ function formatDateTime(iso: string): string {
   });
 }
 
-export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, itemOptions }: Props) {
+export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, itemOptions, reconcileRows, reconciles }: Props) {
   const t = useTranslations("canvassing");
+  const router = useRouter();
 
   return (
     <div className="space-y-6">
@@ -146,9 +152,57 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
               )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ClipboardCheck className="h-4 w-4" />
+                {t("reconcileHistoryCardTitle")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {reconciles.length === 0 ? (
+                <div className="text-center py-8">
+                  <ClipboardCheck className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-muted-foreground">{t("emptyReconciles")}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("colDocNo")}</TableHead>
+                        <TableHead>{t("colDate")}</TableHead>
+                        <TableHead>{t("colReconciledBy")}</TableHead>
+                        <TableHead className="text-right">{t("colTotalReturned")}</TableHead>
+                        <TableHead className="text-right">{t("colVariance")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reconciles.map((rec) => (
+                        <TableRow
+                          key={rec.id}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => router.push(`/backoffice/canvassing/reconcile/${rec.id}`)}
+                        >
+                          <TableCell className="font-mono text-xs">{rec.docNo}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatDateTime(rec.createdAtIso)}
+                          </TableCell>
+                          <TableCell>{rec.reconciledByLabel}</TableCell>
+                          <TableCell className="text-right tabular-nums">{rec.totalReturnedQty}</TableCell>
+                          <TableCell className="text-right tabular-nums">{rec.totalVarianceQty}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -160,6 +214,20 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
               <LoadVanForm canvasserId={canvasserId} itemOptions={itemOptions} />
             </CardContent>
           </Card>
+
+          {reconcileRows.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ClipboardCheck className="h-4 w-4" />
+                  {t("reconcileSectionTitle")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ReconcileVanForm canvasserId={canvasserId} rows={reconcileRows} />
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>
