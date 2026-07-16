@@ -109,7 +109,7 @@ export function VariantSheet({
                             size="icon-lg"
                             disabled={!hasActiveVisit || qty <= 0}
                             onClick={() => setQty(item, v.variantSku, v.variantLabel, qty - 1)}
-                            aria-label={`Kurangi ${v.variantLabel}`}
+                            aria-label={t("variantDecrease", { label: v.variantLabel })}
                           >
                             <Minus className="h-4 w-4" />
                           </Button>
@@ -120,7 +120,7 @@ export function VariantSheet({
                             size="icon-lg"
                             disabled={!hasActiveVisit || qty >= v.available}
                             onClick={() => setQty(item, v.variantSku, v.variantLabel, qty + 1)}
-                            aria-label={`Tambah ${v.variantLabel}`}
+                            aria-label={t("variantIncrease", { label: v.variantLabel })}
                           >
                             <Plus className="h-4 w-4" />
                           </Button>

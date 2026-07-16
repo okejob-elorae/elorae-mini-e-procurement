@@ -1,12 +1,11 @@
 import { reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines, buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
-import { computeOrderPromos } from "@elorae/db/promo";
+import { applyItemAggregatedPromos } from "./promo-apply";
 import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError } from "./errors";
-import { distributeDiscountProRata } from "./promo-distribute";
 
 type CreateLine = { itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number };
 
@@ -113,38 +112,22 @@ export async function createFieldSalesOrder(input: {
         select: { id: true, inventoryValues: { select: { avgCost: true } } },
       });
       const avgCostById = new Map(itemMeta.map((i) => [i.id, i.inventoryValues[0] ? Number(i.inventoryValues[0].avgCost) : 0]));
-      // group order.lines by itemId (preserve line order for distribution)
-      const linesByItem = new Map<string, typeof order.lines>();
-      for (const l of order.lines) {
-        const arr = linesByItem.get(l.itemId) ?? [];
-        arr.push(l);
-        linesByItem.set(l.itemId, arr);
-      }
-      const itemAgg = Array.from(linesByItem, ([itemId, ls]) => ({
-        itemId,
-        qty: ls.reduce((s, l) => s + l.qty, 0),
-        unitPrice: Number(ls[0].unitPrice),
-        avgCost: avgCostById.get(itemId) ?? 0,
-      }));
       const promos = await fetchActivePromosForStore(input.storeId, new Date(), tx);
-      const result = computeOrderPromos({ lines: itemAgg, activePromos: promos });
-
+      // Per-item aggregate + pro-rate — shared with previewFieldSalesPromos so the quote matches.
+      const applied = applyItemAggregatedPromos(
+        order.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, unitPrice: Number(l.unitPrice), avgCost: avgCostById.get(l.itemId) ?? 0 })),
+        promos,
+      );
       let netTotal = 0;
-      for (let a = 0; a < itemAgg.length; a++) {
-        const itemId = itemAgg[a].itemId;
-        const res = result.lines[a];
-        const ls = linesByItem.get(itemId)!;
-        const parts = distributeDiscountProRata(ls.map((l) => Number(l.lineTotal)), res.discountAmount);
-        for (let j = 0; j < ls.length; j++) {
-          const l = ls[j];
-          netTotal += Number(l.lineTotal) - parts[j];
-          await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { discountAmount: parts[j], appliedPromoId: res.appliedPromoId } });
-        }
+      for (let i = 0; i < order.lines.length; i++) {
+        const l = order.lines[i];
+        netTotal += Number(l.lineTotal) - applied.lineDiscounts[i];
+        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { discountAmount: applied.lineDiscounts[i], appliedPromoId: applied.lineAppliedPromoId[i] } });
       }
-      netTotal -= result.orderDiscountAmount;
+      netTotal -= applied.orderDiscountAmount;
       await tx.fieldSalesOrder.update({
         where: { id: order.id },
-        data: { total: netTotal, orderDiscountAmount: result.orderDiscountAmount, appliedOrderPromoId: result.appliedOrderPromoId },
+        data: { total: netTotal, orderDiscountAmount: applied.orderDiscountAmount, appliedOrderPromoId: applied.appliedOrderPromoId },
       });
       finalTotal = netTotal;
     }
