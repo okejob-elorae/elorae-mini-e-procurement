@@ -65,6 +65,8 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/field-sales-orders': 'field_sales_orders:view',
   '/backoffice/promos': 'promos:view',
   '/backoffice/canvassing': 'canvassing:manage',
+  '/backoffice/van-sales': 'canvassing:manage',
+  '/backoffice/van-sales/[id]': 'canvassing:manage',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
   '/backoffice/forecast': 'forecast:view',

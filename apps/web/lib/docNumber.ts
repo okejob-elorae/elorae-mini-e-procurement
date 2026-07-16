@@ -16,6 +16,7 @@ const DEFAULT_CONFIGS: Record<
   PUTUS: { prefix: 'PUTUS/', resetPeriod: 'YEARLY', padding: 4 },
   KONSI: { prefix: 'KONSI/', resetPeriod: 'YEARLY', padding: 4 },
   VANLOAD: { prefix: 'VLOAD/', resetPeriod: 'YEARLY', padding: 4 },
+  VANSALE: { prefix: 'VSALE/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
 type ConfigRow = {

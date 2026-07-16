@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Store, CloudUpload } from "lucide-react";
+import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Store, CloudUpload, Truck } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { listPendingOrders } from "@/lib/pwa/offline/queue";
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
@@ -26,6 +26,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
   const t = useTranslations("pwa.nearest");
   const tAuth = useTranslations("auth");
   const tOffline = useTranslations("pwa.offline");
+  const tVanSale = useTranslations("vanSale");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [fetchingOrigin, setFetchingOrigin] = useState(false);
@@ -92,6 +93,15 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
     </header>
   );
 
+  const vanSaleCta = (
+    <Button asChild variant="outline" className="w-full">
+      <Link href="/pwa/van">
+        <Truck className="h-4 w-4" />
+        {tVanSale("homeCta")}
+      </Link>
+    </Button>
+  );
+
   const pendingChip = pendingCount > 0 ? (
     <Link
       href="/pwa/orders/pending"
@@ -134,6 +144,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
             Katalog Produk
           </Link>
         </Button>
+        {vanSaleCta}
         <CheckOutButton visitId={activeVisit.id} />
       </div>
     );
@@ -145,6 +156,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
     <div className="p-4 space-y-5">
       {header}
       {pendingChip}
+      {vanSaleCta}
 
       <Card>
         <CardContent className="p-4 flex items-start gap-3">

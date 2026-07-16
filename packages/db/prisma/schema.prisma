@@ -83,6 +83,7 @@ model User {
   vanStock      VanStock[] @relation("VanStockUser")
   vanLoadsAsCanvasser VanLoad[] @relation("VanLoadCanvasser")
   vanLoadsLoaded      VanLoad[] @relation("VanLoadLoadedBy")
+  vanSales      VanSale[] @relation("VanSaleSalesman")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -239,6 +240,7 @@ model Store {
   fieldSalesOrders FieldSalesOrder[]
   promoStores    PromoStore[]
   storeChangeRequests StoreChangeRequest[]
+  vanSales       VanSale[]
 
   @@index([isActive, name])
 }
@@ -492,6 +494,7 @@ model Item {
   promoItems       PromoItem[]
   vanStock         VanStock[]
   vanLoadLines     VanLoadLine[]
+  vanSaleLines     VanSaleLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -1572,6 +1575,44 @@ model VanLoadLine {
   @@index([vanLoadId])
 }
 
+model VanSale {
+  id             String        @id @default(cuid())
+  docNo          String        @unique
+  salesmanId     String
+  storeId        String?
+  buyerName      String?
+  buyerPhone     String?
+  saleLat        Decimal?      @db.Decimal(10, 7)
+  saleLng        Decimal?      @db.Decimal(10, 7)
+  subtotal       Decimal       @db.Decimal(15, 2)
+  total          Decimal       @db.Decimal(15, 2)
+  amountPaid     Decimal       @db.Decimal(15, 2)
+  changeAmount   Decimal       @db.Decimal(15, 2)
+  note           String?       @db.Text
+  idempotencyKey String?       @unique
+  createdAt      DateTime      @default(now())
+  salesman       User          @relation("VanSaleSalesman", fields: [salesmanId], references: [id])
+  store          Store?        @relation(fields: [storeId], references: [id])
+  lines          VanSaleLine[]
+  @@index([salesmanId, createdAt])
+  @@index([storeId])
+}
+
+model VanSaleLine {
+  id          String  @id @default(cuid())
+  vanSaleId   String
+  itemId      String
+  variantSku  String?
+  productName String
+  qty         Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(15, 2)
+  unitCost    Decimal @db.Decimal(15, 2)
+  lineTotal   Decimal @db.Decimal(15, 2)
+  vanSale     VanSale @relation(fields: [vanSaleId], references: [id], onDelete: Cascade)
+  item        Item    @relation(fields: [itemId], references: [id])
+  @@index([vanSaleId])
+}
+
 enum DocType {
   PO
   GRN
@@ -1584,6 +1625,7 @@ enum DocType {
   PUTUS
   KONSI
   VANLOAD
+  VANSALE
 }
 
 enum OpnameScope {
