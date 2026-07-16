@@ -1990,7 +1990,15 @@
     },
     "catalog": {
       "promoTag": "Promo",
-      "promoOrderDiscount": "Order discount"
+      "promoOrderDiscount": "Order discount",
+      "selectVariant": "Select variant",
+      "variantBadge": "{variants} variants · {units} pcs",
+      "variantSheetTitle": "Select Variant",
+      "variantSearchPlaceholder": "Search variant or SKU",
+      "variantAvailable": "{available} available",
+      "variantOutOfStock": "Out of stock",
+      "variantEmpty": "No matching variants.",
+      "sheetDone": "Done"
     },
     "offline": {
       "pendingTitle": "Pending Orders",

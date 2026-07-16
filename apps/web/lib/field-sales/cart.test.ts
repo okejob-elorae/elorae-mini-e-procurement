@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { cartTotal, cartCount, buildOrderLines, type CartLine } from "./cart";
 
 const line = (over: Partial<CartLine> = {}): CartLine => ({
-  itemId: "i1", variantSku: "", sku: "FG-1", nameId: "Kaos", unitPrice: 35000, available: 100, qty: 6, ...over,
+  itemId: "i1", variantSku: "", variantLabel: null, sku: "FG-1", nameId: "Kaos", unitPrice: 35000, available: 100, qty: 6, ...over,
 });
 
 describe("cart helpers", () => {
@@ -21,5 +21,12 @@ describe("cart helpers", () => {
   it("buildOrderLines maps to the createFieldSalesOrder line shape (productName = nameId)", () => {
     expect(buildOrderLines([line({ itemId: "i1", variantSku: "", nameId: "Kaos", qty: 6, unitPrice: 35000 })]))
       .toEqual([{ itemId: "i1", variantSku: "", productName: "Kaos", qty: 6, unitPrice: 35000 }]);
+  });
+  it("buildOrderLines appends variantLabel to productName when a variant is selected", () => {
+    expect(
+      buildOrderLines([
+        line({ itemId: "i1", variantSku: "RED-M", variantLabel: "Merah / M", nameId: "Kaos", qty: 2, unitPrice: 35000 }),
+      ]),
+    ).toEqual([{ itemId: "i1", variantSku: "RED-M", productName: "Kaos — Merah / M", qty: 2, unitPrice: 35000 }]);
   });
 });
