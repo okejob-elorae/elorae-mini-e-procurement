@@ -84,6 +84,8 @@ model User {
   vanLoadsAsCanvasser VanLoad[] @relation("VanLoadCanvasser")
   vanLoadsLoaded      VanLoad[] @relation("VanLoadLoadedBy")
   vanSales      VanSale[] @relation("VanSaleSalesman")
+  vanReconciles VanReconcile[] @relation("VanReconcileCanvasser")
+  vanReconcilesDone VanReconcile[] @relation("VanReconcileBy")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -495,6 +497,7 @@ model Item {
   vanStock         VanStock[]
   vanLoadLines     VanLoadLine[]
   vanSaleLines     VanSaleLine[]
+  vanReconcileLines VanReconcileLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -1613,6 +1616,36 @@ model VanSaleLine {
   @@index([vanSaleId])
 }
 
+model VanReconcile {
+  id               String             @id @default(cuid())
+  docNo            String             @unique
+  canvasserId      String
+  reconciledById   String
+  note             String?            @db.Text
+  totalReturnedQty Decimal            @db.Decimal(10, 2)
+  totalVarianceQty Decimal            @db.Decimal(10, 2)
+  createdAt        DateTime           @default(now())
+  canvasser        User               @relation("VanReconcileCanvasser", fields: [canvasserId], references: [id])
+  reconciledBy     User               @relation("VanReconcileBy", fields: [reconciledById], references: [id])
+  lines            VanReconcileLine[]
+  @@index([canvasserId, createdAt])
+}
+
+model VanReconcileLine {
+  id             String       @id @default(cuid())
+  vanReconcileId String
+  itemId         String
+  variantSku     String?
+  productName    String
+  expectedQty    Decimal      @db.Decimal(10, 2)
+  countedQty     Decimal      @db.Decimal(10, 2)
+  varianceQty    Decimal      @db.Decimal(10, 2)
+  unitCost       Decimal      @db.Decimal(15, 2)
+  vanReconcile   VanReconcile @relation(fields: [vanReconcileId], references: [id], onDelete: Cascade)
+  item           Item         @relation(fields: [itemId], references: [id])
+  @@index([vanReconcileId])
+}
+
 enum DocType {
   PO
   GRN
@@ -1626,6 +1659,7 @@ enum DocType {
   KONSI
   VANLOAD
   VANSALE
+  VANRECON
 }
 
 enum OpnameScope {

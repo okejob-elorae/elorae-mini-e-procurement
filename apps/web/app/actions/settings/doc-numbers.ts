@@ -34,6 +34,7 @@ const DEFAULT_CONFIGS: Record<
   KONSI: { prefix: 'KONSI/', resetPeriod: 'YEARLY', padding: 4 },
   VANLOAD: { prefix: 'VLOAD/', resetPeriod: 'YEARLY', padding: 4 },
   VANSALE: { prefix: 'VSALE/', resetPeriod: 'YEARLY', padding: 4 },
+  VANRECON: { prefix: 'VRCN/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
 export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {
