@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { SALES_CHANNEL_VALUES, SALES_ORDER_STATUS_VALUES } from "@/lib/constants/enums";
 import type { SalesChannel, SalesOrderStatus } from "@/lib/constants/enums";
-import { parseDateOnly } from "@/lib/date-only";
+import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { listSalesOrders } from "@/lib/sales-orders/queries";
 import { SalesOrdersPageClient } from "./SalesOrdersPageClient";
 
@@ -47,11 +47,9 @@ function parseDateFrom(raw: string | undefined): Date | undefined {
 }
 
 function parseDateTo(raw: string | undefined): Date | undefined {
-  const d = raw ? parseDateOnly(raw) : undefined;
-  if (!d) return undefined;
-  // Inclusive end-of-day in local time so the chosen day's orders are not excluded.
-  d.setHours(23, 59, 59, 999);
-  return d;
+  // Inclusive end-of-day anchored to WIB (matches the WIB-displayed dates), so the chosen
+  // day's orders are included and the next WIB day's are excluded.
+  return raw ? parseDateOnlyEnd(raw) : undefined;
 }
 
 export default async function SalesOrdersPage({ searchParams }: PageProps) {
