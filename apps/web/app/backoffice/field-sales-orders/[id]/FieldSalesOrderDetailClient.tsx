@@ -119,10 +119,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
           <TableBody>
             {order.lines.map((line) => (
               <TableRow key={line.id}>
-                <TableCell>
-                  {line.productName}
-                  {line.variantLabel ? ` · ${line.variantLabel}` : ""}
-                </TableCell>
+                <TableCell>{line.productName}</TableCell>
                 <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
                 <TableCell className="text-right">{line.qty}</TableCell>
                 <TableCell className="text-right">{line.available}</TableCell>
