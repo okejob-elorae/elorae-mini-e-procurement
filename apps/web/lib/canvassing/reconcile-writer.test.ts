@@ -18,8 +18,10 @@ d("recordVanReconcile (test bed only)", () => {
     // main starts at 50 @ 1000 (after some was loaded to the van). Variantless main rows use
     // variantSku: null in this codebase (production shape) — the return path must find it.
     await prisma.inventoryValue.create({ data: { itemId, variantSku: null, qtyOnHand: 50, reservedQty: 0, avgCost: 1000, totalValue: 50000 } });
-    const s = await prisma.user.findFirstOrThrow({ where: { email: "salesman@elorae.com" } });
-    canvasserId = s.id;
+    // Dedicated canvasser — recordVanReconcile reads ALL of a user's van rows, so it must NOT
+    // share salesman@elorae.com with the parallel 8a/8b suites (they'd leave foreign van rows).
+    const canv = await prisma.user.create({ data: { email: `canvasser-${tag}@test.local`, name: "Reconcile Canvasser" } });
+    canvasserId = canv.id;
     const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
     adminId = admin.id;
     // van holds 10 @ 1000 (expected remaining)
@@ -34,6 +36,7 @@ d("recordVanReconcile (test bed only)", () => {
     await prisma.inventoryValue.deleteMany({ where: { itemId } });
     await prisma.item.deleteMany({ where: { id: itemId } });
     await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.user.deleteMany({ where: { id: canvasserId } });
   });
 
   const count = (qty: number) => [{ itemId, variantSku: null, qty }].map(() => ({ itemId, variantSku: null as string | null, countedQty: qty }));
