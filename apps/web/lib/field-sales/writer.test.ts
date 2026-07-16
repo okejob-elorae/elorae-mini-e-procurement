@@ -46,6 +46,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
     await prisma.store.deleteMany({ where: { id: storeId } });
     await prisma.stockReservation.deleteMany({ where: { itemId } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId } });
+    // covers both the base "" row and the extra per-variant rows seeded by the variant test cases
     await prisma.inventoryValue.deleteMany({ where: { itemId } });
     await prisma.item.deleteMany({ where: { id: itemId } });
     if (itemId2) {
@@ -192,6 +193,74 @@ d("field-sales lifecycle writers (test bed only)", () => {
     const b = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [orderLine], idempotencyKey: key });
     expect(b.orderId).toBe(a.orderId);
     expect(await prisma.fieldSalesOrder.count({ where: { idempotencyKey: key } })).toBe(1);
+  });
+
+  it("variant putus order: per-item min-qty aggregate + per-variant reservations", async () => {
+    // seed two variant inventory rows for `itemId`
+    await prisma.inventoryValue.createMany({ data: [
+      { itemId, variantSku: `${sku}-A`, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
+      { itemId, variantSku: `${sku}-B`, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
+    ] });
+    await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [
+      { itemId, variantSku: `${sku}-A`, productName: "T-A", qty: 4, unitPrice: 35000 },
+      { itemId, variantSku: `${sku}-B`, productName: "T-B", qty: 3, unitPrice: 35000 },
+    ] }); // total 7 >= min 6
+    const rows = await prisma.stockReservation.findMany({ where: { itemId } });
+    expect(rows).toHaveLength(2);
+    const invA = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku: `${sku}-A` } } });
+    expect(Number(invA!.reservedQty)).toBe(4);
+    const invB = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku: `${sku}-B` } } });
+    expect(Number(invB!.reservedQty)).toBe(3);
+  });
+
+  it("variant putus order: per-item aggregate below the min throws even though it spans two variants", async () => {
+    await prisma.inventoryValue.createMany({ data: [
+      { itemId, variantSku: `${sku}-A`, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
+      { itemId, variantSku: `${sku}-B`, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
+    ] });
+    await expect(createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [
+      { itemId, variantSku: `${sku}-A`, productName: "T-A", qty: 2, unitPrice: 35000 },
+      { itemId, variantSku: `${sku}-B`, productName: "T-B", qty: 2, unitPrice: 35000 },
+    ] })).rejects.toBeInstanceOf(MinQtyViolationError); // 2 + 2 = 4 < min 6
+  });
+
+  it("variant putus order: item-level promo discount pro-rates across variant lines", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1 } });
+    await prisma.inventoryValue.createMany({ data: [
+      { itemId, variantSku: `${sku}-A`, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
+      { itemId, variantSku: `${sku}-B`, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
+    ] });
+    const promo = await prisma.promo.create({
+      data: {
+        name: `TEST-PROMO-${sku}`,
+        type: "PERCENT",
+        level: "LINE",
+        termsType: "PUTUS",
+        value: 10,
+        allStores: true,
+        isActive: true,
+        items: { create: [{ itemId }] },
+      },
+    });
+    promoId = promo.id;
+
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [
+        { itemId, variantSku: `${sku}-A`, productName: "T-A", qty: 2, unitPrice: 100 },
+        { itemId, variantSku: `${sku}-B`, productName: "T-B", qty: 3, unitPrice: 100 },
+      ],
+    });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    const lineA = order!.lines.find((l) => l.variantSku === `${sku}-A`)!;
+    const lineB = order!.lines.find((l) => l.variantSku === `${sku}-B`)!;
+    // aggregate item discount = 10% of (200 + 300) = 50; pro-rated 20/30 by line total
+    expect(Number(lineA.discountAmount)).toBe(20);
+    expect(Number(lineB.discountAmount)).toBe(30);
+    expect(Number(order!.subtotal)).toBe(500);
+    expect(Number(order!.total)).toBe(450);
   });
 });
 

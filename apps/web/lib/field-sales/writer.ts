@@ -6,6 +6,7 @@ import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError } from "./errors";
+import { distributeDiscountProRata } from "./promo-distribute";
 
 type CreateLine = { itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number };
 
@@ -53,7 +54,11 @@ export async function createFieldSalesOrder(input: {
       const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
       const globalMin = globalRow ? Number(globalRow.value) : 6;
       const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
-      const violations = validateMinQtyLines(input.lines, minByItemId);
+      // Aggregate qty per item so an item's variants collectively satisfy the min.
+      const qtyByItem = new Map<string, number>();
+      for (const l of input.lines) qtyByItem.set(l.itemId, (qtyByItem.get(l.itemId) ?? 0) + l.qty);
+      const aggLines = Array.from(qtyByItem, ([itemId, qty]) => ({ itemId, qty }));
+      const violations = validateMinQtyLines(aggLines, minByItemId);
       if (violations.length > 0) throw new MinQtyViolationError(violations);
     }
 
@@ -108,17 +113,33 @@ export async function createFieldSalesOrder(input: {
         select: { id: true, inventoryValues: { select: { avgCost: true } } },
       });
       const avgCostById = new Map(itemMeta.map((i) => [i.id, i.inventoryValues[0] ? Number(i.inventoryValues[0].avgCost) : 0]));
+      // group order.lines by itemId (preserve line order for distribution)
+      const linesByItem = new Map<string, typeof order.lines>();
+      for (const l of order.lines) {
+        const arr = linesByItem.get(l.itemId) ?? [];
+        arr.push(l);
+        linesByItem.set(l.itemId, arr);
+      }
+      const itemAgg = Array.from(linesByItem, ([itemId, ls]) => ({
+        itemId,
+        qty: ls.reduce((s, l) => s + l.qty, 0),
+        unitPrice: Number(ls[0].unitPrice),
+        avgCost: avgCostById.get(itemId) ?? 0,
+      }));
       const promos = await fetchActivePromosForStore(input.storeId, new Date(), tx);
-      const result = computeOrderPromos({
-        lines: order.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, unitPrice: Number(l.unitPrice), avgCost: avgCostById.get(l.itemId) ?? 0 })),
-        activePromos: promos,
-      });
+      const result = computeOrderPromos({ lines: itemAgg, activePromos: promos });
+
       let netTotal = 0;
-      for (let i = 0; i < order.lines.length; i++) {
-        const l = order.lines[i];
-        const res = result.lines[i];
-        netTotal += Number(l.lineTotal) - res.discountAmount;
-        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { discountAmount: res.discountAmount, appliedPromoId: res.appliedPromoId } });
+      for (let a = 0; a < itemAgg.length; a++) {
+        const itemId = itemAgg[a].itemId;
+        const res = result.lines[a];
+        const ls = linesByItem.get(itemId)!;
+        const parts = distributeDiscountProRata(ls.map((l) => Number(l.lineTotal)), res.discountAmount);
+        for (let j = 0; j < ls.length; j++) {
+          const l = ls[j];
+          netTotal += Number(l.lineTotal) - parts[j];
+          await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { discountAmount: parts[j], appliedPromoId: res.appliedPromoId } });
+        }
       }
       netTotal -= result.orderDiscountAmount;
       await tx.fieldSalesOrder.update({
