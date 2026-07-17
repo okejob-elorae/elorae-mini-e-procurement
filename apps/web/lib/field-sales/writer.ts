@@ -1,7 +1,7 @@
 import { reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines, buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
-import { computeOrderPromos } from "@elorae/db/promo";
+import { applyItemAggregatedPromos } from "./promo-apply";
 import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
@@ -53,7 +53,11 @@ export async function createFieldSalesOrder(input: {
       const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
       const globalMin = globalRow ? Number(globalRow.value) : 6;
       const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
-      const violations = validateMinQtyLines(input.lines, minByItemId);
+      // Aggregate qty per item so an item's variants collectively satisfy the min.
+      const qtyByItem = new Map<string, number>();
+      for (const l of input.lines) qtyByItem.set(l.itemId, (qtyByItem.get(l.itemId) ?? 0) + l.qty);
+      const aggLines = Array.from(qtyByItem, ([itemId, qty]) => ({ itemId, qty }));
+      const violations = validateMinQtyLines(aggLines, minByItemId);
       if (violations.length > 0) throw new MinQtyViolationError(violations);
     }
 
@@ -109,21 +113,21 @@ export async function createFieldSalesOrder(input: {
       });
       const avgCostById = new Map(itemMeta.map((i) => [i.id, i.inventoryValues[0] ? Number(i.inventoryValues[0].avgCost) : 0]));
       const promos = await fetchActivePromosForStore(input.storeId, new Date(), tx);
-      const result = computeOrderPromos({
-        lines: order.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, unitPrice: Number(l.unitPrice), avgCost: avgCostById.get(l.itemId) ?? 0 })),
-        activePromos: promos,
-      });
+      // Per-item aggregate + pro-rate — shared with previewFieldSalesPromos so the quote matches.
+      const applied = applyItemAggregatedPromos(
+        order.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, unitPrice: Number(l.unitPrice), avgCost: avgCostById.get(l.itemId) ?? 0 })),
+        promos,
+      );
       let netTotal = 0;
       for (let i = 0; i < order.lines.length; i++) {
         const l = order.lines[i];
-        const res = result.lines[i];
-        netTotal += Number(l.lineTotal) - res.discountAmount;
-        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { discountAmount: res.discountAmount, appliedPromoId: res.appliedPromoId } });
+        netTotal += Number(l.lineTotal) - applied.lineDiscounts[i];
+        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { discountAmount: applied.lineDiscounts[i], appliedPromoId: applied.lineAppliedPromoId[i] } });
       }
-      netTotal -= result.orderDiscountAmount;
+      netTotal -= applied.orderDiscountAmount;
       await tx.fieldSalesOrder.update({
         where: { id: order.id },
-        data: { total: netTotal, orderDiscountAmount: result.orderDiscountAmount, appliedOrderPromoId: result.appliedOrderPromoId },
+        data: { total: netTotal, orderDiscountAmount: applied.orderDiscountAmount, appliedOrderPromoId: applied.appliedOrderPromoId },
       });
       finalTotal = netTotal;
     }

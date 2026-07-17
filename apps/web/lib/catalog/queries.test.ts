@@ -34,6 +34,7 @@ describe("serializeCatalogItem", () => {
       priceLabel: null,
       neverSent: true,
       minOrderQty: 6,
+      variants: [],
     });
   });
 
@@ -77,7 +78,45 @@ describe("serializeCatalogItem", () => {
       priceLabel: null,
       neverSent: false,
       minOrderQty: 6,
+      variants: [],
     });
+  });
+});
+
+describe("serializeCatalogItem variants", () => {
+  const variantRow = (
+    variants: unknown,
+    inv: Array<{ variantSku: string | null; qtyOnHand: number; reservedQty: number }>,
+  ) => ({
+    id: "i1",
+    sku: "SKU1",
+    nameId: "Item 1",
+    categoryId: null,
+    category: null,
+    sellingPrice: 10000,
+    minOrderQty: null,
+    variants,
+    inventoryValues: inv.map((r) => ({ variantSku: r.variantSku, qtyOnHand: r.qtyOnHand, reservedQty: r.reservedQty, totalValue: 0 })),
+  });
+  const putusStore = { termsType: "PUTUS" as const, marginPercent: null };
+
+  it("variant item → per-variant available list, aggregate on the card", () => {
+    const c = serializeCatalogItem(
+      variantRow(
+        [{ Size: "S", sku: "SKU1-S" }, { Size: "L", sku: "SKU1-L" }],
+        [{ variantSku: "SKU1-S", qtyOnHand: 10, reservedQty: 2 }, { variantSku: "SKU1-L", qtyOnHand: 5, reservedQty: 0 }],
+      ),
+      putusStore, null, false, 6,
+    );
+    expect(c.variants).toHaveLength(2);
+    expect(c.variants.find((v) => v.variantSku === "SKU1-S")).toMatchObject({ variantLabel: expect.stringContaining("S"), available: 8 });
+    expect(c.available).toBe(13); // aggregate 8 + 5
+  });
+
+  it("simple item (null bucket) → variants: []", () => {
+    const c = serializeCatalogItem(variantRow(null, [{ variantSku: null, qtyOnHand: 20, reservedQty: 0 }]), putusStore, null, false, 6);
+    expect(c.variants).toEqual([]);
+    expect(c.available).toBe(20);
   });
 });
 

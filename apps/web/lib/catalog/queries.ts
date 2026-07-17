@@ -3,6 +3,7 @@ import { computeStorePrice } from "@elorae/db/pricing";
 import { aggregateInventoryValues } from "@/lib/items/queries";
 import { getPrimaryImagesBatch } from "@/lib/items/images/queries";
 import { sentItemIds } from "@/lib/field-sales/queries";
+import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
 
 export type CatalogItem = {
   itemId: string;
@@ -16,6 +17,7 @@ export type CatalogItem = {
   priceLabel: string | null;
   neverSent: boolean;
   minOrderQty: number;
+  variants: Array<{ variantSku: string; variantLabel: string; available: number }>;
 };
 
 export type CatalogPayload = {
@@ -31,7 +33,8 @@ type CatalogRow = {
   category: { name: string } | null;
   sellingPrice: unknown;
   minOrderQty: number | null;
-  inventoryValues: Array<{ qtyOnHand: unknown; reservedQty?: unknown; totalValue: unknown }>;
+  variants?: unknown;
+  inventoryValues: Array<{ qtyOnHand: unknown; reservedQty?: unknown; totalValue: unknown; variantSku?: unknown }>;
 };
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
@@ -54,6 +57,19 @@ export function serializeCatalogItem(
         termsType: store.termsType,
         marginPercent: store.marginPercent,
       });
+  const labelBySku = new Map(
+    variantSelectOptions(parseItemVariants(row.variants)).map((o) => [o.sku, o.label]),
+  );
+  const num = (v: unknown) => (v == null ? 0 : Number(v));
+  const variants = row.inventoryValues
+    .map((iv) => {
+      const variantSku = (iv.variantSku as string | null) ?? "";
+      return { variantSku, available: num(iv.qtyOnHand) - num(iv.reservedQty) };
+    })
+    // Only variant rows (real SKU) become sheet entries; the item-level null/"" bucket is the simple-item path.
+    .filter((v) => v.variantSku !== "")
+    .map((v) => ({ variantSku: v.variantSku, variantLabel: labelBySku.get(v.variantSku) ?? v.variantSku, available: v.available }))
+    .sort((a, b) => a.variantLabel.localeCompare(b.variantLabel));
   return {
     itemId: row.id,
     sku: row.sku,
@@ -66,6 +82,7 @@ export function serializeCatalogItem(
     priceLabel: label,
     neverSent,
     minOrderQty: row.minOrderQty ?? globalMin,
+    variants,
   };
 }
 
@@ -98,7 +115,8 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
       category: { select: { name: true } },
       sellingPrice: true,
       minOrderQty: true,
-      inventoryValues: { select: { qtyOnHand: true, reservedQty: true, totalValue: true } },
+      variants: true,
+      inventoryValues: { select: { variantSku: true, qtyOnHand: true, reservedQty: true, totalValue: true } },
     },
   });
 

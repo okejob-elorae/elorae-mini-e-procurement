@@ -1,6 +1,7 @@
 export type CartLine = {
   itemId: string;
   variantSku: string;
+  variantLabel: string | null;
   sku: string;
   nameId: string;
   unitPrice: number;
@@ -28,7 +29,7 @@ export function buildOrderLines(lines: CartLine[]): OrderLineInput[] {
   return lines.map((l) => ({
     itemId: l.itemId,
     variantSku: l.variantSku,
-    productName: l.nameId,
+    productName: l.variantLabel ? `${l.nameId} — ${l.variantLabel}` : l.nameId,
     qty: l.qty,
     unitPrice: l.unitPrice,
   }));

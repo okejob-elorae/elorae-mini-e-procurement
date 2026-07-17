@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cartCount, cartTotal, buildOrderLines, type CartLine } from "@/lib/field-sales/cart";
 import { enqueueOrder, newLocalId } from "@/lib/pwa/offline/queue";
 import { submitFieldSalesOrder, previewFieldSalesPromos, type PromoPreviewResult } from "./actions";
+import { VariantSheet } from "./VariantSheet";
 
 type CatalogItem = {
   itemId: string;
@@ -27,6 +28,7 @@ type CatalogItem = {
   priceLabel: string | null;
   neverSent: boolean;
   minOrderQty: number;
+  variants: Array<{ variantSku: string; variantLabel: string; available: number }>;
 };
 
 type Payload = { items: CatalogItem[] };
@@ -34,6 +36,9 @@ type LoadState = "loading" | "ready" | "error";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 const PAGE_SIZE = 10;
+// Cart lines are keyed by item + variant so distinct variants of the same item are distinct
+// entries; simple items (no variants) always use variantSku "".
+const variantKey = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
 
 export function CatalogShell({
   storeId,
@@ -56,6 +61,7 @@ export function CatalogShell({
   const [cat, setCat] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [cart, setCart] = useState<Map<string, CartLine>>(new Map());
+  const [sheetItem, setSheetItem] = useState<CatalogItem | null>(null);
   const [view, setView] = useState<"catalog" | "review">("catalog");
   const [note, setNote] = useState("");
   const [online, setOnline] = useState(true);
@@ -67,18 +73,23 @@ export function CatalogShell({
   const reviewBarRef = useRef<HTMLDivElement | null>(null);
   const [reviewBarHeight, setReviewBarHeight] = useState(0);
 
-  function setQty(it: CatalogItem, qty: number) {
+  function setQty(it: CatalogItem, variantSku: string, variantLabel: string | null, qty: number) {
+    const key = variantKey(it.itemId, variantSku);
+    // Simple items (no variants) cap at the item aggregate; variant lines cap at that
+    // variant's own available (looked up from it.variants, falling back to the aggregate).
+    const available = variantSku ? (it.variants.find((v) => v.variantSku === variantSku)?.available ?? 0) : it.available;
     setCart((prev) => {
       const next = new Map(prev);
-      if (qty <= 0) next.delete(it.sku);
+      if (qty <= 0) next.delete(key);
       else
-        next.set(it.sku, {
+        next.set(key, {
           itemId: it.itemId,
-          variantSku: "",
+          variantSku,
+          variantLabel,
           sku: it.sku,
           nameId: it.nameId,
           unitPrice: isKonsi ? 0 : (it.price ?? 0),
-          available: it.available,
+          available,
           qty,
         });
       return next;
@@ -156,12 +167,15 @@ export function CatalogShell({
       try {
         if (!online) {
           if (!isKonsi) {
-            const violations = cartLines
-              .map((line) => {
-                const min = items.find((i) => i.itemId === line.itemId)?.minOrderQty ?? 0;
-                return line.qty < min ? `${line.nameId} (min ${min})` : null;
-              })
-              .filter((v): v is string => v !== null);
+            // Aggregate qty per item (mirrors the server's per-item min-qty rule) so an
+            // item's variants collectively satisfy the minimum, not each variant alone.
+            const qtyByItem = new Map<string, number>();
+            for (const line of cartLines) qtyByItem.set(line.itemId, (qtyByItem.get(line.itemId) ?? 0) + line.qty);
+            const violations = Array.from(qtyByItem, ([itemId, qty]) => {
+              const it = items.find((i) => i.itemId === itemId);
+              const min = it?.minOrderQty ?? 0;
+              return qty < min ? `${it?.nameId ?? itemId} (min ${min})` : null;
+            }).filter((v): v is string => v !== null);
             if (violations.length > 0) {
               toast.error(`Jumlah di bawah minimum: ${violations.join(", ")}.`);
               return;
@@ -304,7 +318,13 @@ export function CatalogShell({
             </div>
           )}
 
-          {isKonsi && hasActiveVisit && items.some((it) => it.neverSent && it.available > 0 && !cart.has(it.sku)) && (
+          {isKonsi &&
+            hasActiveVisit &&
+            // Variant items are excluded — auto-suggest can't pick a variant for the
+            // salesman, so those items must be added via the variant sheet instead.
+            items.some(
+              (it) => it.neverSent && it.available > 0 && it.variants.length === 0 && !cart.has(variantKey(it.itemId, "")),
+            ) && (
             <Button
               type="button"
               variant="outline"
@@ -314,10 +334,12 @@ export function CatalogShell({
                   const next = new Map(prev);
                   let added = 0;
                   for (const it of items) {
-                    if (it.neverSent && it.available > 0 && !next.has(it.sku)) {
-                      next.set(it.sku, {
+                    const key = variantKey(it.itemId, "");
+                    if (it.neverSent && it.available > 0 && it.variants.length === 0 && !next.has(key)) {
+                      next.set(key, {
                         itemId: it.itemId,
                         variantSku: "",
+                        variantLabel: null,
                         sku: it.sku,
                         nameId: it.nameId,
                         unitPrice: 0,
@@ -349,8 +371,14 @@ export function CatalogShell({
 
           <div className="flex flex-col gap-2">
             {shown.map((it) => {
-              const qty = cart.get(it.sku)?.qty ?? 0;
+              const hasVariants = it.variants.length > 0;
+              const qty = cart.get(variantKey(it.itemId, ""))?.qty ?? 0;
               const canOrder = (isKonsi || it.price != null) && it.available > 0;
+              // For variant items, the badge summarizes what's already in the cart across
+              // that item's variant lines (variantSku "" is never used once it has variants).
+              const variantLines = hasVariants ? cartLines.filter((l) => l.itemId === it.itemId) : [];
+              const variantCount = variantLines.length;
+              const variantUnits = variantLines.reduce((s, l) => s + l.qty, 0);
               return (
                 <Card key={it.sku} className="flex flex-row items-center gap-3 p-3">
                   <div className="h-12 w-12 shrink-0 overflow-hidden rounded bg-muted">
@@ -392,14 +420,19 @@ export function CatalogShell({
                         )}
                       </>
                     )}
-                    {canOrder && hasActiveVisit && (
+                    {canOrder && hasActiveVisit && hasVariants && (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setSheetItem(it)}>
+                        {variantUnits > 0 ? t("variantBadge", { variants: variantCount, units: variantUnits }) : t("selectVariant")}
+                      </Button>
+                    )}
+                    {canOrder && hasActiveVisit && !hasVariants && (
                       <div className="flex items-center gap-1.5">
                         <Button
                           type="button"
                           variant="outline"
                           size="icon-lg"
                           disabled={qty <= 0}
-                          onClick={() => setQty(it, qty - 1)}
+                          onClick={() => setQty(it, "", null, qty - 1)}
                           aria-label={`Kurangi ${it.nameId}`}
                         >
                           <Minus className="h-4 w-4" />
@@ -410,7 +443,7 @@ export function CatalogShell({
                           variant="outline"
                           size="icon-lg"
                           disabled={qty >= it.available}
-                          onClick={() => setQty(it, qty + 1)}
+                          onClick={() => setQty(it, "", null, qty + 1)}
                           aria-label={`Tambah ${it.nameId}`}
                         >
                           <Plus className="h-4 w-4" />
@@ -494,11 +527,16 @@ export function CatalogShell({
                       priceLabel: null,
                       neverSent: false,
                       minOrderQty: 0,
+                      variants: [],
                     };
+                  const lineLabel = line.variantLabel ? `${line.nameId} ${line.variantLabel}` : line.nameId;
                   return (
-                    <Card key={line.sku} className="flex flex-row items-center gap-3 p-3">
+                    <Card key={variantKey(line.itemId, line.variantSku)} className="flex flex-row items-center gap-3 p-3">
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{line.nameId}</p>
+                        {line.variantLabel && (
+                          <p className="truncate text-xs text-muted-foreground">{line.variantLabel}</p>
+                        )}
                         <p className="truncate text-xs text-muted-foreground">{line.sku}</p>
                         {!isKonsi && (
                           <p className="text-xs text-muted-foreground tabular-nums">
@@ -512,8 +550,8 @@ export function CatalogShell({
                             type="button"
                             variant="outline"
                             size="icon-lg"
-                            onClick={() => setQty(it, line.qty - 1)}
-                            aria-label={`Kurangi ${line.nameId}`}
+                            onClick={() => setQty(it, line.variantSku, line.variantLabel, line.qty - 1)}
+                            aria-label={`Kurangi ${lineLabel}`}
                           >
                             <Minus className="h-4 w-4" />
                           </Button>
@@ -522,9 +560,9 @@ export function CatalogShell({
                             type="button"
                             variant="outline"
                             size="icon-lg"
-                            disabled={line.qty >= it.available}
-                            onClick={() => setQty(it, line.qty + 1)}
-                            aria-label={`Tambah ${line.nameId}`}
+                            disabled={line.qty >= line.available}
+                            onClick={() => setQty(it, line.variantSku, line.variantLabel, line.qty + 1)}
+                            aria-label={`Tambah ${lineLabel}`}
                           >
                             <Plus className="h-4 w-4" />
                           </Button>
@@ -640,6 +678,18 @@ export function CatalogShell({
           </div>
         </div>
       )}
+
+      <VariantSheet
+        item={sheetItem}
+        isKonsi={isKonsi}
+        hasActiveVisit={hasActiveVisit}
+        cart={cart}
+        setQty={setQty}
+        open={sheetItem !== null}
+        onOpenChange={(next) => {
+          if (!next) setSheetItem(null);
+        }}
+      />
     </div>
   );
 }

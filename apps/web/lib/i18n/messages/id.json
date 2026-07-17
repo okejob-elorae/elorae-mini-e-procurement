@@ -1990,7 +1990,17 @@
     },
     "catalog": {
       "promoTag": "Promo",
-      "promoOrderDiscount": "Diskon pesanan"
+      "promoOrderDiscount": "Diskon pesanan",
+      "selectVariant": "Pilih varian",
+      "variantBadge": "{variants} varian · {units} pcs",
+      "variantSheetTitle": "Pilih Varian",
+      "variantDecrease": "Kurangi {label}",
+      "variantIncrease": "Tambah {label}",
+      "variantSearchPlaceholder": "Cari varian atau SKU",
+      "variantAvailable": "{available} tersedia",
+      "variantOutOfStock": "Habis",
+      "variantEmpty": "Tidak ada varian cocok.",
+      "sheetDone": "Selesai"
     },
     "offline": {
       "pendingTitle": "Pesanan Menunggu",

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@elorae/db";
-import { computeOrderPromos } from "@elorae/db/promo";
+import { applyItemAggregatedPromos } from "@/lib/field-sales/promo-apply";
 import { auth } from "@/lib/auth";
 import { createFieldSalesOrder } from "@/lib/field-sales/writer";
 import { NoActiveVisitError, MinQtyViolationError } from "@/lib/field-sales/errors";
@@ -88,13 +88,13 @@ export async function previewFieldSalesPromos(input: {
   }
 
   const activePromos = await fetchActivePromosForStore(input.storeId, new Date());
-  const result = computeOrderPromos({
-    lines: input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, unitPrice: l.unitPrice, avgCost: avgCostById.get(l.itemId) ?? 0 })),
+  // Per-item aggregate + pro-rate — SAME helper as createFieldSalesOrder so the quote == the recorded order.
+  const applied = applyItemAggregatedPromos(
+    input.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, unitPrice: l.unitPrice, avgCost: avgCostById.get(l.itemId) ?? 0 })),
     activePromos,
-  });
-
-  const lineDiscounts = result.lines.map((r) => r.discountAmount);
-  const orderDiscount = result.orderDiscountAmount;
+  );
+  const lineDiscounts = applied.lineDiscounts;
+  const orderDiscount = applied.orderDiscountAmount;
   const netTotal = gross - lineDiscounts.reduce((s, d) => s + d, 0) - orderDiscount;
 
   return { lineDiscounts, orderDiscount, netTotal };
