@@ -48,6 +48,7 @@
     "navCoa": "Bagan Akun",
     "navFinanceSettlements": "Settlement Marketplace",
     "navFinanceJournals": "Jurnal",
+    "navFinanceAccountMapping": "Pemetaan Akun",
     "items": "Item",
     "navItemsAll": "Semua Item",
     "navItemsCategory": "Kategori",
@@ -2538,5 +2539,46 @@
       "empty": "Tidak ada mutasi pada rentang tanggal ini."
     },
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi."
+  },
+  "financeAccountMapping": {
+    "title": "Pemetaan Akun",
+    "cardTitle": "Pemetaan Akun Posting",
+    "notSet": "Belum diatur",
+    "savedToast": "Pemetaan akun berhasil disimpan.",
+    "selectAccount": "Pilih akun…",
+    "searchAccount": "Cari kode atau nama akun…",
+    "noAccounts": "Akun tidak ditemukan.",
+    "col": {
+      "role": "Peran",
+      "description": "Deskripsi",
+      "account": "Akun"
+    },
+    "role": {
+      "INVENTORY": "Persediaan",
+      "AP": "Utang Usaha",
+      "AR": "Piutang Usaha",
+      "SALES_REVENUE": "Pendapatan Penjualan",
+      "COGS": "Harga Pokok Penjualan",
+      "BANK": "Bank/Kas",
+      "MARKETPLACE_FEE": "Biaya Marketplace",
+      "INVENTORY_VARIANCE": "Selisih Persediaan",
+      "TAX": "Pajak"
+    },
+    "desc": {
+      "INVENTORY": "Akun aset yang didebit saat stok masuk dan dikredit saat stok keluar.",
+      "AP": "Akun kewajiban untuk utang ke pemasok.",
+      "AR": "Akun aset untuk piutang dari pelanggan/marketplace.",
+      "SALES_REVENUE": "Akun pendapatan yang dikreditkan saat penjualan tercatat.",
+      "COGS": "Akun beban untuk harga pokok barang yang terjual.",
+      "BANK": "Akun kas/bank untuk penerimaan dan pengeluaran pembayaran.",
+      "MARKETPLACE_FEE": "Akun beban untuk potongan biaya platform marketplace.",
+      "INVENTORY_VARIANCE": "Akun untuk mencatat selisih stock opname/rekonsiliasi.",
+      "TAX": "Akun untuk kewajiban/beban pajak."
+    },
+    "error": {
+      "FORBIDDEN": "Anda tidak memiliki izin untuk mengubah pemetaan akun.",
+      "BAD_ROLE": "Peran posting tidak dikenali.",
+      "NON_POSTABLE_ACCOUNT": "Akun yang dipilih tidak dapat diposting (bukan akun aktif tanpa turunan)."
+    }
   }
 }
