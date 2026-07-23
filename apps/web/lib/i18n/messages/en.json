@@ -2451,6 +2451,8 @@
     "noMatchedLines": "No matched lines yet.",
     "noUnmatchedLines": "All lines are matched.",
     "costPending": "cost pending",
+    "prevPage": "Previous page",
+    "nextPage": "Next page",
     "coverageNote": "Orders placed before sales-history ingestion (~2026-06-14) may not be found, so older settlements can show many unmatched lines.",
     "errGeneric": "Something went wrong. Please try again."
   }

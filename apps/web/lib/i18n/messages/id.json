@@ -2451,6 +2451,8 @@
     "noMatchedLines": "Belum ada baris yang cocok.",
     "noUnmatchedLines": "Semua baris sudah tercocokkan.",
     "costPending": "HPP tertunda",
+    "prevPage": "Halaman sebelumnya",
+    "nextPage": "Halaman berikutnya",
     "coverageNote": "Pesanan yang dibuat sebelum ingest riwayat penjualan (± 14 Jun 2026) mungkin tidak ditemukan, sehingga settlement lama bisa menunjukkan banyak baris belum cocok.",
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi."
   }

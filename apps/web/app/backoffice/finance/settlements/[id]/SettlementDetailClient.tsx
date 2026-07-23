@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 import type { SettlementDetail } from "@/lib/finance/settlement/queries";
 import { matchSettlementAction } from "@/app/actions/settlements";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,6 +42,11 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
 
   const matchedLines = settlement.lines.filter((l) => l.matchStatus === "MATCHED");
   const unmatchedLines = settlement.lines.filter((l) => l.matchStatus !== "MATCHED");
+
+  const PAGE_SIZE = 25;
+  const [matchedPage, setMatchedPage] = useState(1);
+  const [unmatchedPage, setUnmatchedPage] = useState(1);
+  const pageSlice = <T,>(rows: T[], page: number) => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const statusVariant: "default" | "secondary" =
     settlement.status === "MATCHED" ? "default" : "secondary";
@@ -147,7 +152,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {matchedLines.map((line) => (
+                  {pageSlice(matchedLines, matchedPage).map((line) => (
                     <TableRow key={line.id}>
                       <TableCell className="font-mono text-sm">{line.orderNo}</TableCell>
                       <TableCell className="text-right">{formatRupiah(line.netIncome)}</TableCell>
@@ -165,6 +170,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                   ))}
                 </TableBody>
               </Table>
+              <TablePager total={matchedLines.length} page={matchedPage} pageSize={PAGE_SIZE} onPage={setMatchedPage} t={t} />
             </div>
           )}
         </CardContent>
@@ -188,7 +194,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {unmatchedLines.map((line) => (
+                  {pageSlice(unmatchedLines, unmatchedPage).map((line) => (
                     <TableRow key={line.id}>
                       <TableCell className="font-mono text-sm">{line.orderNo}</TableCell>
                       <TableCell className="text-right">{formatRupiah(line.netIncome)}</TableCell>
@@ -196,10 +202,58 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
                   ))}
                 </TableBody>
               </Table>
+              <TablePager total={unmatchedLines.length} page={unmatchedPage} pageSize={PAGE_SIZE} onPage={setUnmatchedPage} t={t} />
             </div>
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function TablePager({
+  total,
+  page,
+  pageSize,
+  onPage,
+  t,
+}: {
+  total: number;
+  page: number;
+  pageSize: number;
+  onPage: (p: number) => void;
+  t: (key: string) => string;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (totalPages <= 1) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  return (
+    <div className="flex items-center justify-between gap-2 pt-3">
+      <span className="text-xs text-muted-foreground tabular-nums">{`${from}–${to} / ${total}`}</span>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          disabled={page <= 1}
+          onClick={() => onPage(page - 1)}
+          aria-label={t("prevPage")}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-xs tabular-nums px-1">{`${page} / ${totalPages}`}</span>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          disabled={page >= totalPages}
+          onClick={() => onPage(page + 1)}
+          aria-label={t("nextPage")}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }
