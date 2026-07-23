@@ -263,6 +263,8 @@
     "coa": {
       "title": "Bagan Akun",
       "newAccount": "Akun Baru",
+      "expand": "Perluas",
+      "collapse": "Ciutkan",
       "searchPlaceholder": "Cari berdasarkan kode atau nama…",
       "showInactive": "Tampilkan tidak aktif",
       "hideInactive": "Sembunyikan tidak aktif",
