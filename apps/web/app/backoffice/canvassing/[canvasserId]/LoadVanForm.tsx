@@ -161,7 +161,7 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
           return (
             <div key={block.id} className="space-y-3 rounded-md border p-3">
               <div className="flex items-start gap-2">
-                <div className="flex-1 space-y-1.5">
+                <div className="min-w-0 flex-1 space-y-1.5">
                   <Label className="text-xs">{t("item")}</Label>
                   <SearchableCombobox
                     options={itemOptionsFor(block.id).map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
@@ -169,13 +169,14 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
                     onValueChange={(value) => updateBlock(block.id, { itemId: value, qty: {} })}
                     placeholder={t("selectItem")}
                     disabled={pending}
+                    triggerClassName="w-full"
                   />
                 </div>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="mt-6"
+                  className="mt-6 shrink-0"
                   disabled={pending || blocks.length === 1}
                   onClick={() => removeBlock(block.id)}
                   aria-label={t("removeLine")}
@@ -194,31 +195,31 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
                 }
                 return (
                   <div className="space-y-2">
-                    {loadable.map((v) => {
-                      const avail = availableFor(block.itemId, v.sku);
-                      const qty = block.qty[v.sku] ?? 0;
-                      const over = qty > avail;
-                      return (
-                        <div key={v.sku} className="flex items-center gap-3">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm">{v.label}</p>
-                            <p className={`text-xs ${over ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
+                    <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+                      {loadable.map((v) => {
+                        const avail = availableFor(block.itemId, v.sku);
+                        const qty = block.qty[v.sku] ?? 0;
+                        const over = qty > avail;
+                        return (
+                          <div key={v.sku} className="flex items-center gap-2">
+                            <p className="min-w-0 flex-1 truncate text-sm">{v.label}</p>
+                            <span className={`shrink-0 text-xs ${over ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
                               {t("available")}: <span className="tabular-nums">{avail}</span>
-                            </p>
+                            </span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              disabled={pending}
+                              value={qty || ""}
+                              onChange={(e) => setQty(block.id, v.sku, parseFloat(e.target.value) || 0)}
+                              placeholder="0"
+                              className="w-20 shrink-0 text-right"
+                            />
                           </div>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            disabled={pending}
-                            value={qty || ""}
-                            onChange={(e) => setQty(block.id, v.sku, parseFloat(e.target.value) || 0)}
-                            placeholder="0"
-                            className="w-24 text-right"
-                          />
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                     {hiddenZero > 0 && (
                       <p className="text-xs text-muted-foreground">{t("zeroVariantsHidden", { count: hiddenZero })}</p>
                     )}
