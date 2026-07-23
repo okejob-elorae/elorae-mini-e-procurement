@@ -265,4 +265,7 @@ export const PERMISSIONS = {
   PROMOS_MANAGE: "promos:manage",
   // Canvassing (Van Stock)
   CANVASSING_MANAGE: "canvassing:manage",
+  // Finance — Settlements
+  SETTLEMENTS_VIEW: "finance:settlements:view",
+  SETTLEMENTS_MANAGE: "finance:settlements:manage",
 } as const;
