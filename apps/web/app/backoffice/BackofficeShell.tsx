@@ -180,6 +180,11 @@ const navItems: NavItem[] = [
         href: '/backoffice/finance/settlements',
         permission: PERMISSIONS.SETTLEMENTS_VIEW,
       },
+      {
+        labelKey: 'navFinanceJournals',
+        href: '/backoffice/finance/journals',
+        permission: PERMISSIONS.JOURNALS_VIEW,
+      },
     ],
   },
   {

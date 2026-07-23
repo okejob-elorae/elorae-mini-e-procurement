@@ -22,6 +22,14 @@ export default async function CoaPage({
   const includeInactive = params.inactive === "1";
   const tree = await getCoaTree({ includeInactive });
   const canManage = hasPermission(perms, PERMISSIONS.COA_MANAGE);
+  const canViewLedger = hasPermission(perms, PERMISSIONS.JOURNALS_VIEW);
 
-  return <CoaPageClient tree={tree} includeInactive={includeInactive} canManage={canManage} />;
+  return (
+    <CoaPageClient
+      tree={tree}
+      includeInactive={includeInactive}
+      canManage={canManage}
+      canViewLedger={canViewLedger}
+    />
+  );
 }
