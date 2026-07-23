@@ -1,7 +1,8 @@
 import { prisma } from "@elorae/db";
 import { computeStorePrice } from "@elorae/db/pricing";
+import { variantDetailForSku } from "@/lib/items/variants";
 
-export type SellableVanRow = { itemId: string; sku: string; productName: string; variantSku: string | null; qtyOnVan: number; price: number | null };
+export type SellableVanRow = { itemId: string; sku: string; productName: string; variantSku: string | null; variantLabel: string | null; qtyOnVan: number; price: number | null };
 export type VanSaleListRow = { id: string; docNo: string; salesmanLabel: string; buyerLabel: string; total: number; createdAtIso: string };
 export type VanSaleDetail = {
   id: string; docNo: string; salesmanLabel: string; storeName: string | null; buyerName: string | null; buyerPhone: string | null;
@@ -15,13 +16,17 @@ export async function getSellableVanStock(salesmanId: string): Promise<SellableV
   // so pricing is buyer-independent.
   const rows = await prisma.vanStock.findMany({
     where: { userId: salesmanId, qty: { gt: 0 } },
-    include: { item: { select: { sku: true, nameId: true, sellingPrice: true } } },
+    include: { item: { select: { sku: true, nameId: true, sellingPrice: true, variants: true } } },
     orderBy: { item: { nameId: "asc" } },
   });
   return rows.map((r) => {
     const sp = r.item.sellingPrice === null ? null : Number(r.item.sellingPrice);
     const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null });
-    return { itemId: r.itemId, sku: r.item.sku, productName: r.item.nameId, variantSku: r.variantSku, qtyOnVan: Number(r.qty), price };
+    return {
+      itemId: r.itemId, sku: r.item.sku, productName: r.item.nameId,
+      variantSku: r.variantSku, variantLabel: variantDetailForSku(r.item.variants, r.variantSku),
+      qtyOnVan: Number(r.qty), price,
+    };
   });
 }
 

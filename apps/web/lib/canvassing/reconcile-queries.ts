@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
+import { variantDetailForSku } from "@/lib/items/variants";
 
-export type VanReconcileRow = { itemId: string; sku: string; productName: string; variantSku: string | null; expectedQty: number; avgCost: number };
+export type VanReconcileRow = { itemId: string; sku: string; productName: string; variantSku: string | null; variantLabel: string | null; expectedQty: number; avgCost: number };
 export type VanReconcileListRow = { id: string; docNo: string; reconciledByLabel: string; totalReturnedQty: number; totalVarianceQty: number; createdAtIso: string };
 export type VanReconcileDetail = {
   id: string; docNo: string; canvasserLabel: string; reconciledByLabel: string; note: string | null; createdAtIso: string;
@@ -11,10 +12,18 @@ export type VanReconcileDetail = {
 export async function getVanForReconcile(canvasserId: string): Promise<VanReconcileRow[]> {
   const rows = await prisma.vanStock.findMany({
     where: { userId: canvasserId, qty: { gt: 0 } },
-    include: { item: { select: { sku: true, nameId: true } } },
+    include: { item: { select: { sku: true, nameId: true, variants: true } } },
     orderBy: { item: { nameId: "asc" } },
   });
-  return rows.map((r) => ({ itemId: r.itemId, sku: r.item.sku, productName: r.item.nameId, variantSku: r.variantSku, expectedQty: r.qty.toNumber(), avgCost: r.avgCost.toNumber() }));
+  return rows.map((r) => ({
+    itemId: r.itemId,
+    sku: r.item.sku,
+    productName: r.item.nameId,
+    variantSku: r.variantSku,
+    variantLabel: variantDetailForSku(r.item.variants, r.variantSku),
+    expectedQty: r.qty.toNumber(),
+    avgCost: r.avgCost.toNumber(),
+  }));
 }
 
 export async function listVanReconciles(canvasserId: string, paging: { page: number; pageSize: number }): Promise<{ items: VanReconcileListRow[]; totalCount: number }> {

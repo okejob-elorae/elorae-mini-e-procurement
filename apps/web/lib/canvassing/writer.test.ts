@@ -78,4 +78,35 @@ d("loadVan (test bed only)", () => {
     const res = await loadVan({ canvasserId, loadedById: adminId, lines: [line(0)] });
     expect(res).toEqual({ ok: false, code: "EMPTY" });
   });
+
+  it("loads a specific variant into per-variant van stock (real variantSku)", async () => {
+    const vUom = await prisma.uOM.create({ data: { code: `UV-${tag}`, nameId: "pcs", nameEn: "pcs" } });
+    const vItem = await prisma.item.create({
+      data: {
+        sku: `${tag}-V`, nameId: "Kaos", nameEn: "Tee", type: "FINISHED_GOOD", uomId: vUom.id, isActive: true, sellingPrice: 5000,
+        variants: [{ sku: `${tag}-V-M`, size: "M" }, { sku: `${tag}-V-L`, size: "L" }],
+      },
+    });
+    await prisma.inventoryValue.create({ data: { itemId: vItem.id, variantSku: `${tag}-V-M`, qtyOnHand: 40, reservedQty: 0, avgCost: 1000, totalValue: 40000 } });
+    await prisma.inventoryValue.create({ data: { itemId: vItem.id, variantSku: `${tag}-V-L`, qtyOnHand: 10, reservedQty: 0, avgCost: 1000, totalValue: 10000 } });
+
+    const res = await loadVan({ canvasserId, loadedById: adminId, lines: [{ itemId: vItem.id, variantSku: `${tag}-V-M`, qty: 15 }] });
+    expect(res.ok).toBe(true);
+
+    const vanM = await prisma.vanStock.findUnique({ where: { userId_itemId_variantSku: { userId: canvasserId, itemId: vItem.id, variantSku: `${tag}-V-M` } } });
+    expect(vanM!.qty.toNumber()).toBe(15);
+    const mainM = await prisma.inventoryValue.findFirst({ where: { itemId: vItem.id, variantSku: `${tag}-V-M` } });
+    expect(mainM!.qtyOnHand.toNumber()).toBe(25); // 40 - 15
+    const mainL = await prisma.inventoryValue.findFirst({ where: { itemId: vItem.id, variantSku: `${tag}-V-L` } });
+    expect(mainL!.qtyOnHand.toNumber()).toBe(10); // untouched
+
+    // cleanup (this case created its own item/uom outside the shared afterEach)
+    await prisma.vanLoadLine.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.vanLoad.deleteMany({ where: { canvasserId } });
+    await prisma.vanStock.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.item.deleteMany({ where: { id: vItem.id } });
+    await prisma.uOM.deleteMany({ where: { id: vUom.id } });
+  });
 });

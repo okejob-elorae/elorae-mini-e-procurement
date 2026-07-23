@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { ArrowLeft, ClipboardCheck, Clock, Package, Truck } from "lucide-react";
-import type { VanStockRow, VanLoadRow } from "@/lib/canvassing/queries";
+import type { VanStockRow, VanLoadRow, LoadableInventoryRow } from "@/lib/canvassing/queries";
 import type { VanReconcileRow, VanReconcileListRow } from "@/lib/canvassing/reconcile-queries";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +30,7 @@ type Props = {
   vanStock: VanStockRow[];
   loads: VanLoadRow[];
   itemOptions: ItemOption[];
+  loadableInventory: LoadableInventoryRow[];
   reconcileRows: VanReconcileRow[];
   reconciles: VanReconcileListRow[];
 };
@@ -44,7 +45,7 @@ function formatDateTime(iso: string): string {
   });
 }
 
-export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, itemOptions, reconcileRows, reconciles }: Props) {
+export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, itemOptions, loadableInventory, reconcileRows, reconciles }: Props) {
   const t = useTranslations("canvassing");
   const router = useRouter();
 
@@ -97,7 +98,7 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                             <div>{row.productName}</div>
                             <div className="text-xs text-muted-foreground font-mono">{row.sku}</div>
                           </TableCell>
-                          <TableCell>{row.variantSku ?? "—"}</TableCell>
+                          <TableCell>{row.variantLabel ?? row.variantSku ?? "—"}</TableCell>
                           <TableCell className="text-right tabular-nums">{row.qty}</TableCell>
                           <TableCell className="text-right tabular-nums">
                             {row.avgCost.toLocaleString("id-ID")}
@@ -211,7 +212,7 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <LoadVanForm canvasserId={canvasserId} itemOptions={itemOptions} />
+              <LoadVanForm canvasserId={canvasserId} itemOptions={itemOptions} loadableInventory={loadableInventory} />
             </CardContent>
           </Card>
 

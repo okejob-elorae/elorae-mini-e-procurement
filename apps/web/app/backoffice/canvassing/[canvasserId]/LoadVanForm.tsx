@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { loadVanAction } from "@/app/actions/canvassing";
+import type { LoadableInventoryRow } from "@/lib/canvassing/queries";
+import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -15,42 +17,77 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export type ItemOption = { id: string; sku: string; nameId: string; variants?: unknown };
 
-type LineRow = { id: string; itemId: string; variantSku: string | null; qty: number };
+// One block = one item. `qty` is keyed by variantSku; a simple item uses the "" slot.
+// This makes loading many variants of one item a single item pick + several qty inputs,
+// and makes duplicate item/variant selection structurally impossible.
+type Block = { id: string; itemId: string; qty: Record<string, number> };
 
 type ShortLine = { itemId: string; variantSku: string | null; requested: number; available: number };
 
 type Props = {
   canvasserId: string;
   itemOptions: ItemOption[];
+  loadableInventory: LoadableInventoryRow[];
 };
 
-function emptyLine(): LineRow {
-  return { id: `line-${Date.now()}-${Math.random().toString(36).slice(2)}`, itemId: "", variantSku: null, qty: 0 };
+function emptyBlock(): Block {
+  return { id: `blk-${Date.now()}-${Math.random().toString(36).slice(2)}`, itemId: "", qty: {} };
 }
 
-export function LoadVanForm({ canvasserId, itemOptions }: Props) {
+export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Props) {
   const t = useTranslations("canvassing");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [lines, setLines] = useState<LineRow[]>([emptyLine()]);
+  const [blocks, setBlocks] = useState<Block[]>([emptyBlock()]);
   const [note, setNote] = useState("");
   const [shortLines, setShortLines] = useState<ShortLine[]>([]);
 
-  function updateLine(id: string, patch: Partial<LineRow>) {
-    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  const availByKey = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of loadableInventory) m.set(`${r.itemId}::${r.variantSku ?? ""}`, r.available);
+    return m;
+  }, [loadableInventory]);
+
+  const variantOptsByItem = useMemo(() => {
+    const m = new Map<string, { sku: string; label: string }[]>();
+    for (const i of itemOptions) m.set(i.id, variantSelectOptions(parseItemVariants(i.variants)));
+    return m;
+  }, [itemOptions]);
+
+  function availableFor(itemId: string, variantSku: string): number {
+    return availByKey.get(`${itemId}::${variantSku}`) ?? 0;
   }
 
-  function addLine() {
-    setLines((prev) => [...prev, emptyLine()]);
+  // Items already chosen in OTHER blocks — one block owns an entire item, so it can't be re-picked.
+  function itemOptionsFor(blockId: string): ItemOption[] {
+    const taken = new Set(blocks.filter((b) => b.id !== blockId && b.itemId).map((b) => b.itemId));
+    return itemOptions.filter((i) => !taken.has(i.id));
   }
 
-  function removeLine(id: string) {
-    setLines((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.id !== id)));
+  function updateBlock(id: string, patch: Partial<Block>) {
+    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+  }
+
+  function setQty(id: string, variantSku: string, qty: number) {
+    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, qty: { ...b.qty, [variantSku]: qty } } : b)));
+  }
+
+  function addBlock() {
+    setBlocks((prev) => [...prev, emptyBlock()]);
+  }
+
+  function removeBlock(id: string) {
+    setBlocks((prev) => (prev.length === 1 ? prev : prev.filter((b) => b.id !== id)));
   }
 
   function itemLabel(itemId: string): string {
     const opt = itemOptions.find((i) => i.id === itemId);
     return opt ? `${opt.sku} - ${opt.nameId}` : itemId;
+  }
+
+  function variantLabelFor(itemId: string, sku: string): string {
+    const v = (variantOptsByItem.get(itemId) ?? []).find((x) => x.sku === sku);
+    return v ? v.label : sku;
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -59,10 +96,14 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
 
     setShortLines([]);
 
-    // Van loading is item-level (stock is tracked per item, not per variant — see BOUNDARY D15).
-    const validLines = lines
-      .filter((l) => l.itemId && l.qty > 0)
-      .map((l) => ({ itemId: l.itemId, variantSku: null, qty: l.qty }));
+    const validLines: Array<{ itemId: string; variantSku: string | null; qty: number }> = [];
+    for (const b of blocks) {
+      if (!b.itemId) continue;
+      const hasVariants = (variantOptsByItem.get(b.itemId) ?? []).length > 0;
+      for (const [sku, qty] of Object.entries(b.qty)) {
+        if (qty > 0) validLines.push({ itemId: b.itemId, variantSku: hasVariants ? sku : null, qty });
+      }
+    }
 
     if (validLines.length === 0) {
       toast.error(t("errEmpty"));
@@ -75,7 +116,7 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
         if (result.ok) {
           toast.success(t("loadedSuccess", { docNo: result.docNo }));
           router.refresh();
-          setLines([emptyLine()]);
+          setBlocks([emptyBlock()]);
           setNote("");
           return;
         }
@@ -105,7 +146,7 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
               {shortLines.map((sl, idx) => (
                 <li key={idx}>
                   {itemLabel(sl.itemId)}
-                  {sl.variantSku ? ` (${sl.variantSku})` : ""} — {t("shortLineDetail", { requested: sl.requested, available: sl.available })}
+                  {sl.variantSku ? ` (${variantLabelFor(sl.itemId, sl.variantSku)})` : ""} — {t("shortLineDetail", { requested: sl.requested, available: sl.available })}
                 </li>
               ))}
             </ul>
@@ -114,52 +155,111 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
       )}
 
       <div className="space-y-3">
-        {lines.map((line) => {
+        {blocks.map((block) => {
+          const vOpts = block.itemId ? variantOptsByItem.get(block.itemId) ?? [] : [];
+          const hasVariants = vOpts.length > 0;
           return (
-            <div key={line.id} className="space-y-2 rounded-md border p-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">{t("item")}</Label>
-                <SearchableCombobox
-                  options={itemOptions.map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
-                  value={line.itemId}
-                  onValueChange={(value) => updateLine(line.id, { itemId: value })}
-                  placeholder={t("selectItem")}
-                  disabled={pending}
-                />
-              </div>
-
-              <div className="flex items-end gap-2">
-                <div className="flex-1 space-y-1.5">
-                  <Label className="text-xs">{t("colQty")}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
+            <div key={block.id} className="space-y-3 rounded-md border p-3">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <Label className="text-xs">{t("item")}</Label>
+                  <SearchableCombobox
+                    options={itemOptionsFor(block.id).map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
+                    value={block.itemId}
+                    onValueChange={(value) => updateBlock(block.id, { itemId: value, qty: {} })}
+                    placeholder={t("selectItem")}
                     disabled={pending}
-                    value={line.qty || ""}
-                    onChange={(e) => updateLine(line.id, { qty: parseFloat(e.target.value) || 0 })}
-                    placeholder="0"
+                    triggerClassName="w-full"
                   />
                 </div>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  disabled={pending || lines.length === 1}
-                  onClick={() => removeLine(line.id)}
+                  className="mt-6 shrink-0"
+                  disabled={pending || blocks.length === 1}
+                  onClick={() => removeBlock(block.id)}
                   aria-label={t("removeLine")}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>
+
+              {block.itemId && hasVariants && (() => {
+                // Only variants with stock to transfer are loadable — hide 0-available ones
+                // (the writer would reject them anyway) so a many-variant item stays scannable.
+                const loadable = vOpts.filter((v) => availableFor(block.itemId, v.sku) > 0);
+                const hiddenZero = vOpts.length - loadable.length;
+                if (loadable.length === 0) {
+                  return <p className="text-xs text-muted-foreground">{t("noLoadableStock")}</p>;
+                }
+                return (
+                  <div className="space-y-2">
+                    <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+                      {loadable.map((v) => {
+                        const avail = availableFor(block.itemId, v.sku);
+                        const qty = block.qty[v.sku] ?? 0;
+                        const over = qty > avail;
+                        return (
+                          <div key={v.sku} className="flex items-center gap-2">
+                            <p className="min-w-0 flex-1 truncate text-sm">{v.label}</p>
+                            <span className={`shrink-0 text-xs ${over ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
+                              {t("available")}: <span className="tabular-nums">{avail}</span>
+                            </span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              disabled={pending}
+                              value={qty || ""}
+                              onChange={(e) => setQty(block.id, v.sku, parseFloat(e.target.value) || 0)}
+                              placeholder="0"
+                              className="w-20 shrink-0 text-right"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {hiddenZero > 0 && (
+                      <p className="text-xs text-muted-foreground">{t("zeroVariantsHidden", { count: hiddenZero })}</p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {block.itemId && !hasVariants && (() => {
+                const avail = availableFor(block.itemId, "");
+                if (avail <= 0) {
+                  return <p className="text-xs text-muted-foreground">{t("noLoadableStock")}</p>;
+                }
+                const qty = block.qty[""] ?? 0;
+                const over = qty > avail;
+                return (
+                  <div className="flex items-center gap-3">
+                    <p className={`flex-1 text-xs ${over ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
+                      {t("available")}: <span className="tabular-nums">{avail}</span>
+                    </p>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      disabled={pending}
+                      value={qty || ""}
+                      onChange={(e) => setQty(block.id, "", parseFloat(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-24 text-right"
+                    />
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
       </div>
 
-      <Button type="button" variant="outline" size="sm" disabled={pending} onClick={addLine}>
+      <Button type="button" variant="outline" size="sm" disabled={pending} onClick={addBlock}>
         <Plus className="mr-2 h-4 w-4" />
-        {t("addLine")}
+        {t("addItem")}
       </Button>
 
       <div className="space-y-1.5">

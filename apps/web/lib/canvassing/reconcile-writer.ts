@@ -1,5 +1,6 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { variantDetailForSku } from "@/lib/items/variants";
 import { weightedAvgCost } from "./cost";
 
 export type ReconcileCountInput = { itemId: string; variantSku: string | null; countedQty: number };
@@ -16,7 +17,7 @@ export async function recordVanReconcile(input: {
   return runSerializable(async (tx) => {
     const vanRows = await tx.vanStock.findMany({
       where: { userId: input.canvasserId, qty: { gt: 0 } },
-      include: { item: { select: { sku: true, nameId: true } } },
+      include: { item: { select: { sku: true, nameId: true, variants: true } } },
     });
     if (vanRows.length === 0) return { ok: false, code: "EMPTY_VAN" };
 
@@ -36,7 +37,9 @@ export async function recordVanReconcile(input: {
     const lines: Line[] = vanRows.map((r) => {
       const expected = r.qty.toNumber();
       const counted = countByKey.get(`${r.itemId}::${r.variantSku ?? ""}`)!;
-      return { itemId: r.itemId, variantSku: r.variantSku, productName: r.item.nameId, expected, counted, variance: expected - counted, avgCost: r.avgCost.toNumber() };
+      const label = variantDetailForSku(r.item.variants, r.variantSku);
+      const productName = label ? `${r.item.nameId} — ${label}` : r.item.nameId;
+      return { itemId: r.itemId, variantSku: r.variantSku, productName, expected, counted, variance: expected - counted, avgCost: r.avgCost.toNumber() };
     });
 
     const hasVariance = lines.some((l) => l.variance !== 0);
