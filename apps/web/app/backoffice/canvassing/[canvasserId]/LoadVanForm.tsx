@@ -17,7 +17,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export type ItemOption = { id: string; sku: string; nameId: string; variants?: unknown };
 
-type LineRow = { id: string; itemId: string; variantSku: string | null; qty: number };
+// One block = one item. `qty` is keyed by variantSku; a simple item uses the "" slot.
+// This makes loading many variants of one item a single item pick + several qty inputs,
+// and makes duplicate item/variant selection structurally impossible.
+type Block = { id: string; itemId: string; qty: Record<string, number> };
 
 type ShortLine = { itemId: string; variantSku: string | null; requested: number; available: number };
 
@@ -27,15 +30,15 @@ type Props = {
   loadableInventory: LoadableInventoryRow[];
 };
 
-function emptyLine(): LineRow {
-  return { id: `line-${Date.now()}-${Math.random().toString(36).slice(2)}`, itemId: "", variantSku: null, qty: 0 };
+function emptyBlock(): Block {
+  return { id: `blk-${Date.now()}-${Math.random().toString(36).slice(2)}`, itemId: "", qty: {} };
 }
 
 export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Props) {
   const t = useTranslations("canvassing");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [lines, setLines] = useState<LineRow[]>([emptyLine()]);
+  const [blocks, setBlocks] = useState<Block[]>([emptyBlock()]);
   const [note, setNote] = useState("");
   const [shortLines, setShortLines] = useState<ShortLine[]>([]);
 
@@ -51,50 +54,40 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
     return m;
   }, [itemOptions]);
 
-  function variantOptionsFor(itemId: string): { sku: string; label: string }[] {
-    return variantOptsByItem.get(itemId) ?? [];
+  function availableFor(itemId: string, variantSku: string): number {
+    return availByKey.get(`${itemId}::${variantSku}`) ?? 0;
   }
 
-  function availableFor(itemId: string, variantSku: string | null): number {
-    return availByKey.get(`${itemId}::${variantSku ?? ""}`) ?? 0;
+  // Items already chosen in OTHER blocks — one block owns an entire item, so it can't be re-picked.
+  function itemOptionsFor(blockId: string): ItemOption[] {
+    const taken = new Set(blocks.filter((b) => b.id !== blockId && b.itemId).map((b) => b.itemId));
+    return itemOptions.filter((i) => !taken.has(i.id));
   }
 
-  // Keys (itemId::variantSku; simple items use "") already claimed by OTHER lines. Excluding
-  // them keeps a variant/item from being picked twice — so each line's "Available" stays honest
-  // and loadVan's merge-sum can't surprise the user with a submit-time short-stock error.
-  function takenKeysExcluding(lineId: string): Set<string> {
-    const s = new Set<string>();
-    for (const l of lines) {
-      if (l.id === lineId || !l.itemId) continue;
-      s.add(`${l.itemId}::${l.variantSku ?? ""}`);
-    }
-    return s;
+  function updateBlock(id: string, patch: Partial<Block>) {
+    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   }
 
-  function itemOptionsFor(lineId: string): ItemOption[] {
-    const taken = takenKeysExcluding(lineId);
-    return itemOptions.filter((i) => {
-      const skus = (variantOptsByItem.get(i.id) ?? []).map((v) => v.sku);
-      if (skus.length === 0) return !taken.has(`${i.id}::`);
-      return !skus.every((sku) => taken.has(`${i.id}::${sku}`));
-    });
+  function setQty(id: string, variantSku: string, qty: number) {
+    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, qty: { ...b.qty, [variantSku]: qty } } : b)));
   }
 
-  function updateLine(id: string, patch: Partial<LineRow>) {
-    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  function addBlock() {
+    setBlocks((prev) => [...prev, emptyBlock()]);
   }
 
-  function addLine() {
-    setLines((prev) => [...prev, emptyLine()]);
-  }
-
-  function removeLine(id: string) {
-    setLines((prev) => (prev.length === 1 ? prev : prev.filter((l) => l.id !== id)));
+  function removeBlock(id: string) {
+    setBlocks((prev) => (prev.length === 1 ? prev : prev.filter((b) => b.id !== id)));
   }
 
   function itemLabel(itemId: string): string {
     const opt = itemOptions.find((i) => i.id === itemId);
     return opt ? `${opt.sku} - ${opt.nameId}` : itemId;
+  }
+
+  function variantLabelFor(itemId: string, sku: string): string {
+    const v = (variantOptsByItem.get(itemId) ?? []).find((x) => x.sku === sku);
+    return v ? v.label : sku;
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -103,14 +96,14 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
 
     setShortLines([]);
 
-    const active = lines.filter((l) => l.itemId && l.qty > 0);
-    // A variant item (variants present) must have a variant chosen.
-    const missingVariant = active.some((l) => variantOptionsFor(l.itemId).length > 0 && !l.variantSku);
-    if (missingVariant) {
-      toast.error(t("errVariantRequired"));
-      return;
+    const validLines: Array<{ itemId: string; variantSku: string | null; qty: number }> = [];
+    for (const b of blocks) {
+      if (!b.itemId) continue;
+      const hasVariants = (variantOptsByItem.get(b.itemId) ?? []).length > 0;
+      for (const [sku, qty] of Object.entries(b.qty)) {
+        if (qty > 0) validLines.push({ itemId: b.itemId, variantSku: hasVariants ? sku : null, qty });
+      }
     }
-    const validLines = active.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty }));
 
     if (validLines.length === 0) {
       toast.error(t("errEmpty"));
@@ -123,7 +116,7 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
         if (result.ok) {
           toast.success(t("loadedSuccess", { docNo: result.docNo }));
           router.refresh();
-          setLines([emptyLine()]);
+          setBlocks([emptyBlock()]);
           setNote("");
           return;
         }
@@ -153,7 +146,7 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
               {shortLines.map((sl, idx) => (
                 <li key={idx}>
                   {itemLabel(sl.itemId)}
-                  {sl.variantSku ? ` (${sl.variantSku})` : ""} — {t("shortLineDetail", { requested: sl.requested, available: sl.available })}
+                  {sl.variantSku ? ` (${variantLabelFor(sl.itemId, sl.variantSku)})` : ""} — {t("shortLineDetail", { requested: sl.requested, available: sl.available })}
                 </li>
               ))}
             </ul>
@@ -162,81 +155,95 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
       )}
 
       <div className="space-y-3">
-        {lines.map((line) => {
+        {blocks.map((block) => {
+          const vOpts = block.itemId ? variantOptsByItem.get(block.itemId) ?? [] : [];
+          const hasVariants = vOpts.length > 0;
           return (
-            <div key={line.id} className="space-y-2 rounded-md border p-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">{t("item")}</Label>
-                <SearchableCombobox
-                  options={itemOptionsFor(line.id).map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
-                  value={line.itemId}
-                  onValueChange={(value) => updateLine(line.id, { itemId: value, variantSku: null })}
-                  placeholder={t("selectItem")}
-                  disabled={pending}
-                />
-              </div>
-
-              {(() => {
-                const allVOpts = variantOptionsFor(line.itemId);
-                const hasVariants = allVOpts.length > 0;
-                const taken = takenKeysExcluding(line.id);
-                const vOpts = allVOpts.filter((v) => !taken.has(`${line.itemId}::${v.sku}`));
-                const avail = line.itemId ? availableFor(line.itemId, hasVariants ? line.variantSku : null) : null;
-                return (
-                  <>
-                    {line.itemId && hasVariants && (
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">{t("variant")}</Label>
-                        <SearchableCombobox
-                          options={vOpts.map((v) => ({ value: v.sku, label: v.label }))}
-                          value={line.variantSku ?? ""}
-                          onValueChange={(value) => updateLine(line.id, { variantSku: value || null })}
-                          placeholder={t("selectVariant")}
-                          disabled={pending}
-                        />
-                      </div>
-                    )}
-                    {line.itemId && (!hasVariants || line.variantSku) && (
-                      <p className={`text-xs ${avail! <= 0 ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
-                        {t("available")}: <span className="tabular-nums font-medium">{avail}</span>
-                      </p>
-                    )}
-                  </>
-                );
-              })()}
-
-              <div className="flex items-end gap-2">
+            <div key={block.id} className="space-y-3 rounded-md border p-3">
+              <div className="flex items-start gap-2">
                 <div className="flex-1 space-y-1.5">
-                  <Label className="text-xs">{t("colQty")}</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                  <Label className="text-xs">{t("item")}</Label>
+                  <SearchableCombobox
+                    options={itemOptionsFor(block.id).map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
+                    value={block.itemId}
+                    onValueChange={(value) => updateBlock(block.id, { itemId: value, qty: {} })}
+                    placeholder={t("selectItem")}
                     disabled={pending}
-                    value={line.qty || ""}
-                    onChange={(e) => updateLine(line.id, { qty: parseFloat(e.target.value) || 0 })}
-                    placeholder="0"
                   />
                 </div>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  disabled={pending || lines.length === 1}
-                  onClick={() => removeLine(line.id)}
+                  className="mt-6"
+                  disabled={pending || blocks.length === 1}
+                  onClick={() => removeBlock(block.id)}
                   aria-label={t("removeLine")}
                 >
                   <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>
+
+              {block.itemId && hasVariants && (
+                <div className="space-y-2">
+                  {vOpts.map((v) => {
+                    const avail = availableFor(block.itemId, v.sku);
+                    const qty = block.qty[v.sku] ?? 0;
+                    const over = qty > avail;
+                    return (
+                      <div key={v.sku} className="flex items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm">{v.label}</p>
+                          <p className={`text-xs ${over || avail <= 0 ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
+                            {t("available")}: <span className="tabular-nums">{avail}</span>
+                          </p>
+                        </div>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          disabled={pending}
+                          value={qty || ""}
+                          onChange={(e) => setQty(block.id, v.sku, parseFloat(e.target.value) || 0)}
+                          placeholder="0"
+                          className="w-24 text-right"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {block.itemId && !hasVariants && (() => {
+                const avail = availableFor(block.itemId, "");
+                const qty = block.qty[""] ?? 0;
+                const over = qty > avail;
+                return (
+                  <div className="flex items-center gap-3">
+                    <p className={`flex-1 text-xs ${over || avail <= 0 ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
+                      {t("available")}: <span className="tabular-nums">{avail}</span>
+                    </p>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      disabled={pending}
+                      value={qty || ""}
+                      onChange={(e) => setQty(block.id, "", parseFloat(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-24 text-right"
+                    />
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
       </div>
 
-      <Button type="button" variant="outline" size="sm" disabled={pending} onClick={addLine}>
+      <Button type="button" variant="outline" size="sm" disabled={pending} onClick={addBlock}>
         <Plus className="mr-2 h-4 w-4" />
-        {t("addLine")}
+        {t("addItem")}
       </Button>
 
       <div className="space-y-1.5">
