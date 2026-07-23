@@ -139,6 +139,13 @@ export async function consumeOrder(
         },
       });
 
+      if (row.salesorderDetailId != null) {
+        await tx.salesOrderItem.updateMany({
+          where: { salesorderDetailId: row.salesorderDetailId },
+          data: { cogs: qty * avgCost },
+        });
+      }
+
       consumed += 1;
     }
 
