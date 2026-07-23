@@ -45,14 +45,39 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
     return m;
   }, [loadableInventory]);
 
+  const variantOptsByItem = useMemo(() => {
+    const m = new Map<string, { sku: string; label: string }[]>();
+    for (const i of itemOptions) m.set(i.id, variantSelectOptions(parseItemVariants(i.variants)));
+    return m;
+  }, [itemOptions]);
+
   function variantOptionsFor(itemId: string): { sku: string; label: string }[] {
-    const opt = itemOptions.find((i) => i.id === itemId);
-    if (!opt) return [];
-    return variantSelectOptions(parseItemVariants(opt.variants));
+    return variantOptsByItem.get(itemId) ?? [];
   }
 
   function availableFor(itemId: string, variantSku: string | null): number {
     return availByKey.get(`${itemId}::${variantSku ?? ""}`) ?? 0;
+  }
+
+  // Keys (itemId::variantSku; simple items use "") already claimed by OTHER lines. Excluding
+  // them keeps a variant/item from being picked twice — so each line's "Available" stays honest
+  // and loadVan's merge-sum can't surprise the user with a submit-time short-stock error.
+  function takenKeysExcluding(lineId: string): Set<string> {
+    const s = new Set<string>();
+    for (const l of lines) {
+      if (l.id === lineId || !l.itemId) continue;
+      s.add(`${l.itemId}::${l.variantSku ?? ""}`);
+    }
+    return s;
+  }
+
+  function itemOptionsFor(lineId: string): ItemOption[] {
+    const taken = takenKeysExcluding(lineId);
+    return itemOptions.filter((i) => {
+      const skus = (variantOptsByItem.get(i.id) ?? []).map((v) => v.sku);
+      if (skus.length === 0) return !taken.has(`${i.id}::`);
+      return !skus.every((sku) => taken.has(`${i.id}::${sku}`));
+    });
   }
 
   function updateLine(id: string, patch: Partial<LineRow>) {
@@ -143,7 +168,7 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
               <div className="space-y-1.5">
                 <Label className="text-xs">{t("item")}</Label>
                 <SearchableCombobox
-                  options={itemOptions.map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
+                  options={itemOptionsFor(line.id).map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
                   value={line.itemId}
                   onValueChange={(value) => updateLine(line.id, { itemId: value, variantSku: null })}
                   placeholder={t("selectItem")}
@@ -152,8 +177,10 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
               </div>
 
               {(() => {
-                const vOpts = variantOptionsFor(line.itemId);
-                const hasVariants = vOpts.length > 0;
+                const allVOpts = variantOptionsFor(line.itemId);
+                const hasVariants = allVOpts.length > 0;
+                const taken = takenKeysExcluding(line.id);
+                const vOpts = allVOpts.filter((v) => !taken.has(`${line.itemId}::${v.sku}`));
                 const avail = line.itemId ? availableFor(line.itemId, hasVariants ? line.variantSku : null) : null;
                 return (
                   <>
