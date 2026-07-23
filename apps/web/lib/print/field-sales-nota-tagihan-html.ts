@@ -78,7 +78,7 @@ export function buildNotaTagihanPrintHtml(opts: BuildNotaTagihanOptions): string
     <div><p class="block-label">${esc(labels.salesman)}</p><p class="payee-name">${esc(salesmanName)}</p></div>
   </div>
   <table class="lines"><thead><tr>
-    <th>${esc(labels.no)}</th><th>${esc(labels.product)}</th><th>${esc(labels.qty)}</th>
+    <th>${esc(labels.no)}</th><th>${esc(labels.product)}</th><th class="col-num-head">${esc(labels.qty)}</th>
     <th class="col-num-head">${esc(labels.price)}</th><th class="col-num-head">${esc(labels.discount)}</th><th class="col-num-head">${esc(labels.lineTotal)}</th>
   </tr></thead><tbody>${rows}</tbody></table>
   <div class="totals-wrap">
