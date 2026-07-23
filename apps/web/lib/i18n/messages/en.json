@@ -2217,6 +2217,8 @@
     "available": "Available",
     "addLine": "Add line",
     "addItem": "Add item",
+    "noLoadableStock": "No stock available to load",
+    "zeroVariantsHidden": "{count} variant(s) with 0 stock hidden",
     "removeLine": "Remove line",
     "note": "Note",
     "notePlaceholder": "Optional note",

@@ -2217,6 +2217,8 @@
     "available": "Tersedia",
     "addLine": "Tambah baris",
     "addItem": "Tambah item",
+    "noLoadableStock": "Tidak ada stok untuk dimuat",
+    "zeroVariantsHidden": "{count} varian stok 0 disembunyikan",
     "removeLine": "Hapus baris",
     "note": "Catatan",
     "notePlaceholder": "Catatan opsional",

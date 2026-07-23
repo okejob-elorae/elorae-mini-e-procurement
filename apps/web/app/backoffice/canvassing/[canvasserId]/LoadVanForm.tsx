@@ -184,43 +184,58 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
                 </Button>
               </div>
 
-              {block.itemId && hasVariants && (
-                <div className="space-y-2">
-                  {vOpts.map((v) => {
-                    const avail = availableFor(block.itemId, v.sku);
-                    const qty = block.qty[v.sku] ?? 0;
-                    const over = qty > avail;
-                    return (
-                      <div key={v.sku} className="flex items-center gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm">{v.label}</p>
-                          <p className={`text-xs ${over || avail <= 0 ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
-                            {t("available")}: <span className="tabular-nums">{avail}</span>
-                          </p>
+              {block.itemId && hasVariants && (() => {
+                // Only variants with stock to transfer are loadable — hide 0-available ones
+                // (the writer would reject them anyway) so a many-variant item stays scannable.
+                const loadable = vOpts.filter((v) => availableFor(block.itemId, v.sku) > 0);
+                const hiddenZero = vOpts.length - loadable.length;
+                if (loadable.length === 0) {
+                  return <p className="text-xs text-muted-foreground">{t("noLoadableStock")}</p>;
+                }
+                return (
+                  <div className="space-y-2">
+                    {loadable.map((v) => {
+                      const avail = availableFor(block.itemId, v.sku);
+                      const qty = block.qty[v.sku] ?? 0;
+                      const over = qty > avail;
+                      return (
+                        <div key={v.sku} className="flex items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm">{v.label}</p>
+                            <p className={`text-xs ${over ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
+                              {t("available")}: <span className="tabular-nums">{avail}</span>
+                            </p>
+                          </div>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            disabled={pending}
+                            value={qty || ""}
+                            onChange={(e) => setQty(block.id, v.sku, parseFloat(e.target.value) || 0)}
+                            placeholder="0"
+                            className="w-24 text-right"
+                          />
                         </div>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          disabled={pending}
-                          value={qty || ""}
-                          onChange={(e) => setQty(block.id, v.sku, parseFloat(e.target.value) || 0)}
-                          placeholder="0"
-                          className="w-24 text-right"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                      );
+                    })}
+                    {hiddenZero > 0 && (
+                      <p className="text-xs text-muted-foreground">{t("zeroVariantsHidden", { count: hiddenZero })}</p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {block.itemId && !hasVariants && (() => {
                 const avail = availableFor(block.itemId, "");
+                if (avail <= 0) {
+                  return <p className="text-xs text-muted-foreground">{t("noLoadableStock")}</p>;
+                }
                 const qty = block.qty[""] ?? 0;
                 const over = qty > avail;
                 return (
                   <div className="flex items-center gap-3">
-                    <p className={`flex-1 text-xs ${over || avail <= 0 ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
+                    <p className={`flex-1 text-xs ${over ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
                       {t("available")}: <span className="tabular-nums">{avail}</span>
                     </p>
                     <Input
