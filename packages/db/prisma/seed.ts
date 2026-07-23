@@ -189,6 +189,9 @@ async function main() {
     // Finance — Marketplace Settlements
     { code: 'finance:settlements:view', module: 'finance', action: 'settlements:view', description: 'View marketplace settlements' },
     { code: 'finance:settlements:manage', module: 'finance', action: 'settlements:manage', description: 'Upload + match marketplace settlements' },
+    // Finance — Journal Engine
+    { code: 'journals:view', module: 'journals', action: 'view', description: 'View journals + ledger' },
+    { code: 'journals:manage', module: 'journals', action: 'manage', description: 'Create manual journals + post auto-journals' },
   ];
 
   // Upsert all permissions

@@ -268,4 +268,7 @@ export const PERMISSIONS = {
   // Finance — Settlements
   SETTLEMENTS_VIEW: "finance:settlements:view",
   SETTLEMENTS_MANAGE: "finance:settlements:manage",
+  // Finance — Journal Engine
+  JOURNALS_VIEW: "journals:view",
+  JOURNALS_MANAGE: "journals:manage",
 } as const;
