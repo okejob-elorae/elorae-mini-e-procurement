@@ -1,5 +1,7 @@
 import { prisma, Prisma } from "@elorae/db";
 
+const toNum = (v: Prisma.Decimal | number): number => Number(v);
+
 export type SettlementListRow = {
   id: string;
   marketplace: string;
@@ -8,6 +10,7 @@ export type SettlementListRow = {
   periodToIso: string;
   status: string;
   checksumOk: boolean;
+  checksumVariance: number;
   lineCount: number;
   matchedCount: number;
   createdAtIso: string;
@@ -30,6 +33,7 @@ export async function listSettlements(paging: {
         periodTo: true,
         status: true,
         checksumOk: true,
+        checksumVariance: true,
         createdAt: true,
         _count: { select: { lines: true } },
       },
@@ -55,6 +59,7 @@ export async function listSettlements(paging: {
     periodToIso: r.periodTo.toISOString(),
     status: r.status,
     checksumOk: r.checksumOk,
+    checksumVariance: toNum(r.checksumVariance),
     lineCount: r._count.lines,
     matchedCount: matchedCountBySettlementId.get(r.id) ?? 0,
     createdAtIso: r.createdAt.toISOString(),
@@ -94,8 +99,6 @@ export type SettlementDetail = {
   profitPendingCount: number;
   matchRatePct: number;
 };
-
-const toNum = (v: Prisma.Decimal | number): number => Number(v);
 
 export async function getSettlementById(id: string): Promise<SettlementDetail | null> {
   const row = await prisma.settlement.findUnique({

@@ -175,6 +175,11 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.COA_VIEW,
     children: [
       { labelKey: 'navCoa', href: '/backoffice/finance/coa', permission: PERMISSIONS.COA_VIEW },
+      {
+        labelKey: 'navFinanceSettlements',
+        href: '/backoffice/finance/settlements',
+        permission: PERMISSIONS.SETTLEMENTS_VIEW,
+      },
     ],
   },
   {
@@ -300,6 +305,7 @@ function Sidebar({
       return '/backoffice/production/planning';
     }
     if (path.startsWith('/backoffice/jubelio')) return '/backoffice/jubelio/admin';
+    if (path.startsWith('/backoffice/finance')) return '#';
     if (
       path.startsWith('/backoffice/sales-orders') ||
       path.startsWith('/backoffice/fulfillment') ||
