@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ChevronRight, ChevronDown, Plus, MoreHorizontal, ListTree } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, MoreHorizontal, ListTree, ScrollText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,7 @@ type Props = {
   tree: CoaTreeNode[];
   includeInactive: boolean;
   canManage: boolean;
+  canViewLedger: boolean;
 };
 
 type CreateDialogState = {
@@ -138,7 +140,7 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
   );
 }
 
-export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
+export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger }: Props) {
   const t = useTranslations("finance.coa");
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -357,7 +359,7 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
               <StatusBadge isActive={node.isActive} />
             </TableCell>
             <TableCell className="text-right">
-              {canManage && (
+              {(canManage || (canViewLedger && node.isLeaf)) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
@@ -366,16 +368,27 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => openEdit(node)}>
-                      {t("dialog.editTitle")}
-                    </DropdownMenuItem>
-                    {node.depth < 4 && (
+                    {canViewLedger && node.isLeaf && (
+                      <DropdownMenuItem asChild>
+                        <Link href={`/backoffice/finance/journals/ledger/${node.id}`}>
+                          <ScrollText className="h-4 w-4" />
+                          {t("viewLedger")}
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {canViewLedger && node.isLeaf && canManage && <DropdownMenuSeparator />}
+                    {canManage && (
+                      <DropdownMenuItem onClick={() => openEdit(node)}>
+                        {t("dialog.editTitle")}
+                      </DropdownMenuItem>
+                    )}
+                    {canManage && node.depth < 4 && (
                       <DropdownMenuItem onClick={() => openCreate(node)}>
                         {t("newAccount")}
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuSeparator />
-                    {node.isActive ? (
+                    {canManage && <DropdownMenuSeparator />}
+                    {canManage && (node.isActive ? (
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
                         onClick={() =>
@@ -400,7 +413,7 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
                       >
                         {t("dialog.reactivate")}
                       </DropdownMenuItem>
-                    )}
+                    ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
