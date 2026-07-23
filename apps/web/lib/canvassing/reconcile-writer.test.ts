@@ -87,4 +87,32 @@ d("recordVanReconcile (test bed only)", () => {
     const res = await recordVanReconcile({ canvasserId, reconciledById: adminId, counts: [] });
     expect(res).toEqual({ ok: false, code: "COUNT_MISMATCH" });
   });
+
+  it("stamps the variant label into VanReconcileLine.productName", async () => {
+    const vUom = await prisma.uOM.create({ data: { code: `UVR-${tag}`, nameId: "pcs", nameEn: "pcs" } });
+    const vItem = await prisma.item.create({
+      data: {
+        sku: `${tag}-V`, nameId: "Kaos", nameEn: "Tee", type: "FINISHED_GOOD", uomId: vUom.id, isActive: true, sellingPrice: 5000,
+        variants: [{ sku: `${tag}-V-M`, size: "M" }],
+      },
+    });
+    await prisma.inventoryValue.create({ data: { itemId: vItem.id, variantSku: `${tag}-V-M`, qtyOnHand: 0, reservedQty: 0, avgCost: 1000, totalValue: 0 } });
+    // isolate to a fresh canvasser so the shared van seed isn't in this reconcile's row set
+    const vCanv = await prisma.user.create({ data: { email: `rc-${tag}@test.local`, name: "RC" } });
+    await prisma.vanStock.create({ data: { userId: vCanv.id, itemId: vItem.id, variantSku: `${tag}-V-M`, qty: 6, avgCost: 1000 } });
+
+    const res = await recordVanReconcile({ canvasserId: vCanv.id, reconciledById: adminId, counts: [{ itemId: vItem.id, variantSku: `${tag}-V-M`, countedQty: 6 }] });
+    expect(res.ok).toBe(true);
+    const rec = await prisma.vanReconcile.findFirst({ where: { canvasserId: vCanv.id }, include: { lines: true } });
+    expect(rec!.lines[0].productName).toBe("Kaos — size: M");
+
+    await prisma.vanReconcileLine.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.vanReconcile.deleteMany({ where: { canvasserId: vCanv.id } });
+    await prisma.vanStock.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.item.deleteMany({ where: { id: vItem.id } });
+    await prisma.uOM.deleteMany({ where: { id: vUom.id } });
+    await prisma.user.deleteMany({ where: { id: vCanv.id } });
+  });
 });

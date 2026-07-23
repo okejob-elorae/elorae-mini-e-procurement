@@ -3,6 +3,7 @@ import { computeStorePrice } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { variantDetailForSku } from "@/lib/items/variants";
 
 export type VanSaleLineInput = { itemId: string; variantSku: string | null; qty: number };
 export type RecordVanSaleResult =
@@ -41,7 +42,7 @@ export async function recordVanSale(input: {
     const itemIds = Array.from(new Set(merged.map((l) => l.itemId)));
     const items = await tx.item.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true, sku: true, nameId: true, sellingPrice: true, category: { select: { name: true } } },
+      select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true, category: { select: { name: true } } },
     });
     const itemById = new Map(items.map((i) => [i.id, i]));
 
@@ -65,6 +66,11 @@ export async function recordVanSale(input: {
       priced.push({ line: l, item, unitPrice: price, vanQty, vanCost: van ? Number(van.avgCost) : 0 });
     }
     if (shortLines.length > 0) return { ok: false, code: "INSUFFICIENT_VAN_STOCK", shortLines };
+
+    const displayName = (p: Priced) => {
+      const label = variantDetailForSku(p.item.variants, p.line.variantSku);
+      return label ? `${p.item.nameId} — ${label}` : p.item.nameId;
+    };
 
     const total = priced.reduce((s, p) => s + p.line.qty * p.unitPrice, 0);
     if (input.amountPaid < total) return { ok: false, code: "INSUFFICIENT_PAYMENT" };
@@ -97,7 +103,7 @@ export async function recordVanSale(input: {
           create: priced.map((p) => ({
             itemId: p.line.itemId,
             variantSku: p.line.variantSku ?? "",
-            productName: p.item.nameId,
+            productName: displayName(p),
             qty: p.line.qty,
             unitPrice: p.unitPrice,
             unitCost: p.vanCost,
@@ -116,7 +122,7 @@ export async function recordVanSale(input: {
         itemId: p.line.itemId,
         variantSku: p.line.variantSku ?? "",
         parentSku: p.item.sku,
-        productName: p.item.nameId,
+        productName: displayName(p),
         qty: p.line.qty,
         unitPrice: p.unitPrice,
         lineTotal: p.line.qty * p.unitPrice,

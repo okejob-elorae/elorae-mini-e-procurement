@@ -91,4 +91,31 @@ d("recordVanSale (test bed only)", () => {
     const van = await prisma.vanStock.findFirst({ where: { userId: salesmanId, itemId } });
     expect(Number(van!.qty)).toBe(15);                 // 20 - 5
   });
+
+  it("stamps the variant label into productName on van sale + sales history", async () => {
+    const vUom = await prisma.uOM.create({ data: { code: `UVS-${tag}`, nameId: "pcs", nameEn: "pcs" } });
+    const vItem = await prisma.item.create({
+      data: {
+        sku: `${tag}-V`, nameId: "Kaos", nameEn: "Tee", type: "FINISHED_GOOD", uomId: vUom.id, isActive: true, sellingPrice: 5000,
+        variants: [{ sku: `${tag}-V-M`, size: "M" }],
+      },
+    });
+    await prisma.vanStock.create({ data: { userId: salesmanId, itemId: vItem.id, variantSku: `${tag}-V-M`, qty: 20, avgCost: 2000 } });
+
+    const res = await recordVanSale({ salesmanId, lines: [{ itemId: vItem.id, variantSku: `${tag}-V-M`, qty: 2 }], amountPaid: 10000, buyerName: "Walk-in" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    const sale = await prisma.vanSale.findUnique({ where: { id: res.saleId }, include: { lines: true } });
+    expect(sale!.lines[0].productName).toBe("Kaos — size: M");
+    expect(sale!.lines[0].variantSku).toBe(`${tag}-V-M`);
+    const sh = await prisma.salesHistory.findFirst({ where: { itemId: vItem.id, orderId: res.docNo } });
+    expect(sh!.productName).toBe("Kaos — size: M");
+
+    await prisma.salesHistory.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.vanSaleLine.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.vanSale.deleteMany({ where: { id: res.saleId } });
+    await prisma.vanStock.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.item.deleteMany({ where: { id: vItem.id } });
+    await prisma.uOM.deleteMany({ where: { id: vUom.id } });
+  });
 });
