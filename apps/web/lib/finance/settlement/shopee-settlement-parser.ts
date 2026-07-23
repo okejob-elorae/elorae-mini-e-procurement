@@ -66,6 +66,43 @@ function str(v: unknown): string {
   return (v == null ? "" : String(v)).trim();
 }
 
+const YMD_RE = /^\d{4}-\d{2}-\d{2}/;
+
+/**
+ * Summary "Dari"/"ke" cells come out of the workbook as either a JS `Date`
+ * (the sheet is read with `cellDates: true`) or a plain string. Persist
+ * expects a clean `YYYY-MM-DD` string it can safely append a fixed offset
+ * time to; anything else is recorded as a parse error instead of silently
+ * flowing through as an unparseable date.
+ */
+function normalizePeriodDate(
+  v: unknown,
+  label: string,
+): { value: string; error?: SettlementParseError } {
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) {
+      return {
+        value: "",
+        error: { sheet: "Summary", row: null, message: `Invalid date value for "${label}"` },
+      };
+    }
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(v.getUTCDate()).padStart(2, "0");
+    return { value: `${y}-${m}-${d}` };
+  }
+
+  const s = str(v);
+  if (YMD_RE.test(s)) {
+    return { value: s.slice(0, 10) };
+  }
+
+  return {
+    value: "",
+    error: { sheet: "Summary", row: null, message: `Could not resolve "${label}" as a date` },
+  };
+}
+
 function findHeaderRow(matrix: unknown[][], label: string): number {
   return matrix.findIndex((r) => r.some((c) => str(c) === label));
 }
@@ -96,6 +133,7 @@ function parseSummarySheet(matrix: unknown[][]): {
   totalPengeluaran: number;
   totalDilepas: number;
   raw: Record<string, unknown>;
+  errors: SettlementParseError[];
 } {
   const raw: Record<string, unknown> = {};
   for (const row of matrix) {
@@ -104,14 +142,44 @@ function parseSummarySheet(matrix: unknown[][]): {
     raw[label] = rowValue(row);
   }
 
+  const errors: SettlementParseError[] = [];
+
+  const seller = str(raw[SUMMARY_LABELS.seller]);
+  if (!seller) {
+    errors.push({
+      sheet: "Summary",
+      row: null,
+      message: `Could not resolve "${SUMMARY_LABELS.seller}" anchor`,
+    });
+  }
+
+  const totalDilepasCell = raw[SUMMARY_LABELS.totalDilepas];
+  if (totalDilepasCell === undefined || str(totalDilepasCell) === "") {
+    errors.push({
+      sheet: "Summary",
+      row: null,
+      message: `Could not resolve "${SUMMARY_LABELS.totalDilepas}" anchor`,
+    });
+  }
+
+  const periodFromResult = normalizePeriodDate(
+    raw[SUMMARY_LABELS.periodFrom],
+    SUMMARY_LABELS.periodFrom,
+  );
+  if (periodFromResult.error) errors.push(periodFromResult.error);
+
+  const periodToResult = normalizePeriodDate(raw[SUMMARY_LABELS.periodTo], SUMMARY_LABELS.periodTo);
+  if (periodToResult.error) errors.push(periodToResult.error);
+
   return {
-    seller: str(raw[SUMMARY_LABELS.seller]),
-    periodFrom: str(raw[SUMMARY_LABELS.periodFrom]),
-    periodTo: str(raw[SUMMARY_LABELS.periodTo]),
+    seller,
+    periodFrom: periodFromResult.value,
+    periodTo: periodToResult.value,
     totalPendapatan: num(raw[SUMMARY_LABELS.totalPendapatan]),
     totalPengeluaran: num(raw[SUMMARY_LABELS.totalPengeluaran]),
-    totalDilepas: num(raw[SUMMARY_LABELS.totalDilepas]),
+    totalDilepas: num(totalDilepasCell),
     raw,
+    errors,
   };
 }
 
@@ -200,6 +268,7 @@ export function parseShopeeSettlement(buffer: Buffer): ParseSuccess | ParseFailu
     header: 1,
   }) as unknown[][];
   const summary = parseSummarySheet(summaryMatrix);
+  if (summary.errors.length > 0) return { ok: false, errors: summary.errors };
 
   const incomeMatrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets["Income"], {
     header: 1,
