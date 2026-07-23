@@ -16,7 +16,7 @@ d("postJournal (test bed only)", () => {
   let bId: string; // postable leaf under Beban
 
   beforeEach(async () => {
-    token = Math.random().toString(36).slice(2, 10);
+    token = Math.floor(Math.random() * 10_000_000).toString(); // digits only — CoA codes are numeric
     const user = await prisma.user.create({
       data: { email: `test-journal-${token}@test.local`, name: "Test Admin" },
     });

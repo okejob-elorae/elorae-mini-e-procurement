@@ -146,6 +146,9 @@ export async function updateAccountAction(
 
       // Code change (leaf only by the gate above)
       if (input.code !== undefined && input.code !== current.code) {
+        if (!/^[0-9]+$/.test(input.code)) {
+          return { ok: false, code: "code_format_invalid", message: "Code must be digits only." };
+        }
         const dup = await tx.chartAccount.findUnique({ where: { code: input.code } });
         if (dup) return { ok: false, code: "code_duplicate", message: "Code already in use." };
         // Re-run prefix check against (possibly new) parent
