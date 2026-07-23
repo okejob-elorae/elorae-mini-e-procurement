@@ -185,6 +185,11 @@ const navItems: NavItem[] = [
         href: '/backoffice/finance/journals',
         permission: PERMISSIONS.JOURNALS_VIEW,
       },
+      {
+        labelKey: 'navFinanceAccountMapping',
+        href: '/backoffice/finance/account-mapping',
+        permission: PERMISSIONS.JOURNALS_VIEW,
+      },
     ],
   },
   {

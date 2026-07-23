@@ -48,6 +48,7 @@
     "navCoa": "Chart of Accounts",
     "navFinanceSettlements": "Marketplace Settlements",
     "navFinanceJournals": "Journals",
+    "navFinanceAccountMapping": "Account Mapping",
     "items": "Items",
     "navItemsAll": "All Items",
     "navItemsCategory": "Category",
@@ -2538,5 +2539,46 @@
       "empty": "No activity in this date range."
     },
     "errGeneric": "Something went wrong. Please try again."
+  },
+  "financeAccountMapping": {
+    "title": "Account Mapping",
+    "cardTitle": "Posting Account Mapping",
+    "notSet": "Not set",
+    "savedToast": "Account mapping saved.",
+    "selectAccount": "Select account…",
+    "searchAccount": "Search by code or name…",
+    "noAccounts": "No accounts found.",
+    "col": {
+      "role": "Role",
+      "description": "Description",
+      "account": "Account"
+    },
+    "role": {
+      "INVENTORY": "Inventory",
+      "AP": "Accounts Payable",
+      "AR": "Accounts Receivable",
+      "SALES_REVENUE": "Sales Revenue",
+      "COGS": "Cost of Goods Sold",
+      "BANK": "Bank/Cash",
+      "MARKETPLACE_FEE": "Marketplace Fee",
+      "INVENTORY_VARIANCE": "Inventory Variance",
+      "TAX": "Tax"
+    },
+    "desc": {
+      "INVENTORY": "Asset account debited on stock-in and credited on stock-out.",
+      "AP": "Liability account for amounts owed to suppliers.",
+      "AR": "Asset account for amounts owed by customers/marketplaces.",
+      "SALES_REVENUE": "Revenue account credited when a sale is recorded.",
+      "COGS": "Expense account for the cost of goods sold.",
+      "BANK": "Cash/bank account for payment receipts and disbursements.",
+      "MARKETPLACE_FEE": "Expense account for marketplace platform fee deductions.",
+      "INVENTORY_VARIANCE": "Account for recording stock opname/reconciliation variances.",
+      "TAX": "Account for tax liabilities/expenses."
+    },
+    "error": {
+      "FORBIDDEN": "You do not have permission to change account mappings.",
+      "BAD_ROLE": "Unrecognized posting role.",
+      "NON_POSTABLE_ACCOUNT": "The selected account cannot be posted to (not an active leaf account)."
+    }
   }
 }

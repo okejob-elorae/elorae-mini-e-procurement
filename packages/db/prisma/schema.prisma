@@ -2092,6 +2092,7 @@ model ChartAccount {
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
   lines     JournalLine[]
+  mappings  JournalAccountMapping[] @relation("MappingAccount")
 
   @@index([parentId])
   @@index([type, isActive])
@@ -2186,5 +2187,15 @@ model JournalLine {
   account        ChartAccount @relation(fields: [chartAccountId], references: [id])
 
   @@index([journalId])
+  @@index([chartAccountId])
+}
+
+model JournalAccountMapping {
+  id             String       @id @default(cuid())
+  role           String       @unique
+  chartAccountId String
+  account        ChartAccount @relation("MappingAccount", fields: [chartAccountId], references: [id])
+  updatedAt      DateTime     @updatedAt
+
   @@index([chartAccountId])
 }

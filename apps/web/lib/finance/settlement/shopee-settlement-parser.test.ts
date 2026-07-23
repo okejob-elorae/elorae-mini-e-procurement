@@ -27,7 +27,7 @@ d("parseShopeeSettlement (local fixture only)", () => {
     expect(Math.round(d.parsedNetTotal)).toBe(Math.round(sum));
     expect(Array.isArray(d.sellerFeesRaw)).toBe(true);
     expect(Array.isArray(d.adjustmentsRaw)).toBe(true);
-  });
+  }, 30_000); // parses the real ~1MB 4-sheet fixture (~11k rows) — exceeds the 5s default
 });
 
 const INCOME_HEADER = [
