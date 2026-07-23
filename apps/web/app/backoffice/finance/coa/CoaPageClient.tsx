@@ -4,11 +4,20 @@ import React, { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ChevronRight, ChevronDown, Plus, MoreHorizontal } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { ChevronRight, ChevronDown, Plus, MoreHorizontal, ListTree } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -118,13 +127,14 @@ function filterTree(nodes: CoaTreeNode[], search: string): CoaTreeNode[] {
 /** Status badge for active/inactive. */
 function StatusBadge({ isActive }: { isActive: boolean }) {
   const t = useTranslations("finance.coa");
-  const cls = isActive
-    ? "bg-green-50 text-green-700 border-green-200"
-    : "bg-gray-50 text-gray-500 border-gray-200";
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${cls}`}>
-      {isActive ? t("status.active") : t("status.inactive")}
-    </span>
+  return isActive ? (
+    <Badge className="border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-400">
+      {t("status.active")}
+    </Badge>
+  ) : (
+    <Badge variant="outline" className="text-muted-foreground">
+      {t("status.inactive")}
+    </Badge>
   );
 }
 
@@ -320,19 +330,22 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
                 style={{ paddingLeft: `${(node.depth - 1) * 1.5}rem` }}
               >
                 {!node.isLeaf ? (
-                  <button
+                  <Button
                     type="button"
-                    className="flex-shrink-0 rounded p-0.5 hover:bg-muted"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
                     onClick={() => toggle(node.id)}
+                    aria-label={isOpen ? t("collapse") : t("expand")}
                   >
                     {isOpen ? (
                       <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                     ) : (
                       <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
                     )}
-                  </button>
+                  </Button>
                 ) : (
-                  <span className="flex-shrink-0 w-5" />
+                  <span className="shrink-0 w-6" />
                 )}
                 <span>{node.name}</span>
               </div>
@@ -409,9 +422,9 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
   // ---------- Render ----------
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
         {canManage && (
           <Button onClick={() => openCreate(null)}>
             <Plus className="h-4 w-4 mr-2" />
@@ -420,28 +433,36 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
         )}
       </div>
 
-      <Card className="p-4">
-        <div className="flex items-center gap-3 mb-4">
-          <Input
-            placeholder={t("searchPlaceholder")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="max-w-sm"
-          />
-          <Button
-            variant={includeInactive ? "default" : "outline"}
-            size="sm"
-            onClick={() =>
-              router.push(
-                `/backoffice/finance/coa${includeInactive ? "" : "?inactive=1"}`,
-              )
-            }
-          >
-            {includeInactive ? t("hideInactive") : t("showInactive")}
-          </Button>
-        </div>
+      <div className="flex flex-col sm:flex-row gap-3">
+        <Input
+          placeholder={t("searchPlaceholder")}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="sm:max-w-sm"
+        />
+        <Button
+          variant={includeInactive ? "default" : "outline"}
+          size="sm"
+          onClick={() =>
+            router.push(
+              `/backoffice/finance/coa${includeInactive ? "" : "?inactive=1"}`,
+            )
+          }
+        >
+          {includeInactive ? t("hideInactive") : t("showInactive")}
+        </Button>
+      </div>
 
-        <Table>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ListTree className="h-5 w-5" />
+            {t("title")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-36">{t("col.code")}</TableHead>
@@ -465,18 +486,20 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
               rows
             )}
           </TableBody>
-        </Table>
+            </Table>
+          </div>
+        </CardContent>
       </Card>
 
       {/* ---- Create Dialog ---- */}
-      <AlertDialog
+      <Dialog
         open={createDialog.open}
         onOpenChange={(v) => setCreateDialog((s) => ({ ...s, open: v }))}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("dialog.createTitle")}</AlertDialogTitle>
-          </AlertDialogHeader>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("dialog.createTitle")}</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3 py-2">
             {!createDialog.parentId && (
               <div className="space-y-1">
@@ -531,9 +554,11 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
               />
             </div>
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("dialog.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">{t("dialog.cancel")}</Button>
+            </DialogClose>
+            <Button
               onClick={handleCreate}
               disabled={
                 isPending ||
@@ -543,20 +568,20 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
               }
             >
               {t("dialog.save")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ---- Edit Dialog ---- */}
-      <AlertDialog
+      <Dialog
         open={editDialog.open}
         onOpenChange={(v) => setEditDialog((s) => ({ ...s, open: v }))}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("dialog.editTitle")}</AlertDialogTitle>
-          </AlertDialogHeader>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("dialog.editTitle")}</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3 py-2">
             {editDialog.account?.isLeaf && (
               <div className="space-y-1">
@@ -604,17 +629,19 @@ export function CoaPageClient({ tree, includeInactive, canManage }: Props) {
               </div>
             )}
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("dialog.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">{t("dialog.cancel")}</Button>
+            </DialogClose>
+            <Button
               onClick={handleEdit}
               disabled={isPending || !editName.trim()}
             >
               {t("dialog.save")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ---- Deactivate Confirm Dialog ---- */}
       <AlertDialog

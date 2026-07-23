@@ -263,6 +263,8 @@
     "coa": {
       "title": "Chart of Accounts",
       "newAccount": "New Account",
+      "expand": "Expand",
+      "collapse": "Collapse",
       "searchPlaceholder": "Search by code or name…",
       "showInactive": "Show inactive",
       "hideInactive": "Hide inactive",
