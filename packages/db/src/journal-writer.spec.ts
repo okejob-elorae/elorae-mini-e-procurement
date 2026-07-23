@@ -8,7 +8,7 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 d("postJournal (test bed only)", () => {
-  const suffix = Math.random().toString(36).slice(2, 10);
+  let token: string; // unique per test → no cross-test / leaked-row collision on email or code
   let adminId: string;
   let kasParentId: string;
   let aId: string; // postable leaf under Kas/Bank
@@ -16,26 +16,27 @@ d("postJournal (test bed only)", () => {
   let bId: string; // postable leaf under Beban
 
   beforeEach(async () => {
+    token = Math.random().toString(36).slice(2, 10);
     const user = await prisma.user.create({
-      data: { email: `test-journal-${suffix}@test.local`, name: "Test Admin" },
+      data: { email: `test-journal-${token}@test.local`, name: "Test Admin" },
     });
     adminId = user.id;
 
     const kasParent = await prisma.chartAccount.create({
-      data: { code: `9${suffix}1`, name: "Kas & Bank (test)", type: "ASET", depth: 0, isActive: true },
+      data: { code: `9${token}1`, name: "Kas & Bank (test)", type: "ASET", depth: 0, isActive: true },
     });
     kasParentId = kasParent.id;
     const kasLeaf = await prisma.chartAccount.create({
-      data: { code: `9${suffix}11`, name: "Kas Test", type: "ASET", parentId: kasParentId, depth: 1, isActive: true },
+      data: { code: `9${token}11`, name: "Kas Test", type: "ASET", parentId: kasParentId, depth: 1, isActive: true },
     });
     aId = kasLeaf.id;
 
     const bebanParent = await prisma.chartAccount.create({
-      data: { code: `9${suffix}2`, name: "Beban (test)", type: "BEBAN", depth: 0, isActive: true },
+      data: { code: `9${token}2`, name: "Beban (test)", type: "BEBAN", depth: 0, isActive: true },
     });
     bebanParentId = bebanParent.id;
     const bebanLeaf = await prisma.chartAccount.create({
-      data: { code: `9${suffix}21`, name: "Beban Test", type: "BEBAN", parentId: bebanParentId, depth: 1, isActive: true },
+      data: { code: `9${token}21`, name: "Beban Test", type: "BEBAN", parentId: bebanParentId, depth: 1, isActive: true },
     });
     bId = bebanLeaf.id;
   });
@@ -43,7 +44,10 @@ d("postJournal (test bed only)", () => {
   afterEach(async () => {
     await prisma.journalLine.deleteMany({ where: { chartAccountId: { in: [aId, bId] } } });
     await prisma.journal.deleteMany({ where: { postedById: adminId } });
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [aId, bId, kasParentId, bebanParentId] } } });
+    // Delete leaf children BEFORE their parents — the CoaParent self-FK (onDelete: NoAction)
+    // blocks removing a parent while a child still references it.
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [aId, bId] } } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [kasParentId, bebanParentId] } } });
     await prisma.user.delete({ where: { id: adminId } });
   });
 
