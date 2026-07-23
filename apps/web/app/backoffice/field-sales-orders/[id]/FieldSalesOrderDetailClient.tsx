@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
 import type { FieldSalesOrderDetail, FieldSalesOrderStatus } from "@/lib/field-sales/queries";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApproveRejectCard } from "./ApproveRejectCard";
+import { logPrint } from "@/app/actions/audit";
+import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
+import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
+import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
 
 type Props = {
   order: FieldSalesOrderDetail;
@@ -42,6 +46,19 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
+function printHtml(html: string, title: string) {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("style", "position:absolute;width:0;height:0;border:0;visibility:hidden;");
+  iframe.setAttribute("title", title);
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow?.document;
+  if (doc) {
+    doc.open(); doc.write(html); doc.close();
+    setTimeout(() => iframe.contentWindow?.print(), 350);
+  }
+  setTimeout(() => document.body.removeChild(iframe), 500);
+}
+
 export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const locale = useLocale();
@@ -57,6 +74,115 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
       minute: "2-digit",
     }).format(date);
 
+  const handlePrintGudang = async () => {
+    await logPrint("FieldSalesNotaGudang", order.id);
+    const html = buildNotaGudangPrintHtml({
+      orderNo: order.orderNo,
+      storeName: order.storeName,
+      salesmanName: order.salesmanName,
+      approvedAt: order.approvedAt,
+      status: order.status,
+      lines: order.lines.map((line) => ({
+        productName: line.productName,
+        variantSku: line.variantSku,
+        variantLabel: line.variantLabel,
+        qty: line.qty,
+      })),
+      labels: {
+        title: t("print.gudangTitle"),
+        doc: t("print.docLabel"),
+        store: t("print.storeLabel"),
+        salesman: t("print.salesmanLabel"),
+        date: t("print.dateLabel"),
+        status: t("print.statusLabel"),
+        no: t("print.colNo"),
+        product: t("print.colProduct"),
+        qty: t("print.colQty"),
+        preparedBy: t("print.preparedBy"),
+        receivedBy: t("print.receivedBy"),
+        issuedBy: t("print.issuedBy"),
+      },
+    });
+    printHtml(html, t("print.notaGudang"));
+  };
+
+  const handlePrintTagihan = async () => {
+    await logPrint("FieldSalesNotaTagihan", order.id);
+    const html = buildNotaTagihanPrintHtml({
+      orderNo: order.orderNo,
+      storeName: order.storeName,
+      salesmanName: order.salesmanName,
+      approvedAt: order.approvedAt,
+      subtotal: order.subtotal,
+      orderDiscountAmount: order.orderDiscountAmount,
+      appliedOrderPromoName: order.appliedOrderPromoName,
+      total: order.total,
+      lines: order.lines.map((line) => ({
+        productName: line.productName,
+        variantSku: line.variantSku,
+        variantLabel: line.variantLabel,
+        qty: line.qty,
+        unitPrice: line.unitPrice,
+        lineTotal: line.lineTotal,
+        discountAmount: line.discountAmount,
+        appliedPromoName: line.appliedPromoName,
+      })),
+      labels: {
+        title: t("print.tagihanTitle"),
+        doc: t("print.docLabel"),
+        store: t("print.storeLabel"),
+        salesman: t("print.salesmanLabel"),
+        date: t("print.dateLabel"),
+        no: t("print.colNo"),
+        product: t("print.colProduct"),
+        qty: t("print.colQty"),
+        price: t("print.colPrice"),
+        discount: t("print.colDiscount"),
+        lineTotal: t("print.colLineTotal"),
+        subtotal: t("print.subtotal"),
+        orderDiscount: t("print.orderDiscount"),
+        grandTotal: t("print.grandTotal"),
+        regards: t("print.regards"),
+        receivedBy: t("print.receivedBy"),
+        issuedBy: t("print.issuedBy"),
+      },
+    });
+    printHtml(html, t("print.notaTagihan"));
+  };
+
+  const handlePrintSuratKeluar = async () => {
+    await logPrint("KonsiSuratKeluar", order.id);
+    const html = buildSuratKeluarPrintHtml({
+      orderNo: order.orderNo,
+      storeName: order.storeName,
+      salesmanName: order.salesmanName,
+      approvedAt: order.approvedAt,
+      status: order.status,
+      lines: order.lines.map((line) => ({
+        productName: line.productName,
+        variantSku: line.variantSku,
+        variantLabel: line.variantLabel,
+        qty: line.qty,
+      })),
+      labels: {
+        title: t("print.suratKeluarTitle"),
+        doc: t("print.docLabel"),
+        store: t("print.storeLabel"),
+        salesman: t("print.salesmanLabel"),
+        date: t("print.dateLabel"),
+        status: t("print.statusLabel"),
+        no: t("print.colNo"),
+        product: t("print.colProduct"),
+        qty: t("print.colQty"),
+        consignmentNote: t("print.consignmentNote"),
+        handedBy: t("print.handedBy"),
+        receivedBy: t("print.receivedBy"),
+        issuedBy: t("print.issuedBy"),
+      },
+    });
+    printHtml(html, t("print.suratKeluar"));
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -71,6 +197,27 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
           {t(STATUS_LABEL_KEY[order.status])}
         </Badge>
         <Badge variant="outline">{isKonsi ? t("typeKonsi") : t("typePutus")}</Badge>
+        {order.status === "APPROVED" && (
+          <div className="flex items-center gap-2 ml-auto">
+            {isKonsi ? (
+              <Button variant="outline" size="sm" onClick={handlePrintSuratKeluar}>
+                <Printer className="h-4 w-4 mr-2" />
+                {t("print.suratKeluar")}
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" size="sm" onClick={handlePrintGudang}>
+                  <Printer className="h-4 w-4 mr-2" />
+                  {t("print.notaGudang")}
+                </Button>
+                <Button variant="outline" size="sm" onClick={handlePrintTagihan}>
+                  <Printer className="h-4 w-4 mr-2" />
+                  {t("print.notaTagihan")}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {canApprove && (
