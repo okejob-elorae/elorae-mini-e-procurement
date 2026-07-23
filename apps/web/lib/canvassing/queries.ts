@@ -55,6 +55,38 @@ export async function getLoadableInventory(itemIds: string[]): Promise<LoadableI
   }));
 }
 
+export type VanLoadDetail = {
+  docNo: string;
+  createdAtIso: string;
+  canvasserLabel: string;
+  loadedByLabel: string;
+  lines: Array<{ productName: string; variantSku: string | null; variantLabel: string | null; qty: number }>;
+};
+
+export async function getVanLoadById(id: string): Promise<VanLoadDetail | null> {
+  const load = await prisma.vanLoad.findUnique({
+    where: { id },
+    include: {
+      canvasser: { select: { name: true, email: true } },
+      loadedBy: { select: { name: true, email: true } },
+      lines: { include: { item: { select: { nameId: true, variants: true } } } },
+    },
+  });
+  if (!load) return null;
+  return {
+    docNo: load.docNo,
+    createdAtIso: load.createdAt.toISOString(),
+    canvasserLabel: load.canvasser.name ?? load.canvasser.email,
+    loadedByLabel: load.loadedBy.name ?? load.loadedBy.email,
+    lines: load.lines.map((l) => ({
+      productName: l.item.nameId,
+      variantSku: l.variantSku,
+      variantLabel: variantDetailForSku(l.item.variants, l.variantSku),
+      qty: l.qty.toNumber(),
+    })),
+  };
+}
+
 export async function listVanLoads(canvasserId: string, limit: number): Promise<VanLoadRow[]> {
   const rows = await prisma.vanLoad.findMany({
     where: { canvasserId },
