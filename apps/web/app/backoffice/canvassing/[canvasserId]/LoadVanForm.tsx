@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { loadVanAction } from "@/app/actions/canvassing";
+import type { LoadableInventoryRow } from "@/lib/canvassing/queries";
+import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -22,19 +24,36 @@ type ShortLine = { itemId: string; variantSku: string | null; requested: number;
 type Props = {
   canvasserId: string;
   itemOptions: ItemOption[];
+  loadableInventory: LoadableInventoryRow[];
 };
 
 function emptyLine(): LineRow {
   return { id: `line-${Date.now()}-${Math.random().toString(36).slice(2)}`, itemId: "", variantSku: null, qty: 0 };
 }
 
-export function LoadVanForm({ canvasserId, itemOptions }: Props) {
+export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Props) {
   const t = useTranslations("canvassing");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [lines, setLines] = useState<LineRow[]>([emptyLine()]);
   const [note, setNote] = useState("");
   const [shortLines, setShortLines] = useState<ShortLine[]>([]);
+
+  const availByKey = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of loadableInventory) m.set(`${r.itemId}::${r.variantSku ?? ""}`, r.available);
+    return m;
+  }, [loadableInventory]);
+
+  function variantOptionsFor(itemId: string): { sku: string; label: string }[] {
+    const opt = itemOptions.find((i) => i.id === itemId);
+    if (!opt) return [];
+    return variantSelectOptions(parseItemVariants(opt.variants));
+  }
+
+  function availableFor(itemId: string, variantSku: string | null): number {
+    return availByKey.get(`${itemId}::${variantSku ?? ""}`) ?? 0;
+  }
 
   function updateLine(id: string, patch: Partial<LineRow>) {
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -59,10 +78,14 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
 
     setShortLines([]);
 
-    // Van loading is item-level (stock is tracked per item, not per variant — see BOUNDARY D15).
-    const validLines = lines
-      .filter((l) => l.itemId && l.qty > 0)
-      .map((l) => ({ itemId: l.itemId, variantSku: null, qty: l.qty }));
+    const active = lines.filter((l) => l.itemId && l.qty > 0);
+    // A variant item (variants present) must have a variant chosen.
+    const missingVariant = active.some((l) => variantOptionsFor(l.itemId).length > 0 && !l.variantSku);
+    if (missingVariant) {
+      toast.error(t("errVariantRequired"));
+      return;
+    }
+    const validLines = active.map((l) => ({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty }));
 
     if (validLines.length === 0) {
       toast.error(t("errEmpty"));
@@ -122,11 +145,38 @@ export function LoadVanForm({ canvasserId, itemOptions }: Props) {
                 <SearchableCombobox
                   options={itemOptions.map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
                   value={line.itemId}
-                  onValueChange={(value) => updateLine(line.id, { itemId: value })}
+                  onValueChange={(value) => updateLine(line.id, { itemId: value, variantSku: null })}
                   placeholder={t("selectItem")}
                   disabled={pending}
                 />
               </div>
+
+              {(() => {
+                const vOpts = variantOptionsFor(line.itemId);
+                const hasVariants = vOpts.length > 0;
+                const avail = line.itemId ? availableFor(line.itemId, hasVariants ? line.variantSku : null) : null;
+                return (
+                  <>
+                    {line.itemId && hasVariants && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">{t("variant")}</Label>
+                        <SearchableCombobox
+                          options={vOpts.map((v) => ({ value: v.sku, label: v.label }))}
+                          value={line.variantSku ?? ""}
+                          onValueChange={(value) => updateLine(line.id, { variantSku: value || null })}
+                          placeholder={t("selectVariant")}
+                          disabled={pending}
+                        />
+                      </div>
+                    )}
+                    {line.itemId && (!hasVariants || line.variantSku) && (
+                      <p className={`text-xs ${avail! <= 0 ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}>
+                        {t("available")}: <span className="tabular-nums font-medium">{avail}</span>
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
 
               <div className="flex items-end gap-2">
                 <div className="flex-1 space-y-1.5">

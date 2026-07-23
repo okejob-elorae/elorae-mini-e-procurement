@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { getVanStock, listVanLoads } from "@/lib/canvassing/queries";
+import { getVanStock, listVanLoads, getLoadableInventory } from "@/lib/canvassing/queries";
 import { getVanForReconcile, listVanReconciles } from "@/lib/canvassing/reconcile-queries";
 import { VanDetailClient } from "./VanDetailClient";
 
@@ -37,6 +37,8 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
     listVanReconciles(canvasserId, { page: 1, pageSize: RECONCILE_HISTORY_PAGE_SIZE }),
   ]);
 
+  const loadableInventory = await getLoadableInventory(items.map((i) => i.id));
+
   return (
     <VanDetailClient
       canvasserId={canvasser.id}
@@ -49,6 +51,7 @@ export default async function CanvasserVanPage({ params }: { params: Promise<{ c
         nameId: i.nameId,
         variants: i.variants,
       }))}
+      loadableInventory={loadableInventory}
       reconcileRows={reconcileRows}
       reconciles={reconciles.items}
     />
