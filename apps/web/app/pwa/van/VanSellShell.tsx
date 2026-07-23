@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Minus, Plus } from "lucide-react";
+import { ArrowLeft, ChevronRight, Loader2, Minus, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -14,8 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { recordVanSaleAction } from "@/app/actions/van-sale";
+import { VanVariantSheet, type VanStockRow, type VanGroup } from "./VanVariantSheet";
 
-type VanStockRow = { itemId: string; sku: string; productName: string; variantSku: string | null; variantLabel: string | null; qtyOnVan: number; price: number | null };
 type StoreOption = { id: string; name: string };
 type ShortLine = { itemId: string; variantSku: string | null; requested: number; available: number };
 
@@ -58,6 +58,13 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
   // Stable across retries so a re-submit after an ambiguous failure dedups server-side;
   // rotated only after a confirmed success.
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [sheetGroup, setSheetGroup] = useState<VanGroup | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  function openSheet(g: VanGroup) {
+    setSheetGroup(g);
+    setSheetOpen(true);
+  }
 
   function setQty(row: VanStockRow, qty: number) {
     const key = lineKey(row.itemId, row.variantSku);
@@ -83,11 +90,34 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
   const paid = Number(amountPaid) || 0;
   const change = paid - total;
 
-  const filtered = useMemo(() => {
+  const groups = useMemo(() => {
+    const m = new Map<string, VanGroup>();
+    for (const r of stock) {
+      let g = m.get(r.itemId);
+      if (!g) {
+        g = { itemId: r.itemId, sku: r.sku, productName: r.productName, price: r.price, variants: [], totalVan: 0 };
+        m.set(r.itemId, g);
+      }
+      g.variants.push(r);
+      g.totalVan += r.qtyOnVan;
+    }
+    return Array.from(m.values());
+  }, [stock]);
+
+  const filteredGroups = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return stock;
-    return stock.filter((r) => r.sku.toLowerCase().includes(needle) || r.productName.toLowerCase().includes(needle));
-  }, [stock, q]);
+    if (!needle) return groups;
+    return groups.filter(
+      (g) =>
+        g.sku.toLowerCase().includes(needle) ||
+        g.productName.toLowerCase().includes(needle) ||
+        g.variants.some((v) => (v.variantLabel ?? "").toLowerCase().includes(needle) || (v.variantSku ?? "").toLowerCase().includes(needle)),
+    );
+  }, [groups, q]);
+
+  function selectedQtyForGroup(g: VanGroup): number {
+    return g.variants.reduce((s, v) => s + (cart.get(lineKey(v.itemId, v.variantSku))?.qty ?? 0), 0);
+  }
 
   const canSubmit = cartLines.length > 0 && total > 0 && paid >= total && !pending;
 
@@ -239,56 +269,96 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
       <Input placeholder={t("searchItemPlaceholder")} value={q} onChange={(e) => setQ(e.target.value)} />
 
       {stock.length === 0 && <p className="text-sm text-muted-foreground">{t("emptyStock")}</p>}
-      {stock.length > 0 && filtered.length === 0 && <p className="text-sm text-muted-foreground">{t("noResults")}</p>}
+      {stock.length > 0 && filteredGroups.length === 0 && <p className="text-sm text-muted-foreground">{t("noResults")}</p>}
 
       <div className="flex flex-col gap-2">
-        {filtered.map((row) => {
-          const key = lineKey(row.itemId, row.variantSku);
-          const qty = cart.get(key)?.qty ?? 0;
-          const canSell = row.price !== null && row.qtyOnVan > 0;
+        {filteredGroups.map((g) => {
+          // Single loaded row → inline stepper (no sheet needed for one choice).
+          if (g.variants.length === 1) {
+            const row = g.variants[0];
+            const key = lineKey(row.itemId, row.variantSku);
+            const qty = cart.get(key)?.qty ?? 0;
+            const canSell = row.price !== null && row.qtyOnVan > 0;
+            return (
+              <Card key={g.itemId} className="flex flex-row items-center gap-3 p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{row.productName}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {row.sku}
+                    {row.variantLabel ? ` · ${row.variantLabel}` : row.variantSku ? ` · ${row.variantSku}` : ""}
+                  </p>
+                  <Badge variant={row.qtyOnVan > 0 ? "secondary" : "destructive"} className="mt-1">
+                    {t("qtyOnVan", { qty: row.qtyOnVan })}
+                  </Badge>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  {row.price !== null ? (
+                    <span className="text-sm font-semibold tabular-nums">{rupiah(row.price)}</span>
+                  ) : (
+                    <span className="text-xs italic text-muted-foreground">{t("priceUnset")}</span>
+                  )}
+                  {canSell && (
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-lg"
+                        disabled={qty <= 0 || pending}
+                        onClick={() => setQty(row, qty - 1)}
+                        aria-label={t("decrease", { name: row.productName })}
+                      >
+                        <Minus className="h-4 w-4" />
+                      </Button>
+                      <span className="w-5 text-center text-sm font-semibold tabular-nums">{qty}</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-lg"
+                        disabled={qty >= row.qtyOnVan || pending}
+                        onClick={() => setQty(row, qty + 1)}
+                        aria-label={t("increase", { name: row.productName })}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            );
+          }
+
+          // Multiple variants → tap to open the variant sheet.
+          const selected = selectedQtyForGroup(g);
           return (
-            <Card key={key} className="flex flex-row items-center gap-3 p-3">
+            <Card
+              key={g.itemId}
+              role="button"
+              tabIndex={0}
+              onClick={() => openSheet(g)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openSheet(g);
+                }
+              }}
+              className="flex cursor-pointer flex-row items-center gap-3 p-3"
+            >
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{row.productName}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {row.sku}
-                  {row.variantLabel ? ` · ${row.variantLabel}` : row.variantSku ? ` · ${row.variantSku}` : ""}
-                </p>
-                <Badge variant={row.qtyOnVan > 0 ? "secondary" : "destructive"} className="mt-1">
-                  {t("qtyOnVan", { qty: row.qtyOnVan })}
-                </Badge>
+                <p className="truncate text-sm font-medium">{g.productName}</p>
+                <p className="truncate text-xs text-muted-foreground">{g.sku}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <Badge variant="secondary">{t("qtyOnVan", { qty: g.totalVan })}</Badge>
+                  <Badge variant="outline">{t("variantsChip", { count: g.variants.length })}</Badge>
+                  {selected > 0 && <Badge>{t("selectedChip", { count: selected })}</Badge>}
+                </div>
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-1.5">
-                {row.price !== null ? (
-                  <span className="text-sm font-semibold tabular-nums">{rupiah(row.price)}</span>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                {g.price !== null ? (
+                  <span className="text-sm font-semibold tabular-nums">{rupiah(g.price)}</span>
                 ) : (
                   <span className="text-xs italic text-muted-foreground">{t("priceUnset")}</span>
                 )}
-                {canSell && (
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-lg"
-                      disabled={qty <= 0 || pending}
-                      onClick={() => setQty(row, qty - 1)}
-                      aria-label={t("decrease", { name: row.productName })}
-                    >
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <span className="w-5 text-center text-sm font-semibold tabular-nums">{qty}</span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-lg"
-                      disabled={qty >= row.qtyOnVan || pending}
-                      onClick={() => setQty(row, qty + 1)}
-                      aria-label={t("increase", { name: row.productName })}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </div>
             </Card>
           );
@@ -335,6 +405,8 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
           </Button>
         </div>
       )}
+
+      <VanVariantSheet group={sheetGroup} cart={cart} setQty={setQty} open={sheetOpen} onOpenChange={setSheetOpen} />
     </div>
   );
 }
