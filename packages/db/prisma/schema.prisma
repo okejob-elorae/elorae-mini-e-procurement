@@ -2091,6 +2091,7 @@ model ChartAccount {
   isActive  Boolean     @default(true)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+  lines     JournalLine[]
 
   @@index([parentId])
   @@index([type, isActive])
@@ -2153,4 +2154,37 @@ model SettlementLine {
 
   @@index([settlementId])
   @@index([orderNo])
+}
+
+// ==========================================
+// FINANCE — JOURNAL ENGINE
+// ==========================================
+model Journal {
+  id          String        @id @default(cuid())
+  date        DateTime
+  description String
+  sourceType  String?
+  sourceId    String?
+  isManual    Boolean       @default(false)
+  postedById  String
+  createdAt   DateTime      @default(now())
+  lines       JournalLine[]
+
+  @@unique([sourceType, sourceId])
+  @@index([date])
+  @@index([sourceType, sourceId])
+}
+
+model JournalLine {
+  id             String       @id @default(cuid())
+  journalId      String
+  chartAccountId String
+  debit          Decimal      @db.Decimal(18, 2) @default(0)
+  credit         Decimal      @db.Decimal(18, 2) @default(0)
+  memo           String?
+  journal        Journal      @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  account        ChartAccount @relation(fields: [chartAccountId], references: [id])
+
+  @@index([journalId])
+  @@index([chartAccountId])
 }

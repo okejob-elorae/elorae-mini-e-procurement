@@ -111,3 +111,9 @@ export {
   classifyForBackfill,
   type BackfillDecision,
 } from "./backfill-reservations-classify";
+export {
+  postJournal,
+  JournalError,
+  type JournalLineInput,
+  type PostJournalInput,
+} from "./journal-writer";
