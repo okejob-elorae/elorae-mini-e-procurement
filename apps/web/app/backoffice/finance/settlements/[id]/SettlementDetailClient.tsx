@@ -116,10 +116,13 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <KpiTile label={t("kpiNetIncome")} value={formatRupiah(settlement.totalNetIncome)} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+        {/* Reconciling trio: matchedNetIncome - totalCogs === totalProfit exactly. */}
+        <KpiTile label={t("kpiNetIncomeMatched")} value={formatRupiah(settlement.matchedNetIncome)} />
         <KpiTile label={t("kpiCogs")} value={formatRupiah(settlement.totalCogs)} />
         <KpiTile label={t("kpiProfit")} value={formatRupiah(settlement.totalProfit)} />
+        {/* Separate — sums ALL lines regardless of match/cogs status, does not tie to the trio above. */}
+        <KpiTile label={t("kpiGrossNetIncome")} value={formatRupiah(settlement.totalNetIncome)} />
         <KpiTile label={t("kpiMatchRate")} value={`${settlement.matchRatePct}%`} />
         <KpiTile label={t("kpiUnmatched")} value={String(settlement.unmatchedCount)} />
         <KpiTile label={t("kpiProfitPending")} value={String(settlement.profitPendingCount)} />

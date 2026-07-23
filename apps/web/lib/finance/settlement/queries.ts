@@ -92,6 +92,7 @@ export type SettlementDetail = {
   createdAtIso: string;
   lines: SettlementDetailLine[];
   totalNetIncome: number;
+  matchedNetIncome: number;
   totalCogs: number;
   totalProfit: number;
   matchedCount: number;
@@ -141,8 +142,12 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
   }));
 
   const totalNetIncome = lines.reduce((s, l) => s + l.netIncome, 0);
-  const totalCogs = lines.reduce((s, l) => s + (l.cogsSnapshot ?? 0), 0);
-  const totalProfit = lines.reduce((s, l) => s + (l.profit ?? 0), 0);
+  // Same population as totalCogs/totalProfit (lines with a computed profit) so the
+  // reconciling trio ties out exactly: matchedNetIncome - totalCogs === totalProfit.
+  const linesWithProfit = lines.filter((l) => l.profit !== null);
+  const matchedNetIncome = linesWithProfit.reduce((s, l) => s + l.netIncome, 0);
+  const totalCogs = linesWithProfit.reduce((s, l) => s + (l.cogsSnapshot ?? 0), 0);
+  const totalProfit = linesWithProfit.reduce((s, l) => s + (l.profit ?? 0), 0);
   const matchedCount = lines.filter((l) => l.matchStatus === "MATCHED").length;
   const unmatchedCount = lines.filter((l) => l.matchStatus === "UNMATCHED").length;
   const profitPendingCount = lines.filter((l) => l.matchStatus === "MATCHED" && l.profit === null).length;
@@ -162,6 +167,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     createdAtIso: row.createdAt.toISOString(),
     lines,
     totalNetIncome,
+    matchedNetIncome,
     totalCogs,
     totalProfit,
     matchedCount,

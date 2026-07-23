@@ -16,8 +16,11 @@ d("matchSettlement (test bed only)", () => {
     const orderNoA = `AAA-${suffix}`;
     const orderNoB = `BBB-${suffix}`;
     const orderNoC = `CCC-${suffix}`;
+    const orderNoD = `DDD-${suffix}`;
     const salesorderIdA = Math.floor(Math.random() * 1_000_000_000);
     const salesorderIdB = salesorderIdA + 1;
+    const salesorderIdD1 = salesorderIdA + 2;
+    const salesorderIdD2 = salesorderIdA + 3;
     const detailIdA = salesorderIdA + 100;
     const detailIdB = salesorderIdA + 101;
 
@@ -71,6 +74,17 @@ d("matchSettlement (test bed only)", () => {
               biayaAdministrasi: -300,
               biayaLayanan: -150,
               biayaKomisiAms: -30,
+              biayaProsesPesanan: -20,
+              raw: {},
+            },
+            {
+              orderNo: orderNoD,
+              netIncome: 1000,
+              hargaAsliProduk: 1200,
+              totalDiskonProduk: 0,
+              biayaAdministrasi: -100,
+              biayaLayanan: -60,
+              biayaKomisiAms: -20,
               biayaProsesPesanan: -20,
               raw: {},
             },
@@ -150,9 +164,42 @@ d("matchSettlement (test bed only)", () => {
 
     // Order C: no matching SalesOrder is seeded at all — line C stays unmatched.
 
+    // Order D: TWO SalesOrders share the same salesorderNo (duplicate order number,
+    // e.g. a return) — line D must be flagged ambiguous, never guess a cogs/profit.
+    const orderD1 = await prisma.salesOrder.create({
+      data: {
+        salesorderId: salesorderIdD1,
+        salesorderNo: `SP-${orderNoD}`,
+        channel: "SHOPEE",
+        sourceName: "test",
+        status: "COMPLETED",
+        subTotal: 1000,
+        totalDisc: 0,
+        totalTax: 0,
+        shippingCost: 0,
+        grandTotal: 1000,
+        transactionDate: new Date(),
+      },
+    });
+    const orderD2 = await prisma.salesOrder.create({
+      data: {
+        salesorderId: salesorderIdD2,
+        salesorderNo: `SP-${orderNoD}`,
+        channel: "SHOPEE",
+        sourceName: "test",
+        status: "COMPLETED",
+        subTotal: 1000,
+        totalDisc: 0,
+        totalTax: 0,
+        shippingCost: 0,
+        grandTotal: 1000,
+        transactionDate: new Date(),
+      },
+    });
+
     try {
       const res = await matchSettlement(settlement.id);
-      expect(res).toMatchObject({ matched: 2, unmatched: 1, profitPending: 1 });
+      expect(res).toMatchObject({ matched: 3, unmatched: 1, profitPending: 2 });
 
       const a = await prisma.settlementLine.findFirst({ where: { settlementId: settlement.id, orderNo: orderNoA } });
       expect(a!.matchStatus).toBe("MATCHED");
@@ -172,11 +219,19 @@ d("matchSettlement (test bed only)", () => {
       expect(c!.cogsSnapshot).toBeNull();
       expect(c!.profit).toBeNull();
 
+      const d = await prisma.settlementLine.findFirst({ where: { settlementId: settlement.id, orderNo: orderNoD } });
+      expect(d!.matchStatus).toBe("MATCHED");
+      expect(d!.matchedSalesOrderId).not.toBeNull();
+      expect(d!.cogsSnapshot).toBeNull();
+      expect(d!.profit).toBeNull(); // ambiguous — never guessed
+
       const s = await prisma.settlement.findUnique({ where: { id: settlement.id } });
       expect(s!.status).toBe("MATCHED");
     } finally {
       await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: { in: [orderA.id, orderB.id] } } });
-      await prisma.salesOrder.deleteMany({ where: { id: { in: [orderA.id, orderB.id] } } });
+      await prisma.salesOrder.deleteMany({
+        where: { id: { in: [orderA.id, orderB.id, orderD1.id, orderD2.id] } },
+      });
       await prisma.settlement.delete({ where: { id: settlement.id } }); // cascades to lines
     }
   });

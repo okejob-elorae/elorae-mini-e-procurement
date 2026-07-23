@@ -97,8 +97,9 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
         return;
       }
 
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      setUploadErrorMessage(data.error ?? t("uploadGenericError"));
+      // Backend errors here are untranslated English tokens (e.g. "invalid multipart
+      // body") — never echo them to the user, always show a localized message.
+      setUploadErrorMessage(t("uploadFailed"));
     } catch {
       setUploadErrorMessage(t("uploadGenericError"));
     } finally {
