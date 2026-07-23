@@ -12,7 +12,8 @@ d("resolveBackfillCogs (test bed only)", () => {
   let uomId: string;
   let salesOrderId: string;
   const sku = `TEST-BACKFILL-COGS-${Math.random().toString(36).slice(2, 10)}`;
-  const salesorderId = Math.floor(Date.now() / 1000);
+  // Random (not Date.now()/1000) so parallel specs can't collide on SalesOrder_salesorderId_key.
+  const salesorderId = Math.floor(Math.random() * 2_000_000_000);
   const salesorderDetailId1 = salesorderId + 1;
   const salesorderDetailId2 = salesorderId + 2;
 
@@ -120,5 +121,14 @@ d("resolveBackfillCogs (test bed only)", () => {
     expect(Number(l1!.cogs)).toBe(3000); // 1000 x |-3|
     expect(l2!.cogs).toBeNull();
     expect(res.updated).toBe(1);
+  });
+
+  it("dry-run reports the would-update count without writing", async () => {
+    const res = await resolveBackfillCogs(prisma, { apply: false });
+
+    const l1 = await prisma.salesOrderItem.findUnique({ where: { salesorderDetailId: salesorderDetailId1 } });
+
+    expect(res.updated).toBe(1);   // resolvable count
+    expect(l1!.cogs).toBeNull();   // dry-run wrote nothing
   });
 });
