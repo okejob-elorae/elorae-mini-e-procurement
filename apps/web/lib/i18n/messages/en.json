@@ -2273,7 +2273,16 @@
       "colQty": "Qty",
       "adminSign": "Warehouse admin",
       "canvasserSign": "Canvasser",
-      "issuedBy": "Issued by"
+      "issuedBy": "Issued by",
+      "reconcileButton": "Print",
+      "reconcileTitle": "VAN RECONCILIATION",
+      "reconciledByLabel": "Reconciled by",
+      "colExpected": "Expected",
+      "colCounted": "Counted",
+      "colVariance": "Variance",
+      "totalReturned": "Total returned",
+      "totalVariance": "Total variance",
+      "reasonLabel": "Reason"
     },
     "reconcileSectionTitle": "EOD Reconciliation",
     "reconcileHistoryCardTitle": "Reconciliation History",

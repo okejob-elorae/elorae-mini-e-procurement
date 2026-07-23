@@ -2273,7 +2273,16 @@
       "colQty": "Qty",
       "adminSign": "Admin gudang",
       "canvasserSign": "Canvasser",
-      "issuedBy": "Diterbitkan oleh"
+      "issuedBy": "Diterbitkan oleh",
+      "reconcileButton": "Cetak",
+      "reconcileTitle": "REKONSILIASI VAN",
+      "reconciledByLabel": "Direkonsiliasi oleh",
+      "colExpected": "Ekspektasi",
+      "colCounted": "Hitung",
+      "colVariance": "Selisih",
+      "totalReturned": "Total dikembalikan",
+      "totalVariance": "Total selisih",
+      "reasonLabel": "Alasan"
     },
     "reconcileSectionTitle": "Rekonsiliasi EOD",
     "reconcileHistoryCardTitle": "Riwayat Rekonsiliasi",
