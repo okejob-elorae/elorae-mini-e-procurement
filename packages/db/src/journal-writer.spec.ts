@@ -23,20 +23,20 @@ d("postJournal (test bed only)", () => {
     adminId = user.id;
 
     const kasParent = await prisma.chartAccount.create({
-      data: { code: `9${token}1`, name: "Kas & Bank (test)", type: "ASET", depth: 0, isActive: true },
+      data: { code: `9${token}1`, name: "Kas & Bank (test)", type: "ASET", depth: 1, isActive: true },
     });
     kasParentId = kasParent.id;
     const kasLeaf = await prisma.chartAccount.create({
-      data: { code: `9${token}11`, name: "Kas Test", type: "ASET", parentId: kasParentId, depth: 1, isActive: true },
+      data: { code: `9${token}11`, name: "Kas Test", type: "ASET", parentId: kasParentId, depth: 2, isActive: true },
     });
     aId = kasLeaf.id;
 
     const bebanParent = await prisma.chartAccount.create({
-      data: { code: `9${token}2`, name: "Beban (test)", type: "BEBAN", depth: 0, isActive: true },
+      data: { code: `9${token}2`, name: "Beban (test)", type: "BEBAN", depth: 1, isActive: true },
     });
     bebanParentId = bebanParent.id;
     const bebanLeaf = await prisma.chartAccount.create({
-      data: { code: `9${token}21`, name: "Beban Test", type: "BEBAN", parentId: bebanParentId, depth: 1, isActive: true },
+      data: { code: `9${token}21`, name: "Beban Test", type: "BEBAN", parentId: bebanParentId, depth: 2, isActive: true },
     });
     bId = bebanLeaf.id;
   });
