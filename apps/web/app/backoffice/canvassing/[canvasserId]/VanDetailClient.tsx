@@ -98,7 +98,7 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                             <div>{row.productName}</div>
                             <div className="text-xs text-muted-foreground font-mono">{row.sku}</div>
                           </TableCell>
-                          <TableCell>{row.variantSku ?? "—"}</TableCell>
+                          <TableCell>{row.variantLabel ?? row.variantSku ?? "—"}</TableCell>
                           <TableCell className="text-right tabular-nums">{row.qty}</TableCell>
                           <TableCell className="text-right tabular-nums">
                             {row.avgCost.toLocaleString("id-ID")}

@@ -15,7 +15,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { recordVanSaleAction } from "@/app/actions/van-sale";
 
-type VanStockRow = { itemId: string; sku: string; productName: string; variantSku: string | null; qtyOnVan: number; price: number | null };
+type VanStockRow = { itemId: string; sku: string; productName: string; variantSku: string | null; variantLabel: string | null; qtyOnVan: number; price: number | null };
 type StoreOption = { id: string; name: string };
 type ShortLine = { itemId: string; variantSku: string | null; requested: number; available: number };
 
@@ -252,7 +252,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
                 <p className="truncate text-sm font-medium">{row.productName}</p>
                 <p className="truncate text-xs text-muted-foreground">
                   {row.sku}
-                  {row.variantSku ? ` · ${row.variantSku}` : ""}
+                  {row.variantLabel ? ` · ${row.variantLabel}` : row.variantSku ? ` · ${row.variantSku}` : ""}
                 </p>
                 <Badge variant={row.qtyOnVan > 0 ? "secondary" : "destructive"} className="mt-1">
                   {t("qtyOnVan", { qty: row.qtyOnVan })}

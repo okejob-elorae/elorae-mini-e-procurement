@@ -115,7 +115,8 @@ export function ReconcileVanForm({ canvasserId, rows }: Props) {
                 <TableRow key={key}>
                   <TableCell className="font-medium">
                     <div>{row.productName}</div>
-                    <div className="text-xs text-muted-foreground font-mono">{row.sku}</div>
+                    {row.variantLabel && <div className="text-xs text-muted-foreground">{row.variantLabel}</div>}
+                    <div className="text-xs text-muted-foreground font-mono">{row.sku}{row.variantSku ? ` · ${row.variantSku}` : ""}</div>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{row.expectedQty}</TableCell>
                   <TableCell className="text-right">
