@@ -186,6 +186,9 @@ async function main() {
     // Promos
     { code: 'promos:view', module: 'promos', action: 'view', description: 'View promos' },
     { code: 'promos:manage', module: 'promos', action: 'manage', description: 'Create, edit, activate/deactivate promos' },
+    // Finance — Marketplace Settlements
+    { code: 'finance:settlements:view', module: 'finance', action: 'settlements:view', description: 'View marketplace settlements' },
+    { code: 'finance:settlements:manage', module: 'finance', action: 'settlements:manage', description: 'Upload + match marketplace settlements' },
   ];
 
   // Upsert all permissions
