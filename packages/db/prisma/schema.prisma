@@ -2105,3 +2105,52 @@ enum AccountType {
   HPP
   BEBAN
 }
+
+// ==========================================
+// FINANCE — MARKETPLACE SETTLEMENT
+// ==========================================
+model Settlement {
+  id               String           @id @default(cuid())
+  marketplace      String
+  seller           String
+  periodFrom       DateTime
+  periodTo         DateTime
+  fileName         String
+  uploadedById     String
+  status           String           @default("PARSED")
+  totalPendapatan  Decimal          @db.Decimal(18, 2)
+  totalPengeluaran Decimal          @db.Decimal(18, 2)
+  totalDilepas     Decimal          @db.Decimal(18, 2)
+  parsedNetTotal   Decimal          @db.Decimal(18, 2)
+  checksumOk       Boolean
+  checksumVariance Decimal          @db.Decimal(18, 2)
+  summaryRaw       Json
+  sellerFeesRaw    Json
+  adjustmentsRaw   Json
+  createdAt        DateTime         @default(now())
+  lines            SettlementLine[]
+
+  @@index([marketplace, periodFrom])
+}
+
+model SettlementLine {
+  id                  String     @id @default(cuid())
+  settlementId        String
+  orderNo             String
+  netIncome           Decimal    @db.Decimal(18, 2)
+  hargaAsliProduk     Decimal    @db.Decimal(18, 2)
+  totalDiskonProduk   Decimal    @db.Decimal(18, 2)
+  biayaAdministrasi   Decimal    @db.Decimal(18, 2)
+  biayaLayanan        Decimal    @db.Decimal(18, 2)
+  biayaKomisiAms      Decimal    @db.Decimal(18, 2)
+  biayaProsesPesanan  Decimal    @db.Decimal(18, 2)
+  raw                 Json
+  matchStatus         String     @default("UNMATCHED")
+  matchedSalesOrderId String?
+  cogsSnapshot        Decimal?   @db.Decimal(18, 2)
+  profit              Decimal?   @db.Decimal(18, 2)
+  settlement          Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  @@index([settlementId])
+  @@index([orderNo])
+}
