@@ -99,6 +99,7 @@ export type SettlementDetail = {
   unmatchedCount: number;
   profitPendingCount: number;
   matchRatePct: number;
+  journalId: string | null;
 };
 
 export async function getSettlementById(id: string): Promise<SettlementDetail | null> {
@@ -130,6 +131,11 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     },
   });
   if (!row) return null;
+
+  const journal = await prisma.journal.findUnique({
+    where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: id } },
+    select: { id: true },
+  });
 
   const lines: SettlementDetailLine[] = row.lines.map((l) => ({
     id: l.id,
@@ -174,5 +180,6 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     unmatchedCount,
     profitPendingCount,
     matchRatePct,
+    journalId: journal?.id ?? null,
   };
 }
