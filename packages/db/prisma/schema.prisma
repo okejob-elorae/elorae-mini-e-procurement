@@ -1968,6 +1968,7 @@ model SalesOrderItem {
   discAmount         Decimal    @db.Decimal(15, 2)
   taxAmount          Decimal    @db.Decimal(15, 2)
   lineTotal          Decimal    @db.Decimal(15, 2)
+  cogs               Decimal?   @db.Decimal(15, 2)
   discMarketplace    Decimal    @db.Decimal(15, 2) @default(0)
   weightInGram       Decimal    @db.Decimal(15, 4) @default(0)
   salesOrder         SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
