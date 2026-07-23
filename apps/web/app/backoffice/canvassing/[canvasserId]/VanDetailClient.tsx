@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { ArrowLeft, ClipboardCheck, Clock, Package, Truck } from "lucide-react";
 import type { VanStockRow, VanLoadRow, LoadableInventoryRow } from "@/lib/canvassing/queries";
 import type { VanReconcileRow, VanReconcileListRow } from "@/lib/canvassing/reconcile-queries";
+import { logPrint } from "@/app/actions/audit";
+import { getVanLoadPrintData } from "@/app/actions/van-load-print";
+import { buildVanLoadPrintHtml } from "@/lib/print/van-load-html";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -45,9 +49,52 @@ function formatDateTime(iso: string): string {
   });
 }
 
+function printHtml(html: string, title: string) {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("style", "position:absolute;width:0;height:0;border:0;visibility:hidden;");
+  iframe.setAttribute("title", title);
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow?.document;
+  if (doc) {
+    doc.open(); doc.write(html); doc.close();
+    setTimeout(() => iframe.contentWindow?.print(), 350);
+  }
+  setTimeout(() => document.body.removeChild(iframe), 500);
+}
+
 export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, itemOptions, loadableInventory, reconcileRows, reconciles }: Props) {
   const t = useTranslations("canvassing");
   const router = useRouter();
+
+  async function handlePrintLoad(loadId: string) {
+    const data = await getVanLoadPrintData(loadId);
+    if (!data) {
+      toast.error(t("errForbidden"));
+      return;
+    }
+    await logPrint("VanLoad", loadId);
+    const html = buildVanLoadPrintHtml({
+      docNo: data.docNo,
+      createdAt: data.createdAtIso,
+      canvasserName: data.canvasserLabel,
+      loadedByName: data.loadedByLabel,
+      lines: data.lines,
+      labels: {
+        title: t("print.vanLoadTitle"),
+        doc: t("print.docLabel"),
+        canvasser: t("print.canvasserLabel"),
+        loadedBy: t("print.loadedByLabel"),
+        date: t("print.dateLabel"),
+        no: t("print.colNo"),
+        product: t("print.colProduct"),
+        qty: t("print.colQty"),
+        adminSign: t("print.adminSign"),
+        canvasserSign: t("print.canvasserSign"),
+        issuedBy: t("print.issuedBy"),
+      },
+    });
+    printHtml(html, t("print.vanLoadTitle"));
+  }
 
   return (
     <div className="space-y-6">
@@ -134,6 +181,7 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                         <TableHead>{t("colLoadedBy")}</TableHead>
                         <TableHead>{t("colDate")}</TableHead>
                         <TableHead className="text-right">{t("colLines")}</TableHead>
+                        <TableHead className="text-right">{t("print.vanLoadButton")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -145,6 +193,11 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                             {formatDateTime(load.createdAtIso)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{load.lineCount}</TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="sm" onClick={() => handlePrintLoad(load.id)}>
+                              {t("print.vanLoadButton")}
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
