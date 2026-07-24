@@ -967,6 +967,20 @@
     "roll": "Roll",
     "item": "Item",
     "driftFlag": "Drift at approval",
+    "journal": {
+      "posted": "Journal posted",
+      "viewJournal": "View journal",
+      "postJournal": "Post journal",
+      "postedToast": "Journal posted successfully",
+      "alreadyPostedToast": "Journal was already posted",
+      "err": {
+        "UNMAPPED_ROLE": "Posting role \"{role}\" is unmapped — map it in Account Mapping, then try again.",
+        "UNBALANCED": "Journal is not balanced (debit ≠ credit).",
+        "NOTHING_TO_POST": "No value change to journal.",
+        "BAD_STATE": "Opname must be Approved to post a journal.",
+        "FORBIDDEN": "You don't have permission to post journals."
+      }
+    },
     "scopes": {
       "FINISHED_GOOD": "Finished Goods",
       "FABRIC": "Fabric (rolls)",

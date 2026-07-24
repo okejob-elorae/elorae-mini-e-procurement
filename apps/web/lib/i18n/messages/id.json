@@ -967,6 +967,20 @@
     "roll": "Roll",
     "item": "Item",
     "driftFlag": "Drift saat approve",
+    "journal": {
+      "posted": "Jurnal terposting",
+      "viewJournal": "Lihat jurnal",
+      "postJournal": "Posting jurnal",
+      "postedToast": "Jurnal berhasil diposting",
+      "alreadyPostedToast": "Jurnal sudah pernah diposting",
+      "err": {
+        "UNMAPPED_ROLE": "Role posting \"{role}\" belum dipetakan — petakan di Account Mapping lalu coba lagi.",
+        "UNBALANCED": "Jurnal tidak balance (debit ≠ kredit).",
+        "NOTHING_TO_POST": "Tidak ada perubahan nilai untuk dijurnal.",
+        "BAD_STATE": "Opname harus berstatus Disetujui untuk posting jurnal.",
+        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal."
+      }
+    },
     "scopes": {
       "FINISHED_GOOD": "Barang Jadi",
       "FABRIC": "Kain (per roll)",
