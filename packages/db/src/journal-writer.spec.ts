@@ -119,4 +119,36 @@ d("postJournal (test bed only)", () => {
     expect(a2.created).toBe(false);
     expect(a2.journalId).toBe(a1.journalId);
   });
+
+  it("stores cents-rounded values and stays exactly balanced", async () => {
+    const r = await postJournal(prisma, {
+      date: new Date(),
+      description: "round",
+      postedById: adminId,
+      lines: [
+        { chartAccountId: aId, debit: 33.334, credit: 0 },
+        { chartAccountId: bId, debit: 0, credit: 33.33 },
+      ],
+    });
+    // 33.334 → 33.33; both sides 33.33 → balanced + stored rounded
+    const j = await prisma.journal.findUnique({ where: { id: r.journalId }, include: { lines: true } });
+    const dr = j!.lines.reduce((s, l) => s + Number(l.debit), 0);
+    const cr = j!.lines.reduce((s, l) => s + Number(l.credit), 0);
+    expect(dr).toBe(cr); // exactly, post-round
+  });
+
+  it("rejects an imbalance that only appears after cents rounding", async () => {
+    // 33.33 + 33.33 + 33.34 = 100.00 debit vs 100.005 credit → credit rounds 100.01 ≠ 100.00
+    await expect(
+      postJournal(prisma, {
+        date: new Date(),
+        description: "x",
+        postedById: adminId,
+        lines: [
+          { chartAccountId: aId, debit: 100, credit: 0 },
+          { chartAccountId: bId, debit: 0, credit: 100.005 },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "UNBALANCED" });
+  });
 });

@@ -5,9 +5,18 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, CheckCircle2, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  AlertTriangle,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  BookText,
+  ExternalLink,
+} from "lucide-react";
 import type { SettlementDetail } from "@/lib/finance/settlement/queries";
-import { matchSettlementAction } from "@/app/actions/settlements";
+import { matchSettlementAction, postSettlementJournalAction } from "@/app/actions/settlements";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +43,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isPosting, startPostTransition] = useTransition();
 
   const formatDate = (iso: string) =>
     new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
@@ -49,8 +59,13 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
   const pageSlice = <T,>(rows: T[], page: number) => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const statusVariant: "default" | "secondary" =
-    settlement.status === "MATCHED" ? "default" : "secondary";
-  const statusLabel = settlement.status === "MATCHED" ? t("statusMatched") : t("statusParsed");
+    settlement.status === "MATCHED" || settlement.status === "RECONCILED" ? "default" : "secondary";
+  const statusLabel =
+    settlement.status === "RECONCILED"
+      ? t("statusReconciled")
+      : settlement.status === "MATCHED"
+        ? t("statusMatched")
+        : t("statusParsed");
 
   function handleMatch() {
     startTransition(async () => {
@@ -69,6 +84,43 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
           toast.error(t("matchToastForbidden"));
         } else {
           toast.error(t("matchToastNotFound"));
+        }
+      } catch {
+        toast.error(t("errGeneric"));
+      }
+    });
+  }
+
+  function handlePostJournal() {
+    startPostTransition(async () => {
+      try {
+        const result = await postSettlementJournalAction(settlement.id);
+        if (result.ok) {
+          toast.success(result.created ? t("postJournalToastSuccess") : t("postJournalToastAlready"));
+          router.refresh();
+        } else {
+          switch (result.code) {
+            case "CHECKSUM_BLOCKED":
+              toast.error(t("journalErr.CHECKSUM_BLOCKED"));
+              break;
+            case "UNMAPPED_ROLE":
+              toast.error(t("journalErr.UNMAPPED_ROLE", { role: result.role ?? "" }));
+              break;
+            case "UNBALANCED":
+              toast.error(t("journalErr.UNBALANCED"));
+              break;
+            case "ALREADY_RECONCILED_DIFF":
+              toast.error(t("journalErr.ALREADY_RECONCILED_DIFF"));
+              break;
+            case "FORBIDDEN":
+              toast.error(t("journalErr.FORBIDDEN"));
+              break;
+            case "NOT_FOUND":
+              toast.error(t("journalErr.NOT_FOUND"));
+              break;
+            default:
+              toast.error(t("errGeneric"));
+          }
         }
       } catch {
         toast.error(t("errGeneric"));
@@ -96,11 +148,41 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
         <Badge variant={statusVariant}>{statusLabel}</Badge>
 
         {canManage && (
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             <Button size="sm" disabled={isPending} onClick={handleMatch}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
               {isPending ? t("matchOrdersPending") : t("matchOrdersButton")}
             </Button>
+
+            {settlement.journalId ? (
+              <>
+                <Badge variant="default" className="gap-1">
+                  <BookText className="h-3.5 w-3.5" />
+                  {t("journalPosted")}
+                </Badge>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href={`/backoffice/finance/journals/${settlement.journalId}`}>
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    {t("viewJournal")}
+                  </Link>
+                </Button>
+              </>
+            ) : (
+              <div className="flex flex-col items-end gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!settlement.checksumOk || isPosting}
+                  onClick={handlePostJournal}
+                >
+                  <BookText className={`h-4 w-4 mr-2 ${isPosting ? "animate-pulse" : ""}`} />
+                  {isPosting ? t("postJournalPending") : t("postJournal")}
+                </Button>
+                {!settlement.checksumOk && (
+                  <span className="text-xs text-muted-foreground">{t("postJournalChecksumHint")}</span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

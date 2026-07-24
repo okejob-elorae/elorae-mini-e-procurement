@@ -34,16 +34,18 @@ export async function postJournal(
   const { lines } = input;
   if (lines.length < 2) throw new JournalError("TOO_FEW_LINES");
 
-  let dr = 0;
-  let cr = 0;
-  for (const l of lines) {
-    const d = Number(l.debit) || 0;
-    const c = Number(l.credit) || 0;
-    if ((d > 0) === (c > 0)) throw new JournalError("BAD_LINE", "line must be exactly one of debit/credit");
-    dr += d;
-    cr += c;
-  }
-  if (Math.abs(dr - cr) >= 0.01) throw new JournalError("UNBALANCED", `dr=${dr} cr=${cr}`);
+  const cents = (n: number): number => Math.round((Number(n) || 0) * 100);
+  let drCents = 0,
+    crCents = 0;
+  const rounded = lines.map((l) => {
+    const dC = cents(l.debit),
+      cC = cents(l.credit);
+    if ((dC > 0) === (cC > 0)) throw new JournalError("BAD_LINE", "line must be exactly one of debit/credit");
+    drCents += dC;
+    crCents += cC;
+    return { chartAccountId: l.chartAccountId, debit: dC / 100, credit: cC / 100, memo: l.memo ?? null };
+  });
+  if (drCents !== crCents) throw new JournalError("UNBALANCED", `dr=${drCents / 100} cr=${crCents / 100}`);
 
   const run = async (tx: Prisma.TransactionClient) => {
     if (input.source) {
@@ -71,11 +73,11 @@ export async function postJournal(
         sourceId: input.source?.id ?? null,
         isManual: input.isManual ?? false,
         lines: {
-          create: lines.map((l) => ({
+          create: rounded.map((l) => ({
             chartAccountId: l.chartAccountId,
-            debit: Number(l.debit) || 0,
-            credit: Number(l.credit) || 0,
-            memo: l.memo ?? null,
+            debit: l.debit,
+            credit: l.credit,
+            memo: l.memo,
           })),
         },
       },

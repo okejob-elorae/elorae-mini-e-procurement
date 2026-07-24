@@ -2458,7 +2458,23 @@
     "prevPage": "Halaman sebelumnya",
     "nextPage": "Halaman berikutnya",
     "coverageNote": "Pesanan yang dibuat sebelum ingest riwayat penjualan (± 14 Jun 2026) mungkin tidak ditemukan, sehingga settlement lama bisa menunjukkan banyak baris belum cocok.",
-    "errGeneric": "Terjadi kesalahan. Silakan coba lagi."
+    "errGeneric": "Terjadi kesalahan. Silakan coba lagi.",
+    "statusReconciled": "Terekonsiliasi",
+    "postJournal": "Posting Jurnal",
+    "postJournalPending": "Memposting…",
+    "postJournalChecksumHint": "Checksum harus sesuai sebelum jurnal dapat diposting.",
+    "postJournalToastSuccess": "Jurnal berhasil diposting.",
+    "postJournalToastAlready": "Jurnal untuk settlement ini sudah pernah diposting.",
+    "journalPosted": "Jurnal Terposting",
+    "viewJournal": "Lihat Jurnal",
+    "journalErr": {
+      "CHECKSUM_BLOCKED": "Checksum harus sesuai sebelum jurnal dapat diposting.",
+      "UNMAPPED_ROLE": "Bagan akun belum dipetakan untuk peran \"{role}\". Petakan dulu di pengaturan Finance.",
+      "UNBALANCED": "Total settlement tidak balance — periksa Ringkasan atau tambahkan akun \"lainnya\".",
+      "NOT_FOUND": "Settlement tidak ditemukan.",
+      "FORBIDDEN": "Anda tidak memiliki izin untuk memposting jurnal ini.",
+      "ALREADY_RECONCILED_DIFF": "Settlement ini sudah terekonsiliasi dengan jurnal yang berbeda."
+    }
   },
   "financeJournals": {
     "pageTitle": "Jurnal",

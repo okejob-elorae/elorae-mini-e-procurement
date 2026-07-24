@@ -2458,7 +2458,23 @@
     "prevPage": "Previous page",
     "nextPage": "Next page",
     "coverageNote": "Orders placed before sales-history ingestion (~2026-06-14) may not be found, so older settlements can show many unmatched lines.",
-    "errGeneric": "Something went wrong. Please try again."
+    "errGeneric": "Something went wrong. Please try again.",
+    "statusReconciled": "Reconciled",
+    "postJournal": "Post Journal",
+    "postJournalPending": "Posting…",
+    "postJournalChecksumHint": "Checksum must pass before the journal can be posted.",
+    "postJournalToastSuccess": "Journal posted.",
+    "postJournalToastAlready": "Journal was already posted for this settlement.",
+    "journalPosted": "Journal Posted",
+    "viewJournal": "View Journal",
+    "journalErr": {
+      "CHECKSUM_BLOCKED": "Checksum must pass before the journal can be posted.",
+      "UNMAPPED_ROLE": "Chart of accounts not mapped for role \"{role}\". Map it under Finance settings first.",
+      "UNBALANCED": "Settlement totals don't balance — check the Summary or add an \"other\" account.",
+      "NOT_FOUND": "Settlement not found.",
+      "FORBIDDEN": "You don't have permission to post this journal.",
+      "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal."
+    }
   },
   "financeJournals": {
     "pageTitle": "Journals",
