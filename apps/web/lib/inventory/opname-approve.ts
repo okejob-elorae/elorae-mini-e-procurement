@@ -26,6 +26,15 @@ function toNum(v: unknown): number {
   return typeof v === "number" ? v : Number(v);
 }
 
+// Jubelio-ingested items store InventoryValue with variantSku = NULL, while
+// normalizeVariantKey maps null/empty to "". A strict lookup on "" misses those NULL
+// rows. For the pooled key, match both "" and NULL; for a real variant, match exactly.
+function inventoryLookupWhere(itemId: string, variantKey: string) {
+  return variantKey === ""
+    ? { itemId, OR: [{ variantSku: "" }, { variantSku: null }] }
+    : { itemId, variantSku: variantKey };
+}
+
 export async function detectItemDrift(
   tx: Tx,
   opnameId: string,
@@ -34,8 +43,8 @@ export async function detectItemDrift(
   const drift: DriftRow[] = [];
   for (const row of items) {
     const variantKey = normalizeVariantKey(row.variantSku);
-    const inv = await tx.inventoryValue.findUnique({
-      where: { itemId_variantSku: { itemId: row.itemId, variantSku: variantKey } },
+    const inv = await tx.inventoryValue.findFirst({
+      where: inventoryLookupWhere(row.itemId, variantKey),
     });
     const currentQty = inv ? toNum(inv.qtyOnHand) : 0;
     const snapshotQty = toNum(row.snapshotQty);
@@ -118,8 +127,8 @@ export async function applyFgAccessoriesAdjustments(
   for (const row of items) {
     const countedQty = toNum(row.countedQty);
     const variantKey = normalizeVariantKey(row.variantSku);
-    const inv = await tx.inventoryValue.findUnique({
-      where: { itemId_variantSku: { itemId: row.itemId, variantSku: variantKey } },
+    const inv = await tx.inventoryValue.findFirst({
+      where: inventoryLookupWhere(row.itemId, variantKey),
     });
     const currentQty = inv ? toNum(inv.qtyOnHand) : 0;
     const snapshotQty = toNum(row.snapshotQty);
