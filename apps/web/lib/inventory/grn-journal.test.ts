@@ -12,6 +12,7 @@ d("GRN auto-journal (test bed only)", () => {
   let userId: string;
   let supplierId: string;
   let grnId: string;
+  let supplierTypeId: string;
   let inventoryId: string;
   let apId: string;
   let mappingSnapshot: MappingSnapshot;
@@ -24,8 +25,12 @@ d("GRN auto-journal (test bed only)", () => {
       data: { email: `test-grn-journal-${token}@test.local`, name: "Test Admin" },
     });
     userId = user.id;
+    const supplierType = await prisma.supplierType.create({
+      data: { code: `ST-${token}`, name: "Test Type" },
+    });
+    supplierTypeId = supplierType.id;
     const supplier = await prisma.supplier.create({
-      data: { code: `SUP-${token}`, name: "Test Supplier" },
+      data: { code: `SUP-${token}`, name: "Test Supplier", typeId: supplierTypeId },
     });
     supplierId = supplier.id;
     const grn = await prisma.gRN.create({
@@ -69,6 +74,7 @@ d("GRN auto-journal (test bed only)", () => {
     await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, apId] } } });
     await prisma.gRN.delete({ where: { id: grnId } });
     await prisma.supplier.delete({ where: { id: supplierId } });
+    await prisma.supplierType.delete({ where: { id: supplierTypeId } });
     await prisma.user.delete({ where: { id: userId } });
   });
 
