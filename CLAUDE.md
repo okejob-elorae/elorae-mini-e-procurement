@@ -167,12 +167,12 @@ EPIC-13 (Journal Engine) decomposition:
 | **Engine** | Balance-enforced `postJournal` (cents-rounded, idempotent by `(sourceType, sourceId)`) + posting-role→account mapping (`JournalAccountMapping`, `resolveAccount`, `POSTING_ROLES`) + manual journal entry (13-07) + ledger list/detail view (13-08) | ✅ shipped (PR #155 core + PR #156 mapping, merged 2026-07-23) |
 | **13-04** | Auto-journal: settlement — DR Bank + DR Fee, CR AR (Piutang); checksum-gated | ✅ shipped (PR #157 merged 2026-07-24) |
 | **13-06** | Auto-journal: opname adjustment — surplus DR Persediaan / CR Selisih (shrinkage reversed); net from `StockMovement` (FG+accessories+fabric); best-effort post-approve + `JOURNAL_PENDING` flag + retriable "Post journal" button (gated on non-zero delta). Introduced the generic `generateAutoJournal(client, sourceType, sourceId, lines, meta)` seam all future auto-journals reuse. | ✅ shipped (PR #159 merged 2026-07-25) |
-| **13-01** | Auto-journal: GRN — DR Persediaan, CR Hutang | ⬜ not started |
+| **13-01** | Auto-journal: GRN — DR Persediaan, CR Hutang; best-effort on create + reverse (DR Hutang / CR Persediaan) on owner-decline of an over-receive GRN; value = `totalAmount`, dated `grnDate` | ✅ shipped (PR #160 merged 2026-07-26) |
 | **13-02** | Auto-journal: FG receipt — DR Persediaan FG, CR HPP/WIP | ⬜ not started |
 | **13-03** | Auto-journal: sales (marketplace) — revenue + COGS (cross-service, hardest) | ⬜ not started |
 | **13-05** | Auto-journal: retur — reverse revenue + COGS on accepted return | ⬜ not started |
 
-Remaining auto-journals (13-01/02/03/05) all reuse the `generateAutoJournal` seam + role→account mapping — add: role lines + source hook + spec + test. Requires the roles mapped in the CoA; unmapped → flagged (`JOURNAL_PENDING`) + retriable, never blocks the source op.
+Remaining auto-journals (13-02/03/05) all reuse the `generateAutoJournal` seam + role→account mapping — add: role lines + source hook + spec + test. Requires the roles mapped in the CoA; unmapped → flagged (`JOURNAL_PENDING`) + retriable, never blocks the source op.
 
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
@@ -182,7 +182,7 @@ Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit l
 
 Canonical home for follow-ups + known debt. **New follow-ups go HERE** as `- [ ]` — not buried in PR bodies (they die on merge) or per-slice decomposition prose. When an item ships, flip it to `- [x]` and append the PR #. Feature names only (no EPIC labels — shared artifact). Cross-cutting code landmines also get a `memory/` note; this list is the actionable index.
 
-Roadmap slices (not debt) live in the decomposition tables + the GitHub board, NOT here — e.g. the remaining EPIC-13 auto-journals (13-01 GRN, 13-02 FG receipt, 13-03 sales/COGS, 13-05 retur). **Every item below was verified STILL-OPEN against current code on 2026-07-25** (full merged-PR + board sweep, then per-item code check). *Dropped as already-fixed — do not re-add:* P2002 index-name check (`stock-writer.ts:86` robust regex, #73), canvassing van-load forbidden-vs-not-found (no conflation, #148), oversold-only view (now server-side, #133), `docker builder prune -af`/`.next` cache (uses GHA layer cache, not aggressive prune, #99), `@types/node-cron` ("dead" but node-cron is actively used), fulfillment e2e (prod-live since #8).
+Roadmap slices (not debt) live in the decomposition tables + the GitHub board, NOT here — e.g. the remaining EPIC-13 auto-journals (13-02 FG receipt, 13-03 sales/COGS, 13-05 retur). **Every item below was verified STILL-OPEN against current code on 2026-07-25** (full merged-PR + board sweep, then per-item code check). *Dropped as already-fixed — do not re-add:* P2002 index-name check (`stock-writer.ts:86` robust regex, #73), canvassing van-load forbidden-vs-not-found (no conflation, #148), oversold-only view (now server-side, #133), `docker builder prune -af`/`.next` cache (uses GHA layer cache, not aggressive prune, #99), `@types/node-cron` ("dead" but node-cron is actively used), fulfillment e2e (prod-live since #8).
 
 ### Finance — Journal & CoA
 - [ ] Account-mapping UI: add an unmap/clear control (currently reassign-only — a mis-mapped role can't be cleared).
