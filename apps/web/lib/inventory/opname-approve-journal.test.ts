@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
 import { postOpnameJournal } from "./opname-journal";
+import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
 
 // Exercises postOpnameJournal at the DB level, mirroring the approveOpname
 // post-commit call. Never run against the shared prod DB (port 3307 tunnel / VPS host).
@@ -16,9 +17,11 @@ d("opname approve auto-journal integration (test bed only)", () => {
   let inventoryId: string;
   let varianceId: string;
   let opnameId: string;
+  let mappingSnapshot: MappingSnapshot;
 
   beforeEach(async () => {
     token = Math.floor(Math.random() * 10_000_000).toString();
+    mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_VARIANCE"]);
 
     const user = await prisma.user.create({
       data: { email: `test-opname-approve-journal-${token}@test.local`, name: "Test Admin" },
@@ -65,7 +68,7 @@ d("opname approve auto-journal integration (test bed only)", () => {
       await prisma.journalLine.deleteMany({ where: { journalId: journal.id } });
       await prisma.journal.delete({ where: { id: journal.id } });
     }
-    await prisma.journalAccountMapping.deleteMany({ where: { chartAccountId: { in: [inventoryId, varianceId] } } });
+    await restoreMappings(mappingSnapshot);
     await prisma.stockMovement.deleteMany({ where: { refType: "OPNAME", refId: opnameId } });
     await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, varianceId] } } });
     await prisma.stockOpname.delete({ where: { id: opnameId } });
@@ -125,6 +128,8 @@ d("opname approve auto-journal integration (test bed only)", () => {
   });
 
   it("INVENTORY unmapped: postOpnameJournal returns UNMAPPED_ROLE", async () => {
+    // Simulate INVENTORY unmapped explicitly — don't assume the operator's config is absent.
+    await prisma.journalAccountMapping.deleteMany({ where: { role: "INVENTORY" } });
     await prisma.journalAccountMapping.upsert({
       where: { role: "INVENTORY_VARIANCE" },
       create: { role: "INVENTORY_VARIANCE", chartAccountId: varianceId },

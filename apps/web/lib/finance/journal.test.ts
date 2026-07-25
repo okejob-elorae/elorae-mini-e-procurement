@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
 import { generateAutoJournal } from "./journal";
+import { snapshotMappings, restoreMappings, type MappingSnapshot } from "./journals/mapping-test-fixture";
 
 // Posts journal + mapping rows — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -12,10 +13,12 @@ d("generateAutoJournal (test bed only)", () => {
   let userId: string;
   let inventoryId: string;
   let varianceId: string;
+  let mappingSnapshot: MappingSnapshot;
   const sourceId = () => `test-src-${token}`;
 
   beforeEach(async () => {
     token = Math.floor(Math.random() * 10_000_000).toString();
+    mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_VARIANCE"]);
     const user = await prisma.user.create({
       data: { email: `test-auto-journal-${token}@test.local`, name: "Test Admin" },
     });
@@ -43,15 +46,16 @@ d("generateAutoJournal (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const journal = await prisma.journal.findUnique({
-      where: { sourceType_sourceId: { sourceType: "TEST", sourceId: sourceId() } },
+    const journals = await prisma.journal.findMany({
+      where: { postedById: userId },
       select: { id: true },
     });
-    if (journal) {
-      await prisma.journalLine.deleteMany({ where: { journalId: journal.id } });
-      await prisma.journal.delete({ where: { id: journal.id } });
+    const journalIds = journals.map((j) => j.id);
+    if (journalIds.length) {
+      await prisma.journalLine.deleteMany({ where: { journalId: { in: journalIds } } });
+      await prisma.journal.deleteMany({ where: { id: { in: journalIds } } });
     }
-    await prisma.journalAccountMapping.deleteMany({ where: { chartAccountId: { in: [inventoryId, varianceId] } } });
+    await restoreMappings(mappingSnapshot);
     await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, varianceId] } } });
     await prisma.user.delete({ where: { id: userId } });
   });

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
 import { opnameNetDelta, postOpnameJournal } from "./opname-journal";
+import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
 
 // Posts journal + mapping rows and stock movements — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -15,9 +16,11 @@ d("postOpnameJournal (test bed only)", () => {
   let inventoryId: string;
   let varianceId: string;
   let opnameId: string;
+  let mappingSnapshot: MappingSnapshot;
 
   beforeEach(async () => {
     token = Math.floor(Math.random() * 10_000_000).toString();
+    mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_VARIANCE"]);
 
     const user = await prisma.user.create({
       data: { email: `test-opname-journal-${token}@test.local`, name: "Test Admin" },
@@ -75,7 +78,7 @@ d("postOpnameJournal (test bed only)", () => {
       await prisma.journalLine.deleteMany({ where: { journalId: journal.id } });
       await prisma.journal.delete({ where: { id: journal.id } });
     }
-    await prisma.journalAccountMapping.deleteMany({ where: { chartAccountId: { in: [inventoryId, varianceId] } } });
+    await restoreMappings(mappingSnapshot);
     await prisma.stockMovement.deleteMany({ where: { refType: "OPNAME", refId: opnameId } });
     await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, varianceId] } } });
     await prisma.stockOpname.delete({ where: { id: opnameId } });

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
 import { postSettlementJournal } from "./journal";
+import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 
 // Posts journal + mapping rows — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -14,9 +15,11 @@ d("postSettlementJournal (test bed only)", () => {
   let feeId: string;
   let arId: string;
   let settlementId: string;
+  let mappingSnapshot: MappingSnapshot;
 
   beforeEach(async () => {
     token = Math.floor(Math.random() * 10_000_000).toString();
+    mappingSnapshot = await snapshotMappings(["BANK", "MARKETPLACE_FEE", "AR"]);
     const user = await prisma.user.create({
       data: { email: `test-settlement-journal-${token}@test.local`, name: "Test Admin" },
     });
@@ -84,7 +87,7 @@ d("postSettlementJournal (test bed only)", () => {
       await prisma.journalLine.deleteMany({ where: { journalId: journal.id } });
       await prisma.journal.delete({ where: { id: journal.id } });
     }
-    await prisma.journalAccountMapping.deleteMany({ where: { chartAccountId: { in: [bankId, feeId, arId] } } });
+    await restoreMappings(mappingSnapshot);
     await prisma.chartAccount.deleteMany({ where: { id: { in: [bankId, feeId, arId] } } });
     await prisma.settlement.delete({ where: { id: settlementId } });
     await prisma.user.delete({ where: { id: adminId } });
