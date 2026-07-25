@@ -903,6 +903,20 @@
         "HABIS": "Habis",
         "NEGATIF": "Negatif"
       }
+    },
+    "grnJournal": {
+      "posted": "Jurnal diposting",
+      "reversalPosted": "Jurnal pembalik diposting",
+      "postJournal": "Posting jurnal",
+      "postReversal": "Posting jurnal pembalik",
+      "viewJournal": "Lihat jurnal",
+      "postedToast": "Jurnal berhasil diposting.",
+      "alreadyPostedToast": "Jurnal sudah ada.",
+      "errUNMAPPED_ROLE": "Peran akun {role} belum dipetakan — petakan di Account Mapping lalu posting ulang.",
+      "errUNBALANCED": "Jurnal tidak seimbang.",
+      "errNOTHING_TO_POST": "Tidak ada nilai untuk diposting.",
+      "errBAD_STATE": "GRN tidak dalam status yang bisa diposting.",
+      "errFORBIDDEN": "Anda tidak punya akses posting jurnal."
     }
   },
   "stockOpname": {

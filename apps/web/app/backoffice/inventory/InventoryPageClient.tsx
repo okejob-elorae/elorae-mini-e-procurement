@@ -49,7 +49,11 @@ import {
   getFabricRollFilterOptions,
   approveGRNByOwner,
   declineGRNByOwner,
+  getGrnJournalState,
+  postGrnReceiptJournalAction,
+  postGrnReversalJournalAction,
 } from '@/app/actions/grn';
+import { hasPermission } from "@/lib/rbac";
 import { getStockAdjustments } from '@/app/actions/inventory';
 import { getInventoryValueSnapshot } from '@/app/actions/reports/inventory';
 import { buildInventoryReportPrintHtml } from '@/lib/print/inventory-report-html';
@@ -171,6 +175,8 @@ export function InventoryPageClient({
   const [expandedAdjustmentId, setExpandedAdjustmentId] = useState<string | null>(null);
   const [expandedGrnId, setExpandedGrnId] = useState<string | null>(null);
   const [grnRolls, setGrnRolls] = useState<Array<{ id: string; rollCode: string; rollRef: string; initialLength: number; remainingLength: number; isClosed: boolean; item: { sku: string; nameId: string }; uom: { code: string } }>>([]);
+  const [grnJournal, setGrnJournal] = useState<Awaited<ReturnType<typeof getGrnJournalState>> | null>(null);
+  const [postingJournal, setPostingJournal] = useState(false);
   const [rolls, setRolls] = useState<
     Array<{
       id: string;
@@ -302,12 +308,56 @@ export function InventoryPageClient({
   useEffect(() => {
     if (!expandedGrnId) {
       setGrnRolls([]);
+      setGrnJournal(null);
       return;
     }
     getRollsByGrnId(expandedGrnId)
       .then(setGrnRolls)
       .catch(() => setGrnRolls([]));
+    getGrnJournalState(expandedGrnId)
+      .then(setGrnJournal)
+      .catch(() => setGrnJournal(null));
   }, [expandedGrnId]);
+
+  const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
+
+  const handlePostJournal = async (grnId: string, kind: "receipt" | "reversal") => {
+    setPostingJournal(true);
+    try {
+      const res =
+        kind === "receipt"
+          ? await postGrnReceiptJournalAction(grnId)
+          : await postGrnReversalJournalAction(grnId);
+      if (res.ok) {
+        toast.success(t(res.created ? "grnJournal.postedToast" : "grnJournal.alreadyPostedToast"));
+      } else {
+        switch (res.code) {
+          case "UNMAPPED_ROLE":
+            toast.error(t("grnJournal.errUNMAPPED_ROLE", { role: res.role ?? "" }));
+            break;
+          case "UNBALANCED":
+            toast.error(t("grnJournal.errUNBALANCED"));
+            break;
+          case "NOTHING_TO_POST":
+            toast.error(t("grnJournal.errNOTHING_TO_POST"));
+            break;
+          case "BAD_STATE":
+            toast.error(t("grnJournal.errBAD_STATE"));
+            break;
+          case "FORBIDDEN":
+            toast.error(t("grnJournal.errFORBIDDEN"));
+            break;
+          default:
+            toast.error(t("grnJournal.errBAD_STATE"));
+        }
+      }
+      await getGrnJournalState(grnId)
+        .then(setGrnJournal)
+        .catch(() => setGrnJournal(null));
+    } finally {
+      setPostingJournal(false);
+    }
+  };
 
   useEffect(() => {
     if (activeTab !== 'rolls') return;
@@ -748,6 +798,51 @@ export function InventoryPageClient({
                                     ))}
                                   </TableBody>
                                 </Table>
+                              )}
+
+                              {grnJournal && (
+                                <div className="flex flex-wrap items-center gap-2 pt-4">
+                                  {grnJournal.receiptJournalId ? (
+                                    <>
+                                      <Badge variant="default">{t("grnJournal.posted")}</Badge>
+                                      <Button asChild variant="outline" size="sm">
+                                        <Link href={`/backoffice/finance/journals/${grnJournal.receiptJournalId}`}>
+                                          {t("grnJournal.viewJournal")}
+                                        </Link>
+                                      </Button>
+                                    </>
+                                  ) : grnJournal.hasPostableReceiptJournal && canPostJournal ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={postingJournal}
+                                      onClick={() => handlePostJournal(grn.id, "receipt")}
+                                    >
+                                      {t("grnJournal.postJournal")}
+                                    </Button>
+                                  ) : null}
+
+                                  {grn.ownerDeclinedAt &&
+                                    (grnJournal.reversalJournalId ? (
+                                      <>
+                                        <Badge variant="secondary">{t("grnJournal.reversalPosted")}</Badge>
+                                        <Button asChild variant="outline" size="sm">
+                                          <Link href={`/backoffice/finance/journals/${grnJournal.reversalJournalId}`}>
+                                            {t("grnJournal.viewJournal")}
+                                          </Link>
+                                        </Button>
+                                      </>
+                                    ) : grnJournal.hasPostableReversalJournal && canPostJournal ? (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={postingJournal}
+                                        onClick={() => handlePostJournal(grn.id, "reversal")}
+                                      >
+                                        {t("grnJournal.postReversal")}
+                                      </Button>
+                                    ) : null)}
+                                </div>
                               )}
                             </TableCell>
                           </TableRow>
