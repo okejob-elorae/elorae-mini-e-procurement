@@ -842,7 +842,20 @@
     "actualConsumption": "Konsumsi aktual",
     "remainder": "Sisa",
     "increaseConsumptionOrMaterial": "Tambah konsumsi atau pilih material lain",
-    "defineBomFirst": "Definisikan BOM untuk barang jadi ini terlebih dahulu"
+    "defineBomFirst": "Definisikan BOM untuk barang jadi ini terlebih dahulu",
+    "receiptJournal": {
+      "posted": "Jurnal diposting",
+      "postJournal": "Posting jurnal",
+      "viewJournal": "Lihat jurnal",
+      "column": "Jurnal",
+      "postedToast": "Jurnal berhasil diposting.",
+      "alreadyPostedToast": "Jurnal sudah ada.",
+      "errUNMAPPED_ROLE": "Peran akun {role} belum dipetakan — petakan di Account Mapping lalu posting ulang.",
+      "errUNBALANCED": "Jurnal tidak seimbang.",
+      "errBAD_STATE": "Receipt tidak bisa diposting.",
+      "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
+      "errUnexpected": "Terjadi kesalahan saat memposting jurnal."
+    }
   },
   "supplierTypes": {
     "cardDescription": "Tambah, edit, atau hapus tipe pemasok. Tipe yang masih dipakai tidak dapat dihapus."

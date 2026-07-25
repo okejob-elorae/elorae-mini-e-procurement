@@ -842,7 +842,20 @@
     "actualConsumption": "Actual consumption",
     "remainder": "Remainder",
     "increaseConsumptionOrMaterial": "Increase consumption or choose a different material",
-    "defineBomFirst": "Define BOM for this finished good first"
+    "defineBomFirst": "Define BOM for this finished good first",
+    "receiptJournal": {
+      "posted": "Journal posted",
+      "postJournal": "Post journal",
+      "viewJournal": "View journal",
+      "column": "Journal",
+      "postedToast": "Journal posted.",
+      "alreadyPostedToast": "Journal already exists.",
+      "errUNMAPPED_ROLE": "Posting role {role} is unmapped — map it in Account Mapping, then post again.",
+      "errUNBALANCED": "Journal is unbalanced.",
+      "errBAD_STATE": "Receipt is not in a postable state.",
+      "errFORBIDDEN": "You don't have journal-posting permission.",
+      "errUnexpected": "Something went wrong posting the journal."
+    }
   },
   "supplierTypes": {
     "cardDescription": "Add, edit, or remove supplier types. Types in use cannot be deleted."
