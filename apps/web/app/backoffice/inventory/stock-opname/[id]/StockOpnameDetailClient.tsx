@@ -270,7 +270,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
                 </Link>
               </Button>
             </>
-          ) : status === "APPROVED" && canPostJournal ? (
+          ) : status === "APPROVED" && canPostJournal && opname.hasPostableJournal ? (
             <Button size="sm" variant="outline" onClick={handlePostJournal} disabled={postingJournal}>
               <BookText className={`h-4 w-4 mr-2 ${postingJournal ? "animate-pulse" : ""}`} />
               {t("journal.postJournal")}

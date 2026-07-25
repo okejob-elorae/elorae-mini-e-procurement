@@ -25,7 +25,7 @@ import {
   type DriftRow,
 } from "@/lib/inventory/opname-approve";
 import { freezeFabricRollSnapshot, freezeItemSnapshot } from "@/lib/inventory/opname-snapshot";
-import { postOpnameJournal } from "@/lib/inventory/opname-journal";
+import { postOpnameJournal, opnameNetDelta } from "@/lib/inventory/opname-journal";
 import { serializeForClient } from "@/lib/serialize-for-client";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
@@ -422,6 +422,10 @@ export async function getOpnameById(opnameId: string) {
     select: { id: true },
   });
 
+  // Only offer the post-journal action when there is an unposted, non-zero value delta —
+  // a no-drift opname (or one with no cost basis) has nothing to journal.
+  const netDelta = j ? 0 : await opnameNetDelta(opnameId, prisma);
+
   return serializeOpname({
     ...opname,
     createdByName: userNames.get(opname.createdById) ?? null,
@@ -435,5 +439,6 @@ export async function getOpnameById(opnameId: string) {
       ? (userNames.get(opname.assignedToId) ?? null)
       : null,
     journalId: j?.id ?? null,
+    hasPostableJournal: !j && Math.abs(netDelta) >= 0.01,
   });
 }
