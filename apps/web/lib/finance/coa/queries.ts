@@ -84,7 +84,22 @@ export async function getPostableAccounts(): Promise<Array<{ id: string; code: s
     select: { id: true, code: true, name: true, type: true, parentId: true },
   });
   const parentIds = new Set(all.map((a) => a.parentId).filter(Boolean) as string[]);
+  // Standard CoA/ledger ordering: group by account type, then numeric-aware by code
+  // within each type (a plain string sort would put "1101" before "113" before "12").
+  const typeRank: Record<AccountType, number> = {
+    ASET: 0,
+    LIABILITAS: 1,
+    EKUITAS: 2,
+    PENDAPATAN: 3,
+    HPP: 4,
+    BEBAN: 5,
+  };
   return all
     .filter((a) => !parentIds.has(a.id))
-    .map(({ id, code, name, type }) => ({ id, code, name, type: type as AccountType }));
+    .map(({ id, code, name, type }) => ({ id, code, name, type: type as AccountType }))
+    .sort(
+      (a, b) =>
+        typeRank[a.type] - typeRank[b.type] ||
+        a.code.localeCompare(b.code, undefined, { numeric: true }),
+    );
 }

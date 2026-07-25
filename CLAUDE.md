@@ -226,6 +226,9 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 ### Sales UI / dates
 - [ ] Adopt `parseDateOnlyEnd` (WIB-safe inclusive `to`) on the remaining date-filtered lists: returns, fulfillment, van-sales, supplier-payments, reports/hpp, stock-card (only journals/ledger/sales-orders use it today) (PR #142).
 
+### Notifications
+- [ ] `AdminNotification` is write-only — nothing reads/renders it. Three categories insert to it (`JOURNAL_PENDING` from opname 13-06 + GRN 13-01; `PENDING_ORDER_APPROVAL` from field-sales; `STORE_CHANGE_REQUEST` from store edits) but the in-app bell (`NotificationIcon` → `/api/notifications`) reads `notificationQueue` (FCM), a different table. Add an `AdminNotification` feed/bell so these flags surface (fixes all three at once). Until then the visible recovery path is the per-row retry button (e.g. "Post journal").
+
 ### Ops / infra
 - [ ] No DB backups — set up daily `mariadb-dump` → R2 cron (TiDB did this automatically) (PR #74).
 - [ ] Auto-schedule the R2 orphan sweeper (not registered in `lib/cron/jobs.ts`) (PR #86).

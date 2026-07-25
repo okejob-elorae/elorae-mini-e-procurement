@@ -9,7 +9,9 @@ import { getActorName, notifyGRNCreated } from '@/app/actions/notifications';
 import { logAudit } from '@/lib/audit';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { auth } from '@/lib/auth';
-import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
+import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -313,6 +315,35 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
     entityId: result.id,
     changes: { after: { docNumber: result.docNumber } },
   }).catch(() => {});
+
+  try {
+    const jr = await postGrnJournal(result.id, userId);
+    if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
+      await prisma.adminNotification.create({
+        data: {
+          category: "JOURNAL_PENDING",
+          severity: "WARNING",
+          title: "GRN journal not posted",
+          message: `GRN journal could not be posted (${jr.code}${jr.role ? `: ${jr.role}` : ""}). Map the account, then post from the GRN row.`,
+          metadata: { grnId: result.id, kind: "receipt", reason: jr.code, role: jr.role ?? null },
+        },
+      });
+    }
+  } catch (e) {
+    try {
+      await prisma.adminNotification.create({
+        data: {
+          category: "JOURNAL_PENDING",
+          severity: "WARNING",
+          title: "GRN journal not posted",
+          message: `GRN journal errored (${e instanceof Error ? e.message : "unknown"}). Map/verify the account, then post from the GRN row.`,
+          metadata: { grnId: result.id, kind: "receipt", reason: "ERROR", role: null },
+        },
+      });
+    } catch {
+      // best-effort: a notification failure must never fail the GRN
+    }
+  }
 
   return result;
 }
@@ -732,7 +763,95 @@ export async function declineGRNByOwner(id: string, userId: string) {
     });
   });
 
+  try {
+    const jr = await postGrnReversalJournal(id, userId);
+    if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
+      await prisma.adminNotification.create({
+        data: {
+          category: "JOURNAL_PENDING",
+          severity: "WARNING",
+          title: "GRN reversal journal not posted",
+          message: `GRN reversal journal could not be posted (${jr.code}${jr.role ? `: ${jr.role}` : ""}). Map the account, then post from the GRN row.`,
+          metadata: { grnId: id, kind: "reversal", reason: jr.code, role: jr.role ?? null },
+        },
+      });
+    }
+  } catch (e) {
+    try {
+      await prisma.adminNotification.create({
+        data: {
+          category: "JOURNAL_PENDING",
+          severity: "WARNING",
+          title: "GRN reversal journal not posted",
+          message: `GRN journal errored (${e instanceof Error ? e.message : "unknown"}). Map/verify the account, then post from the GRN row.`,
+          metadata: { grnId: id, kind: "reversal", reason: "ERROR", role: null },
+        },
+      });
+    } catch {
+      // best-effort: a notification failure must never fail the decline
+    }
+  }
+
   revalidatePath('/backoffice/inventory');
   revalidatePath('/backoffice/purchase-orders');
   if (poIdForRevalidate) revalidatePath(`/backoffice/purchase-orders/${poIdForRevalidate}`);
+}
+
+export async function getGrnJournalState(grnId: string): Promise<{
+  receiptJournalId: string | null;
+  reversalJournalId: string | null;
+  hasPostableReceiptJournal: boolean;
+  hasPostableReversalJournal: boolean;
+}> {
+  const [receipt, reversal, grn] = await Promise.all([
+    prisma.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "GRN", sourceId: grnId } },
+      select: { id: true },
+    }),
+    prisma.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "GRN_REVERSAL", sourceId: grnId } },
+      select: { id: true },
+    }),
+    prisma.gRN.findUnique({ where: { id: grnId }, select: { totalAmount: true, ownerDeclinedAt: true } }),
+  ]);
+  const hasValue = grn != null && Math.abs(Number(grn.totalAmount)) >= 0.01;
+  const declined = grn?.ownerDeclinedAt != null;
+  return {
+    receiptJournalId: receipt?.id ?? null,
+    reversalJournalId: reversal?.id ?? null,
+    hasPostableReceiptJournal: hasValue && receipt == null,
+    hasPostableReversalJournal: hasValue && declined && reversal == null,
+  };
+}
+
+export async function postGrnReceiptJournalAction(
+  grnId: string,
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { id: true } });
+  if (!grn) return { ok: false, code: "BAD_STATE" };
+
+  const r = await postGrnJournal(grnId, session.user.id);
+  revalidatePath("/backoffice/inventory");
+  return r;
+}
+
+export async function postGrnReversalJournalAction(
+  grnId: string,
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { ownerDeclinedAt: true } });
+  if (!grn || grn.ownerDeclinedAt == null) return { ok: false, code: "BAD_STATE" };
+
+  const r = await postGrnReversalJournal(grnId, session.user.id);
+  revalidatePath("/backoffice/inventory");
+  return r;
 }

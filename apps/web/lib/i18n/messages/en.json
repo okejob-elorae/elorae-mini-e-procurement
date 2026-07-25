@@ -903,6 +903,21 @@
         "HABIS": "Out",
         "NEGATIF": "Negative"
       }
+    },
+    "grnJournal": {
+      "posted": "Journal posted",
+      "reversalPosted": "Reversal journal posted",
+      "postJournal": "Post journal",
+      "postReversal": "Post reversal journal",
+      "viewJournal": "View journal",
+      "postedToast": "Journal posted.",
+      "alreadyPostedToast": "Journal already exists.",
+      "errUNMAPPED_ROLE": "Posting role {role} is unmapped — map it in Account Mapping, then post again.",
+      "errUNBALANCED": "Journal is unbalanced.",
+      "errNOTHING_TO_POST": "Nothing to post.",
+      "errBAD_STATE": "GRN is not in a postable state.",
+      "errFORBIDDEN": "You don't have journal-posting permission.",
+      "errUnexpected": "Something went wrong posting the journal."
     }
   },
   "stockOpname": {
