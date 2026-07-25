@@ -2613,6 +2613,7 @@
     },
     "role": {
       "INVENTORY": "Persediaan",
+      "INVENTORY_FG": "Persediaan Barang Jadi",
       "AP": "Utang Usaha",
       "AR": "Piutang Usaha",
       "SALES_REVENUE": "Pendapatan Penjualan",
@@ -2624,6 +2625,7 @@
     },
     "desc": {
       "INVENTORY": "Akun aset yang didebit saat stok masuk dan dikredit saat stok keluar.",
+      "INVENTORY_FG": "Akun persediaan barang jadi, didebit saat hasil work order diterima.",
       "AP": "Akun kewajiban untuk utang ke pemasok.",
       "AR": "Akun aset untuk piutang dari pelanggan/marketplace.",
       "SALES_REVENUE": "Akun pendapatan yang dikreditkan saat penjualan tercatat.",

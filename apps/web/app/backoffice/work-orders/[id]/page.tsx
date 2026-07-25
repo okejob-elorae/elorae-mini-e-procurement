@@ -711,7 +711,7 @@ export default function WorkOrderDetailPage() {
                       <TableHead className="text-right">Received</TableHead>
                       <TableHead className="text-right">Rejected</TableHead>
                       <TableHead className="text-right">Accepted</TableHead>
-                      <TableHead>{tWO('receiptJournal.column')}</TableHead>
+                      <TableHead>{tWO("receiptJournal.column")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -735,9 +735,9 @@ export default function WorkOrderDetailPage() {
                         <TableCell>
                           {r.journalId ? (
                             <div className="flex items-center gap-2">
-                              <Badge variant="default">{tWO('receiptJournal.posted')}</Badge>
+                              <Badge variant="default">{tWO("receiptJournal.posted")}</Badge>
                               <Button asChild variant="outline" size="sm">
-                                <Link href={`/backoffice/finance/journals/${r.journalId}`}>{tWO('receiptJournal.viewJournal')}</Link>
+                                <Link href={`/backoffice/finance/journals/${r.journalId}`}>{tWO("receiptJournal.viewJournal")}</Link>
                               </Button>
                             </div>
                           ) : r.hasPostableJournal && canPostJournal ? (
@@ -747,7 +747,7 @@ export default function WorkOrderDetailPage() {
                               disabled={postingReceiptId === r.id}
                               onClick={() => handlePostReceiptJournal(r.id)}
                             >
-                              {tWO('receiptJournal.postJournal')}
+                              {tWO("receiptJournal.postJournal")}
                             </Button>
                           ) : null}
                         </TableCell>
