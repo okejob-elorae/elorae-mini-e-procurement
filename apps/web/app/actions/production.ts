@@ -13,7 +13,9 @@ import { getActorName, notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterials
 import { getPpnRatePercent } from '@/app/actions/settings/ppn';
 import { auth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { postFgReceiptJournal } from '@/lib/production/fg-receipt-journal';
+import type { GenerateAutoJournalResult } from '@/lib/finance/journal';
 import {
   listWorkOrders as listWorkOrdersLib,
   type ListWorkOrdersFilters,
@@ -1211,7 +1213,53 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
       // poller picks it up within ~5s if this fails
     });
   }
+
+  try {
+    const jr = await postFgReceiptJournal(receiveResult.receipt.id, userId);
+    if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
+      await prisma.adminNotification.create({
+        data: {
+          category: "JOURNAL_PENDING",
+          severity: "WARNING",
+          title: "FG receipt journal not posted",
+          message: `FG receipt journal could not be posted (${jr.code}${jr.role ? `: ${jr.role}` : ""}). Map the account, then post from the work order.`,
+          metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: jr.code, role: jr.role ?? null },
+        },
+      });
+    }
+  } catch (e) {
+    try {
+      await prisma.adminNotification.create({
+        data: {
+          category: "JOURNAL_PENDING",
+          severity: "WARNING",
+          title: "FG receipt journal errored",
+          message: `FG receipt journal errored (${e instanceof Error ? e.message : "unknown"}). Verify the account mapping, then post from the work order.`,
+          metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: "ERROR", role: null },
+        },
+      });
+    } catch {
+      // best-effort: never fail receiveFG on a journal/notification error
+    }
+  }
+
   return receiveResult.receipt;
+}
+
+export async function postFgReceiptJournalAction(
+  receiptId: string,
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  const receipt = await prisma.fGReceipt.findUnique({ where: { id: receiptId }, select: { woId: true } });
+  if (!receipt) return { ok: false, code: "BAD_STATE" };
+
+  const r = await postFgReceiptJournal(receiptId, session.user.id);
+  revalidatePath(`/backoffice/work-orders/${receipt.woId}`);
+  return r;
 }
 
 export async function cancelWorkOrder(id: string, userId: string, reason?: string) {
@@ -1280,7 +1328,28 @@ export async function getWorkOrderById(id: string) {
     }
   });
   if (!raw) return null;
-  return serializeWorkOrder(raw as Parameters<typeof serializeWorkOrder>[0]);
+  const serialized = serializeWorkOrder(raw as Parameters<typeof serializeWorkOrder>[0]) as Record<string, unknown>;
+
+  const receiptRows = (serialized.receipts ?? []) as Array<{ id: string; qtyAccepted: number; totalCostValue: number | null }>;
+  const receiptIds = receiptRows.map((r) => r.id);
+  const receiptJournals = receiptIds.length
+    ? await prisma.journal.findMany({
+        where: { sourceType: "FG_RECEIPT", sourceId: { in: receiptIds } },
+        select: { id: true, sourceId: true },
+      })
+    : [];
+  const journalBySource = new Map(receiptJournals.map((j) => [j.sourceId, j.id]));
+  serialized.receipts = receiptRows.map((r) => {
+    const journalId = journalBySource.get(r.id) ?? null;
+    const value = r.totalCostValue == null ? 0 : Number(r.totalCostValue);
+    return {
+      ...r,
+      journalId,
+      hasPostableJournal: Number(r.qtyAccepted) > 0 && Math.abs(value) >= 0.01 && journalId == null,
+    };
+  });
+
+  return serialized;
 }
 
 /** Roll allocation status for WO detail: per-roll initial/remaining (so user sees what’s already issued). */
