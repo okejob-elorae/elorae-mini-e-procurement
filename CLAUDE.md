@@ -92,7 +92,7 @@ EPIC-01 (Jubelio Integration) + EPIC-02 (Product & Stock Sync) are decomposed in
 | **1** | Inbound webhook queue + stock handler | ✅ shipped (PR #29 merged 2026-05-28) | 01-02 (partial — stock only), 01-03 (inbound half), 02-04 |
 | **2** | Outbound `JubelioOutbox` + first push primitive | ✅ shipped (product + stock handlers, outbox router/poller/processor) | 01-03 (outbound), 02-03 |
 | **3** | Product push + HPP/price sync | ✅ shipped — product push (PRs #37/#42) + HPP→sellingPrice auto-recalc with audit log (PR #52 merged 2026-06-14). `buy_price` intentionally stays global per decision H3; revisit if Jubelio's buy_price column starts feeding downstream marketplace reporting. | 02-01, 02-02 |
-| **4** | Remaining inbound handlers (salesorder, salesreturn, product webhooks) | 🟡 mostly shipped (PR #40 merged 2026-06-10) — salesorder + product handlers wired; **salesreturn handler is a stub awaiting live payload samples**. | 01-02 (full) |
+| **4** | Remaining inbound handlers (salesorder, salesreturn, product webhooks) | ✅ shipped — salesorder + product handlers (PR #40); **salesreturn inbound wired via EPIC-05 (PRs #54/#55)** — returns ARE SalesOrders, handled by `SalesOrderWebhookHandler` (the old "stub awaiting samples" note is stale). Only the *outbound* `salesreturn_decision_push` remains unwired — see Follow-ups. | 01-02 (full) |
 | **5** | Initial bulk migration tool | ✅ shipped (PR #41 merged 2026-06-10) | 02-05 |
 
 EPIC-03 (Sales — Orders) status:
@@ -182,15 +182,62 @@ Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit l
 
 Canonical home for follow-ups + known debt. **New follow-ups go HERE** as `- [ ]` — not buried in PR bodies (they die on merge) or per-slice decomposition prose. When an item ships, flip it to `- [x]` and append the PR #. Feature names only (no EPIC labels — shared artifact). Cross-cutting code landmines also get a `memory/` note; this list is the actionable index.
 
+Roadmap slices (not debt) live in the decomposition tables + the GitHub board, NOT here — e.g. the remaining EPIC-13 auto-journals (13-01 GRN, 13-02 FG receipt, 13-03 sales/COGS, 13-05 retur). This list is post-audit-complete as of 2026-07-25 (swept all merged PRs + board issues).
+
 ### Finance — Journal & CoA
 - [ ] Account-mapping UI: add an unmap/clear control (currently reassign-only — a mis-mapped role can't be cleared).
 - [ ] Seed CoA detail accounts (Persediaan, Piutang, Selisih Persediaan, Bank, Marketplace Fee) so posting-role mappings are wireable out-of-box.
 - [ ] `postJournal` integrity-check query — surface any unbalanced or dangling journals.
+- [ ] Settlement journal: add an "other"/4th-line role so real settlement lines beyond `Dilepas+Pengeluaran=Pendapatan` don't block UNBALANCED (PR #157, #17).
 - [ ] Settlement `SP-`+orderNo match coverage is low for pre-2026-06-14 settlements (SalesOrder ingestion started then) — revisit if old-period reconciliation matters.
+- [ ] Field-sales promo: order-level discount not pro-rated across `SalesHistory` lines (per D7); preview debounce; zero-promo short-circuit (PR #111).
 
-### Inventory — Opname & Reconciliation
+### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
 - [ ] Same NULL-variant lookup in `reconciliation-runner.ts` auto-correct path (dormant, `FLAG_ONLY`) — fix before enabling auto-reconcile. See memory `project_inventory_null_variant_lookup`.
+- [ ] GRN + Adjustments inventory tabs client-filter only the current page; oversold-only view still client-side (PR #133).
+
+### Jubelio integration / sync
+- [ ] Wire the outbound `salesreturn_decision_push` handler — accept/reject decisions enqueue but never sync (`HANDLER_NOT_WIRED`); blocked on Jubelio resolve-endpoint docs (PR #58).
+- [ ] New-product first push needs a second push (`variation_images` only populates after mappings exist) — auto-self-enqueue (PR #75).
+- [ ] `ProductPushHandler` DELETE-variant path has the same unfixed partial-failure shape as the fixed upsert path (low freq) (PR #42).
+- [ ] Stock webhooks refetch group detail N× for N same-group events — batch by `item_group_id` (PR #78).
+- [ ] Add a `source:"JUBELIO"` filter to Jubelio reservation sweeps (defense-in-depth) (PR #98).
+- [ ] Audit other writer helpers for the narrow P2002 index-name check (PRs #63, #73).
+- [ ] `buy_price` stays global (decision H3) — revisit if Jubelio's `buy_price` starts feeding marketplace reporting (PR #52).
+- [ ] Tokopedia settlement adapter (`TT-` prefix) unsupported; settlement Phase 1 is Shopee-only (#19).
+
+### Sales returns
+- [ ] `SalesReturn.jubelioReturnId` actually stores `salesorder_id` — misleading name, rename deferred (migration churn) (PR #55).
+- [ ] Return evidence R2 mirror (R5) deferred — evidence URLs nullable, no mirror (PR #54/#55).
+- [ ] Extract `JubelioHttpClient` into a leaf module to break the triple-hop forwardRef circular (PR #54).
+
+### Field Sales / PWA (SFA)
+- [ ] Putus: server-recompute `unitPrice` (client-sent, mitigated by the approval gate) (#21).
+- [ ] Putus oversell is WARN-not-block; approve doesn't re-surface short stock — unresolved design call (#21).
+- [ ] Offline: `newLocalId` double-tap can create 2 orders (only mitigated by disabled button) (#21).
+- [ ] Offline: logout clears neither the Dexie order queue nor the SW page cache (one-salesman-per-device assumption) (#21).
+- [ ] Photos: 401 mid-sync marks pending `failed` — consider treating auth as transient (#21).
+- [ ] Photos: soft-cap is client-advisory only; server enforces none (race) (#21).
+- [ ] Canvassing: offline write-queue for van sales, promos on van sales, and void/refund — all deferred (#21).
+- [ ] Konsi: real stock transfer to store virtual warehouse + surat keluar (→ EPIC-18-04/19) (#21).
+- [ ] Territory model — every salesman currently sees every active store (#21).
+- [ ] Canvassing van-load action conflates forbidden vs not-found error codes (PR #148).
+- [ ] PWA i18n debt: hardcoded ID strings across offline/CatalogShell/photo-capture + lightbox `DialogTitle` (#21).
+- [ ] Backoffice code quality: shared format helpers, shared `QtyStepper`, cross-page nav pending-state, CI `tsc --noEmit` gate (#21).
+
+### Sales UI / dates
+- [ ] Migrate date-filtered list pages' inclusive `to` bound to `parseDateOnlyEnd` (same WIB-vs-UTC class as PR #142).
+- [ ] Fulfillment end-to-end flow still needs live verification (#8).
+
+### Ops / infra
+- [ ] No DB backups — set up daily `mariadb-dump` → R2 cron (TiDB did this automatically) (PR #74).
+- [ ] Auto-schedule the R2 orphan sweeper via node-cron (currently a manual one-shot script) (PR #86).
+- [ ] Queue: depth alert (AdminNotificationService) + dashboard panel; sweeper DEAD-letters after N attempts; prod-mode singleton smoke test (PR #73).
+- [ ] VPS log shipping (Loki/Logtail) for off-server retention + backup Redis + Caddy cert volumes (PR #53).
+- [ ] Per-deploy `docker builder prune -af` fights the build cache — add a `.next/cache` mount (PR #99).
+- [ ] Trim web image size (drop unused Prisma engine binaries) + remove dead `@types/node-cron` dep (PR #56).
+- [ ] Catalog sync: re-introduce the dropped progress log via an atomic counter (PR #39).
 
 ### Testing / infra
 - [ ] DB-spec isolation: `vitest.config.ts` `fileParallelism:false` serializes the WHOLE suite (slow). Scope DB specs into a serial project, or add a tx-rollback harness for the ~20 real-row specs.
