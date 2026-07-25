@@ -916,7 +916,8 @@
       "errUNBALANCED": "Journal is unbalanced.",
       "errNOTHING_TO_POST": "Nothing to post.",
       "errBAD_STATE": "GRN is not in a postable state.",
-      "errFORBIDDEN": "You don't have journal-posting permission."
+      "errFORBIDDEN": "You don't have journal-posting permission.",
+      "errUnexpected": "Something went wrong posting the journal."
     }
   },
   "stockOpname": {

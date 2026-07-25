@@ -35,6 +35,7 @@ d("GRN auto-journal (test bed only)", () => {
         receivedBy: userId,
         totalAmount: 500,
         items: [],
+        grnDate: new Date("2026-01-15"),
       },
       select: { id: true },
     });
@@ -82,6 +83,7 @@ d("GRN auto-journal (test bed only)", () => {
     const ap = j!.lines.find((l) => l.chartAccountId === apId);
     expect(Number(inv!.debit)).toBe(500);
     expect(Number(ap!.credit)).toBe(500);
+    expect(j!.date.toISOString()).toBe(new Date("2026-01-15").toISOString());
   });
 
   it("reversal posts DR Hutang 500 / CR Persediaan 500", async () => {

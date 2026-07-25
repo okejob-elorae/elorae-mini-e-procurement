@@ -354,6 +354,8 @@ export function InventoryPageClient({
       await getGrnJournalState(grnId)
         .then(setGrnJournal)
         .catch(() => setGrnJournal(null));
+    } catch {
+      toast.error(t("grnJournal.errUnexpected"));
     } finally {
       setPostingJournal(false);
     }

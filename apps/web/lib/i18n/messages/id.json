@@ -916,7 +916,8 @@
       "errUNBALANCED": "Jurnal tidak seimbang.",
       "errNOTHING_TO_POST": "Tidak ada nilai untuk diposting.",
       "errBAD_STATE": "GRN tidak dalam status yang bisa diposting.",
-      "errFORBIDDEN": "Anda tidak punya akses posting jurnal."
+      "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
+      "errUnexpected": "Terjadi kesalahan saat memposting jurnal."
     }
   },
   "stockOpname": {

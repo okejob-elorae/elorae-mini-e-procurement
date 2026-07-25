@@ -329,8 +329,20 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
         },
       });
     }
-  } catch {
-    // best-effort: a journal/notification failure must never fail the GRN
+  } catch (e) {
+    try {
+      await prisma.adminNotification.create({
+        data: {
+          category: "JOURNAL_PENDING",
+          severity: "WARNING",
+          title: "GRN journal not posted",
+          message: `GRN journal errored (${e instanceof Error ? e.message : "unknown"}). Map/verify the account, then post from the GRN row.`,
+          metadata: { grnId: result.id, kind: "receipt", reason: "ERROR", role: null },
+        },
+      });
+    } catch {
+      // best-effort: a notification failure must never fail the GRN
+    }
   }
 
   return result;
@@ -764,8 +776,20 @@ export async function declineGRNByOwner(id: string, userId: string) {
         },
       });
     }
-  } catch {
-    // best-effort
+  } catch (e) {
+    try {
+      await prisma.adminNotification.create({
+        data: {
+          category: "JOURNAL_PENDING",
+          severity: "WARNING",
+          title: "GRN reversal journal not posted",
+          message: `GRN journal errored (${e instanceof Error ? e.message : "unknown"}). Map/verify the account, then post from the GRN row.`,
+          metadata: { grnId: id, kind: "reversal", reason: "ERROR", role: null },
+        },
+      });
+    } catch {
+      // best-effort: a notification failure must never fail the decline
+    }
   }
 
   revalidatePath('/backoffice/inventory');

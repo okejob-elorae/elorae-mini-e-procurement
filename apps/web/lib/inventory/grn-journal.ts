@@ -3,10 +3,10 @@ import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finan
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
-async function grnValue(grnId: string, client: AnyClient): Promise<{ value: number; docNumber: string } | null> {
-  const grn = await client.gRN.findUnique({ where: { id: grnId }, select: { totalAmount: true, docNumber: true } });
+async function grnValue(grnId: string, client: AnyClient): Promise<{ value: number; docNumber: string; grnDate: Date } | null> {
+  const grn = await client.gRN.findUnique({ where: { id: grnId }, select: { totalAmount: true, docNumber: true, grnDate: true } });
   if (!grn) return null;
-  return { value: Number(grn.totalAmount), docNumber: grn.docNumber };
+  return { value: Number(grn.totalAmount), docNumber: grn.docNumber, grnDate: grn.grnDate };
 }
 
 export async function postGrnJournal(
@@ -21,7 +21,7 @@ export async function postGrnJournal(
     { role: "AP" as const, debit: 0, credit: grn.value },
   ];
   return generateAutoJournal(client, "GRN", grnId, lines, {
-    date: new Date(),
+    date: grn.grnDate ?? new Date(),
     description: `GRN ${grn.docNumber}`,
     postedById,
   });
