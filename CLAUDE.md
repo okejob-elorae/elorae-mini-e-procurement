@@ -160,6 +160,20 @@ EPIC-07 (Stock Opname & Reconciliation) decomposition:
 
 Launch posture: reconciliation `FLAG_ONLY` + threshold 0; auto-correct directions implemented but dormant until config flip.
 
+EPIC-13 (Journal Engine) decomposition:
+
+| Story | Scope | Status |
+|----|-------|--------|
+| **Engine** | Balance-enforced `postJournal` (cents-rounded, idempotent by `(sourceType, sourceId)`) + posting-role→account mapping (`JournalAccountMapping`, `resolveAccount`, `POSTING_ROLES`) + manual journal entry (13-07) + ledger list/detail view (13-08) | ✅ shipped (PR #155 core + PR #156 mapping, merged 2026-07-23) |
+| **13-04** | Auto-journal: settlement — DR Bank + DR Fee, CR AR (Piutang); checksum-gated | ✅ shipped (PR #157 merged 2026-07-24) |
+| **13-06** | Auto-journal: opname adjustment — surplus DR Persediaan / CR Selisih (shrinkage reversed); net from `StockMovement` (FG+accessories+fabric); best-effort post-approve + `JOURNAL_PENDING` flag + retriable "Post journal" button (gated on non-zero delta). Introduced the generic `generateAutoJournal(client, sourceType, sourceId, lines, meta)` seam all future auto-journals reuse. | ✅ shipped (PR #159 merged 2026-07-25) |
+| **13-01** | Auto-journal: GRN — DR Persediaan, CR Hutang | ⬜ not started |
+| **13-02** | Auto-journal: FG receipt — DR Persediaan FG, CR HPP/WIP | ⬜ not started |
+| **13-03** | Auto-journal: sales (marketplace) — revenue + COGS (cross-service, hardest) | ⬜ not started |
+| **13-05** | Auto-journal: retur — reverse revenue + COGS on accepted return | ⬜ not started |
+
+Remaining auto-journals (13-01/02/03/05) all reuse the `generateAutoJournal` seam + role→account mapping — add: role lines + source hook + spec + test. Requires the roles mapped in the CoA; unmapped → flagged (`JOURNAL_PENDING`) + retriable, never blocks the source op.
+
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
 **Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought. Same for the **Follow-ups / tech debt** checklist below — on merge, tick any shipped items (append the PR #) and move any new follow-ups there (never leave them only in PR bodies).
