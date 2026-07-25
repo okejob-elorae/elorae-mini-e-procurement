@@ -87,18 +87,6 @@ export async function detectRollDrift(
   return drift;
 }
 
-async function tryOpnameJournal(
-  opnameId: string,
-  lines: Array<{ accountCode: string; debit: number; credit: number }>,
-): Promise<void> {
-  try {
-    const mod = await import("@/lib/finance/journal");
-    await mod.generateAutoJournal("OPNAME", opnameId, lines);
-  } catch {
-    // accounting not built — no-op
-  }
-}
-
 async function enqueueStockPush(itemId: string, userId: string): Promise<void> {
   const row = await prisma.jubelioOutbox.create({
     data: {
@@ -122,7 +110,6 @@ export async function applyFgAccessoriesAdjustments(
   const items = await tx.stockOpnameItem.findMany({ where: { opnameId } });
   let adjustmentCount = 0;
   const pushItemIds: string[] = [];
-  const journalLines: Array<{ accountCode: string; debit: number; credit: number }> = [];
 
   for (const row of items) {
     const countedQty = toNum(row.countedQty);
@@ -222,7 +209,6 @@ export async function applyFgAccessoriesAdjustments(
     });
 
     adjustmentCount += 1;
-    journalLines.push({ accountCode: "6201", debit: Math.abs(totalCostAdj), credit: 0 });
 
     if (scope === "FINISHED_GOOD") {
       const mapping = await tx.jubelioProductMapping.findFirst({
@@ -231,10 +217,6 @@ export async function applyFgAccessoriesAdjustments(
       });
       if (mapping) pushItemIds.push(row.itemId);
     }
-  }
-
-  if (journalLines.length > 0) {
-    await tryOpnameJournal(opnameId, journalLines);
   }
 
   return { adjustmentCount, pushItemIds };

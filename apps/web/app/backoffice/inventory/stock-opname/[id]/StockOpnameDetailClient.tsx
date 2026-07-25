@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, BookText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,6 +21,7 @@ import {
   approveOpname,
   cancelOpname,
   getOpnameById,
+  postOpnameJournalAction,
   submitOpname,
 } from "@/app/actions/stock-opname";
 import {
@@ -57,6 +58,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   const [opname, setOpname] = useState<OpnameDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [postingJournal, setPostingJournal] = useState(false);
   const [driftOpen, setDriftOpen] = useState(false);
   const [driftRows, setDriftRows] = useState<
     Array<{ label: string; snapshotQty: number; currentQty: number }>
@@ -131,6 +133,39 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
     }
   };
 
+  const handlePostJournal = async () => {
+    setPostingJournal(true);
+    try {
+      const res = await postOpnameJournalAction(opnameId);
+      if (res.ok) {
+        toast.success(t(res.created ? "journal.postedToast" : "journal.alreadyPostedToast"));
+        await load();
+        return;
+      }
+      switch (res.code) {
+        case "UNMAPPED_ROLE":
+          toast.error(t("journal.err.UNMAPPED_ROLE", { role: res.role ?? "" }));
+          break;
+        case "UNBALANCED":
+          toast.error(t("journal.err.UNBALANCED"));
+          break;
+        case "NOTHING_TO_POST":
+          toast.error(t("journal.err.NOTHING_TO_POST"));
+          break;
+        case "BAD_STATE":
+          toast.error(t("journal.err.BAD_STATE"));
+          break;
+        case "FORBIDDEN":
+          toast.error(t("journal.err.FORBIDDEN"));
+          break;
+        default:
+          toast.error(t("journal.err.BAD_STATE"));
+      }
+    } finally {
+      setPostingJournal(false);
+    }
+  };
+
   const isFabric = opname?.scope === "FABRIC";
 
   const lines = useMemo(() => {
@@ -175,6 +210,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   const scope = String(opname.scope);
   const canCount = hasPermission(perms, "inventory_opname:count");
   const canApprove = hasPermission(perms, "inventory_opname:approve");
+  const canPostJournal = hasPermission(perms, "journals:manage");
   const countProgress =
     summary.totalLines > 0
       ? Math.round((summary.countedLines / summary.totalLines) * 100)
@@ -221,6 +257,25 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
               {t("cancel")}
             </Button>
           )}
+          {opname.journalId ? (
+            <>
+              <Badge variant="default" className="gap-1">
+                <BookText className="h-3.5 w-3.5" />
+                {t("journal.posted")}
+              </Badge>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/backoffice/finance/journals/${opname.journalId}`}>
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  {t("journal.viewJournal")}
+                </Link>
+              </Button>
+            </>
+          ) : status === "APPROVED" && canPostJournal && opname.hasPostableJournal ? (
+            <Button size="sm" variant="outline" onClick={handlePostJournal} disabled={postingJournal}>
+              <BookText className={`h-4 w-4 mr-2 ${postingJournal ? "animate-pulse" : ""}`} />
+              {t("journal.postJournal")}
+            </Button>
+          ) : null}
         </div>
       </div>
 

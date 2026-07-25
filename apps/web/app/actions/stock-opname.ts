@@ -25,7 +25,9 @@ import {
   type DriftRow,
 } from "@/lib/inventory/opname-approve";
 import { freezeFabricRollSnapshot, freezeItemSnapshot } from "@/lib/inventory/opname-snapshot";
+import { postOpnameJournal, opnameNetDelta } from "@/lib/inventory/opname-journal";
 import { serializeForClient } from "@/lib/serialize-for-client";
+import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 const OPNAME_PATH = "/backoffice/inventory/stock-opname";
 
@@ -295,6 +297,23 @@ export async function approveOpname(
       changes: { after: { adjustmentCount } },
     });
 
+    // Auto-journal (best-effort — never block the approved opname on GL config).
+    try {
+      const jr = await postOpnameJournal(opnameId, user.id);
+      if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
+        await prisma.adminNotification.create({
+          data: {
+            category: "JOURNAL_PENDING", severity: "WARNING",
+            title: `Opname ${opname.docNumber}: journal not posted`,
+            message: jr.code === "UNMAPPED_ROLE"
+              ? `Posting role ${jr.role} is unmapped — map it in Account Mapping, then Post journal on the opname.`
+              : `Opname adjustment journal could not post (${jr.code}). Post it manually from the opname detail.`,
+            metadata: { opnameId, reason: jr.code, role: jr.role ?? null },
+          },
+        });
+      }
+    } catch { /* never let journaling fail the approve */ }
+
     revalidatePath(OPNAME_PATH);
     revalidatePath(`${OPNAME_PATH}/${opnameId}`);
     revalidatePath("/backoffice/inventory");
@@ -302,6 +321,24 @@ export async function approveOpname(
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Failed to approve opname" };
   }
+}
+
+export async function postOpnameJournalAction(
+  opnameId: string,
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  const opname = await prisma.stockOpname.findUnique({ where: { id: opnameId } });
+  if (!opname || opname.status !== "APPROVED") {
+    return { ok: false, code: "BAD_STATE" };
+  }
+
+  const r = await postOpnameJournal(opnameId, session.user.id);
+  revalidatePath(`${OPNAME_PATH}/${opnameId}`);
+  return r;
 }
 
 export async function cancelOpname(opnameId: string): Promise<{ success: boolean; error?: string }> {
@@ -380,6 +417,15 @@ export async function getOpnameById(opnameId: string) {
 
   const userNames = new Map(users.map((u) => [u.id, u.name]));
 
+  const j = await prisma.journal.findUnique({
+    where: { sourceType_sourceId: { sourceType: "OPNAME", sourceId: opnameId } },
+    select: { id: true },
+  });
+
+  // Only offer the post-journal action when there is an unposted, non-zero value delta —
+  // a no-drift opname (or one with no cost basis) has nothing to journal.
+  const netDelta = j ? 0 : await opnameNetDelta(opnameId, prisma);
+
   return serializeOpname({
     ...opname,
     createdByName: userNames.get(opname.createdById) ?? null,
@@ -392,5 +438,7 @@ export async function getOpnameById(opnameId: string) {
     assignedToName: opname.assignedToId
       ? (userNames.get(opname.assignedToId) ?? null)
       : null,
+    journalId: j?.id ?? null,
+    hasPostableJournal: !j && Math.abs(netDelta) >= 0.01,
   });
 }

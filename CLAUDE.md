@@ -162,7 +162,24 @@ Launch posture: reconciliation `FLAG_ONLY` + threshold 0; auto-correct direction
 
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
-**Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought.
+**Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought. Same for the **Follow-ups / tech debt** checklist below — on merge, tick any shipped items (append the PR #) and move any new follow-ups there (never leave them only in PR bodies).
+
+## Follow-ups / tech debt (checklist)
+
+Canonical home for follow-ups + known debt. **New follow-ups go HERE** as `- [ ]` — not buried in PR bodies (they die on merge) or per-slice decomposition prose. When an item ships, flip it to `- [x]` and append the PR #. Feature names only (no EPIC labels — shared artifact). Cross-cutting code landmines also get a `memory/` note; this list is the actionable index.
+
+### Finance — Journal & CoA
+- [ ] Account-mapping UI: add an unmap/clear control (currently reassign-only — a mis-mapped role can't be cleared).
+- [ ] Seed CoA detail accounts (Persediaan, Piutang, Selisih Persediaan, Bank, Marketplace Fee) so posting-role mappings are wireable out-of-box.
+- [ ] `postJournal` integrity-check query — surface any unbalanced or dangling journals.
+- [ ] Settlement `SP-`+orderNo match coverage is low for pre-2026-06-14 settlements (SalesOrder ingestion started then) — revisit if old-period reconciliation matters.
+
+### Inventory — Opname & Reconciliation
+- [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
+- [ ] Same NULL-variant lookup in `reconciliation-runner.ts` auto-correct path (dormant, `FLAG_ONLY`) — fix before enabling auto-reconcile. See memory `project_inventory_null_variant_lookup`.
+
+### Testing / infra
+- [ ] DB-spec isolation: `vitest.config.ts` `fileParallelism:false` serializes the WHOLE suite (slow). Scope DB specs into a serial project, or add a tx-rollback harness for the ~20 real-row specs.
 
 ## What NOT to do
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
 import { resolveAccount, listAccountMappings, setAccountMapping, UnmappedRoleError } from "./mapping";
+import { snapshotMappings, restoreMappings, type MappingSnapshot } from "./mapping-test-fixture";
 
 // Mutates JournalAccountMapping + seeds ChartAccount rows — never run against the shared prod DB.
 const url = process.env.DATABASE_URL ?? "";
@@ -11,8 +12,10 @@ d("mapping (test bed only)", () => {
   const tag = Math.floor(Math.random() * 10_000_000).toString(); // digits only — CoA codes are numeric
   let parentId: string;
   let leafId: string;
+  let mappingSnapshot: MappingSnapshot;
 
   beforeEach(async () => {
+    mappingSnapshot = await snapshotMappings(["BANK", "COGS", "AR", "TAX"]);
     const parent = await prisma.chartAccount.create({
       data: { code: `9${tag}1`, name: "Mapping Parent (test)", type: "ASET", depth: 1, isActive: true },
     });
@@ -24,7 +27,7 @@ d("mapping (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.journalAccountMapping.deleteMany({ where: { chartAccountId: { in: [leafId, parentId] } } });
+    await restoreMappings(mappingSnapshot);
     // Delete leaf before parent — the CoaParent self-FK (onDelete: NoAction) blocks
     // removing a parent while a child still references it.
     await prisma.chartAccount.deleteMany({ where: { id: leafId } });

@@ -7,6 +7,7 @@ config({ path: path.resolve(__dirname, '.env') });
 export default defineConfig({
   test: {
     environment: 'node',
+    fileParallelism: false,
     include: [
       'lib/**/*.test.ts',
       'app/**/*.spec.ts',
