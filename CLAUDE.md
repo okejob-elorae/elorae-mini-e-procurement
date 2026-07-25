@@ -11,7 +11,7 @@ apps/web/        Next.js 16 App Router — the ERP UI + NextAuth + node-cron (VP
 apps/api/        NestJS 11 — Jubelio integration service (token, webhooks, queue)
 packages/db/     Prisma 7 schema + generated client + MariaDB adapter (shared)
 docs/BOUNDARY.md Service-boundary contract — source of truth for who-writes-what
-reference/       Local-only planning artifacts (gitignored). EPIC todos live here.
+reference/       Local-only planning artifacts (gitignored). EPIC todos now live on the GitHub board (epic issues).
 ```
 
 Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostinger VPS. Local dev reaches it through an SSH tunnel — same DB, same data, both environments. Migrated off TiDB Cloud Serverless 2026-06-28 after the free tier exhausted its monthly quota.
@@ -28,7 +28,7 @@ Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostin
 
 - **Double quotes** for string literals in all TS/JS source (whole monorepo, including `apps/web`). No ESLint quote rule enforces single — safe.
 - **No comments on Prisma schema models.** Field-level `//` comments forbidden; rationale lives in `docs/`. Migration SQL `--` comments are fine.
-- **Branch names + commit messages + PR titles + spec docs are shared artifacts** — no EPIC-XX or L1-L9 labels in them. Use feature names. EPIC labels stay in `reference/todo/` only.
+- **Branch names + commit messages + PR titles + spec docs are shared artifacts** — no EPIC-XX or L1-L9 labels in them. Use feature names. EPIC-XX labels live only on the GitHub board (epic issue titles) — never in shared code artifacts.
 - **One-liner commit messages.** No body. No `Co-Authored-By` trailer. Conventional Commits format (`feat(api): ...`, `fix(db): ...`, etc.).
 - **Subpath exports for `@elorae/db` pure helpers.** Client-component imports must use `@elorae/db/color` or `@elorae/db/pantone` (NOT the main barrel) to avoid dragging Prisma/mariadb into the client bundle.
 
@@ -176,7 +176,7 @@ Remaining auto-journals (13-01/02/03/05) all reuse the `generateAutoJournal` sea
 
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
-**Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought. Same for the **Follow-ups / tech debt** checklist below — on merge, tick any shipped items (append the PR #) and move any new follow-ups there (never leave them only in PR bodies).
+**Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought. Same for the **Follow-ups / tech debt** checklist below — on merge, tick any shipped items (append the PR #) and move any new follow-ups there (never leave them only in PR bodies). **Also tick the matching story on the GitHub board** (the epic issue, `EPIC-NN` → #`NN+3`) — that's the canonical cross-EPIC status tracker now that `reference/todo/` is retired.
 
 ## Follow-ups / tech debt (checklist)
 
@@ -209,6 +209,6 @@ Canonical home for follow-ups + known debt. **New follow-ups go HERE** as `- [ ]
 ## When you need more context
 
 - **Architecture/data ownership:** `docs/BOUNDARY.md`.
-- **EPIC story details:** `reference/todo/<NN>.md` (local-only, gitignored).
+- **EPIC story details + status:** the GitHub project board — each EPIC has a tracking issue (`EPIC-NN` → issue #`NN+3`, e.g. EPIC-13 → #17). `gh issue view <n>`. Update the issue's progress checklist on merge (the maintenance rule now applies to the board, not a local file).
 - **Past designs/plans:** `docs/superpowers/specs/` and `docs/superpowers/plans/` (local-only, gitignored).
 - **What changed and why:** `git log --oneline` (commit messages are descriptive; bodies are rare by convention).
