@@ -3,6 +3,16 @@ import { salesorderNoForSettlement } from "./match-key";
 
 export type MatchResult = { matched: number; unmatched: number; profitPending: number };
 
+/**
+ * Which SalesOrder column a settlement's resolved key is looked up against.
+ * Shopee reconstructs `SP-<orderNo>` and matches `salesorderNo`; TikTok/Tokopedia
+ * match the raw `orderNo` against `channelOrderNo` (populated from Jubelio's
+ * `ref_no` — see Sub-C).
+ */
+function matchColumn(marketplace: string): "salesorderNo" | "channelOrderNo" {
+  return marketplace === "SHOPEE" ? "salesorderNo" : "channelOrderNo";
+}
+
 export async function matchSettlement(
   settlementId: string,
   client: Prisma.TransactionClient | typeof prisma = prisma,
@@ -16,7 +26,9 @@ export async function matchSettlement(
     select: { id: true, orderNo: true, netIncome: true },
   });
 
-  // Resolve candidate salesorderNos, then bulk-load matching orders + their item cogs.
+  const column = matchColumn(settlement.marketplace);
+
+  // Resolve candidate keys, then bulk-load matching orders + their item cogs.
   const keyByLineId = new Map<string, string>();
   const keys: string[] = [];
   for (const l of lines) {
@@ -28,18 +40,26 @@ export async function matchSettlement(
   }
   const orders = keys.length
     ? await client.salesOrder.findMany({
-        where: { salesorderNo: { in: keys } },
-        select: { id: true, salesorderNo: true, items: { select: { cogs: true } } },
+        where: column === "salesorderNo" ? { salesorderNo: { in: keys } } : { channelOrderNo: { in: keys } },
+        select: {
+          id: true,
+          salesorderNo: true,
+          channelOrderNo: true,
+          items: { select: { cogs: true } },
+        },
       })
     : [];
-  // salesorderNo is NOT unique (only salesorderId is) — group so a duplicate order
-  // number (e.g. returns) never silently picks the wrong row via last-wins.
+  // Neither salesorderNo nor channelOrderNo is guaranteed unique across rows
+  // (returns, re-ingests) — group so a duplicate never silently picks the
+  // wrong row via last-wins.
   type OrderRow = (typeof orders)[number];
   const ordersByNo = new Map<string, OrderRow[]>();
   for (const o of orders) {
-    const bucket = ordersByNo.get(o.salesorderNo);
+    const key = column === "salesorderNo" ? o.salesorderNo : o.channelOrderNo;
+    if (!key) continue;
+    const bucket = ordersByNo.get(key);
     if (bucket) bucket.push(o);
-    else ordersByNo.set(o.salesorderNo, [o]);
+    else ordersByNo.set(key, [o]);
   }
 
   let matched = 0;
