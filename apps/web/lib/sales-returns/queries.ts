@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { serializeForClient } from "@/lib/serialize-for-client";
 import type { SalesChannel, SalesReturnStatus } from "@/lib/constants/enums";
 
 export async function getSalesReturnById(id: string) {
@@ -25,7 +26,9 @@ export async function getSalesReturnById(id: string) {
   const revenueJournalId = journals.find((j) => j.sourceType === "SALESRETURN_REVENUE")?.id ?? null;
   const cogsJournalId = journals.find((j) => j.sourceType === "SALESRETURN_COGS")?.id ?? null;
 
-  return { ...salesReturn, revenueJournalId, cogsJournalId };
+  // Serialize Prisma Decimals (and Dates) so the raw row can cross the
+  // server→client boundary into ReturnDecisionCard (Decimals aren't supported).
+  return serializeForClient({ ...salesReturn, revenueJournalId, cogsJournalId });
 }
 
 export type SalesReturnDetail = NonNullable<Awaited<ReturnType<typeof getSalesReturnById>>>;
