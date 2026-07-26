@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { parseShopeeSettlement } from "@/lib/finance/settlement/shopee-settlement-parser";
+import { parseSettlement, isSupportedMarketplace } from "@/lib/finance/settlement/parser";
 import { persistSettlement } from "@/lib/finance/settlement/persist";
 
 export const dynamic = "force-dynamic";
@@ -47,8 +47,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "File exceeds the 10 MB limit" }, { status: 400 });
     }
 
+    const marketplaceRaw = formData.get("marketplace");
+    const marketplace = typeof marketplaceRaw === "string" && marketplaceRaw ? marketplaceRaw : "SHOPEE";
+    if (!isSupportedMarketplace(marketplace)) {
+      return NextResponse.json({ error: `Unsupported marketplace "${marketplace}"` }, { status: 400 });
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
-    const parsed = parseShopeeSettlement(buffer);
+    const parsed = parseSettlement(marketplace, buffer);
     if (!parsed.ok) {
       return NextResponse.json({ errors: parsed.errors }, { status: 422 });
     }
@@ -57,7 +63,7 @@ export async function POST(request: NextRequest) {
       parsed: parsed.data,
       fileName: file.name,
       uploadedById: session.user.id,
-      marketplace: "SHOPEE",
+      marketplace,
     });
 
     return NextResponse.json({ settlementId, checksumOk, checksumVariance, lineCount });
