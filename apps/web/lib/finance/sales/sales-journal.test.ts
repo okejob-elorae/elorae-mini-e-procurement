@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
+import { type PostingRole } from "@/lib/constants/journal-roles";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -17,11 +18,14 @@ d("sales auto-journal (test bed only)", () => {
   let invId: string;
   let mappingSnapshot: MappingSnapshot;
 
+  let soSeq = 0;
   async function makeOrder(grandTotal: number, cogsPerItem: number[]): Promise<string> {
+    soSeq += 1;
+    const base = token * 100 + soSeq; // unique per call, < ~1e8
     const so = await prisma.salesOrder.create({
       data: {
-        salesorderId: token,
-        salesorderNo: `SO-${token}`,
+        salesorderId: base,
+        salesorderNo: `SO-${token}-${soSeq}`,
         channel: "SHOPEE",
         sourceName: "test",
         status: "SHIPPED",
@@ -30,33 +34,37 @@ d("sales auto-journal (test bed only)", () => {
         totalTax: 0,
         shippingCost: 0,
         grandTotal,
+        transactionDate: new Date("2026-03-05"),
         shippedAt: new Date("2026-03-05"),
       },
       select: { id: true },
     });
-    let detail = token * 10;
+    let i = 0;
     for (const cogs of cogsPerItem) {
       await prisma.salesOrderItem.create({
         data: {
           salesOrderId: so.id,
-          salesorderDetailId: detail++,
-          jubelioItemId: detail,
-          jubelioItemCode: `IT-${detail}`,
+          salesorderDetailId: base * 10 + i, // < ~1e9, unique
+          jubelioItemId: base * 10 + i,
+          jubelioItemCode: `IT-${base}-${i}`,
           productName: "Test",
           qty: 1,
           qtyInBase: 1,
           unitPrice: grandTotal,
           pricePaid: grandTotal,
           discAmount: 0,
+          taxAmount: 0,
+          lineTotal: grandTotal,
           cogs,
         },
       });
+      i += 1;
     }
     return so.id;
   }
 
   beforeEach(async () => {
-    token = Math.floor(Math.random() * 1_000_000_000);
+    token = Math.floor(Math.random() * 1_000_000);
     mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
     const user = await prisma.user.create({ data: { email: `test-sales-journal-${token}@test.local`, name: "Test Admin" } });
     userId = user.id;
@@ -69,7 +77,7 @@ d("sales auto-journal (test bed only)", () => {
     cogsId = await mk(`9${token}3`, "HPP (test)", "HPP");
     invId = await mk(`9${token}4`, "Persediaan (test)", "ASET");
     const map = async (role: string, id: string) =>
-      prisma.journalAccountMapping.upsert({ where: { role: role as never }, create: { role: role as never, chartAccountId: id }, update: { chartAccountId: id } });
+      prisma.journalAccountMapping.upsert({ where: { role: role as PostingRole }, create: { role: role as PostingRole, chartAccountId: id }, update: { chartAccountId: id } });
     await map("AR", arId);
     await map("SALES_REVENUE", revId);
     await map("COGS", cogsId);
@@ -114,10 +122,37 @@ d("sales auto-journal (test bed only)", () => {
 
   it("no item cogs → cogs NOTHING_TO_POST", async () => {
     const so = await prisma.salesOrder.create({
-      data: { salesorderId: token + 1, salesorderNo: `SO-${token}-b`, channel: "SHOPEE", sourceName: "t", status: "SHIPPED", subTotal: 50, totalDisc: 0, totalTax: 0, shippingCost: 0, grandTotal: 50 },
+      data: {
+        salesorderId: token * 100 + 90,
+        salesorderNo: `SO-${token}-nocogs`,
+        channel: "SHOPEE",
+        sourceName: "t",
+        status: "SHIPPED",
+        subTotal: 50,
+        totalDisc: 0,
+        totalTax: 0,
+        shippingCost: 0,
+        grandTotal: 50,
+        transactionDate: new Date("2026-03-05"),
+      },
       select: { id: true },
     });
-    await prisma.salesOrderItem.create({ data: { salesOrderId: so.id, salesorderDetailId: token * 10 + 99, jubelioItemId: 1, jubelioItemCode: "x", productName: "x", qty: 1, qtyInBase: 1, unitPrice: 50, pricePaid: 50, discAmount: 0 } });
+    await prisma.salesOrderItem.create({
+      data: {
+        salesOrderId: so.id,
+        salesorderDetailId: (token * 100 + 90) * 10,
+        jubelioItemId: 1,
+        jubelioItemCode: "x",
+        productName: "x",
+        qty: 1,
+        qtyInBase: 1,
+        unitPrice: 50,
+        pricePaid: 50,
+        discAmount: 0,
+        taxAmount: 0,
+        lineTotal: 50,
+      },
+    });
     expect(await postSalesCogsJournal(so.id, userId, prisma)).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
   });
 
