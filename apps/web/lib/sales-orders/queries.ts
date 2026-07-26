@@ -68,6 +68,8 @@ export type SalesOrderDetail = {
   courierId: number | null;
   courierName: string | null;
   shipmentJubelioId: number | null;
+  revenueJournalId: string | null;
+  cogsJournalId: string | null;
 };
 
 export type SalesOrderItemRow = {
@@ -174,6 +176,13 @@ export async function getSalesOrderById(
   ]);
   const nameById = new Map(users.map((u) => [u.id, u.name ?? null]));
 
+  const journals = await prisma.journal.findMany({
+    where: { sourceType: { in: ["SALESORDER_REVENUE", "SALESORDER_COGS"] }, sourceId: row.id },
+    select: { id: true, sourceType: true },
+  });
+  const revenueJournalId = journals.find((j) => j.sourceType === "SALESORDER_REVENUE")?.id ?? null;
+  const cogsJournalId = journals.find((j) => j.sourceType === "SALESORDER_COGS")?.id ?? null;
+
   const order: SalesOrderDetail = {
     id: row.id,
     salesorderId: row.salesorderId,
@@ -221,6 +230,8 @@ export async function getSalesOrderById(
     courierId: row.courierId,
     courierName: courier?.name ?? null,
     shipmentJubelioId: row.shipmentJubelioId,
+    revenueJournalId,
+    cogsJournalId,
   };
 
   const items: SalesOrderItemRow[] = row.items.map((it: any) => ({

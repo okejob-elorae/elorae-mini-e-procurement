@@ -1701,6 +1701,14 @@
         "forbidden": "Akses tidak diizinkan.",
         "networkError": "Gagal terhubung ke server. Coba lagi."
       }
+    },
+    "journal": {
+      "title": "Jurnal",
+      "revenue": "Jurnal pendapatan",
+      "cogs": "Jurnal HPP",
+      "posted": "Diposting",
+      "pending": "Menunggu posting",
+      "view": "Lihat"
     }
   },
   "salesReturns": {

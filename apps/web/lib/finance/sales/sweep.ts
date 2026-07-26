@@ -1,0 +1,108 @@
+import { prisma, Prisma } from "@elorae/db";
+import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
+import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+
+async function flag(
+  orderId: string,
+  soNumber: string,
+  kind: "revenue" | "cogs",
+  res: Extract<GenerateAutoJournalResult, { ok: false }>,
+): Promise<void> {
+  // Dedup: at most one unread JOURNAL_PENDING per (orderId, kind). MariaDB JSON-path
+  // filtering on this adapter is unreliable, so fetch recent unread rows and dedup in JS.
+  const recent = await prisma.adminNotification.findMany({
+    where: { category: "JOURNAL_PENDING", readAt: null },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    select: { metadata: true },
+  });
+  const already = recent.some((n) => {
+    const m = n.metadata as { orderId?: string; kind?: string } | null;
+    return m?.orderId === orderId && m?.kind === kind;
+  });
+  if (already) return;
+
+  await prisma.adminNotification.create({
+    data: {
+      category: "JOURNAL_PENDING",
+      severity: "WARNING",
+      title: "Sales journal not posted",
+      message: `Sales ${kind} journal for ${soNumber} could not be posted (${res.code}${res.role ? `: ${res.role}` : ""}). Map the account.`,
+      metadata: { orderId, kind, reason: res.code, role: res.role ?? null },
+    },
+  });
+}
+
+export async function postPendingSalesJournals(
+  opts: { limit?: number; postedById?: string; orderIds?: string[] } = {},
+): Promise<{ posted: number; revenue: number; cogs: number; pending: number }> {
+  const limit = opts.limit ?? 50;
+  let systemPoster = opts.postedById ?? null;
+  if (!systemPoster) {
+    const admin = await prisma.user.findFirst({ where: { role: "ADMIN" }, select: { id: true } });
+    systemPoster = admin?.id ?? null;
+  }
+
+  // Optional scope (targeted re-post / test isolation) — without it the sweep is global.
+  const idFilter =
+    opts.orderIds && opts.orderIds.length > 0
+      ? Prisma.sql`AND so.id IN (${Prisma.join(opts.orderIds)})`
+      : Prisma.empty;
+
+  const orders = await prisma.$queryRaw<Array<{ id: string; salesorderNo: string; shippedById: string | null }>>(
+    Prisma.sql`
+    SELECT so.id, so.salesorderNo, so.shippedById
+    FROM SalesOrder so
+    WHERE (so.status IN ('SHIPPED','COMPLETED') OR so.fulfillmentStatus = 'SHIPPED')
+      ${idFilter}
+      AND NOT (
+        EXISTS (SELECT 1 FROM Journal j  WHERE j.sourceType  = 'SALESORDER_REVENUE' AND j.sourceId  = so.id)
+        AND
+        EXISTS (SELECT 1 FROM Journal j2 WHERE j2.sourceType = 'SALESORDER_COGS'    AND j2.sourceId = so.id)
+      )
+    ORDER BY so.createdAt ASC
+    LIMIT ${limit}
+  `,
+  );
+
+  let revenue = 0;
+  let cogs = 0;
+  let pending = 0;
+
+  for (const order of orders) {
+    const poster = order.shippedById ?? systemPoster;
+    if (!poster) continue; // cannot post without a user
+
+    try {
+      const existing = await prisma.journal.findMany({
+        where: { sourceType: { in: ["SALESORDER_REVENUE", "SALESORDER_COGS"] }, sourceId: order.id },
+        select: { sourceType: true },
+      });
+      const have = new Set(existing.map((e) => e.sourceType));
+
+      if (!have.has("SALESORDER_REVENUE")) {
+        const r = await postSalesRevenueJournal(order.id, poster);
+        if (r.ok) {
+          if (r.created) revenue += 1;
+        } else if (r.code !== "NOTHING_TO_POST") {
+          pending += 1;
+          await flag(order.id, order.salesorderNo, "revenue", r);
+        }
+      }
+
+      if (!have.has("SALESORDER_COGS")) {
+        const c = await postSalesCogsJournal(order.id, poster);
+        if (c.ok) {
+          if (c.created) cogs += 1;
+        } else if (c.code !== "NOTHING_TO_POST") {
+          pending += 1;
+          await flag(order.id, order.salesorderNo, "cogs", c);
+        }
+      }
+    } catch (e) {
+      console.error(`[sales-journal] order ${order.salesorderNo} failed:`, e);
+    }
+  }
+
+  return { posted: revenue + cogs, revenue, cogs, pending };
+}
