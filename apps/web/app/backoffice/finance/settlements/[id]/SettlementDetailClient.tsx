@@ -59,6 +59,17 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
   const [resyncSummary, setResyncSummary] = useState<ResyncSummary | null>(null);
   const [resyncPollError, setResyncPollError] = useState(false);
 
+  // The resync runs server-side in the queue regardless of the browser, but
+  // batchId lives only in component state — so it's lost on navigation/refresh,
+  // orphaning the progress panel. Persist it per settlement and re-attach the
+  // poller on mount so the panel (and the "rematch" CTA) survive leaving the page.
+  const resyncStorageKey = `elorae:resyncBatch:${settlement.id}`;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(resyncStorageKey);
+    if (stored) setResyncBatchId(stored);
+  }, [resyncStorageKey]);
+
   const formatDate = (iso: string) =>
     new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
       new Date(iso),
@@ -93,6 +104,13 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
               profitPending: String(result.profitPending),
             }),
           );
+          // Batch's purpose is served once its orders are rematched — clear the
+          // persisted batch so the panel doesn't linger on later visits.
+          if (typeof window !== "undefined") {
+            window.localStorage.removeItem(resyncStorageKey);
+          }
+          setResyncBatchId(null);
+          setResyncSummary(null);
           router.refresh();
         } else if (result.reason === "FORBIDDEN") {
           toast.error(t("matchToastForbidden"));
@@ -156,6 +174,9 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
           setResyncSummary(null);
           setResyncPollError(false);
           setResyncBatchId(result.batchId);
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(resyncStorageKey, result.batchId);
+          }
         } else {
           switch (result.code) {
             case "FORBIDDEN":
