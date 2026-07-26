@@ -4,9 +4,10 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Link2 } from "lucide-react";
+import { Link2, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -16,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
-import { setAccountMappingAction } from "@/app/actions/account-mapping";
+import { setAccountMappingAction, clearAccountMappingAction } from "@/app/actions/account-mapping";
 import { POSTING_ROLES, type PostingRole } from "@/lib/constants/journal-roles";
 import type { AccountMappingRow } from "@/lib/finance/journals/mapping";
 import type { AccountType } from "@/lib/constants/enums";
@@ -53,6 +54,20 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
       setSavingRole(null);
       if (result.ok) {
         toast.success(t("savedToast"));
+        router.refresh();
+      } else {
+        toast.error(t(`error.${result.code}` as never));
+      }
+    });
+  }
+
+  function handleClear(role: PostingRole) {
+    setSavingRole(role);
+    startTransition(async () => {
+      const result = await clearAccountMappingAction(role);
+      setSavingRole(null);
+      if (result.ok) {
+        toast.success(t("clearedToast"));
         router.refresh();
       } else {
         toast.error(t(`error.${result.code}` as never));
@@ -104,16 +119,34 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
                         {t(`desc.${role}` as never)}
                       </TableCell>
                       <TableCell className="align-top">
-                        <SearchableCombobox
-                          options={options}
-                          value={value}
-                          onValueChange={(v) => handleSelect(role, v)}
-                          placeholder={t("selectAccount")}
-                          searchPlaceholder={t("searchAccount")}
-                          emptyMessage={t("noAccounts")}
-                          disabled={!canManage || rowPending}
-                          triggerClassName="w-full"
-                        />
+                        <div className="flex items-center gap-1">
+                          <SearchableCombobox
+                            options={options}
+                            value={value}
+                            onValueChange={(v) => handleSelect(role, v)}
+                            placeholder={t("selectAccount")}
+                            searchPlaceholder={t("searchAccount")}
+                            emptyMessage={t("noAccounts")}
+                            disabled={!canManage || rowPending}
+                            triggerClassName="flex-1 min-w-0"
+                          />
+                          {canManage && value ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0 text-muted-foreground"
+                              onClick={() => handleClear(role)}
+                              disabled={rowPending}
+                              aria-label={t("clear")}
+                              title={t("clear")}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          ) : (
+                            <span className="w-8 shrink-0" aria-hidden />
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
