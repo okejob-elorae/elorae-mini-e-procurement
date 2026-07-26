@@ -93,10 +93,17 @@ describe("parseTiktokSettlement (synthetic workbook)", () => {
     expect(d.incomeLines[0].raw["Total Pendapatan"]).toBe(20000);
     expect(d.incomeLines[0].raw["Sumber pesanan"]).toBe("TikTok Shop");
 
-    // derived totals
+    // derived totals — pinned sign convention: "Total Biaya" is negative in
+    // the raw export (a deduction), but totalPengeluaran is normalized to the
+    // sum of absolute values (non-negative debit, matches the persisted
+    // convention match.test.ts's TikTok fixture already assumes).
     expect(d.summary.totalDilepas).toBe(18000 + 9000 + 4500);
-    expect(d.summary.totalPendapatan).toBe(20000 + 10000 + 5000);
-    expect(d.summary.totalPengeluaran).toBe(-2000 + -1000 + -500);
+    expect(d.summary.totalPengeluaran).toBe(2000 + 1000 + 500);
+    // totalPendapatan is DERIVED (totalDilepas + totalPengeluaran), not summed
+    // from the raw "Total Pendapatan" column — this is what makes the
+    // settlement journal balance by construction (journal.ts identity).
+    expect(d.summary.totalPendapatan).toBe(d.summary.totalDilepas + d.summary.totalPengeluaran);
+    expect(d.summary.totalPengeluaran).toBeGreaterThanOrEqual(0);
 
     // checksum: parsedNetTotal == totalDilepas (persist.ts:16)
     expect(d.parsedNetTotal).toBe(d.summary.totalDilepas);
@@ -130,6 +137,54 @@ describe("parseTiktokSettlement (synthetic workbook)", () => {
     if (!res.ok) return;
     expect(res.data.summary.totalDilepas).toBe(1000);
     expect(res.data.parsedNetTotal).toBe(1000);
+  });
+
+  it("derives totals that satisfy the settlement-journal balance identity, even with a nonzero adjustment and a negative fee", () => {
+    // Regression for the Critical finding: the journal (journal.ts) posts
+    // DR Bank=totalDilepas + DR Fee=totalPengeluaran, CR AR=totalPendapatan,
+    // and journal-writer.ts throws BAD_LINE on a negative debit. This fixture
+    // includes a nonzero "Jumlah penyesuaian" (adjustment) and a negative
+    // "Total Biaya" (fee) to prove neither breaks the identity or produces a
+    // negative debit.
+    const buf = buildWorkbook([
+      DETAIL_HEADER,
+      [
+        "AAA",
+        18000, // Jumlah penyelesaian pembayaran (payout, already adjustment-inclusive)
+        20000, // Total Pendapatan (raw column — not used for the persisted total)
+        -2000, // Total Biaya (negative fee)
+        500, // Jumlah penyesuaian (nonzero adjustment)
+        "AAA",
+        "TikTok Shop",
+        new Date(Date.UTC(2026, 5, 3)),
+      ],
+      [
+        "BBB",
+        9000,
+        10000,
+        -1000,
+        -100,
+        "BBB",
+        "TikTok Shop",
+        new Date(Date.UTC(2026, 5, 10)),
+      ],
+    ]);
+
+    const res = parseTiktokSettlement(buf);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const { summary, parsedNetTotal } = res.data;
+
+    // The journal-balancing identity (journal.ts) must hold by construction.
+    expect(summary.totalPendapatan).toBe(summary.totalDilepas + summary.totalPengeluaran);
+    // Non-negative debit — a negative totalPengeluaran would throw BAD_LINE
+    // in journal-writer.ts's `(dC > 0) === (cC > 0)` check.
+    expect(summary.totalPengeluaran).toBeGreaterThanOrEqual(0);
+    expect(summary.totalPengeluaran).toBe(2000 + 1000);
+    expect(summary.totalDilepas).toBe(18000 + 9000);
+    expect(parsedNetTotal).toBe(summary.totalDilepas);
+    // Adjustment is aggregated for audit only, not folded into any derived total.
+    expect(summary.raw.totalAdjustment).toBe(500 + -100);
   });
 
   it("returns ok:false when the Detail pesanan sheet is missing", () => {

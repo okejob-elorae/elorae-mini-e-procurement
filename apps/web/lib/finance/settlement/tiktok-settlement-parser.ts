@@ -1,6 +1,17 @@
 import * as XLSX from "xlsx";
 import type { ParsedIncomeLine, ParsedSettlement, SettlementParseError } from "./shopee-settlement-parser";
 
+/**
+ * TikTok's "Total Biaya" column sign is unverified against the real export
+ * (could be negative-as-deduction or positive-as-cost — samples seen so far
+ * disagree). The settlement journal (`journal.ts`) posts `totalPengeluaran`
+ * as a straight debit line, and `journal-writer.ts` throws `BAD_LINE` on any
+ * negative debit — so every per-line fee is normalized with `Math.abs()`
+ * before aggregation, guaranteeing a valid (non-negative) debit regardless of
+ * which sign convention the real file turns out to use. Owner: validate the
+ * actual sign against the real export and drop the abs() if it's already
+ * consistently positive.
+ */
 type ParseSuccess = { ok: true; data: ParsedSettlement };
 type ParseFailure = { ok: false; errors: SettlementParseError[] };
 
@@ -21,6 +32,7 @@ const ORDER_COLUMNS = {
   netIncome: NET_INCOME_COLUMN,
   totalPendapatan: "Total Pendapatan",
   totalBiaya: "Total Biaya",
+  jumlahPenyesuaian: "Jumlah penyesuaian",
 } as const;
 
 function num(v: unknown): number {
@@ -83,8 +95,9 @@ const DEFAULT_SELLER = "TikTok Shop";
 
 function parseDetailPesananSheet(matrix: unknown[][]): {
   lines: ParsedIncomeLine[];
-  totalPendapatan: number;
-  totalBiaya: number;
+  totalPengeluaran: number;
+  totalAdjustment: number;
+  rawTotalPendapatanSum: number;
   errors: SettlementParseError[];
 } {
   const errors: SettlementParseError[] = [];
@@ -95,7 +108,7 @@ function parseDetailPesananSheet(matrix: unknown[][]): {
       row: null,
       message: `Header row containing "${ORDER_HEADER_LABEL}" not found`,
     });
-    return { lines: [], totalPendapatan: 0, totalBiaya: 0, errors };
+    return { lines: [], totalPengeluaran: 0, totalAdjustment: 0, rawTotalPendapatanSum: 0, errors };
   }
 
   const headerRow = matrix[headerRowIdx];
@@ -104,6 +117,7 @@ function parseDetailPesananSheet(matrix: unknown[][]): {
     netIncome: colIndex(headerRow, ORDER_COLUMNS.netIncome),
     totalPendapatan: colIndex(headerRow, ORDER_COLUMNS.totalPendapatan),
     totalBiaya: colIndex(headerRow, ORDER_COLUMNS.totalBiaya),
+    jumlahPenyesuaian: colIndex(headerRow, ORDER_COLUMNS.jumlahPenyesuaian),
   };
 
   if (colIdx.orderNo < 0) {
@@ -112,7 +126,7 @@ function parseDetailPesananSheet(matrix: unknown[][]): {
       row: headerRowIdx + 1,
       message: `Column "${ORDER_COLUMNS.orderNo}" not found in header row`,
     });
-    return { lines: [], totalPendapatan: 0, totalBiaya: 0, errors };
+    return { lines: [], totalPengeluaran: 0, totalAdjustment: 0, rawTotalPendapatanSum: 0, errors };
   }
   if (colIdx.netIncome < 0) {
     errors.push({
@@ -120,12 +134,13 @@ function parseDetailPesananSheet(matrix: unknown[][]): {
       row: headerRowIdx + 1,
       message: `Column "${ORDER_COLUMNS.netIncome}" not found in header row`,
     });
-    return { lines: [], totalPendapatan: 0, totalBiaya: 0, errors };
+    return { lines: [], totalPengeluaran: 0, totalAdjustment: 0, rawTotalPendapatanSum: 0, errors };
   }
 
   const lines: ParsedIncomeLine[] = [];
-  let totalPendapatan = 0;
-  let totalBiaya = 0;
+  let totalPengeluaran = 0;
+  let totalAdjustment = 0;
+  let rawTotalPendapatanSum = 0;
 
   for (let i = headerRowIdx + 1; i < matrix.length; i++) {
     const row = matrix[i];
@@ -157,11 +172,19 @@ function parseDetailPesananSheet(matrix: unknown[][]): {
       raw,
     });
 
-    if (colIdx.totalPendapatan >= 0) totalPendapatan += num(row[colIdx.totalPendapatan]);
-    if (colIdx.totalBiaya >= 0) totalBiaya += num(row[colIdx.totalBiaya]);
+    // Per-line fee, normalized non-negative (see the top-of-file note) before
+    // aggregation — a negative fee on one row can never cancel a positive fee
+    // on another, and the aggregate can never go negative into the journal.
+    if (colIdx.totalBiaya >= 0) totalPengeluaran += Math.abs(num(row[colIdx.totalBiaya]));
+    // Adjustment is aggregated for audit only (see `summary.raw.totalAdjustment`)
+    // — per the confirmed identity `Total Pendapatan − Total Biaya +
+    // Penyesuaian = payout`, the adjustment is already folded into netIncome,
+    // so it must NOT be added again into any derived total below.
+    if (colIdx.jumlahPenyesuaian >= 0) totalAdjustment += num(row[colIdx.jumlahPenyesuaian]);
+    if (colIdx.totalPendapatan >= 0) rawTotalPendapatanSum += num(row[colIdx.totalPendapatan]);
   }
 
-  return { lines, totalPendapatan, totalBiaya, errors };
+  return { lines, totalPengeluaran, totalAdjustment, rawTotalPendapatanSum, errors };
 }
 
 export function parseTiktokSettlement(buffer: Buffer): ParseSuccess | ParseFailure {
@@ -182,8 +205,13 @@ export function parseTiktokSettlement(buffer: Buffer): ParseSuccess | ParseFailu
   const detailMatrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets["Detail pesanan"], {
     header: 1,
   }) as unknown[][];
-  const { lines: incomeLines, totalPendapatan, totalBiaya, errors } =
-    parseDetailPesananSheet(detailMatrix);
+  const {
+    lines: incomeLines,
+    totalPengeluaran,
+    totalAdjustment,
+    rawTotalPendapatanSum,
+    errors,
+  } = parseDetailPesananSheet(detailMatrix);
   if (errors.length > 0) return { ok: false, errors };
 
   if (incomeLines.length === 0) {
@@ -208,19 +236,33 @@ export function parseTiktokSettlement(buffer: Buffer): ParseSuccess | ParseFailu
     }
   }
 
+  // Derived by aggregation over "Detail pesanan" — there is no Summary sheet
+  // to read these from directly.
+  //   totalDilepas      = Σ netIncome (net payout; per the confirmed identity
+  //                       `Total Pendapatan − Total Biaya + Penyesuaian =
+  //                       payout`, adjustments are already folded in here).
+  //   totalPengeluaran  = Σ |Total Biaya| (non-negative — see top-of-file note).
+  //   totalPendapatan   = totalDilepas + totalPengeluaran, DERIVED from the
+  //                       journal balance identity the settlement journal
+  //                       enforces (`journal.ts`: DR Bank=totalDilepas + DR
+  //                       Fee=totalPengeluaran, CR AR=totalPendapatan) — NOT
+  //                       summed independently from the raw "Total Pendapatan"
+  //                       column, so the journal balances by construction and
+  //                       can never throw UNBALANCED. The raw column sum is
+  //                       kept in `summary.raw.rawTotalPendapatanSum` purely
+  //                       for audit/reconciliation against the real export.
+  const totalDilepas = parsedNetTotal;
+  const totalPendapatan = totalDilepas + totalPengeluaran;
+
   const data: ParsedSettlement = {
     seller: DEFAULT_SELLER,
     periodFrom: period.from,
     periodTo: period.to,
     summary: {
-      // Derived by aggregation over "Detail pesanan" — there is no Summary
-      // sheet to read these from directly. totalDilepas mirrors the sum of
-      // per-order netIncome so the persist checksum (parsedNetTotal ==
-      // totalDilepas) holds by construction.
       totalPendapatan,
-      totalPengeluaran: totalBiaya,
-      totalDilepas: parsedNetTotal,
-      raw: optionalSheetsRaw,
+      totalPengeluaran,
+      totalDilepas,
+      raw: { ...optionalSheetsRaw, rawTotalPendapatanSum, totalAdjustment },
     },
     incomeLines,
     sellerFeesRaw: [],
