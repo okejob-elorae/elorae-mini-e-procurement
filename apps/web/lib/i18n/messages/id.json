@@ -2560,7 +2560,26 @@
     "resyncDoneHint": "Resync selesai. Cocokkan ulang settlement untuk memperbarui baris yang kini tersedia.",
     "resyncDeadHint": "{count} pesanan gagal di-resync setelah beberapa percobaan. Hubungi admin teknis jika berulang.",
     "resyncRematchButton": "Cocokkan Ulang Settlement",
-    "resyncSummaryErrForbidden": "Sesi berakhir atau izin dicabut — progres berhenti diperbarui."
+    "resyncSummaryErrForbidden": "Sesi berakhir atau izin dicabut — progres berhenti diperbarui.",
+    "kpiDiffer": "Pesanan Berbeda",
+    "compare": {
+      "expandLabel": "Lihat rincian",
+      "collapseLabel": "Sembunyikan rincian",
+      "excelTitle": "Rincian Excel",
+      "jubelioTitle": "Perbandingan Jubelio",
+      "hargaAsliProduk": "Harga Asli Produk",
+      "totalDiskonProduk": "Total Diskon Produk",
+      "biayaAdministrasi": "Biaya Administrasi",
+      "biayaLayanan": "Biaya Layanan",
+      "biayaKomisiAms": "Biaya Komisi AMS",
+      "biayaProsesPesanan": "Biaya Proses Pesanan",
+      "netIncomeExcel": "Pendapatan Bersih (Excel)",
+      "netIncomeJubelio": "Pendapatan Bersih (Jubelio)",
+      "netDelta": "Selisih Bersih",
+      "statusMatches": "Cocok",
+      "statusDiffers": "Berbeda",
+      "statusUnavailable": "Data Jubelio n/a"
+    }
   },
   "financeJournals": {
     "pageTitle": "Jurnal",
