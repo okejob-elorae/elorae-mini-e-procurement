@@ -207,6 +207,15 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] `buy_price` stays global (decision H3) — revisit if Jubelio's `buy_price` starts feeding marketplace reporting (PR #52).
 - [ ] Tokopedia settlement adapter (`TT-` prefix) unsupported — `match-key.ts` is Shopee-only (#19).
 
+### Settlement reconciliation (Jubelio salesorder resync)
+- [ ] Guard the raw `POST /jubelio/salesorders/resync` endpoint — the web action path is HMAC-signed (`internal-sign.guard`) but the controller has no guard, so the raw route is open. Add before the bulk backfill (PR #165).
+- [ ] Resync `no→id` resolve + the settlement-line `q` lookups depend on the **undocumented** Jubelio `q` search (`GET /sales/orders/?q=`, `/completed|cancel|failed/?q=`) — the OpenAPI spec lists only `page`/`pageSize`, and the documented `POST /wms/order/getOrderByNo/` is pick-flow-scoped (200-empty for settled orders). Brittle if Jubelio changes it; no contract guarantee (PR #165).
+- [ ] Resync `attempts` counter under-reports real retries (BullMQ owns the retry count via `attemptsMade`; the DEAD decision is correct, this is just an observability gap) (PR #165).
+- [ ] `JubelioResyncModule` re-declares `SalesOrderWebhookHandler` + `JubelioWebhooksService` as providers (their home modules don't export them) → two stateless-singleton instances app-wide; harmless today, would diverge if either gained state (PR #165).
+- [ ] Resync progress-panel re-attach is per-browser (localStorage keyed by settlement id) — cross-device / multi-operator re-attach would need a `settlementId` link on `JubelioSalesOrderResync` + a "latest in-flight batch" query + migration (PR #165).
+- [ ] Variant-key derivation mismatch surfaced during resync ingest — reserve looked for `27000101P-XL` while the item code is `27000101P-BLK-XL`; couldn't confirm on `:3308` (0 inventory rows for the item). Verify the reservation-writer variant derivation on prod before the bulk (PR #165).
+- [ ] Settlement-line `netIncome` is the excel value; a RETURNED order can legitimately show excel net 0 vs Jubelio escrow > 0 (return leg) — the Sub-B compare flags it correctly, but decide the P&L "truth" for returned orders (excel realized-0 vs Jubelio gross escrow) (PR #166).
+
 ### Sales returns
 - [ ] `SalesReturn.jubelioReturnId` actually stores `salesorder_id` — misleading name, rename deferred (migration churn) (PR #55).
 - [ ] Return evidence R2 mirror (R5) — `evidenceUrls` exists in schema but the ingest never assigns/mirrors it (not even ingested) (PR #54/#55).
