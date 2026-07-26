@@ -1854,6 +1854,24 @@ model JubelioOutbox {
   @@index([enqueuedById])
 }
 
+model JubelioSalesOrderResync {
+  id             String    @id @default(cuid())
+  batchId        String
+  salesorderNo   String
+  salesorderId   Int?
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  lastError      String?   @db.Text
+  webhookEventId String?
+  enqueuedById   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([batchId])
+  @@index([status])
+  @@unique([batchId, salesorderNo])
+}
+
 model JubelioPushDefaults {
   id                       String   @id @default("singleton")
   sellTaxId                Int      @default(-1)
