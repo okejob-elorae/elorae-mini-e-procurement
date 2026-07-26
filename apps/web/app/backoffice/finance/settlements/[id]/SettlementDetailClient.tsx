@@ -19,7 +19,7 @@ import {
   BookText,
   ExternalLink,
 } from "lucide-react";
-import type { SettlementDetail, SettlementDetailLine } from "@/lib/finance/settlement/queries";
+import type { SettlementDetail, SettlementDetailLine, JubelioFees } from "@/lib/finance/settlement/queries";
 import { matchSettlementAction, postSettlementJournalAction } from "@/app/actions/settlements";
 import {
   getResyncSummary,
@@ -620,6 +620,38 @@ function FeeRow({ label, value }: { label: string; value: number }) {
   );
 }
 
+// Jubelio is coarser than the excel breakdown (it lumps several excel line
+// items into service_fee/order_processing_fee) — this is an independent
+// breakdown shown beside the excel one, not a row-for-row reconciliation.
+// Deduction/discount amounts are shown negative regardless of the sign
+// Jubelio stored them in; zero-valued lines are hidden to avoid clutter.
+function JubelioFeeLines({ fees, t }: { fees: JubelioFees; t: TFn }) {
+  const deductions: Array<{ key: string; label: string; value: number }> = [
+    { key: "serviceFee", label: t("compare.serviceFee"), value: fees.serviceFee },
+    { key: "orderProcessingFee", label: t("compare.orderProcessingFee"), value: fees.orderProcessingFee },
+    { key: "insuranceCost", label: t("compare.insuranceCost"), value: fees.insuranceCost },
+    { key: "addFee", label: t("compare.addFee"), value: fees.addFee },
+    { key: "codFee", label: t("compare.codFee"), value: fees.codFee },
+    { key: "shippingTax", label: t("compare.shippingTax"), value: fees.shippingTax },
+    { key: "addDisc", label: t("compare.addDisc"), value: fees.addDisc },
+    { key: "voucherAmount", label: t("compare.voucherAmount"), value: fees.voucherAmount },
+  ];
+  return (
+    <>
+      <FeeRow label={t("compare.bruto")} value={fees.totalAmountMp} />
+      {deductions
+        .filter((d) => d.value !== 0)
+        .map((d) => (
+          <FeeRow key={d.key} label={d.label} value={-Math.abs(d.value)} />
+        ))}
+      <div className="flex justify-between border-t pt-1 text-sm font-medium">
+        <span>{t("compare.escrowNet")}</span>
+        <span className="tabular-nums">{formatRupiah(fees.escrowAmount)}</span>
+      </div>
+    </>
+  );
+}
+
 function FeeBreakdownPanel({ line, t }: { line: SettlementDetailLine; t: TFn }) {
   return (
     <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
@@ -642,12 +674,14 @@ function FeeBreakdownPanel({ line, t }: { line: SettlementDetailLine; t: TFn }) 
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
           {t("compare.jubelioTitle")}
         </h3>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">{t("compare.netIncomeJubelio")}</span>
-          <span className="tabular-nums">
-            {line.jubelioNet === null ? "—" : formatRupiah(line.jubelioNet)}
-          </span>
-        </div>
+        {line.jubelioFees ? (
+          <JubelioFeeLines fees={line.jubelioFees} t={t} />
+        ) : (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">{t("compare.netIncomeJubelio")}</span>
+            <span className="tabular-nums">—</span>
+          </div>
+        )}
         <div className="flex justify-between border-t pt-1 text-sm font-medium">
           <span>{t("compare.netDelta")}</span>
           <span className="tabular-nums">

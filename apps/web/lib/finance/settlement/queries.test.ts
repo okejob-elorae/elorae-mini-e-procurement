@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { prisma } from "@elorae/db";
-import { deriveJubelioComparison, getSettlementById } from "./queries";
+import { deriveJubelioComparison, deriveJubelioFees, getSettlementById } from "./queries";
 
 // Test-bed only — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -43,6 +43,55 @@ describe("deriveJubelioComparison (pure)", () => {
   it("returns null when escrow_amount is not numeric", () => {
     const r = deriveJubelioComparison(5000, { escrow_amount: "not-a-number" });
     expect(r).toEqual({ jubelioNet: null, netDelta: null, matches: false });
+  });
+});
+
+describe("deriveJubelioFees (pure)", () => {
+  it("parses every fee field from a full feeBreakdown into the camelCase JubelioFees shape", () => {
+    const r = deriveJubelioFees({
+      total_amount_mp: "7000",
+      service_fee: "500",
+      order_processing_fee: "200",
+      insurance_cost: "50",
+      add_fee: "30",
+      add_disc: "100",
+      voucher_amount: "70",
+      cod_fee: "0",
+      shipping_tax: "20",
+      escrow_amount: "6030",
+    });
+    expect(r).toEqual({
+      totalAmountMp: 7000,
+      serviceFee: 500,
+      orderProcessingFee: 200,
+      insuranceCost: 50,
+      addFee: 30,
+      addDisc: 100,
+      voucherAmount: 70,
+      codFee: 0,
+      shippingTax: 20,
+      escrowAmount: 6030,
+    });
+  });
+
+  it("defaults missing/non-numeric fields to 0 rather than NaN", () => {
+    const r = deriveJubelioFees({ escrow_amount: "5000" });
+    expect(r).toEqual({
+      totalAmountMp: 0,
+      serviceFee: 0,
+      orderProcessingFee: 0,
+      insuranceCost: 0,
+      addFee: 0,
+      addDisc: 0,
+      voucherAmount: 0,
+      codFee: 0,
+      shippingTax: 0,
+      escrowAmount: 5000,
+    });
+  });
+
+  it("returns null when feeBreakdown is null", () => {
+    expect(deriveJubelioFees(null)).toBeNull();
   });
 });
 
@@ -129,7 +178,18 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
         shippingCost: 0,
         grandTotal: 5000,
         transactionDate: new Date(),
-        feeBreakdown: { escrow_amount: "5000" },
+        feeBreakdown: {
+          total_amount_mp: "7000",
+          service_fee: "500",
+          order_processing_fee: "200",
+          insurance_cost: "50",
+          add_fee: "30",
+          add_disc: "100",
+          voucher_amount: "70",
+          cod_fee: "0",
+          shipping_tax: "20",
+          escrow_amount: "5000",
+        },
       },
     });
     const orderDiffer = await prisma.salesOrder.create({
@@ -187,6 +247,18 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
       expect(lineMatch.jubelioNet).toBe(5000);
       expect(lineMatch.netDelta).toBe(0);
       expect(lineMatch.matches).toBe(true);
+      expect(lineMatch.jubelioFees).toEqual({
+        totalAmountMp: 7000,
+        serviceFee: 500,
+        orderProcessingFee: 200,
+        insuranceCost: 50,
+        addFee: 30,
+        addDisc: 100,
+        voucherAmount: 70,
+        codFee: 0,
+        shippingTax: 20,
+        escrowAmount: 5000,
+      });
 
       const lineDiffer = detail!.lines.find((l) => l.orderNo === orderNoDiffer)!;
       expect(lineDiffer.jubelioNet).toBe(2600);
@@ -197,6 +269,7 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
       expect(lineNoData.jubelioNet).toBeNull();
       expect(lineNoData.netDelta).toBeNull();
       expect(lineNoData.matches).toBe(false);
+      expect(lineNoData.jubelioFees).toBeNull();
 
       expect(detail!.differCount).toBe(1);
     } finally {

@@ -86,7 +86,51 @@ export type SettlementDetailLine = {
   jubelioNet: number | null;
   netDelta: number | null;
   matches: boolean;
+  jubelioFees: JubelioFees | null;
 };
+
+/**
+ * Jubelio's fee-by-fee breakdown, mirrored 1:1 from `buildFeeBreakdown` in
+ * `apps/api/src/jubelio/handlers/salesorder.handler.ts` — the writer that
+ * persists `SalesOrder.feeBreakdown`. Field names below are the camelCase
+ * mirror of that handler's snake_case keys; do not rename either side without
+ * updating both. Coarser than the excel breakdown (Jubelio lumps several
+ * excel line items into `service_fee`/`order_processing_fee`) — the two
+ * breakdowns are shown side by side, not reconciled row-for-row.
+ */
+export type JubelioFees = {
+  totalAmountMp: number;
+  serviceFee: number;
+  orderProcessingFee: number;
+  insuranceCost: number;
+  addFee: number;
+  addDisc: number;
+  voucherAmount: number;
+  codFee: number;
+  shippingTax: number;
+  escrowAmount: number;
+};
+
+function feeNum(v: string | undefined): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function deriveJubelioFees(feeBreakdown: Record<string, string> | null): JubelioFees | null {
+  if (!feeBreakdown) return null;
+  return {
+    totalAmountMp: feeNum(feeBreakdown.total_amount_mp),
+    serviceFee: feeNum(feeBreakdown.service_fee),
+    orderProcessingFee: feeNum(feeBreakdown.order_processing_fee),
+    insuranceCost: feeNum(feeBreakdown.insurance_cost),
+    addFee: feeNum(feeBreakdown.add_fee),
+    addDisc: feeNum(feeBreakdown.add_disc),
+    voucherAmount: feeNum(feeBreakdown.voucher_amount),
+    codFee: feeNum(feeBreakdown.cod_fee),
+    shippingTax: feeNum(feeBreakdown.shipping_tax),
+    escrowAmount: feeNum(feeBreakdown.escrow_amount),
+  };
+}
 
 /**
  * Jubelio-side "net income" comparable to the excel's `netIncome`: the
@@ -215,6 +259,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
       biayaKomisiAms: toNum(l.biayaKomisiAms),
       biayaProsesPesanan: toNum(l.biayaProsesPesanan),
       raw: l.raw as Record<string, unknown>,
+      jubelioFees: deriveJubelioFees(feeBreakdown),
       ...comparison,
     };
   });
