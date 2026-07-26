@@ -46,21 +46,21 @@ d("postPendingSalesJournals (test bed only)", () => {
   });
 
   it("posts both journals for a shipped+consumed order, idempotently", async () => {
-    const first = await postPendingSalesJournals({ limit: 100 });
+    const first = await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
     expect(first.revenue).toBeGreaterThanOrEqual(1);
     expect(first.cogs).toBeGreaterThanOrEqual(1);
     expect(await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "SALESORDER_REVENUE", sourceId: orderId } } })).not.toBeNull();
     expect(await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "SALESORDER_COGS", sourceId: orderId } } })).not.toBeNull();
     // Second run does not double-post this order.
     const before = await prisma.journal.count({ where: { sourceId: orderId } });
-    await postPendingSalesJournals({ limit: 100 });
+    await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
     expect(await prisma.journal.count({ where: { sourceId: orderId } })).toBe(before);
   });
 
   it("unmapped role → order stays pending + a single JOURNAL_PENDING (no dup on 2nd run)", async () => {
     await prisma.journalAccountMapping.deleteMany({ where: { role: "AR" } });
-    await postPendingSalesJournals({ limit: 100 });
-    await postPendingSalesJournals({ limit: 100 });
+    await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
+    await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
     const notifs = await prisma.adminNotification.count({ where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } } });
     expect(notifs).toBe(1);
     expect(await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "SALESORDER_REVENUE", sourceId: orderId } } })).toBeNull();

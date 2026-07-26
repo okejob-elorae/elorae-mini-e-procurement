@@ -1,4 +1,4 @@
-import { prisma } from "@elorae/db";
+import { prisma, Prisma } from "@elorae/db";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
@@ -34,7 +34,7 @@ async function flag(
 }
 
 export async function postPendingSalesJournals(
-  opts: { limit?: number; postedById?: string } = {},
+  opts: { limit?: number; postedById?: string; orderIds?: string[] } = {},
 ): Promise<{ posted: number; revenue: number; cogs: number; pending: number }> {
   const limit = opts.limit ?? 50;
   let systemPoster = opts.postedById ?? null;
@@ -43,10 +43,18 @@ export async function postPendingSalesJournals(
     systemPoster = admin?.id ?? null;
   }
 
-  const orders = await prisma.$queryRaw<Array<{ id: string; salesorderNo: string; shippedById: string | null }>>`
+  // Optional scope (targeted re-post / test isolation) — without it the sweep is global.
+  const idFilter =
+    opts.orderIds && opts.orderIds.length > 0
+      ? Prisma.sql`AND so.id IN (${Prisma.join(opts.orderIds)})`
+      : Prisma.empty;
+
+  const orders = await prisma.$queryRaw<Array<{ id: string; salesorderNo: string; shippedById: string | null }>>(
+    Prisma.sql`
     SELECT so.id, so.salesorderNo, so.shippedById
     FROM SalesOrder so
     WHERE (so.status IN ('SHIPPED','COMPLETED') OR so.fulfillmentStatus = 'SHIPPED')
+      ${idFilter}
       AND NOT (
         EXISTS (SELECT 1 FROM Journal j  WHERE j.sourceType  = 'SALESORDER_REVENUE' AND j.sourceId  = so.id)
         AND
@@ -54,7 +62,8 @@ export async function postPendingSalesJournals(
       )
     ORDER BY so.createdAt ASC
     LIMIT ${limit}
-  `;
+  `,
+  );
 
   let revenue = 0;
   let cogs = 0;
