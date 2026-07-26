@@ -98,6 +98,22 @@ describe("JubelioHttpClient", () => {
     });
   });
 
+  describe("listOrders (general, all-status)", () => {
+    it("GETs /sales/orders/ with q + paging and unwraps data", async () => {
+      http.get.mockResolvedValue({ data: [{ salesorder_id: 5, salesorder_no: "SP-5" }] });
+
+      const result = await client.listOrders("SP-5");
+
+      expect(result).toEqual([{ salesorder_id: 5, salesorder_no: "SP-5" }]);
+      expect(http.get).toHaveBeenCalledWith("/sales/orders/?q=SP-5&page=1&pageSize=20");
+    });
+
+    it("returns [] when data is missing", async () => {
+      http.get.mockResolvedValue({});
+      expect(await client.listOrders("x")).toEqual([]);
+    });
+  });
+
   describe("listCompletedOrders / listCancelledOrders / listFailedOrders", () => {
     it("GETs /sales/orders/completed/ with q + paging and unwraps data", async () => {
       http.get.mockResolvedValue({ data: [{ salesorder_id: 1, salesorder_no: "SP-1" }] });
@@ -131,19 +147,32 @@ describe("JubelioHttpClient", () => {
   });
 
   describe("findSalesOrderIdByNo", () => {
-    it("returns the id from the completed list on an exact salesorder_no match", async () => {
+    it("resolves from the general list first (single call, no bucket fallback)", async () => {
       http.get.mockResolvedValueOnce({ data: [{ salesorder_id: 7, salesorder_no: "SP-7" }] });
 
       const id = await client.findSalesOrderIdByNo("SP-7");
 
       expect(id).toBe(7);
+      // Only the general /sales/orders/?q= list is hit; buckets never queried.
+      expect(http.get).toHaveBeenCalledTimes(1);
+      expect(http.get).toHaveBeenCalledWith("/sales/orders/?q=SP-7&page=1&pageSize=20");
+    });
+
+    it("resolves an in-flight order via the general list that the buckets would miss", async () => {
+      // The whole point of the swap: an order not in completed/cancel/failed
+      // (still being picked/shipped at settlement time) is found by the general list.
+      http.get.mockResolvedValueOnce({ data: [{ salesorder_id: 26859, salesorder_no: "SP-26062630P1QHU7" }] });
+
+      const id = await client.findSalesOrderIdByNo("SP-26062630P1QHU7");
+
+      expect(id).toBe(26859);
       expect(http.get).toHaveBeenCalledTimes(1);
     });
 
-    it("falls through to the cancelled list when not in completed", async () => {
+    it("falls back to completed when the general list misses", async () => {
       http.get
-        .mockResolvedValueOnce({ data: [] }) // completed
-        .mockResolvedValueOnce({ data: [{ salesorder_id: 8, salesorder_no: "SP-8" }] }); // cancelled
+        .mockResolvedValueOnce({ data: [] }) // general
+        .mockResolvedValueOnce({ data: [{ salesorder_id: 8, salesorder_no: "SP-8" }] }); // completed
 
       const id = await client.findSalesOrderIdByNo("SP-8");
 
@@ -151,36 +180,39 @@ describe("JubelioHttpClient", () => {
       expect(http.get).toHaveBeenCalledTimes(2);
     });
 
-    it("falls through to the failed list when not in completed or cancelled", async () => {
+    it("falls back through general → completed → cancelled → failed", async () => {
       http.get
-        .mockResolvedValueOnce({ data: [] })
-        .mockResolvedValueOnce({ data: [] })
-        .mockResolvedValueOnce({ data: [{ salesorder_id: 9, salesorder_no: "SP-9" }] });
+        .mockResolvedValueOnce({ data: [] }) // general
+        .mockResolvedValueOnce({ data: [] }) // completed
+        .mockResolvedValueOnce({ data: [] }) // cancelled
+        .mockResolvedValueOnce({ data: [{ salesorder_id: 9, salesorder_no: "SP-9" }] }); // failed
 
       const id = await client.findSalesOrderIdByNo("SP-9");
 
       expect(id).toBe(9);
-      expect(http.get).toHaveBeenCalledTimes(3);
+      expect(http.get).toHaveBeenCalledTimes(4);
     });
 
-    it("returns null when not found in any list", async () => {
+    it("returns null when not found in any list (all four tiers queried)", async () => {
       http.get.mockResolvedValue({ data: [] });
 
       const id = await client.findSalesOrderIdByNo("SP-missing");
 
       expect(id).toBeNull();
-      expect(http.get).toHaveBeenCalledTimes(3);
+      expect(http.get).toHaveBeenCalledTimes(4);
     });
 
-    it("ignores a fuzzy q match that isn't the exact salesorder_no", async () => {
+    it("ignores a fuzzy q match that isn't the exact salesorder_no across all tiers", async () => {
       http.get
-        .mockResolvedValueOnce({ data: [{ salesorder_id: 1, salesorder_no: "SP-100" }] }) // fuzzy hit on completed
+        .mockResolvedValueOnce({ data: [{ salesorder_id: 1, salesorder_no: "SP-100" }] }) // fuzzy hit on general
+        .mockResolvedValueOnce({ data: [] })
         .mockResolvedValueOnce({ data: [] })
         .mockResolvedValueOnce({ data: [] });
 
       const id = await client.findSalesOrderIdByNo("SP-10");
 
       expect(id).toBeNull();
+      expect(http.get).toHaveBeenCalledTimes(4);
     });
   });
 });
