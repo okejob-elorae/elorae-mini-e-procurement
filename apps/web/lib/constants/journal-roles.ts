@@ -1,5 +1,6 @@
 export const POSTING_ROLES = [
   "INVENTORY",
+  "INVENTORY_FG",
   "AP",
   "AR",
   "SALES_REVENUE",

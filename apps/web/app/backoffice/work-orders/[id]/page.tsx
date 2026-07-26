@@ -52,10 +52,12 @@ import {
   updateWOHppAdjustments,
   getAdditionalMaterialsPreview,
   issueAdditionalMaterials,
+  postFgReceiptJournalAction,
 } from '@/app/actions/production';
 import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { logPrint } from '@/app/actions/audit';
 import { WOStatus } from '@/lib/constants/enums';
+import { hasPermission } from '@/lib/rbac';
 
 
 const statusColors: Record<WOStatus, string> = {
@@ -96,6 +98,31 @@ export default function WorkOrderDetailPage() {
   const [additionalPreview, setAdditionalPreview] = useState<Awaited<ReturnType<typeof getAdditionalMaterialsPreview>> | null>(null);
   const [additionalPreviewLoading, setAdditionalPreviewLoading] = useState(false);
   const [additionalSubmitLoading, setAdditionalSubmitLoading] = useState(false);
+  const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
+  const [postingReceiptId, setPostingReceiptId] = useState<string | null>(null);
+
+  async function handlePostReceiptJournal(receiptId: string) {
+    setPostingReceiptId(receiptId);
+    try {
+      const res = await postFgReceiptJournalAction(receiptId);
+      if (res.ok) {
+        toast.success(res.created ? tWO("receiptJournal.postedToast") : tWO("receiptJournal.alreadyPostedToast"));
+      } else {
+        switch (res.code) {
+          case "UNMAPPED_ROLE": toast.error(tWO("receiptJournal.errUNMAPPED_ROLE", { role: res.role ?? "" })); break;
+          case "UNBALANCED": toast.error(tWO("receiptJournal.errUNBALANCED")); break;
+          case "FORBIDDEN": toast.error(tWO("receiptJournal.errFORBIDDEN")); break;
+          default: toast.error(tWO("receiptJournal.errBAD_STATE"));
+        }
+      }
+      const updated = await getWorkOrderById(id);
+      setWO(updated);
+    } catch {
+      toast.error(tWO("receiptJournal.errUnexpected"));
+    } finally {
+      setPostingReceiptId(null);
+    }
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -684,6 +711,7 @@ export default function WorkOrderDetailPage() {
                       <TableHead className="text-right">Received</TableHead>
                       <TableHead className="text-right">Rejected</TableHead>
                       <TableHead className="text-right">Accepted</TableHead>
+                      <TableHead>{tWO("receiptJournal.column")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -703,6 +731,25 @@ export default function WorkOrderDetailPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           {Number(r.qtyAccepted).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          {r.journalId ? (
+                            <div className="flex items-center gap-2">
+                              <Badge variant="default">{tWO("receiptJournal.posted")}</Badge>
+                              <Button asChild variant="outline" size="sm">
+                                <Link href={`/backoffice/finance/journals/${r.journalId}`}>{tWO("receiptJournal.viewJournal")}</Link>
+                              </Button>
+                            </div>
+                          ) : r.hasPostableJournal && canPostJournal ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={postingReceiptId === r.id}
+                              onClick={() => handlePostReceiptJournal(r.id)}
+                            >
+                              {tWO("receiptJournal.postJournal")}
+                            </Button>
+                          ) : null}
                         </TableCell>
                       </TableRow>
                     ))}
