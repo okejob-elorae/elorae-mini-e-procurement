@@ -48,6 +48,12 @@ export type JubelioSalesOrderDetail = {
   [k: string]: unknown;
 };
 
+export type JubelioSalesOrderListRow = {
+  salesorder_id: number;
+  salesorder_no?: string;
+  [k: string]: unknown;
+};
+
 @Injectable()
 export class JubelioHttpClient {
   constructor(private readonly http: JubelioHttpService) {}
@@ -61,5 +67,71 @@ export class JubelioHttpClient {
       `/sales/orders/returned-list/?page=${page}&pageSize=${pageSize}`,
     );
     return body.data ?? [];
+  }
+
+  /**
+   * The general sales-order list — spans EVERY status (completed AND in-flight),
+   * unlike the completed/cancel/failed buckets below. Returns order-shaped rows
+   * ({ salesorder_id, salesorder_no, … }), so the resolver can read salesorder_id
+   * directly. Both this and the bucket `q` search are undocumented (the OpenAPI
+   * spec lists only page/pageSize on the list endpoints, and its purpose-built
+   * `POST /wms/order/getOrderByNo/` is pick-flow-scoped → empty for settled
+   * orders). See CLAUDE.md "Before using or adding ANY Jubelio endpoint".
+   */
+  async listOrders(q: string, page = 1, pageSize = 20): Promise<JubelioSalesOrderListRow[]> {
+    const body = await this.http.get<{ data: JubelioSalesOrderListRow[]; totalCount?: number }>(
+      `/sales/orders/?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`,
+    );
+    return body.data ?? [];
+  }
+
+  async listCompletedOrders(q: string, page = 1, pageSize = 20): Promise<JubelioSalesOrderListRow[]> {
+    const body = await this.http.get<{ data: JubelioSalesOrderListRow[]; totalCount?: number }>(
+      `/sales/orders/completed/?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`,
+    );
+    return body.data ?? [];
+  }
+
+  async listCancelledOrders(q: string, page = 1, pageSize = 20): Promise<JubelioSalesOrderListRow[]> {
+    const body = await this.http.get<{ data: JubelioSalesOrderListRow[]; totalCount?: number }>(
+      `/sales/orders/cancel/?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`,
+    );
+    return body.data ?? [];
+  }
+
+  async listFailedOrders(q: string, page = 1, pageSize = 20): Promise<JubelioSalesOrderListRow[]> {
+    const body = await this.http.get<{ data: JubelioSalesOrderListRow[]; totalCount?: number }>(
+      `/sales/orders/failed/?q=${encodeURIComponent(q)}&page=${page}&pageSize=${pageSize}`,
+    );
+    return body.data ?? [];
+  }
+
+  /**
+   * Resolves a Jubelio salesorder_no to its salesorder_id.
+   *
+   * Primary: the general `/sales/orders/?q=` list, which spans ALL statuses —
+   * it resolves in-flight orders (still being picked/shipped at settlement time)
+   * that the completed/cancel/failed buckets miss. Falls back to those buckets
+   * as belt-and-suspenders. Exact-matches on salesorder_no (the `q` search is
+   * fuzzy and can return siblings). Returns null if found nowhere.
+   */
+  async findSalesOrderIdByNo(salesorderNo: string): Promise<number | null> {
+    const general = await this.listOrders(salesorderNo);
+    const inGeneral = general.find((r) => r.salesorder_no === salesorderNo);
+    if (inGeneral) return inGeneral.salesorder_id;
+
+    const completed = await this.listCompletedOrders(salesorderNo);
+    const inCompleted = completed.find((r) => r.salesorder_no === salesorderNo);
+    if (inCompleted) return inCompleted.salesorder_id;
+
+    const cancelled = await this.listCancelledOrders(salesorderNo);
+    const inCancelled = cancelled.find((r) => r.salesorder_no === salesorderNo);
+    if (inCancelled) return inCancelled.salesorder_id;
+
+    const failed = await this.listFailedOrders(salesorderNo);
+    const inFailed = failed.find((r) => r.salesorder_no === salesorderNo);
+    if (inFailed) return inFailed.salesorder_id;
+
+    return null;
   }
 }
