@@ -2603,6 +2603,8 @@
     "cardTitle": "Pemetaan Akun Posting",
     "notSet": "Belum diatur",
     "savedToast": "Pemetaan akun berhasil disimpan.",
+    "clear": "Hapus pemetaan",
+    "clearedToast": "Pemetaan akun dihapus.",
     "selectAccount": "Pilih akun…",
     "searchAccount": "Cari kode atau nama akun…",
     "noAccounts": "Akun tidak ditemukan.",

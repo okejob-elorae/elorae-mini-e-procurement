@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
-import { resolveAccount, listAccountMappings, setAccountMapping, UnmappedRoleError } from "./mapping";
+import { resolveAccount, listAccountMappings, setAccountMapping, clearAccountMapping, UnmappedRoleError } from "./mapping";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "./mapping-test-fixture";
 
 // Mutates JournalAccountMapping + seeds ChartAccount rows — never run against the shared prod DB.
@@ -46,6 +46,14 @@ d("mapping (test bed only)", () => {
   it("resolveAccount throws UnmappedRoleError when unset", async () => {
     await prisma.journalAccountMapping.deleteMany({ where: { role: "COGS" } });
     await expect(resolveAccount("COGS")).rejects.toBeInstanceOf(UnmappedRoleError);
+  });
+
+  it("clearAccountMapping removes the mapping row", async () => {
+    await setAccountMapping("AR", leafId, prisma);
+    expect(await prisma.journalAccountMapping.findUnique({ where: { role: "AR" } })).not.toBeNull();
+    await clearAccountMapping("AR", prisma);
+    expect(await prisma.journalAccountMapping.findUnique({ where: { role: "AR" } })).toBeNull();
+    await expect(resolveAccount("AR")).rejects.toBeInstanceOf(UnmappedRoleError);
   });
 
   it("setAccountMapping upserts", async () => {

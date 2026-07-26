@@ -50,3 +50,10 @@ export async function setAccountMapping(
     update: { chartAccountId },
   });
 }
+
+export async function clearAccountMapping(
+  role: PostingRole,
+  client: AnyClient = prisma,
+): Promise<void> {
+  await client.journalAccountMapping.deleteMany({ where: { role } });
+}

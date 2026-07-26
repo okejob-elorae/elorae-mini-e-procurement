@@ -2603,6 +2603,8 @@
     "cardTitle": "Posting Account Mapping",
     "notSet": "Not set",
     "savedToast": "Account mapping saved.",
+    "clear": "Unmap",
+    "clearedToast": "Account mapping cleared.",
     "selectAccount": "Select account…",
     "searchAccount": "Search by code or name…",
     "noAccounts": "No accounts found.",

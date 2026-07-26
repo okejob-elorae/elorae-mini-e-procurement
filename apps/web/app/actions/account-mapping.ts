@@ -5,7 +5,7 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { POSTING_ROLES, type PostingRole } from "@/lib/constants/journal-roles";
-import { setAccountMapping } from "@/lib/finance/journals/mapping";
+import { setAccountMapping, clearAccountMapping } from "@/lib/finance/journals/mapping";
 
 export type SetAccountMappingResult =
   | { ok: true }
@@ -40,6 +40,22 @@ export async function setAccountMappingAction(
   }
 
   await setAccountMapping(role, chartAccountId, prisma);
+
+  revalidatePath("/backoffice/finance/account-mapping");
+  return { ok: true };
+}
+
+export async function clearAccountMappingAction(role: string): Promise<SetAccountMappingResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  if (!isPostingRole(role)) {
+    return { ok: false, code: "BAD_ROLE" };
+  }
+
+  await clearAccountMapping(role, prisma);
 
   revalidatePath("/backoffice/finance/account-mapping");
   return { ok: true };
