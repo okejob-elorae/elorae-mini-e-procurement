@@ -185,7 +185,7 @@ Canonical home for follow-ups + known debt. **New follow-ups go HERE** as `- [ ]
 Roadmap slices (not debt) live in the decomposition tables + the GitHub board, NOT here — e.g. the remaining EPIC-13 auto-journals (13-03 sales/COGS, 13-05 retur). **Every item below was verified STILL-OPEN against current code on 2026-07-25** (full merged-PR + board sweep, then per-item code check). *Dropped as already-fixed — do not re-add:* P2002 index-name check (`stock-writer.ts:86` robust regex, #73), canvassing van-load forbidden-vs-not-found (no conflation, #148), oversold-only view (now server-side, #133), `docker builder prune -af`/`.next` cache (uses GHA layer cache, not aggressive prune, #99), `@types/node-cron` ("dead" but node-cron is actively used), fulfillment e2e (prod-live since #8).
 
 ### Finance — Journal & CoA
-- [ ] Account-mapping UI: add an unmap/clear control (currently reassign-only — a mis-mapped role can't be cleared).
+- [x] Account-mapping UI: unmap/clear control (X button per mapped role) — PR #162.
 - [ ] Seed CoA detail postable leaves — Persediaan, Piutang, Selisih Persediaan, Marketplace Fee (Bank `1102` already seeded) so posting-role mappings are wireable out-of-box. Seed is a 10-account SAK-EMKM skeleton (`coa-sak-emkm.json`).
 - [ ] `postJournal` integrity-check query — surface any unbalanced or dangling journals.
 - [ ] Settlement journal: add an "other"/4th-line role so real settlement lines beyond `Dilepas+Pengeluaran=Pendapatan` don't block UNBALANCED (`settlement/journal.ts` builds exactly 3 lines) (PR #157, #17).
