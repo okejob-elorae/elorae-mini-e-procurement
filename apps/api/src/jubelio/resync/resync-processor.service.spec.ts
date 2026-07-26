@@ -43,6 +43,9 @@ describe("ResyncProcessor", () => {
       jubelioWebhookEvent: {
         findUniqueOrThrow: jest.fn(),
       },
+      salesOrder: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
     };
     client = { findSalesOrderIdByNo: jest.fn(), getSalesOrder: jest.fn() };
     webhooks = { persist: jest.fn() };
@@ -198,6 +201,52 @@ describe("ResyncProcessor", () => {
     );
     const afterFailed = prisma.jubelioSalesOrderResync.update.mock.calls;
     expect(afterFailed[afterFailed.length - 1][0].data).toMatchObject({ status: RESYNC_STATUS.DEAD });
+  });
+
+  it("marks DONE-with-warning (not DEAD) when the handler throws but the SalesOrder already landed", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture());
+    client.findSalesOrderIdByNo.mockResolvedValue(999);
+    const detail = { salesorder_id: 999, salesorder_no: "SP-2606252NSQ63S0", items: [] };
+    client.getSalesOrder.mockResolvedValue(detail);
+    webhooks.persist.mockResolvedValue({ id: "wh9", duplicate: false });
+    prisma.jubelioWebhookEvent.findUniqueOrThrow.mockResolvedValue({ id: "wh9" });
+    // Handler persists the order + items, then throws on the stock reserve/consume step.
+    handler.handle.mockRejectedValue(
+      new Error('InventoryValue not found for (itemId=x, variantSku="27000101P-XL")'),
+    );
+    // The order record IS present despite the throw.
+    prisma.salesOrder.findFirst.mockResolvedValue({ id: "so1" });
+
+    // Must NOT rethrow — a landed order is a success for backfill purposes.
+    await processor.process({ data: { rowId: "r1" } } as any);
+
+    expect(prisma.salesOrder.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { salesorderId: 999 } }),
+    );
+    const updates = prisma.jubelioSalesOrderResync.update.mock.calls;
+    const last = updates[updates.length - 1][0];
+    expect(last.data.status).toBe(RESYNC_STATUS.DONE);
+    expect(last.data.webhookEventId).toBe("wh9");
+    expect(last.data.lastError).toMatch(/post-ingest step skipped/i);
+    // Not reset to PENDING, not DEAD, no admin alert.
+    expect(admin.write).not.toHaveBeenCalled();
+  });
+
+  it("still rethrows (retry path) when the handler throws AND no SalesOrder landed", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture());
+    client.findSalesOrderIdByNo.mockResolvedValue(999);
+    const detail = { salesorder_id: 999, salesorder_no: "SP-2606252NSQ63S0", items: [] };
+    client.getSalesOrder.mockResolvedValue(detail);
+    webhooks.persist.mockResolvedValue({ id: "wh9", duplicate: false });
+    prisma.jubelioWebhookEvent.findUniqueOrThrow.mockResolvedValue({ id: "wh9" });
+    handler.handle.mockRejectedValue(new Error("DB write failed before order persisted"));
+    prisma.salesOrder.findFirst.mockResolvedValue(null);
+
+    await expect(processor.process({ data: { rowId: "r1" } } as any)).rejects.toThrow(/DB write failed/);
+
+    const updates = prisma.jubelioSalesOrderResync.update.mock.calls;
+    const last = updates[updates.length - 1][0];
+    expect(last.data).toMatchObject({ status: RESYNC_STATUS.PENDING });
   });
 
   it("marks DEAD via onJobFailed when attemptsMade reaches JOB_ATTEMPTS", async () => {

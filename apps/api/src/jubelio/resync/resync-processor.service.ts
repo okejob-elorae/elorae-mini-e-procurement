@@ -62,25 +62,30 @@ export class ResyncProcessor extends WorkerHost<Worker<JobPayload>> {
       return;
     }
 
+    // Hoisted so the catch block can tell "the order never ingested" (retry)
+    // apart from "the order ingested but a post-ingest side-effect threw"
+    // (record landed → DONE-with-warning; see the catch).
+    let resolvedSalesorderId: number | null = row.salesorderId;
+    let webhookEventId: string | null = null;
+
     try {
-      let salesorderId: number | null = row.salesorderId;
-      if (!salesorderId) {
+      if (!resolvedSalesorderId) {
         const resolved = await this.client.findSalesOrderIdByNo(row.salesorderNo);
         if (!resolved) {
           await this.markNotFound(row.id);
           await sleep(RESYNC_QUEUE_DEFAULTS.INTER_JOB_DELAY_MS);
           return;
         }
-        salesorderId = resolved;
+        resolvedSalesorderId = resolved;
       }
-      const resolvedSalesorderId: number = salesorderId;
+      const salesorderId: number = resolvedSalesorderId;
 
       await this.prisma.jubelioSalesOrderResync.update({
         where: { id: row.id },
-        data: { status: RESYNC_STATUS.FETCHING, salesorderId: resolvedSalesorderId },
+        data: { status: RESYNC_STATUS.FETCHING, salesorderId },
       });
 
-      const detail = await this.client.getSalesOrder(resolvedSalesorderId);
+      const detail = await this.client.getSalesOrder(salesorderId);
 
       const persisted = await this.webhooks.persist({
         event: "salesorder",
@@ -89,6 +94,7 @@ export class ResyncProcessor extends WorkerHost<Worker<JobPayload>> {
         // string is only for audit/traceability, never verified.
         signature: `resync:${row.batchId}:${row.id}`,
       });
+      webhookEventId = persisted.id;
 
       const event = await this.prisma.jubelioWebhookEvent.findUniqueOrThrow({
         where: { id: persisted.id },
@@ -103,11 +109,33 @@ export class ResyncProcessor extends WorkerHost<Worker<JobPayload>> {
       await sleep(RESYNC_QUEUE_DEFAULTS.INTER_JOB_DELAY_MS);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Reset back to PENDING (not left stuck in RESOLVING/FETCHING) so
-      // BullMQ's retry re-claims the row via the atomic PENDING→RESOLVING
-      // transition above. Otherwise the claim matches 0 rows, process()
-      // returns without throwing, BullMQ marks the job completed, and the
-      // row sits stuck until the 5-min poller sweep.
+
+      // The resync exists to backfill the order RECORD so a settlement line
+      // can match. The handler also replays stock reserve/consume, which can
+      // throw on a historical order whose item lacks an InventoryValue row
+      // (discontinued/deleted variant) — but by then the SalesOrder + items
+      // are already persisted (the handler commits them before the stock
+      // step). Re-driving would just re-throw forever → DEAD, mislabelling a
+      // fully-ingested, matchable order as failed. So: if the order landed,
+      // treat the throw as a non-fatal post-ingest side-effect → DONE with the
+      // error kept as a warning. Never touches the shared writer.
+      if (resolvedSalesorderId !== null) {
+        const landed = await this.prisma.salesOrder.findFirst({
+          where: { salesorderId: resolvedSalesorderId },
+          select: { id: true },
+        });
+        if (landed) {
+          await this.markDoneWithWarning(row.id, webhookEventId, msg);
+          await sleep(RESYNC_QUEUE_DEFAULTS.INTER_JOB_DELAY_MS);
+          return;
+        }
+      }
+
+      // Order never ingested → genuine failure. Reset to PENDING (not left
+      // stuck in RESOLVING/FETCHING) so BullMQ's retry re-claims the row via
+      // the atomic PENDING→RESOLVING transition above. Otherwise the claim
+      // matches 0 rows, process() returns without throwing, BullMQ marks the
+      // job completed, and the row sits stuck until the 5-min poller sweep.
       await this.prisma.jubelioSalesOrderResync.update({
         where: { id: row.id },
         data: { status: RESYNC_STATUS.PENDING, lastError: msg },
@@ -126,6 +154,21 @@ export class ResyncProcessor extends WorkerHost<Worker<JobPayload>> {
     await this.prisma.jubelioSalesOrderResync.update({
       where: { id },
       data: { status: RESYNC_STATUS.DONE, webhookEventId },
+    });
+  }
+
+  private async markDoneWithWarning(
+    id: string,
+    webhookEventId: string | null,
+    warning: string,
+  ): Promise<void> {
+    await this.prisma.jubelioSalesOrderResync.update({
+      where: { id },
+      data: {
+        status: RESYNC_STATUS.DONE,
+        ...(webhookEventId ? { webhookEventId } : {}),
+        lastError: `Order ingested; post-ingest step skipped: ${warning}`,
+      },
     });
   }
 
