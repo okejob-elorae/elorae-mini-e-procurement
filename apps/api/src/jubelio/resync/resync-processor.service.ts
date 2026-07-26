@@ -93,15 +93,24 @@ export class ResyncProcessor extends WorkerHost<Worker<JobPayload>> {
       const event = await this.prisma.jubelioWebhookEvent.findUniqueOrThrow({
         where: { id: persisted.id },
       });
-      await this.handler.handle(event);
+      const outcome = await this.handler.handle(event);
 
-      await this.markDone(row.id, persisted.id);
+      if (outcome?.kind === "skipped") {
+        await this.markSkipped(row.id, persisted.id, outcome.reason);
+      } else {
+        await this.markDone(row.id, persisted.id);
+      }
       await sleep(RESYNC_QUEUE_DEFAULTS.INTER_JOB_DELAY_MS);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // Reset back to PENDING (not left stuck in RESOLVING/FETCHING) so
+      // BullMQ's retry re-claims the row via the atomic PENDING→RESOLVING
+      // transition above. Otherwise the claim matches 0 rows, process()
+      // returns without throwing, BullMQ marks the job completed, and the
+      // row sits stuck until the 5-min poller sweep.
       await this.prisma.jubelioSalesOrderResync.update({
         where: { id: row.id },
-        data: { lastError: msg },
+        data: { status: RESYNC_STATUS.PENDING, lastError: msg },
       });
       throw err;
     }
@@ -117,6 +126,13 @@ export class ResyncProcessor extends WorkerHost<Worker<JobPayload>> {
     await this.prisma.jubelioSalesOrderResync.update({
       where: { id },
       data: { status: RESYNC_STATUS.DONE, webhookEventId },
+    });
+  }
+
+  private async markSkipped(id: string, webhookEventId: string, reason: string): Promise<void> {
+    await this.prisma.jubelioSalesOrderResync.update({
+      where: { id },
+      data: { status: RESYNC_STATUS.SKIPPED, webhookEventId, lastError: reason },
     });
   }
 

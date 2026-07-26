@@ -6,6 +6,7 @@ import { SalesOrderWebhookHandler } from "../handlers/salesorder.handler";
 import { AdminNotificationService } from "../../admin/notification.service";
 import { PRISMA } from "../../db/prisma.module";
 import { RESYNC_STATUS } from "./resync-status";
+import { RESYNC_QUEUE_DEFAULTS } from "./jubelio-resync.config";
 
 function rowFixture(overrides: any = {}) {
   return {
@@ -113,6 +114,28 @@ describe("ResyncProcessor", () => {
     expect(last.data).toMatchObject({ status: RESYNC_STATUS.DONE, webhookEventId: "wh1" });
   });
 
+  it("marks SKIPPED (not DONE) when the handler outcome is skipped", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture());
+    client.findSalesOrderIdByNo.mockResolvedValue(999);
+    const detail = { salesorder_id: 999, salesorder_no: "SP-2606252NSQ63S0", items: [] };
+    client.getSalesOrder.mockResolvedValue(detail);
+    webhooks.persist.mockResolvedValue({ id: "wh1", duplicate: false });
+    const eventRow = { id: "wh1", event: "salesorder", rawPayload: detail };
+    prisma.jubelioWebhookEvent.findUniqueOrThrow.mockResolvedValue(eventRow);
+    handler.handle.mockResolvedValue({ kind: "skipped", reason: "missing_salesorder_id" });
+
+    await processor.process({ data: { rowId: "r1" } } as any);
+
+    const updates = prisma.jubelioSalesOrderResync.update.mock.calls;
+    const last = updates[updates.length - 1][0];
+    expect(last.data).toMatchObject({
+      status: RESYNC_STATUS.SKIPPED,
+      webhookEventId: "wh1",
+      lastError: "missing_salesorder_id",
+    });
+    expect(last.data.status).not.toBe(RESYNC_STATUS.DONE);
+  });
+
   it("skips resolve when salesorderId is already set on the row", async () => {
     prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture({ salesorderId: 555 }));
     const detail = { salesorder_id: 555, salesorder_no: "SP-2606252NSQ63S0", items: [] };
@@ -150,6 +173,31 @@ describe("ResyncProcessor", () => {
     const updates = prisma.jubelioSalesOrderResync.update.mock.calls;
     expect(updates.some((c: any[]) => c[0].data.lastError === "transient Jubelio 503")).toBe(true);
     expect(admin.write).not.toHaveBeenCalled();
+  });
+
+  it("resets a row back to PENDING (not stuck FETCHING) on a transient error, then reaches DEAD once BullMQ exhausts retries", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture());
+    client.findSalesOrderIdByNo.mockResolvedValue(999);
+    client.getSalesOrder.mockRejectedValue(new Error("always fails"));
+
+    await expect(processor.process({ data: { rowId: "r1" } } as any)).rejects.toThrow(/always fails/);
+
+    const updates = prisma.jubelioSalesOrderResync.update.mock.calls;
+    const last = updates[updates.length - 1][0];
+    // Row must be reset to PENDING (re-claimable), not left stuck in FETCHING —
+    // otherwise BullMQ's retry re-invokes process(), the atomic PENDING claim
+    // matches 0 rows, process() returns without throwing, and BullMQ marks the
+    // job completed while the row is stuck until the sweeper.
+    expect(last.data).toMatchObject({ status: RESYNC_STATUS.PENDING, lastError: "always fails" });
+
+    // Once BullMQ has exhausted all attempts, onJobFailed must still land the
+    // row on DEAD (not leave it re-claimable forever).
+    await processor.onJobFailed(
+      { data: { rowId: "r1" }, attemptsMade: RESYNC_QUEUE_DEFAULTS.JOB_ATTEMPTS } as any,
+      new Error("always fails"),
+    );
+    const afterFailed = prisma.jubelioSalesOrderResync.update.mock.calls;
+    expect(afterFailed[afterFailed.length - 1][0].data).toMatchObject({ status: RESYNC_STATUS.DEAD });
   });
 
   it("marks DEAD via onJobFailed when attemptsMade reaches JOB_ATTEMPTS", async () => {
