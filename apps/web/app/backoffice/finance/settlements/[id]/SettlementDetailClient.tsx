@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
 import {
@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
+  Repeat,
+  Loader2,
   ChevronLeft,
   ChevronRight,
   BookText,
@@ -17,9 +19,15 @@ import {
 } from "lucide-react";
 import type { SettlementDetail } from "@/lib/finance/settlement/queries";
 import { matchSettlementAction, postSettlementJournalAction } from "@/app/actions/settlements";
+import {
+  getResyncSummary,
+  triggerSettlementResyncAction,
+  type ResyncSummary,
+} from "@/app/actions/jubelio-salesorder-resync";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -28,6 +36,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+const RESYNC_POLL_INTERVAL_MS = 2000;
 
 type Props = {
   settlement: SettlementDetail;
@@ -44,6 +54,10 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isPosting, startPostTransition] = useTransition();
+  const [isResyncing, startResyncTransition] = useTransition();
+  const [resyncBatchId, setResyncBatchId] = useState<string | null>(null);
+  const [resyncSummary, setResyncSummary] = useState<ResyncSummary | null>(null);
+  const [resyncPollError, setResyncPollError] = useState(false);
 
   const formatDate = (iso: string) =>
     new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
@@ -84,6 +98,78 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
           toast.error(t("matchToastForbidden"));
         } else {
           toast.error(t("matchToastNotFound"));
+        }
+      } catch {
+        toast.error(t("errGeneric"));
+      }
+    });
+  }
+
+  const resyncInFlight = resyncSummary
+    ? resyncSummary.pending + resyncSummary.resolving + resyncSummary.fetching
+    : 0;
+  const resyncTerminal = resyncSummary !== null && resyncSummary.total > 0 && resyncInFlight === 0;
+  const resyncDoneCount = resyncSummary
+    ? resyncSummary.done + resyncSummary.notFound + resyncSummary.dead + resyncSummary.skipped
+    : 0;
+  const resyncProgressPct =
+    resyncSummary && resyncSummary.total > 0
+      ? Math.round((resyncDoneCount / resyncSummary.total) * 100)
+      : 0;
+
+  useEffect(() => {
+    if (!resyncBatchId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    async function poll() {
+      const res = await getResyncSummary(resyncBatchId!);
+      if (cancelled) return;
+      if (!res.ok) {
+        setResyncPollError(true);
+        if (timer) clearInterval(timer);
+        return;
+      }
+      setResyncPollError(false);
+      setResyncSummary(res);
+      const inFlight = res.pending + res.resolving + res.fetching;
+      if (inFlight === 0 && timer) {
+        clearInterval(timer);
+      }
+    }
+
+    void poll();
+    timer = setInterval(poll, RESYNC_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [resyncBatchId]);
+
+  function handleResync() {
+    startResyncTransition(async () => {
+      try {
+        const result = await triggerSettlementResyncAction(settlement.id);
+        if (result.ok) {
+          toast.success(t("resyncToastSuccess", { seeded: String(result.seeded) }));
+          setResyncSummary(null);
+          setResyncPollError(false);
+          setResyncBatchId(result.batchId);
+        } else {
+          switch (result.code) {
+            case "FORBIDDEN":
+              toast.error(t("resyncToastForbidden"));
+              break;
+            case "NOT_FOUND":
+              toast.error(t("resyncToastNotFound"));
+              break;
+            case "NO_UNMATCHED_ORDERS":
+              toast.error(t("resyncToastNoUnmatched"));
+              break;
+            default:
+              toast.error(t("resyncToastApiError", { message: result.message ?? "" }));
+          }
         }
       } catch {
         toast.error(t("errGeneric"));
@@ -154,6 +240,20 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
               {isPending ? t("matchOrdersPending") : t("matchOrdersButton")}
             </Button>
 
+            {unmatchedLines.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isResyncing || (resyncBatchId !== null && !resyncTerminal)}
+                onClick={handleResync}
+              >
+                <Repeat className={`h-4 w-4 mr-2 ${isResyncing ? "animate-spin" : ""}`} />
+                {isResyncing
+                  ? t("resyncButtonPending")
+                  : t("resyncButton", { count: String(unmatchedLines.length) })}
+              </Button>
+            )}
+
             {settlement.journalId ? (
               <>
                 <Badge variant="default" className="gap-1">
@@ -200,6 +300,68 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
           <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
             {t("checksumBannerVariance", { amount: formatRupiah(settlement.checksumVariance) })}
           </span>
+        </Card>
+      )}
+
+      {resyncBatchId && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              {!resyncTerminal && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
+              {t("resyncPanelTitle")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {resyncPollError ? (
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                {t("resyncSummaryErrForbidden")}
+              </p>
+            ) : resyncSummary === null ? (
+              <p className="text-sm text-muted-foreground">{t("resyncRunningHint")}</p>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <Progress value={resyncProgressPct} />
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {t("resyncProgressLabel", {
+                      completed: String(resyncDoneCount),
+                      total: String(resyncSummary.total),
+                    })}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+                  <ResyncStatTile label={t("resyncStatPending")} value={resyncSummary.pending} />
+                  <ResyncStatTile label={t("resyncStatResolving")} value={resyncSummary.resolving} />
+                  <ResyncStatTile label={t("resyncStatFetching")} value={resyncSummary.fetching} />
+                  <ResyncStatTile label={t("resyncStatDone")} value={resyncSummary.done} tone="good" />
+                  <ResyncStatTile label={t("resyncStatNotFound")} value={resyncSummary.notFound} tone="warn" />
+                  <ResyncStatTile label={t("resyncStatDead")} value={resyncSummary.dead} tone="bad" />
+                  <ResyncStatTile label={t("resyncStatSkipped")} value={resyncSummary.skipped} />
+                </div>
+
+                {!resyncTerminal && (
+                  <p className="text-xs text-muted-foreground">{t("resyncRunningHint")}</p>
+                )}
+
+                {resyncTerminal && (
+                  <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">{t("resyncDoneHint")}</p>
+                      {resyncSummary.dead > 0 && (
+                        <p className="text-xs text-red-700 dark:text-red-400">
+                          {t("resyncDeadHint", { count: String(resyncSummary.dead) })}
+                        </p>
+                      )}
+                    </div>
+                    <Button size="sm" disabled={isPending} onClick={handleMatch}>
+                      <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
+                      {isPending ? t("matchOrdersPending") : t("resyncRematchButton")}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
         </Card>
       )}
 
@@ -345,6 +507,31 @@ function KpiTile({ label, value }: { label: string; value: string }) {
     <Card className="gap-1 p-3">
       <p className="text-xs text-muted-foreground truncate">{label}</p>
       <p className="text-lg font-semibold tabular-nums truncate">{value}</p>
+    </Card>
+  );
+}
+
+function ResyncStatTile({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number;
+  tone?: "default" | "good" | "warn" | "bad";
+}) {
+  const toneClass =
+    tone === "good"
+      ? "text-green-700 dark:text-green-400"
+      : tone === "warn"
+        ? "text-amber-700 dark:text-amber-400"
+        : tone === "bad"
+          ? "text-red-700 dark:text-red-400"
+          : "";
+  return (
+    <Card className="gap-1 p-3">
+      <p className="text-xs text-muted-foreground truncate">{label}</p>
+      <p className={`text-lg font-semibold tabular-nums truncate ${toneClass}`}>{value}</p>
     </Card>
   );
 }
