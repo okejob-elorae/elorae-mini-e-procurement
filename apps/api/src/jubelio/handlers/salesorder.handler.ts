@@ -219,6 +219,7 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
 
     const baseFields = {
       salesorderNo: p.salesorder_no ?? "",
+      channelOrderNo: p.ref_no ?? null,
       channel,
       sourceName: p.source_name ?? "",
       status,

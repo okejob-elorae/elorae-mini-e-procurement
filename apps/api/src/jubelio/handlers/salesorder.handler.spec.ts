@@ -488,4 +488,31 @@ describe("SalesOrderWebhookHandler", () => {
     expect(upsertArgs.update.fulfillmentStatus).toBeUndefined();
     expect(prisma.salesOrder.updateMany).not.toHaveBeenCalled();
   });
+
+  it("maps payload.ref_no onto channelOrderNo on create + update", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    await handler.handle(row(makePayload({ ref_no: "584771788142839379" })) as any);
+
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.create.channelOrderNo).toBe("584771788142839379");
+    expect(upsertArgs.update.channelOrderNo).toBe("584771788142839379");
+  });
+
+  it("is null-safe when ref_no is absent — writes null, no crash", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
+      id: "st1", salesorderId: 23043, stockApplied: true,
+    });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    const r = await handler.handle(row(makePayload()) as any);
+
+    const upsertArgs = prisma.salesOrder.upsert.mock.calls[0][0];
+    expect(upsertArgs.create.channelOrderNo).toBeNull();
+    expect(upsertArgs.update.channelOrderNo).toBeNull();
+    expect(r).toEqual({ kind: "processed" });
+  });
 });
