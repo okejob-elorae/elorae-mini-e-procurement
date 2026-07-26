@@ -12,6 +12,7 @@ import { JubelioCategoriesModule } from "./jubelio/categories/categories.module"
 import { JubelioCouriersModule } from "./jubelio/couriers/couriers.module";
 import { JubelioModule } from "./jubelio/jubelio.module";
 import { JubelioOutboxModule } from "./jubelio/outbox/jubelio-outbox.module";
+import { JubelioResyncModule } from "./jubelio/resync/jubelio-resync.module";
 import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
 
 @Module({
@@ -39,6 +40,7 @@ import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
     JubelioCouriersModule,
     JubelioWebhooksModule,
     JubelioOutboxModule,
+    JubelioResyncModule,
   ],
 })
 export class AppModule {}
