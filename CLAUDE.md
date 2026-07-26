@@ -215,6 +215,10 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] Resync progress-panel re-attach is per-browser (localStorage keyed by settlement id) — cross-device / multi-operator re-attach would need a `settlementId` link on `JubelioSalesOrderResync` + a "latest in-flight batch" query + migration (PR #165).
 - [ ] Variant-key derivation mismatch surfaced during resync ingest — reserve looked for `27000101P-XL` while the item code is `27000101P-BLK-XL`; couldn't confirm on `:3308` (0 inventory rows for the item). Verify the reservation-writer variant derivation on prod before the bulk (PR #165).
 - [ ] Settlement-line `netIncome` is the excel value; a RETURNED order can legitimately show excel net 0 vs Jubelio escrow > 0 (return leg) — the Sub-B compare flags it correctly, but decide the P&L "truth" for returned orders (excel realized-0 vs Jubelio gross escrow) (PR #166).
+- [ ] Settlement compare `differCount` counts only computable deltas — can read "0 differ" while most lines are simply not-yet-compared (pre-resync). Add a "N belum dibandingkan" bucket / tooltip (PR #166).
+- [ ] Settlement compare selects + ships the full `raw` sheet-row JSON to the client but never renders it — drop from the query until a view reads it (payload weight) (PR #166).
+- [ ] Settlement compare could surface Jubelio's fee-by-fee breakdown (`service_fee`/`order_processing_fee`/escrow object from `feeBreakdown`) beside the excel fees, not just the net delta — data already stored; HPP/profit would need the item cost (populates on prod, else product-master fetch) (PR #166 follow-on).
+- [x] Settlement compare `jubelioNet` = `feeBreakdown.escrow_amount` basis — VALIDATED live: on real orders the excel net == Jubelio escrow (e.g. 201.815==201.815, delta 0), and a returned order's escrow matched the dashboard 202.910 (PR #166).
 
 ### Sales returns
 - [ ] `SalesReturn.jubelioReturnId` actually stores `salesorder_id` — misleading name, rename deferred (migration churn) (PR #55).
