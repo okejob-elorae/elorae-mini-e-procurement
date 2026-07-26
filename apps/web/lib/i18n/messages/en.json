@@ -1701,6 +1701,14 @@
         "forbidden": "Insufficient permissions.",
         "networkError": "Couldn't reach the server. Try again."
       }
+    },
+    "journal": {
+      "title": "Journal",
+      "revenue": "Revenue journal",
+      "cogs": "COGS journal",
+      "posted": "Posted",
+      "pending": "Pending",
+      "view": "View"
     }
   },
   "salesReturns": {
