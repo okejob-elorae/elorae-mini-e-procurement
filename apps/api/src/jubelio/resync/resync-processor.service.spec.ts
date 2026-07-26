@@ -1,0 +1,187 @@
+import { Test } from "@nestjs/testing";
+import { ResyncProcessor } from "./resync-processor.service";
+import { JubelioHttpClient } from "../jubelio-http.client";
+import { JubelioWebhooksService } from "../webhooks/webhooks.service";
+import { SalesOrderWebhookHandler } from "../handlers/salesorder.handler";
+import { AdminNotificationService } from "../../admin/notification.service";
+import { PRISMA } from "../../db/prisma.module";
+import { RESYNC_STATUS } from "./resync-status";
+
+function rowFixture(overrides: any = {}) {
+  return {
+    id: "r1",
+    batchId: "batch1",
+    salesorderNo: "SP-2606252NSQ63S0",
+    salesorderId: null,
+    status: RESYNC_STATUS.PENDING,
+    attempts: 0,
+    lastError: null,
+    webhookEventId: null,
+    enqueuedById: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+describe("ResyncProcessor", () => {
+  let processor: ResyncProcessor;
+  let prisma: any;
+  let client: { findSalesOrderIdByNo: jest.Mock; getSalesOrder: jest.Mock };
+  let webhooks: { persist: jest.Mock };
+  let handler: { handle: jest.Mock };
+  let admin: { write: jest.Mock };
+
+  beforeEach(async () => {
+    prisma = {
+      jubelioSalesOrderResync: {
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      jubelioWebhookEvent: {
+        findUniqueOrThrow: jest.fn(),
+      },
+    };
+    client = { findSalesOrderIdByNo: jest.fn(), getSalesOrder: jest.fn() };
+    webhooks = { persist: jest.fn() };
+    handler = { handle: jest.fn() };
+    admin = { write: jest.fn() };
+
+    const mod = await Test.createTestingModule({
+      providers: [
+        ResyncProcessor,
+        { provide: PRISMA, useValue: prisma },
+        { provide: JubelioHttpClient, useValue: client },
+        { provide: JubelioWebhooksService, useValue: webhooks },
+        { provide: SalesOrderWebhookHandler, useValue: handler },
+        { provide: AdminNotificationService, useValue: admin },
+      ],
+    }).compile();
+    processor = mod.get(ResyncProcessor);
+  });
+
+  it("returns silently when row not found", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(null);
+    await processor.process({ data: { rowId: "missing" } } as any);
+    expect(client.findSalesOrderIdByNo).not.toHaveBeenCalled();
+  });
+
+  it.each([RESYNC_STATUS.DONE, RESYNC_STATUS.NOT_FOUND, RESYNC_STATUS.SKIPPED, RESYNC_STATUS.DEAD])(
+    "early-returns (idempotent) when row already %s",
+    async (status) => {
+      prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture({ status }));
+      await processor.process({ data: { rowId: "r1" } } as any);
+      expect(client.findSalesOrderIdByNo).not.toHaveBeenCalled();
+      expect(client.getSalesOrder).not.toHaveBeenCalled();
+      expect(webhooks.persist).not.toHaveBeenCalled();
+      expect(handler.handle).not.toHaveBeenCalled();
+    },
+  );
+
+  it("skips the claim silently when another worker already owns the row", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture());
+    prisma.jubelioSalesOrderResync.updateMany.mockResolvedValue({ count: 0 });
+
+    await processor.process({ data: { rowId: "r1" } } as any);
+
+    expect(client.findSalesOrderIdByNo).not.toHaveBeenCalled();
+  });
+
+  it("resolves no→id, fetches detail, persists a webhook event, drives the handler, marks DONE", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture());
+    client.findSalesOrderIdByNo.mockResolvedValue(999);
+    const detail = { salesorder_id: 999, salesorder_no: "SP-2606252NSQ63S0", items: [] };
+    client.getSalesOrder.mockResolvedValue(detail);
+    webhooks.persist.mockResolvedValue({ id: "wh1", duplicate: false });
+    const eventRow = { id: "wh1", event: "salesorder", rawPayload: detail };
+    prisma.jubelioWebhookEvent.findUniqueOrThrow.mockResolvedValue(eventRow);
+    handler.handle.mockResolvedValue({ kind: "processed" });
+
+    await processor.process({ data: { rowId: "r1" } } as any);
+
+    expect(client.findSalesOrderIdByNo).toHaveBeenCalledWith("SP-2606252NSQ63S0");
+    expect(client.getSalesOrder).toHaveBeenCalledWith(999);
+    expect(webhooks.persist).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "salesorder", rawBody: JSON.stringify(detail) }),
+    );
+    expect(handler.handle).toHaveBeenCalledWith(eventRow);
+
+    const updates = prisma.jubelioSalesOrderResync.update.mock.calls;
+    expect(updates.some((c: any[]) => c[0].data.status === RESYNC_STATUS.FETCHING)).toBe(true);
+    const last = updates[updates.length - 1][0];
+    expect(last.data).toMatchObject({ status: RESYNC_STATUS.DONE, webhookEventId: "wh1" });
+  });
+
+  it("skips resolve when salesorderId is already set on the row", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture({ salesorderId: 555 }));
+    const detail = { salesorder_id: 555, salesorder_no: "SP-2606252NSQ63S0", items: [] };
+    client.getSalesOrder.mockResolvedValue(detail);
+    webhooks.persist.mockResolvedValue({ id: "wh2", duplicate: false });
+    prisma.jubelioWebhookEvent.findUniqueOrThrow.mockResolvedValue({ id: "wh2" });
+    handler.handle.mockResolvedValue({ kind: "processed" });
+
+    await processor.process({ data: { rowId: "r1" } } as any);
+
+    expect(client.findSalesOrderIdByNo).not.toHaveBeenCalled();
+    expect(client.getSalesOrder).toHaveBeenCalledWith(555);
+  });
+
+  it("marks NOT_FOUND when the no→id resolve comes back empty; handler never runs", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture());
+    client.findSalesOrderIdByNo.mockResolvedValue(null);
+
+    await processor.process({ data: { rowId: "r1" } } as any);
+
+    expect(client.getSalesOrder).not.toHaveBeenCalled();
+    expect(webhooks.persist).not.toHaveBeenCalled();
+    expect(handler.handle).not.toHaveBeenCalled();
+    const updates = prisma.jubelioSalesOrderResync.update.mock.calls;
+    expect(updates[updates.length - 1][0].data).toMatchObject({ status: RESYNC_STATUS.NOT_FOUND });
+  });
+
+  it("rethrows generic errors for BullMQ retry and records lastError", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(rowFixture());
+    client.findSalesOrderIdByNo.mockResolvedValue(999);
+    client.getSalesOrder.mockRejectedValue(new Error("transient Jubelio 503"));
+
+    await expect(processor.process({ data: { rowId: "r1" } } as any)).rejects.toThrow(/transient/);
+
+    const updates = prisma.jubelioSalesOrderResync.update.mock.calls;
+    expect(updates.some((c: any[]) => c[0].data.lastError === "transient Jubelio 503")).toBe(true);
+    expect(admin.write).not.toHaveBeenCalled();
+  });
+
+  it("marks DEAD via onJobFailed when attemptsMade reaches JOB_ATTEMPTS", async () => {
+    await processor.onJobFailed(
+      { data: { rowId: "r1" }, attemptsMade: 5 } as any,
+      new Error("final fail"),
+    );
+    const updates = prisma.jubelioSalesOrderResync.update.mock.calls;
+    expect(updates.some((c: any[]) => c[0].data.status === RESYNC_STATUS.DEAD)).toBe(true);
+    expect(admin.write).toHaveBeenCalledWith(
+      expect.objectContaining({ category: "jubelio-so-resync", severity: "ERROR" }),
+    );
+  });
+
+  it("does not mark DEAD via onJobFailed when attemptsMade below JOB_ATTEMPTS", async () => {
+    await processor.onJobFailed(
+      { data: { rowId: "r1" }, attemptsMade: 2 } as any,
+      new Error("transient"),
+    );
+    expect(prisma.jubelioSalesOrderResync.update).not.toHaveBeenCalled();
+    expect(admin.write).not.toHaveBeenCalled();
+  });
+
+  it("idempotent: re-running a DONE row does nothing (no duplicate webhook event / handler call)", async () => {
+    prisma.jubelioSalesOrderResync.findUnique.mockResolvedValue(
+      rowFixture({ status: RESYNC_STATUS.DONE, webhookEventId: "wh1" }),
+    );
+
+    await processor.process({ data: { rowId: "r1" } } as any);
+
+    expect(prisma.jubelioSalesOrderResync.updateMany).not.toHaveBeenCalled();
+    expect(webhooks.persist).not.toHaveBeenCalled();
+    expect(handler.handle).not.toHaveBeenCalled();
+  });
+});
