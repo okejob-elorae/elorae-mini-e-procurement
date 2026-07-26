@@ -8,6 +8,7 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -30,6 +31,7 @@ import {
   acceptReturnItemAction,
   rejectReturnItemAction,
   submitReturnDecisionAction,
+  postSalesReturnJournalsAction,
   type DecisionActionResult,
 } from "@/app/actions/sales-return-decision";
 import type { SalesReturnDetail } from "@/lib/sales-returns/queries";
@@ -41,6 +43,7 @@ import {
 type Props = {
   ret: SalesReturnDetail;
   canDecide: boolean;
+  canPostJournal: boolean;
 };
 
 function fmtCurrency(v: unknown, locale: string): string {
@@ -60,12 +63,14 @@ function fmtDateTime(d: Date | string | null | undefined, locale: string): strin
   }).format(new Date(d));
 }
 
-export function ReturnDecisionCard({ ret, canDecide }: Props) {
+export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
   const t = useTranslations("salesReturns.decision");
+  const tj = useTranslations("salesReturns");
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
+  const [postingJournal, setPostingJournal] = useState(false);
 
   const locked = ret.pushOutboxRowId !== null;
   const allDecided = ret.items.every((i) => i.decision !== "PENDING");
@@ -99,6 +104,35 @@ export function ReturnDecisionCard({ ret, canDecide }: Props) {
       setSubmitDialogOpen(false);
       handle(r, "toast.submitted");
     });
+  }
+
+  async function handlePostReturnJournals(): Promise<void> {
+    setPostingJournal(true);
+    try {
+      const res = await postSalesReturnJournalsAction(ret.id);
+      if (res.ok) {
+        toast.success(res.created === false ? tj("journal.alreadyPostedToast") : tj("journal.postedToast"));
+      } else {
+        switch (res.code) {
+          case "UNMAPPED_ROLE":
+            toast.error(tj("journal.errUNMAPPED_ROLE", { role: res.role ?? "" }));
+            break;
+          case "UNBALANCED":
+            toast.error(tj("journal.errUNBALANCED"));
+            break;
+          case "FORBIDDEN":
+            toast.error(tj("journal.errFORBIDDEN"));
+            break;
+          default:
+            toast.error(tj("journal.errBAD_STATE"));
+        }
+      }
+      router.refresh();
+    } catch {
+      toast.error(tj("journal.errUnexpected"));
+    } finally {
+      setPostingJournal(false);
+    }
   }
 
   return (
@@ -138,6 +172,40 @@ export function ReturnDecisionCard({ ret, canDecide }: Props) {
               when: fmtDateTime(ret.decidedAt, locale),
               who: ret.decidedBy?.name ?? "—",
             })}
+          </div>
+        )}
+
+        {ret.decidedAt && (
+          <div className="space-y-2">
+            <div className="text-sm font-medium">{tj("journal.title")}</div>
+            {(
+              [
+                { label: tj("journal.revenue"), id: ret.revenueJournalId },
+                { label: tj("journal.cogs"), id: ret.cogsJournalId },
+              ] as const
+            ).map((row) => (
+              <div key={row.label} className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">{row.label}</span>
+                {row.id ? (
+                  <>
+                    <Badge variant="default">{tj("journal.posted")}</Badge>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/backoffice/finance/journals/${row.id}`}>{tj("journal.view")}</Link>
+                    </Button>
+                  </>
+                ) : null}
+              </div>
+            ))}
+            {canPostJournal && (!ret.revenueJournalId || !ret.cogsJournalId) && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={postingJournal}
+                onClick={handlePostReturnJournals}
+              >
+                {tj("journal.postJournal")}
+              </Button>
+            )}
           </div>
         )}
       </Card>

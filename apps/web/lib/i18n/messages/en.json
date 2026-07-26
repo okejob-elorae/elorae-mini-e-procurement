@@ -1808,6 +1808,21 @@
         "already_submitted": "This return was already submitted.",
         "internal_error": "Something went wrong. Try again."
       }
+    },
+    "journal": {
+      "title": "Journal",
+      "revenue": "Return revenue journal",
+      "cogs": "Return COGS journal",
+      "posted": "Posted",
+      "postJournal": "Post journal",
+      "view": "View",
+      "postedToast": "Journal posted.",
+      "alreadyPostedToast": "Journal already exists.",
+      "errUNMAPPED_ROLE": "Posting role {role} is unmapped — map it in Account Mapping, then post again.",
+      "errUNBALANCED": "Journal is unbalanced.",
+      "errBAD_STATE": "Return is not in a postable state.",
+      "errFORBIDDEN": "You don't have journal-posting permission.",
+      "errUnexpected": "Something went wrong posting the journal."
     }
   },
   "jubelioCouriers": {

@@ -1808,6 +1808,21 @@
         "already_submitted": "Pengembalian ini sudah diajukan.",
         "internal_error": "Terjadi kesalahan. Coba lagi."
       }
+    },
+    "journal": {
+      "title": "Jurnal",
+      "revenue": "Jurnal retur pendapatan",
+      "cogs": "Jurnal retur HPP",
+      "posted": "Diposting",
+      "postJournal": "Posting jurnal",
+      "view": "Lihat",
+      "postedToast": "Jurnal berhasil diposting.",
+      "alreadyPostedToast": "Jurnal sudah ada.",
+      "errUNMAPPED_ROLE": "Peran akun {role} belum dipetakan — petakan di Account Mapping lalu posting ulang.",
+      "errUNBALANCED": "Jurnal tidak seimbang.",
+      "errBAD_STATE": "Retur belum bisa diposting.",
+      "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
+      "errUnexpected": "Terjadi kesalahan saat memposting jurnal."
     }
   },
   "jubelioCouriers": {
