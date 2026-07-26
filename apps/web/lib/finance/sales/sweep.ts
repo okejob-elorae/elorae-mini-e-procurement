@@ -43,12 +43,18 @@ export async function postPendingSalesJournals(
     systemPoster = admin?.id ?? null;
   }
 
-  const orders = await prisma.salesOrder.findMany({
-    where: { status: { in: ["SHIPPED", "COMPLETED"] } },
-    select: { id: true, salesorderNo: true, shippedById: true },
-    orderBy: { shippedAt: "asc" },
-    take: limit,
-  });
+  const orders = await prisma.$queryRaw<Array<{ id: string; salesorderNo: string; shippedById: string | null }>>`
+    SELECT so.id, so.salesorderNo, so.shippedById
+    FROM SalesOrder so
+    WHERE (so.status IN ('SHIPPED','COMPLETED') OR so.fulfillmentStatus = 'SHIPPED')
+      AND NOT (
+        EXISTS (SELECT 1 FROM Journal j  WHERE j.sourceType  = 'SALESORDER_REVENUE' AND j.sourceId  = so.id)
+        AND
+        EXISTS (SELECT 1 FROM Journal j2 WHERE j2.sourceType = 'SALESORDER_COGS'    AND j2.sourceId = so.id)
+      )
+    ORDER BY so.createdAt ASC
+    LIMIT ${limit}
+  `;
 
   let revenue = 0;
   let cogs = 0;

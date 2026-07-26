@@ -70,27 +70,29 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
         courierName={order.courierName}
       />
 
-      <Card className="p-4 space-y-2">
-        <h2 className="font-semibold">{t("journal.title")}</h2>
-        {([
-          { label: t("journal.revenue"), id: order.revenueJournalId },
-          { label: t("journal.cogs"), id: order.cogsJournalId },
-        ] as const).map((row) => (
-          <div key={row.label} className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">{row.label}</span>
-            {row.id ? (
-              <>
-                <Badge variant="default">{t("journal.posted")}</Badge>
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/backoffice/finance/journals/${row.id}`}>{t("journal.view")}</Link>
-                </Button>
-              </>
-            ) : (
-              <Badge variant="outline" className="text-muted-foreground">{t("journal.pending")}</Badge>
-            )}
-          </div>
-        ))}
-      </Card>
+      {(order.status === "SHIPPED" || order.status === "COMPLETED" || order.fulfillmentStatus === "SHIPPED") && (
+        <Card className="p-4 space-y-2">
+          <h2 className="font-semibold">{t("journal.title")}</h2>
+          {([
+            { label: t("journal.revenue"), id: order.revenueJournalId },
+            { label: t("journal.cogs"), id: order.cogsJournalId },
+          ] as const).map((row) => (
+            <div key={row.label} className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">{row.label}</span>
+              {row.id ? (
+                <>
+                  <Badge variant="default">{t("journal.posted")}</Badge>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/backoffice/finance/journals/${row.id}`}>{t("journal.view")}</Link>
+                  </Button>
+                </>
+              ) : (
+                <Badge variant="outline" className="text-muted-foreground">{t("journal.pending")}</Badge>
+              )}
+            </div>
+          ))}
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-4 space-y-2">
