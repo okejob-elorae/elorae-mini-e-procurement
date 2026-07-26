@@ -126,12 +126,12 @@ describe("jubelio-salesorder-resync server actions", () => {
       expect(apiFetch).not.toHaveBeenCalled();
     });
 
-    it("returns NO_UNMATCHED_ORDERS when the marketplace has no supported match key (e.g. Tokopedia)", async () => {
+    it("returns NO_UNMATCHED_ORDERS when the marketplace has no supported match key", async () => {
       (auth as any).mockResolvedValue(MANAGE_SESSION);
-      (prisma.settlement.findUnique as any).mockResolvedValue({ marketplace: "TOKOPEDIA" });
+      (prisma.settlement.findUnique as any).mockResolvedValue({ marketplace: "LAZADA" });
       (prisma.settlementLine.findMany as any).mockResolvedValue([
-        { orderNo: "TT-111" },
-        { orderNo: "TT-222" },
+        { orderNo: "LZ-111" },
+        { orderNo: "LZ-222" },
       ]);
 
       const result = await triggerSettlementResyncAction("s1");
