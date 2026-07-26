@@ -2487,6 +2487,11 @@
     "listTitle": "Settlement List",
     "empty": "No settlements uploaded yet.",
     "uploadTitle": "Upload Settlement",
+    "uploadMarketplaceLabel": "Marketplace",
+    "marketplaceOption": {
+      "SHOPEE": "Shopee",
+      "TIKTOK": "TikTok Shop"
+    },
     "uploadFileLabel": "File (.xlsx)",
     "uploadButton": "Upload",
     "uploading": "Uploading…",
