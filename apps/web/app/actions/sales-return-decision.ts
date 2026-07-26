@@ -11,7 +11,6 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { withSalesReturnLock, SalesReturnLockBusyError } from "@/lib/redis/lock";
 import { postSalesReturnRevenueJournal, postSalesReturnCogsJournal } from "@/lib/finance/sales/sales-return-journal";
-import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type DecisionActionResult =
   | { ok: true }
@@ -164,7 +163,10 @@ export async function submitReturnDecisionAction(
 
 export async function postSalesReturnJournalsAction(
   salesReturnId: string,
-): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+): Promise<
+  | { ok: true; created: boolean }
+  | { ok: false; code: "UNMAPPED_ROLE" | "UNBALANCED" | "NOTHING_TO_POST" | "FORBIDDEN" | "BAD_STATE"; role?: string }
+> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
     return { ok: false, code: "FORBIDDEN" };
@@ -175,5 +177,7 @@ export async function postSalesReturnJournalsAction(
   const cogs = await postSalesReturnCogsJournal(salesReturnId, session.user.id);
   revalidatePath(`/backoffice/returns/${salesReturnId}`);
   const firstErr = [rev, cogs].find((r) => !r.ok && r.code !== "NOTHING_TO_POST");
-  return firstErr ?? { ok: true };
+  if (firstErr && !firstErr.ok) return firstErr;
+  const created = [rev, cogs].some((r) => r.ok && r.created);
+  return { ok: true, created };
 }
