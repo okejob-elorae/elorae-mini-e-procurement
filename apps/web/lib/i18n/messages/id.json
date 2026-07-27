@@ -36,6 +36,7 @@
     "suppliers": "Pemasok",
     "masterSuppliers": "Master Pemasok",
     "supplierType": "Jenis Pemasok",
+    "leadTime": "Lead Time",
     "sales": "Penjualan",
     "navSalesOrders": "Pesanan",
     "navFulfillment": "Pemenuhan",
@@ -2642,6 +2643,7 @@
     },
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi."
   },
+
   "financeAccountMapping": {
     "title": "Pemetaan Akun",
     "cardTitle": "Pemetaan Akun Posting",
@@ -2685,6 +2687,122 @@
       "FORBIDDEN": "Anda tidak memiliki izin untuk mengubah pemetaan akun.",
       "BAD_ROLE": "Peran posting tidak dikenali.",
       "NON_POSTABLE_ACCOUNT": "Akun yang dipilih tidak dapat diposting (bukan akun aktif tanpa turunan)."
+    }
+  },
+
+  "leadTime": {
+    "title": "Lead Time",
+    "subtitle": "Daftar proses (pustaka) & papan untuk menarik proses ke tiap supplier",
+    "tabs": {
+      "pustaka": "Pustaka Proses",
+      "papan": "Papan Supplier",
+      "sop": "SOP Rantai"
+    },
+    "pustaka": {
+      "banner": "Proses \"per qty\" dihitung sesuai jumlah saat ditarik ke item.",
+      "bannerApproval": "✋ menandai langkah persetujuan (ACC) — pelacakan otomatis berhenti di situ sampai orang mengonfirmasi.",
+      "process": "Proses",
+      "leadTime": "Lead Time",
+      "equalsDays": "= Hari",
+      "perQty": "per qty",
+      "perQtyValue": "{days} hari / {rateQty} pcs",
+      "asQty": "sesuai qty",
+      "days": "{days} hari",
+      "add": "Tambah Proses",
+      "search": "Cari proses...",
+      "showArchived": "Tampilkan arsip",
+      "inUse": "Proses dipakai di {n} chain supplier. Nonaktifkan saja.",
+      "deactivateConfirm": "Nonaktifkan proses {name}?",
+      "actions": "Aksi",
+      "edit": "Edit",
+      "deactivate": "Nonaktifkan",
+      "isApproval": "Langkah persetujuan (ACC)",
+      "sopInstructions": "Instruksi SOP",
+      "form": {
+        "name": "Nama Proses",
+        "type": "Tipe",
+        "fixed": "Tetap",
+        "perQty": "Per Qty",
+        "daysLabel": "Lead time (hari)",
+        "rateQtyLabel": "Per berapa pcs",
+        "notes": "Catatan",
+        "isApproval": "Langkah persetujuan (ACC)?",
+        "sopInstructions": "Instruksi SOP",
+        "save": "Simpan",
+        "cancel": "Batal"
+      }
+    },
+    "papan": {
+      "pickerTitle": "Proses",
+      "assignBanner": "{name} dipilih — klik kotak supplier untuk menambah.",
+      "cancel": "batal",
+      "searchSupplier": "Cari supplier...",
+      "emptyChain": "Belum ada proses. Terapkan SOP atau pilih proses di kiri lalu klik kartu ini.",
+      "minPrefix": "min.",
+      "totalFormat": "{days} hari (~{weeks} minggu, {months} bln)",
+      "overrideTooltip": "Override — default: {default} hari",
+      "overrideDays": "Override hari",
+      "overrideRateQty": "Override per pcs",
+      "resetDefault": "Kembali ke default",
+      "removeConfirm": "Hapus {name} dari chain {supplier}?",
+      "moveUp": "Naik",
+      "moveDown": "Turun",
+      "save": "Simpan",
+      "applySop": "Terapkan SOP",
+      "applyReplace": "Ganti (REPLACE)",
+      "applyAppend": "Tambah (APPEND)",
+      "applyConfirm": "Chain {supplier} saat ini akan diganti dengan SOP {name} — {n} langkah. Lanjutkan?",
+      "applyAppendConfirm": "Tambahkan SOP {name} ({n} langkah) ke chain {supplier}?",
+      "noSops": "Belum ada SOP aktif"
+    },
+    "sop": {
+      "title": "SOP Rantai",
+      "add": "Tambah SOP",
+      "search": "Cari SOP...",
+      "empty": "Belum ada SOP. Tambah template rantai untuk diterapkan ke supplier.",
+      "showInactive": "Tampilkan nonaktif",
+      "steps": "{n} langkah",
+      "totalDays": "{days} hari (fixed)",
+      "updatedAt": "Diperbarui {date}",
+      "colName": "Nama",
+      "colSteps": "Langkah",
+      "colDays": "Hari",
+      "colUpdated": "Diperbarui",
+      "inactive": "Nonaktif",
+      "hasArchived": "berisi proses arsip",
+      "deactivateConfirm": "Nonaktifkan SOP {name}?",
+      "deactivate": "Nonaktifkan",
+      "edit": "Edit",
+      "actions": "Aksi",
+      "helper": "Mengedit SOP tidak mengubah chain supplier yang sudah diterapkan — salinan, bukan referensi.",
+      "form": {
+        "name": "Nama SOP",
+        "description": "Deskripsi",
+        "steps": "Langkah",
+        "addStep": "Tambah langkah",
+        "pickProcess": "Pilih proses…",
+        "save": "Simpan",
+        "cancel": "Batal",
+        "createTitle": "SOP baru",
+        "editTitle": "Edit SOP"
+      }
+    },
+    "po": {
+      "etaHint": "Estimasi lead time {supplier}: {days} hari → ETA {date}",
+      "targetHint": "Estimasi lead time {supplier}: {days} hari → target {date} (estimasi jika di-issue hari ini)",
+      "useDate": "Pakai tanggal ini",
+      "autoSource": "otomatis",
+      "awaitingAccShort": "Menunggu ACC",
+      "stripTitle": "Proses Supplier — hari ke-{day} dari {total}",
+      "stripOverdue": "lewat {days} hari dari estimasi",
+      "expected": "Ekspektasi",
+      "confirmed": "Konfirmasi",
+      "updatePosition": "Update posisi",
+      "clearConfirmation": "Hapus konfirmasi",
+      "behindWarning": "Tertinggal {steps} langkah dari ekspektasi",
+      "aheadNote": "Lebih cepat dari ekspektasi",
+      "completedSummary": "Selesai dalam {actual} hari (estimasi {estimated} hari)",
+      "dayInStep": "hari {day}/{total}"
     }
   }
 }

@@ -53,6 +53,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/items': 'items:view',
   '/backoffice/suppliers': 'suppliers:view',
   '/backoffice/suppliers/types': 'supplier_types:view',
+  '/backoffice/lead-time': 'lead_time:view',
   '/backoffice/purchase-orders': 'purchase_orders:view',
   '/backoffice/supplier-payments': 'supplier_payments:view',
   '/backoffice/inventory': 'inventory:view',
@@ -107,6 +108,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/dashboard',
   '/backoffice/items',
   '/backoffice/suppliers',
+  '/backoffice/lead-time',
   '/backoffice/purchase-orders',
   '/backoffice/supplier-payments',
   '/backoffice/inventory',
@@ -271,4 +273,7 @@ export const PERMISSIONS = {
   // Finance — Journal Engine
   JOURNALS_VIEW: "journals:view",
   JOURNALS_MANAGE: "journals:manage",
+  // Lead Time
+  LEAD_TIME_VIEW: "lead_time:view",
+  LEAD_TIME_MANAGE: "lead_time:manage",
 } as const;

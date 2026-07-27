@@ -37,6 +37,9 @@ import { OfflinePOButton } from '@/components/offline/OfflinePOButton';
 import { isOnline } from '@/lib/offline/sync';
 import { useLocale, useTranslations } from 'next-intl';
 import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
+import { previewChainDays } from '@/app/actions/lead-time';
+import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
+import { sumPcsQty } from '@/lib/leadtime/calculations';
 
 type POFormData = z.infer<ReturnType<typeof createPoSchema>>;
 type POItemData = z.infer<typeof poItemSchema>;
@@ -126,6 +129,12 @@ export function POForm({
     ]
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const [etaPreview, setEtaPreview] = useState<{
+    totalDays: number;
+    suggestedEta: Date | null;
+    supplierCode: string;
+  } | null>(null);
+  const [etaTouched, setEtaTouched] = useState(Boolean(initialData?.etaDate));
 
   const {
     register,
@@ -357,6 +366,54 @@ export function POForm({
 
   const etaDate = watch('etaDate');
   const isETAPast = etaDate && new Date(etaDate) < new Date();
+  const supplierId = watch('supplierId');
+
+  useEffect(() => {
+    if (!supplierId || !isOnline()) {
+      setEtaPreview(null);
+      return;
+    }
+    const handle = setTimeout(() => {
+      void (async () => {
+        const pcsQty = sumPcsQty(
+          lineItems
+            .filter((l) => l.itemId && l.qty > 0)
+            .map((l) => {
+              const item = items.find((i) => i.id === l.itemId);
+              return {
+                qty: l.qty,
+                uomCode: item?.uom.code ?? null,
+                itemType: null,
+              };
+            })
+        );
+        try {
+          const preview = await previewChainDays(
+            supplierId,
+            pcsQty > 0 ? pcsQty : null
+          );
+          if (preview.totalDays <= 0 || !preview.suggestedEta) {
+            setEtaPreview(null);
+            return;
+          }
+          const supplier = suppliers.find((s) => s.id === supplierId);
+          setEtaPreview({
+            totalDays: preview.totalDays,
+            suggestedEta: new Date(preview.suggestedEta),
+            supplierCode: supplier?.code ?? "",
+          });
+          if (!etaTouched && !watch("etaDate")) {
+            setValue("etaDate", new Date(preview.suggestedEta), {
+              shouldValidate: true,
+            });
+          }
+        } catch {
+          setEtaPreview(null);
+        }
+      })();
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [supplierId, lineItems, items, suppliers, etaTouched, setValue, watch]);
 
   return (
     <form onSubmit={handleSubmitForm} className="space-y-6">
@@ -395,6 +452,7 @@ export function POForm({
                 aria-invalid={!!errors.etaDate}
                 className={errors.etaDate ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                 onChange={(date) => {
+                  setEtaTouched(true);
                   setValue('etaDate', date ?? null, { shouldValidate: true });
                 }}
               />
@@ -402,6 +460,19 @@ export function POForm({
                 <p className="text-sm text-destructive" role="alert">
                   {errors.etaDate.message}
                 </p>
+              )}
+              {etaPreview?.suggestedEta && (
+                <EtaSuggestionHint
+                  supplierCode={etaPreview.supplierCode}
+                  totalDays={etaPreview.totalDays}
+                  suggestedEta={etaPreview.suggestedEta}
+                  onUseDate={() => {
+                    setEtaTouched(true);
+                    setValue("etaDate", etaPreview.suggestedEta, {
+                      shouldValidate: true,
+                    });
+                  }}
+                />
               )}
               {isETAPast && (
                 <Alert variant="destructive">

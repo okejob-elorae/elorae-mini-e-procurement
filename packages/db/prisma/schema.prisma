@@ -175,10 +175,75 @@ model Supplier {
   vendorReturns    VendorReturn[]
   planCmtAllocations PlanCmtAllocation[]
   planStages       PlanStage[]      @relation("PlanStageSupplier")
+  processChain     SupplierProcess[]
   @@index([typeId])
   @@index([code])
   @@index([status])
   @@index([approvedById])
+}
+
+model ProcessTemplate {
+  id               String              @id @default(cuid())
+  name             String              @unique
+  leadTimeType     LeadTimeType        @default(FIXED)
+  days             Int
+  rateQty          Int?
+  notes            String?
+  isApproval       Boolean             @default(false)
+  sopInstructions  String?             @db.Text
+  isActive         Boolean             @default(true)
+  sortOrder        Int                 @default(0)
+  supplierSteps    SupplierProcess[]
+  chainTemplateSteps ChainTemplateStep[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([isActive])
+}
+
+model ChainTemplate {
+  id          String              @id @default(cuid())
+  name        String              @unique
+  description String?             @db.Text
+  isActive    Boolean             @default(true)
+  steps       ChainTemplateStep[]
+  updatedById String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([isActive])
+}
+
+model ChainTemplateStep {
+  id                String          @id @default(cuid())
+  chainTemplateId   String
+  chainTemplate     ChainTemplate   @relation(fields: [chainTemplateId], references: [id], onDelete: Cascade)
+  processTemplateId String
+  processTemplate   ProcessTemplate @relation(fields: [processTemplateId], references: [id], onDelete: Restrict)
+  sequence          Int
+  notes             String?
+
+  @@unique([chainTemplateId, sequence])
+  @@index([processTemplateId])
+  @@index([chainTemplateId])
+}
+
+model SupplierProcess {
+  id                String          @id @default(cuid())
+  supplierId        String
+  supplier          Supplier        @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  processTemplateId String
+  processTemplate   ProcessTemplate @relation(fields: [processTemplateId], references: [id], onDelete: Restrict)
+  sequence          Int
+  overrideDays      Int?
+  overrideRateQty   Int?
+  notes             String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([supplierId, sequence])
+  @@index([supplierId])
+  @@index([processTemplateId])
 }
 
 model UOM {
@@ -563,6 +628,12 @@ model PurchaseOrder {
   statusHistory POStatusHistory[]
   workOrders  WorkOrder[]
   syncStatus  SyncStatus      @default(SYNCED)
+  chainSnapshot           Json?
+  chainTotalDays          Int?
+  chainConfirmedStepIndex Int?
+  chainConfirmedAt        DateTime?
+  chainConfirmedSource    String?
+  actualLeadDays          Int?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   @@index([supplierId])
@@ -869,6 +940,12 @@ model WorkOrder {
   notes           String?
   syncStatus      SyncStatus @default(SYNCED)
   createdById     String
+  chainSnapshot           Json?
+  chainTotalDays          Int?
+  chainConfirmedStepIndex Int?
+  chainConfirmedAt        DateTime?
+  chainConfirmedSource    String?
+  actualLeadDays          Int?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   issues          MaterialIssue[]
@@ -1424,6 +1501,11 @@ enum SupplierStatus {
   PENDING_APPROVAL
   ACTIVE
   REJECTED
+}
+
+enum LeadTimeType {
+  FIXED
+  PER_QTY
 }
 
 enum ItemType {

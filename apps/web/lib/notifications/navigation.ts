@@ -15,6 +15,14 @@ export function getNotificationHref(
       }
       return '/backoffice/purchase-orders';
     }
+    case 'WO_OVERDUE':
+    case 'MATERIAL_ARRIVED': {
+      const woId = data.woId;
+      if (typeof woId === 'string') {
+        return `/backoffice/work-orders/${woId}`;
+      }
+      return '/backoffice/work-orders';
+    }
     case 'WO_COMPLETED': {
       const woId = data.woId;
       if (typeof woId === 'string') {

@@ -5,13 +5,14 @@ import { z } from 'zod';
 import { prisma } from '@elorae/db';
 import { calculateMovingAverage, reverseMovingAverage } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
-import { getActorName, notifyGRNCreated } from '@/app/actions/notifications';
+import { getActorName, notifyGRNCreated, notifyMaterialArrivedForPo } from '@/app/actions/notifications';
 import { logAudit } from '@/lib/audit';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { auth } from '@/lib/auth';
 import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -286,6 +287,25 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
           },
         });
       }
+
+      // Lead time actual capture — first GRN only
+      if (validated.poId) {
+        const poForLead = await tx.purchaseOrder.findUnique({
+          where: { id: validated.poId },
+          select: { id: true, createdAt: true, actualLeadDays: true },
+        });
+        if (poForLead && poForLead.actualLeadDays == null) {
+          await tx.purchaseOrder.update({
+            where: { id: validated.poId },
+            data: {
+              actualLeadDays: computeActualLeadDays(
+                poForLead.createdAt,
+                grn.grnDate
+              ),
+            },
+          });
+        }
+      }
     }
 
     revalidatePath('/backoffice/inventory');
@@ -307,6 +327,12 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   getActorName(userId)
     .then((triggeredByName) => notifyGRNCreated(result.id, result.docNumber, triggeredByName))
     .catch(() => {});
+
+  if (result.poId) {
+    void notifyMaterialArrivedForPo(result.poId, result.docNumber).catch((err) => {
+      console.warn('[leadtime] MATERIAL_ARRIVED notify failed', err);
+    });
+  }
 
   logAudit({
     userId,

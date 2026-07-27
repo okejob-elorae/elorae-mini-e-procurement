@@ -192,6 +192,9 @@ async function main() {
     // Finance — Journal Engine
     { code: 'journals:view', module: 'journals', action: 'view', description: 'View journals + ledger' },
     { code: 'journals:manage', module: 'journals', action: 'manage', description: 'Create manual journals + post auto-journals' },
+    // Lead Time
+    { code: 'lead_time:view', module: 'lead_time', action: 'view', description: 'View process library and supplier chains' },
+    { code: 'lead_time:manage', module: 'lead_time', action: 'manage', description: 'Manage process library and supplier chains' },
   ];
 
   // Upsert all permissions
@@ -290,6 +293,7 @@ async function main() {
     'purchase_orders:view', 'purchase_orders:create', 'purchase_orders:edit',
     'supplier_payments:view', 'supplier_payments:create', 'supplier_payments:edit',
     'vendor_returns:view', 'vendor_returns:create', 'vendor_returns:manage',
+    'lead_time:view',
   ];
   for (const code of purchaserPermissions) {
     const perm = permissionMap.get(code);
@@ -1647,6 +1651,14 @@ async function main() {
     });
     console.log("HPP test WO (Article 2700001) seeded: WO/2026/HPP01");
   }
+
+  const { seedProcessTemplates } = await import("./seed-process-templates");
+  const templateCount = await seedProcessTemplates(prisma);
+  console.log(`Process templates: ${templateCount} upserted`);
+
+  const { seedChainTemplates } = await import("./seed-chain-templates");
+  const chainCount = await seedChainTemplates(prisma);
+  console.log(`Chain templates (SOP): ${chainCount} upserted`);
 
   console.log("\nSeeding completed!");
   console.log("Login: admin@elorae.com / admin123 (PIN: 123456)");

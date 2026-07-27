@@ -28,6 +28,7 @@ import {
   Store,
   Wallet,
   MapPin,
+  Timer,
   Tag,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -100,10 +101,16 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    labelKey: "stores",
-    href: "/backoffice/stores",
+    labelKey: 'stores',
+    href: '/backoffice/stores',
     icon: MapPin,
     permission: PERMISSIONS.STORES_VIEW,
+  },
+  {
+    labelKey: 'leadTime',
+    href: '/backoffice/lead-time',
+    icon: Timer,
+    permission: PERMISSIONS.LEAD_TIME_VIEW,
   },
   {
     labelKey: 'purchaseOrders',

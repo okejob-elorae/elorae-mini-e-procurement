@@ -53,6 +53,8 @@ function serializeWorkOrderRow(wo: {
   createdById: string;
   createdAt: Date;
   updatedAt: Date;
+  chainSnapshot?: unknown;
+  chainConfirmedStepIndex?: number | null;
   vendor: { name: string; code: string };
   finishedGood: { id: string; sku: string; nameId: string; nameEn: string };
   _count: { issues: number; receipts: number };
@@ -75,6 +77,8 @@ function serializeWorkOrderRow(wo: {
     createdById: wo.createdById,
     createdAt: wo.createdAt,
     updatedAt: wo.updatedAt,
+    chainSnapshot: wo.chainSnapshot ?? null,
+    chainConfirmedStepIndex: wo.chainConfirmedStepIndex ?? null,
     vendor: wo.vendor,
     finishedGood: wo.finishedGood,
     _count: wo._count,
