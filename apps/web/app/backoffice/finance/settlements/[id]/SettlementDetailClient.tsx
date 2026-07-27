@@ -623,8 +623,11 @@ function FeeRow({ label, value }: { label: string; value: number }) {
 // Jubelio is coarser than the excel breakdown (it lumps several excel line
 // items into service_fee/order_processing_fee) — this is an independent
 // breakdown shown beside the excel one, not a row-for-row reconciliation.
-// Deduction/discount amounts are shown negative regardless of the sign
-// Jubelio stored them in; zero-valued lines are hidden to avoid clutter.
+// Deduction amounts are shown negative regardless of the sign Jubelio stored
+// them in; zero-valued lines are hidden to avoid clutter. `addDisc`/
+// `voucherAmount` are credits (not deductions) with an unverified sign in
+// `feeBreakdown`, so they're deliberately excluded from this rendered list —
+// they still round-trip on the `jubelioFees` data object.
 function JubelioFeeLines({ fees, t }: { fees: JubelioFees; t: TFn }) {
   const deductions: Array<{ key: string; label: string; value: number }> = [
     { key: "serviceFee", label: t("compare.serviceFee"), value: fees.serviceFee },
@@ -633,21 +636,22 @@ function JubelioFeeLines({ fees, t }: { fees: JubelioFees; t: TFn }) {
     { key: "addFee", label: t("compare.addFee"), value: fees.addFee },
     { key: "codFee", label: t("compare.codFee"), value: fees.codFee },
     { key: "shippingTax", label: t("compare.shippingTax"), value: fees.shippingTax },
-    { key: "addDisc", label: t("compare.addDisc"), value: fees.addDisc },
-    { key: "voucherAmount", label: t("compare.voucherAmount"), value: fees.voucherAmount },
   ];
   return (
     <>
-      <FeeRow label={t("compare.bruto")} value={fees.totalAmountMp} />
+      {fees.totalAmountMp !== 0 && <FeeRow label={t("compare.bruto")} value={fees.totalAmountMp} />}
       {deductions
         .filter((d) => d.value !== 0)
         .map((d) => (
           <FeeRow key={d.key} label={d.label} value={-Math.abs(d.value)} />
         ))}
-      <div className="flex justify-between border-t pt-1 text-sm font-medium">
-        <span>{t("compare.escrowNet")}</span>
-        <span className="tabular-nums">{formatRupiah(fees.escrowAmount)}</span>
-      </div>
+      {fees.escrowAmount !== null && (
+        <div className="flex justify-between border-t pt-1 text-sm font-medium">
+          <span>{t("compare.escrowNet")}</span>
+          <span className="tabular-nums">{formatRupiah(fees.escrowAmount)}</span>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">{t("compare.jubelioFeesNote")}</p>
     </>
   );
 }

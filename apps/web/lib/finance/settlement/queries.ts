@@ -108,12 +108,29 @@ export type JubelioFees = {
   voucherAmount: number;
   codFee: number;
   shippingTax: number;
-  escrowAmount: number;
+  escrowAmount: number | null;
 };
 
 function feeNum(v: string | undefined): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * `escrow_amount` is persisted as a string and defaults to "0" when Jubelio
+ * never sent a value (see `buildFeeBreakdown`'s `dec()`), so a literal "0"
+ * is treated as absent data, not a real zero-value escrow — mirrors the
+ * `v !== "0"` filter `SalesOrderDetailClient` already applies to fee entries.
+ * Shared by `deriveJubelioComparison` (jubelioNet) and `deriveJubelioFees`
+ * (escrowAmount) so both agree on when escrow data is "present".
+ */
+function escrowAmountOrNull(feeBreakdown: Record<string, string> | null): number | null {
+  const escrowRaw = feeBreakdown?.escrow_amount;
+  if (escrowRaw === undefined || escrowRaw === null || escrowRaw === "" || escrowRaw === "0") {
+    return null;
+  }
+  const escrowAmount = Number(escrowRaw);
+  return Number.isFinite(escrowAmount) ? escrowAmount : null;
 }
 
 export function deriveJubelioFees(feeBreakdown: Record<string, string> | null): JubelioFees | null {
@@ -128,7 +145,7 @@ export function deriveJubelioFees(feeBreakdown: Record<string, string> | null): 
     voucherAmount: feeNum(feeBreakdown.voucher_amount),
     codFee: feeNum(feeBreakdown.cod_fee),
     shippingTax: feeNum(feeBreakdown.shipping_tax),
-    escrowAmount: feeNum(feeBreakdown.escrow_amount),
+    escrowAmount: escrowAmountOrNull(feeBreakdown),
   };
 }
 
@@ -137,21 +154,14 @@ export function deriveJubelioFees(feeBreakdown: Record<string, string> | null): 
  * matched SalesOrder's `feeBreakdown.escrow_amount` — "the value to be paid
  * to the seller from the MP after deducting the admin fee" (Jubelio API
  * docs), which is the same economic figure as Shopee's "Total Penghasilan".
- * `escrow_amount` is persisted as a string and defaults to "0" when Jubelio
- * never sent a value (see `buildFeeBreakdown`'s `dec()`), so a literal "0"
- * is treated as absent data, not a real zero-value escrow — mirrors the
- * `v !== "0"` filter `SalesOrderDetailClient` already applies to fee entries.
+ * See `escrowAmountOrNull` for the "0"/missing-means-absent rule.
  */
 export function deriveJubelioComparison(
   netIncome: number,
   feeBreakdown: Record<string, string> | null,
 ): { jubelioNet: number | null; netDelta: number | null; matches: boolean } {
-  const escrowRaw = feeBreakdown?.escrow_amount;
-  if (escrowRaw === undefined || escrowRaw === null || escrowRaw === "" || escrowRaw === "0") {
-    return { jubelioNet: null, netDelta: null, matches: false };
-  }
-  const jubelioNet = Number(escrowRaw);
-  if (!Number.isFinite(jubelioNet)) {
+  const jubelioNet = escrowAmountOrNull(feeBreakdown);
+  if (jubelioNet === null) {
     return { jubelioNet: null, netDelta: null, matches: false };
   }
   const netDelta = Math.round((netIncome - jubelioNet) * 100) / 100;

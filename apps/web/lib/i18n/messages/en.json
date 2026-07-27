@@ -2588,7 +2588,8 @@
       "netDelta": "Net Delta",
       "statusMatches": "Matches",
       "statusDiffers": "Differs",
-      "statusUnavailable": "Jubelio data n/a"
+      "statusUnavailable": "Jubelio data n/a",
+      "jubelioFeesNote": "Jubelio's reported fees — may not sum exactly to escrow."
     }
   },
   "financeJournals": {

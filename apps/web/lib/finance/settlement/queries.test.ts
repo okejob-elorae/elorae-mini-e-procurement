@@ -93,6 +93,17 @@ describe("deriveJubelioFees (pure)", () => {
   it("returns null when feeBreakdown is null", () => {
     expect(deriveJubelioFees(null)).toBeNull();
   });
+
+  it("treats escrow_amount '0' as absent data, mirroring deriveJubelioComparison's jubelioNet null case", () => {
+    const r = deriveJubelioFees({ escrow_amount: "0", service_fee: "500" });
+    expect(r?.escrowAmount).toBeNull();
+    expect(r?.serviceFee).toBe(500);
+  });
+
+  it("treats a missing escrow_amount as absent data (escrowAmount null)", () => {
+    const r = deriveJubelioFees({ service_fee: "500" });
+    expect(r?.escrowAmount).toBeNull();
+  });
 });
 
 d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", () => {

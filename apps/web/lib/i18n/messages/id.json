@@ -2588,7 +2588,8 @@
       "netDelta": "Selisih Bersih",
       "statusMatches": "Cocok",
       "statusDiffers": "Berbeda",
-      "statusUnavailable": "Data Jubelio n/a"
+      "statusUnavailable": "Data Jubelio n/a",
+      "jubelioFeesNote": "Biaya Jubelio yang dilaporkan — mungkin tidak menjumlah persis ke escrow."
     }
   },
   "financeJournals": {
