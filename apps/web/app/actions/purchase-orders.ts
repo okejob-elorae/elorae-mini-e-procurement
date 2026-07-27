@@ -14,6 +14,7 @@ import { getActorName, notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentTo
 import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/mutations';
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
+import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
 
 function poReceiptLineKey(itemId: string, variantSku?: string | null) {
   return `${itemId}\n${variantSku ?? ''}`;
@@ -130,16 +131,41 @@ export async function updatePO(
       };
     });
 
+    let leadTimePatch: {
+      chainSnapshot?: object | null;
+      chainTotalDays?: number | null;
+      etaDate?: Date | null;
+    } = {};
+    if (existing?.status === "DRAFT") {
+      const lt = await resolvePoLeadTimeFields(
+        tx,
+        data.supplierId,
+        data.items,
+        data.etaDate ?? null
+      );
+      leadTimePatch = {
+        chainSnapshot: lt.chainSnapshot,
+        chainTotalDays: lt.chainTotalDays,
+        etaDate: lt.etaDate ?? null,
+      };
+    }
+
     const po = await tx.purchaseOrder.update({
       where: { id },
       data: {
         supplierId: data.supplierId,
-        etaDate: data.etaDate,
+        etaDate: leadTimePatch.etaDate !== undefined ? leadTimePatch.etaDate : data.etaDate,
         paymentDueDate: data.paymentDueDate ?? undefined,
         notes: data.notes,
         terms: data.terms,
         totalAmount: totalAmount.toNumber(),
         grandTotal: totalAmount.toNumber(),
+        ...(existing?.status === "DRAFT"
+          ? {
+              chainSnapshot: leadTimePatch.chainSnapshot ?? undefined,
+              chainTotalDays: leadTimePatch.chainTotalDays ?? undefined,
+            }
+          : {}),
         items: { create: itemCreates },
       },
       include: {

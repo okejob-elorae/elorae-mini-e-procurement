@@ -46,6 +46,8 @@ import { getWorkOrders, issueWorkOrder, cancelWorkOrder } from '@/app/actions/pr
 import { WOStatus } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { isAwaitingApproval } from '@/lib/leadtime/awaiting-acc';
+import type { SnapshotStep } from '@/lib/leadtime/calculations';
 
 interface WorkOrder {
   id: string;
@@ -56,6 +58,8 @@ interface WorkOrder {
   targetDate: string | null;
   completedAt: string | null;
   createdAt: string;
+  chainSnapshot?: Array<{ name: string }> | null;
+  chainConfirmedStepIndex?: number | null;
   vendor: {
     name: string;
     code: string;
@@ -259,10 +263,26 @@ export function WorkOrdersPageClient() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={statusColors[wo.status]}>
-                          {statusIcons[wo.status]}
-                          <span className="ml-1">{statusLabels[wo.status]}</span>
-                        </Badge>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Badge className={statusColors[wo.status]}>
+                            {statusIcons[wo.status]}
+                            <span className="ml-1">{statusLabels[wo.status]}</span>
+                          </Badge>
+                          {isAwaitingApproval(
+                            wo.chainSnapshot as SnapshotStep[] | null,
+                            wo.chainConfirmedStepIndex ?? null
+                          ) &&
+                            wo.status !== 'DRAFT' &&
+                            wo.status !== 'CANCELLED' &&
+                            wo.status !== 'COMPLETED' && (
+                              <Badge
+                                variant="outline"
+                                className="border-amber-500 text-amber-700 dark:text-amber-400"
+                              >
+                                ✋ Menunggu ACC
+                              </Badge>
+                            )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {wo.targetDate ? (

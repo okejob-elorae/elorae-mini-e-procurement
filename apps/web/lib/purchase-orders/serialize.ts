@@ -106,6 +106,12 @@ type PODetailRow = {
   syncStatus: string;
   createdAt: Date;
   updatedAt: Date;
+  chainSnapshot: unknown;
+  chainTotalDays: number | null;
+  chainConfirmedStepIndex: number | null;
+  chainConfirmedAt: Date | null;
+  chainConfirmedSource?: string | null;
+  actualLeadDays: number | null;
   supplier: Record<string, unknown>;
   items: Array<{
     id: string;
@@ -165,6 +171,12 @@ export function serializePODetail(po: PODetailRow) {
     syncStatus: po.syncStatus,
     createdAt: toIso(po.createdAt),
     updatedAt: toIso(po.updatedAt),
+    chainSnapshot: po.chainSnapshot ?? null,
+    chainTotalDays: po.chainTotalDays,
+    chainConfirmedStepIndex: po.chainConfirmedStepIndex,
+    chainConfirmedAt: toIso(po.chainConfirmedAt),
+    chainConfirmedSource: po.chainConfirmedSource ?? null,
+    actualLeadDays: po.actualLeadDays,
     supplier: po.supplier,
     items: po.items.map((line) => ({
       id: line.id,

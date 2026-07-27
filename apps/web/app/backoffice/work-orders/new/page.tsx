@@ -37,6 +37,8 @@ import {
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption, suggestFabricRollAllocation, getAvailableFabricRolls } from '@/app/actions/production';
+import { previewChainDays } from '@/app/actions/lead-time';
+import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
 import { getPOs } from '@/app/actions/purchase-orders';
 import { ItemType } from '@/lib/constants/enums';
@@ -118,6 +120,12 @@ export default function NewWorkOrderPage() {
 
   const DEBOUNCE_MS = 1500;
   const [targetDate, setTargetDate] = useState('');
+  const [targetTouched, setTargetTouched] = useState(false);
+  const [targetPreview, setTargetPreview] = useState<{
+    totalDays: number;
+    suggestedEta: Date;
+    supplierCode: string;
+  } | null>(null);
   const [notes, setNotes] = useState('');
   const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
   const [availableRolls, setAvailableRolls] = useState<Array<{ rollId: string; rollCode: string; rollRef: string; remainingLength: number }>>([]);
@@ -299,6 +307,40 @@ export default function NewWorkOrderPage() {
       cancelled = true;
     };
   }, [finishedGoodId, plannedNum, t]);
+
+  useEffect(() => {
+    if (!vendorId) {
+      setTargetPreview(null);
+      return;
+    }
+    const handle = setTimeout(() => {
+      void (async () => {
+        try {
+          const preview = await previewChainDays(
+            vendorId,
+            plannedNum > 0 ? plannedNum : null
+          );
+          if (preview.totalDays <= 0 || !preview.suggestedEta) {
+            setTargetPreview(null);
+            return;
+          }
+          const vendor = tailors.find((x) => x.id === vendorId);
+          const suggested = new Date(preview.suggestedEta);
+          setTargetPreview({
+            totalDays: preview.totalDays,
+            suggestedEta: suggested,
+            supplierCode: vendor?.code ?? "",
+          });
+          if (!targetTouched && !targetDate) {
+            setTargetDate(formatDateOnly(suggested));
+          }
+        } catch {
+          setTargetPreview(null);
+        }
+      })();
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [vendorId, plannedNum, tailors, targetTouched, targetDate]);
 
   const hasShortage = materialPlan.some((m) => m.shortage > 0);
   const rollSum = rollBreakdown.reduce((s, r) => s + r.qty, 0);
@@ -542,8 +584,23 @@ export default function NewWorkOrderPage() {
                 <DatePicker
                   id="targetDate"
                   value={parseDateOnly(targetDate)}
-                  onChange={(date) => setTargetDate(date ? formatDateOnly(date) : '')}
+                  onChange={(date) => {
+                    setTargetTouched(true);
+                    setTargetDate(date ? formatDateOnly(date) : '');
+                  }}
                 />
+                {targetPreview?.suggestedEta && (
+                  <EtaSuggestionHint
+                    supplierCode={targetPreview.supplierCode}
+                    totalDays={targetPreview.totalDays}
+                    suggestedEta={targetPreview.suggestedEta}
+                    hintKey="targetHint"
+                    onUseDate={() => {
+                      setTargetTouched(true);
+                      setTargetDate(formatDateOnly(targetPreview.suggestedEta));
+                    }}
+                  />
+                )}
               </div>
               <div className="space-y-2">
                 <Label>PO Reference (optional)</Label>

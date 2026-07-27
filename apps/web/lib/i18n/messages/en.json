@@ -36,6 +36,7 @@
     "suppliers": "Suppliers",
     "masterSuppliers": "Master Suppliers",
     "supplierType": "Supplier Type",
+    "leadTime": "Lead Time",
     "sales": "Sales",
     "navSalesOrders": "Sales Orders",
     "navFulfillment": "Fulfillment",
@@ -2642,6 +2643,7 @@
     },
     "errGeneric": "Something went wrong. Please try again."
   },
+
   "financeAccountMapping": {
     "title": "Account Mapping",
     "cardTitle": "Posting Account Mapping",
@@ -2685,6 +2687,122 @@
       "FORBIDDEN": "You do not have permission to change account mappings.",
       "BAD_ROLE": "Unrecognized posting role.",
       "NON_POSTABLE_ACCOUNT": "The selected account cannot be posted to (not an active leaf account)."
+    }
+  },
+
+  "leadTime": {
+    "title": "Lead Time",
+    "subtitle": "Process library & board to assign processes to each supplier",
+    "tabs": {
+      "pustaka": "Process Library",
+      "papan": "Supplier Board",
+      "sop": "SOP Chains"
+    },
+    "pustaka": {
+      "banner": "\"Per qty\" processes are calculated from quantity when applied to an item.",
+      "bannerApproval": "✋ marks an approval step (ACC) — auto-tracking pauses there until a person confirms.",
+      "process": "Process",
+      "leadTime": "Lead Time",
+      "equalsDays": "= Days",
+      "perQty": "per qty",
+      "perQtyValue": "{days} days / {rateQty} pcs",
+      "asQty": "by qty",
+      "days": "{days} days",
+      "add": "Add Process",
+      "search": "Search processes...",
+      "showArchived": "Show archived",
+      "inUse": "Process is used in {n} supplier chain(s). Deactivate instead.",
+      "deactivateConfirm": "Deactivate process {name}?",
+      "actions": "Actions",
+      "edit": "Edit",
+      "deactivate": "Deactivate",
+      "isApproval": "Approval step (ACC)",
+      "sopInstructions": "SOP instructions",
+      "form": {
+        "name": "Process name",
+        "type": "Type",
+        "fixed": "Fixed",
+        "perQty": "Per Qty",
+        "daysLabel": "Lead time (days)",
+        "rateQtyLabel": "Per how many pcs",
+        "notes": "Notes",
+        "isApproval": "Approval step (ACC)?",
+        "sopInstructions": "SOP instructions",
+        "save": "Save",
+        "cancel": "Cancel"
+      }
+    },
+    "papan": {
+      "pickerTitle": "Processes",
+      "assignBanner": "{name} selected — click a supplier card to add.",
+      "cancel": "cancel",
+      "searchSupplier": "Search suppliers...",
+      "emptyChain": "No processes yet. Apply an SOP or pick a process on the left, then click this card.",
+      "minPrefix": "min.",
+      "totalFormat": "{days} days (~{weeks} wk, {months} mo)",
+      "overrideTooltip": "Override — default: {default} days",
+      "overrideDays": "Override days",
+      "overrideRateQty": "Override per pcs",
+      "resetDefault": "Reset to default",
+      "removeConfirm": "Remove {name} from {supplier} chain?",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "save": "Save",
+      "applySop": "Apply SOP",
+      "applyReplace": "Replace",
+      "applyAppend": "Append",
+      "applyConfirm": "Current chain for {supplier} will be replaced with SOP {name} — {n} steps. Continue?",
+      "applyAppendConfirm": "Append SOP {name} ({n} steps) to {supplier} chain?",
+      "noSops": "No active SOPs"
+    },
+    "sop": {
+      "title": "SOP Chains",
+      "add": "Add SOP",
+      "search": "Search SOPs...",
+      "empty": "No SOPs yet. Create a chain template to apply to suppliers.",
+      "showInactive": "Show inactive",
+      "steps": "{n} steps",
+      "totalDays": "{days} days (fixed)",
+      "updatedAt": "Updated {date}",
+      "colName": "Name",
+      "colSteps": "Steps",
+      "colDays": "Days",
+      "colUpdated": "Updated",
+      "inactive": "Inactive",
+      "hasArchived": "contains archived processes",
+      "deactivateConfirm": "Deactivate SOP {name}?",
+      "deactivate": "Deactivate",
+      "edit": "Edit",
+      "actions": "Actions",
+      "helper": "Editing an SOP does not change supplier chains already applied — copy, not reference.",
+      "form": {
+        "name": "SOP name",
+        "description": "Description",
+        "steps": "Steps",
+        "addStep": "Add step",
+        "pickProcess": "Pick a process…",
+        "save": "Save",
+        "cancel": "Cancel",
+        "createTitle": "New SOP",
+        "editTitle": "Edit SOP"
+      }
+    },
+    "po": {
+      "etaHint": "Estimated lead time {supplier}: {days} days → ETA {date}",
+      "targetHint": "Estimated lead time {supplier}: {days} days → target {date} (estimate if issued today)",
+      "useDate": "Use this date",
+      "autoSource": "automatic",
+      "awaitingAccShort": "Awaiting ACC",
+      "stripTitle": "Supplier process — day {day} of {total}",
+      "stripOverdue": "{days} days past estimate",
+      "expected": "Expected",
+      "confirmed": "Confirmed",
+      "updatePosition": "Update position",
+      "clearConfirmation": "Clear confirmation",
+      "behindWarning": "Behind expectation by {steps} step(s)",
+      "aheadNote": "Ahead of expectation",
+      "completedSummary": "Completed in {actual} days (estimated {estimated})",
+      "dayInStep": "day {day}/{total}"
     }
   }
 }

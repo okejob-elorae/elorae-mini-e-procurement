@@ -57,7 +57,9 @@ import {
 import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { logPrint } from '@/app/actions/audit';
 import { WOStatus } from '@/lib/constants/enums';
-import { hasPermission } from '@/lib/rbac';
+import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
+import type { SnapshotStep } from '@/lib/leadtime/calculations';
+import { PERMISSIONS, hasPermission } from '@/lib/rbac';
 
 
 const statusColors: Record<WOStatus, string> = {
@@ -381,6 +383,38 @@ export default function WorkOrderDetailPage() {
           )}
         </div>
       </div>
+
+      {Array.isArray((wo as { chainSnapshot?: unknown }).chainSnapshot) &&
+        ((wo as { chainSnapshot: unknown[] }).chainSnapshot?.length ?? 0) > 0 &&
+        (wo as { issuedAt?: string | Date | null }).issuedAt && (
+          <ChainPositionStrip
+            docType="WO"
+            docId={String(wo.id)}
+            snapshot={(wo as { chainSnapshot: SnapshotStep[] }).chainSnapshot}
+            clockStart={new Date((wo as { issuedAt: string | Date }).issuedAt)}
+            chainTotalDays={(wo as { chainTotalDays?: number | null }).chainTotalDays ?? 0}
+            confirmedIndex={
+              (wo as { chainConfirmedStepIndex?: number | null }).chainConfirmedStepIndex ?? null
+            }
+            confirmedAt={
+              (wo as { chainConfirmedAt?: string | Date | null }).chainConfirmedAt
+                ? new Date((wo as { chainConfirmedAt: string | Date }).chainConfirmedAt)
+                : null
+            }
+            confirmedSource={
+              (wo as { chainConfirmedSource?: string | null }).chainConfirmedSource ?? null
+            }
+            actualLeadDays={(wo as { actualLeadDays?: number | null }).actualLeadDays ?? null}
+            status={String(wo.status)}
+            canConfirm={hasPermission(
+              session?.user?.permissions ?? [],
+              PERMISSIONS.WORK_ORDERS_MANAGE
+            )}
+            onUpdated={() => {
+              void getWorkOrderById(String(wo.id)).then(setWO);
+            }}
+          />
+        )}
 
       <Card>
         <CardHeader>

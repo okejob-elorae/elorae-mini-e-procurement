@@ -4,6 +4,8 @@ import { prisma } from '@elorae/db';
 import { messaging } from '@/lib/firebase/admin';
 
 const PO_OVERDUE_TYPE = 'PO_OVERDUE';
+const WO_OVERDUE_TYPE = 'WO_OVERDUE';
+const MATERIAL_ARRIVED_TYPE = 'MATERIAL_ARRIVED';
 const ACCESSORIES_PENDING_CMT_TYPE = 'ACCESSORIES_PENDING_CMT';
 
 // ----- Shared helpers for RBAC-filtered push notifications -----
@@ -179,11 +181,31 @@ export async function checkAndSendOverdueNotifications(): Promise<{ sent: number
       .filter(Boolean) as string[]
   );
 
+  const overduePoIds = overduePOs.map((p) => p.id);
+  const draftWOsByPo = new Map<string, string[]>();
+  if (overduePoIds.length > 0) {
+    const drafts = await prisma.workOrder.findMany({
+      where: { poId: { in: overduePoIds }, status: 'DRAFT' },
+      select: { poId: true, docNumber: true },
+    });
+    for (const wo of drafts) {
+      if (!wo.poId) continue;
+      const list = draftWOsByPo.get(wo.poId) ?? [];
+      list.push(wo.docNumber);
+      draftWOsByPo.set(wo.poId, list);
+    }
+  }
+
   for (const po of overduePOs) {
     const poId = po.id;
     const docNumber = po.docNumber;
+
+    const draftLinked = draftWOsByPo.get(poId) ?? [];
     const title = 'PO Overdue';
-    const body = `${docNumber} (${po.supplier?.name ?? 'Supplier'}) – ETA has passed`;
+    const body =
+      draftLinked.length > 0
+        ? `PO ${docNumber} terlambat — menghambat produksi ${draftLinked.slice(0, 3).join(', ')}.`
+        : `${docNumber} (${po.supplier?.name ?? 'Supplier'}) – ETA has passed`;
     const _data = { type: PO_OVERDUE_TYPE, poId, docNumber };
     void _data;
 
@@ -233,6 +255,142 @@ export async function checkAndSendOverdueNotifications(): Promise<{ sent: number
   }
 
   return { sent };
+}
+
+/**
+ * WOs past targetDate in active production statuses.
+ * Recipients mirror PO_OVERDUE (purchase_orders:view + system admins).
+ */
+export async function checkAndSendWoOverdueNotifications(): Promise<{ sent: number }> {
+  const today = startOfToday();
+
+  const overdueWOs = await prisma.workOrder.findMany({
+    where: {
+      targetDate: { lt: today },
+      status: { in: ['ISSUED', 'IN_PRODUCTION', 'PARTIAL'] },
+    },
+    include: {
+      vendor: { select: { name: true } },
+    },
+  });
+
+  if (overdueWOs.length === 0) return { sent: 0 };
+
+  const targetUsers = await getUsersWithPermission('purchase_orders:view');
+  if (targetUsers.length === 0) return { sent: 0 };
+
+  const userMap = new Map(targetUsers.map((u) => [u.id, u]));
+  let sent = 0;
+
+  const sentToday = await prisma.notificationQueue.findMany({
+    where: { type: WO_OVERDUE_TYPE, createdAt: { gte: today } },
+    select: { data: true, userId: true },
+  });
+  const sentPairs = new Set(
+    sentToday
+      .map((r) => {
+        const woId =
+          typeof r.data === 'object' && r.data !== null && 'woId' in r.data
+            ? (r.data as { woId: string }).woId
+            : null;
+        return woId ? `${woId}:${r.userId}` : null;
+      })
+      .filter(Boolean) as string[]
+  );
+
+  for (const wo of overdueWOs) {
+    const title = 'WO Overdue';
+    const body = `${wo.docNumber} (${wo.vendor?.name ?? 'Vendor'}) – target date has passed`;
+    for (const user of targetUsers) {
+      const key = `${wo.id}:${user.id}`;
+      if (sentPairs.has(key)) continue;
+
+      let sentThis = false;
+      if (user.fcmToken && messaging) {
+        try {
+          await messaging.send({
+            token: user.fcmToken,
+            notification: { title, body },
+            data: {
+              type: WO_OVERDUE_TYPE,
+              woId: wo.id,
+              docNumber: wo.docNumber,
+            },
+          });
+          sentThis = true;
+          sent += 1;
+        } catch (err) {
+          console.error('FCM send failed for WO', wo.id, user.id, err);
+        }
+      }
+
+      await prisma.notificationQueue.create({
+        data: {
+          userId: user.id,
+          type: WO_OVERDUE_TYPE,
+          title,
+          body,
+          data: {
+            type: WO_OVERDUE_TYPE,
+            woId: wo.id,
+            docNumber: wo.docNumber,
+          },
+          sent: sentThis,
+          sentAt: sentThis ? new Date() : null,
+        },
+      });
+      sentPairs.add(key);
+    }
+  }
+
+  return { sent };
+}
+
+/**
+ * After GRN on a PO: notify that linked DRAFT WOs can be issued.
+ * Dedup once per WO (event, not daily).
+ */
+export async function notifyMaterialArrivedForPo(
+  poId: string,
+  grnDocNumber: string
+): Promise<void> {
+  const draftWOs = await prisma.workOrder.findMany({
+    where: { poId, status: 'DRAFT' },
+    select: { id: true, docNumber: true },
+  });
+  if (draftWOs.length === 0) return;
+
+  const users = await getUsersWithPermission('purchase_orders:view');
+  if (users.length === 0) return;
+
+  const existing = await prisma.notificationQueue.findMany({
+    where: { type: MATERIAL_ARRIVED_TYPE },
+    select: { data: true },
+  });
+  const already = new Set(
+    existing
+      .map((r) =>
+        typeof r.data === 'object' && r.data !== null && 'woId' in r.data
+          ? (r.data as { woId: string }).woId
+          : null
+      )
+      .filter(Boolean) as string[]
+  );
+
+  for (const wo of draftWOs) {
+    if (already.has(wo.id)) continue;
+    await sendNotificationToUsers(users, {
+      type: MATERIAL_ARRIVED_TYPE,
+      title: 'Material arrived',
+      body: `Kain untuk ${wo.docNumber} sudah tiba (GRN ${grnDocNumber}) — siap di-issue.`,
+      data: {
+        woId: wo.id,
+        poId,
+        grnDocNumber,
+        docNumber: wo.docNumber,
+      },
+    });
+  }
 }
 
 /**

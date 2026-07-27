@@ -1,9 +1,10 @@
-import { Decimal } from 'decimal.js';
-import { prisma } from '@elorae/db';
-import { generateDocNumber } from '@/lib/docNumber';
-import { poSchema } from '@/lib/validations';
-import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
-import type { z } from 'zod';
+import { Decimal } from "decimal.js";
+import { prisma } from "@elorae/db";
+import { generateDocNumber } from "@/lib/docNumber";
+import { poSchema } from "@/lib/validations";
+import { assertLinesVariantSkusMatchItemDefinitions } from "@/lib/items/validate-variant-lines";
+import { resolvePoLeadTimeFields } from "@/lib/leadtime/po-snapshot";
+import type { z } from "zod";
 
 export type POFormData = z.infer<typeof poSchema>;
 
@@ -25,34 +26,57 @@ export type OfflinePOCreatePayload = {
 };
 
 function parseDate(val: Date | string | null | undefined): Date | undefined {
-  if (val == null || val === '') return undefined;
+  if (val == null || val === "") return undefined;
   return val instanceof Date ? val : new Date(val);
 }
 
 /** Full PO create (backoffice) — matches createPO action transaction */
-export async function createPurchaseOrder(data: POFormData, userId: string) {
+export async function createPurchaseOrder(
+  data: POFormData,
+  userId: string,
+  options?: { applyLeadTime?: boolean }
+) {
   const validated = poSchema.parse(data);
+  const applyLeadTime = options?.applyLeadTime !== false;
 
   return prisma.$transaction(async (tx) => {
     await assertLinesVariantSkusMatchItemDefinitions(tx.item, validated.items);
 
-    const docNumber = await generateDocNumber('PO', tx);
+    const docNumber = await generateDocNumber("PO", tx);
     const totalAmount = validated.items.reduce(
       (sum, item) => sum.plus(new Decimal(item.qty).mul(item.price)),
       new Decimal(0)
     );
 
+    let etaDate = validated.etaDate ?? null;
+    let chainSnapshot: object | null = null;
+    let chainTotalDays: number | null = null;
+
+    if (applyLeadTime) {
+      const lt = await resolvePoLeadTimeFields(
+        tx,
+        validated.supplierId,
+        validated.items,
+        etaDate
+      );
+      chainSnapshot = lt.chainSnapshot;
+      chainTotalDays = lt.chainTotalDays;
+      etaDate = lt.etaDate ?? null;
+    }
+
     const created = await tx.purchaseOrder.create({
       data: {
         docNumber,
         supplierId: validated.supplierId,
-        etaDate: validated.etaDate,
+        etaDate,
         paymentDueDate: validated.paymentDueDate ?? undefined,
         notes: validated.notes,
         terms: validated.terms,
         totalAmount: totalAmount.toNumber(),
         grandTotal: totalAmount.toNumber(),
         createdById: userId,
+        chainSnapshot: chainSnapshot ?? undefined,
+        chainTotalDays: chainTotalDays ?? undefined,
         items: {
           create: validated.items.map((i) => ({
             itemId: i.itemId,
@@ -71,9 +95,9 @@ export async function createPurchaseOrder(data: POFormData, userId: string) {
     await tx.pOStatusHistory.create({
       data: {
         poId: created.id,
-        status: 'DRAFT',
+        status: "DRAFT",
         changedById: userId,
-        notes: 'PO Created',
+        notes: "PO Created",
       },
     });
 
@@ -81,7 +105,7 @@ export async function createPurchaseOrder(data: POFormData, userId: string) {
   });
 }
 
-/** Offline sync — normalizes pending PO payload then creates with status history */
+/** Offline sync — lead-time columns stay null (no chain load offline). */
 export async function createPurchaseOrderFromOfflinePayload(
   payload: OfflinePOCreatePayload,
   userId: string
@@ -92,7 +116,7 @@ export async function createPurchaseOrderFromOfflinePayload(
     qty: item.qty,
     price: item.price,
     ppnIncluded: item.ppnIncluded ?? false,
-    uomId: item.uomId ?? '',
+    uomId: item.uomId ?? "",
     notes: item.notes ?? null,
   }));
 
@@ -104,7 +128,7 @@ export async function createPurchaseOrderFromOfflinePayload(
     });
     const uomByItem = new Map(dbItems.map((r) => [r.id, r.uomId]));
     for (const line of items) {
-      if (!line.uomId) line.uomId = uomByItem.get(line.itemId) ?? '';
+      if (!line.uomId) line.uomId = uomByItem.get(line.itemId) ?? "";
     }
   }
 
@@ -114,8 +138,8 @@ export async function createPurchaseOrderFromOfflinePayload(
     paymentDueDate: parseDate(payload.paymentDueDate),
     notes: payload.notes,
     terms: payload.terms,
-    items: items as POFormData['items'],
+    items: items as POFormData["items"],
   };
 
-  return createPurchaseOrder(normalized, userId);
+  return createPurchaseOrder(normalized, userId, { applyLeadTime: false });
 }

@@ -28,6 +28,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
+import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
+import { PERMISSIONS, hasPermission } from '@/lib/rbac';
+import type { SnapshotStep } from '@/lib/leadtime/calculations';
 
 const statusLabels: Record<POStatus, string> = {
   DRAFT: 'Draft',
@@ -299,6 +302,28 @@ export default function PODetailPage() {
           )}
         </div>
       </div>
+
+      {Array.isArray(po.chainSnapshot) && po.chainSnapshot.length > 0 && (
+        <ChainPositionStrip
+          docType="PO"
+          docId={po.id}
+          snapshot={po.chainSnapshot as SnapshotStep[]}
+          clockStart={new Date(po.createdAt)}
+          chainTotalDays={po.chainTotalDays ?? 0}
+          confirmedIndex={po.chainConfirmedStepIndex ?? null}
+          confirmedAt={po.chainConfirmedAt ? new Date(po.chainConfirmedAt) : null}
+          confirmedSource={po.chainConfirmedSource ?? null}
+          actualLeadDays={po.actualLeadDays ?? null}
+          status={po.status}
+          canConfirm={hasPermission(
+            session?.user?.permissions ?? [],
+            PERMISSIONS.PURCHASE_ORDERS_EDIT
+          )}
+          onUpdated={() => {
+            void getPOById(po.id).then(setPO);
+          }}
+        />
+      )}
 
       {isEditMode && canOpenEditForm ? (
         <POForm

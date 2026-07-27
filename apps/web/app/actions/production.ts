@@ -21,6 +21,9 @@ import {
   type ListWorkOrdersFilters,
   type ListWorkOrdersOpts,
 } from '@/lib/work-orders/queries';
+import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
+import { computeActualLeadDays } from '@/lib/leadtime/calculations';
+import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
 
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
@@ -153,6 +156,14 @@ function serializeWorkOrder(wo: {
       return Array.isArray(parsed) ? parsed : null;
     })(),
     notes: wo.notes,
+    chainSnapshot: (wo as { chainSnapshot?: unknown }).chainSnapshot ?? null,
+    chainTotalDays: (wo as { chainTotalDays?: number | null }).chainTotalDays ?? null,
+    chainConfirmedStepIndex:
+      (wo as { chainConfirmedStepIndex?: number | null }).chainConfirmedStepIndex ?? null,
+    chainConfirmedAt: (wo as { chainConfirmedAt?: Date | null }).chainConfirmedAt ?? null,
+    chainConfirmedSource:
+      (wo as { chainConfirmedSource?: string | null }).chainConfirmedSource ?? null,
+    actualLeadDays: (wo as { actualLeadDays?: number | null }).actualLeadDays ?? null,
     syncStatus: wo.syncStatus,
     createdById: wo.createdById,
     createdAt: wo.createdAt,
@@ -550,12 +561,24 @@ export async function issueWorkOrder(id: string, userId: string) {
   
   if (!wo) throw new Error('Work Order not found');
   if (wo.status !== 'DRAFT') throw new Error('Work Order already issued');
+
+  const lt = await resolveWoLeadTimeFields(
+    prisma,
+    wo.vendorId,
+    Number(wo.plannedQty)
+  );
   
   await prisma.workOrder.update({
     where: { id },
     data: {
       status: 'ISSUED',
-      issuedAt: new Date()
+      issuedAt: new Date(),
+      ...(lt.chainSnapshot
+        ? {
+            chainSnapshot: lt.chainSnapshot,
+            chainTotalDays: lt.chainTotalDays,
+          }
+        : {}),
     }
   });
 
@@ -566,6 +589,7 @@ export async function issueWorkOrder(id: string, userId: string) {
     .catch(() => {});
   
   revalidatePath('/backoffice/work-orders');
+  revalidatePath(`/backoffice/work-orders/${id}`);
 }
 
 const issueSchema = z.object({
@@ -830,6 +854,13 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       )
       .catch(() => {});
   }
+  void applyChainSignal(
+    { type: "WO", id: data.woId },
+    { kind: "MATERIAL_ISSUE" },
+    userId
+  ).catch((err) => {
+    console.warn("[leadtime] auto-confirm after material issue failed", err);
+  });
   return issueResult;
 }
 
@@ -1061,13 +1092,26 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
       (wo.actualQty?.toString() ? Number(wo.actualQty) : 0) + qtyAccepted;
     const plannedQty = Number(wo.plannedQty);
     const meetsTarget = newActualQty >= plannedQty;
+    const completedAt = meetsTarget ? (wo.completedAt ?? new Date()) : null;
+    let actualLeadDays: number | undefined;
+    if (
+      meetsTarget &&
+      wo.actualLeadDays == null &&
+      wo.issuedAt != null
+    ) {
+      actualLeadDays = computeActualLeadDays(
+        wo.issuedAt,
+        completedAt ?? new Date()
+      );
+    }
     await tx.workOrder.update({
       where: { id: data.woId },
       data: {
         actualQty: newActualQty,
         status: meetsTarget ? 'COMPLETED' : 'PARTIAL',
         // Set once when WO first reaches Completed; keep on later over-production receipts
-        completedAt: meetsTarget ? (wo.completedAt ?? new Date()) : null,
+        completedAt,
+        ...(actualLeadDays !== undefined ? { actualLeadDays } : {}),
       }
     });
 
@@ -1205,6 +1249,14 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
 
   if (receiveResult.woCompleted) {
     notifyWOCompleted(data.woId, userId).catch(() => {});
+  } else {
+    void applyChainSignal(
+      { type: "WO", id: data.woId },
+      { kind: "FG_PARTIAL" },
+      userId
+    ).catch((err) => {
+      console.warn("[leadtime] auto-confirm after FG partial failed", err);
+    });
   }
   if (receiveResult.recalcOutboxRowId) {
     void apiFetch("POST", `/jubelio/outbox/enqueue/${receiveResult.recalcOutboxRowId}`, {
