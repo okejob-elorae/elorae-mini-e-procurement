@@ -1,5 +1,8 @@
 import { prisma } from "@elorae/db";
-import type { SnapshotStep } from "@/lib/leadtime/calculations";
+import {
+  parseChainSnapshot,
+  type SnapshotStep,
+} from "@/lib/leadtime/calculations";
 import { logAudit } from "@/lib/audit";
 
 export type ChainDocType = "PO" | "WO";
@@ -115,7 +118,7 @@ export async function applyChainSignal(
     return;
   }
 
-  const snapshot = wo.chainSnapshot as SnapshotStep[];
+  const snapshot = parseChainSnapshot(wo.chainSnapshot);
   if (!Array.isArray(snapshot) || snapshot.length === 0) return;
 
   const confirmedIndex = wo.chainConfirmedStepIndex;

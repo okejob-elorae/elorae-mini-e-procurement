@@ -15,6 +15,11 @@ export interface SnapshotStep extends ResolvedStep {
   computedDays: number;
 }
 
+/** Narrow Prisma JsonValue / unknown into a snapshot array (empty if invalid). */
+export function parseChainSnapshot(value: unknown): SnapshotStep[] {
+  return Array.isArray(value) ? (value as SnapshotStep[]) : [];
+}
+
 export interface ExpectedPosition {
   status: "NOT_STARTED" | "IN_PROGRESS" | "PAST_DUE";
   stepIndex: number | null;
