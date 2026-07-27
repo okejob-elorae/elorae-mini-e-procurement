@@ -7,6 +7,7 @@ import { logAudit } from "@/lib/audit";
 import { PERMISSIONS, hasPermission, requirePermission } from "@/lib/rbac";
 import {
   buildChainSnapshot,
+  parseChainSnapshot,
   resolveChain,
   suggestEta,
   totalDaysFixedOnly,
@@ -505,7 +506,7 @@ export async function confirmChainPosition(data: unknown): Promise<Result> {
         return { success: false, error: "PO tidak memiliki chain snapshot." };
       }
 
-      const snapshot = po.chainSnapshot as SnapshotStep[];
+      const snapshot = parseChainSnapshot(po.chainSnapshot);
       if (
         parsed.stepIndex != null &&
         (parsed.stepIndex < 0 || parsed.stepIndex >= snapshot.length)
@@ -548,7 +549,7 @@ export async function confirmChainPosition(data: unknown): Promise<Result> {
       return { success: false, error: "WO tidak memiliki chain snapshot." };
     }
 
-    const snapshot = wo.chainSnapshot as SnapshotStep[];
+    const snapshot = parseChainSnapshot(wo.chainSnapshot);
     if (
       parsed.stepIndex != null &&
       (parsed.stepIndex < 0 || parsed.stepIndex >= snapshot.length)
