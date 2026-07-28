@@ -1710,6 +1710,14 @@
       "posted": "Posted",
       "pending": "Pending",
       "view": "View"
+    },
+    "kpi": {
+      "totalOrders": "Total orders",
+      "totalValue": "{value} in range",
+      "byStatus": "By status",
+      "avgDailySales": "Average daily sales",
+      "avgDailyCount": "{count} orders / day",
+      "avgDailySalesDesc": "Over {days} day(s) in the selected range"
     }
   },
   "salesReturns": {

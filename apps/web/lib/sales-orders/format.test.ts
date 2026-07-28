@@ -24,11 +24,20 @@ describe("formatIDR", () => {
 });
 
 describe("formatDateTime", () => {
-  it("renders a Date as 'dd MMM yyyy, HH:mm' in the en-GB locale", () => {
+  it("renders in Asia/Jakarta (WIB), not the browser/process local zone", () => {
+    // 10:30 UTC = 17:30 WIB
     const d = new Date("2026-06-11T10:30:00.000Z");
     const out = formatDateTime(d, "en-GB");
     expect(out).toMatch(/11 Jun 2026/);
-    expect(out).toMatch(/10:30|17:30/);
+    expect(out).toMatch(/17:30/);
+  });
+
+  it("keeps late-WIB evenings on the same calendar day as the date filter", () => {
+    // 2026-07-27 23:30 WIB = 16:30 UTC — must display as 27 Jul, not 28 Jul (UTC+8 browsers)
+    const d = new Date("2026-07-27T16:30:00.000Z");
+    const out = formatDateTime(d, "en-GB");
+    expect(out).toMatch(/27 Jul 2026/);
+    expect(out).not.toMatch(/28 Jul/);
   });
 
   it("renders id-ID locale with Indonesian month names", () => {

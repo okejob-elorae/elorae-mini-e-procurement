@@ -7,17 +7,72 @@ vi.mock("@elorae/db", () => ({
       count: vi.fn(),
       findUnique: vi.fn(),
       aggregate: vi.fn(),
+      groupBy: vi.fn(),
     },
     user: { findMany: vi.fn() },
     jubelioCourier: { findUnique: vi.fn() },
+    journal: { findMany: vi.fn().mockResolvedValue([]) },
   },
 }));
 
 import { prisma } from "@elorae/db";
-import { listSalesOrders, getSalesOrderById } from "./queries";
+import { listSalesOrders, getSalesOrderById, getSalesOrdersListKpi, inclusiveWibDayCount } from "./queries";
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("inclusiveWibDayCount", () => {
+  it("counts inclusive WIB calendar days across a date filter window", () => {
+    // 2026-07-01 00:00 WIB → 2026-07-27 23:59:59.999 WIB
+    const from = new Date("2026-06-30T17:00:00.000Z");
+    const to = new Date("2026-07-27T16:59:59.999Z");
+    expect(inclusiveWibDayCount(from, to)).toBe(27);
+  });
+
+  it("returns 1 for a single WIB day", () => {
+    const start = new Date("2026-07-26T17:00:00.000Z"); // Jul 27 00:00 WIB
+    const end = new Date("2026-07-27T16:59:59.999Z"); // Jul 27 23:59:59.999 WIB
+    expect(inclusiveWibDayCount(start, end)).toBe(1);
+  });
+});
+
+describe("getSalesOrdersListKpi", () => {
+  it("aggregates totals, channel/status breakdowns, and avg daily sales", async () => {
+    (prisma.salesOrder.aggregate as any).mockResolvedValue({
+      _count: { _all: 10 },
+      _sum: { grandTotal: 1_000_000 },
+      _min: { transactionDate: new Date("2026-07-01T00:00:00.000Z") },
+      _max: { transactionDate: new Date("2026-07-10T00:00:00.000Z") },
+    });
+    (prisma.salesOrder.groupBy as any)
+      .mockResolvedValueOnce([
+        { channel: "SHOPEE", _count: { _all: 7 }, _sum: { grandTotal: 700_000 } },
+        { channel: "TOKOPEDIA", _count: { _all: 3 }, _sum: { grandTotal: 300_000 } },
+      ])
+      .mockResolvedValueOnce([
+        { status: "COMPLETED", _count: { _all: 8 } },
+        { status: "NEW", _count: { _all: 2 } },
+      ]);
+
+    const from = new Date("2026-06-30T17:00:00.000Z"); // Jul 1 WIB
+    const to = new Date("2026-07-10T16:59:59.999Z"); // Jul 10 WIB
+    const kpi = await getSalesOrdersListKpi({ dateFrom: from, dateTo: to });
+
+    expect(kpi.totalCount).toBe(10);
+    expect(kpi.totalValue).toBe("1000000");
+    expect(kpi.dayCount).toBe(10);
+    expect(kpi.averageDailySales).toBe("100000");
+    expect(kpi.averageDailyCount).toBe(1);
+    expect(kpi.byChannel).toEqual([
+      { channel: "SHOPEE", count: 7, totalValue: "700000" },
+      { channel: "TOKOPEDIA", count: 3, totalValue: "300000" },
+    ]);
+    expect(kpi.byStatus).toEqual([
+      { status: "COMPLETED", count: 8 },
+      { status: "NEW", count: 2 },
+    ]);
+  });
 });
 
 describe("listSalesOrders", () => {

@@ -4,7 +4,7 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { SALES_CHANNEL_VALUES, SALES_ORDER_STATUS_VALUES } from "@/lib/constants/enums";
 import type { SalesChannel, SalesOrderStatus } from "@/lib/constants/enums";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
-import { listSalesOrders } from "@/lib/sales-orders/queries";
+import { listSalesOrders, getSalesOrdersListKpi } from "@/lib/sales-orders/queries";
 import { SalesOrdersPageClient } from "./SalesOrdersPageClient";
 
 export const dynamic = "force-dynamic";
@@ -67,15 +67,16 @@ export default async function SalesOrdersPage({ searchParams }: PageProps) {
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
 
-  const { orders, totalCount } = await listSalesOrders(filter, {
-    page,
-    pageSize,
-  });
+  const [{ orders, totalCount }, kpi] = await Promise.all([
+    listSalesOrders(filter, { page, pageSize }),
+    getSalesOrdersListKpi(filter),
+  ]);
 
   return (
     <SalesOrdersPageClient
       orders={orders}
       totalCount={totalCount}
+      kpi={kpi}
       search={filter.search ?? ""}
       channel={filter.channel ?? ""}
       status={filter.status ?? ""}
