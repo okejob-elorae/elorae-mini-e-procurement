@@ -10,8 +10,10 @@ export function formatIDR(value: string | number | null | undefined): string {
   return IDR_FORMATTER.format(Number.isFinite(n) ? n : 0);
 }
 
+/** Format in Asia/Jakarta so list dates match WIB-anchored date filters. */
 export function formatDateTime(date: Date, locale: string): string {
   return new Intl.DateTimeFormat(locale, {
+    timeZone: "Asia/Jakarta",
     day: "2-digit",
     month: "short",
     year: "numeric",

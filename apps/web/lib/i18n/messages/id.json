@@ -1710,6 +1710,14 @@
       "posted": "Diposting",
       "pending": "Menunggu posting",
       "view": "Lihat"
+    },
+    "kpi": {
+      "totalOrders": "Total pesanan",
+      "totalValue": "{value} dalam rentang",
+      "byStatus": "Per status",
+      "avgDailySales": "Rata-rata penjualan harian",
+      "avgDailyCount": "{count} pesanan / hari",
+      "avgDailySalesDesc": "Selama {days} hari dalam rentang terpilih"
     }
   },
   "salesReturns": {

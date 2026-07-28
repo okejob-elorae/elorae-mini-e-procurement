@@ -720,10 +720,15 @@ export default function SuppliersPage() {
                     <Badge
                       variant={
                         supplier.status === 'ACTIVE'
-                          ? 'default'
+                          ? 'outline'
                           : supplier.status === 'PENDING_APPROVAL'
                             ? 'secondary'
                             : 'destructive'
+                      }
+                      className={
+                        supplier.status === 'ACTIVE'
+                          ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-700'
+                          : undefined
                       }
                     >
                       {supplier.status === 'PENDING_APPROVAL'

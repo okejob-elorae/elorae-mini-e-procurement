@@ -263,6 +263,16 @@ export type MarketplaceKpi = {
   todaySalesTotal: string;
 };
 
+export type SalesOrdersListKpi = {
+  totalCount: number;
+  totalValue: string;
+  byChannel: Array<{ channel: SalesChannel; count: number; totalValue: string }>;
+  byStatus: Array<{ status: SalesOrderStatus; count: number }>;
+  averageDailySales: string;
+  averageDailyCount: number;
+  dayCount: number;
+};
+
 function startOfToday(): Date {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -273,6 +283,21 @@ function endOfToday(): Date {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
   return d;
+}
+
+/** Inclusive calendar-day span in Asia/Jakarta between two instants. */
+export function inclusiveWibDayCount(from: Date, to: Date): number {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const [ay, am, ad] = fmt.format(from).split("-").map(Number);
+  const [by, bm, bd] = fmt.format(to).split("-").map(Number);
+  const start = Date.UTC(ay, am - 1, ad);
+  const end = Date.UTC(by, bm - 1, bd);
+  return Math.max(1, Math.round((end - start) / 86_400_000) + 1);
 }
 
 export async function getMarketplaceKpi(): Promise<MarketplaceKpi> {
@@ -295,5 +320,68 @@ export async function getMarketplaceKpi(): Promise<MarketplaceKpi> {
     pendingFulfillmentCount: pendingCount,
     todaySalesCount: todayAgg._count._all,
     todaySalesTotal: sum ? sum.toString() : "0",
+  };
+}
+
+/** KPI for the sales-orders list — respects the same filters as the table. */
+export async function getSalesOrdersListKpi(
+  filter: SalesOrderListFilter,
+): Promise<SalesOrdersListKpi> {
+  const where = buildWhere(filter);
+
+  const [agg, byChannelRows, byStatusRows] = await Promise.all([
+    prisma.salesOrder.aggregate({
+      where,
+      _count: { _all: true },
+      _sum: { grandTotal: true },
+      _min: { transactionDate: true },
+      _max: { transactionDate: true },
+    }),
+    prisma.salesOrder.groupBy({
+      by: ["channel"],
+      where,
+      _count: { _all: true },
+      _sum: { grandTotal: true },
+    }),
+    prisma.salesOrder.groupBy({
+      by: ["status"],
+      where,
+      _count: { _all: true },
+    }),
+  ]);
+
+  const totalCount = agg._count._all;
+  const totalValueNum = Number(agg._sum.grandTotal ?? 0);
+
+  const rangeStart = filter.dateFrom ?? agg._min.transactionDate;
+  const rangeEnd = filter.dateTo ?? agg._max.transactionDate;
+  const dayCount =
+    rangeStart && rangeEnd ? inclusiveWibDayCount(rangeStart, rangeEnd) : 1;
+  const averageDailySales = totalCount === 0 ? 0 : totalValueNum / dayCount;
+  const averageDailyCount = totalCount === 0 ? 0 : totalCount / dayCount;
+
+  const byChannel = byChannelRows
+    .map((r) => ({
+      channel: r.channel as SalesChannel,
+      count: r._count._all,
+      totalValue: String(Number(r._sum.grandTotal ?? 0)),
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const byStatus = byStatusRows
+    .map((r) => ({
+      status: r.status as SalesOrderStatus,
+      count: r._count._all,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    totalCount,
+    totalValue: String(totalValueNum),
+    byChannel,
+    byStatus,
+    averageDailySales: String(averageDailySales),
+    averageDailyCount,
+    dayCount,
   };
 }

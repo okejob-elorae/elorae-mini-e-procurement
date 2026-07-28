@@ -17,9 +17,12 @@ other-sources
 
 # Root-level scratchpad artifacts (screenshots, notes, scratch scripts)
 /*.png
+/*.webm
 /log.md
 /scratchpad-*.js
 /scratchpad-*.mjs
+
+scripts/legacy-master
 
 # TSC build outputs inside lib/ (source is .ts; compiled JS must not ship)
 apps/web/lib/**/*.js
