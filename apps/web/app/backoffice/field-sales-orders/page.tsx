@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listFieldSalesOrders } from "@/lib/field-sales/queries";
 import type { FieldSalesOrderStatus } from "@/lib/field-sales/queries";
+import { listStoreOptions } from "@/lib/stores/queries";
 import { FieldSalesOrdersPageClient } from "./FieldSalesOrdersPageClient";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ type PageProps = {
     search?: string;
     status?: string;
     orderType?: string;
+    storeId?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -46,14 +48,15 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
     search: sp.search?.trim() || undefined,
     status: parseStatus(sp.status),
     orderType: parseOrderType(sp.orderType),
+    storeId: sp.storeId?.trim() || undefined,
   };
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
 
-  const { orders, totalCount } = await listFieldSalesOrders(filter, {
-    page,
-    pageSize,
-  });
+  const [{ orders, totalCount }, storeOptions] = await Promise.all([
+    listFieldSalesOrders(filter, { page, pageSize }),
+    listStoreOptions(),
+  ]);
 
   return (
     <FieldSalesOrdersPageClient
@@ -62,6 +65,8 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
       search={filter.search ?? ""}
       status={filter.status ?? "ALL"}
       orderType={sp.orderType === "PUTUS" || sp.orderType === "KONSI" ? sp.orderType : "ALL"}
+      storeId={filter.storeId ?? "ALL"}
+      storeOptions={storeOptions}
       page={page}
       pageSize={pageSize}
     />

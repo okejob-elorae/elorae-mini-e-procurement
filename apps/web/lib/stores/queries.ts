@@ -84,6 +84,12 @@ export async function listStores(
   return { items: rows.map(serializeStore), totalCount };
 }
 
+// Lightweight {id,name} list for filter dropdowns — all stores (incl. inactive,
+// since orders can reference a since-deactivated store), ordered by name.
+export async function listStoreOptions(): Promise<{ id: string; name: string }[]> {
+  return prisma.store.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
+}
+
 export async function listActiveStoresForPwa() {
   const rows = await prisma.store.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
   return rows.map(serializeStore);
