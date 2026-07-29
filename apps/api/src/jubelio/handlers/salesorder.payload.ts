@@ -21,6 +21,7 @@ export type SalesOrderPayload = {
   action?: string;
   salesorder_id: number;
   salesorder_no?: string;
+  ref_no?: string | null;
   channel_status?: string | null;
   internal_status?: string | null;
   wms_status?: string | null;

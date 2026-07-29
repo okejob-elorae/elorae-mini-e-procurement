@@ -1998,6 +1998,7 @@ model SalesOrder {
   id                  String           @id @default(cuid())
   salesorderId        Int              @unique
   salesorderNo        String
+  channelOrderNo      String?
   channel             SalesChannel
   sourceName          String
   status              SalesOrderStatus
@@ -2049,6 +2050,7 @@ model SalesOrder {
   @@index([shippingProvince])
   @@index([shippingCity])
   @@index([fulfillmentStatus])
+  @@index([channelOrderNo])
 }
 
 model SalesOrderItem {
