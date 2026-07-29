@@ -88,6 +88,7 @@ export type SettlementDetailLine = {
   matches: boolean;
   jubelioFees: JubelioFees | null;
   jubelioComposition: JubelioComposition | null;
+  jubelioCanceled: boolean;
 };
 
 /**
@@ -134,21 +135,32 @@ function feeNum(v: string | undefined): number {
 /**
  * `escrow_amount` is persisted as a string and defaults to "0" when Jubelio
  * never sent a value (see `buildFeeBreakdown`'s `dec()`), so a literal "0"
- * is treated as absent data, not a real zero-value escrow — mirrors the
- * `v !== "0"` filter `SalesOrderDetailClient` already applies to fee entries.
- * Shared by `deriveJubelioComparison` (jubelioNet) and `deriveJubelioFees`
- * (escrowAmount) so both agree on when escrow data is "present".
+ * is normally treated as absent data, not a real zero-value escrow — mirrors
+ * the `v !== "0"` filter `SalesOrderDetailClient` applies to fee entries.
+ * EXCEPTION: a CANCELLED order genuinely nets to 0 (no payout), and its excel
+ * line is also 0 — so with `treatZeroAsReal` the "0" is a real zero and the
+ * line reconciles (Matches at 0) instead of showing "n/a". Shared by
+ * `deriveJubelioComparison` + `deriveJubelioFees` so both agree.
  */
-function escrowAmountOrNull(feeBreakdown: Record<string, string> | null): number | null {
+function escrowAmountOrNull(
+  feeBreakdown: Record<string, string> | null,
+  treatZeroAsReal = false,
+): number | null {
   const escrowRaw = feeBreakdown?.escrow_amount;
-  if (escrowRaw === undefined || escrowRaw === null || escrowRaw === "" || escrowRaw === "0") {
+  if (escrowRaw === undefined || escrowRaw === null || escrowRaw === "") {
     return null;
+  }
+  if (escrowRaw === "0") {
+    return treatZeroAsReal ? 0 : null;
   }
   const escrowAmount = Number(escrowRaw);
   return Number.isFinite(escrowAmount) ? escrowAmount : null;
 }
 
-export function deriveJubelioFees(feeBreakdown: Record<string, string> | null): JubelioFees | null {
+export function deriveJubelioFees(
+  feeBreakdown: Record<string, string> | null,
+  treatZeroAsReal = false,
+): JubelioFees | null {
   if (!feeBreakdown) return null;
   return {
     totalAmountMp: feeNum(feeBreakdown.total_amount_mp),
@@ -160,7 +172,7 @@ export function deriveJubelioFees(feeBreakdown: Record<string, string> | null): 
     voucherAmount: feeNum(feeBreakdown.voucher_amount),
     codFee: feeNum(feeBreakdown.cod_fee),
     shippingTax: feeNum(feeBreakdown.shipping_tax),
-    escrowAmount: escrowAmountOrNull(feeBreakdown),
+    escrowAmount: escrowAmountOrNull(feeBreakdown, treatZeroAsReal),
   };
 }
 
@@ -169,13 +181,15 @@ export function deriveJubelioFees(feeBreakdown: Record<string, string> | null): 
  * matched SalesOrder's `feeBreakdown.escrow_amount` — "the value to be paid
  * to the seller from the MP after deducting the admin fee" (Jubelio API
  * docs), which is the same economic figure as Shopee's "Total Penghasilan".
+ * `treatZeroAsReal` is set for CANCELLED orders (escrow 0 is a genuine zero).
  * See `escrowAmountOrNull` for the "0"/missing-means-absent rule.
  */
 export function deriveJubelioComparison(
   netIncome: number,
   feeBreakdown: Record<string, string> | null,
+  treatZeroAsReal = false,
 ): { jubelioNet: number | null; netDelta: number | null; matches: boolean } {
-  const jubelioNet = escrowAmountOrNull(feeBreakdown);
+  const jubelioNet = escrowAmountOrNull(feeBreakdown, treatZeroAsReal);
   if (jubelioNet === null) {
     return { jubelioNet: null, netDelta: null, matches: false };
   }
@@ -258,6 +272,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
         where: { id: { in: matchedSalesOrderIds } },
         select: {
           id: true,
+          status: true,
           feeBreakdown: true,
           totalDisc: true,
           totalTax: true,
@@ -269,6 +284,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
   const feeBreakdownByOrderId = new Map(
     matchedOrders.map((o) => [o.id, o.feeBreakdown as Record<string, string> | null]),
   );
+  const statusByOrderId = new Map(matchedOrders.map((o) => [o.id, o.status]));
   const compositionByOrderId = new Map<string, JubelioComposition>(
     matchedOrders.map((o) => [
       o.id,
@@ -286,7 +302,12 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     const feeBreakdown = l.matchedSalesOrderId
       ? (feeBreakdownByOrderId.get(l.matchedSalesOrderId) ?? null)
       : null;
-    const comparison = deriveJubelioComparison(netIncome, feeBreakdown);
+    // A CANCELLED order genuinely nets to 0 — treat its escrow "0" as a real
+    // zero so it reconciles (Matches at 0) instead of showing "n/a".
+    const canceled = l.matchedSalesOrderId
+      ? statusByOrderId.get(l.matchedSalesOrderId) === "CANCELLED"
+      : false;
+    const comparison = deriveJubelioComparison(netIncome, feeBreakdown, canceled);
     return {
       id: l.id,
       orderNo: l.orderNo,
@@ -302,10 +323,11 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
       biayaKomisiAms: toNum(l.biayaKomisiAms),
       biayaProsesPesanan: toNum(l.biayaProsesPesanan),
       raw: l.raw as Record<string, unknown>,
-      jubelioFees: deriveJubelioFees(feeBreakdown),
+      jubelioFees: deriveJubelioFees(feeBreakdown, canceled),
       jubelioComposition: l.matchedSalesOrderId
         ? (compositionByOrderId.get(l.matchedSalesOrderId) ?? null)
         : null,
+      jubelioCanceled: canceled,
       ...comparison,
     };
   });

@@ -2608,6 +2608,7 @@
       "statusMatches": "Cocok",
       "statusDiffers": "Berbeda",
       "statusUnavailable": "Data Jubelio n/a",
+      "statusCancelled": "Dibatalkan",
       "jubelioFeesNote": "Penyesuaian Lain = biaya/penyesuaian escrow Jubelio yang tidak dirinci (mis. biaya transaksi/kampanye). Baris dijumlahkan tepat ke escrow."
     }
   },

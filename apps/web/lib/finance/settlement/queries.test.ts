@@ -40,6 +40,16 @@ describe("deriveJubelioComparison (pure)", () => {
     expect(r).toEqual({ jubelioNet: null, netDelta: null, matches: false });
   });
 
+  it("with treatZeroAsReal (CANCELLED order), escrow '0' is a real zero → matches an excel net of 0", () => {
+    const r = deriveJubelioComparison(0, { escrow_amount: "0" }, true);
+    expect(r).toEqual({ jubelioNet: 0, netDelta: 0, matches: true });
+  });
+
+  it("with treatZeroAsReal, a nonzero excel net vs escrow 0 → differs (delta shown, not n/a)", () => {
+    const r = deriveJubelioComparison(5000, { escrow_amount: "0" }, true);
+    expect(r).toEqual({ jubelioNet: 0, netDelta: 5000, matches: false });
+  });
+
   it("returns null when escrow_amount is not numeric", () => {
     const r = deriveJubelioComparison(5000, { escrow_amount: "not-a-number" });
     expect(r).toEqual({ jubelioNet: null, netDelta: null, matches: false });
@@ -103,6 +113,12 @@ describe("deriveJubelioFees (pure)", () => {
   it("treats a missing escrow_amount as absent data (escrowAmount null)", () => {
     const r = deriveJubelioFees({ service_fee: "500" });
     expect(r?.escrowAmount).toBeNull();
+  });
+
+  it("with treatZeroAsReal (CANCELLED order), escrow '0' becomes a real 0 escrowAmount", () => {
+    const r = deriveJubelioFees({ escrow_amount: "0", service_fee: "500" }, true);
+    expect(r?.escrowAmount).toBe(0);
+    expect(r?.serviceFee).toBe(500);
   });
 });
 

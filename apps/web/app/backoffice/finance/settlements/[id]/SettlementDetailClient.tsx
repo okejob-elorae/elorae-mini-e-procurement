@@ -599,15 +599,26 @@ function KpiTile({
 type TFn = (key: string) => string;
 
 function ComparisonBadge({ line, t }: { line: SettlementDetailLine; t: TFn }) {
-  if (line.netDelta === null) {
-    return <Badge variant="secondary">{t("compare.statusUnavailable")}</Badge>;
-  }
-  return line.matches ? (
-    <Badge className="bg-green-600 text-white hover:bg-green-600/90 dark:bg-green-700">
-      {t("compare.statusMatches")}
+  const cancelledTag = line.jubelioCanceled ? (
+    <Badge variant="outline" className="ml-1">
+      {t("compare.statusCancelled")}
     </Badge>
-  ) : (
-    <Badge variant="destructive">{t("compare.statusDiffers")}</Badge>
+  ) : null;
+  const primary =
+    line.netDelta === null ? (
+      <Badge variant="secondary">{t("compare.statusUnavailable")}</Badge>
+    ) : line.matches ? (
+      <Badge className="bg-green-600 text-white hover:bg-green-600/90 dark:bg-green-700">
+        {t("compare.statusMatches")}
+      </Badge>
+    ) : (
+      <Badge variant="destructive">{t("compare.statusDiffers")}</Badge>
+    );
+  return (
+    <span className="inline-flex items-center">
+      {primary}
+      {cancelledTag}
+    </span>
   );
 }
 

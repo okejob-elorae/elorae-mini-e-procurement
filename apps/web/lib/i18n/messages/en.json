@@ -2608,6 +2608,7 @@
       "statusMatches": "Matches",
       "statusDiffers": "Differs",
       "statusUnavailable": "Jubelio data n/a",
+      "statusCancelled": "Cancelled",
       "jubelioFeesNote": "Other Adjustments = Jubelio escrow fees/adjustments it doesn't itemize (e.g. transaction/campaign fees). Rows sum exactly to escrow."
     }
   },
