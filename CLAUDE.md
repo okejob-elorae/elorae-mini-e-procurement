@@ -221,11 +221,13 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [x] Settlement compare `jubelioNet` = `feeBreakdown.escrow_amount` basis — VALIDATED live: on real orders the excel net == Jubelio escrow (e.g. 201.815==201.815, delta 0), and a returned order's escrow matched the dashboard 202.910 (PR #166).
 
 ### TikTok/Tokopedia settlement adapter
-- [ ] TikTok parser Decision #2 — `netIncome` column = `Jumlah penyelesaian pembayaran` (single `NET_INCOME_COLUMN` constant, one-line swap). Validate against the real TikTok export before trusting TikTok net figures (PR #168).
-- [ ] TikTok `Total Biaya` sign unverified — fees normalized with `Math.abs()` so the 13-04 journal can't go negative-debit; drop the abs if the real export already stores positive magnitudes (PR #168).
-- [ ] TikTok period dates derived by scanning for Date-typed cells (min/max), **falling back to *today*** if none found — if the real export has no date column, `periodFrom`/`periodTo` (and the auto-journal date) land wrong. Confirm against the real file (PR #168).
+- [x] VALIDATED end-to-end on the real TikTok income export (18-line settlement): parser parses (checksum matched), Decision #2 net column (`Jumlah penyelesaian pembayaran`) is correct — 2 completed orders matched Jubelio escrow exactly (208.073, 256.730), 16 canceled reconciled at 0 → 18/18 Matches, 0 differ (PR #168).
+- [x] TikTok escrow lives at `escrow_list.settlement_amount` (top-level `escrow_amount` is null for TikTok) — `buildFeeBreakdown` now falls back to it; the compare's residual absorbs `fee_and_tax_amount`/shipping (PR #168).
+- [x] TikTok/Tokopedia `salesorder_no` is `TT-<ref>-<suffix>` / `TP-<ref>-<suffix>` — the resolver matches `ref_no` (the bare id the excel/settlement keys on) OR `salesorder_no`, so both resolve; Shopee still matches `salesorder_no` (PR #168).
+- [ ] TikTok `Total Biaya` sign — normalized with `Math.abs()` (journal-safe); held on the real export (residual reconciled, journal checksum passed). Drop the abs only if a future export proves the sign (PR #168).
+- [ ] TikTok period dates derived by scanning for Date-typed cells (min/max), falling back to today if none — the real export DID carry dates (period resolved to a real range, not today), so low-risk; revisit if a dateless export appears (PR #168).
 - [ ] TikTok checksum (`parsedNetTotal == totalDilepas`) is tautological (both `Σ netIncome`), unlike Shopee's cross-source check (PR #168).
-- [ ] `TOKOPEDIA` is wired in `match-key.ts` but has no parser — an upload attempt fails at the marketplace gate (defensive, not a crash) until a Tokopedia parser is added (PR #168). Supersedes the old "Tokopedia adapter unsupported (#19)" item for the TikTok half.
+- [ ] `TOKOPEDIA` (`TP-` orders) is wired in `match-key.ts` + resolves by ref_no, but has **no income-export parser** — a Tokopedia settlement upload fails at the parser dispatch until a Tokopedia adapter is added (its sheet/columns likely differ from TikTok's). Supersedes the old "Tokopedia adapter unsupported (#19)" item (PR #168).
 
 ### Sales returns
 - [ ] `SalesReturn.jubelioReturnId` actually stores `salesorder_id` — misleading name, rename deferred (migration churn) (PR #55).
