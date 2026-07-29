@@ -370,12 +370,15 @@ export async function getInventorySnapshot(opts?: GetInventorySnapshotOpts) {
   const lowStockItems = health.menipisCount;
 
   // Search filters the list (server-side, across all rows — not just the current page).
+  // Also matches against per-variant SKUs (e.g. "27000101P-BLK-XL") so a variant-code
+  // search surfaces the article it belongs to.
   const q = opts?.search?.trim().toLowerCase();
   const searched = q
     ? allItems.filter(
         (v) =>
           v.item.sku.toLowerCase().includes(q) ||
-          v.item.nameId.toLowerCase().includes(q),
+          v.item.nameId.toLowerCase().includes(q) ||
+          v.variants.some((variant) => variant.variantSku.toLowerCase().includes(q)),
       )
     : allItems;
 

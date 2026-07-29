@@ -142,7 +142,20 @@ export function StockItemCard({ item }: Props) {
               </Button>
 
               {expanded ? (
-                <StockVariantMatrix variants={variants} wide />
+                <>
+                  <div className="flex items-center justify-between rounded-md border bg-muted/20 px-3 py-2 text-sm">
+                    <span className="font-medium text-muted-foreground">
+                      {t("variantTotalLabel")}
+                    </span>
+                    <span className="tabular-nums font-semibold">
+                      {t("variantTotalValue", {
+                        qty: Number(item.qtyOnHand).toLocaleString(),
+                        available: Number(item.available).toLocaleString(),
+                      })}
+                    </span>
+                  </div>
+                  <StockVariantMatrix variants={variants} wide />
+                </>
               ) : null}
             </div>
           ) : null}

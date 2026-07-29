@@ -911,6 +911,8 @@
       "variantMatrixAria": "Stock by size or variant",
       "variantCue": "{count} variants",
       "variantCueWithNegatif": "{count} variants · {negatif} negative",
+      "variantTotalLabel": "Total across all sizes",
+      "variantTotalValue": "{qty} on hand · {available} available",
       "status": {
         "OK": "OK",
         "MENIPIS": "Low",
