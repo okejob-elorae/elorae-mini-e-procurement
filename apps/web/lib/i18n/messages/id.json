@@ -2585,11 +2585,16 @@
       "codFee": "Biaya COD",
       "shippingTax": "Pajak Pengiriman",
       "escrowNet": "Escrow (Bersih)",
+      "qtyTotal": "Qty Total",
+      "diskon": "Diskon",
+      "pajak": "Pajak",
+      "ongkir": "Ongkos Kirim",
+      "otherAdjustments": "Penyesuaian Lain (Jubelio)",
       "netDelta": "Selisih Bersih",
       "statusMatches": "Cocok",
       "statusDiffers": "Berbeda",
       "statusUnavailable": "Data Jubelio n/a",
-      "jubelioFeesNote": "Biaya Jubelio yang dilaporkan — mungkin tidak menjumlah persis ke escrow."
+      "jubelioFeesNote": "Penyesuaian Lain = biaya/penyesuaian escrow Jubelio yang tidak dirinci (mis. biaya transaksi/kampanye). Baris dijumlahkan tepat ke escrow."
     }
   },
   "financeJournals": {

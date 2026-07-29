@@ -19,7 +19,7 @@ import {
   BookText,
   ExternalLink,
 } from "lucide-react";
-import type { SettlementDetail, SettlementDetailLine, JubelioFees } from "@/lib/finance/settlement/queries";
+import type { SettlementDetail, SettlementDetailLine } from "@/lib/finance/settlement/queries";
 import { matchSettlementAction, postSettlementJournalAction } from "@/app/actions/settlements";
 import {
   getResyncSummary,
@@ -620,35 +620,58 @@ function FeeRow({ label, value }: { label: string; value: number }) {
   );
 }
 
-// Jubelio is coarser than the excel breakdown (it lumps several excel line
-// items into service_fee/order_processing_fee) — this is an independent
-// breakdown shown beside the excel one, not a row-for-row reconciliation.
-// Deduction amounts are shown negative regardless of the sign Jubelio stored
-// them in; zero-valued lines are hidden to avoid clutter. `addDisc`/
-// `voucherAmount` are credits (not deductions) with an unverified sign in
-// `feeBreakdown`, so they're deliberately excluded from this rendered list —
-// they still round-trip on the `jubelioFees` data object.
-function JubelioFeeLines({ fees, t }: { fees: JubelioFees; t: TFn }) {
-  const deductions: Array<{ key: string; label: string; value: number }> = [
-    { key: "serviceFee", label: t("compare.serviceFee"), value: fees.serviceFee },
-    { key: "orderProcessingFee", label: t("compare.orderProcessingFee"), value: fees.orderProcessingFee },
-    { key: "insuranceCost", label: t("compare.insuranceCost"), value: fees.insuranceCost },
-    { key: "addFee", label: t("compare.addFee"), value: fees.addFee },
-    { key: "codFee", label: t("compare.codFee"), value: fees.codFee },
-    { key: "shippingTax", label: t("compare.shippingTax"), value: fees.shippingTax },
-  ];
+// The Jubelio side, reconciled to escrow. Rows = the order composition
+// (dashboard "Rincian": Qty Total / Diskon / Pajak / Ongkir, from the stored
+// SalesOrder) + the itemized marketplace fees we persist (service_fee,
+// order_processing_fee, …). Jubelio does NOT fully itemize escrow — its OWN
+// dashboard shows a "Total" that differs from escrow (extra escrow-level fees:
+// transaction/campaign/coin adjustments it never breaks out). So we append a
+// single balancing "other adjustments" line = escrow − Σ(shown rows), making
+// the column reconcile to escrow (the authoritative net) instead of appearing
+// to be "off". Deductions shown negative; zero lines hidden. `totalAmountMp`,
+// `addDisc`, `voucherAmount` are intentionally not rendered (internal / unverified
+// sign) but still round-trip on the data objects.
+function JubelioBreakdown({ line, t }: { line: SettlementDetailLine; t: TFn }) {
+  const comp = line.jubelioComposition;
+  const fees = line.jubelioFees;
+  const rows: Array<{ key: string; label: string; value: number }> = [];
+
+  if (comp) {
+    rows.push({ key: "qtyTotal", label: t("compare.qtyTotal"), value: comp.grossProduct });
+    if (comp.diskon !== 0) rows.push({ key: "diskon", label: t("compare.diskon"), value: -Math.abs(comp.diskon) });
+    if (comp.pajak !== 0) rows.push({ key: "pajak", label: t("compare.pajak"), value: comp.pajak });
+    if (comp.ongkir !== 0) rows.push({ key: "ongkir", label: t("compare.ongkir"), value: comp.ongkir });
+  }
+  if (fees) {
+    const deductions: Array<[string, string, number]> = [
+      ["serviceFee", t("compare.serviceFee"), fees.serviceFee],
+      ["orderProcessingFee", t("compare.orderProcessingFee"), fees.orderProcessingFee],
+      ["insuranceCost", t("compare.insuranceCost"), fees.insuranceCost],
+      ["addFee", t("compare.addFee"), fees.addFee],
+      ["codFee", t("compare.codFee"), fees.codFee],
+      ["shippingTax", t("compare.shippingTax"), fees.shippingTax],
+    ];
+    for (const [key, label, v] of deductions) {
+      if (v !== 0) rows.push({ key, label, value: -Math.abs(v) });
+    }
+  }
+
+  const escrow = fees?.escrowAmount ?? null;
+  const shownSum = rows.reduce((s, r) => s + r.value, 0);
+  const residual = escrow !== null ? Math.round(escrow - shownSum) : null;
+
   return (
     <>
-      {fees.totalAmountMp !== 0 && <FeeRow label={t("compare.bruto")} value={fees.totalAmountMp} />}
-      {deductions
-        .filter((d) => d.value !== 0)
-        .map((d) => (
-          <FeeRow key={d.key} label={d.label} value={-Math.abs(d.value)} />
-        ))}
-      {fees.escrowAmount !== null && (
+      {rows.map((r) => (
+        <FeeRow key={r.key} label={r.label} value={r.value} />
+      ))}
+      {residual !== null && residual !== 0 && (
+        <FeeRow label={t("compare.otherAdjustments")} value={residual} />
+      )}
+      {escrow !== null && (
         <div className="flex justify-between border-t pt-1 text-sm font-medium">
           <span>{t("compare.escrowNet")}</span>
-          <span className="tabular-nums">{formatRupiah(fees.escrowAmount)}</span>
+          <span className="tabular-nums">{formatRupiah(escrow)}</span>
         </div>
       )}
       <p className="text-xs text-muted-foreground">{t("compare.jubelioFeesNote")}</p>
@@ -679,7 +702,7 @@ function FeeBreakdownPanel({ line, t }: { line: SettlementDetailLine; t: TFn }) 
           {t("compare.jubelioTitle")}
         </h3>
         {line.jubelioFees ? (
-          <JubelioFeeLines fees={line.jubelioFees} t={t} />
+          <JubelioBreakdown line={line} t={t} />
         ) : (
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">{t("compare.netIncomeJubelio")}</span>

@@ -87,6 +87,21 @@ export type SettlementDetailLine = {
   netDelta: number | null;
   matches: boolean;
   jubelioFees: JubelioFees | null;
+  jubelioComposition: JubelioComposition | null;
+};
+
+/**
+ * The matched Jubelio order's top-level composition (the dashboard "Rincian"
+ * header: Qty Total / Diskon / Pajak / Ongkir), read straight from the stored
+ * `SalesOrder` (`totalDisc`/`totalTax`/`shippingCost`) plus the item gross
+ * (Σ `unitPrice × qty`). Distinct from `feeBreakdown` (marketplace fees) —
+ * this is the order's own economics. Null when the line has no matched order.
+ */
+export type JubelioComposition = {
+  grossProduct: number;
+  diskon: number;
+  pajak: number;
+  ongkir: number;
 };
 
 /**
@@ -241,11 +256,29 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
   const matchedOrders = matchedSalesOrderIds.length
     ? await prisma.salesOrder.findMany({
         where: { id: { in: matchedSalesOrderIds } },
-        select: { id: true, feeBreakdown: true },
+        select: {
+          id: true,
+          feeBreakdown: true,
+          totalDisc: true,
+          totalTax: true,
+          shippingCost: true,
+          items: { select: { unitPrice: true, qty: true } },
+        },
       })
     : [];
   const feeBreakdownByOrderId = new Map(
     matchedOrders.map((o) => [o.id, o.feeBreakdown as Record<string, string> | null]),
+  );
+  const compositionByOrderId = new Map<string, JubelioComposition>(
+    matchedOrders.map((o) => [
+      o.id,
+      {
+        grossProduct: o.items.reduce((s, it) => s + toNum(it.unitPrice) * toNum(it.qty), 0),
+        diskon: toNum(o.totalDisc),
+        pajak: toNum(o.totalTax),
+        ongkir: toNum(o.shippingCost),
+      },
+    ]),
   );
 
   const lines: SettlementDetailLine[] = row.lines.map((l) => {
@@ -270,6 +303,9 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
       biayaProsesPesanan: toNum(l.biayaProsesPesanan),
       raw: l.raw as Record<string, unknown>,
       jubelioFees: deriveJubelioFees(feeBreakdown),
+      jubelioComposition: l.matchedSalesOrderId
+        ? (compositionByOrderId.get(l.matchedSalesOrderId) ?? null)
+        : null,
       ...comparison,
     };
   });

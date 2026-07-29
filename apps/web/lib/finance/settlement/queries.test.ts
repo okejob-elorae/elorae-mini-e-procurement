@@ -184,9 +184,9 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
         sourceName: "test",
         status: "COMPLETED",
         subTotal: 5000,
-        totalDisc: 0,
-        totalTax: 0,
-        shippingCost: 0,
+        totalDisc: 98000,
+        totalTax: 5000,
+        shippingCost: 10000,
         grandTotal: 5000,
         transactionDate: new Date(),
         feeBreakdown: {
@@ -200,6 +200,23 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
           cod_fee: "0",
           shipping_tax: "20",
           escrow_amount: "5000",
+        },
+        items: {
+          create: [
+            {
+              salesorderDetailId: salesorderIdMatch + 500,
+              jubelioItemId: 1,
+              jubelioItemCode: "SKU-TEST",
+              productName: "Test Product",
+              qty: 1,
+              qtyInBase: 1,
+              unitPrice: 389000,
+              pricePaid: 389000,
+              discAmount: 0,
+              taxAmount: 0,
+              lineTotal: 389000,
+            },
+          ],
         },
       },
     });
@@ -270,6 +287,14 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
         shippingTax: 20,
         escrowAmount: 5000,
       });
+      // Order composition from the stored SalesOrder: gross = Σ unitPrice×qty
+      // (389000×1), diskon/pajak/ongkir straight from totalDisc/totalTax/shippingCost.
+      expect(lineMatch.jubelioComposition).toEqual({
+        grossProduct: 389000,
+        diskon: 98000,
+        pajak: 5000,
+        ongkir: 10000,
+      });
 
       const lineDiffer = detail!.lines.find((l) => l.orderNo === orderNoDiffer)!;
       expect(lineDiffer.jubelioNet).toBe(2600);
@@ -281,9 +306,17 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
       expect(lineNoData.netDelta).toBeNull();
       expect(lineNoData.matches).toBe(false);
       expect(lineNoData.jubelioFees).toBeNull();
+      // Composition is present for a matched order even with no items / zero fields.
+      expect(lineNoData.jubelioComposition).toEqual({
+        grossProduct: 0,
+        diskon: 0,
+        pajak: 0,
+        ongkir: 0,
+      });
 
       expect(detail!.differCount).toBe(1);
     } finally {
+      await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: orderMatch.id } });
       await prisma.salesOrder.deleteMany({
         where: { id: { in: [orderMatch.id, orderDiffer.id, orderNoData.id] } },
       });

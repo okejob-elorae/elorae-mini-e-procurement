@@ -2585,11 +2585,16 @@
       "codFee": "COD Fee",
       "shippingTax": "Shipping Tax",
       "escrowNet": "Escrow (Net)",
+      "qtyTotal": "Qty Total",
+      "diskon": "Discount",
+      "pajak": "Tax",
+      "ongkir": "Shipping",
+      "otherAdjustments": "Other Adjustments (Jubelio)",
       "netDelta": "Net Delta",
       "statusMatches": "Matches",
       "statusDiffers": "Differs",
       "statusUnavailable": "Jubelio data n/a",
-      "jubelioFeesNote": "Jubelio's reported fees — may not sum exactly to escrow."
+      "jubelioFeesNote": "Other Adjustments = Jubelio escrow fees/adjustments it doesn't itemize (e.g. transaction/campaign fees). Rows sum exactly to escrow."
     }
   },
   "financeJournals": {
