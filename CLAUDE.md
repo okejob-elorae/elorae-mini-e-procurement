@@ -227,6 +227,8 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] TikTok `Total Biaya` sign — normalized with `Math.abs()` (journal-safe); held on the real export (residual reconciled, journal checksum passed). Drop the abs only if a future export proves the sign (PR #168).
 - [ ] TikTok period dates derived by scanning for Date-typed cells (min/max), falling back to today if none — the real export DID carry dates (period resolved to a real range, not today), so low-risk; revisit if a dateless export appears (PR #168).
 - [ ] TikTok checksum (`parsedNetTotal == totalDilepas`) is tautological (both `Σ netIncome`), unlike Shopee's cross-source check (PR #168).
+- [x] TikTok "Other Adjustments" residual itemized into **Fee & Tax** (`escrow_list.fee_and_tax_amount`) + **Shipping Cost** (`escrow_list.shipping_cost_amount`) — captured in `buildFeeBreakdown`, residual → ~0 (PR #168).
+- [ ] Shopee residual (the remaining "Other Adjustments") is `escrow_list.seller_transaction_fee` for the sampled order, but Shopee's `escrow_list` has many fee fields and which ones deduct to `escrow_amount` varies per order — kept as a reconciling residual by choice (not itemized). Revisit only if per-line Shopee fee detail is needed; would need per-order field mapping (PR #168).
 - [ ] `TOKOPEDIA` (`TP-` orders) is wired in `match-key.ts` + resolves by ref_no, but has **no income-export parser** — a Tokopedia settlement upload fails at the parser dispatch until a Tokopedia adapter is added (its sheet/columns likely differ from TikTok's). Supersedes the old "Tokopedia adapter unsupported (#19)" item (PR #168).
 
 ### Sales returns
