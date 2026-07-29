@@ -51,6 +51,11 @@ export type JubelioSalesOrderDetail = {
 export type JubelioSalesOrderListRow = {
   salesorder_id: number;
   salesorder_no?: string;
+  // The marketplace reference number. For Shopee it's the bare order SN
+  // (salesorder_no is `SP-<ref>`); for TikTok/Tokopedia the settlement/excel
+  // keys on THIS value while salesorder_no is `TT-<ref>-<suffix>`. The resolver
+  // matches on either salesorder_no OR ref_no so both marketplaces resolve.
+  ref_no?: string | null;
   [k: string]: unknown;
 };
 
@@ -112,24 +117,30 @@ export class JubelioHttpClient {
    * Primary: the general `/sales/orders/?q=` list, which spans ALL statuses —
    * it resolves in-flight orders (still being picked/shipped at settlement time)
    * that the completed/cancel/failed buckets miss. Falls back to those buckets
-   * as belt-and-suspenders. Exact-matches on salesorder_no (the `q` search is
-   * fuzzy and can return siblings). Returns null if found nowhere.
+   * as belt-and-suspenders. Exact-matches on salesorder_no OR ref_no (the `q`
+   * search is fuzzy and can return siblings): Shopee keys settlements on
+   * salesorder_no (`SP-<ref>`), TikTok/Tokopedia on ref_no (salesorder_no is
+   * `TT-<ref>-<suffix>`, so an exact salesorder_no match would miss). Returns
+   * null if found nowhere.
    */
   async findSalesOrderIdByNo(salesorderNo: string): Promise<number | null> {
+    const matches = (r: JubelioSalesOrderListRow): boolean =>
+      r.salesorder_no === salesorderNo || r.ref_no === salesorderNo;
+
     const general = await this.listOrders(salesorderNo);
-    const inGeneral = general.find((r) => r.salesorder_no === salesorderNo);
+    const inGeneral = general.find(matches);
     if (inGeneral) return inGeneral.salesorder_id;
 
     const completed = await this.listCompletedOrders(salesorderNo);
-    const inCompleted = completed.find((r) => r.salesorder_no === salesorderNo);
+    const inCompleted = completed.find(matches);
     if (inCompleted) return inCompleted.salesorder_id;
 
     const cancelled = await this.listCancelledOrders(salesorderNo);
-    const inCancelled = cancelled.find((r) => r.salesorder_no === salesorderNo);
+    const inCancelled = cancelled.find(matches);
     if (inCancelled) return inCancelled.salesorder_id;
 
     const failed = await this.listFailedOrders(salesorderNo);
-    const inFailed = failed.find((r) => r.salesorder_no === salesorderNo);
+    const inFailed = failed.find(matches);
     if (inFailed) return inFailed.salesorder_id;
 
     return null;
