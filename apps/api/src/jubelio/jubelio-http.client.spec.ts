@@ -158,6 +158,19 @@ describe("JubelioHttpClient", () => {
       expect(http.get).toHaveBeenCalledWith("/sales/orders/?q=SP-7&page=1&pageSize=20");
     });
 
+    it("resolves a TikTok order by ref_no when salesorder_no carries the TT- prefix/suffix", async () => {
+      // Excel/settlement keys on the bare marketplace id; Jubelio's salesorder_no
+      // is `TT-<ref>-<suffix>`, but the row carries ref_no = the bare id.
+      http.get.mockResolvedValueOnce({
+        data: [{ salesorder_id: 28217, salesorder_no: "TT-584771788142839379-128001", ref_no: "584771788142839379" }],
+      });
+
+      const id = await client.findSalesOrderIdByNo("584771788142839379");
+
+      expect(id).toBe(28217);
+      expect(http.get).toHaveBeenCalledTimes(1);
+    });
+
     it("resolves an in-flight order via the general list that the buckets would miss", async () => {
       // The whole point of the swap: an order not in completed/cancel/failed
       // (still being picked/shipped at settlement time) is found by the general list.

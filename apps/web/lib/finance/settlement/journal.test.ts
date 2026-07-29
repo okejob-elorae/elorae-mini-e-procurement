@@ -126,4 +126,59 @@ d("postSettlementJournal (test bed only)", () => {
     const r = await postSettlementJournal(settlementId, adminId, prisma);
     expect(r).toMatchObject({ ok: false, code: "UNMAPPED_ROLE", role: "BANK" });
   });
+
+  it("posts a balanced journal for a TikTok settlement whose totals were derived by the fixed parser identity", async () => {
+    // Regression: the TikTok parser used to sum independent "Total Pendapatan"
+    // / "Total Biaya" columns, which could disagree with totalDilepas +
+    // totalPengeluaran (UNBALANCED) or produce a negative totalPengeluaran
+    // (BAD_LINE, uncaught here). These totals are built the way the fixed
+    // parser derives them — totalPendapatan = totalDilepas + totalPengeluaran,
+    // totalPengeluaran normalized non-negative — proving postSettlementJournal
+    // (marketplace-blind, totals-only) accepts a TikTok settlement cleanly.
+    const tiktokSettlement = await prisma.settlement.create({
+      data: {
+        marketplace: "TIKTOK",
+        seller: "TikTok Shop",
+        periodFrom: new Date("2026-06-01T00:00:00+07:00"),
+        periodTo: new Date("2026-06-30T00:00:00+07:00"),
+        fileName: "t-tiktok.xlsx",
+        uploadedById: adminId,
+        status: "MATCHED",
+        totalPendapatan: 4500,
+        totalPengeluaran: 1500,
+        totalDilepas: 3000,
+        parsedNetTotal: 3000,
+        checksumOk: true,
+        checksumVariance: 0,
+        summaryRaw: {},
+        sellerFeesRaw: [],
+        adjustmentsRaw: [],
+      },
+      select: { id: true },
+    });
+
+    try {
+      const r = await postSettlementJournal(tiktokSettlement.id, adminId, prisma);
+      expect(r).toMatchObject({ ok: true, created: true });
+
+      const j = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: tiktokSettlement.id } },
+        include: { lines: true },
+      });
+      expect(j!.lines).toHaveLength(3);
+
+      const s = await prisma.settlement.findUnique({ where: { id: tiktokSettlement.id } });
+      expect(s!.status).toBe("RECONCILED");
+    } finally {
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: tiktokSettlement.id } },
+        select: { id: true },
+      });
+      if (journal) {
+        await prisma.journalLine.deleteMany({ where: { journalId: journal.id } });
+        await prisma.journal.delete({ where: { id: journal.id } });
+      }
+      await prisma.settlement.delete({ where: { id: tiktokSettlement.id } });
+    }
+  });
 });

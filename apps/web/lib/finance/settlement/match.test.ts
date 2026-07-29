@@ -235,4 +235,103 @@ d("matchSettlement (test bed only)", () => {
       await prisma.settlement.delete({ where: { id: settlement.id } }); // cascades to lines
     }
   });
+
+  it("matches a TikTok settlement line on channelOrderNo (not salesorderNo)", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const tiktokOrderNo = `58477178814283${suffix}`;
+    const salesorderId = Math.floor(Math.random() * 1_000_000_000);
+    const detailId = salesorderId + 100;
+
+    const settlement = await prisma.settlement.create({
+      data: {
+        marketplace: "TIKTOK",
+        seller: "TikTok Shop",
+        periodFrom: new Date("2026-06-01T00:00:00+07:00"),
+        periodTo: new Date("2026-06-30T00:00:00+07:00"),
+        fileName: "t-tiktok.xlsx",
+        uploadedById: admin.id,
+        status: "PARSED",
+        totalPendapatan: 10000,
+        totalPengeluaran: 4000,
+        totalDilepas: 6000,
+        parsedNetTotal: 6000,
+        checksumOk: true,
+        checksumVariance: 0,
+        summaryRaw: {},
+        sellerFeesRaw: [],
+        adjustmentsRaw: [],
+        lines: {
+          create: [
+            {
+              orderNo: tiktokOrderNo,
+              netIncome: 6000,
+              hargaAsliProduk: 0,
+              totalDiskonProduk: 0,
+              biayaAdministrasi: 0,
+              biayaLayanan: 0,
+              biayaKomisiAms: 0,
+              biayaProsesPesanan: 0,
+              raw: {},
+            },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+
+    // salesorderNo deliberately does NOT contain the TikTok order id — only
+    // channelOrderNo does. A match here proves the lookup column switched.
+    const order = await prisma.salesOrder.create({
+      data: {
+        salesorderId,
+        salesorderNo: `JUB-${suffix}`,
+        channelOrderNo: tiktokOrderNo,
+        channel: "TIKTOK",
+        sourceName: "test",
+        status: "COMPLETED",
+        subTotal: 6000,
+        totalDisc: 0,
+        totalTax: 0,
+        shippingCost: 0,
+        grandTotal: 6000,
+        transactionDate: new Date(),
+      },
+    });
+    await prisma.salesOrderItem.create({
+      data: {
+        salesOrderId: order.id,
+        salesorderDetailId: detailId,
+        jubelioItemId: detailId,
+        jubelioItemCode: "TEST-SKU-TT",
+        productName: "test tiktok product",
+        qty: 1,
+        qtyInBase: 1,
+        unitPrice: 4500,
+        pricePaid: 4500,
+        discAmount: 0,
+        taxAmount: 0,
+        lineTotal: 4500,
+        cogs: 4500,
+      },
+    });
+
+    try {
+      const res = await matchSettlement(settlement.id);
+      expect(res).toMatchObject({ matched: 1, unmatched: 0, profitPending: 0 });
+
+      const line = await prisma.settlementLine.findFirstOrThrow({
+        where: { settlementId: settlement.id, orderNo: tiktokOrderNo },
+      });
+      expect(line.matchStatus).toBe("MATCHED");
+      expect(line.matchedSalesOrderId).toBe(order.id);
+      expect(Number(line.cogsSnapshot)).toBe(4500);
+      expect(Number(line.profit)).toBe(Number(line.netIncome) - 4500);
+    } finally {
+      await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: order.id } });
+      await prisma.salesOrder.delete({ where: { id: order.id } });
+      await prisma.settlement.delete({ where: { id: settlement.id } }); // cascades to lines
+    }
+  });
 });

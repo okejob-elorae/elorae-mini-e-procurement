@@ -11,6 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -19,6 +26,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
+
+const UPLOAD_MARKETPLACES = ["SHOPEE", "TIKTOK"] as const;
+type UploadMarketplace = (typeof UPLOAD_MARKETPLACES)[number];
 
 type Props = {
   items: SettlementListRow[];
@@ -47,6 +57,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
 
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [marketplace, setMarketplace] = useState<UploadMarketplace>("SHOPEE");
   const [uploading, setUploading] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<string[] | null>(null);
   const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(null);
@@ -77,6 +88,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("marketplace", marketplace);
       const res = await fetch("/api/finance/settlements/upload", {
         method: "POST",
         body: formData,
@@ -132,6 +144,25 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+              <div className="grid gap-2 sm:w-48">
+                <label className="text-xs text-muted-foreground">{t("uploadMarketplaceLabel")}</label>
+                <Select
+                  value={marketplace}
+                  onValueChange={(v) => setMarketplace(v as UploadMarketplace)}
+                  disabled={uploading}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UPLOAD_MARKETPLACES.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {t(`marketplaceOption.${m}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid gap-2 flex-1">
                 <label className="text-xs text-muted-foreground">{t("uploadFileLabel")}</label>
                 <Input

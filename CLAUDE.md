@@ -220,6 +220,17 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] Settlement compare could surface Jubelio's fee-by-fee breakdown (`service_fee`/`order_processing_fee`/escrow object from `feeBreakdown`) beside the excel fees, not just the net delta — data already stored; HPP/profit would need the item cost (populates on prod, else product-master fetch) (PR #166 follow-on).
 - [x] Settlement compare `jubelioNet` = `feeBreakdown.escrow_amount` basis — VALIDATED live: on real orders the excel net == Jubelio escrow (e.g. 201.815==201.815, delta 0), and a returned order's escrow matched the dashboard 202.910 (PR #166).
 
+### TikTok/Tokopedia settlement adapter
+- [x] VALIDATED end-to-end on the real TikTok income export (18-line settlement): parser parses (checksum matched), Decision #2 net column (`Jumlah penyelesaian pembayaran`) is correct — 2 completed orders matched Jubelio escrow exactly (208.073, 256.730), 16 canceled reconciled at 0 → 18/18 Matches, 0 differ (PR #168).
+- [x] TikTok escrow lives at `escrow_list.settlement_amount` (top-level `escrow_amount` is null for TikTok) — `buildFeeBreakdown` now falls back to it; the compare's residual absorbs `fee_and_tax_amount`/shipping (PR #168).
+- [x] TikTok/Tokopedia `salesorder_no` is `TT-<ref>-<suffix>` / `TP-<ref>-<suffix>` — the resolver matches `ref_no` (the bare id the excel/settlement keys on) OR `salesorder_no`, so both resolve; Shopee still matches `salesorder_no` (PR #168).
+- [ ] TikTok `Total Biaya` sign — normalized with `Math.abs()` (journal-safe); held on the real export (residual reconciled, journal checksum passed). Drop the abs only if a future export proves the sign (PR #168).
+- [ ] TikTok period dates derived by scanning for Date-typed cells (min/max), falling back to today if none — the real export DID carry dates (period resolved to a real range, not today), so low-risk; revisit if a dateless export appears (PR #168).
+- [ ] TikTok checksum (`parsedNetTotal == totalDilepas`) is tautological (both `Σ netIncome`), unlike Shopee's cross-source check (PR #168).
+- [x] TikTok "Other Adjustments" residual itemized into **Fee & Tax** (`escrow_list.fee_and_tax_amount`) + **Shipping Cost** (`escrow_list.shipping_cost_amount`) — captured in `buildFeeBreakdown`, residual → ~0 (PR #168).
+- [ ] Shopee residual (the remaining "Other Adjustments") is `escrow_list.seller_transaction_fee` for the sampled order, but Shopee's `escrow_list` has many fee fields and which ones deduct to `escrow_amount` varies per order — kept as a reconciling residual by choice (not itemized). Revisit only if per-line Shopee fee detail is needed; would need per-order field mapping (PR #168).
+- [ ] `TOKOPEDIA` (`TP-` orders) is wired in `match-key.ts` + resolves by ref_no, but has **no income-export parser** — a Tokopedia settlement upload fails at the parser dispatch until a Tokopedia adapter is added (its sheet/columns likely differ from TikTok's). Supersedes the old "Tokopedia adapter unsupported (#19)" item (PR #168).
+
 ### Sales returns
 - [ ] `SalesReturn.jubelioReturnId` actually stores `salesorder_id` — misleading name, rename deferred (migration churn) (PR #55).
 - [ ] Return evidence R2 mirror (R5) — `evidenceUrls` exists in schema but the ingest never assigns/mirrors it (not even ingested) (PR #54/#55).

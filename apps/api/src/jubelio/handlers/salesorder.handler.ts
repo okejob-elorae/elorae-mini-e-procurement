@@ -62,12 +62,20 @@ function buildFeeBreakdown(p: SalesOrderPayload): Record<string, string> | undef
     add_fee: dec(p.add_fee),
     add_disc: dec(p.add_disc),
     service_fee: dec(p.service_fee),
-    escrow_amount: dec(p.escrow_amount),
+    // TikTok/Tokopedia null the top-level escrow_amount and carry the settled
+    // net in escrow_list.settlement_amount — fall back to it so their orders
+    // get a real escrow (Shopee keeps using the top-level field).
+    escrow_amount: dec(p.escrow_amount ?? p.escrow_list?.settlement_amount),
     voucher_amount: dec(p.voucher_amount),
     cod_fee: dec(p.cod_fee),
     order_processing_fee: dec(p.order_processing_fee),
     shipping_tax: dec(p.shipping_tax),
     total_amount_mp: dec(p.total_amount_mp),
+    // TikTok/Tokopedia lump their escrow deductions here (top-level service_fee
+    // etc are 0 for them) — captured so the compare can itemize "fee & tax" +
+    // "shipping" instead of a single opaque residual. Absent for Shopee → "0".
+    fee_and_tax_amount: dec(p.escrow_list?.fee_and_tax_amount),
+    shipping_cost_amount: dec(p.escrow_list?.shipping_cost_amount),
   };
   const hasAny = Object.values(fields).some((v) => v !== "0");
   return hasAny ? fields : undefined;

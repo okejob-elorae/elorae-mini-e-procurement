@@ -2487,6 +2487,11 @@
     "listTitle": "Settlement List",
     "empty": "No settlements uploaded yet.",
     "uploadTitle": "Upload Settlement",
+    "uploadMarketplaceLabel": "Marketplace",
+    "marketplaceOption": {
+      "SHOPEE": "Shopee",
+      "TIKTOK": "TikTok Shop"
+    },
     "uploadFileLabel": "File (.xlsx)",
     "uploadButton": "Upload",
     "uploading": "Uploading…",
@@ -2598,11 +2603,14 @@
       "diskon": "Discount",
       "pajak": "Tax",
       "ongkir": "Shipping",
+      "feeAndTax": "Fee & Tax",
+      "shippingCostMp": "Shipping Cost",
       "otherAdjustments": "Other Adjustments (Jubelio)",
       "netDelta": "Net Delta",
       "statusMatches": "Matches",
       "statusDiffers": "Differs",
       "statusUnavailable": "Jubelio data n/a",
+      "statusCancelled": "Cancelled",
       "jubelioFeesNote": "Other Adjustments = Jubelio escrow fees/adjustments it doesn't itemize (e.g. transaction/campaign fees). Rows sum exactly to escrow."
     }
   },

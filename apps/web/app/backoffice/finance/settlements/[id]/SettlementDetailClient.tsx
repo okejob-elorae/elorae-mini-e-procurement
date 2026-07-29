@@ -599,15 +599,26 @@ function KpiTile({
 type TFn = (key: string) => string;
 
 function ComparisonBadge({ line, t }: { line: SettlementDetailLine; t: TFn }) {
-  if (line.netDelta === null) {
-    return <Badge variant="secondary">{t("compare.statusUnavailable")}</Badge>;
-  }
-  return line.matches ? (
-    <Badge className="bg-green-600 text-white hover:bg-green-600/90 dark:bg-green-700">
-      {t("compare.statusMatches")}
+  const cancelledTag = line.jubelioCanceled ? (
+    <Badge variant="outline" className="ml-1">
+      {t("compare.statusCancelled")}
     </Badge>
-  ) : (
-    <Badge variant="destructive">{t("compare.statusDiffers")}</Badge>
+  ) : null;
+  const primary =
+    line.netDelta === null ? (
+      <Badge variant="secondary">{t("compare.statusUnavailable")}</Badge>
+    ) : line.matches ? (
+      <Badge className="bg-green-600 text-white hover:bg-green-600/90 dark:bg-green-700">
+        {t("compare.statusMatches")}
+      </Badge>
+    ) : (
+      <Badge variant="destructive">{t("compare.statusDiffers")}</Badge>
+    );
+  return (
+    <span className="inline-flex items-center">
+      {primary}
+      {cancelledTag}
+    </span>
   );
 }
 
@@ -650,6 +661,10 @@ function JubelioBreakdown({ line, t }: { line: SettlementDetailLine; t: TFn }) {
       ["addFee", t("compare.addFee"), fees.addFee],
       ["codFee", t("compare.codFee"), fees.codFee],
       ["shippingTax", t("compare.shippingTax"), fees.shippingTax],
+      // TikTok/Tokopedia escrow-level deductions — itemize what would otherwise
+      // land in the "Other Adjustments" residual (0 for Shopee → hidden).
+      ["feeAndTax", t("compare.feeAndTax"), fees.feeAndTax],
+      ["shippingCostAmount", t("compare.shippingCostMp"), fees.shippingCostAmount],
     ];
     for (const [key, label, v] of deductions) {
       if (v !== 0) rows.push({ key, label, value: -Math.abs(v) });

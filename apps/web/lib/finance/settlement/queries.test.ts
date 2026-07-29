@@ -40,6 +40,16 @@ describe("deriveJubelioComparison (pure)", () => {
     expect(r).toEqual({ jubelioNet: null, netDelta: null, matches: false });
   });
 
+  it("with treatZeroAsReal (CANCELLED order), escrow '0' is a real zero → matches an excel net of 0", () => {
+    const r = deriveJubelioComparison(0, { escrow_amount: "0" }, true);
+    expect(r).toEqual({ jubelioNet: 0, netDelta: 0, matches: true });
+  });
+
+  it("with treatZeroAsReal, a nonzero excel net vs escrow 0 → differs (delta shown, not n/a)", () => {
+    const r = deriveJubelioComparison(5000, { escrow_amount: "0" }, true);
+    expect(r).toEqual({ jubelioNet: 0, netDelta: 5000, matches: false });
+  });
+
   it("returns null when escrow_amount is not numeric", () => {
     const r = deriveJubelioComparison(5000, { escrow_amount: "not-a-number" });
     expect(r).toEqual({ jubelioNet: null, netDelta: null, matches: false });
@@ -58,6 +68,8 @@ describe("deriveJubelioFees (pure)", () => {
       voucher_amount: "70",
       cod_fee: "0",
       shipping_tax: "20",
+      fee_and_tax_amount: "-54179",
+      shipping_cost_amount: "-990",
       escrow_amount: "6030",
     });
     expect(r).toEqual({
@@ -70,6 +82,8 @@ describe("deriveJubelioFees (pure)", () => {
       voucherAmount: 70,
       codFee: 0,
       shippingTax: 20,
+      feeAndTax: -54179,
+      shippingCostAmount: -990,
       escrowAmount: 6030,
     });
   });
@@ -86,6 +100,8 @@ describe("deriveJubelioFees (pure)", () => {
       voucherAmount: 0,
       codFee: 0,
       shippingTax: 0,
+      feeAndTax: 0,
+      shippingCostAmount: 0,
       escrowAmount: 5000,
     });
   });
@@ -103,6 +119,12 @@ describe("deriveJubelioFees (pure)", () => {
   it("treats a missing escrow_amount as absent data (escrowAmount null)", () => {
     const r = deriveJubelioFees({ service_fee: "500" });
     expect(r?.escrowAmount).toBeNull();
+  });
+
+  it("with treatZeroAsReal (CANCELLED order), escrow '0' becomes a real 0 escrowAmount", () => {
+    const r = deriveJubelioFees({ escrow_amount: "0", service_fee: "500" }, true);
+    expect(r?.escrowAmount).toBe(0);
+    expect(r?.serviceFee).toBe(500);
   });
 });
 
@@ -285,6 +307,8 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
         voucherAmount: 70,
         codFee: 0,
         shippingTax: 20,
+        feeAndTax: 0,
+        shippingCostAmount: 0,
         escrowAmount: 5000,
       });
       // Order composition from the stored SalesOrder: gross = Σ unitPrice×qty
