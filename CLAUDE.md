@@ -220,6 +220,13 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] Settlement compare could surface Jubelio's fee-by-fee breakdown (`service_fee`/`order_processing_fee`/escrow object from `feeBreakdown`) beside the excel fees, not just the net delta — data already stored; HPP/profit would need the item cost (populates on prod, else product-master fetch) (PR #166 follow-on).
 - [x] Settlement compare `jubelioNet` = `feeBreakdown.escrow_amount` basis — VALIDATED live: on real orders the excel net == Jubelio escrow (e.g. 201.815==201.815, delta 0), and a returned order's escrow matched the dashboard 202.910 (PR #166).
 
+### TikTok/Tokopedia settlement adapter
+- [ ] TikTok parser Decision #2 — `netIncome` column = `Jumlah penyelesaian pembayaran` (single `NET_INCOME_COLUMN` constant, one-line swap). Validate against the real TikTok export before trusting TikTok net figures (PR #168).
+- [ ] TikTok `Total Biaya` sign unverified — fees normalized with `Math.abs()` so the 13-04 journal can't go negative-debit; drop the abs if the real export already stores positive magnitudes (PR #168).
+- [ ] TikTok period dates derived by scanning for Date-typed cells (min/max), **falling back to *today*** if none found — if the real export has no date column, `periodFrom`/`periodTo` (and the auto-journal date) land wrong. Confirm against the real file (PR #168).
+- [ ] TikTok checksum (`parsedNetTotal == totalDilepas`) is tautological (both `Σ netIncome`), unlike Shopee's cross-source check (PR #168).
+- [ ] `TOKOPEDIA` is wired in `match-key.ts` but has no parser — an upload attempt fails at the marketplace gate (defensive, not a crash) until a Tokopedia parser is added (PR #168). Supersedes the old "Tokopedia adapter unsupported (#19)" item for the TikTok half.
+
 ### Sales returns
 - [ ] `SalesReturn.jubelioReturnId` actually stores `salesorder_id` — misleading name, rename deferred (migration churn) (PR #55).
 - [ ] Return evidence R2 mirror (R5) — `evidenceUrls` exists in schema but the ingest never assigns/mirrors it (not even ingested) (PR #54/#55).
