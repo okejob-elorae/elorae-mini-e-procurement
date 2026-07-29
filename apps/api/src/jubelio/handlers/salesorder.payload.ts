@@ -58,6 +58,13 @@ export type SalesOrderPayload = {
   order_processing_fee?: string | number | null;
   shipping_tax?: string | number | null;
   total_amount_mp?: string | number | null;
+  // TikTok/Tokopedia keep the settled net in a nested `escrow_list` rather than
+  // the top-level `escrow_amount` (which is null for them). `settlement_amount`
+  // is the escrow (net) figure — buildFeeBreakdown falls back to it.
+  escrow_list?: {
+    settlement_amount?: string | number | null;
+    fee_and_tax_amount?: string | number | null;
+  } | null;
   payment_method?: string | null;
   payment_date?: string | null;
   transaction_date?: string | null;

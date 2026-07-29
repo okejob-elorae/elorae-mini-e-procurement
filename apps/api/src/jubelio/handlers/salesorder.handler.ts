@@ -62,7 +62,10 @@ function buildFeeBreakdown(p: SalesOrderPayload): Record<string, string> | undef
     add_fee: dec(p.add_fee),
     add_disc: dec(p.add_disc),
     service_fee: dec(p.service_fee),
-    escrow_amount: dec(p.escrow_amount),
+    // TikTok/Tokopedia null the top-level escrow_amount and carry the settled
+    // net in escrow_list.settlement_amount — fall back to it so their orders
+    // get a real escrow (Shopee keeps using the top-level field).
+    escrow_amount: dec(p.escrow_amount ?? p.escrow_list?.settlement_amount),
     voucher_amount: dec(p.voucher_amount),
     cod_fee: dec(p.cod_fee),
     order_processing_fee: dec(p.order_processing_fee),

@@ -354,6 +354,35 @@ describe("SalesOrderWebhookHandler", () => {
     expect(createArgs.data[1].jubelioItemCode).toBe("SKU-B");
   });
 
+  it("TikTok escrow: falls back to escrow_list.settlement_amount when top-level escrow_amount is null", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
+    prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    const payload = makePayload({
+      escrow_amount: null,
+      escrow_list: { settlement_amount: "208073", fee_and_tax_amount: "-76836" },
+    });
+    await handler.handle(row(payload) as any);
+
+    const fb = prisma.salesOrder.upsert.mock.calls[0][0].create.feeBreakdown;
+    expect(fb.escrow_amount).toBe("208073");
+    // escrow_list itself must NOT leak into the persisted feeBreakdown.
+    expect(fb.escrow_list).toBeUndefined();
+  });
+
+  it("Shopee escrow: uses the top-level escrow_amount (escrow_list absent)", async () => {
+    prisma.jubelioSalesOrderState.findUnique.mockResolvedValue(null);
+    prisma.jubelioSalesOrderState.create.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: false });
+    prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
+
+    const payload = makePayload({ escrow_amount: "5000" });
+    await handler.handle(row(payload) as any);
+
+    const fb = prisma.salesOrder.upsert.mock.calls[0][0].create.feeBreakdown;
+    expect(fb.escrow_amount).toBe("5000");
+  });
+
   it("upsert is idempotent — re-receiving same payload calls upsert once per webhook with same key", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({ id: "st1", salesorderId: 23043, stockApplied: true });
     prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
