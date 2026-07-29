@@ -76,7 +76,112 @@ export type SettlementDetailLine = {
   profit: number | null;
   matchStatus: string;
   matchedSalesOrderId: string | null;
+  hargaAsliProduk: number;
+  totalDiskonProduk: number;
+  biayaAdministrasi: number;
+  biayaLayanan: number;
+  biayaKomisiAms: number;
+  biayaProsesPesanan: number;
+  raw: Record<string, unknown>;
+  jubelioNet: number | null;
+  netDelta: number | null;
+  matches: boolean;
+  jubelioFees: JubelioFees | null;
+  jubelioComposition: JubelioComposition | null;
 };
+
+/**
+ * The matched Jubelio order's top-level composition (the dashboard "Rincian"
+ * header: Qty Total / Diskon / Pajak / Ongkir), read straight from the stored
+ * `SalesOrder` (`totalDisc`/`totalTax`/`shippingCost`) plus the item gross
+ * (Σ `unitPrice × qty`). Distinct from `feeBreakdown` (marketplace fees) —
+ * this is the order's own economics. Null when the line has no matched order.
+ */
+export type JubelioComposition = {
+  grossProduct: number;
+  diskon: number;
+  pajak: number;
+  ongkir: number;
+};
+
+/**
+ * Jubelio's fee-by-fee breakdown, mirrored 1:1 from `buildFeeBreakdown` in
+ * `apps/api/src/jubelio/handlers/salesorder.handler.ts` — the writer that
+ * persists `SalesOrder.feeBreakdown`. Field names below are the camelCase
+ * mirror of that handler's snake_case keys; do not rename either side without
+ * updating both. Coarser than the excel breakdown (Jubelio lumps several
+ * excel line items into `service_fee`/`order_processing_fee`) — the two
+ * breakdowns are shown side by side, not reconciled row-for-row.
+ */
+export type JubelioFees = {
+  totalAmountMp: number;
+  serviceFee: number;
+  orderProcessingFee: number;
+  insuranceCost: number;
+  addFee: number;
+  addDisc: number;
+  voucherAmount: number;
+  codFee: number;
+  shippingTax: number;
+  escrowAmount: number | null;
+};
+
+function feeNum(v: string | undefined): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * `escrow_amount` is persisted as a string and defaults to "0" when Jubelio
+ * never sent a value (see `buildFeeBreakdown`'s `dec()`), so a literal "0"
+ * is treated as absent data, not a real zero-value escrow — mirrors the
+ * `v !== "0"` filter `SalesOrderDetailClient` already applies to fee entries.
+ * Shared by `deriveJubelioComparison` (jubelioNet) and `deriveJubelioFees`
+ * (escrowAmount) so both agree on when escrow data is "present".
+ */
+function escrowAmountOrNull(feeBreakdown: Record<string, string> | null): number | null {
+  const escrowRaw = feeBreakdown?.escrow_amount;
+  if (escrowRaw === undefined || escrowRaw === null || escrowRaw === "" || escrowRaw === "0") {
+    return null;
+  }
+  const escrowAmount = Number(escrowRaw);
+  return Number.isFinite(escrowAmount) ? escrowAmount : null;
+}
+
+export function deriveJubelioFees(feeBreakdown: Record<string, string> | null): JubelioFees | null {
+  if (!feeBreakdown) return null;
+  return {
+    totalAmountMp: feeNum(feeBreakdown.total_amount_mp),
+    serviceFee: feeNum(feeBreakdown.service_fee),
+    orderProcessingFee: feeNum(feeBreakdown.order_processing_fee),
+    insuranceCost: feeNum(feeBreakdown.insurance_cost),
+    addFee: feeNum(feeBreakdown.add_fee),
+    addDisc: feeNum(feeBreakdown.add_disc),
+    voucherAmount: feeNum(feeBreakdown.voucher_amount),
+    codFee: feeNum(feeBreakdown.cod_fee),
+    shippingTax: feeNum(feeBreakdown.shipping_tax),
+    escrowAmount: escrowAmountOrNull(feeBreakdown),
+  };
+}
+
+/**
+ * Jubelio-side "net income" comparable to the excel's `netIncome`: the
+ * matched SalesOrder's `feeBreakdown.escrow_amount` — "the value to be paid
+ * to the seller from the MP after deducting the admin fee" (Jubelio API
+ * docs), which is the same economic figure as Shopee's "Total Penghasilan".
+ * See `escrowAmountOrNull` for the "0"/missing-means-absent rule.
+ */
+export function deriveJubelioComparison(
+  netIncome: number,
+  feeBreakdown: Record<string, string> | null,
+): { jubelioNet: number | null; netDelta: number | null; matches: boolean } {
+  const jubelioNet = escrowAmountOrNull(feeBreakdown);
+  if (jubelioNet === null) {
+    return { jubelioNet: null, netDelta: null, matches: false };
+  }
+  const netDelta = Math.round((netIncome - jubelioNet) * 100) / 100;
+  return { jubelioNet, netDelta, matches: Math.abs(netDelta) < 1 };
+}
 
 export type SettlementDetail = {
   id: string;
@@ -100,6 +205,7 @@ export type SettlementDetail = {
   profitPendingCount: number;
   matchRatePct: number;
   journalId: string | null;
+  differCount: number;
 };
 
 export async function getSettlementById(id: string): Promise<SettlementDetail | null> {
@@ -126,6 +232,13 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
           profit: true,
           matchStatus: true,
           matchedSalesOrderId: true,
+          hargaAsliProduk: true,
+          totalDiskonProduk: true,
+          biayaAdministrasi: true,
+          biayaLayanan: true,
+          biayaKomisiAms: true,
+          biayaProsesPesanan: true,
+          raw: true,
         },
       },
     },
@@ -137,15 +250,65 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     select: { id: true },
   });
 
-  const lines: SettlementDetailLine[] = row.lines.map((l) => ({
-    id: l.id,
-    orderNo: l.orderNo,
-    netIncome: toNum(l.netIncome),
-    cogsSnapshot: l.cogsSnapshot === null ? null : toNum(l.cogsSnapshot),
-    profit: l.profit === null ? null : toNum(l.profit),
-    matchStatus: l.matchStatus,
-    matchedSalesOrderId: l.matchedSalesOrderId,
-  }));
+  const matchedSalesOrderIds = Array.from(
+    new Set(row.lines.map((l) => l.matchedSalesOrderId).filter((v): v is string => v !== null)),
+  );
+  const matchedOrders = matchedSalesOrderIds.length
+    ? await prisma.salesOrder.findMany({
+        where: { id: { in: matchedSalesOrderIds } },
+        select: {
+          id: true,
+          feeBreakdown: true,
+          totalDisc: true,
+          totalTax: true,
+          shippingCost: true,
+          items: { select: { unitPrice: true, qty: true } },
+        },
+      })
+    : [];
+  const feeBreakdownByOrderId = new Map(
+    matchedOrders.map((o) => [o.id, o.feeBreakdown as Record<string, string> | null]),
+  );
+  const compositionByOrderId = new Map<string, JubelioComposition>(
+    matchedOrders.map((o) => [
+      o.id,
+      {
+        grossProduct: o.items.reduce((s, it) => s + toNum(it.unitPrice) * toNum(it.qty), 0),
+        diskon: toNum(o.totalDisc),
+        pajak: toNum(o.totalTax),
+        ongkir: toNum(o.shippingCost),
+      },
+    ]),
+  );
+
+  const lines: SettlementDetailLine[] = row.lines.map((l) => {
+    const netIncome = toNum(l.netIncome);
+    const feeBreakdown = l.matchedSalesOrderId
+      ? (feeBreakdownByOrderId.get(l.matchedSalesOrderId) ?? null)
+      : null;
+    const comparison = deriveJubelioComparison(netIncome, feeBreakdown);
+    return {
+      id: l.id,
+      orderNo: l.orderNo,
+      netIncome,
+      cogsSnapshot: l.cogsSnapshot === null ? null : toNum(l.cogsSnapshot),
+      profit: l.profit === null ? null : toNum(l.profit),
+      matchStatus: l.matchStatus,
+      matchedSalesOrderId: l.matchedSalesOrderId,
+      hargaAsliProduk: toNum(l.hargaAsliProduk),
+      totalDiskonProduk: toNum(l.totalDiskonProduk),
+      biayaAdministrasi: toNum(l.biayaAdministrasi),
+      biayaLayanan: toNum(l.biayaLayanan),
+      biayaKomisiAms: toNum(l.biayaKomisiAms),
+      biayaProsesPesanan: toNum(l.biayaProsesPesanan),
+      raw: l.raw as Record<string, unknown>,
+      jubelioFees: deriveJubelioFees(feeBreakdown),
+      jubelioComposition: l.matchedSalesOrderId
+        ? (compositionByOrderId.get(l.matchedSalesOrderId) ?? null)
+        : null,
+      ...comparison,
+    };
+  });
 
   const totalNetIncome = lines.reduce((s, l) => s + l.netIncome, 0);
   // Same population as totalCogs/totalProfit (lines with a computed profit) so the
@@ -158,6 +321,9 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
   const unmatchedCount = lines.filter((l) => l.matchStatus === "UNMATCHED").length;
   const profitPendingCount = lines.filter((l) => l.matchStatus === "MATCHED" && l.profit === null).length;
   const matchRatePct = lines.length === 0 ? 0 : Math.round((matchedCount / lines.length) * 1000) / 10;
+  const differCount = lines.filter(
+    (l) => l.matchStatus === "MATCHED" && l.netDelta !== null && !l.matches,
+  ).length;
 
   return {
     id: row.id,
@@ -181,5 +347,6 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     profitPendingCount,
     matchRatePct,
     journalId: journal?.id ?? null,
+    differCount,
   };
 }

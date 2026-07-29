@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { Fragment, useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
 import {
@@ -14,10 +14,12 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   BookText,
   ExternalLink,
 } from "lucide-react";
-import type { SettlementDetail } from "@/lib/finance/settlement/queries";
+import type { SettlementDetail, SettlementDetailLine } from "@/lib/finance/settlement/queries";
 import { matchSettlementAction, postSettlementJournalAction } from "@/app/actions/settlements";
 import {
   getResyncSummary,
@@ -82,6 +84,16 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
   const [matchedPage, setMatchedPage] = useState(1);
   const [unmatchedPage, setUnmatchedPage] = useState(1);
   const pageSlice = <T,>(rows: T[], page: number) => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const [expandedLineIds, setExpandedLineIds] = useState<Set<string>>(new Set());
+  function toggleExpanded(lineId: string) {
+    setExpandedLineIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
+  }
 
   const statusVariant: "default" | "secondary" =
     settlement.status === "MATCHED" || settlement.status === "RECONCILED" ? "default" : "secondary";
@@ -396,6 +408,11 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
         <KpiTile label={t("kpiMatchRate")} value={`${settlement.matchRatePct}%`} />
         <KpiTile label={t("kpiUnmatched")} value={String(settlement.unmatchedCount)} />
         <KpiTile label={t("kpiProfitPending")} value={String(settlement.profitPendingCount)} />
+        <KpiTile
+          label={t("kpiDiffer")}
+          value={String(settlement.differCount)}
+          tone={settlement.differCount > 0 ? "warn" : undefined}
+        />
       </div>
 
       <Card>
@@ -410,29 +427,67 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-9" />
                     <TableHead>{t("colOrderNo")}</TableHead>
                     <TableHead className="text-right">{t("colNetIncome")}</TableHead>
                     <TableHead className="text-right">{t("colCogs")}</TableHead>
                     <TableHead className="text-right">{t("colProfit")}</TableHead>
+                    <TableHead className="text-right">{t("compare.netDelta")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pageSlice(matchedLines, matchedPage).map((line) => (
-                    <TableRow key={line.id}>
-                      <TableCell className="font-mono text-sm">{line.orderNo}</TableCell>
-                      <TableCell className="text-right">{formatRupiah(line.netIncome)}</TableCell>
-                      <TableCell className="text-right">
-                        {line.cogsSnapshot === null ? "—" : formatRupiah(line.cogsSnapshot)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {line.profit === null ? (
-                          <Badge variant="secondary">{t("costPending")}</Badge>
-                        ) : (
-                          formatRupiah(line.profit)
+                  {pageSlice(matchedLines, matchedPage).map((line) => {
+                    const isExpanded = expandedLineIds.has(line.id);
+                    return (
+                      <Fragment key={line.id}>
+                        <TableRow
+                          className="cursor-pointer"
+                          onClick={() => toggleExpanded(line.id)}
+                        >
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              aria-label={isExpanded ? t("compare.collapseLabel") : t("compare.expandLabel")}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpanded(line.id);
+                              }}
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">{line.orderNo}</TableCell>
+                          <TableCell className="text-right">{formatRupiah(line.netIncome)}</TableCell>
+                          <TableCell className="text-right">
+                            {line.cogsSnapshot === null ? "—" : formatRupiah(line.cogsSnapshot)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {line.profit === null ? (
+                              <Badge variant="secondary">{t("costPending")}</Badge>
+                            ) : (
+                              formatRupiah(line.profit)
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <ComparisonBadge line={line} t={t} />
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="bg-muted/30 p-0">
+                              <FeeBreakdownPanel line={line} t={t} />
+                            </TableCell>
+                          </TableRow>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                      </Fragment>
+                    );
+                  })}
                 </TableBody>
               </Table>
               <TablePager total={matchedLines.length} page={matchedPage} pageSize={PAGE_SIZE} onPage={setMatchedPage} t={t} />
@@ -523,12 +578,148 @@ function TablePager({
   );
 }
 
-function KpiTile({ label, value }: { label: string; value: string }) {
+function KpiTile({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "warn";
+}) {
+  const toneClass = tone === "warn" ? "text-amber-700 dark:text-amber-400" : "";
   return (
     <Card className="gap-1 p-3">
       <p className="text-xs text-muted-foreground truncate">{label}</p>
-      <p className="text-lg font-semibold tabular-nums truncate">{value}</p>
+      <p className={`text-lg font-semibold tabular-nums truncate ${toneClass}`}>{value}</p>
     </Card>
+  );
+}
+
+type TFn = (key: string) => string;
+
+function ComparisonBadge({ line, t }: { line: SettlementDetailLine; t: TFn }) {
+  if (line.netDelta === null) {
+    return <Badge variant="secondary">{t("compare.statusUnavailable")}</Badge>;
+  }
+  return line.matches ? (
+    <Badge className="bg-green-600 text-white hover:bg-green-600/90 dark:bg-green-700">
+      {t("compare.statusMatches")}
+    </Badge>
+  ) : (
+    <Badge variant="destructive">{t("compare.statusDiffers")}</Badge>
+  );
+}
+
+function FeeRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex justify-between text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="tabular-nums">{formatRupiah(value)}</span>
+    </div>
+  );
+}
+
+// The Jubelio side, reconciled to escrow. Rows = the order composition
+// (dashboard "Rincian": Qty Total / Diskon / Pajak / Ongkir, from the stored
+// SalesOrder) + the itemized marketplace fees we persist (service_fee,
+// order_processing_fee, …). Jubelio does NOT fully itemize escrow — its OWN
+// dashboard shows a "Total" that differs from escrow (extra escrow-level fees:
+// transaction/campaign/coin adjustments it never breaks out). So we append a
+// single balancing "other adjustments" line = escrow − Σ(shown rows), making
+// the column reconcile to escrow (the authoritative net) instead of appearing
+// to be "off". Deductions shown negative; zero lines hidden. `totalAmountMp`,
+// `addDisc`, `voucherAmount` are intentionally not rendered (internal / unverified
+// sign) but still round-trip on the data objects.
+function JubelioBreakdown({ line, t }: { line: SettlementDetailLine; t: TFn }) {
+  const comp = line.jubelioComposition;
+  const fees = line.jubelioFees;
+  const rows: Array<{ key: string; label: string; value: number }> = [];
+
+  if (comp) {
+    rows.push({ key: "qtyTotal", label: t("compare.qtyTotal"), value: comp.grossProduct });
+    if (comp.diskon !== 0) rows.push({ key: "diskon", label: t("compare.diskon"), value: -Math.abs(comp.diskon) });
+    if (comp.pajak !== 0) rows.push({ key: "pajak", label: t("compare.pajak"), value: comp.pajak });
+    if (comp.ongkir !== 0) rows.push({ key: "ongkir", label: t("compare.ongkir"), value: comp.ongkir });
+  }
+  if (fees) {
+    const deductions: Array<[string, string, number]> = [
+      ["serviceFee", t("compare.serviceFee"), fees.serviceFee],
+      ["orderProcessingFee", t("compare.orderProcessingFee"), fees.orderProcessingFee],
+      ["insuranceCost", t("compare.insuranceCost"), fees.insuranceCost],
+      ["addFee", t("compare.addFee"), fees.addFee],
+      ["codFee", t("compare.codFee"), fees.codFee],
+      ["shippingTax", t("compare.shippingTax"), fees.shippingTax],
+    ];
+    for (const [key, label, v] of deductions) {
+      if (v !== 0) rows.push({ key, label, value: -Math.abs(v) });
+    }
+  }
+
+  const escrow = fees?.escrowAmount ?? null;
+  const shownSum = rows.reduce((s, r) => s + r.value, 0);
+  const residual = escrow !== null ? Math.round(escrow - shownSum) : null;
+
+  return (
+    <>
+      {rows.map((r) => (
+        <FeeRow key={r.key} label={r.label} value={r.value} />
+      ))}
+      {residual !== null && residual !== 0 && (
+        <FeeRow label={t("compare.otherAdjustments")} value={residual} />
+      )}
+      {escrow !== null && (
+        <div className="flex justify-between border-t pt-1 text-sm font-medium">
+          <span>{t("compare.escrowNet")}</span>
+          <span className="tabular-nums">{formatRupiah(escrow)}</span>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">{t("compare.jubelioFeesNote")}</p>
+    </>
+  );
+}
+
+function FeeBreakdownPanel({ line, t }: { line: SettlementDetailLine; t: TFn }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+      <div className="space-y-1">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          {t("compare.excelTitle")}
+        </h3>
+        <FeeRow label={t("compare.hargaAsliProduk")} value={line.hargaAsliProduk} />
+        <FeeRow label={t("compare.totalDiskonProduk")} value={line.totalDiskonProduk} />
+        <FeeRow label={t("compare.biayaAdministrasi")} value={line.biayaAdministrasi} />
+        <FeeRow label={t("compare.biayaLayanan")} value={line.biayaLayanan} />
+        <FeeRow label={t("compare.biayaKomisiAms")} value={line.biayaKomisiAms} />
+        <FeeRow label={t("compare.biayaProsesPesanan")} value={line.biayaProsesPesanan} />
+        <div className="flex justify-between border-t pt-1 text-sm font-medium">
+          <span>{t("compare.netIncomeExcel")}</span>
+          <span className="tabular-nums">{formatRupiah(line.netIncome)}</span>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          {t("compare.jubelioTitle")}
+        </h3>
+        {line.jubelioFees ? (
+          <JubelioBreakdown line={line} t={t} />
+        ) : (
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">{t("compare.netIncomeJubelio")}</span>
+            <span className="tabular-nums">—</span>
+          </div>
+        )}
+        <div className="flex justify-between border-t pt-1 text-sm font-medium">
+          <span>{t("compare.netDelta")}</span>
+          <span className="tabular-nums">
+            {line.netDelta === null ? "—" : formatRupiah(line.netDelta)}
+          </span>
+        </div>
+        {line.netDelta === null && (
+          <p className="text-xs text-muted-foreground">{t("compare.statusUnavailable")}</p>
+        )}
+      </div>
+    </div>
   );
 }
 
