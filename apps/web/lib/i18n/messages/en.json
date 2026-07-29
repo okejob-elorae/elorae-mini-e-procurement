@@ -2603,6 +2603,8 @@
       "diskon": "Discount",
       "pajak": "Tax",
       "ongkir": "Shipping",
+      "feeAndTax": "Fee & Tax",
+      "shippingCostMp": "Shipping Cost",
       "otherAdjustments": "Other Adjustments (Jubelio)",
       "netDelta": "Net Delta",
       "statusMatches": "Matches",

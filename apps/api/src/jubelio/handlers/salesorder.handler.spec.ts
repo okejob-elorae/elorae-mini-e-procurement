@@ -361,12 +361,15 @@ describe("SalesOrderWebhookHandler", () => {
 
     const payload = makePayload({
       escrow_amount: null,
-      escrow_list: { settlement_amount: "208073", fee_and_tax_amount: "-76836" },
+      escrow_list: { settlement_amount: "208073", fee_and_tax_amount: "-76836", shipping_cost_amount: "-990" },
     });
     await handler.handle(row(payload) as any);
 
     const fb = prisma.salesOrder.upsert.mock.calls[0][0].create.feeBreakdown;
     expect(fb.escrow_amount).toBe("208073");
+    // The lumped escrow deductions are captured so the compare can itemize them.
+    expect(fb.fee_and_tax_amount).toBe("-76836");
+    expect(fb.shipping_cost_amount).toBe("-990");
     // escrow_list itself must NOT leak into the persisted feeBreakdown.
     expect(fb.escrow_list).toBeUndefined();
   });

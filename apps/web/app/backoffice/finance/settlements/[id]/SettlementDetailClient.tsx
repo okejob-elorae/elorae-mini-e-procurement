@@ -661,6 +661,10 @@ function JubelioBreakdown({ line, t }: { line: SettlementDetailLine; t: TFn }) {
       ["addFee", t("compare.addFee"), fees.addFee],
       ["codFee", t("compare.codFee"), fees.codFee],
       ["shippingTax", t("compare.shippingTax"), fees.shippingTax],
+      // TikTok/Tokopedia escrow-level deductions — itemize what would otherwise
+      // land in the "Other Adjustments" residual (0 for Shopee → hidden).
+      ["feeAndTax", t("compare.feeAndTax"), fees.feeAndTax],
+      ["shippingCostAmount", t("compare.shippingCostMp"), fees.shippingCostAmount],
     ];
     for (const [key, label, v] of deductions) {
       if (v !== 0) rows.push({ key, label, value: -Math.abs(v) });

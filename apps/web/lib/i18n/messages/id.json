@@ -2603,6 +2603,8 @@
       "diskon": "Diskon",
       "pajak": "Pajak",
       "ongkir": "Ongkos Kirim",
+      "feeAndTax": "Biaya & Pajak",
+      "shippingCostMp": "Biaya Kirim",
       "otherAdjustments": "Penyesuaian Lain (Jubelio)",
       "netDelta": "Selisih Bersih",
       "statusMatches": "Cocok",

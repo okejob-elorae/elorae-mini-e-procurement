@@ -68,6 +68,8 @@ describe("deriveJubelioFees (pure)", () => {
       voucher_amount: "70",
       cod_fee: "0",
       shipping_tax: "20",
+      fee_and_tax_amount: "-54179",
+      shipping_cost_amount: "-990",
       escrow_amount: "6030",
     });
     expect(r).toEqual({
@@ -80,6 +82,8 @@ describe("deriveJubelioFees (pure)", () => {
       voucherAmount: 70,
       codFee: 0,
       shippingTax: 20,
+      feeAndTax: -54179,
+      shippingCostAmount: -990,
       escrowAmount: 6030,
     });
   });
@@ -96,6 +100,8 @@ describe("deriveJubelioFees (pure)", () => {
       voucherAmount: 0,
       codFee: 0,
       shippingTax: 0,
+      feeAndTax: 0,
+      shippingCostAmount: 0,
       escrowAmount: 5000,
     });
   });
@@ -301,6 +307,8 @@ d("getSettlementById — jubelioNet/netDelta/matches wiring (test bed only)", ()
         voucherAmount: 70,
         codFee: 0,
         shippingTax: 20,
+        feeAndTax: 0,
+        shippingCostAmount: 0,
         escrowAmount: 5000,
       });
       // Order composition from the stored SalesOrder: gross = Σ unitPrice×qty

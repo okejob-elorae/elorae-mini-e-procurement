@@ -64,6 +64,7 @@ export type SalesOrderPayload = {
   escrow_list?: {
     settlement_amount?: string | number | null;
     fee_and_tax_amount?: string | number | null;
+    shipping_cost_amount?: string | number | null;
   } | null;
   payment_method?: string | null;
   payment_date?: string | null;

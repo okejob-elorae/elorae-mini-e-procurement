@@ -71,6 +71,11 @@ function buildFeeBreakdown(p: SalesOrderPayload): Record<string, string> | undef
     order_processing_fee: dec(p.order_processing_fee),
     shipping_tax: dec(p.shipping_tax),
     total_amount_mp: dec(p.total_amount_mp),
+    // TikTok/Tokopedia lump their escrow deductions here (top-level service_fee
+    // etc are 0 for them) — captured so the compare can itemize "fee & tax" +
+    // "shipping" instead of a single opaque residual. Absent for Shopee → "0".
+    fee_and_tax_amount: dec(p.escrow_list?.fee_and_tax_amount),
+    shipping_cost_amount: dec(p.escrow_list?.shipping_cost_amount),
   };
   const hasAny = Object.values(fields).some((v) => v !== "0");
   return hasAny ? fields : undefined;

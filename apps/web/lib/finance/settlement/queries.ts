@@ -124,6 +124,12 @@ export type JubelioFees = {
   voucherAmount: number;
   codFee: number;
   shippingTax: number;
+  // TikTok/Tokopedia escrow-level deductions (lumped by Jubelio's order API):
+  // feeAndTax = escrow_list.fee_and_tax_amount, shippingCostAmount =
+  // escrow_list.shipping_cost_amount. 0 for Shopee. Itemizes what would
+  // otherwise fall into the "Other Adjustments" residual.
+  feeAndTax: number;
+  shippingCostAmount: number;
   escrowAmount: number | null;
 };
 
@@ -172,6 +178,8 @@ export function deriveJubelioFees(
     voucherAmount: feeNum(feeBreakdown.voucher_amount),
     codFee: feeNum(feeBreakdown.cod_fee),
     shippingTax: feeNum(feeBreakdown.shipping_tax),
+    feeAndTax: feeNum(feeBreakdown.fee_and_tax_amount),
+    shippingCostAmount: feeNum(feeBreakdown.shipping_cost_amount),
     escrowAmount: escrowAmountOrNull(feeBreakdown, treatZeroAsReal),
   };
 }
