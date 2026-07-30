@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -33,6 +34,8 @@ type Props = {
   search: string;
   status: StatusFilter;
   orderType: "ALL" | "PUTUS" | "KONSI";
+  storeId: string;
+  storeOptions: { id: string; name: string }[];
   page: number;
   pageSize: number;
 };
@@ -104,7 +107,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
           <div className="lg:col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
             <Input
@@ -139,6 +142,21 @@ export function FieldSalesOrdersPageClient(props: Props) {
                 <SelectItem value="KONSI">{t("typeKonsi")}</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("storeFilter")}</label>
+            <SearchableCombobox
+              options={[
+                { value: "ALL", label: t("storeAll") },
+                ...props.storeOptions.map((s) => ({ value: s.id, label: s.name })),
+              ]}
+              value={props.storeId}
+              onValueChange={(v) => pushParam("storeId", v === "ALL" ? undefined : v)}
+              placeholder={t("storeAll")}
+              searchPlaceholder={t("storeSearchPlaceholder")}
+              emptyMessage={t("storeSearchEmpty")}
+              triggerClassName="w-full"
+            />
           </div>
           <div className="flex flex-col justify-end">
             <Button variant="outline" onClick={reset} className="w-full">

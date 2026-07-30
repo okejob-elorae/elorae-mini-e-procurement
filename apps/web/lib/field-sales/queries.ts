@@ -65,12 +65,13 @@ export function serializeListItem(row: {
 }
 
 export async function listFieldSalesOrders(
-  filter: { status?: FieldSalesOrderStatus; search?: string; orderType?: FieldSalesOrderType },
+  filter: { status?: FieldSalesOrderStatus; search?: string; orderType?: FieldSalesOrderType; storeId?: string },
   paging: { page: number; pageSize: number },
 ): Promise<{ orders: FieldSalesOrderListItem[]; totalCount: number }> {
   const where: Prisma.FieldSalesOrderWhereInput = {};
   if (filter.status) where.status = filter.status;
   if (filter.orderType) where.orderType = filter.orderType;
+  if (filter.storeId) where.storeId = filter.storeId;
   if (filter.search && filter.search.trim()) {
     const s = filter.search.trim();
     where.OR = [{ orderNo: { contains: s } }, { store: { name: { contains: s } } }];
