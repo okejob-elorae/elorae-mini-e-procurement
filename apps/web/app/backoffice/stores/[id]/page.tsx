@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getStore, listVisitsForStore, listVisitPhotosForVisits } from "@/lib/stores/queries";
 import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
-import { getStoreOrderSummary } from "@/lib/field-sales/queries";
+import { getStoreOrderSummary, getStoreSentItems } from "@/lib/field-sales/queries";
 import { StoreDetailView } from "./StoreDetailView";
 
 export default async function EditStorePage({ params }: { params: Promise<{ id: string }> }) {
@@ -21,6 +21,7 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
   const photosByVisit = await listVisitPhotosForVisits(visits.map((v) => v.id));
   const pending = await getPendingStoreChangeRequest(store.id);
   const orders = await getStoreOrderSummary(store.id);
+  const sentItems = await getStoreSentItems(store.id);
 
   return (
     <StoreDetailView
@@ -28,6 +29,7 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
       canEdit={canEdit}
       pendingChange={pending ? { requestId: pending.id, requestedByLabel: pending.requestedByLabel, proposed: pending.proposed, old: pending.old } : null}
       orders={orders}
+      sentItems={sentItems}
       visits={visits.map(v => ({
         id: v.id,
         checkinAtIso: v.checkinAt.toISOString(),

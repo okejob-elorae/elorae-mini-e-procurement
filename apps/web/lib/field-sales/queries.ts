@@ -189,6 +189,43 @@ export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderS
   }));
 }
 
+export type StoreSentItemRow = {
+  itemId: string;
+  articleSku: string;
+  articleName: string;
+  variantSku: string;
+  totalQty: number;
+};
+
+export async function getStoreSentItems(storeId: string): Promise<StoreSentItemRow[]> {
+  const grouped = await prisma.fieldSalesOrderLine.groupBy({
+    by: ["itemId", "variantSku"],
+    where: { order: { storeId, status: "APPROVED" } },
+    _sum: { qty: true },
+  });
+  if (grouped.length === 0) return [];
+
+  const itemIds = Array.from(new Set(grouped.map((g) => g.itemId)));
+  const items = await prisma.item.findMany({
+    where: { id: { in: itemIds } },
+    select: { id: true, sku: true, nameId: true },
+  });
+  const itemById = new Map(items.map((i) => [i.id, i]));
+
+  return grouped
+    .map((g) => {
+      const item = itemById.get(g.itemId);
+      return {
+        itemId: g.itemId,
+        articleSku: item?.sku ?? "—",
+        articleName: item?.nameId ?? "—",
+        variantSku: g.variantSku && g.variantSku.trim() !== "" ? g.variantSku : "—",
+        totalQty: g._sum.qty ?? 0,
+      };
+    })
+    .sort((a, b) => a.articleSku.localeCompare(b.articleSku) || a.variantSku.localeCompare(b.variantSku));
+}
+
 export async function sentItemIds(
   storeId: string,
   tx: { fieldSalesOrderLine: typeof prisma.fieldSalesOrderLine } = prisma,

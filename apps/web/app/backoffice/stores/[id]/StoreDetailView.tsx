@@ -10,12 +10,14 @@ import {
   ExternalLink,
   Images,
   MapPin,
+  Package,
   Phone,
   ShoppingBag,
   Store,
   User as UserIcon,
 } from "lucide-react";
 import type { StoreListItem } from "@/lib/stores/queries";
+import type { StoreSentItemRow } from "@/lib/field-sales/queries";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -66,6 +68,7 @@ type Props = {
   canEdit: boolean;
   visits: Visit[];
   orders: OrderRow[];
+  sentItems: StoreSentItemRow[];
   pendingChange: {
     requestId: string;
     requestedByLabel: string;
@@ -107,12 +110,30 @@ function formatDuration(startIso: string, endIso: string | null): string {
   return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`;
 }
 
-export function StoreDetailView({ store, canEdit, visits, orders, pendingChange }: Props) {
+function groupSentItemsByArticle(
+  rows: StoreSentItemRow[],
+): Array<{ articleSku: string; articleName: string; variants: Array<{ variantSku: string; totalQty: number }> }> {
+  const groups: Array<{ articleSku: string; articleName: string; variants: Array<{ variantSku: string; totalQty: number }> }> = [];
+  const indexByArticle = new Map<string, number>();
+  for (const row of rows) {
+    let idx = indexByArticle.get(row.itemId);
+    if (idx === undefined) {
+      idx = groups.length;
+      indexByArticle.set(row.itemId, idx);
+      groups.push({ articleSku: row.articleSku, articleName: row.articleName, variants: [] });
+    }
+    groups[idx].variants.push({ variantSku: row.variantSku, totalQty: row.totalQty });
+  }
+  return groups;
+}
+
+export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pendingChange }: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
   const tDetail = useTranslations("stores.detail");
   const tTable = useTranslations("stores.list.table");
   const tOrders = useTranslations("stores.orders");
+  const tSentItems = useTranslations("stores.sentItems");
   const tFso = useTranslations("fieldSalesOrders");
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -121,6 +142,7 @@ export function StoreDetailView({ store, canEdit, visits, orders, pendingChange 
 
   const totalVisits = visits.length;
   const lastVisit = visits[0];
+  const sentItemGroups = groupSentItemsByArticle(sentItems);
 
   return (
     <div className="space-y-6">
@@ -207,9 +229,9 @@ export function StoreDetailView({ store, canEdit, visits, orders, pendingChange 
                   <p className="text-sm text-muted-foreground">{tDetail("noVisits")}</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-96 rounded-md border">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="sticky top-0 z-10 bg-background">
                       <TableRow>
                         <TableHead>{tDetail("visitTable.checkin")}</TableHead>
                         <TableHead>{tDetail("visitTable.checkout")}</TableHead>
@@ -321,6 +343,56 @@ export function StoreDetailView({ store, canEdit, visits, orders, pendingChange 
                           </TableCell>
                         </TableRow>
                       ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Package className="h-4 w-4" />
+                {tSentItems("cardTitle")}
+                <span className="text-sm font-normal text-muted-foreground ml-2">({sentItems.length})</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {sentItems.length === 0 ? (
+                <div className="text-center py-8">
+                  <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">{tSentItems("empty")}</p>
+                </div>
+              ) : (
+                <div className="overflow-auto max-h-96 rounded-md border">
+                  <Table>
+                    <TableHeader className="sticky top-0 z-10 bg-background">
+                      <TableRow>
+                        <TableHead>{tSentItems("colArticle")}</TableHead>
+                        <TableHead>{tSentItems("colSize")}</TableHead>
+                        <TableHead className="text-right">{tSentItems("colQtySent")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sentItemGroups.map((group) =>
+                        group.variants.map((v, i) => (
+                          <TableRow key={`${group.articleSku}-${v.variantSku}`}>
+                            <TableCell className="text-xs">
+                              {i === 0 ? (
+                                <>
+                                  <span className="font-mono">{group.articleSku}</span>
+                                  <span className="text-muted-foreground"> — {group.articleName}</span>
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">↳</span>
+                              )}
+                            </TableCell>
+                            <TableCell>{v.variantSku}</TableCell>
+                            <TableCell className="text-right tabular-nums">{v.totalQty}</TableCell>
+                          </TableRow>
+                        )),
+                      )}
                     </TableBody>
                   </Table>
                 </div>

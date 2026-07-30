@@ -2045,6 +2045,13 @@
       "colStatus": "Status",
       "colDate": "Tanggal",
       "colTotal": "Total"
+    },
+    "sentItems": {
+      "cardTitle": "Barang Terkirim",
+      "empty": "Belum ada barang terkirim ke toko ini",
+      "colArticle": "Artikel",
+      "colSize": "Ukuran",
+      "colQtySent": "Qty Terkirim"
     }
   },
   "pwa": {
