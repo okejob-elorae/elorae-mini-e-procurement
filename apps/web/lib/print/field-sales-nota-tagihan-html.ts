@@ -1,4 +1,4 @@
-import { esc, fmtDocDate, printCssBase, printPagePortrait } from "@/lib/print/print-theme";
+import { esc, fmtDocDate, printCssBase, printPageLandscape } from "@/lib/print/print-theme";
 import type { FsPrintLine } from "@/lib/print/field-sales-nota-gudang-html";
 
 const idr = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
@@ -10,6 +10,10 @@ export interface BuildNotaTagihanOptions {
   storeName: string;
   salesmanName: string;
   approvedAt: Date | string | null;
+  /** Print-time editable date (defaults to approvedAt when omitted). Not persisted. */
+  notaDate?: Date | string | null;
+  /** Print-time custom footnote, rendered above the sign-row. Not persisted. */
+  footnote?: string;
   subtotal: number;
   orderDiscountAmount: number;
   appliedOrderPromoName: string | null;
@@ -43,6 +47,8 @@ export function buildNotaTagihanPrintHtml(opts: BuildNotaTagihanOptions): string
     storeName,
     salesmanName,
     approvedAt,
+    notaDate,
+    footnote,
     subtotal,
     orderDiscountAmount,
     appliedOrderPromoName,
@@ -60,18 +66,22 @@ export function buildNotaTagihanPrintHtml(opts: BuildNotaTagihanOptions): string
       <td class="col-num">${idr(l.discountAmount)}</td>
       <td class="col-num">${idr(l.lineTotal - l.discountAmount)}</td>
     </tr>`).join("");
+  const footnoteHtml = footnote && footnote.trim() !== ""
+    ? `<div class="footnote">${esc(footnote).replace(/\n/g, "<br>")}</div>`
+    : "";
   return `<!DOCTYPE html>
 <html lang="id"><head><meta charset="utf-8"><title>${esc(labels.title)} — ${esc(orderNo)}</title>
-<style>${printCssBase}${printPagePortrait}
+<style>${printCssBase}${printPageLandscape}
   .sign-row { display:flex; justify-content:space-between; gap:48px; margin-top:56px; }
   .sign-box { flex:1; text-align:center; }
   .sign-line { margin-top:56px; border-top:1px solid var(--border); padding-top:6px; font-size:9pt; color:#374151; }
+  .footnote { margin-top:24px; font-size:9pt; color:#6b7280; line-height:1.5; }
 </style></head>
 <body>
   <div class="doc-top">
     <div><h1 class="doc-title">${esc(labels.title)}</h1><p class="doc-sub">${esc(labels.issuedBy)} ${esc(issuerName)}</p></div>
     <div class="doc-ref"><span class="lbl">${esc(labels.doc)}</span><span class="val">${esc(orderNo)}</span>
-      <span class="lbl">${esc(labels.date)}</span><span class="val">${esc(fmtDocDate(approvedAt))}</span></div>
+      <span class="lbl">${esc(labels.date)}</span><span class="val">${esc(fmtDocDate(notaDate ?? approvedAt))}</span></div>
   </div>
   <div class="two-col">
     <div><p class="block-label">${esc(labels.store)}</p><p class="payee-name">${esc(storeName)}</p></div>
@@ -88,6 +98,7 @@ export function buildNotaTagihanPrintHtml(opts: BuildNotaTagihanOptions): string
       <div class="grand-row"><span class="gk">${esc(labels.grandTotal)}</span><span class="gv">${idr(total)}</span></div>
     </div>
   </div>
+  ${footnoteHtml}
   <div class="sign-row">
     <div class="sign-box"><div class="sign-line">${esc(labels.regards)}</div></div>
     <div class="sign-box"><div class="sign-line">${esc(labels.receivedBy)}</div></div>

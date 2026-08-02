@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft, Printer } from "lucide-react";
@@ -7,6 +8,17 @@ import type { FieldSalesOrderDetail, FieldSalesOrderStatus } from "@/lib/field-s
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { DatePicker } from "@/components/ui/date-picker";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -65,6 +77,10 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
   const isKonsi = order.orderType === "KONSI";
   const showMoney = !isKonsi || order.status === "APPROVED";
 
+  const [tagihanDialogOpen, setTagihanDialogOpen] = useState(false);
+  const [tagihanNotaDate, setTagihanNotaDate] = useState<Date | undefined>(undefined);
+  const [tagihanFootnote, setTagihanFootnote] = useState("");
+
   const formatDate = (date: Date) =>
     new Intl.DateTimeFormat(locale, {
       day: "2-digit",
@@ -106,13 +122,21 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
     printHtml(html, t("print.notaGudang"));
   };
 
-  const handlePrintTagihan = async () => {
+  const openTagihanDialog = () => {
+    setTagihanNotaDate(order.approvedAt ?? order.createdAt);
+    setTagihanFootnote("");
+    setTagihanDialogOpen(true);
+  };
+
+  const handleConfirmPrintTagihan = async () => {
     await logPrint("FieldSalesNotaTagihan", order.id);
     const html = buildNotaTagihanPrintHtml({
       orderNo: order.orderNo,
       storeName: order.storeName,
       salesmanName: order.salesmanName,
       approvedAt: order.approvedAt,
+      notaDate: tagihanNotaDate,
+      footnote: tagihanFootnote,
       subtotal: order.subtotal,
       orderDiscountAmount: order.orderDiscountAmount,
       appliedOrderPromoName: order.appliedOrderPromoName,
@@ -148,6 +172,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
       },
     });
     printHtml(html, t("print.notaTagihan"));
+    setTagihanDialogOpen(false);
   };
 
   const handlePrintSuratKeluar = async () => {
@@ -210,7 +235,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
                   <Printer className="h-4 w-4 mr-2" />
                   {t("print.notaGudang")}
                 </Button>
-                <Button variant="outline" size="sm" onClick={handlePrintTagihan}>
+                <Button variant="outline" size="sm" onClick={openTagihanDialog}>
                   <Printer className="h-4 w-4 mr-2" />
                   {t("print.notaTagihan")}
                 </Button>
@@ -319,6 +344,41 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
           <p className="mt-2 text-right text-xs text-amber-600">{t("promoBelowCost")}</p>
         )}
       </Card>
+
+      <Dialog open={tagihanDialogOpen} onOpenChange={setTagihanDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("print.tagihanDialogTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label>{t("print.tagihanDialogDate")}</Label>
+              <DatePicker
+                value={tagihanNotaDate ?? null}
+                onChange={(date) => setTagihanNotaDate(date)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>{t("print.tagihanDialogFootnote")}</Label>
+              <Textarea
+                value={tagihanFootnote}
+                onChange={(e) => setTagihanFootnote(e.target.value)}
+                placeholder={t("print.tagihanDialogFootnotePlaceholder")}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">{t("print.tagihanDialogCancel")}</Button>
+            </DialogClose>
+            <Button onClick={handleConfirmPrintTagihan}>
+              <Printer className="h-4 w-4 mr-2" />
+              {t("print.tagihanDialogPrint")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

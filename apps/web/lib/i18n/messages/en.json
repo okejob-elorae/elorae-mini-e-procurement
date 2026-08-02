@@ -2254,7 +2254,13 @@
       "receivedBy": "Received by",
       "regards": "Regards",
       "handedBy": "Handed over by",
-      "issuedBy": "Issued by"
+      "issuedBy": "Issued by",
+      "tagihanDialogTitle": "Print Invoice",
+      "tagihanDialogDate": "Invoice Date",
+      "tagihanDialogFootnote": "Footnote (optional)",
+      "tagihanDialogFootnotePlaceholder": "e.g. Purchased items cannot be exchanged/returned",
+      "tagihanDialogCancel": "Cancel",
+      "tagihanDialogPrint": "Print"
     }
   },
   "promos": {
