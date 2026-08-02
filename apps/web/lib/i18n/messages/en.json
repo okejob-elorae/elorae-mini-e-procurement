@@ -2045,6 +2045,13 @@
       "colStatus": "Status",
       "colDate": "Date",
       "colTotal": "Total"
+    },
+    "sentItems": {
+      "cardTitle": "Items Sent",
+      "empty": "No items have been sent to this store yet",
+      "colArticle": "Article",
+      "colSize": "Size",
+      "colQtySent": "Qty Sent"
     }
   },
   "pwa": {

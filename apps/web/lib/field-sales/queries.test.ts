@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds } from "./queries";
+import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds, getStoreSentItems } from "./queries";
 import { createFieldSalesOrder } from "./writer";
 import { Prisma, prisma } from "@elorae/db";
 
@@ -146,6 +146,92 @@ d("konsi queries (test bed only)", () => {
     expect(detail!.orderType).toBe("KONSI");
     expect(detail!.lines).toHaveLength(1);
     expect(detail!.lines[0].available).toBe(15); // qtyOnHand 20 - reservedQty 5
+  });
+});
+
+d("getStoreSentItems (test bed only)", () => {
+  const sku = `TEST-FSQ-SENT-${Math.random().toString(36).slice(2, 10)}`;
+  let uomId = "";
+  let itemId = "";
+  let storeId = "";
+  let salesmanId = "";
+  let visitId = "";
+
+  beforeEach(async () => {
+    const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+    const item = await prisma.item.create({ data: { sku, nameId: "Kaos Test", nameEn: "Test Shirt", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000 } });
+    itemId = item.id;
+    await prisma.inventoryValue.create({ data: { itemId, variantSku: "M", qtyOnHand: 20, reservedQty: 0, avgCost: 1000, totalValue: 20000 } });
+    await prisma.inventoryValue.create({ data: { itemId, variantSku: "L", qtyOnHand: 20, reservedQty: 0, avgCost: 1000, totalValue: 20000 } });
+    const store = await prisma.store.create({ data: { code: `S-${sku}`, name: "T", address: "T", termsType: "KONSI", isActive: true } });
+    storeId = store.id;
+    const user = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    salesmanId = user!.id;
+    const visit = await prisma.storeVisit.create({ data: { storeId, userId: salesmanId, checkinLat: 0, checkinLng: 0 } });
+    visitId = visit.id;
+  });
+
+  afterEach(async () => {
+    await prisma.salesHistory.deleteMany({ where: { itemId } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
+    await prisma.storeVisit.deleteMany({ where: { id: visitId } });
+    await prisma.store.deleteMany({ where: { id: storeId } });
+    await prisma.stockReservation.deleteMany({ where: { itemId } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId } });
+    await prisma.item.deleteMany({ where: { id: itemId } });
+    await prisma.uOM.deleteMany({ where: { id: uomId } });
+  });
+
+  const seedOrder = async (opts: {
+    orderType: "PUTUS" | "KONSI";
+    status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
+    lines: Array<{ variantSku: string; qty: number }>;
+  }) => {
+    return prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `${opts.orderType}/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        storeId,
+        salesmanId,
+        visitId,
+        status: opts.status,
+        orderType: opts.orderType,
+        subtotal: 0,
+        total: 0,
+        lines: {
+          create: opts.lines.map((l) => ({
+            itemId, variantSku: l.variantSku, productName: "Kaos Test", qty: l.qty, unitPrice: 0, lineTotal: 0,
+          })),
+        },
+      },
+    });
+  };
+
+  it("aggregates qty by article+variant across APPROVED putus and konsi orders, excludes non-approved", async () => {
+    await seedOrder({ orderType: "PUTUS", status: "APPROVED", lines: [{ variantSku: "M", qty: 3 }, { variantSku: "L", qty: 2 }] });
+    await seedOrder({ orderType: "KONSI", status: "APPROVED", lines: [{ variantSku: "M", qty: 4 }] });
+    await seedOrder({ orderType: "PUTUS", status: "REJECTED", lines: [{ variantSku: "M", qty: 100 }] });
+    await seedOrder({ orderType: "KONSI", status: "PENDING_APPROVAL", lines: [{ variantSku: "L", qty: 50 }] });
+
+    const rows = await getStoreSentItems(storeId);
+    expect(rows).toHaveLength(2);
+
+    const bySize = new Map(rows.map((r) => [r.variantSku, r]));
+    expect(bySize.get("M")?.totalQty).toBe(7); // 3 (putus) + 4 (konsi), excludes rejected 100
+    expect(bySize.get("L")?.totalQty).toBe(2); // excludes pending 50
+    for (const r of rows) {
+      expect(r.itemId).toBe(itemId);
+      expect(r.articleSku).toBe(sku);
+      expect(r.articleName).toBe("Kaos Test");
+    }
+  });
+
+  it("returns empty array when the store has no approved orders", async () => {
+    await seedOrder({ orderType: "PUTUS", status: "PENDING_APPROVAL", lines: [{ variantSku: "M", qty: 5 }] });
+    const rows = await getStoreSentItems(storeId);
+    expect(rows).toEqual([]);
   });
 });
 
