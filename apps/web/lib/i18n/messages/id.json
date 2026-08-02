@@ -2247,7 +2247,13 @@
       "receivedBy": "Diterima",
       "regards": "Hormat kami",
       "handedBy": "Diserahkan",
-      "issuedBy": "Diterbitkan oleh"
+      "issuedBy": "Diterbitkan oleh",
+      "tagihanDialogTitle": "Cetak Nota Tagihan",
+      "tagihanDialogDate": "Tanggal Nota",
+      "tagihanDialogFootnote": "Catatan Kaki (opsional)",
+      "tagihanDialogFootnotePlaceholder": "Contoh: Barang yang sudah dibeli tidak dapat ditukar/dikembalikan",
+      "tagihanDialogCancel": "Batal",
+      "tagihanDialogPrint": "Cetak"
     }
   },
   "promos": {
