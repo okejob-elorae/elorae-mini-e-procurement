@@ -217,7 +217,9 @@ export async function approveFieldSalesOrder(input: {
     // materialize SalesHistory with NET figures. Create-time discounts are kept as-is.
     const finalPriceByLineId = new Map((input.finalPrices ?? []).map((f) => [f.lineId, f.finalUnitPrice]));
     let subtotal = 0;
-    const finalLines: Array<(typeof order.lines)[number] & { unitPrice: number; lineTotal: number }> = [];
+    const finalLines: Array<
+      Omit<(typeof order.lines)[number], "unitPrice" | "lineTotal"> & { unitPrice: number; lineTotal: number }
+    > = [];
     for (const l of order.lines) {
       let unitPrice = Number(l.unitPrice);
       let lineTotal = Number(l.lineTotal);
