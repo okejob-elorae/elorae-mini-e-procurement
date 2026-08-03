@@ -25,6 +25,7 @@ function lineKey(itemId: string, variantSku: string | null) {
 const ERROR_MESSAGES: Record<string, string> = {
   FORBIDDEN: "Anda tidak memiliki akses untuk mencatat penjualan.",
   NO_ASSIGNED_STORE: "Anda belum ditugaskan ke toko manapun. Hubungi admin.",
+  NO_ACTIVE_VISIT: "Anda belum check-in di toko. Check-in dulu sebelum mencatat penjualan.",
   EMPTY: "Keranjang masih kosong.",
   STORE_NOT_FOUND: "Toko tidak ditemukan.",
   NO_PRICE: "Ada produk yang belum punya harga.",

@@ -46,6 +46,7 @@ export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
           const result = await checkIn({ storeId, lat: pos.coords.latitude, lng: pos.coords.longitude });
           if (result && !result.ok) {
             if (result.code === "NOT_FOUND") setError(t("storeInactive"));
+            else if (result.code === "STORE_NOT_ASSIGNED") setError(t("storeNotAssigned"));
             return;
           }
         });

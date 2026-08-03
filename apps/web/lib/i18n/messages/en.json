@@ -2065,6 +2065,7 @@
       "coordsRetry": "Retry",
       "coordsError": "Could not read location. Try again.",
       "storeInactive": "This store is no longer active.",
+      "storeNotAssigned": "You can only check in at your assigned store.",
       "history": "Visit history",
       "historyEmpty": "No visits yet.",
       "stillOpen": "Still open",

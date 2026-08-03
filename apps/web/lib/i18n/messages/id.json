@@ -2065,6 +2065,7 @@
       "coordsRetry": "Coba lagi",
       "coordsError": "Tidak dapat membaca lokasi. Coba lagi.",
       "storeInactive": "Toko ini sudah tidak aktif.",
+      "storeNotAssigned": "Anda hanya dapat check-in di toko yang ditugaskan.",
       "history": "Riwayat kunjungan",
       "historyEmpty": "Belum ada kunjungan.",
       "stillOpen": "Masih terbuka",

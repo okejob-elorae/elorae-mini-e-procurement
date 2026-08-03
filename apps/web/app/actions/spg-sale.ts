@@ -5,10 +5,11 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordSpgSale } from "@/lib/spg/sale-writer";
+import { getActiveVisit } from "@/lib/stores/queries";
 
 export type RecordSpgSaleActionResult =
   | { ok: true; spgSaleId: string; docNo: string; changeGiven: number }
-  | { ok: false; code: "FORBIDDEN" | "NO_ASSIGNED_STORE" | "EMPTY" | "STORE_NOT_FOUND" | "NO_PRICE" | "INSUFFICIENT_PAYMENT" | "VALIDATION" };
+  | { ok: false; code: "FORBIDDEN" | "NO_ASSIGNED_STORE" | "NO_ACTIVE_VISIT" | "EMPTY" | "STORE_NOT_FOUND" | "NO_PRICE" | "INSUFFICIENT_PAYMENT" | "VALIDATION" };
 
 // storeId is NOT taken from the client — it's derived server-side from the SPG's
 // fixed `assignedStoreId`, so an SPG can only ever record a sale at their own store.
@@ -31,6 +32,13 @@ export async function recordSpgSaleAction(input: unknown): Promise<RecordSpgSale
   // Authoritative store = the SPG's assigned store; never trust a client-supplied id.
   const me = await prisma.user.findUnique({ where: { id: session.user.id }, select: { assignedStoreId: true } });
   if (!me?.assignedStoreId) return { ok: false, code: "NO_ASSIGNED_STORE" };
+
+  // Require an active check-in at the assigned store — the page-load SSR guard alone
+  // is bypassable from a stale tab or a direct action call.
+  const activeVisit = await getActiveVisit(session.user.id);
+  if (!activeVisit || activeVisit.storeId !== me.assignedStoreId) {
+    return { ok: false, code: "NO_ACTIVE_VISIT" };
+  }
   const d = parsed.data;
   const res = await recordSpgSale({
     salesmanId: session.user.id,
