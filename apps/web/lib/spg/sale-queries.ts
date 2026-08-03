@@ -1,4 +1,57 @@
 import { prisma } from "@elorae/db";
+import { computeStorePrice } from "@elorae/db/pricing";
+import { parseItemVariants, variantDetailForSku } from "@/lib/items/variants";
+
+export type SpgCatalogRow = {
+  itemId: string;
+  sku: string;
+  productName: string;
+  variantSku: string | null;
+  variantLabel: string | null;
+  price: number | null;
+};
+
+/**
+ * SPG record-sale catalog — active finished goods, priced PUTUS (retail),
+ * mirroring the pricing recordSpgSale itself applies (store-independent:
+ * PUTUS ignores marginPercent, so this never needs the store's own
+ * consignment terms). No stock/available field — SpgSale is record-only, no
+ * inventory ledger backs it (see recordSpgSale doc comment), so nothing here
+ * should imply a stock gate. Every variant defined on the item is offered
+ * (not just ones with an InventoryValue row) since there is no stock check.
+ */
+export async function getSellableCatalogForSpg(): Promise<SpgCatalogRow[]> {
+  const rows = await prisma.item.findMany({
+    where: { isActive: true, type: "FINISHED_GOOD" },
+    orderBy: { nameId: "asc" },
+    select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true },
+  });
+
+  const out: SpgCatalogRow[] = [];
+  for (const r of rows) {
+    const sp = r.sellingPrice === null ? null : Number(r.sellingPrice);
+    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null });
+    const variantSkus = parseItemVariants(r.variants)
+      .map((v) => (v.sku ?? "").trim())
+      .filter(Boolean);
+
+    if (variantSkus.length === 0) {
+      out.push({ itemId: r.id, sku: r.sku, productName: r.nameId, variantSku: null, variantLabel: null, price });
+      continue;
+    }
+    for (const vSku of variantSkus) {
+      out.push({
+        itemId: r.id,
+        sku: r.sku,
+        productName: r.nameId,
+        variantSku: vSku,
+        variantLabel: variantDetailForSku(r.variants, vSku) ?? vSku,
+        price,
+      });
+    }
+  }
+  return out;
+}
 
 export type SpgSaleDetail = {
   id: string;
