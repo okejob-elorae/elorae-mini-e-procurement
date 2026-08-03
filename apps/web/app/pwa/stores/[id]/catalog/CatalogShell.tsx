@@ -15,6 +15,7 @@ import { cartCount, cartTotal, buildOrderLines, type CartLine } from "@/lib/fiel
 import { enqueueOrder, newLocalId } from "@/lib/pwa/offline/queue";
 import { submitFieldSalesOrder, previewFieldSalesPromos, type PromoPreviewResult } from "./actions";
 import { VariantSheet } from "./VariantSheet";
+import { AppealPriceSheet } from "./AppealPriceSheet";
 
 type CatalogItem = {
   itemId: string;
@@ -62,6 +63,7 @@ export function CatalogShell({
   const [page, setPage] = useState(1);
   const [cart, setCart] = useState<Map<string, CartLine>>(new Map());
   const [sheetItem, setSheetItem] = useState<CatalogItem | null>(null);
+  const [appealKey, setAppealKey] = useState<string | null>(null);
   const [view, setView] = useState<"catalog" | "review">("catalog");
   const [note, setNote] = useState("");
   const [online, setOnline] = useState(true);
@@ -81,7 +83,10 @@ export function CatalogShell({
     setCart((prev) => {
       const next = new Map(prev);
       if (qty <= 0) next.delete(key);
-      else
+      else {
+        // Preserve an existing price appeal across qty edits — this rebuilds the whole line,
+        // so a bare object literal here would silently drop requestedUnitPrice/appealReason.
+        const existing = prev.get(key);
         next.set(key, {
           itemId: it.itemId,
           variantSku,
@@ -91,12 +96,33 @@ export function CatalogShell({
           unitPrice: isKonsi ? 0 : (it.price ?? 0),
           available,
           qty,
+          requestedUnitPrice: existing?.requestedUnitPrice ?? null,
+          appealReason: existing?.appealReason ?? null,
         });
+      }
+      return next;
+    });
+  }
+
+  // Putus only — sets/clears a per-line price appeal (requested price + reason). The store
+  // price itself stays read-only; this never changes unitPrice, only the appeal fields the
+  // office reviews at approve.
+  function setAppeal(key: string, appeal: { requestedUnitPrice: number; appealReason: string } | null) {
+    setCart((prev) => {
+      const existing = prev.get(key);
+      if (!existing) return prev;
+      const next = new Map(prev);
+      next.set(key, {
+        ...existing,
+        requestedUnitPrice: appeal?.requestedUnitPrice ?? null,
+        appealReason: appeal?.appealReason ?? null,
+      });
       return next;
     });
   }
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
+  const appealLine = appealKey ? cart.get(appealKey) ?? null : null;
   const showCartBar = cartLines.length > 0 && view === "catalog";
 
   useLayoutEffect(() => {
@@ -345,6 +371,8 @@ export function CatalogShell({
                         unitPrice: 0,
                         available: it.available,
                         qty: 1,
+                        requestedUnitPrice: null,
+                        appealReason: null,
                       });
                       added += 1;
                     }
@@ -543,6 +571,12 @@ export function CatalogShell({
                             {rupiah(line.unitPrice)} / pcs
                           </p>
                         )}
+                        {!isKonsi && line.requestedUnitPrice != null && (
+                          <p className="truncate text-xs text-amber-600 dark:text-amber-500">
+                            Diajukan {rupiah(line.requestedUnitPrice)}/pcs
+                            {line.appealReason ? ` — ${line.appealReason}` : ""}
+                          </p>
+                        )}
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-1.5">
                         <div className="flex items-center gap-1.5">
@@ -583,6 +617,17 @@ export function CatalogShell({
                           ) : (
                             <span className="text-sm font-semibold tabular-nums">{rupiah(lineTotal)}</span>
                           )
+                        )}
+                        {!isKonsi && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-10 px-3 text-xs"
+                            onClick={() => setAppealKey(variantKey(line.itemId, line.variantSku))}
+                          >
+                            {line.requestedUnitPrice != null ? "Ubah pengajuan" : "Ajukan Harga"}
+                          </Button>
                         )}
                       </div>
                     </Card>
@@ -688,6 +733,20 @@ export function CatalogShell({
         open={sheetItem !== null}
         onOpenChange={(next) => {
           if (!next) setSheetItem(null);
+        }}
+      />
+
+      <AppealPriceSheet
+        line={appealLine}
+        open={appealLine !== null}
+        onOpenChange={(next) => {
+          if (!next) setAppealKey(null);
+        }}
+        onSave={(requestedUnitPrice, appealReason) => {
+          if (appealKey) setAppeal(appealKey, { requestedUnitPrice, appealReason });
+        }}
+        onClear={() => {
+          if (appealKey) setAppeal(appealKey, null);
         }}
       />
     </div>
