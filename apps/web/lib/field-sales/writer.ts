@@ -7,7 +7,15 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError } from "./errors";
 
-type CreateLine = { itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number };
+type CreateLine = {
+  itemId: string;
+  variantSku: string;
+  productName: string;
+  qty: number;
+  unitPrice: number;
+  requestedUnitPrice?: number | null;
+  appealReason?: string | null;
+};
 
 export async function createFieldSalesOrder(input: {
   storeId: string;
@@ -43,13 +51,17 @@ export async function createFieldSalesOrder(input: {
 
     const store = await tx.store.findUniqueOrThrow({
       where: { id: input.storeId },
-      select: { termsType: true },
+      select: { termsType: true, marginPercent: true },
     });
     const isKonsi = store.termsType === "KONSI";
+    const margin = store.marginPercent === null ? null : Number(store.marginPercent);
 
+    // Server-authoritative putus price: the salesman never sets it, the office rules (store price) do.
+    const priceByItemId = new Map<string, number | null>();
     if (!isKonsi) {
       const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
-      const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, minOrderQty: true } });
+      const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, minOrderQty: true, sellingPrice: true } });
+      for (const i of items) priceByItemId.set(i.id, i.sellingPrice === null ? null : Number(i.sellingPrice));
       const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
       const globalMin = globalRow ? Number(globalRow.value) : 6;
       const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
@@ -63,11 +75,18 @@ export async function createFieldSalesOrder(input: {
 
     const orderNo = await generateDocNumber(isKonsi ? "KONSI" : "PUTUS", tx);
     // Konsi lines carry no salesman price; gross-up is computed later at approve.
-    const linesData = input.lines.map((l) => ({
-      ...l,
-      unitPrice: isKonsi ? 0 : l.unitPrice,
-      lineTotal: isKonsi ? 0 : l.qty * l.unitPrice,
-    }));
+    const linesData = input.lines.map((l) => {
+      const unitPrice = isKonsi
+        ? 0
+        : computeStorePrice({ sellingPrice: priceByItemId.get(l.itemId) ?? null, termsType: "PUTUS", marginPercent: margin }).price ?? 0;
+      return {
+        ...l,
+        unitPrice,
+        lineTotal: isKonsi ? 0 : l.qty * unitPrice,
+        requestedUnitPrice: l.requestedUnitPrice ?? null,
+        appealReason: l.appealReason ?? null,
+      };
+    });
     const subtotal = linesData.reduce((s, l) => s + l.lineTotal, 0);
     let finalTotal = subtotal;
 
@@ -91,6 +110,8 @@ export async function createFieldSalesOrder(input: {
             qty: l.qty,
             unitPrice: l.unitPrice,
             lineTotal: l.lineTotal,
+            requestedUnitPrice: l.requestedUnitPrice,
+            appealReason: l.appealReason,
           })),
         },
       },
@@ -148,7 +169,11 @@ export async function createFieldSalesOrder(input: {
   });
 }
 
-export async function approveFieldSalesOrder(input: { orderId: string; approvedById: string }): Promise<{ ok: true }> {
+export async function approveFieldSalesOrder(input: {
+  orderId: string;
+  approvedById: string;
+  finalPrices?: Array<{ lineId: string; finalUnitPrice: number }>;
+}): Promise<{ ok: true }> {
   return runSerializable(async (tx) => {
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
@@ -188,14 +213,33 @@ export async function approveFieldSalesOrder(input: { orderId: string; approvedB
       return { ok: true };
     }
 
-    // PUTUS: consume + materialize SalesHistory with NET figures (honor-at-create; no promo recompute here).
+    // PUTUS: apply owner's final appeal prices (Decision A — no promo recompute), then consume +
+    // materialize SalesHistory with NET figures. Create-time discounts are kept as-is.
+    const finalPriceByLineId = new Map((input.finalPrices ?? []).map((f) => [f.lineId, f.finalUnitPrice]));
+    let subtotal = 0;
+    const finalLines: Array<(typeof order.lines)[number] & { unitPrice: number; lineTotal: number }> = [];
+    for (const l of order.lines) {
+      let unitPrice = Number(l.unitPrice);
+      let lineTotal = Number(l.lineTotal);
+      // Only an appealed line (requestedUnitPrice set) may be repriced; ignore stray entries.
+      if (l.requestedUnitPrice !== null && finalPriceByLineId.has(l.id)) {
+        unitPrice = finalPriceByLineId.get(l.id)!;
+        lineTotal = l.qty * unitPrice;
+        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { unitPrice, lineTotal } });
+      }
+      subtotal += lineTotal;
+      finalLines.push({ ...l, unitPrice, lineTotal });
+    }
+    const discountTotal = finalLines.reduce((s, l) => s + Number(l.discountAmount), 0);
+    const total = subtotal - discountTotal - Number(order.orderDiscountAmount);
+
     await consumeFieldSalesOrder(tx, { orderNo: order.orderNo, fieldSalesLineIds: order.lines.map((l) => l.id) });
     const now = new Date();
     const rows = buildOfflineSalesHistoryRows({
       orderNo: order.orderNo,
-      orderTotal: Number(order.total),
-      lines: order.lines.map((l) => {
-        const net = Number(l.lineTotal) - Number(l.discountAmount);
+      orderTotal: total,
+      lines: finalLines.map((l) => {
+        const net = l.lineTotal - Number(l.discountAmount);
         return {
           itemId: l.itemId,
           variantSku: l.variantSku,
@@ -211,7 +255,7 @@ export async function approveFieldSalesOrder(input: { orderId: string; approvedB
     await tx.salesHistory.createMany({ data: rows });
     await tx.fieldSalesOrder.update({
       where: { id: order.id },
-      data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById },
+      data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal, total },
     });
     return { ok: true };
   });

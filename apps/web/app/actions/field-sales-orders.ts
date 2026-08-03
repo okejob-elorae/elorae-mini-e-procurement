@@ -18,11 +18,14 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
   return { userId: session.user.id };
 }
 
-export async function approveFieldSalesOrderAction(orderId: string): Promise<ActionResult> {
+export async function approveFieldSalesOrderAction(
+  orderId: string,
+  finalPrices?: Array<{ lineId: string; finalUnitPrice: number }>,
+): Promise<ActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
   try {
-    await approveFieldSalesOrder({ orderId, approvedById: g.userId });
+    await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices });
   } catch (e) {
     if (e instanceof InsufficientStockError) return { ok: false, reason: "INSUFFICIENT_STOCK" };
     if (e instanceof InvalidOrderTransitionError) {

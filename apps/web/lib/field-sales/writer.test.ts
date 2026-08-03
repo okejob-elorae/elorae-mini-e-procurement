@@ -125,7 +125,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
   });
 
   it("putus create applies an active line promo → discountAmount persisted, total is net", async () => {
-    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1 } });
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100 } });
     const promo = await prisma.promo.create({
       data: {
         name: `TEST-PROMO-${sku}`,
@@ -155,7 +155,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
   });
 
   it("putus approve writes net SalesHistory (discounted unit + line total)", async () => {
-    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1 } });
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100 } });
     const promo = await prisma.promo.create({
       data: {
         name: `TEST-PROMO-${sku}`,
@@ -186,7 +186,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
   });
 
   it("createFieldSalesOrder dedups on idempotencyKey", async () => {
-    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1 } });
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100 } });
     const key = `idem-${Math.random().toString(36).slice(2)}`;
     const orderLine = { itemId, variantSku: "", productName: "X", qty: 1, unitPrice: 100 };
     const a = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [orderLine], idempotencyKey: key });
@@ -225,7 +225,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
   });
 
   it("variant putus order: item-level promo discount pro-rates across variant lines", async () => {
-    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1 } });
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100 } });
     await prisma.inventoryValue.createMany({ data: [
       { itemId, variantSku: `${sku}-A`, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
       { itemId, variantSku: `${sku}-B`, qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 },
@@ -261,6 +261,75 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(lineB.discountAmount)).toBe(30);
     expect(Number(order!.subtotal)).toBe(500);
     expect(Number(order!.total)).toBe(450);
+  });
+
+  it("putus create ignores any client-sent price and uses the server store price regardless; stores the appeal fields when supplied", async () => {
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      // item.sellingPrice is 35000 (see beforeEach) — the client-sent unitPrice: 1 must be ignored.
+      lines: [{ itemId, variantSku: "", productName: "T", qty: 6, unitPrice: 1, requestedUnitPrice: 30000, appealReason: "Nego harga" }],
+    });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    expect(Number(order!.lines[0].unitPrice)).toBe(35000);
+    expect(Number(order!.lines[0].lineTotal)).toBe(6 * 35000);
+    expect(Number(order!.lines[0].requestedUnitPrice)).toBe(30000);
+    expect(order!.lines[0].appealReason).toBe("Nego harga");
+    expect(Number(order!.subtotal)).toBe(6 * 35000);
+  });
+
+  it("putus create with no appeal stores null requestedUnitPrice/appealReason", async () => {
+    const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    expect(order!.lines[0].requestedUnitPrice).toBeNull();
+    expect(order!.lines[0].appealReason).toBeNull();
+  });
+
+  it("approve applies finalPrices only to the appealed line, recomputes the total, and ignores a stray finalPrice for a non-appealed line", async () => {
+    const sku2 = `${sku}-APPEAL`;
+    const item2 = await prisma.item.create({ data: { sku: sku2, nameId: "T2", nameEn: "T2", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 } });
+    itemId2 = item2.id;
+    await prisma.inventoryValue.create({ data: { itemId: itemId2, variantSku: "", qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 } });
+
+    const { orderId, orderNo } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [
+        { ...line(), requestedUnitPrice: 30000, appealReason: "Nego" }, // appealed: qty 6, store price 35000
+        { itemId: itemId2, variantSku: "", productName: "T2", qty: 6, unitPrice: 40000 }, // not appealed
+      ],
+    });
+    const created = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    const appealedLineId = created!.lines.find((l) => l.itemId === itemId)!.id;
+    const plainLineId = created!.lines.find((l) => l.itemId === itemId2)!.id;
+    expect(Number(created!.subtotal)).toBe(6 * 35000 + 6 * 40000); // store price honored at create, not the ask
+
+    await approveFieldSalesOrder({
+      orderId,
+      approvedById: salesmanId,
+      finalPrices: [
+        { lineId: appealedLineId, finalUnitPrice: 30000 },
+        { lineId: plainLineId, finalUnitPrice: 99999 }, // stray — plainLine was never appealed, must be ignored
+      ],
+    });
+
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    const finalAppealed = order!.lines.find((l) => l.itemId === itemId)!;
+    const finalPlain = order!.lines.find((l) => l.itemId === itemId2)!;
+    expect(Number(finalAppealed.unitPrice)).toBe(30000);
+    expect(Number(finalAppealed.lineTotal)).toBe(6 * 30000);
+    expect(Number(finalPlain.unitPrice)).toBe(40000);
+    expect(Number(finalPlain.lineTotal)).toBe(6 * 40000);
+    expect(Number(order!.subtotal)).toBe(6 * 30000 + 6 * 40000);
+    expect(Number(order!.total)).toBe(6 * 30000 + 6 * 40000); // no promo active → discounts stay 0
+
+    const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
+    expect(hist).toHaveLength(2);
+    const histAppealed = hist.find((h) => h.itemId === itemId)!;
+    expect(Number(histAppealed.lineTotal)).toBe(6 * 30000);
+    expect(Number(histAppealed.orderTotal)).toBe(6 * 30000 + 6 * 40000);
   });
 });
 
