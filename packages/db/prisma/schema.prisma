@@ -86,10 +86,14 @@ model User {
   vanSales      VanSale[] @relation("VanSaleSalesman")
   vanReconciles VanReconcile[] @relation("VanReconcileCanvasser")
   vanReconcilesDone VanReconcile[] @relation("VanReconcileBy")
+  assignedStoreId String?
+  spgSales      SpgSale[] @relation("SpgSaleSalesman")
+  spgSalesCreated SpgSale[] @relation("SpgSaleCreatedBy")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
   @@index([themePantoneTcx])
+  @@index([assignedStoreId])
 }
 
 model VerificationToken {
@@ -308,6 +312,7 @@ model Store {
   promoStores    PromoStore[]
   storeChangeRequests StoreChangeRequest[]
   vanSales       VanSale[]
+  spgSales       SpgSale[]
 
   @@index([isActive, name])
 }
@@ -565,6 +570,7 @@ model Item {
   vanLoadLines     VanLoadLine[]
   vanSaleLines     VanSaleLine[]
   vanReconcileLines VanReconcileLine[]
+  spgSaleLines     SpgSaleLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -1730,6 +1736,43 @@ model VanReconcileLine {
   @@index([vanReconcileId])
 }
 
+model SpgSale {
+  id             String        @id @default(cuid())
+  docNo          String        @unique
+  salesmanId     String
+  storeId        String
+  saleLat        Decimal?      @db.Decimal(10, 7)
+  saleLng        Decimal?      @db.Decimal(10, 7)
+  subtotal       Decimal       @db.Decimal(15, 2)
+  total          Decimal       @db.Decimal(15, 2)
+  cashReceived   Decimal       @db.Decimal(15, 2)
+  changeGiven    Decimal       @db.Decimal(15, 2)
+  note           String?       @db.Text
+  idempotencyKey String?       @unique
+  createdById    String
+  createdAt      DateTime      @default(now())
+  salesman       User          @relation("SpgSaleSalesman", fields: [salesmanId], references: [id])
+  createdBy      User          @relation("SpgSaleCreatedBy", fields: [createdById], references: [id])
+  store          Store         @relation(fields: [storeId], references: [id])
+  lines          SpgSaleLine[]
+  @@index([salesmanId, createdAt])
+  @@index([storeId])
+}
+
+model SpgSaleLine {
+  id          String  @id @default(cuid())
+  spgSaleId   String
+  itemId      String
+  variantSku  String  @default("")
+  productName String
+  qty         Int
+  unitPrice   Decimal @db.Decimal(15, 2)
+  lineTotal   Decimal @db.Decimal(15, 2)
+  spgSale     SpgSale @relation(fields: [spgSaleId], references: [id], onDelete: Cascade)
+  item        Item    @relation(fields: [itemId], references: [id])
+  @@index([spgSaleId])
+}
+
 enum DocType {
   PO
   GRN
@@ -1744,6 +1787,7 @@ enum DocType {
   VANLOAD
   VANSALE
   VANRECON
+  SPGSALE
 }
 
 enum OpnameScope {
