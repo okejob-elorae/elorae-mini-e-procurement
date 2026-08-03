@@ -460,6 +460,117 @@ export type OversoldInventoryRow = {
   available: number;
 };
 
+export type SalesmenSalesBucket = {
+  count: number;
+  amount: number;
+};
+
+export type SalesmanSalesRow = {
+  salesmanId: string;
+  salesmanName: string;
+  realised: SalesmenSalesBucket;
+  outstanding: SalesmenSalesBucket;
+};
+
+export type SalesmenSalesSummary = {
+  rows: SalesmanSalesRow[];
+  totals: {
+    realised: SalesmenSalesBucket;
+    outstanding: SalesmenSalesBucket;
+  };
+};
+
+/**
+ * All-time per-salesman realised vs outstanding sales.
+ * Realised = APPROVED PUTUS FieldSalesOrder.total + all VanSale.total.
+ * Outstanding = PENDING_APPROVAL PUTUS FieldSalesOrder.total.
+ * KONSI excluded from every bucket; REJECTED never counts.
+ */
+export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
+  const [realisedPutus, realisedVan, outstandingPutus] = await Promise.all([
+    prisma.fieldSalesOrder.groupBy({
+      by: ['salesmanId'],
+      where: { orderType: 'PUTUS', status: 'APPROVED' },
+      _count: true,
+      _sum: { total: true },
+    }),
+    prisma.vanSale.groupBy({
+      by: ['salesmanId'],
+      _count: true,
+      _sum: { total: true },
+    }),
+    prisma.fieldSalesOrder.groupBy({
+      by: ['salesmanId'],
+      where: { orderType: 'PUTUS', status: 'PENDING_APPROVAL' },
+      _count: true,
+      _sum: { total: true },
+    }),
+  ]);
+
+  const bySalesman = new Map<
+    string,
+    { realised: SalesmenSalesBucket; outstanding: SalesmenSalesBucket }
+  >();
+  const ensure = (id: string) => {
+    let rec = bySalesman.get(id);
+    if (!rec) {
+      rec = { realised: { count: 0, amount: 0 }, outstanding: { count: 0, amount: 0 } };
+      bySalesman.set(id, rec);
+    }
+    return rec;
+  };
+
+  for (const r of realisedPutus) {
+    const rec = ensure(r.salesmanId);
+    rec.realised.count += Number(r._count ?? 0);
+    rec.realised.amount += Number(r._sum.total ?? 0);
+  }
+  for (const r of realisedVan) {
+    const rec = ensure(r.salesmanId);
+    rec.realised.count += Number(r._count ?? 0);
+    rec.realised.amount += Number(r._sum.total ?? 0);
+  }
+  for (const r of outstandingPutus) {
+    const rec = ensure(r.salesmanId);
+    rec.outstanding.count += Number(r._count ?? 0);
+    rec.outstanding.amount += Number(r._sum.total ?? 0);
+  }
+
+  const salesmanIds = Array.from(bySalesman.keys());
+  const users =
+    salesmanIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: salesmanIds } },
+          select: { id: true, name: true, email: true },
+        })
+      : [];
+  const nameById = new Map(users.map((u) => [u.id, u.name ?? u.email ?? '—']));
+
+  const rows: SalesmanSalesRow[] = salesmanIds.map((id) => {
+    const rec = bySalesman.get(id)!;
+    return {
+      salesmanId: id,
+      salesmanName: nameById.get(id) ?? '—',
+      realised: rec.realised,
+      outstanding: rec.outstanding,
+    };
+  });
+  rows.sort((a, b) => b.realised.amount - a.realised.amount);
+
+  const totals = rows.reduce(
+    (acc, r) => {
+      acc.realised.count += r.realised.count;
+      acc.realised.amount += r.realised.amount;
+      acc.outstanding.count += r.outstanding.count;
+      acc.outstanding.amount += r.outstanding.amount;
+      return acc;
+    },
+    { realised: { count: 0, amount: 0 }, outstanding: { count: 0, amount: 0 } }
+  );
+
+  return { rows, totals };
+}
+
 /** InventoryValue rows where reservedQty exceeds qtyOnHand (negative available = oversell). */
 export async function getOversoldInventory(): Promise<OversoldInventoryRow[]> {
   const rows = await prisma.inventoryValue.findMany({

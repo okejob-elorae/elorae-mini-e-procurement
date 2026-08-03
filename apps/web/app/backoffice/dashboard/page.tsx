@@ -7,6 +7,7 @@ import {
   getCOGSRawVsFinished,
   getSuppliersForReportFilter,
   getOversoldInventory,
+  getSalesmenSalesSummary,
 } from '@/lib/dashboard/queries';
 import { getOverduePOs } from '@/lib/purchase-orders/queries';
 import { getMarketplaceKpi } from '@/lib/sales-orders/queries';
@@ -19,17 +20,27 @@ export default async function DashboardPage() {
   const session = await auth();
   if (!session) redirect('/login');
 
-  const [stats, overduePOs, suppliers, cogsRawVsFinished, rawMaterialShortage, woStatusCounts, marketplaceKpi, oversoldInventory] =
-    await Promise.all([
-      getDashboardStats(),
-      getOverduePOs(),
-      getSuppliersForReportFilter(),
-      getCOGSRawVsFinished(),
-      getRawMaterialShortage(),
-      getWorkOrderCountByStatus(),
-      getMarketplaceKpi(),
-      getOversoldInventory(),
-    ]);
+  const [
+    stats,
+    overduePOs,
+    suppliers,
+    cogsRawVsFinished,
+    rawMaterialShortage,
+    woStatusCounts,
+    marketplaceKpi,
+    oversoldInventory,
+    salesmenSales,
+  ] = await Promise.all([
+    getDashboardStats(),
+    getOverduePOs(),
+    getSuppliersForReportFilter(),
+    getCOGSRawVsFinished(),
+    getRawMaterialShortage(),
+    getWorkOrderCountByStatus(),
+    getMarketplaceKpi(),
+    getOversoldInventory(),
+    getSalesmenSalesSummary(),
+  ]);
 
   return (
     <DashboardPageClient
@@ -44,6 +55,7 @@ export default async function DashboardPage() {
       initialWoStatusCounts={woStatusCounts}
       marketplaceKpi={marketplaceKpi}
       initialOversoldInventory={oversoldInventory}
+      initialSalesmenSales={salesmenSales}
     />
   );
 }
