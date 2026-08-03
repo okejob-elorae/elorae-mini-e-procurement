@@ -430,6 +430,8 @@ model FieldSalesOrderLine {
   lineTotal    Decimal         @db.Decimal(15, 2)
   discountAmount Decimal       @default(0) @db.Decimal(15, 2)
   appliedPromoId String?
+  requestedUnitPrice Decimal?  @db.Decimal(15, 2)
+  appealReason String?
   order        FieldSalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   item         Item            @relation(fields: [itemId], references: [id])
   @@index([orderId])
