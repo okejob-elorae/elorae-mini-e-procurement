@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft, Printer } from "lucide-react";
@@ -27,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ApproveRejectCard } from "./ApproveRejectCard";
+import { ApproveRejectCard, type AppealedLine } from "./ApproveRejectCard";
 import { logPrint } from "@/app/actions/audit";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
@@ -76,6 +76,17 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
   const locale = useLocale();
   const isKonsi = order.orderType === "KONSI";
   const showMoney = !isKonsi || order.status === "APPROVED";
+  const appealedLines: AppealedLine[] = order.lines
+    .filter((line) => line.requestedUnitPrice != null)
+    .map((line) => ({
+      id: line.id,
+      productName: line.productName,
+      variantLabel: line.variantLabel,
+      variantSku: line.variantSku,
+      unitPrice: line.unitPrice,
+      requestedUnitPrice: line.requestedUnitPrice as number,
+      appealReason: line.appealReason,
+    }));
 
   const [tagihanDialogOpen, setTagihanDialogOpen] = useState(false);
   const [tagihanNotaDate, setTagihanNotaDate] = useState<Date | undefined>(undefined);
@@ -251,6 +262,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
           status={order.status}
           canApprove={canApprove}
           orderType={order.orderType}
+          appealedLines={appealedLines}
         />
       )}
 
@@ -290,24 +302,52 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
           </TableHeader>
           <TableBody>
             {order.lines.map((line) => (
-              <TableRow key={line.id}>
-                <TableCell>{line.productName}</TableCell>
-                <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
-                <TableCell className="text-right">{line.qty}</TableCell>
-                <TableCell className="text-right">{line.available}</TableCell>
-                {showMoney && (
-                  <>
-                    <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>
-                    <TableCell className="text-right">{formatRupiah(line.lineTotal)}</TableCell>
-                    <TableCell className="text-right">
-                      {line.discountAmount > 0 ? formatRupiah(line.discountAmount) : "—"}
-                      {line.appliedPromoName && (
-                        <div className="text-xs text-muted-foreground">{line.appliedPromoName}</div>
-                      )}
+              <Fragment key={line.id}>
+                <TableRow>
+                  <TableCell>{line.productName}</TableCell>
+                  <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
+                  <TableCell className="text-right">{line.qty}</TableCell>
+                  <TableCell className="text-right">{line.available}</TableCell>
+                  {showMoney && (
+                    <>
+                      <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>
+                      <TableCell className="text-right">{formatRupiah(line.lineTotal)}</TableCell>
+                      <TableCell className="text-right">
+                        {line.discountAmount > 0 ? formatRupiah(line.discountAmount) : "—"}
+                        {line.appliedPromoName && (
+                          <div className="text-xs text-muted-foreground">{line.appliedPromoName}</div>
+                        )}
+                      </TableCell>
+                    </>
+                  )}
+                </TableRow>
+                {line.requestedUnitPrice != null && (
+                  <TableRow className="border-0 bg-amber-500/5 hover:bg-amber-500/5">
+                    <TableCell colSpan={showMoney ? 7 : 4} className="py-2">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        <Badge variant="outline" className="border-amber-500/40 text-amber-700">
+                          {t("appealBadge")}
+                        </Badge>
+                        <span className="text-muted-foreground">
+                          {t("appealStorePrice")}:{" "}
+                          <span className="font-medium text-foreground tabular-nums">{formatRupiah(line.unitPrice)}</span>
+                        </span>
+                        <span className="text-muted-foreground">
+                          {t("appealRequestedPrice")}:{" "}
+                          <span className="font-medium text-foreground tabular-nums">
+                            {formatRupiah(line.requestedUnitPrice)}
+                          </span>
+                        </span>
+                        {line.appealReason && (
+                          <span className="text-muted-foreground italic">
+                            {t("appealReasonLabel")}: {line.appealReason}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
-                  </>
+                  </TableRow>
                 )}
-              </TableRow>
+              </Fragment>
             ))}
           </TableBody>
         </Table>

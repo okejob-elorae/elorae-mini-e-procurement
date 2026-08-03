@@ -249,7 +249,7 @@ d("putus detail with promo (test bed only)", () => {
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({
-      data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 35000, minOrderQty: 1 },
+      data: { sku, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 100, minOrderQty: 1 },
     });
     itemId = item.id;
     await prisma.inventoryValue.create({ data: { itemId, variantSku: "", qtyOnHand: 100, reservedQty: 0, avgCost: 1000, totalValue: 100000 } });
@@ -304,5 +304,28 @@ d("putus detail with promo (test bed only)", () => {
     expect(detail!.lines[0].belowCost).toBe(true); // net unit 90 < avgCost 1000
     expect(detail!.orderDiscountAmount).toBe(0);
     expect(detail!.appliedOrderPromoName).toBeNull();
+  });
+
+  it("getFieldSalesOrderById exposes requestedUnitPrice/appealReason for an appealed line, null for a plain line", async () => {
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ itemId, variantSku: "", productName: "X", qty: 2, unitPrice: 100, requestedUnitPrice: 80, appealReason: "Nego harga" }],
+    });
+
+    const detail = await getFieldSalesOrderById(orderId);
+    expect(detail!.lines[0].requestedUnitPrice).toBe(80);
+    expect(detail!.lines[0].appealReason).toBe("Nego harga");
+
+    const { orderId: plainOrderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ itemId, variantSku: "", productName: "X", qty: 2, unitPrice: 100 }],
+    });
+    const plainDetail = await getFieldSalesOrderById(plainOrderId);
+    expect(plainDetail!.lines[0].requestedUnitPrice).toBeNull();
+    expect(plainDetail!.lines[0].appealReason).toBeNull();
   });
 });

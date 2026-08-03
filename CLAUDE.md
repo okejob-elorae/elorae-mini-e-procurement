@@ -237,6 +237,7 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] Extract `JubelioHttpService` into a leaf module to break the triple-hop forwardRef circular (Jubelio↔Queue↔Returns) (PR #54).
 
 ### Field Sales / PWA (SFA)
+- [ ] Price appeal: `approveFieldSalesOrderAction` `finalPrices` is **UI-gated only** — the server doesn't reject a stray `lineId` (silently no-ops) nor require a final price for every appealed line (silently falls back to the store price = appeal denied). Safe fallback + permission-gated, but add server-side enforcement (lineId ∈ order + require an entry per appealed line) before treating it as a hard guarantee (feat/field-sales-price-appeal).
 - [ ] Store-detail cards (Visit history, Items Sent) are scroll-bounded (`max-h-96` + sticky header) but **unpaginated** — Visit history caps at 50 (`listVisitsForStore`), Items Sent is an all-time aggregate with no cap. If a store accumulates hundreds of article×size rows / visits, add server-side pagination or an in-card search (`StoreDetailView.tsx`, `getStoreSentItems`) (feat/store-sent-items).
 - [ ] Putus: server-recompute `unitPrice` (`field-sales/writer.ts:66` trusts client price; mitigated by the approval gate) (#21).
 - [ ] Putus oversell is WARN-not-block at create; approve doesn't re-surface short stock — unresolved design call (#21).

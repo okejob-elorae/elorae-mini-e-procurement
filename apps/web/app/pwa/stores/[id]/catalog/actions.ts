@@ -19,6 +19,8 @@ const schema = z.object({
     productName: z.string().min(1),
     qty: z.number().int().positive(),
     unitPrice: z.number().nonnegative(),
+    requestedUnitPrice: z.number().nonnegative().nullable().optional(),
+    appealReason: z.string().max(500).nullable().optional(),
   })).min(1),
   idempotencyKey: z.string().optional(),
 });
@@ -32,7 +34,15 @@ export async function submitFieldSalesOrder(input: {
   storeId: string;
   visitId?: string;
   note?: string;
-  lines: Array<{ itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number }>;
+  lines: Array<{
+    itemId: string;
+    variantSku: string;
+    productName: string;
+    qty: number;
+    unitPrice: number;
+    requestedUnitPrice?: number | null;
+    appealReason?: string | null;
+  }>;
   idempotencyKey?: string;
 }): Promise<SubmitResult> {
   const session = await auth();

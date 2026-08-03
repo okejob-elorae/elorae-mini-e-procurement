@@ -6,7 +6,15 @@ export interface PendingOrder {
   storeName: string;
   visitId: string | null;
   note?: string;
-  lines: Array<{ itemId: string; variantSku: string; productName: string; qty: number; unitPrice: number }>;
+  lines: Array<{
+    itemId: string;
+    variantSku: string;
+    productName: string;
+    qty: number;
+    unitPrice: number;
+    requestedUnitPrice?: number | null;
+    appealReason?: string | null;
+  }>;
   capturedAt: number;
   syncState: "pending" | "syncing" | "failed";
   error?: string;
