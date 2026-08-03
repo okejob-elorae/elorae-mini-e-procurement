@@ -8,7 +8,24 @@ import { InvalidOrderTransitionError, InsufficientStockError } from "@/lib/field
 
 export type ActionResult =
   | { ok: true }
-  | { ok: false; reason: "FORBIDDEN" | "NOT_FOUND" | "INVALID_TRANSITION" | "INSUFFICIENT_STOCK" };
+  | {
+      ok: false;
+      reason: "FORBIDDEN" | "NOT_FOUND" | "INVALID_TRANSITION" | "INSUFFICIENT_STOCK" | "INVALID_FINAL_PRICE";
+    };
+
+function isValidFinalPrices(finalPrices: unknown): finalPrices is Array<{ lineId: string; finalUnitPrice: number }> {
+  if (finalPrices === undefined) return true;
+  if (!Array.isArray(finalPrices)) return false;
+  return finalPrices.every(
+    (f) =>
+      typeof f === "object" &&
+      f !== null &&
+      typeof (f as { lineId?: unknown }).lineId === "string" &&
+      (f as { lineId: string }).lineId.trim() !== "" &&
+      Number.isFinite((f as { finalUnitPrice?: unknown }).finalUnitPrice) &&
+      (f as { finalUnitPrice: number }).finalUnitPrice >= 0,
+  );
+}
 
 async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
   const session = await auth();
@@ -24,6 +41,7 @@ export async function approveFieldSalesOrderAction(
 ): Promise<ActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
+  if (!isValidFinalPrices(finalPrices)) return { ok: false, reason: "INVALID_FINAL_PRICE" };
   try {
     await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices });
   } catch (e) {

@@ -305,4 +305,27 @@ d("putus detail with promo (test bed only)", () => {
     expect(detail!.orderDiscountAmount).toBe(0);
     expect(detail!.appliedOrderPromoName).toBeNull();
   });
+
+  it("getFieldSalesOrderById exposes requestedUnitPrice/appealReason for an appealed line, null for a plain line", async () => {
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ itemId, variantSku: "", productName: "X", qty: 2, unitPrice: 100, requestedUnitPrice: 80, appealReason: "Nego harga" }],
+    });
+
+    const detail = await getFieldSalesOrderById(orderId);
+    expect(detail!.lines[0].requestedUnitPrice).toBe(80);
+    expect(detail!.lines[0].appealReason).toBe("Nego harga");
+
+    const { orderId: plainOrderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ itemId, variantSku: "", productName: "X", qty: 2, unitPrice: 100 }],
+    });
+    const plainDetail = await getFieldSalesOrderById(plainOrderId);
+    expect(plainDetail!.lines[0].requestedUnitPrice).toBeNull();
+    expect(plainDetail!.lines[0].appealReason).toBeNull();
+  });
 });

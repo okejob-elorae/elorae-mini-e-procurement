@@ -106,4 +106,45 @@ d("field-sales order approve/reject actions (test bed only)", () => {
     const result = await approveFieldSalesOrderAction("does-not-exist");
     expect(result).toEqual({ ok: false, reason: "NOT_FOUND" });
   });
+
+  it("approve with finalPrices for an appealed line applies the final price via the writer", async () => {
+    const line = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId }, select: { id: true } });
+    await prisma.fieldSalesOrderLine.update({
+      where: { id: line.id },
+      data: { requestedUnitPrice: 30000, appealReason: "Nego harga" },
+    });
+
+    const result = await approveFieldSalesOrderAction(orderId, [{ lineId: line.id, finalUnitPrice: 30000 }]);
+    expect(result).toEqual({ ok: true });
+
+    const finalLine = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: line.id } });
+    expect(Number(finalLine.unitPrice)).toBe(30000);
+    expect(Number(finalLine.lineTotal)).toBe(6 * 30000);
+
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
+    expect(Number(order!.total)).toBe(6 * 30000);
+  });
+
+  it.each([
+    { finalUnitPrice: -1, label: "negative" },
+    { finalUnitPrice: Number.NaN, label: "NaN" },
+    { finalUnitPrice: Number.POSITIVE_INFINITY, label: "Infinity" },
+  ])("approve rejects a $label finalUnitPrice with INVALID_FINAL_PRICE, order stays PENDING_APPROVAL", async ({ finalUnitPrice }) => {
+    const line = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId }, select: { id: true } });
+    const result = await approveFieldSalesOrderAction(orderId, [{ lineId: line.id, finalUnitPrice }]);
+    expect(result).toEqual({ ok: false, reason: "INVALID_FINAL_PRICE" });
+
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("PENDING_APPROVAL");
+  });
+
+  it("approve rejects a malformed finalPrices entry (missing lineId) with INVALID_FINAL_PRICE", async () => {
+    const result = await approveFieldSalesOrderAction(
+      orderId,
+      // @ts-expect-error — intentionally malformed to exercise the runtime guard
+      [{ finalUnitPrice: 1000 }],
+    );
+    expect(result).toEqual({ ok: false, reason: "INVALID_FINAL_PRICE" });
+  });
 });
