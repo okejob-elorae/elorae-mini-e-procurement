@@ -267,6 +267,8 @@ export const PERMISSIONS = {
   PROMOS_MANAGE: "promos:manage",
   // Canvassing (Van Stock)
   CANVASSING_MANAGE: "canvassing:manage",
+  // SPG Sales (in-store promoter)
+  SPG_SALES_RECORD: "spg_sales:record",
   // Finance — Settlements
   SETTLEMENTS_VIEW: "finance:settlements:view",
   SETTLEMENTS_MANAGE: "finance:settlements:manage",
