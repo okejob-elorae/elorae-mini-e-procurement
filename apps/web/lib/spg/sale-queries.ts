@@ -53,6 +53,45 @@ export async function getSellableCatalogForSpg(): Promise<SpgCatalogRow[]> {
   return out;
 }
 
+export type SpgSaleListRow = { id: string; docNo: string; salesmanLabel: string; storeName: string; total: number; createdAtIso: string };
+
+export async function listSpgSales(
+  filters: { salesmanId?: string; from?: Date; to?: Date },
+  paging: { page: number; pageSize: number },
+): Promise<{ items: SpgSaleListRow[]; totalCount: number }> {
+  const where: Record<string, unknown> = {};
+  if (filters.salesmanId) where.salesmanId = filters.salesmanId;
+  if (filters.from || filters.to) where.createdAt = { ...(filters.from ? { gte: filters.from } : {}), ...(filters.to ? { lte: filters.to } : {}) };
+  const [rows, totalCount] = await Promise.all([
+    prisma.spgSale.findMany({
+      where, orderBy: { createdAt: "desc" },
+      skip: (paging.page - 1) * paging.pageSize, take: paging.pageSize,
+      include: { salesman: { select: { name: true, email: true } }, store: { select: { name: true } } },
+    }),
+    prisma.spgSale.count({ where }),
+  ]);
+  return {
+    items: rows.map((r) => ({
+      id: r.id, docNo: r.docNo,
+      salesmanLabel: r.salesman.name ?? r.salesman.email,
+      storeName: r.store.name,
+      total: Number(r.total), createdAtIso: r.createdAt.toISOString(),
+    })),
+    totalCount,
+  };
+}
+
+export type SpgSalesmanOption = { id: string; label: string };
+
+export async function listSpgSalesmen(): Promise<SpgSalesmanOption[]> {
+  const users = await prisma.user.findMany({
+    where: { assignedStoreId: { not: null } },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, email: true },
+  });
+  return users.map((u) => ({ id: u.id, label: u.name ?? u.email }));
+}
+
 export type SpgSaleDetail = {
   id: string;
   docNo: string;

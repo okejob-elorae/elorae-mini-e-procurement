@@ -44,6 +44,7 @@
     "navFieldSalesOrders": "Pesanan Lapangan",
     "navCanvassing": "Canvassing",
     "navVanSales": "Penjualan Van",
+    "navSpgSales": "Penjualan SPG",
     "promos": "Promo",
     "finance": "Keuangan",
     "navCoa": "Bagan Akun",
@@ -2503,6 +2504,55 @@
           "qty": "Qty",
           "unitPrice": "Harga Satuan",
           "unitCost": "Biaya Satuan",
+          "lineTotal": "Total Baris"
+        }
+      }
+    }
+  },
+  "spgSale": {
+    "back": "Kembali",
+    "printButton": "Cetak",
+    "totalLabel": "Total",
+    "cashTenderedLabel": "Uang diterima",
+    "changeLabel": "Kembalian",
+    "backoffice": {
+      "list": {
+        "pageTitle": "Penjualan SPG",
+        "subtitle": "Daftar penjualan yang dicatat oleh SPG di toko",
+        "cardTitle": "Penjualan",
+        "count": "{count, plural, =0 {tidak ada penjualan} other {# penjualan}}",
+        "empty": "Belum ada penjualan SPG.",
+        "noResults": "Tidak ada penjualan SPG yang cocok dengan filter.",
+        "filters": {
+          "salesmanLabel": "SPG",
+          "allSalesmen": "Semua SPG",
+          "searchSalesmanPlaceholder": "Cari SPG",
+          "noSalesmanFound": "SPG tidak ditemukan.",
+          "fromLabel": "Dari",
+          "toLabel": "Sampai",
+          "reset": "Reset"
+        },
+        "table": {
+          "docNo": "No. Dokumen",
+          "date": "Tanggal",
+          "salesman": "SPG",
+          "store": "Toko",
+          "total": "Total"
+        }
+      },
+      "detail": {
+        "summaryTitle": "Ringkasan",
+        "salesmanLabel": "SPG",
+        "storeLabel": "Toko",
+        "dateLabel": "Tanggal",
+        "gpsLabel": "GPS",
+        "openInMaps": "Buka di Maps",
+        "noteLabel": "Catatan",
+        "table": {
+          "product": "Produk",
+          "variant": "Varian",
+          "qty": "Qty",
+          "unitPrice": "Harga Satuan",
           "lineTotal": "Total Baris"
         }
       }

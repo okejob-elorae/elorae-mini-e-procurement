@@ -69,6 +69,8 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/canvassing/reconcile/[id]': 'canvassing:manage',
   '/backoffice/van-sales': 'canvassing:manage',
   '/backoffice/van-sales/[id]': 'canvassing:manage',
+  '/backoffice/spg-sales': 'spg_sales:view',
+  '/backoffice/spg-sales/[id]': 'spg_sales:view',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
   '/backoffice/forecast': 'forecast:view',
@@ -269,6 +271,7 @@ export const PERMISSIONS = {
   CANVASSING_MANAGE: "canvassing:manage",
   // SPG Sales (in-store promoter)
   SPG_SALES_RECORD: "spg_sales:record",
+  SPG_SALES_VIEW: "spg_sales:view",
   // Finance — Settlements
   SETTLEMENTS_VIEW: "finance:settlements:view",
   SETTLEMENTS_MANAGE: "finance:settlements:manage",

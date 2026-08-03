@@ -7,6 +7,12 @@ SELECT REPLACE(UUID(), '-', ''), 'spg_sales:record', 'spg_sales', 'record', 'Rec
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM Permission WHERE code = 'spg_sales:record');
 
+-- Admin-viewed backoffice register permission (admin wildcard covers the grant; NOT linked to the SPG role).
+INSERT INTO Permission (id, code, module, action, description)
+SELECT REPLACE(UUID(), '-', ''), 'spg_sales:view', 'spg_sales', 'view', 'View SPG in-store sales register'
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM Permission WHERE code = 'spg_sales:view');
+
 INSERT INTO RoleDefinition (id, name, description, isSystem, permissionsVersion, createdAt, updatedAt)
 SELECT REPLACE(UUID(), '-', ''), 'SPG', 'In-store promoter — PWA-only access, fixed to one store', 0, 1, NOW(3), NOW(3)
 FROM DUAL

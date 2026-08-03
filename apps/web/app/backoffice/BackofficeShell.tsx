@@ -167,6 +167,11 @@ const navItems: NavItem[] = [
         href: '/backoffice/van-sales',
         permission: PERMISSIONS.CANVASSING_MANAGE,
       },
+      {
+        labelKey: 'navSpgSales',
+        href: '/backoffice/spg-sales',
+        permission: PERMISSIONS.SPG_SALES_VIEW,
+      },
     ],
   },
   {
@@ -329,7 +334,8 @@ function Sidebar({
       path.startsWith('/backoffice/returns') ||
       path.startsWith('/backoffice/field-sales-orders') ||
       path.startsWith('/backoffice/canvassing') ||
-      path.startsWith('/backoffice/van-sales')
+      path.startsWith('/backoffice/van-sales') ||
+      path.startsWith('/backoffice/spg-sales')
     ) {
       return '/backoffice/sales-orders';
     }

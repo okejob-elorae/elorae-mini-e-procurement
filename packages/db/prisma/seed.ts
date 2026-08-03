@@ -197,6 +197,7 @@ async function main() {
     { code: 'lead_time:manage', module: 'lead_time', action: 'manage', description: 'Manage process library and supplier chains' },
     // SPG Sales (in-store promoter)
     { code: 'spg_sales:record', module: 'spg_sales', action: 'record', description: 'Record SPG in-store sales' },
+    { code: 'spg_sales:view', module: 'spg_sales', action: 'view', description: 'View SPG in-store sales register' },
   ];
 
   // Upsert all permissions
