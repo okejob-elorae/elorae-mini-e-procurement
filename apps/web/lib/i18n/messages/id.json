@@ -2677,10 +2677,11 @@
     "journalErr": {
       "CHECKSUM_BLOCKED": "Checksum harus sesuai sebelum jurnal dapat diposting.",
       "UNMAPPED_ROLE": "Bagan akun belum dipetakan untuk peran \"{role}\". Petakan dulu di pengaturan Finance.",
-      "UNBALANCED": "Total settlement tidak balance — periksa Ringkasan atau tambahkan akun \"lainnya\".",
+      "UNBALANCED": "Total settlement tidak balance. Sisa biaya sudah otomatis masuk ke akun \"Biaya Marketplace — Lainnya\", jadi pesan ini berarti ringkasan excel-nya sendiri tidak memenuhi Dilepas + Pengeluaran = Pendapatan. Periksa tab Ringkasan pada file settlement.",
       "NOT_FOUND": "Settlement tidak ditemukan.",
       "FORBIDDEN": "Anda tidak memiliki izin untuk memposting jurnal ini.",
-      "ALREADY_RECONCILED_DIFF": "Settlement ini sudah terekonsiliasi dengan jurnal yang berbeda."
+      "ALREADY_RECONCILED_DIFF": "Settlement ini sudah terekonsiliasi dengan jurnal yang berbeda.",
+      "NON_POSTABLE_ACCOUNT": "Salah satu akun yang dipetakan tidak dapat diposting — akunnya tidak aktif atau sudah punya akun turunan. Petakan peran tersebut ke akun aktif tanpa turunan di Finance → Pemetaan Akun."
     },
     "resyncButton": "Resync {count} Pesanan Belum Cocok",
     "resyncButtonPending": "Memulai Resync…",

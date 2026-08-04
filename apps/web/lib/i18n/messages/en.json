@@ -2677,10 +2677,11 @@
     "journalErr": {
       "CHECKSUM_BLOCKED": "Checksum must pass before the journal can be posted.",
       "UNMAPPED_ROLE": "Chart of accounts not mapped for role \"{role}\". Map it under Finance settings first.",
-      "UNBALANCED": "Settlement totals don't balance — check the Summary or add an \"other\" account.",
+      "UNBALANCED": "Settlement totals don't balance. The leftover fee already goes to the \"Marketplace Fee — Other\" account automatically, so this means the excel summary itself does not satisfy Released + Expenses = Income. Check the Summary sheet of the settlement file.",
       "NOT_FOUND": "Settlement not found.",
       "FORBIDDEN": "You don't have permission to post this journal.",
-      "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal."
+      "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal.",
+      "NON_POSTABLE_ACCOUNT": "One of the mapped accounts cannot be posted to — it is inactive or has child accounts. Map that role to an active account with no children under Finance → Account Mapping."
     },
     "resyncButton": "Resync {count} Unmatched Order(s)",
     "resyncButtonPending": "Starting Resync…",

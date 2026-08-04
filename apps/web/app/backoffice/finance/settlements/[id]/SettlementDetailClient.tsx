@@ -228,6 +228,9 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
             case "UNBALANCED":
               toast.error(t("journalErr.UNBALANCED"));
               break;
+            case "NON_POSTABLE_ACCOUNT":
+              toast.error(t("journalErr.NON_POSTABLE_ACCOUNT"));
+              break;
             case "ALREADY_RECONCILED_DIFF":
               toast.error(t("journalErr.ALREADY_RECONCILED_DIFF"));
               break;
