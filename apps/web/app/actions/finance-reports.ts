@@ -3,7 +3,7 @@
 import * as XLSX from "xlsx";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
+import { parseDateOnly, parseDateOnlyEnd, formatDateOnlyJakarta } from "@/lib/date-only";
 import { getAccountBalances, getEarliestJournal } from "@/lib/finance/reports/balances";
 import { buildTrialBalance, type TrialBalance } from "@/lib/finance/reports/trial-balance";
 import { buildIncomeStatement, type IncomeStatement } from "@/lib/finance/reports/income-statement";
@@ -21,20 +21,41 @@ async function assertCanView(): Promise<string> {
   return session.user.name ?? session.user.email ?? "-";
 }
 
+/** Calendar-day label in the business timezone (WIB) — see `formatDateOnlyJakarta`. */
 function dateLabel(value: Date): string {
-  return value.toISOString().slice(0, 10);
+  return formatDateOnlyJakarta(value);
+}
+
+/**
+ * Human-readable "printed at" timestamp, explicitly anchored to WIB and
+ * labeled as such — otherwise a reader has no way to know which zone a
+ * printed statement was generated in.
+ */
+function printedAtLabel(value: Date): string {
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jakarta",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(value);
+  return `${formatDateOnlyJakarta(value)} ${time} WIB`;
 }
 
 function rangeLabel(from: Date | undefined, to: Date): string {
   return from ? `${dateLabel(from)} — ${dateLabel(to)}` : `s.d. ${dateLabel(to)}`;
 }
 
-export async function getTrialBalanceReport(input: {
+/**
+ * Unauthorized report assembly, shared by the exported read action and its
+ * matching export action so a single `assertCanView()` call — made by
+ * whichever of the two the caller invoked — gates both.
+ */
+async function loadTrialBalanceReport(input: {
   from?: string;
   to?: string;
   includeZero?: boolean;
 }): Promise<TrialBalance & { periodLabel: string }> {
-  await assertCanView();
   const to = parseDateOnlyEnd(input.to ?? "") ?? new Date();
   const from = parseDateOnly(input.from ?? "");
   const balances = await getAccountBalances({ from, to });
@@ -44,21 +65,19 @@ export async function getTrialBalanceReport(input: {
   };
 }
 
-export async function getIncomeStatementReport(input: {
+async function loadIncomeStatementReport(input: {
   from?: string;
   to?: string;
 }): Promise<IncomeStatement & { periodLabel: string }> {
-  await assertCanView();
   const to = parseDateOnlyEnd(input.to ?? "") ?? new Date();
   const from = parseDateOnly(input.from ?? "");
   const balances = await getAccountBalances({ from, to });
   return { ...buildIncomeStatement(balances), periodLabel: rangeLabel(from, to) };
 }
 
-export async function getBalanceSheetReport(input: {
+async function loadBalanceSheetReport(input: {
   asOf?: string;
 }): Promise<BalanceSheet & { periodLabel: string; openingWarningDate: string | null }> {
-  await assertCanView();
   const asOf = parseDateOnlyEnd(input.asOf ?? "") ?? new Date();
   const [balances, earliest] = await Promise.all([
     getAccountBalances({ to: asOf }),
@@ -71,6 +90,30 @@ export async function getBalanceSheetReport(input: {
   };
 }
 
+export async function getTrialBalanceReport(input: {
+  from?: string;
+  to?: string;
+  includeZero?: boolean;
+}): Promise<TrialBalance & { periodLabel: string }> {
+  await assertCanView();
+  return loadTrialBalanceReport(input);
+}
+
+export async function getIncomeStatementReport(input: {
+  from?: string;
+  to?: string;
+}): Promise<IncomeStatement & { periodLabel: string }> {
+  await assertCanView();
+  return loadIncomeStatementReport(input);
+}
+
+export async function getBalanceSheetReport(input: {
+  asOf?: string;
+}): Promise<BalanceSheet & { periodLabel: string; openingWarningDate: string | null }> {
+  await assertCanView();
+  return loadBalanceSheetReport(input);
+}
+
 type Cell = string | number;
 
 function headerRows(title: string, periodLabel: string, preparedBy: string): Cell[][] {
@@ -79,7 +122,7 @@ function headerRows(title: string, periodLabel: string, preparedBy: string): Cel
     [title],
     [periodLabel],
     [`Disiapkan oleh: ${preparedBy}`],
-    [`Dicetak: ${new Date().toISOString().slice(0, 19).replace("T", " ")}`],
+    [`Dicetak: ${printedAtLabel(new Date())}`],
     [],
   ];
 }
@@ -106,7 +149,7 @@ export async function exportTrialBalanceExcel(input: {
   includeZero?: boolean;
 }): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
-  const report = await getTrialBalanceReport(input);
+  const report = await loadTrialBalanceReport(input);
 
   const rows: Cell[][] = [
     ...headerRows("Neraca Saldo", report.periodLabel, preparedBy),
@@ -123,7 +166,7 @@ export async function exportIncomeStatementExcel(input: {
   to?: string;
 }): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
-  const report = await getIncomeStatementReport(input);
+  const report = await loadIncomeStatementReport(input);
 
   const rows: Cell[][] = [
     ...headerRows("Laporan Laba Rugi", report.periodLabel, preparedBy),
@@ -148,7 +191,7 @@ export async function exportBalanceSheetExcel(input: {
   asOf?: string;
 }): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
-  const report = await getBalanceSheetReport(input);
+  const report = await loadBalanceSheetReport(input);
 
   const rows: Cell[][] = [
     ...headerRows("Neraca", report.periodLabel, preparedBy),

@@ -44,3 +44,18 @@ export function coerceToDate(value: Date | string | null | undefined): Date | un
   }
   return parseDateOnly(value);
 }
+
+/**
+ * Calendar day of the given instant in the business timezone (WIB), as
+ * `YYYY-MM-DD`. Unlike `formatDateOnly`, this is independent of the server
+ * process timezone — prod runs UTC, where a WIB-midnight instant formats as
+ * the previous calendar day.
+ */
+export function formatDateOnlyJakarta(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
