@@ -11,7 +11,7 @@ import { getPackRatio } from "@/app/actions/settings/pack-ratio";
 import { getSmartRequestHistory } from "@/lib/field-sales/queries";
 import { loadSmartRequestCandidates } from "@/lib/field-sales/smart-request/load-candidates";
 import { planSmartRequest, type PlanCategoryInput, type CategoryUnderfill } from "@/lib/field-sales/smart-request/plan";
-import { parseItemVariants, variantDetailForSku } from "@/lib/items/variants";
+import { variantDetailForSku } from "@/lib/items/variants";
 import type { SubmitResult } from "@/app/pwa/stores/[id]/catalog/actions";
 
 export type SmartRequestLine = {

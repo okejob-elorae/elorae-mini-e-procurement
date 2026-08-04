@@ -288,6 +288,7 @@ export function SmartRequestShell({
                       <div
                         className="flex items-center justify-between pl-7"
                         onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
                       >
                         <span className="text-xs text-muted-foreground">{t("packsLabel")}</span>
                         <div className="flex items-center gap-1.5">
