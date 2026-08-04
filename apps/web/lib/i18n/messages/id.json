@@ -2854,6 +2854,24 @@
       "coverageTitle": "Cakupan data",
       "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok."
     },
+    "balanceSheet": {
+      "pageTitle": "Neraca",
+      "subtitle": "Posisi aset, liabilitas, dan ekuitas per tanggal terpilih.",
+      "cardTitle": "Neraca",
+      "sectionAset": "Aset",
+      "sectionLiabilitas": "Liabilitas",
+      "sectionEkuitas": "Ekuitas",
+      "totalAset": "Total Aset",
+      "totalLiabilitas": "Total Liabilitas",
+      "totalEkuitas": "Total Ekuitas",
+      "unclosedEarnings": "Laba (Rugi) Belum Ditutup",
+      "totalLiabilitasEkuitas": "Total Liabilitas dan Ekuitas",
+      "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
+      "balancedNote": "Aset seimbang dengan Liabilitas + Ekuitas. Baris \"Laba (Rugi) Belum Ditutup\" menggantikan jurnal penutup yang belum ada; karena setiap jurnal sudah seimbang saat diposting, kesamaan ini memang diharapkan.",
+      "unbalancedNote": "Aset TIDAK seimbang dengan Liabilitas + Ekuitas. Ini menandakan data jurnal rusak — periksa buku besar.",
+      "openingTitle": "Saldo awal belum dicatat",
+      "openingBody": "Jurnal paling awal bertanggal {date}. Posisi ini hanya mencakup jurnal sejak tanggal tersebut. Catat jurnal manual saldo awal (kas, piutang, persediaan, utang, ekuitas) bertanggal sebelum itu agar neraca mencerminkan posisi sebenarnya."
+    },
     "filter": {
       "dateFrom": "Dari tanggal",
       "dateTo": "Sampai tanggal",

@@ -2854,6 +2854,24 @@
       "coverageTitle": "Data coverage",
       "coverageBody": "This report covers only transactions that produce journals: marketplace sales, returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, and manual journals. NOT yet included: field sales (putus), van sales, SPG sales, and supplier payments."
     },
+    "balanceSheet": {
+      "pageTitle": "Balance Sheet",
+      "subtitle": "Assets, liabilities, and equity as of the selected date.",
+      "cardTitle": "Balance Sheet",
+      "sectionAset": "Assets",
+      "sectionLiabilitas": "Liabilities",
+      "sectionEkuitas": "Equity",
+      "totalAset": "Total Assets",
+      "totalLiabilitas": "Total Liabilities",
+      "totalEkuitas": "Total Equity",
+      "unclosedEarnings": "Unclosed Profit (Loss)",
+      "totalLiabilitasEkuitas": "Total Liabilities and Equity",
+      "sectionEmpty": "No accounts with a balance in this section yet.",
+      "balancedNote": "Assets equal Liabilities + Equity. The \"Unclosed Profit (Loss)\" line stands in for the closing entry that does not exist yet; since every journal is balanced when posted, this equality is expected.",
+      "unbalancedNote": "Assets do NOT equal Liabilities + Equity. This indicates corrupted journal data — inspect the ledger.",
+      "openingTitle": "Opening balances not recorded",
+      "openingBody": "The earliest journal is dated {date}. This position covers only journals from that date onward. Record a manual opening-balance journal (cash, receivables, inventory, payables, equity) dated before it so the balance sheet reflects the real position."
+    },
     "filter": {
       "dateFrom": "From date",
       "dateTo": "To date",

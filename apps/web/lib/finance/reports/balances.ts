@@ -83,3 +83,18 @@ export async function getAccountBalances(range: { from?: Date; to: Date }): Prom
 
   return rows;
 }
+
+/**
+ * The oldest journal, used by Neraca to decide whether to warn that opening
+ * balances were never recorded. An opening-balance journal is entered by hand
+ * and dated before everything else, so when the oldest journal is manual the
+ * warning is suppressed — that is as close as the schema gets to detecting one.
+ * Returns null when no journal exists at all.
+ */
+export async function getEarliestJournal(): Promise<{ date: Date; isManual: boolean } | null> {
+  const first = await prisma.journal.findFirst({
+    orderBy: { date: "asc" },
+    select: { date: true, isManual: true },
+  });
+  return first ?? null;
+}
