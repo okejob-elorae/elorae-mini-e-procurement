@@ -9,6 +9,15 @@ import { buildTrialBalance, type TrialBalance } from "@/lib/finance/reports/tria
 import { buildIncomeStatement, type IncomeStatement } from "@/lib/finance/reports/income-statement";
 import { buildBalanceSheet, type BalanceSheet } from "@/lib/finance/reports/balance-sheet";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
+import {
+  BALANCE_SHEET_OPENING_TITLE,
+  INCOME_STATEMENT_COVERAGE_BODY,
+  INCOME_STATEMENT_COVERAGE_TITLE,
+  TRIAL_BALANCE_BALANCED_NOTE,
+  TRIAL_BALANCE_UNBALANCED_NOTE,
+  balanceSheetOpeningBody,
+  formatOpeningDate,
+} from "@/lib/finance/reports/disclosures";
 
 const COMPANY_NAME = "Elorae";
 
@@ -90,28 +99,40 @@ async function loadBalanceSheetReport(input: {
   };
 }
 
+/**
+ * Attribution the print views render in their header, matching the
+ * `Disiapkan oleh` / `Dicetak` rows `headerRows` emits into the spreadsheets.
+ * Resolved here rather than client-side so the timestamp stays WIB-anchored.
+ */
+type Attribution = { preparedBy: string; printedAt: string };
+
 export async function getTrialBalanceReport(input: {
   from?: string;
   to?: string;
   includeZero?: boolean;
-}): Promise<TrialBalance & { periodLabel: string }> {
-  await assertCanView();
-  return loadTrialBalanceReport(input);
+}): Promise<TrialBalance & { periodLabel: string } & Attribution> {
+  const preparedBy = await assertCanView();
+  const report = await loadTrialBalanceReport(input);
+  return { ...report, preparedBy, printedAt: printedAtLabel(new Date()) };
 }
 
 export async function getIncomeStatementReport(input: {
   from?: string;
   to?: string;
-}): Promise<IncomeStatement & { periodLabel: string }> {
-  await assertCanView();
-  return loadIncomeStatementReport(input);
+}): Promise<IncomeStatement & { periodLabel: string } & Attribution> {
+  const preparedBy = await assertCanView();
+  const report = await loadIncomeStatementReport(input);
+  return { ...report, preparedBy, printedAt: printedAtLabel(new Date()) };
 }
 
 export async function getBalanceSheetReport(input: {
   asOf?: string;
-}): Promise<BalanceSheet & { periodLabel: string; openingWarningDate: string | null }> {
-  await assertCanView();
-  return loadBalanceSheetReport(input);
+}): Promise<
+  BalanceSheet & { periodLabel: string; openingWarningDate: string | null } & Attribution
+> {
+  const preparedBy = await assertCanView();
+  const report = await loadBalanceSheetReport(input);
+  return { ...report, preparedBy, printedAt: printedAtLabel(new Date()) };
 }
 
 type Cell = string | number;
@@ -156,6 +177,8 @@ export async function exportTrialBalanceExcel(input: {
     ["Kode", "Nama Akun", "Debit", "Kredit", "Saldo"],
     ...report.rows.map((r): Cell[] => [r.code, r.name, r.debit, r.credit, r.signed]),
     ["", "Total", report.totalDebit, report.totalCredit, ""],
+    [],
+    [report.isBalanced ? TRIAL_BALANCE_BALANCED_NOTE : TRIAL_BALANCE_UNBALANCED_NOTE],
   ];
 
   return toWorkbook(rows, "Neraca Saldo", `neraca-saldo-${dateLabel(new Date())}.xlsx`);
@@ -182,6 +205,9 @@ export async function exportIncomeStatementExcel(input: {
     ...flattenNodes(report.beban),
     ["Total Beban Operasional", report.totalBeban],
     ["Laba Bersih", report.labaBersih],
+    [],
+    [INCOME_STATEMENT_COVERAGE_TITLE],
+    [INCOME_STATEMENT_COVERAGE_BODY],
   ];
 
   return toWorkbook(rows, "Laba Rugi", `laba-rugi-${dateLabel(new Date())}.xlsx`);
@@ -207,6 +233,13 @@ export async function exportBalanceSheetExcel(input: {
     ["Total Ekuitas", report.totalEkuitas],
     ["Laba (Rugi) Belum Ditutup", report.unclosedEarnings],
     ["Total Liabilitas dan Ekuitas", report.totalLiabilitasEkuitas],
+    ...(report.openingWarningDate
+      ? [
+          [] as Cell[],
+          [BALANCE_SHEET_OPENING_TITLE],
+          [balanceSheetOpeningBody(formatOpeningDate(report.openingWarningDate))],
+        ]
+      : []),
   ];
 
   return toWorkbook(rows, "Neraca", `neraca-${dateLabel(new Date())}.xlsx`);
