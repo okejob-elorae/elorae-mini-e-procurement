@@ -216,7 +216,11 @@ jobs:
             cd /srv/elorae
             docker compose -f docker-compose.prod.yml pull api
             docker compose -f docker-compose.prod.yml up -d --no-build api
-            docker image prune -f
+            # -a is required: pulled images are sha-TAGGED, never dangling, so a bare
+            # `prune -f` never reclaims them (that no-op filled the 96G disk 2026-08-04).
+            # until=336h keeps 14 days of tags as local rollback targets; in-use images
+            # are always skipped regardless of age (mariadb/redis/caddy stay put).
+            docker image prune -a --filter "until=336h" -f
 
   deploy-web:
     name: Deploy web
@@ -251,4 +255,5 @@ jobs:
             cd /srv/elorae
             docker compose -f docker-compose.prod.yml pull web
             docker compose -f docker-compose.prod.yml up -d --no-build web
-            docker image prune -f
+            # See deploy-api: -a is required (sha-tagged images are never dangling).
+            docker image prune -a --filter "until=336h" -f
