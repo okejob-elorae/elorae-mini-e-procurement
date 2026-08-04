@@ -27,14 +27,16 @@ function nodeRows(nodes: RollupNode[], level = 0): React.ReactNode[] {
 export default function PrintBalanceSheetPage() {
   const sp = useSearchParams();
   const printedRef = useRef(false);
-  const [report, setReport] = useState<Report | null>(null);
+  const [report, setReport] = useState<Report | "error" | null>(null);
 
   useEffect(() => {
-    getBalanceSheetReport({ asOf: sp.get("asOf") ?? undefined }).then(setReport);
+    getBalanceSheetReport({ asOf: sp.get("asOf") ?? undefined })
+      .then(setReport)
+      .catch(() => setReport("error"));
   }, [sp]);
 
   useEffect(() => {
-    if (report && !printedRef.current) {
+    if (report && report !== "error" && !printedRef.current) {
       printedRef.current = true;
       window.print();
     }
@@ -44,6 +46,17 @@ export default function PrintBalanceSheetPage() {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
+      </div>
+    );
+  }
+
+  if (report === "error") {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-1 text-center">
+        <p className="font-bold">Gagal memuat laporan.</p>
+        <p className="text-sm text-gray-600">
+          Anda mungkin tidak memiliki akses ke laporan keuangan. Tutup tab ini dan kembali.
+        </p>
       </div>
     );
   }
