@@ -46,6 +46,13 @@ export async function getAccountBalances(range: { from?: Date; to: Date }): Prom
     }),
   ]);
 
+  /* `parentIds` includes ALL parent accounts from the chart of accounts. The `hasChildren`
+   * flag reflects the chart's structure, not the returned row set — a parent can be marked
+   * true while none of its children appear in the returned array (if the children have no
+   * movement in range or are inactive with no movement). This is intentional, since
+   * `postJournal` rejects any non-leaf account regardless of whether its children appear
+   * in this range, so the postable-leaf detection needs the full chart structure.
+   */
   const parentIds = new Set(accounts.map((a) => a.parentId).filter((id): id is string => id !== null));
   const sums = new Map(grouped.map((g) => [g.chartAccountId, g]));
 

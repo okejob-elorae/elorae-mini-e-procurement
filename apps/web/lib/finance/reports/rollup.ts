@@ -49,9 +49,11 @@ export function buildRollup(rows: BalanceRow[], types: AccountType[]): RollupNod
   }
 
   const sortByCode = (a: RollupNode, b: RollupNode) => a.code.localeCompare(b.code);
+  const toCents = (value: number): number => Math.round(value * 100);
   const resolve = (node: RollupNode): number => {
     node.children.sort(sortByCode);
-    node.subtotal = node.signed + node.children.reduce((sum, child) => sum + resolve(child), 0);
+    const childTotal = node.children.reduce((sum, child) => sum + toCents(resolve(child)), 0);
+    node.subtotal = (toCents(node.signed) + childTotal) / 100;
     return node.subtotal;
   };
 

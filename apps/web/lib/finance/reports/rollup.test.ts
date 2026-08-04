@@ -86,4 +86,14 @@ describe("buildRollup", () => {
 
     expect(buildRollup(rows, ["ASET"]).map((n) => n.code)).toEqual(["1100", "1200"]);
   });
+
+  it("keeps subtotals cent-exact when child balances are fractional", () => {
+    const rows: BalanceRow[] = [
+      row({ accountId: "p", code: "6100", hasChildren: true, signed: 0.1 }),
+      row({ accountId: "c1", code: "6101", parentId: "p", depth: 1, signed: 0.2 }),
+      row({ accountId: "c2", code: "6102", parentId: "p", depth: 1, signed: 300.1 }),
+    ];
+
+    expect(buildRollup(rows, ["ASET"])[0].subtotal).toBe(300.4);
+  });
 });
