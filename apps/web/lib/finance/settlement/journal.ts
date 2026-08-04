@@ -12,7 +12,12 @@ export type PostSettlementJournalResult =
   | { ok: true; journalId: string; created: boolean }
   | {
       ok: false;
-      code: "CHECKSUM_BLOCKED" | "UNMAPPED_ROLE" | "UNBALANCED" | "ALREADY_RECONCILED_DIFF";
+      code:
+        | "CHECKSUM_BLOCKED"
+        | "UNMAPPED_ROLE"
+        | "UNBALANCED"
+        | "ALREADY_RECONCILED_DIFF"
+        | "NON_POSTABLE_ACCOUNT";
       role?: string;
     };
 
@@ -60,14 +65,29 @@ export async function postSettlementJournal(
     },
   });
 
+  /**
+   * `SettlementLine.biaya*` columns and `Settlement.totalPengeluaran` are
+   * stored NEGATIVE in real data — they are deductions, not costs — and
+   * `splitMarketplaceFees` needs non-negative magnitudes to emit debit lines
+   * (see `fee-split.ts`'s "negative amount becomes a credit" rule). Feeding
+   * it the raw signed sums would flip every itemized category into a
+   * contra-expense credit, the inverse of the intended breakdown, and can
+   * leave the journal unbalanced once bank/AR are added. Normalize with
+   * `Math.abs()` here, at read time — not in the Shopee parser, since the
+   * stored signed values are also consumed elsewhere (e.g. settlement
+   * compare views) and flipping them there would ripple. This mirrors the
+   * same convention `tiktok-settlement-parser.ts` already applies to
+   * `totalBiaya` for the identical reason (see its top-of-file comment and
+   * the per-line `Math.abs()` note near its `totalPengeluaran +=`).
+   */
   const feeSplit = splitMarketplaceFees(
     {
-      admin: Number(feeTotals._sum.biayaAdministrasi ?? 0),
-      service: Number(feeTotals._sum.biayaLayanan ?? 0),
-      commission: Number(feeTotals._sum.biayaKomisiAms ?? 0),
-      processing: Number(feeTotals._sum.biayaProsesPesanan ?? 0),
+      admin: Math.abs(Number(feeTotals._sum.biayaAdministrasi ?? 0)),
+      service: Math.abs(Number(feeTotals._sum.biayaLayanan ?? 0)),
+      commission: Math.abs(Number(feeTotals._sum.biayaKomisiAms ?? 0)),
+      processing: Math.abs(Number(feeTotals._sum.biayaProsesPesanan ?? 0)),
     },
-    Number(s.totalPengeluaran),
+    Math.abs(Number(s.totalPengeluaran)),
   );
 
   let bank: string, ar: string;
@@ -89,6 +109,8 @@ export async function postSettlementJournal(
       chartAccountId: feeAccounts.get(split.role)!,
       debit: split.debit,
       credit: split.credit,
+      /* Distinguishes categories that share the legacy MARKETPLACE_FEE fallback account. */
+      memo: split.role,
     })),
     { chartAccountId: ar, debit: 0, credit: Number(s.totalPendapatan) },
   ];
@@ -109,6 +131,9 @@ export async function postSettlementJournal(
     return hasTx(client) ? await client.$transaction(run) : await run(client as Prisma.TransactionClient);
   } catch (e) {
     if (e instanceof JournalError && e.code === "UNBALANCED") return { ok: false, code: "UNBALANCED" };
+    if (e instanceof JournalError && e.code === "NON_POSTABLE_ACCOUNT") {
+      return { ok: false, code: "NON_POSTABLE_ACCOUNT" };
+    }
     throw e;
   }
 }

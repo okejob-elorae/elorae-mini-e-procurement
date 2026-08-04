@@ -292,12 +292,22 @@ d("postSettlementJournal (test bed only)", () => {
   });
 
   it("posts one line per fee category plus a residual when all fee roles are mapped", async () => {
-    /* Lines total 2.000 in itemized fees; totalPengeluaran 2.500 leaves a 500 residual. */
+    /*
+     * Real Shopee data stores fee columns AND the summary totalPengeluaran
+     * as NEGATIVE (deductions) — see reference/finance/Income.sudah
+     * dilepas.id.20260601_20260630.xlsx. Seed that sign profile so an
+     * un-normalized implementation (missing Math.abs) fails this spec
+     * instead of an inverted-but-coincidentally-balanced journal passing it.
+     * Lines total 2.000 in itemized fees (unsigned); totalPengeluaran 2.500
+     * (unsigned) leaves a 500 residual. totalPendapatan = totalDilepas +
+     * |totalPengeluaran| = 7.500 + 2.500 = 10.000, matching the identity the
+     * real export satisfies (816.565.654 + 236.119.746 = 1.052.685.400).
+     */
     const feeSplitSettlementId = await seedSettlementWithLines({
       totalPendapatan: 10_000,
-      totalPengeluaran: 2_500,
+      totalPengeluaran: -2_500,
       totalDilepas: 7_500,
-      lines: [{ biayaAdministrasi: 1_000, biayaLayanan: 500, biayaKomisiAms: 300, biayaProsesPesanan: 200 }],
+      lines: [{ biayaAdministrasi: -1_000, biayaLayanan: -500, biayaKomisiAms: -300, biayaProsesPesanan: -200 }],
     });
 
     try {
@@ -314,7 +324,58 @@ d("postSettlementJournal (test bed only)", () => {
       expect(totalDebit).toBe(totalCredit);
       const byAccount = new Map(journal.lines.map((l) => [l.chartAccountId, Number(l.debit)]));
       expect(byAccount.get(feeAdminAccountId)).toBe(1_000);
+      expect(byAccount.get(feeServiceAccountId)).toBe(500);
+      expect(byAccount.get(feeCommissionAccountId)).toBe(300);
+      expect(byAccount.get(feeProcessingAccountId)).toBe(200);
       expect(byAccount.get(feeOtherAccountId)).toBe(500);
+    } finally {
+      await teardownSettlementJournal(feeSplitSettlementId);
+    }
+  });
+
+  it("posts a realistic Shopee-shaped breakdown scaled from the real income export", async () => {
+    /*
+     * Proportions taken from reference/finance/Income.sudah
+     * dilepas.id.20260601_20260630.xlsx, scaled down by 1/10,000 (values
+     * rounded to 2 decimals — SettlementLine columns are Decimal(18,2)):
+     * admin -86.847.349, service -109.821.025, commission -30.867.841,
+     * processing -4.641.762; totalPengeluaran -236.119.746, totalDilepas
+     * 816.565.654, totalPendapatan 1.052.685.400. The expected residual
+     * (394.18 here) matches the real export's known "Other Adjustments"
+     * bucket (3.941.769 unscaled, /10,000 = 394.1769 ≈ 394.18).
+     */
+    const feeSplitSettlementId = await seedSettlementWithLines({
+      totalPendapatan: 105_268.54,
+      totalPengeluaran: -23_611.97,
+      totalDilepas: 81_656.57,
+      lines: [
+        {
+          biayaAdministrasi: -8_684.73,
+          biayaLayanan: -10_982.1,
+          biayaKomisiAms: -3_086.78,
+          biayaProsesPesanan: -464.18,
+        },
+      ],
+    });
+
+    try {
+      const res = await postSettlementJournal(feeSplitSettlementId, adminId, prisma);
+
+      expect(res).toMatchObject({ ok: true });
+      const journal = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: feeSplitSettlementId } },
+        include: { lines: true },
+      });
+      expect(journal.lines).toHaveLength(7);
+      const totalDebit = journal.lines.reduce((sum, l) => sum + Number(l.debit), 0);
+      const totalCredit = journal.lines.reduce((sum, l) => sum + Number(l.credit), 0);
+      expect(totalDebit).toBe(totalCredit);
+      const byAccount = new Map(journal.lines.map((l) => [l.chartAccountId, Number(l.debit)]));
+      expect(byAccount.get(feeAdminAccountId)).toBe(8_684.73);
+      expect(byAccount.get(feeServiceAccountId)).toBe(10_982.1);
+      expect(byAccount.get(feeCommissionAccountId)).toBe(3_086.78);
+      expect(byAccount.get(feeProcessingAccountId)).toBe(464.18);
+      expect(byAccount.get(feeOtherAccountId)).toBe(394.18);
     } finally {
       await teardownSettlementJournal(feeSplitSettlementId);
     }
@@ -323,9 +384,9 @@ d("postSettlementJournal (test bed only)", () => {
   it("falls back to the legacy lumped fee account when category roles are unmapped", async () => {
     const feeSplitSettlementId = await seedSettlementWithLines({
       totalPendapatan: 10_000,
-      totalPengeluaran: 2_000,
+      totalPengeluaran: -2_000,
       totalDilepas: 8_000,
-      lines: [{ biayaAdministrasi: 1_000, biayaLayanan: 1_000, biayaKomisiAms: 0, biayaProsesPesanan: 0 }],
+      lines: [{ biayaAdministrasi: -1_000, biayaLayanan: -1_000, biayaKomisiAms: 0, biayaProsesPesanan: 0 }],
     });
     /* Only the legacy role is mapped — the categories this settlement actually hits are absent. */
     await clearAccountMapping("MARKETPLACE_FEE_ADMIN");
@@ -348,11 +409,64 @@ d("postSettlementJournal (test bed only)", () => {
     }
   });
 
+  it("mixes fallback and directly-mapped fee accounts across the five roles", async () => {
+    /*
+     * ADMIN and SERVICE are unmapped (fall back to the legacy MARKETPLACE_FEE
+     * account); COMMISSION, PROCESSING, and the OTHER residual stay mapped
+     * to their own accounts. All five categories carry a nonzero amount so a
+     * role<->account cross-wiring bug (e.g. COMMISSION's amount landing on
+     * PROCESSING's account) would be caught. The `memo` stamp (one per
+     * category role) disambiguates the two lines that share `feeId`.
+     */
+    const feeSplitSettlementId = await seedSettlementWithLines({
+      totalPendapatan: 10_000,
+      totalPengeluaran: -3_000,
+      totalDilepas: 7_000,
+      lines: [{ biayaAdministrasi: -1_200, biayaLayanan: -800, biayaKomisiAms: -500, biayaProsesPesanan: -300 }],
+    });
+    await clearAccountMapping("MARKETPLACE_FEE_ADMIN");
+    await clearAccountMapping("MARKETPLACE_FEE_SERVICE");
+
+    try {
+      const res = await postSettlementJournal(feeSplitSettlementId, adminId, prisma);
+
+      expect(res).toMatchObject({ ok: true });
+      const journal = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: feeSplitSettlementId } },
+        include: { lines: true },
+      });
+      expect(journal.lines).toHaveLength(7);
+      const totalDebit = journal.lines.reduce((sum, l) => sum + Number(l.debit), 0);
+      const totalCredit = journal.lines.reduce((sum, l) => sum + Number(l.credit), 0);
+      expect(totalDebit).toBe(totalCredit);
+
+      const byMemo = new Map(journal.lines.map((l) => [l.memo, l]));
+      const adminLine = byMemo.get("MARKETPLACE_FEE_ADMIN")!;
+      const serviceLine = byMemo.get("MARKETPLACE_FEE_SERVICE")!;
+      const commissionLine = byMemo.get("MARKETPLACE_FEE_COMMISSION")!;
+      const processingLine = byMemo.get("MARKETPLACE_FEE_PROCESSING")!;
+      const otherLine = byMemo.get("MARKETPLACE_FEE_OTHER")!;
+
+      expect(adminLine.chartAccountId).toBe(feeId);
+      expect(Number(adminLine.debit)).toBe(1_200);
+      expect(serviceLine.chartAccountId).toBe(feeId);
+      expect(Number(serviceLine.debit)).toBe(800);
+      expect(commissionLine.chartAccountId).toBe(feeCommissionAccountId);
+      expect(Number(commissionLine.debit)).toBe(500);
+      expect(processingLine.chartAccountId).toBe(feeProcessingAccountId);
+      expect(Number(processingLine.debit)).toBe(300);
+      expect(otherLine.chartAccountId).toBe(feeOtherAccountId);
+      expect(Number(otherLine.debit)).toBe(200);
+    } finally {
+      await teardownSettlementJournal(feeSplitSettlementId);
+    }
+  });
+
   it("puts every fee in the residual line when no fee column is itemized", async () => {
     /* TikTok shape: the parser zeroes all four fee columns. */
     const feeSplitSettlementId = await seedSettlementWithLines({
       totalPendapatan: 10_000,
-      totalPengeluaran: 1_500,
+      totalPengeluaran: -1_500,
       totalDilepas: 8_500,
       lines: [{ biayaAdministrasi: 0, biayaLayanan: 0, biayaKomisiAms: 0, biayaProsesPesanan: 0 }],
     });
