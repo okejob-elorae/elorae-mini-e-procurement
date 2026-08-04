@@ -7,6 +7,7 @@ packages/db/generated/
 
 reference/*
 docs/superpowers/
+meeting-progress-*.md
 .vercel
 
 other-sources

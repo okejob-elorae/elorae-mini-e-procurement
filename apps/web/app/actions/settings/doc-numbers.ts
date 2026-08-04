@@ -35,6 +35,7 @@ const DEFAULT_CONFIGS: Record<
   VANLOAD: { prefix: 'VLOAD/', resetPeriod: 'YEARLY', padding: 4 },
   VANSALE: { prefix: 'VSALE/', resetPeriod: 'YEARLY', padding: 4 },
   VANRECON: { prefix: 'VRCN/', resetPeriod: 'YEARLY', padding: 4 },
+  SPGSALE: { prefix: 'SPG/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
 export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {

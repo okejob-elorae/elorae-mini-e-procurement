@@ -195,6 +195,9 @@ async function main() {
     // Lead Time
     { code: 'lead_time:view', module: 'lead_time', action: 'view', description: 'View process library and supplier chains' },
     { code: 'lead_time:manage', module: 'lead_time', action: 'manage', description: 'Manage process library and supplier chains' },
+    // SPG Sales (in-store promoter)
+    { code: 'spg_sales:record', module: 'spg_sales', action: 'record', description: 'Record SPG in-store sales' },
+    { code: 'spg_sales:view', module: 'spg_sales', action: 'view', description: 'View SPG in-store sales register' },
   ];
 
   // Upsert all permissions
@@ -260,6 +263,16 @@ async function main() {
     create: {
       name: 'SALESMAN',
       description: 'Field salesman — PWA-only access',
+      isSystem: false,
+    },
+  });
+
+  const spgRole = await prisma.roleDefinition.upsert({
+    where: { name: 'SPG' },
+    update: { isSystem: false },
+    create: {
+      name: 'SPG',
+      description: 'In-store promoter — PWA-only access, fixed to one store',
       isSystem: false,
     },
   });
@@ -391,6 +404,27 @@ async function main() {
       });
     }
   }
+
+  // SPG permissions
+  const spgPermissions = ["pwa:access", "spg_sales:record"];
+  for (const code of spgPermissions) {
+    const perm = permissionMap.get(code);
+    if (perm) {
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: spgRole.id,
+            permissionId: perm.id,
+          },
+        },
+        update: {},
+        create: {
+          roleId: spgRole.id,
+          permissionId: perm.id,
+        },
+      });
+    }
+  }
   console.log('Role permissions assigned');
 
   // Migrate existing users to use roleId
@@ -421,6 +455,22 @@ async function main() {
       passwordHash: await bcrypt.hash("salesman123", 10),
       pinHash: await bcrypt.hash("123456", 10),
       roleId: salesmanRole.id,
+    },
+  });
+
+  // Create or update SPG user with SPG role
+  // NOTE: assignedStoreId left null here — no demo Store is seeded by this
+  // script. Set it by hand (or via backoffice) once a real Store exists,
+  // e.g.: UPDATE User SET assignedStoreId = '<storeId>' WHERE email = 'spg@elorae.com';
+  await prisma.user.upsert({
+    where: { email: "spg@elorae.com" },
+    update: { roleId: spgRole.id },
+    create: {
+      email: "spg@elorae.com",
+      name: "SPG",
+      passwordHash: await bcrypt.hash("spg123", 10),
+      pinHash: await bcrypt.hash("123456", 10),
+      roleId: spgRole.id,
     },
   });
   console.log('Users migrated to roleId');

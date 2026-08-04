@@ -21,10 +21,17 @@ const checkOutSchema = z.object({
   lng: z.number().min(-180).max(180),
 });
 
-export async function checkIn(input: { storeId: string; lat: number; lng: number }): Promise<{ ok: false; code: "UNAUTHORIZED" | "NOT_FOUND" } | void> {
+export async function checkIn(input: { storeId: string; lat: number; lng: number }): Promise<{ ok: false; code: "UNAUTHORIZED" | "NOT_FOUND" | "STORE_NOT_ASSIGNED" } | void> {
   const parsed = checkInSchema.parse(input);
   const session = await auth();
   if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
+
+  // An SPG is stationed at one store — they may only check in there, even if they
+  // reach another store's route directly. Non-SPG users have no assignedStoreId.
+  const me = await prisma.user.findUnique({ where: { id: session.user.id }, select: { assignedStoreId: true } });
+  if (me?.assignedStoreId && me.assignedStoreId !== parsed.storeId) {
+    return { ok: false, code: "STORE_NOT_ASSIGNED" };
+  }
 
   const store = await prisma.store.findUnique({
     where: { id: parsed.storeId },
