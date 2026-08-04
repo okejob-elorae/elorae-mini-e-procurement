@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Store, CloudUpload, Truck } from "lucide-react";
+import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { listPendingOrders } from "@/lib/pwa/offline/queue";
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
@@ -16,7 +16,13 @@ type PermState = "prompt" | "granted" | "denied" | "unknown";
 
 type Props = {
   userName: string;
-  activeVisit: { id: string; storeId: string; storeName: string; checkinAt: string } | null;
+  activeVisit: {
+    id: string;
+    storeId: string;
+    storeName: string;
+    storeTermsType: "PUTUS" | "KONSI";
+    checkinAt: string;
+  } | null;
   stores: StoreWithCoords[];
   recentStores: Array<{ storeId: string; storeName: string }>;
   onLogout: () => Promise<void>;
@@ -27,6 +33,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
   const tAuth = useTranslations("auth");
   const tOffline = useTranslations("pwa.offline");
   const tVanSale = useTranslations("vanSale");
+  const tSmartRequest = useTranslations("pwa.smartRequest");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [fetchingOrigin, setFetchingOrigin] = useState(false);
@@ -138,12 +145,22 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
             </div>
           </CardContent>
         </Card>
-        <Button asChild className="w-full">
-          <Link href={`/pwa/stores/${activeVisit.storeId}/catalog`}>
-            <ShoppingBag className="h-4 w-4" />
-            Katalog Produk
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild className="min-w-0 flex-1 overflow-hidden">
+            <Link href={`/pwa/stores/${activeVisit.storeId}/catalog`}>
+              <ShoppingBag className="h-4 w-4" />
+              <span className="truncate">Katalog Produk</span>
+            </Link>
+          </Button>
+          {activeVisit.storeTermsType === "PUTUS" && (
+            <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
+              <Link href={`/pwa/stores/${activeVisit.storeId}/smart-request`}>
+                <Sparkles className="h-4 w-4" />
+                <span className="truncate">{tSmartRequest("cta")}</span>
+              </Link>
+            </Button>
+          )}
+        </div>
         {vanSaleCta}
         <CheckOutButton visitId={activeVisit.id} />
       </div>

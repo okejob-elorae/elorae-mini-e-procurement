@@ -113,6 +113,7 @@ export default async function PwaHome() {
         id: active.id,
         storeId: active.storeId,
         storeName: active.store.name,
+        storeTermsType: active.store.termsType,
         checkinAt: active.checkinAt.toISOString(),
       } : null}
       stores={stores.map(s => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng }))}

@@ -24,6 +24,7 @@ export async function createFieldSalesOrder(input: {
   lines: CreateLine[];
   note?: string;
   idempotencyKey?: string;
+  skipMinQty?: boolean;
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[] }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
   return runSerializable(async (tx) => {
@@ -62,15 +63,17 @@ export async function createFieldSalesOrder(input: {
       const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
       const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, minOrderQty: true, sellingPrice: true } });
       for (const i of items) priceByItemId.set(i.id, i.sellingPrice === null ? null : Number(i.sellingPrice));
-      const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
-      const globalMin = globalRow ? Number(globalRow.value) : 6;
-      const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
-      // Aggregate qty per item so an item's variants collectively satisfy the min.
-      const qtyByItem = new Map<string, number>();
-      for (const l of input.lines) qtyByItem.set(l.itemId, (qtyByItem.get(l.itemId) ?? 0) + l.qty);
-      const aggLines = Array.from(qtyByItem, ([itemId, qty]) => ({ itemId, qty }));
-      const violations = validateMinQtyLines(aggLines, minByItemId);
-      if (violations.length > 0) throw new MinQtyViolationError(violations);
+      if (!input.skipMinQty) {
+        const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
+        const globalMin = globalRow ? Number(globalRow.value) : 6;
+        const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
+        // Aggregate qty per item so an item's variants collectively satisfy the min.
+        const qtyByItem = new Map<string, number>();
+        for (const l of input.lines) qtyByItem.set(l.itemId, (qtyByItem.get(l.itemId) ?? 0) + l.qty);
+        const aggLines = Array.from(qtyByItem, ([itemId, qty]) => ({ itemId, qty }));
+        const violations = validateMinQtyLines(aggLines, minByItemId);
+        if (violations.length > 0) throw new MinQtyViolationError(violations);
+      }
     }
 
     const orderNo = await generateDocNumber(isKonsi ? "KONSI" : "PUTUS", tx);
