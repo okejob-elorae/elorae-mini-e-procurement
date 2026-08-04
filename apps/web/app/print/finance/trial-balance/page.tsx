@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getTrialBalanceReport } from "@/app/actions/finance-reports";
+import {
+  TRIAL_BALANCE_BALANCED_NOTE,
+  TRIAL_BALANCE_UNBALANCED_NOTE,
+} from "@/lib/finance/reports/disclosures";
 
 type Report = Awaited<ReturnType<typeof getTrialBalanceReport>>;
 
@@ -27,10 +31,21 @@ export default function PrintTrialBalancePage() {
   }, [sp]);
 
   useEffect(() => {
-    if (report && report !== "error" && !printedRef.current) {
-      printedRef.current = true;
+    if (!report || report === "error" || printedRef.current) return;
+    printedRef.current = true;
+    /**
+     * Delay so the DOM is fully rendered before the print dialog opens — the
+     * sibling work-order print view learned this from a real failure. Teardown
+     * releases the guard so a Strict Mode double-invocation still prints once
+     * (first timer cancelled, second one fires).
+     */
+    const timer = setTimeout(() => {
       window.print();
-    }
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      printedRef.current = false;
+    };
   }, [report]);
 
   if (!report) {
@@ -53,11 +68,13 @@ export default function PrintTrialBalancePage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="print-statement mx-auto max-w-3xl">
       <div className="mb-6 text-center">
         <h1 className="text-lg font-bold">Elorae</h1>
         <h2 className="text-base font-semibold">Neraca Saldo</h2>
         <p className="text-sm">{report.periodLabel}</p>
+        <p className="mt-1 text-xs text-gray-600">Disiapkan oleh: {report.preparedBy}</p>
+        <p className="text-xs text-gray-600">Dicetak: {report.printedAt}</p>
       </div>
       <table className="w-full text-sm">
         <thead>
@@ -89,6 +106,9 @@ export default function PrintTrialBalancePage() {
           </tr>
         </tbody>
       </table>
+      <p className="mt-4 text-xs text-gray-700">
+        {report.isBalanced ? TRIAL_BALANCE_BALANCED_NOTE : TRIAL_BALANCE_UNBALANCED_NOTE}
+      </p>
     </div>
   );
 }

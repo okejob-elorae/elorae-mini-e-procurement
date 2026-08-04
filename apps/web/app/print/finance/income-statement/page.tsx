@@ -5,6 +5,10 @@ import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getIncomeStatementReport } from "@/app/actions/finance-reports";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
+import {
+  INCOME_STATEMENT_COVERAGE_BODY,
+  INCOME_STATEMENT_COVERAGE_TITLE,
+} from "@/lib/finance/reports/disclosures";
 
 type Report = Awaited<ReturnType<typeof getIncomeStatementReport>>;
 
@@ -39,10 +43,21 @@ export default function PrintIncomeStatementPage() {
   }, [sp]);
 
   useEffect(() => {
-    if (report && report !== "error" && !printedRef.current) {
-      printedRef.current = true;
+    if (!report || report === "error" || printedRef.current) return;
+    printedRef.current = true;
+    /**
+     * Delay so the DOM is fully rendered before the print dialog opens — the
+     * sibling work-order print view learned this from a real failure. Teardown
+     * releases the guard so a Strict Mode double-invocation still prints once
+     * (first timer cancelled, second one fires).
+     */
+    const timer = setTimeout(() => {
       window.print();
-    }
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      printedRef.current = false;
+    };
   }, [report]);
 
   if (!report) {
@@ -65,15 +80,17 @@ export default function PrintIncomeStatementPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="print-statement mx-auto max-w-2xl">
       <div className="mb-6 text-center">
         <h1 className="text-lg font-bold">Elorae</h1>
         <h2 className="text-base font-semibold">Laporan Laba Rugi</h2>
         <p className="text-sm">{report.periodLabel}</p>
+        <p className="mt-1 text-xs text-gray-600">Disiapkan oleh: {report.preparedBy}</p>
+        <p className="text-xs text-gray-600">Dicetak: {report.printedAt}</p>
       </div>
       <table className="w-full text-sm">
         <tbody>
-          <tr className="bg-gray-100 font-semibold">
+          <tr className="print-statement-band bg-gray-100 font-semibold">
             <td className="py-1" colSpan={2}>
               PENDAPATAN
             </td>
@@ -83,7 +100,7 @@ export default function PrintIncomeStatementPage() {
             <td className="py-1">Total Pendapatan</td>
             <td className="py-1 text-right">{formatRupiah(report.totalPendapatan)}</td>
           </tr>
-          <tr className="bg-gray-100 font-semibold">
+          <tr className="print-statement-band bg-gray-100 font-semibold">
             <td className="py-1" colSpan={2}>
               HARGA POKOK PENJUALAN
             </td>
@@ -97,7 +114,7 @@ export default function PrintIncomeStatementPage() {
             <td className="py-1">Laba Kotor</td>
             <td className="py-1 text-right">{formatRupiah(report.labaKotor)}</td>
           </tr>
-          <tr className="bg-gray-100 font-semibold">
+          <tr className="print-statement-band bg-gray-100 font-semibold">
             <td className="py-1" colSpan={2}>
               BEBAN OPERASIONAL
             </td>
@@ -113,6 +130,10 @@ export default function PrintIncomeStatementPage() {
           </tr>
         </tbody>
       </table>
+      <div className="mt-4 text-xs text-gray-700">
+        <p className="font-semibold">{INCOME_STATEMENT_COVERAGE_TITLE}</p>
+        <p>{INCOME_STATEMENT_COVERAGE_BODY}</p>
+      </div>
     </div>
   );
 }

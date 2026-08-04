@@ -5,6 +5,11 @@ import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getBalanceSheetReport } from "@/app/actions/finance-reports";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
+import {
+  BALANCE_SHEET_OPENING_TITLE,
+  balanceSheetOpeningBody,
+  formatOpeningDate,
+} from "@/lib/finance/reports/disclosures";
 
 type Report = Awaited<ReturnType<typeof getBalanceSheetReport>>;
 
@@ -36,10 +41,21 @@ export default function PrintBalanceSheetPage() {
   }, [sp]);
 
   useEffect(() => {
-    if (report && report !== "error" && !printedRef.current) {
-      printedRef.current = true;
+    if (!report || report === "error" || printedRef.current) return;
+    printedRef.current = true;
+    /**
+     * Delay so the DOM is fully rendered before the print dialog opens — the
+     * sibling work-order print view learned this from a real failure. Teardown
+     * releases the guard so a Strict Mode double-invocation still prints once
+     * (first timer cancelled, second one fires).
+     */
+    const timer = setTimeout(() => {
       window.print();
-    }
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      printedRef.current = false;
+    };
   }, [report]);
 
   if (!report) {
@@ -62,15 +78,17 @@ export default function PrintBalanceSheetPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="print-statement mx-auto max-w-2xl">
       <div className="mb-6 text-center">
         <h1 className="text-lg font-bold">Elorae</h1>
         <h2 className="text-base font-semibold">Neraca</h2>
         <p className="text-sm">{report.periodLabel}</p>
+        <p className="mt-1 text-xs text-gray-600">Disiapkan oleh: {report.preparedBy}</p>
+        <p className="text-xs text-gray-600">Dicetak: {report.printedAt}</p>
       </div>
       <table className="w-full text-sm">
         <tbody>
-          <tr className="bg-gray-100 font-semibold">
+          <tr className="print-statement-band bg-gray-100 font-semibold">
             <td className="py-1" colSpan={2}>
               ASET
             </td>
@@ -80,7 +98,7 @@ export default function PrintBalanceSheetPage() {
             <td className="py-1">Total Aset</td>
             <td className="py-1 text-right">{formatRupiah(report.totalAset)}</td>
           </tr>
-          <tr className="bg-gray-100 font-semibold">
+          <tr className="print-statement-band bg-gray-100 font-semibold">
             <td className="py-1" colSpan={2}>
               LIABILITAS
             </td>
@@ -90,7 +108,7 @@ export default function PrintBalanceSheetPage() {
             <td className="py-1">Total Liabilitas</td>
             <td className="py-1 text-right">{formatRupiah(report.totalLiabilitas)}</td>
           </tr>
-          <tr className="bg-gray-100 font-semibold">
+          <tr className="print-statement-band bg-gray-100 font-semibold">
             <td className="py-1" colSpan={2}>
               EKUITAS
             </td>
@@ -110,6 +128,12 @@ export default function PrintBalanceSheetPage() {
           </tr>
         </tbody>
       </table>
+      {report.openingWarningDate && (
+        <div className="mt-4 text-xs text-gray-700">
+          <p className="font-semibold">{BALANCE_SHEET_OPENING_TITLE}</p>
+          <p>{balanceSheetOpeningBody(formatOpeningDate(report.openingWarningDate))}</p>
+        </div>
+      )}
     </div>
   );
 }
