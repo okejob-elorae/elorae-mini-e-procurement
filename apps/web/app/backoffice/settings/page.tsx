@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import {
   FileDigit,
+  Layers,
   Loader2,
   Palette,
   Percent,
@@ -60,6 +61,7 @@ export default function SettingsPage() {
     { titleKey: 'tax.title' as const, descriptionKey: 'tax.description' as const, href: '/backoffice/settings/tax', icon: Percent },
     { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
     { titleKey: 'rbac.title' as const, descriptionKey: 'rbac.description' as const, href: '/backoffice/settings/rbac', icon: Users },
+    { titleKey: 'packRatio.title' as const, descriptionKey: 'packRatio.description' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
   ];
 
   const userId = session?.user?.id ?? null;
