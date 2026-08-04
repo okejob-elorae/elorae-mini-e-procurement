@@ -2838,6 +2838,22 @@
       "balancedNote": "Debit dan kredit seimbang. Setiap jurnal sudah divalidasi seimbang saat diposting, jadi kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.",
       "unbalancedNote": "Debit dan kredit TIDAK seimbang. Ini menandakan data jurnal rusak — periksa buku besar."
     },
+    "incomeStatement": {
+      "pageTitle": "Laporan Laba Rugi",
+      "subtitle": "Pendapatan, harga pokok, dan beban untuk periode terpilih.",
+      "cardTitle": "Laba Rugi",
+      "sectionPendapatan": "Pendapatan",
+      "sectionHpp": "Harga Pokok Penjualan",
+      "sectionBeban": "Beban Operasional",
+      "totalPendapatan": "Total Pendapatan",
+      "totalHpp": "Total Harga Pokok Penjualan",
+      "totalBeban": "Total Beban Operasional",
+      "labaKotor": "Laba Kotor",
+      "labaBersih": "Laba Bersih",
+      "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
+      "coverageTitle": "Cakupan data",
+      "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok."
+    },
     "filter": {
       "dateFrom": "Dari tanggal",
       "dateTo": "Sampai tanggal",

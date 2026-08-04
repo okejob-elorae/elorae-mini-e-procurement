@@ -2838,6 +2838,22 @@
       "balancedNote": "Debit and credit are equal. Every journal is validated as balanced when posted, so this equality is expected — the check only detects corrupted data.",
       "unbalancedNote": "Debit and credit are NOT equal. This indicates corrupted journal data — inspect the ledger."
     },
+    "incomeStatement": {
+      "pageTitle": "Income Statement",
+      "subtitle": "Revenue, cost of goods sold, and expenses for the selected period.",
+      "cardTitle": "Income Statement",
+      "sectionPendapatan": "Revenue",
+      "sectionHpp": "Cost of Goods Sold",
+      "sectionBeban": "Operating Expenses",
+      "totalPendapatan": "Total Revenue",
+      "totalHpp": "Total Cost of Goods Sold",
+      "totalBeban": "Total Operating Expenses",
+      "labaKotor": "Gross Profit",
+      "labaBersih": "Net Profit",
+      "sectionEmpty": "No accounts with a balance in this section yet.",
+      "coverageTitle": "Data coverage",
+      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, and manual journals. NOT yet included: field sales (putus), van sales, SPG sales, and supplier payments."
+    },
     "filter": {
       "dateFrom": "From date",
       "dateTo": "To date",
