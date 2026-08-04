@@ -252,6 +252,8 @@ export const PERMISSIONS = {
   SETTINGS_SECURITY_MANAGE: 'settings_security:manage',
   SETTINGS_RBAC_VIEW: 'settings_rbac:view',
   SETTINGS_RBAC_MANAGE: 'settings_rbac:manage',
+  SETTINGS_PACK_RATIO_VIEW: 'settings_pack_ratio:view',
+  SETTINGS_PACK_RATIO_MANAGE: 'settings_pack_ratio:manage',
   // Sales Returns
   SALES_RETURNS_VIEW: 'sales_returns:view',
   SALES_RETURNS_DECIDE: 'sales_returns:decide',
