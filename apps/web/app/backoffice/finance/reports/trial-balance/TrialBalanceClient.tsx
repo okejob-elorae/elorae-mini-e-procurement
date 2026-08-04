@@ -18,6 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ReportExportButtons } from "../ReportExportButtons";
+import { exportTrialBalanceExcel } from "@/app/actions/finance-reports";
 
 type Props = {
   report: TrialBalance;
@@ -54,6 +56,16 @@ export function TrialBalanceClient({ report, filters }: Props) {
           <h1 className="text-2xl font-bold tracking-tight">{t("trialBalance.pageTitle")}</h1>
           <p className="text-muted-foreground">{t("trialBalance.subtitle")}</p>
         </div>
+        <ReportExportButtons
+          onExcel={() =>
+            exportTrialBalanceExcel({
+              from: filters.from,
+              to: filters.to,
+              includeZero: filters.zero,
+            })
+          }
+          printHref={`/print/finance/trial-balance?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}&zero=${filters.zero ? "1" : "0"}`}
+        />
       </div>
 
       <Card className="p-4">

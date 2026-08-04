@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ReportSection } from "../ReportSection";
+import { ReportExportButtons } from "../ReportExportButtons";
+import { exportBalanceSheetExcel } from "@/app/actions/finance-reports";
 
 type Props = {
   report: BalanceSheet;
@@ -54,6 +56,10 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
           <h1 className="text-2xl font-bold tracking-tight">{t("balanceSheet.pageTitle")}</h1>
           <p className="text-muted-foreground">{t("balanceSheet.subtitle")}</p>
         </div>
+        <ReportExportButtons
+          onExcel={() => exportBalanceSheetExcel({ asOf: filters.asOf })}
+          printHref={`/print/finance/balance-sheet?asOf=${encodeURIComponent(filters.asOf)}`}
+        />
       </div>
 
       <Card className="p-4">

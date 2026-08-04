@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ReportSection } from "../ReportSection";
+import { ReportExportButtons } from "../ReportExportButtons";
+import { exportIncomeStatementExcel } from "@/app/actions/finance-reports";
 
 type Props = {
   report: IncomeStatement;
@@ -46,6 +48,10 @@ export function IncomeStatementClient({ report, filters }: Props) {
           <h1 className="text-2xl font-bold tracking-tight">{t("incomeStatement.pageTitle")}</h1>
           <p className="text-muted-foreground">{t("incomeStatement.subtitle")}</p>
         </div>
+        <ReportExportButtons
+          onExcel={() => exportIncomeStatementExcel({ from: filters.from, to: filters.to })}
+          printHref={`/print/finance/income-statement?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}`}
+        />
       </div>
 
       <Card className="p-4">
