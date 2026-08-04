@@ -192,6 +192,8 @@ async function main() {
     // Finance — Journal Engine
     { code: 'journals:view', module: 'journals', action: 'view', description: 'View journals + ledger' },
     { code: 'journals:manage', module: 'journals', action: 'manage', description: 'Create manual journals + post auto-journals' },
+    // Finance — Financial Reports
+    { code: 'finance_reports:view', module: 'finance_reports', action: 'view', description: 'View financial reports (trial balance, income statement, balance sheet)' },
     // Lead Time
     { code: 'lead_time:view', module: 'lead_time', action: 'view', description: 'View process library and supplier chains' },
     { code: 'lead_time:manage', module: 'lead_time', action: 'manage', description: 'Manage process library and supplier chains' },
