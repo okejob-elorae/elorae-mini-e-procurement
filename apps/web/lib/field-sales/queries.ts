@@ -1,5 +1,6 @@
 import { prisma, Prisma } from "@elorae/db";
 import { variantDetailForSku } from "@/lib/items/variants";
+import type { PlanHistory } from "./smart-request/plan";
 
 export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 
@@ -240,4 +241,22 @@ export async function sentItemIds(
     distinct: ["itemId"],
   });
   return new Set(rows.map((r) => r.itemId));
+}
+
+export async function getSmartRequestHistory(storeId: string, candidateItemIds: string[]): Promise<PlanHistory> {
+  const orderedRows = await prisma.fieldSalesOrderLine.findMany({
+    where: { order: { storeId, status: { not: "REJECTED" } } },
+    select: { itemId: true },
+    distinct: ["itemId"],
+  });
+  const ordered = new Set(orderedRows.map((r) => r.itemId));
+  const neverOrdered = new Set(candidateItemIds.filter((id) => !ordered.has(id)));
+
+  const grouped = await prisma.fieldSalesOrderLine.groupBy({
+    by: ["itemId"],
+    where: { order: { storeId, status: "APPROVED" } },
+    _sum: { qty: true },
+  });
+  const qtyByItem = new Map<string, number>(grouped.map((g) => [g.itemId, g._sum.qty ?? 0]));
+  return { neverOrdered, qtyByItem };
 }
