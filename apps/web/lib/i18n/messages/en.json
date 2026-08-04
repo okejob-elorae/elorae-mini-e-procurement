@@ -2911,6 +2911,11 @@
       "COGS": "Cost of Goods Sold",
       "BANK": "Bank/Cash",
       "MARKETPLACE_FEE": "Marketplace Fee",
+      "MARKETPLACE_FEE_ADMIN": "Marketplace Admin Fee",
+      "MARKETPLACE_FEE_SERVICE": "Marketplace Service Fee",
+      "MARKETPLACE_FEE_COMMISSION": "Marketplace Commission Fee",
+      "MARKETPLACE_FEE_PROCESSING": "Marketplace Order Processing Fee",
+      "MARKETPLACE_FEE_OTHER": "Other Marketplace Fees",
       "INVENTORY_VARIANCE": "Inventory Variance",
       "TAX": "Tax"
     },
@@ -2923,6 +2928,11 @@
       "COGS": "Expense account for the cost of goods sold.",
       "BANK": "Cash/bank account for payment receipts and disbursements.",
       "MARKETPLACE_FEE": "Expense account for marketplace platform fee deductions.",
+      "MARKETPLACE_FEE_ADMIN": "Expense for the admin fee deducted by the marketplace, from the Biaya Administrasi column.",
+      "MARKETPLACE_FEE_SERVICE": "Expense for the service fee deducted by the marketplace, from the Biaya Layanan column.",
+      "MARKETPLACE_FEE_COMMISSION": "Expense for the commission deducted by the marketplace, from the Biaya Komisi AMS column.",
+      "MARKETPLACE_FEE_PROCESSING": "Expense for the order processing fee, from the Biaya Proses Pesanan column.",
+      "MARKETPLACE_FEE_OTHER": "Unitemized remainder of marketplace deductions — including ad fees, shipping subsidies, adjustments, and every TikTok fee.",
       "INVENTORY_VARIANCE": "Account for recording stock opname/reconciliation variances.",
       "TAX": "Account for tax liabilities/expenses."
     },

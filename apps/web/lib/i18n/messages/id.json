@@ -2911,6 +2911,11 @@
       "COGS": "Harga Pokok Penjualan",
       "BANK": "Bank/Kas",
       "MARKETPLACE_FEE": "Biaya Marketplace",
+      "MARKETPLACE_FEE_ADMIN": "Biaya Administrasi Marketplace",
+      "MARKETPLACE_FEE_SERVICE": "Biaya Layanan Marketplace",
+      "MARKETPLACE_FEE_COMMISSION": "Biaya Komisi Marketplace",
+      "MARKETPLACE_FEE_PROCESSING": "Biaya Proses Pesanan Marketplace",
+      "MARKETPLACE_FEE_OTHER": "Biaya Marketplace Lainnya",
       "INVENTORY_VARIANCE": "Selisih Persediaan",
       "TAX": "Pajak"
     },
@@ -2923,6 +2928,11 @@
       "COGS": "Akun beban untuk harga pokok barang yang terjual.",
       "BANK": "Akun kas/bank untuk penerimaan dan pengeluaran pembayaran.",
       "MARKETPLACE_FEE": "Akun beban untuk potongan biaya platform marketplace.",
+      "MARKETPLACE_FEE_ADMIN": "Beban biaya administrasi yang dipotong marketplace, dari kolom Biaya Administrasi.",
+      "MARKETPLACE_FEE_SERVICE": "Beban biaya layanan yang dipotong marketplace, dari kolom Biaya Layanan.",
+      "MARKETPLACE_FEE_COMMISSION": "Beban komisi yang dipotong marketplace, dari kolom Biaya Komisi AMS.",
+      "MARKETPLACE_FEE_PROCESSING": "Beban biaya proses pesanan, dari kolom Biaya Proses Pesanan.",
+      "MARKETPLACE_FEE_OTHER": "Sisa potongan marketplace yang tidak terinci — termasuk biaya iklan, subsidi pengiriman, penyesuaian, dan seluruh biaya TikTok.",
       "INVENTORY_VARIANCE": "Akun untuk mencatat selisih stock opname/rekonsiliasi.",
       "TAX": "Akun untuk kewajiban/beban pajak."
     },
