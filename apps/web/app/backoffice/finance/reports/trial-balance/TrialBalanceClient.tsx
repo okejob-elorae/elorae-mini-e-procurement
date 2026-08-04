@@ -7,6 +7,8 @@ import { AlertTriangle, CheckCircle2, Scale } from "lucide-react";
 import type { TrialBalance } from "@/lib/finance/reports/trial-balance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -72,16 +74,16 @@ export function TrialBalanceClient({ report, filters }: Props) {
               onChange={(e) => pushParam("to", e.target.value || undefined)}
             />
           </div>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4"
-                checked={filters.zero}
-                onChange={(e) => pushParam("zero", e.target.checked ? "1" : undefined)}
-              />
+          <div className="flex items-end gap-2">
+            <Checkbox
+              id="showZero"
+              checked={filters.zero}
+              disabled={isPending}
+              onCheckedChange={(checked) => pushParam("zero", checked === true ? "1" : undefined)}
+            />
+            <Label htmlFor="showZero" className="text-sm font-normal cursor-pointer">
               {t("filter.showZero")}
-            </label>
+            </Label>
           </div>
           <div className="flex items-end">
             <Button variant="outline" onClick={reset} disabled={isPending}>
