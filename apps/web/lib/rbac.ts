@@ -280,6 +280,8 @@ export const PERMISSIONS = {
   // Finance — Journal Engine
   JOURNALS_VIEW: "journals:view",
   JOURNALS_MANAGE: "journals:manage",
+  // Finance — Financial Reports
+  FINANCE_REPORTS_VIEW: "finance_reports:view",
   // Lead Time
   LEAD_TIME_VIEW: "lead_time:view",
   LEAD_TIME_MANAGE: "lead_time:manage",

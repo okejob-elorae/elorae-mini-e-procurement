@@ -51,6 +51,9 @@
     "navFinanceSettlements": "Settlement Marketplace",
     "navFinanceJournals": "Jurnal",
     "navFinanceAccountMapping": "Pemetaan Akun",
+    "navFinanceTrialBalance": "Neraca Saldo",
+    "navFinanceIncomeStatement": "Laba Rugi",
+    "navFinanceBalanceSheet": "Neraca",
     "items": "Item",
     "navItemsAll": "Semua Item",
     "navItemsCategory": "Kategori",
@@ -2818,6 +2821,36 @@
       "empty": "Tidak ada mutasi pada rentang tanggal ini."
     },
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi."
+  },
+  "financeReports": {
+    "trialBalance": {
+      "pageTitle": "Neraca Saldo",
+      "subtitle": "Total debit dan kredit setiap akun untuk periode terpilih.",
+      "listTitle": "Neraca Saldo",
+      "empty": "Belum ada jurnal pada periode ini.",
+      "emptyFiltered": "Tidak ada akun yang cocok dengan filter.",
+      "colCode": "Kode",
+      "colName": "Nama Akun",
+      "colDebit": "Debit",
+      "colCredit": "Kredit",
+      "colBalance": "Saldo",
+      "totalRow": "Total",
+      "balancedNote": "Debit dan kredit seimbang. Setiap jurnal sudah divalidasi seimbang saat diposting, jadi kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.",
+      "unbalancedNote": "Debit dan kredit TIDAK seimbang. Ini menandakan data jurnal rusak — periksa buku besar."
+    },
+    "filter": {
+      "dateFrom": "Dari tanggal",
+      "dateTo": "Sampai tanggal",
+      "asOf": "Per tanggal",
+      "reset": "Reset",
+      "showZero": "Tampilkan akun bersaldo nol"
+    },
+    "export": {
+      "excel": "Unduh Excel",
+      "print": "Cetak / PDF",
+      "started": "Unduhan dimulai",
+      "failed": "Ekspor gagal"
+    }
   },
 
   "financeAccountMapping": {

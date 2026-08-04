@@ -51,6 +51,9 @@
     "navFinanceSettlements": "Marketplace Settlements",
     "navFinanceJournals": "Journals",
     "navFinanceAccountMapping": "Account Mapping",
+    "navFinanceTrialBalance": "Trial Balance",
+    "navFinanceIncomeStatement": "Income Statement",
+    "navFinanceBalanceSheet": "Balance Sheet",
     "items": "Items",
     "navItemsAll": "All Items",
     "navItemsCategory": "Category",
@@ -2818,6 +2821,36 @@
       "empty": "No activity in this date range."
     },
     "errGeneric": "Something went wrong. Please try again."
+  },
+  "financeReports": {
+    "trialBalance": {
+      "pageTitle": "Trial Balance",
+      "subtitle": "Total debit and credit per account for the selected period.",
+      "listTitle": "Trial Balance",
+      "empty": "No journals in this period yet.",
+      "emptyFiltered": "No accounts match the filter.",
+      "colCode": "Code",
+      "colName": "Account",
+      "colDebit": "Debit",
+      "colCredit": "Credit",
+      "colBalance": "Balance",
+      "totalRow": "Total",
+      "balancedNote": "Debit and credit are equal. Every journal is validated as balanced when posted, so this equality is expected — the check only detects corrupted data.",
+      "unbalancedNote": "Debit and credit are NOT equal. This indicates corrupted journal data — inspect the ledger."
+    },
+    "filter": {
+      "dateFrom": "From date",
+      "dateTo": "To date",
+      "asOf": "As of",
+      "reset": "Reset",
+      "showZero": "Show zero-balance accounts"
+    },
+    "export": {
+      "excel": "Download Excel",
+      "print": "Print / PDF",
+      "started": "Download started",
+      "failed": "Export failed"
+    }
   },
 
   "financeAccountMapping": {
