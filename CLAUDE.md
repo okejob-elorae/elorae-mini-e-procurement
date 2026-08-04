@@ -187,6 +187,16 @@ Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit l
 
 **Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought. Same for the **Follow-ups / tech debt** checklist below — on merge, tick any shipped items (append the PR #) and move any new follow-ups there (never leave them only in PR bodies). **Also tick the matching story on the GitHub board** (the epic issue, `EPIC-NN` → #`NN+3`) — that's the canonical cross-EPIC status tracker now that `reference/todo/` is retired.
 
+EPIC-14 (Financial Reports) decomposition:
+
+| Story | Scope | Status |
+|----|-------|--------|
+| **14-01** | Trial Balance — period-range debit/credit/saldo over postable leaves; balance check framed as a corruption tripwire (`postJournal` already enforces per-journal balance) | on branch (`feat/finance-reports`), pending merge — no PR/merge date yet |
+| **14-02** | Laba Rugi — Pendapatan − HPP = Laba Kotor − Beban = Laba Bersih; sections by `AccountType` (never account code); GL-coverage banner naming the un-journaled sources | on branch (`feat/finance-reports`), pending merge — no PR/merge date yet |
+| **14-03** | Neraca — as-of, cumulative; balances via an injected "Laba (Rugi) Belum Ditutup" line standing in for the missing fiscal close; opening-balance warning when no journal predates the ledger | on branch (`feat/finance-reports`), pending merge — no PR/merge date yet |
+| **14-04** | Export — Excel via `xlsx` server actions returning `{base64, filename}`; PDF via `/print/finance/*` + `print.css` browser print | on branch (`feat/finance-reports`), pending merge — no PR/merge date yet |
+| **Fee split** | Settlement journal posts one line per fee category (`MARKETPLACE_FEE_ADMIN`/`_SERVICE`/`_COMMISSION`/`_PROCESSING`) plus a `_OTHER` residual computed from `totalPengeluaran` so the journal still balances; unmapped category roles fall back to the legacy `MARKETPLACE_FEE` account. TikTok zeroes all four columns → all its fees land in `_OTHER`. Zero schema migration (`role` is a String). | on branch (`feat/finance-reports`), pending merge — no PR/merge date yet |
+
 ## Follow-ups / tech debt (checklist)
 
 Canonical home for follow-ups + known debt. **New follow-ups go HERE** as `- [ ]` — not buried in PR bodies (they die on merge) or per-slice decomposition prose. When an item ships, flip it to `- [x]` and append the PR #. Feature names only (no EPIC labels — shared artifact). Cross-cutting code landmines also get a `memory/` note; this list is the actionable index.
@@ -197,9 +207,18 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [x] Account-mapping UI: unmap/clear control (X button per mapped role) — PR #162.
 - [ ] Seed CoA detail postable leaves — Persediaan, Piutang, Selisih Persediaan, Marketplace Fee (Bank `1102` already seeded) so posting-role mappings are wireable out-of-box. Seed is a 10-account SAK-EMKM skeleton (`coa-sak-emkm.json`).
 - [ ] `postJournal` integrity-check query — surface any unbalanced or dangling journals.
-- [ ] Settlement journal: add an "other"/4th-line role so real settlement lines beyond `Dilepas+Pengeluaran=Pendapatan` don't block UNBALANCED (`settlement/journal.ts` builds exactly 3 lines) (PR #157, #17).
+- [ ] Settlement journal `UNBALANCED` when the excel summary itself doesn't satisfy `Dilepas + Pengeluaran = Pendapatan`. The `MARKETPLACE_FEE_OTHER` residual absorbs fee-level gaps but is computed from `totalPengeluaran`, so it cannot absorb a summary-level mismatch (`settlement/journal.ts`) (PR #157, #17).
 - [ ] Settlement `SP-`+orderNo match coverage is low for pre-2026-06-14 settlements — revisit if old-period reconciliation matters.
 - [ ] Field-sales promo: order-level discount not pro-rated across `SalesHistory` lines — line totals sum > order total (`field-sales/writer.ts:194`), per D7 (PR #111).
+- [ ] Auto-journal offline sales (putus approve, van sale, SPG sale) — revenue + COGS are absent from the GL, so Laba Rugi understates by every offline channel.
+- [ ] Auto-journal supplier payments (DR Hutang / CR Bank) — AP never clears and cash never leaves in the Neraca.
+- [ ] Itemize TikTok fees from `escrow_list` instead of dumping them into `MARKETPLACE_FEE_OTHER`.
+- [ ] Fiscal-period close so Neraca reads real retained earnings instead of an injected unclosed-earnings line.
+- [ ] Settlements journaled before the fee split keep their single lumped `MARKETPLACE_FEE` line — no reverse-and-repost migration was run.
+- [ ] Settlement journal's bank and AR lines still throw an uncaught `BAD_LINE` when `totalDilepas` or `totalPendapatan` is zero (a both-zero journal line), which is realistic for a fully-refunded settlement period — same bug class as the fee-sign issue fixed on this branch; `NON_POSTABLE_ACCOUNT` and `UNBALANCED` are handled, this case is not.
+- [ ] No `NON_POSTABLE_ACCOUNT` i18n string exists for the settlement error — the UI falls through to a generic message and the operator gets nothing actionable about an inactive or non-leaf mapped account.
+- [ ] Laba Rugi renders every active revenue/HPP/expense account even at zero for the period, with no "show zero accounts" toggle like the Trial Balance has.
+- [ ] `apps/web/lib/finance/settlement/tiktok-settlement-parser.ts`'s top-of-file comment is stale — it says the settlement journal posts `totalPengeluaran` as a single straight debit line, which stopped being true when the per-category fee split landed. Its `Math.abs()` rationale still stands.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
@@ -267,6 +286,7 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 
 ### Sales UI / dates
 - [ ] Adopt `parseDateOnlyEnd` (WIB-safe inclusive `to`) on the remaining date-filtered lists: returns, fulfillment, van-sales, supplier-payments, reports/hpp, stock-card (only journals/ledger/sales-orders use it today) (PR #142).
+- [ ] `toDisplayDate` in `apps/web/lib/date-only.ts` calls `toLocaleDateString("id-ID")` with no `timeZone`, so it's process-local; prod runs UTC. Same bug class as the report date labels fixed on this branch, which is why `formatDateOnlyJakarta` now exists — its callers need auditing.
 
 ### Notifications
 - [ ] `AdminNotification` is write-only — nothing reads/renders it. Three categories insert to it (`JOURNAL_PENDING` from opname 13-06 + GRN 13-01; `PENDING_ORDER_APPROVAL` from field-sales; `STORE_CHANGE_REQUEST` from store edits) but the in-app bell (`NotificationIcon` → `/api/notifications`) reads `notificationQueue` (FCM), a different table. Add an `AdminNotification` feed/bell so these flags surface (fixes all three at once). Until then the visible recovery path is the per-row retry button (e.g. "Post journal").
@@ -281,6 +301,7 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 
 ### Testing / infra
 - [ ] DB-spec isolation: `vitest.config.ts` `fileParallelism:false` serializes the WHOLE suite (slow). Scope DB specs into a serial project, or add a tx-rollback harness for the ~20 real-row specs.
+- [ ] `apps/web/lib/finance/settlement/journal.test.ts`'s `afterEach` is order-fragile: a failure partway through leaves stale ids so a delete throws and aborts the hook before later cleanup, leaking a row into the shared dev database.
 
 ## What NOT to do
 
