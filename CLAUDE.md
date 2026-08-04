@@ -253,6 +253,9 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] SPG: offline write-queue for sales (deferred, mirrors the van-sales offline debt); promos on SPG sales; real store/consignment stock tracking + sell-through reconciliation (record-only today, no inventory ledger backs it) (#208).
 - [ ] Pack-ratio: the Settings card client re-implements `validateRows` instead of importing the client-safe `validatePackRatio` from `@elorae/db/pack-ratio` — exact parity today (server backstops), but a thin wrapper would kill the drift risk (#210).
 - [ ] Pack-ratio: `settings_pack_ratio:view` defined but unreferenced (`getPackRatio` un-gated, matching the `getPpnRatePercent` sibling convention) — wire it if the page ever needs a read gate (#210).
+- [ ] Smart-request: `buildSmartRequestAction` is auth-only — doesn't fail-fast on a missing/foreign active visit (build is read-only; submit's writer enforces the visit). Add a visit check to fail fast off-visit (feat/smart-request).
+- [ ] Smart-request: no server-side KONSI guard in build/submit — putus-only is enforced by the page redirect + PUTUS-gated CTAs, and the writer re-prices a konsi store at submit, so no integrity risk; add a defensive `termsType==="KONSI"` reject in the actions for clarity (feat/smart-request).
+- [ ] Smart-request: a selected category with zero candidate articles yields `underfill>0, lines=0, dropped=0` → renders the generic "tidak ada produk" empty state without the underfill note (cosmetic; same outcome conveyed) (feat/smart-request).
 
 ### Sales UI / dates
 - [ ] Adopt `parseDateOnlyEnd` (WIB-safe inclusive `to`) on the remaining date-filtered lists: returns, fulfillment, van-sales, supplier-payments, reports/hpp, stock-card (only journals/ledger/sales-orders use it today) (PR #142).
