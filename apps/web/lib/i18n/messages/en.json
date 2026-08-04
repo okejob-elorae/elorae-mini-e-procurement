@@ -212,6 +212,23 @@
       "title": "Roles & Permissions",
       "description": "Manage user roles and permissions (RBAC)"
     },
+    "packRatio": {
+      "title": "Pack Ratio",
+      "description": "Set the global per-size pack ratio used for smart requests.",
+      "heading": "Global Pack Ratio",
+      "subtitle": "One pack = the quantity per size below, applied across all articles.",
+      "sizeLabel": "Size",
+      "qtyLabel": "Qty",
+      "addSize": "Add size",
+      "remove": "Remove",
+      "empty": "No sizes yet. Add at least one.",
+      "save": "Save",
+      "loadError": "Failed to load pack ratio.",
+      "errEmpty": "Add at least one size.",
+      "errBadSize": "Size name cannot be empty.",
+      "errDupSize": "Sizes cannot repeat.",
+      "errBadQty": "Qty must be a positive whole number."
+    },
     "theme": {
       "title": "Account theme",
       "description": "Pick one Pantone TCX color. It sets your accent and generates neutral surfaces for light and dark mode.",

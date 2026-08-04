@@ -249,6 +249,10 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] Territory model — every salesman sees every active store (`listActiveStoresForPwa` has no salesman filter) (#21).
 - [ ] PWA i18n debt: hardcoded ID strings in `CatalogShell.tsx:180,192`, `VisitPhotoCapture.tsx:139-190`, lightbox `StoreDetailView.tsx:415,439` (pending-orders view already i18n'd) (#21).
 - [ ] Extract a shared `QtyStepper` (inline-duplicated across catalog/van sheets) + finish `lib/sales-orders/format.ts` adoption (~9 sites still inline `Intl.NumberFormat`); cross-page nav pending-state; CI `tsc --noEmit` gate (#21).
+- [ ] SPG: no UI to set `User.assignedStoreId` — must be set via DB today; add an assigned-store picker on the user form (#208).
+- [ ] SPG: offline write-queue for sales (deferred, mirrors the van-sales offline debt); promos on SPG sales; real store/consignment stock tracking + sell-through reconciliation (record-only today, no inventory ledger backs it) (#208).
+- [ ] Pack-ratio: the Settings card client re-implements `validateRows` instead of importing the client-safe `validatePackRatio` from `@elorae/db/pack-ratio` — exact parity today (server backstops), but a thin wrapper would kill the drift risk (#210).
+- [ ] Pack-ratio: `settings_pack_ratio:view` defined but unreferenced (`getPackRatio` un-gated, matching the `getPpnRatePercent` sibling convention) — wire it if the page ever needs a read gate (#210).
 
 ### Sales UI / dates
 - [ ] Adopt `parseDateOnlyEnd` (WIB-safe inclusive `to`) on the remaining date-filtered lists: returns, fulfillment, van-sales, supplier-payments, reports/hpp, stock-card (only journals/ledger/sales-orders use it today) (PR #142).

@@ -212,6 +212,23 @@
       "title": "Peran & Izin",
       "description": "Kelola peran pengguna dan izin (RBAC)"
     },
+    "packRatio": {
+      "title": "Rasio Pack",
+      "description": "Atur rasio ukuran per pack (global) untuk smart request.",
+      "heading": "Rasio Pack Global",
+      "subtitle": "Satu pack = jumlah per ukuran di bawah ini, berlaku untuk semua artikel.",
+      "sizeLabel": "Ukuran",
+      "qtyLabel": "Jumlah",
+      "addSize": "Tambah ukuran",
+      "remove": "Hapus",
+      "empty": "Belum ada ukuran. Tambahkan minimal satu.",
+      "save": "Simpan",
+      "loadError": "Gagal memuat rasio pack.",
+      "errEmpty": "Tambahkan minimal satu ukuran.",
+      "errBadSize": "Nama ukuran tidak boleh kosong.",
+      "errDupSize": "Ukuran tidak boleh sama.",
+      "errBadQty": "Jumlah harus bilangan bulat positif."
+    },
     "theme": {
       "title": "Tema akun",
       "description": "Pilih satu warna Pantone TCX. Warna ini mengatur aksen dan menghasilkan permukaan netral untuk mode terang dan gelap.",

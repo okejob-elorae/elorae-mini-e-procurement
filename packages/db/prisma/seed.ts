@@ -198,6 +198,9 @@ async function main() {
     // SPG Sales (in-store promoter)
     { code: 'spg_sales:record', module: 'spg_sales', action: 'record', description: 'Record SPG in-store sales' },
     { code: 'spg_sales:view', module: 'spg_sales', action: 'view', description: 'View SPG in-store sales register' },
+    // Pack Ratio (global putus pack rules)
+    { code: 'settings_pack_ratio:view', module: 'settings_pack_ratio', action: 'view', description: 'View global pack ratio' },
+    { code: 'settings_pack_ratio:manage', module: 'settings_pack_ratio', action: 'manage', description: 'Manage global pack ratio' },
   ];
 
   // Upsert all permissions
