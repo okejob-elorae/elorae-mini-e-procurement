@@ -7,11 +7,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard,
   Building2,
-  ShoppingCart,
-  DollarSign,
   Package,
-  ClipboardList,
-  RotateCcw,
   FileText,
   Settings,
   Menu,
@@ -22,14 +18,10 @@ import {
   Moon,
   Monitor,
   Check,
-  BarChart2,
   CalendarDays,
   Activity,
   Store,
   Wallet,
-  MapPin,
-  Timer,
-  Tag,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -88,6 +80,16 @@ const navItems: NavItem[] = [
     children: [
       { labelKey: 'masterSuppliers', href: '/backoffice/suppliers' },
       { labelKey: 'supplierType', href: '/backoffice/suppliers/types' },
+      {
+        labelKey: 'masterStores',
+        href: '/backoffice/stores',
+        permission: PERMISSIONS.STORES_VIEW,
+      },
+      {
+        labelKey: 'leadTime',
+        href: '/backoffice/lead-time',
+        permission: PERMISSIONS.LEAD_TIME_VIEW,
+      },
     ],
   },
   {
@@ -99,30 +101,6 @@ const navItems: NavItem[] = [
       { labelKey: 'navItemsAll', href: '/backoffice/items' },
       { labelKey: 'navItemsCategory', href: '/backoffice/items/categories' },
     ],
-  },
-  {
-    labelKey: 'stores',
-    href: '/backoffice/stores',
-    icon: MapPin,
-    permission: PERMISSIONS.STORES_VIEW,
-  },
-  {
-    labelKey: 'leadTime',
-    href: '/backoffice/lead-time',
-    icon: Timer,
-    permission: PERMISSIONS.LEAD_TIME_VIEW,
-  },
-  {
-    labelKey: 'purchaseOrders',
-    href: '/backoffice/purchase-orders',
-    icon: ShoppingCart,
-    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-  },
-  {
-    labelKey: 'supplierPayment',
-    href: '/backoffice/supplier-payments',
-    icon: DollarSign,
-    permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
   },
   {
     labelKey: 'inventory',
@@ -172,13 +150,12 @@ const navItems: NavItem[] = [
         href: '/backoffice/spg-sales',
         permission: PERMISSIONS.SPG_SALES_VIEW,
       },
+      {
+        labelKey: 'promos',
+        href: '/backoffice/promos',
+        permission: PERMISSIONS.PROMOS_VIEW,
+      },
     ],
-  },
-  {
-    labelKey: 'promos',
-    href: '/backoffice/promos',
-    icon: Tag,
-    permission: PERMISSIONS.PROMOS_VIEW,
   },
   {
     labelKey: 'finance',
@@ -205,16 +182,6 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    labelKey: 'workOrders',
-    href: '/backoffice/work-orders',
-    icon: ClipboardList,
-    permission: PERMISSIONS.WORK_ORDERS_VIEW,
-    children: [
-      { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders' },
-      { labelKey: 'registerNotaCmt', href: '/backoffice/work-orders/nota-register' },
-    ],
-  },
-  {
     labelKey: 'production',
     href: '/backoffice/production/planning',
     icon: CalendarDays,
@@ -235,21 +202,31 @@ const navItems: NavItem[] = [
         href: '/backoffice/production/colors',
         permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
       },
-    ],
-  },
-  {
-    labelKey: 'vendorReturns',
-    href: '/backoffice/vendor-returns',
-    icon: RotateCcw,
-    permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
-  },
-  {
-    labelKey: 'reports',
-    href: '/backoffice/reports/hpp',
-    icon: BarChart2,
-    permission: PERMISSIONS.REPORTS_HPP_VIEW,
-    children: [
-      { labelKey: 'hppReport', href: '/backoffice/reports/hpp' },
+      {
+        labelKey: 'purchaseOrders',
+        href: '/backoffice/purchase-orders',
+        permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+      },
+      {
+        labelKey: 'supplierPayment',
+        href: '/backoffice/supplier-payments',
+        permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
+      },
+      {
+        labelKey: 'navWorkOrdersList',
+        href: '/backoffice/work-orders',
+        permission: PERMISSIONS.WORK_ORDERS_VIEW,
+      },
+      {
+        labelKey: 'registerNotaCmt',
+        href: '/backoffice/work-orders/nota-register',
+        permission: PERMISSIONS.NOTA_REGISTER_VIEW,
+      },
+      {
+        labelKey: 'vendorReturns',
+        href: '/backoffice/vendor-returns',
+        permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
+      },
     ],
   },
   {
@@ -318,12 +295,23 @@ function Sidebar({
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
   const getOpenKeyFromPath = (path: string) => {
-    if (path.startsWith('/backoffice/suppliers')) return '/backoffice/suppliers';
+    if (
+      path.startsWith('/backoffice/suppliers') ||
+      path.startsWith('/backoffice/lead-time') ||
+      path.startsWith('/backoffice/stores')
+    ) {
+      return '/backoffice/suppliers';
+    }
     if (path.startsWith('/backoffice/items')) return '/backoffice/items';
     if (path.startsWith('/backoffice/inventory')) return '/backoffice/inventory';
-    if (path.startsWith('/backoffice/work-orders')) return '/backoffice/work-orders';
-    if (path.startsWith('/backoffice/forecast')) return '/backoffice/production/planning';
-    if (path.startsWith('/backoffice/forecast') || path.startsWith('/backoffice/production')) {
+    if (
+      path.startsWith('/backoffice/forecast') ||
+      path.startsWith('/backoffice/production') ||
+      path.startsWith('/backoffice/purchase-orders') ||
+      path.startsWith('/backoffice/supplier-payments') ||
+      path.startsWith('/backoffice/work-orders') ||
+      path.startsWith('/backoffice/vendor-returns')
+    ) {
       return '/backoffice/production/planning';
     }
     if (path.startsWith('/backoffice/jubelio')) return '/backoffice/jubelio/admin';
@@ -335,7 +323,8 @@ function Sidebar({
       path.startsWith('/backoffice/field-sales-orders') ||
       path.startsWith('/backoffice/canvassing') ||
       path.startsWith('/backoffice/van-sales') ||
-      path.startsWith('/backoffice/spg-sales')
+      path.startsWith('/backoffice/spg-sales') ||
+      path.startsWith('/backoffice/promos')
     ) {
       return '/backoffice/sales-orders';
     }
@@ -375,12 +364,14 @@ function Sidebar({
         </div>
       </div>
 
-      <nav className="flex-1 overflow-auto py-4 px-3 space-y-1">
+      <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-3 space-y-1">
         {filteredItems.map((item) => {
           const Icon = item.icon;
           const hasChildren = item.children && item.children.length > 0;
-          const isParentActive =
-            pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+          const pathOpenKey = getOpenKeyFromPath(pathname);
+          const isParentActive = hasChildren
+            ? pathOpenKey === item.href
+            : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
           if (hasChildren) {
             return (
@@ -493,6 +484,13 @@ export function BackofficeShell({
     syncReferenceData();
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.add("backoffice-shell");
+    return () => {
+      document.documentElement.classList.remove("backoffice-shell");
+    };
+  }, []);
+
   if (status === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -519,9 +517,9 @@ export function BackofficeShell({
     : session.user.email?.[0].toUpperCase() || 'U';
 
   return (
-    <div className="h-screen flex overflow-hidden">
+    <div className="h-dvh flex overflow-hidden">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:block w-64 border-r border-primary-foreground/10 bg-primary">
+      <aside className="hidden lg:flex lg:flex-col w-64 shrink-0 border-r border-primary-foreground/10 bg-primary min-h-0">
         <Sidebar permissions={session.user.permissions} />
       </aside>
 
@@ -532,10 +530,10 @@ export function BackofficeShell({
         </SheetContent>
       </Sheet>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* Main Content — min-h-0 so flex-1 + overflow-auto actually scroll inside the viewport */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Header */}
-        <header className="h-16 border-b bg-card flex items-center justify-between px-4 lg:px-6">
+        <header className="h-16 shrink-0 border-b bg-card flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
             <Sheet>
               <SheetTrigger asChild className="lg:hidden">
@@ -595,7 +593,7 @@ export function BackofficeShell({
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 lg:p-6">{children}</main>
         <QuickActionFAB />
         <FcmRegistration />
       </div>

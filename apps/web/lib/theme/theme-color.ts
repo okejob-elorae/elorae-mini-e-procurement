@@ -58,12 +58,13 @@ export function applyThemePrimaryColor(hex: string): string {
   const foreground = getForegroundFor(normalized);
   const rootStyle = document.documentElement.style;
 
+  // Brand color lives on primary/ring/sidebar-primary only.
+  // Do not overwrite --accent: shadcn uses accent for soft hover/highlight
+  // surfaces; stomping it with a dark brand hex makes light-mode text unreadable.
   rootStyle.setProperty('--primary', normalized);
   rootStyle.setProperty('--ring', normalized);
-  rootStyle.setProperty('--accent', normalized);
   rootStyle.setProperty('--sidebar-primary', normalized);
   rootStyle.setProperty('--primary-foreground', foreground);
-  rootStyle.setProperty('--accent-foreground', foreground);
   rootStyle.setProperty('--sidebar-primary-foreground', foreground);
 
   return normalized;
@@ -73,10 +74,8 @@ export function clearThemePrimaryColor(): void {
   const rootStyle = document.documentElement.style;
   rootStyle.removeProperty('--primary');
   rootStyle.removeProperty('--ring');
-  rootStyle.removeProperty('--accent');
   rootStyle.removeProperty('--sidebar-primary');
   rootStyle.removeProperty('--primary-foreground');
-  rootStyle.removeProperty('--accent-foreground');
   rootStyle.removeProperty('--sidebar-primary-foreground');
 }
 

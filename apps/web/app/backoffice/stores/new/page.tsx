@@ -10,19 +10,21 @@ export default async function NewStorePage() {
   if (!hasPermission(perms, PERMISSIONS.STORES_MANAGE)) redirect("/backoffice/stores");
 
   return (
-    <StoreForm mode="create" initial={{
-      code: "",
-      name: "",
-      address: "",
-      phone: null,
-      contactName: null,
-      termsType: "PUTUS",
-      paymentTempo: 0,
-      marginPercent: null,
-      lat: null,
-      lng: null,
-      checkinRadiusMeters: null,
-      isActive: true,
-    }} />
+    <div className="max-w-3xl">
+      <StoreForm mode="create" initial={{
+        code: "",
+        name: "",
+        address: "",
+        phone: null,
+        contactName: null,
+        termsType: "PUTUS",
+        paymentTempo: 0,
+        marginPercent: null,
+        lat: null,
+        lng: null,
+        checkinRadiusMeters: null,
+        isActive: true,
+      }} />
+    </div>
   );
 }
