@@ -19,7 +19,7 @@ function row(over: Partial<BalanceRow> & { accountId: string; code: string }): B
 }
 
 describe("buildTrialBalance", () => {
-  it("keeps postable leaves and drops parent accounts", () => {
+  it("hides parent accounts that carry no movement of their own", () => {
     const rows: BalanceRow[] = [
       row({ accountId: "p", code: "1100", hasChildren: true, debit: 0, credit: 0 }),
       row({ accountId: "c", code: "1101", parentId: "p", debit: 500, credit: 0, signed: 500 }),
@@ -29,6 +29,28 @@ describe("buildTrialBalance", () => {
     const tb = buildTrialBalance(rows);
 
     expect(tb.rows.map((r) => r.code)).toEqual(["1101", "2100"]);
+    expect(tb.totalDebit).toBe(500);
+    expect(tb.totalCredit).toBe(500);
+    expect(tb.isBalanced).toBe(true);
+  });
+
+  it("keeps a parent that has both its own movement and a child", () => {
+    /*
+     * An account posted to before it gained a child. Each row carries only its
+     * own lines (per-account groupBy), so the parent's 300 is not a rollup of
+     * the child's 200 — dropping it would leave debit 200 against credit 500.
+     */
+    const rows: BalanceRow[] = [
+      row({ accountId: "p", code: "1100", hasChildren: true, debit: 300, credit: 0, signed: 300 }),
+      row({ accountId: "c", code: "1101", parentId: "p", debit: 200, credit: 0, signed: 200 }),
+      row({ accountId: "k", code: "2100", type: "LIABILITAS", debit: 0, credit: 500, signed: 500 }),
+    ];
+
+    const tb = buildTrialBalance(rows);
+
+    expect(tb.rows.map((r) => r.code)).toEqual(["1100", "1101", "2100"]);
+    const parent = tb.rows.find((r) => r.code === "1100");
+    expect(parent).toMatchObject({ debit: 300, credit: 0, signed: 300 });
     expect(tb.totalDebit).toBe(500);
     expect(tb.totalCredit).toBe(500);
     expect(tb.isBalanced).toBe(true);

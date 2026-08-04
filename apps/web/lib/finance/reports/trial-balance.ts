@@ -19,16 +19,30 @@ export type TrialBalance = {
 const cents = (value: number): number => Math.round(value * 100);
 
 /**
- * Trial Balance over postable leaves only — a parent account carries no lines
- * of its own, so including it would double-count its children.
+ * Trial Balance over every account that carries movement, plus — when
+ * `includeZero` is set — the empty postable leaves, so a reader can see the
+ * whole postable chart.
+ *
+ * A `BalanceRow`'s debit/credit come from a per-account `groupBy` in
+ * `getAccountBalances`, so each row holds ONLY its own journal lines and never
+ * a rollup of its children. Including a parent therefore cannot double-count.
+ * Dropping one, on the other hand, would: `postJournal` rejects non-leaf
+ * accounts only at post time, and nothing stops an account that already has
+ * lines from later gaining a child, so a parent with movement exists in real
+ * data. Omitting it would break the `totalDebit === totalCredit` identity, fire
+ * the corruption warning falsely, and disagree with Laba Rugi / Neraca, which
+ * count every node's own `signed`. Empty parents are still hidden — they are
+ * structure, not balances, and the rollup statements render the tree anyway.
  */
 export function buildTrialBalance(
   rows: BalanceRow[],
   opts?: { includeZero?: boolean },
 ): TrialBalance {
   const includeZero = opts?.includeZero ?? false;
-  const leaves = rows.filter((r) => !r.hasChildren);
-  const visible = includeZero ? leaves : leaves.filter((r) => r.debit !== 0 || r.credit !== 0);
+  const visible = rows.filter((r) => {
+    const hasMovement = r.debit !== 0 || r.credit !== 0;
+    return hasMovement || (includeZero && !r.hasChildren);
+  });
 
   let totalDebit = 0;
   let totalCredit = 0;
