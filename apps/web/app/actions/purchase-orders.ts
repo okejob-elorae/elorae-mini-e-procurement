@@ -558,9 +558,22 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
   };
 }
 
+/**
+ * `ERROR` is this action's own catch-all, not a code any writer returns. The
+ * reversal writer only converts `postJournal`'s UNBALANCED into a value and lets
+ * everything else out, and at least one of those throws is ordinary rather than
+ * exotic: `postJournal` raises `NON_POSTABLE_ACCOUNT` when a line's chart account
+ * has since been deactivated or given a child, which is exactly what happens when
+ * someone reorganises the CoA under an account a payment already posted against.
+ * Letting that escape would reject the action, so the client falls into its
+ * generic catch and — in production, where Next masks a server error to a digest
+ * — the operator is told nothing at all about a ledger inconsistency they are
+ * standing in front of. Named here instead, so the toast can say which control to
+ * use next; the raw message stays in the server log where it cannot leak.
+ */
 export type PostSupplierPaymentReversalActionResult =
   | GenerateAutoJournalResult
-  | { ok: false; code: 'FORBIDDEN' | 'BAD_STATE' };
+  | { ok: false; code: 'FORBIDDEN' | 'BAD_STATE' | 'ERROR' };
 
 /**
  * Posts the reversal a failed unmark never posted, for a PO that reads unpaid
@@ -603,7 +616,8 @@ export type PostSupplierPaymentReversalActionResult =
  * `postSupplierPaymentReversalJournal` handles idempotency (keyed
  * `(SUPPLIER_PAYMENT_REVERSAL, poId#gen)`), so a double-click cannot double-post.
  * Returns a typed result instead of throwing, so the caller can name the failure
- * the same way the toggle's own outcome is named.
+ * the same way the toggle's own outcome is named — including for a thrown post,
+ * see `ERROR` on the result type.
  */
 export async function postSupplierPaymentReversalJournalAction(
   poId: string
@@ -614,14 +628,28 @@ export async function postSupplierPaymentReversalJournalAction(
   }
   const postedById = session.user.id;
 
-  const result = await runSerializable<PostSupplierPaymentReversalActionResult>(async (tx) => {
-    if (!(await hasStandingPaymentJournalWhileUnpaid(poId, tx))) {
-      return { ok: false, code: 'BAD_STATE' };
-    }
-    const posted = await postSupplierPaymentReversalJournal(poId, postedById, tx);
-    if (!posted.ok && posted.code === 'PO_IS_PAID') return { ok: false, code: 'BAD_STATE' };
-    return posted;
-  });
+  let result: PostSupplierPaymentReversalActionResult;
+  try {
+    result = await runSerializable<PostSupplierPaymentReversalActionResult>(async (tx) => {
+      if (!(await hasStandingPaymentJournalWhileUnpaid(poId, tx))) {
+        return { ok: false, code: 'BAD_STATE' };
+      }
+      const posted = await postSupplierPaymentReversalJournal(poId, postedById, tx);
+      if (!posted.ok && posted.code === 'PO_IS_PAID') return { ok: false, code: 'BAD_STATE' };
+      return posted;
+    });
+  } catch (e) {
+    /* Logged, not swallowed: the reversal is still missing after this, and the
+       standing-payment warning stays up because the state check will still be
+       true, so the operator keeps a visible way back in — but the reason the
+       post failed only exists here. */
+    console.error(
+      `[postSupplierPaymentReversalJournalAction] FAILED TO POST the missing supplier payment reversal for PO ${poId} — ` +
+        'the PO still reads unpaid with its payment journal standing.',
+      e,
+    );
+    result = { ok: false, code: 'ERROR' };
+  }
 
   revalidatePath('/backoffice/purchase-orders');
   revalidatePath(`/backoffice/purchase-orders/${poId}`);

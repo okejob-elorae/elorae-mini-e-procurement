@@ -252,4 +252,24 @@ d("postSupplierPaymentReversalJournalAction (test bed only)", () => {
     expect(await reversalJournalFor(poId)).toBeNull();
   });
 
+  /*
+   * A thrown post must come back as a named failure, not as a rejected action.
+   * `postJournal` raises `NON_POSTABLE_ACCOUNT` when a line's chart account is no
+   * longer an active leaf, which is what a CoA reorganisation does to an account a
+   * payment already posted against — and the reversal mirrors those very accounts.
+   * Unhandled, that rejects the action and the operator gets the client's generic
+   * catch (a masked digest in production) in front of a ledger inconsistency.
+   */
+  it("reports ERROR instead of throwing when the payment's account is no longer postable", async () => {
+    const poId = await seedPoWithStandingPayment("5", null);
+    await prisma.chartAccount.update({ where: { id: bankAccountId }, data: { isActive: false } });
+
+    try {
+      const r = await postSupplierPaymentReversalJournalAction(poId);
+      expect(r).toEqual({ ok: false, code: "ERROR" });
+      expect(await reversalJournalFor(poId)).toBeNull();
+    } finally {
+      await prisma.chartAccount.update({ where: { id: bankAccountId }, data: { isActive: true } });
+    }
+  });
 });
