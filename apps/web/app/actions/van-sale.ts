@@ -3,6 +3,8 @@
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { recordVanSale } from "@/lib/canvassing/sale-writer";
+import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
+import { postVanSaleJournal } from "@/lib/canvassing/van-journal";
 
 export type RecordVanSaleActionResult =
   | { ok: true; saleId: string; docNo: string; changeAmount: number }
@@ -30,7 +32,10 @@ export async function recordVanSaleAction(input: unknown): Promise<RecordVanSale
     salesmanId: session.user.id, storeId: d.storeId, buyerName: d.buyerName, buyerPhone: d.buyerPhone,
     saleLat: d.saleLat, saleLng: d.saleLng, lines: d.lines, amountPaid: d.amountPaid, note: d.note, idempotencyKey: d.idempotencyKey,
   });
-  if (res.ok) return { ok: true, saleId: res.saleId, docNo: res.docNo, changeAmount: res.changeAmount };
+  if (res.ok) {
+    await postVanJournalSafely("sale", res.saleId, () => postVanSaleJournal(res.saleId, session.user.id));
+    return { ok: true, saleId: res.saleId, docNo: res.docNo, changeAmount: res.changeAmount };
+  }
   if (res.code === "INSUFFICIENT_VAN_STOCK") return { ok: false, reason: "INSUFFICIENT_VAN_STOCK", shortLines: res.shortLines };
   return { ok: false, reason: res.code };
 }

@@ -5,6 +5,8 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordVanReconcile } from "@/lib/canvassing/reconcile-writer";
+import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
+import { postVanReconcileJournal } from "@/lib/canvassing/van-journal";
 
 export type RecordVanReconcileActionResult =
   | { ok: true; docNo: string; totalReturned: number; totalVarianceQty: number }
@@ -25,6 +27,7 @@ export async function recordVanReconcileAction(input: unknown): Promise<RecordVa
   }
   const res = await recordVanReconcile({ canvasserId: parsed.data.canvasserId, reconciledById: session.user.id, counts: parsed.data.counts, note: parsed.data.note });
   if (res.ok) {
+    await postVanJournalSafely("reconcile", res.reconcileId, () => postVanReconcileJournal(res.reconcileId, session.user.id));
     revalidatePath("/backoffice/canvassing");
     revalidatePath(`/backoffice/canvassing/${parsed.data.canvasserId}`);
     return { ok: true, docNo: res.docNo, totalReturned: res.totalReturned, totalVarianceQty: res.totalVarianceQty };

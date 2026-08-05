@@ -5,6 +5,8 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { loadVan } from "@/lib/canvassing/writer";
+import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
+import { postVanLoadJournal } from "@/lib/canvassing/van-journal";
 
 export type LoadVanActionResult =
   | { ok: true; docNo: string }
@@ -36,6 +38,7 @@ export async function loadVanAction(input: {
     if (res.code === "INSUFFICIENT_STOCK") return { ok: false, reason: "INSUFFICIENT_STOCK", shortLines: res.shortLines };
     return { ok: false, reason: "EMPTY" };
   }
+  await postVanJournalSafely("load", res.loadId, () => postVanLoadJournal(res.loadId, session.user.id));
   revalidatePath("/backoffice/canvassing");
   revalidatePath(`/backoffice/canvassing/${parsed.data.canvasserId}`);
   return { ok: true, docNo: res.docNo };
