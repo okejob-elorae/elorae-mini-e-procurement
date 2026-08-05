@@ -1,8 +1,11 @@
 import { prisma } from "@elorae/db";
 import { isRetryableTxError } from "@/lib/db/tx-retry";
 import type { PostSupplierPaymentResult } from "./supplier-payment-journal";
+import type { SupplierPaymentDirection } from "./supplier-payment-journal-message";
 
-export type SupplierPaymentDirection = "payment" | "reversal";
+/* Re-exported, not redeclared: the canonical definition lives in the client-safe
+   message module so the toast mapper can take it without importing Prisma. */
+export type { SupplierPaymentDirection };
 
 /** A post that did not produce a journal, in the shape `notify` needs. */
 export type SupplierPaymentPostFailure = { reason: string; role: string | null; detail?: string };

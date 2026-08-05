@@ -79,12 +79,15 @@ export default function PODetailPage() {
   /**
    * The toggle always commits, so the outcome — not the absence of a throw —
    * decides what the operator is told. A journal failure means the ledger does
-   * not reflect this payment: for most codes because payables and bank were left
-   * untouched, and for `PAYMENT_SUPERSEDED` because they still hold an earlier
-   * payment for a different amount. Reporting "Marked as paid" for either is
-   * positive confirmation of something that did not happen, and the only other
-   * trace is an `AdminNotification` row nothing in the UI renders yet. Which of
-   * the two it is, and the remedy, come from the code's own message.
+   * not reflect this toggle: for most payment codes because payables and bank
+   * were left untouched, for `PAYMENT_SUPERSEDED` because they still hold an
+   * earlier payment for a different amount, and on the reversal half because they
+   * still hold the payment this unmark failed to undo. Reporting "Marked as paid"
+   * for any of those is positive confirmation of something that did not happen,
+   * and the only other trace is an `AdminNotification` row nothing in the UI
+   * renders yet. Which case it is, and the remedy, come from the message the code
+   * AND the direction resolve to — the same failure means opposite things on the
+   * two halves of the toggle.
    *
    * `changed: false` is checked FIRST and never reported as success: the PO was
    * already in the requested state, so nothing was written and no journal was
@@ -107,7 +110,10 @@ export default function PODetailPage() {
       } else if (result.journalFailure) {
         toast.warning(
           tSupplierPayments(
-            supplierPaymentJournalErrorKey(result.journalFailure.code) as never,
+            supplierPaymentJournalErrorKey(
+              result.journalFailure.code,
+              result.journalFailure.direction
+            ) as never,
             { role: result.journalFailure.role ?? '' }
           ),
           { duration: 12000 }

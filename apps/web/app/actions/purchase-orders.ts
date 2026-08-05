@@ -26,6 +26,7 @@ import {
   notifySupplierPaymentJournalFailure,
   type SupplierPaymentPostFailure,
 } from '@/lib/purchasing/post-supplier-payment-journal-safely';
+import type { SupplierPaymentDirection } from '@/lib/purchasing/supplier-payment-journal-message';
 import { runSerializable } from '@/lib/db/tx-retry';
 
 function poReceiptLineKey(itemId: string, variantSku?: string | null) {
@@ -383,14 +384,21 @@ export async function getPOStats() {
  * AND on a reversal with no payment journal to undo, which is a genuine no-op on
  * the ledger.
  *
- * Only the code and the posting role cross to the client. The `detail` string a
- * thrown journal carries is a raw server error message — it stays in the
- * `AdminNotification` and the server log, where the operator's toast cannot leak
- * it. A toast maps the code to its own remedy sentence anyway.
+ * Only the code, the posting role and the direction cross to the client. The
+ * `detail` string a thrown journal carries is a raw server error message — it
+ * stays in the `AdminNotification` and the server log, where the operator's toast
+ * cannot leak it. A toast maps the code to its own remedy sentence anyway.
+ *
+ * `direction` rides along because two codes mean opposite things on the two
+ * halves of the toggle — a failed payment wrote nothing and is retried by
+ * unmarking, a failed reversal left the earlier payment journal standing and is
+ * retried from its own control — and the toast picks the wording from it. Sent
+ * from here rather than inferred by the caller from the button it pressed, so the
+ * sentence describes the post that actually ran.
  */
 export type SetPOPaidAtResult = {
   changed: boolean;
-  journalFailure: { code: string; role: string | null } | null;
+  journalFailure: { code: string; role: string | null; direction: SupplierPaymentDirection } | null;
 };
 
 /** Mark a PO as paid (or unmark by passing paidAt: null). */
@@ -419,7 +427,7 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
   const actorId = session.user?.id;
   if (!actorId) throw new Error('Unauthorized');
 
-  const direction = paidAt != null ? 'payment' : 'reversal';
+  const direction: SupplierPaymentDirection = paidAt != null ? 'payment' : 'reversal';
 
   /**
    * The toggle and its journal in ONE serializable transaction, so a concurrent
@@ -545,7 +553,7 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
   return {
     changed: outcome.changed,
     journalFailure: outcome.failure
-      ? { code: outcome.failure.reason, role: outcome.failure.role }
+      ? { code: outcome.failure.reason, role: outcome.failure.role, direction }
       : null,
   };
 }
