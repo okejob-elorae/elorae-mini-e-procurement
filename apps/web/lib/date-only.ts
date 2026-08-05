@@ -29,6 +29,17 @@ export function parseDateOnlyEnd(value: string): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
+/**
+ * Inclusive end (23:59:59.999 WIB) of the current WIB calendar day.
+ *
+ * Report filters that omit a cutoff must land on the same instant an explicit
+ * "today" selection produces via `parseDateOnlyEnd` — a bare `new Date()` is
+ * wall-clock, so it would exclude rows dated later in the same WIB day.
+ */
+export function endOfTodayJakarta(): Date {
+  return parseDateOnlyEnd(formatDateOnlyJakarta(new Date())) ?? new Date();
+}
+
 export function toDisplayDate(date: Date): string {
   return date.toLocaleDateString('id-ID', {
     day: 'numeric',
@@ -43,4 +54,19 @@ export function coerceToDate(value: Date | string | null | undefined): Date | un
     return Number.isNaN(value.getTime()) ? undefined : value;
   }
   return parseDateOnly(value);
+}
+
+/**
+ * Calendar day of the given instant in the business timezone (WIB), as
+ * `YYYY-MM-DD`. Unlike `formatDateOnly`, this is independent of the server
+ * process timezone — prod runs UTC, where a WIB-midnight instant formats as
+ * the previous calendar day.
+ */
+export function formatDateOnlyJakarta(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
 }

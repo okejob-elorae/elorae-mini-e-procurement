@@ -51,6 +51,9 @@
     "navFinanceSettlements": "Marketplace Settlements",
     "navFinanceJournals": "Journals",
     "navFinanceAccountMapping": "Account Mapping",
+    "navFinanceTrialBalance": "Trial Balance",
+    "navFinanceIncomeStatement": "Income Statement",
+    "navFinanceBalanceSheet": "Balance Sheet",
     "items": "Items",
     "navItemsAll": "All Items",
     "navItemsCategory": "Category",
@@ -2674,10 +2677,11 @@
     "journalErr": {
       "CHECKSUM_BLOCKED": "Checksum must pass before the journal can be posted.",
       "UNMAPPED_ROLE": "Chart of accounts not mapped for role \"{role}\". Map it under Finance settings first.",
-      "UNBALANCED": "Settlement totals don't balance — check the Summary or add an \"other\" account.",
+      "UNBALANCED": "Settlement totals don't balance. The leftover fee already goes to the \"Marketplace Fee — Other\" account automatically, so this means the excel summary itself does not satisfy Released + Expenses = Income. Check the Summary sheet of the settlement file.",
       "NOT_FOUND": "Settlement not found.",
       "FORBIDDEN": "You don't have permission to post this journal.",
-      "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal."
+      "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal.",
+      "NON_POSTABLE_ACCOUNT": "One of the mapped accounts cannot be posted to — it is inactive or has child accounts. Map that role to an active account with no children under Finance → Account Mapping."
     },
     "resyncButton": "Resync {count} Unmatched Order(s)",
     "resyncButtonPending": "Starting Resync…",
@@ -2819,6 +2823,70 @@
     },
     "errGeneric": "Something went wrong. Please try again."
   },
+  "financeReports": {
+    "trialBalance": {
+      "pageTitle": "Trial Balance",
+      "subtitle": "Total debit and credit per account for the selected period.",
+      "listTitle": "Trial Balance",
+      "empty": "No journals in this period yet.",
+      "emptyFiltered": "No accounts match the filter.",
+      "colCode": "Code",
+      "colName": "Account",
+      "colDebit": "Debit",
+      "colCredit": "Credit",
+      "colBalance": "Balance",
+      "totalRow": "Total",
+      "balancedNote": "Debit and credit are equal. Every journal is validated as balanced when posted, so this equality is expected — the check only detects corrupted data.",
+      "unbalancedNote": "Debit and credit are NOT equal. This indicates corrupted journal data — inspect the ledger."
+    },
+    "incomeStatement": {
+      "pageTitle": "Income Statement",
+      "subtitle": "Revenue, cost of goods sold, and expenses for the selected period.",
+      "cardTitle": "Income Statement",
+      "sectionPendapatan": "Revenue",
+      "sectionHpp": "Cost of Goods Sold",
+      "sectionBeban": "Operating Expenses",
+      "totalPendapatan": "Total Revenue",
+      "totalHpp": "Total Cost of Goods Sold",
+      "totalBeban": "Total Operating Expenses",
+      "labaKotor": "Gross Profit",
+      "labaBersih": "Net Profit",
+      "sectionEmpty": "No accounts with a balance in this section yet.",
+      "coverageTitle": "Data coverage",
+      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, and manual journals. NOT yet included: field sales (putus), van sales, SPG sales, and supplier payments."
+    },
+    "balanceSheet": {
+      "pageTitle": "Balance Sheet",
+      "subtitle": "Assets, liabilities, and equity as of the selected date.",
+      "cardTitle": "Balance Sheet",
+      "sectionAset": "Assets",
+      "sectionLiabilitas": "Liabilities",
+      "sectionEkuitas": "Equity",
+      "totalAset": "Total Assets",
+      "totalLiabilitas": "Total Liabilities",
+      "totalEkuitas": "Total Equity",
+      "unclosedEarnings": "Unclosed Profit (Loss)",
+      "totalLiabilitasEkuitas": "Total Liabilities and Equity",
+      "sectionEmpty": "No accounts with a balance in this section yet.",
+      "balancedNote": "Assets equal Liabilities + Equity. The \"Unclosed Profit (Loss)\" line stands in for the closing entry that does not exist yet; since every journal is balanced when posted, this equality is expected.",
+      "unbalancedNote": "Assets do NOT equal Liabilities + Equity. This indicates corrupted journal data — inspect the ledger.",
+      "openingTitle": "Opening balances not recorded",
+      "openingBody": "The earliest journal is dated {date}. This position covers only journals from that date onward. Record a manual opening-balance journal (cash, receivables, inventory, payables, equity) dated before it so the balance sheet reflects the real position."
+    },
+    "filter": {
+      "dateFrom": "From date",
+      "dateTo": "To date",
+      "asOf": "As of",
+      "reset": "Reset",
+      "showZero": "Show zero-balance accounts"
+    },
+    "export": {
+      "excel": "Download Excel",
+      "print": "Print / PDF",
+      "started": "Download started",
+      "failed": "Export failed"
+    }
+  },
 
   "financeAccountMapping": {
     "title": "Account Mapping",
@@ -2844,6 +2912,11 @@
       "COGS": "Cost of Goods Sold",
       "BANK": "Bank/Cash",
       "MARKETPLACE_FEE": "Marketplace Fee",
+      "MARKETPLACE_FEE_ADMIN": "Marketplace Admin Fee",
+      "MARKETPLACE_FEE_SERVICE": "Marketplace Service Fee",
+      "MARKETPLACE_FEE_COMMISSION": "Marketplace Commission Fee",
+      "MARKETPLACE_FEE_PROCESSING": "Marketplace Order Processing Fee",
+      "MARKETPLACE_FEE_OTHER": "Other Marketplace Fees",
       "INVENTORY_VARIANCE": "Inventory Variance",
       "TAX": "Tax"
     },
@@ -2856,6 +2929,11 @@
       "COGS": "Expense account for the cost of goods sold.",
       "BANK": "Cash/bank account for payment receipts and disbursements.",
       "MARKETPLACE_FEE": "Expense account for marketplace platform fee deductions.",
+      "MARKETPLACE_FEE_ADMIN": "Expense for the admin fee deducted by the marketplace, from the Biaya Administrasi column.",
+      "MARKETPLACE_FEE_SERVICE": "Expense for the service fee deducted by the marketplace, from the Biaya Layanan column.",
+      "MARKETPLACE_FEE_COMMISSION": "Expense for the commission deducted by the marketplace, from the Biaya Komisi AMS column.",
+      "MARKETPLACE_FEE_PROCESSING": "Expense for the order processing fee, from the Biaya Proses Pesanan column.",
+      "MARKETPLACE_FEE_OTHER": "Unitemized remainder of marketplace deductions — including ad fees, shipping subsidies, adjustments, and every TikTok fee.",
       "INVENTORY_VARIANCE": "Account for recording stock opname/reconciliation variances.",
       "TAX": "Account for tax liabilities/expenses."
     },
