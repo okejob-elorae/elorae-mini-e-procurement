@@ -1,4 +1,4 @@
-import { prisma, Prisma, type PrismaClient } from "@elorae/db";
+import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@elorae/db";
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { bookedPayable, type ApLine } from "./supplier-payable";
@@ -47,7 +47,7 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
       sourceType: { in: ["GRN", "GRN_REVERSAL"] },
       sourceId: { in: grns.map((g) => g.id) },
     },
-    select: { sourceType: true, lines: { select: { chartAccountId: true, debit: true, credit: true } } },
+    select: { lines: { select: { chartAccountId: true, debit: true, credit: true } } },
   });
 
   /* No GRN journals posted at all yet is the benign, expected case (a GRN can sit
@@ -55,13 +55,27 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
      currently-mapped AP account below. */
   if (journals.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
 
-  const apLines: ApLine[] = journals.flatMap((j) =>
-    j.lines
-      .filter((l) => l.chartAccountId === apAccountId)
-      .map((l) => ({ sourceType: j.sourceType ?? "", debit: Number(l.debit), credit: Number(l.credit) })),
-  );
+  /*
+   * Every GRN and GRN_REVERSAL journal books its counter-line against the AP
+   * role, so each one MUST contribute at least one line on the account that
+   * role resolves to now. A journal contributing none means part of this PO's
+   * payable sits on a different account — `AP` was remapped between two
+   * receipts — and paying only the lines found here would silently under-pay by
+   * the missing receipt's amount. An empty set is the same fault with every
+   * receipt on the far side of the remap.
+   */
+  const apLines: ApLine[] = [];
+  let journalsWithoutApLine = 0;
+  for (const journal of journals) {
+    const own = journal.lines.filter((l) => l.chartAccountId === apAccountId);
+    if (own.length === 0) {
+      journalsWithoutApLine += 1;
+      continue;
+    }
+    for (const l of own) apLines.push({ debit: Number(l.debit), credit: Number(l.credit) });
+  }
 
-  if (apLines.length === 0) return { ok: false, code: "AP_ACCOUNT_MISMATCH" };
+  if (apLines.length === 0 || journalsWithoutApLine > 0) return { ok: false, code: "AP_ACCOUNT_MISMATCH" };
 
   const payable = bookedPayable(apLines);
   if (payable < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
@@ -122,23 +136,53 @@ export async function postSupplierPaymentReversalJournal(
 
   const paid = await client.journal.findUnique({
     where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId } },
-    select: { lines: { select: { debit: true, credit: true } } },
+    select: { date: true, lines: { select: { chartAccountId: true, debit: true, credit: true } } },
   });
   if (!paid) return { ok: false, code: "NOTHING_TO_POST" };
 
-  const amount = paid.lines.reduce((sum, l) => sum + Number(l.debit), 0);
-  if (amount < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
+  /*
+   * The reversal mirrors the payment journal BY CONSTRUCTION: same chart
+   * accounts, debit and credit swapped, so the pair always nets to exactly zero
+   * on every account the payment touched. Re-resolving `AP`/`BANK` by role
+   * instead would post against whatever those roles point at NOW — an operator
+   * who repointed `AP` while the PO sat marked paid would leave the payment's
+   * debit stranded on the old account with nothing able to clear it, while the
+   * next payment read a zero payable on the new one and reported nothing to
+   * post. Mirroring accounts is also why this calls `postJournal` directly
+   * rather than the role-based `generateAutoJournal` wrapper; `postJournal`
+   * still enforces balance and idempotency by `(sourceType, sourceId)`.
+   */
+  const lines = paid.lines.map((l) => ({
+    chartAccountId: l.chartAccountId,
+    debit: Number(l.credit),
+    credit: Number(l.debit),
+  }));
+
+  /*
+   * Zero-value guard only. This sums the mirrored journal's debits as a whole
+   * — legitimate because `postJournal` balanced it at creation — rather than
+   * assuming which single line carries the payable, so it stays correct if a
+   * payment journal ever grows beyond its two lines.
+   */
+  const totalCents = lines.reduce((cents, l) => cents + Math.round(l.debit * 100), 0);
+  if (totalCents < 1) return { ok: false, code: "NOTHING_TO_POST" };
 
   const po = await client.purchaseOrder.findUnique({ where: { id: poId }, select: { docNumber: true } });
 
-  return generateAutoJournal(
-    client,
-    "SUPPLIER_PAYMENT_REVERSAL",
-    sourceId,
-    [
-      { role: "BANK" as const, debit: amount, credit: 0 },
-      { role: "AP" as const, debit: 0, credit: amount },
-    ],
-    { date: new Date(), description: `Supplier payment reversal ${po?.docNumber ?? poId}`, postedById },
-  );
+  try {
+    /* Dated to the payment it reverses, not today: marking on 31 Aug and
+       unmarking on 1 Sep must not report an August cash-out that was undone
+       alongside a September inflow that never happened. */
+    const res = await postJournal(client, {
+      source: { type: "SUPPLIER_PAYMENT_REVERSAL", id: sourceId },
+      date: paid.date,
+      description: `Supplier payment reversal ${po?.docNumber ?? poId}`,
+      postedById,
+      lines,
+    });
+    return { ok: true, journalId: res.journalId, created: res.created };
+  } catch (e) {
+    if (e instanceof JournalError && e.code === "UNBALANCED") return { ok: false, code: "UNBALANCED" };
+    throw e;
+  }
 }

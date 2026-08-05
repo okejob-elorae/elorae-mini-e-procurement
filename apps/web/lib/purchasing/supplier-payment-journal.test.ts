@@ -634,4 +634,122 @@ d("supplier payment journal (test bed only)", () => {
       await cleanupPo(tracked);
     }
   });
+
+  it("a PO whose receipts straddle an AP remap returns AP_ACCOUNT_MISMATCH instead of under-paying", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-11`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grnA = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-11A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 70_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnA.id);
+    const grnB = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-11B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnB.id);
+
+    const altAccount = await prisma.chartAccount.create({
+      data: { code: `9${token}7`, name: "AP alt split (test)", type: "LIABILITAS", depth: 1, isActive: true },
+    });
+
+    try {
+      /* GRN A books its payable to the original AP account... */
+      expect(await postGrnJournal(grnA.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      /* ...then AP is repointed, so GRN B books its payable somewhere else.
+         `apLines` is non-empty (B contributed), which is exactly how a naive
+         check would miss that A's 70,000 is unreachable and pay only 30,000. */
+      await setAccountMapping("AP", altAccount.id);
+      try {
+        expect(await postGrnJournal(grnB.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+        const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-01T00:00:00.000Z"), prisma);
+        expect(r).toEqual({ ok: false, code: "AP_ACCOUNT_MISMATCH" });
+
+        const journal = await prisma.journal.findUnique({
+          where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+        });
+        expect(journal).toBeNull();
+      } finally {
+        await setAccountMapping("AP", accountIds.AP);
+      }
+    } finally {
+      /* Journal lines reference the alt account, so they go first. */
+      await cleanupPo(tracked);
+      try {
+        await prisma.chartAccount.deleteMany({ where: { id: altAccount.id } });
+      } catch {
+        /* best-effort */
+      }
+    }
+  });
+
+  it("the reversal mirrors the payment's own accounts and date, not whatever the roles resolve to at unmark time", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-12`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-12`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 55_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    const altAccount = await prisma.chartAccount.create({
+      data: { code: `9${token}6`, name: "AP alt reversal (test)", type: "LIABILITAS", depth: 1, isActive: true },
+    });
+
+    try {
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      const paidAt = new Date("2026-08-31T00:00:00.000Z");
+      expect(await postSupplierPaymentJournal(po.id, userId, paidAt, prisma)).toMatchObject({ ok: true, created: true });
+
+      /* AP is repointed while the PO sits marked paid. A role-resolving reversal
+         would credit the NEW account and strand the payment's debit on the old
+         one; mirroring credits the account the payment actually debited. */
+      await setAccountMapping("AP", altAccount.id);
+      try {
+        expect(await postSupplierPaymentReversalJournal(po.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      } finally {
+        await setAccountMapping("AP", accountIds.AP);
+      }
+
+      const reversal = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: `${po.id}#1` } },
+        include: { lines: true },
+      });
+      expect(reversal.lines).toHaveLength(2);
+      expect(amountsFor(reversal.lines, accountIds.AP)).toEqual({ debit: 0, credit: 55_000 });
+      expect(amountsFor(reversal.lines, accountIds.BANK)).toEqual({ debit: 55_000, credit: 0 });
+      expect(amountsFor(reversal.lines, altAccount.id)).toEqual({ debit: 0, credit: 0 });
+      /* Dated to the payment, so the reversal cannot land in a later period. */
+      expect(reversal.date).toEqual(paidAt);
+
+      /* Payment plus reversal net AP back to the payable the GRN booked. */
+      const apNet = await apNetForSources(
+        [
+          { sourceType: "GRN", sourceId: grn.id },
+          { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` },
+          { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: `${po.id}#1` },
+        ],
+        accountIds.AP,
+      );
+      expect(apNet).toBe(55_000);
+    } finally {
+      await cleanupPo(tracked);
+      try {
+        await prisma.chartAccount.deleteMany({ where: { id: altAccount.id } });
+      } catch {
+        /* best-effort */
+      }
+    }
+  });
 });
