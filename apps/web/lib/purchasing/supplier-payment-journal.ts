@@ -16,13 +16,15 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * — the historical journal lines still point at the old account, so a plain
  * amount-based read would come back short or zero.
  *
- * `GRN_JOURNALS_INCOMPLETE`: at least one of this PO's receipts carries no GRN
- * journal — whether that is one of several or every last one of them. GRN
- * auto-journalling is best-effort, so a receipt can sit un-journaled
- * indefinitely; paying only the journaled subset under-pays, and whoever later
- * retries the missing GRN journal pushes payables back off zero on a PO already
- * shown as paid. Distinct from the mismatch code because the remedy is
- * different: post the missing GRN journal, not fix a mapping.
+ * `GRN_JOURNALS_INCOMPLETE`: at least one of this PO's receipts is still owed
+ * and carries no GRN journal — whether that is one of several or every last one
+ * of them. GRN auto-journalling is best-effort, so a receipt can sit
+ * un-journaled indefinitely; paying only the journaled subset under-pays, and
+ * whoever later retries the missing GRN journal pushes payables back off zero on
+ * a PO already shown as paid. Distinct from the mismatch code because the remedy
+ * is different: post the missing GRN journal, not fix a mapping. An
+ * owner-declined receipt is not "still owed" and so never reaches this code —
+ * see the exemption on the check itself.
  *
  * `GRN_REVERSAL_MISSING`: an owner-declined receipt still carries its GRN
  * journal with no `GRN_REVERSAL` to undo it. Declining an over-receive GRN
@@ -34,9 +36,9 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * (`postGrnReversalJournalAction`) from the receipt journal's.
  *
  * All three stay distinct from the genuinely benign zero cases — no GRNs at all
- * (an advance payment), every GRN sub-cent so nothing was ever bookable, or a
- * net payable already cleared by reversals — so a caller can raise them loudly
- * instead of reporting success.
+ * (an advance payment), no GRN that could ever book a payable (each one either
+ * sub-cent or owner-declined), or a net payable already cleared by reversals —
+ * so a caller can raise them loudly instead of reporting success.
  */
 export type PostSupplierPaymentResult =
   | GenerateAutoJournalResult
@@ -94,6 +96,18 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    * legitimately has no journal and must not block payment forever. Same
    * `Math.abs(...) < 0.01` predicate as that guard, deliberately.
    *
+   * Owner-declined receipts are exempt for the same reason as sub-cent ones:
+   * nothing was ever booked for them, so they have nothing to contribute to the
+   * payable and must not hold up the rest of the PO. Receiving posts the GRN
+   * journal best-effort and an over-receive can be declined afterwards, so a
+   * receipt can end up declined with its journal never posted — without the
+   * exemption that one receipt blocks every sibling receipt on the PO from ever
+   * being paid, and the remedy this code reports ("post the missing GRN
+   * journal") would book a payable for goods inventory has already reversed.
+   * `GRN_REVERSAL_MISSING` below deliberately does NOT cover that state either:
+   * it requires the receipt journal to exist, because a declined receipt that
+   * WAS journaled genuinely still needs its reversal on the ledger.
+   *
    * Checked BEFORE the zero-journals guard: a PO where EVERY receipt failed to
    * journal is the same fault as a partially-journaled one, only worse, so it
    * gets the same precise code instead of the vague `NOTHING_TO_POST` that
@@ -107,7 +121,7 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    */
   const journaledGrnIds = new Set(journals.filter((j) => j.sourceType === "GRN").map((j) => j.sourceId));
   const anyReceiptUnjournaled = grns.some(
-    (g) => Math.abs(Number(g.totalAmount)) >= 0.01 && !journaledGrnIds.has(g.id),
+    (g) => g.ownerDeclinedAt === null && Math.abs(Number(g.totalAmount)) >= 0.01 && !journaledGrnIds.has(g.id),
   );
   if (anyReceiptUnjournaled) return { ok: false, code: "GRN_JOURNALS_INCOMPLETE" };
 
@@ -120,11 +134,13 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    * lines that exist, so a reversal that never posted would leave it reporting
    * either a clean payable that over-pays or a remap that never happened.
    *
-   * The two checks cannot both be the answer for one receipt: a declined GRN
-   * with no receipt journal at all is caught above, and this one requires the
-   * receipt journal to exist. That also makes the order between them and the
-   * zero-journals guard below immaterial to behaviour — grouping them is for
-   * the reader.
+   * The two checks cannot both be the answer for one receipt: the one above
+   * fires only for a receipt still owed, and this one only for a declined
+   * receipt whose journal exists. A declined receipt with no journal at all is
+   * neither — nothing was booked for it and nothing needs reversing, so it is
+   * simply not this PO's problem. That also makes the order between them and
+   * the zero-journals guard below immaterial to behaviour — grouping them is
+   * for the reader.
    *
    * Kept separate from `GRN_JOURNALS_INCOMPLETE` because the operator's action
    * differs: the reversal is retried from the declined GRN's own reversal
@@ -138,12 +154,13 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
 
   /*
    * NOT dead code, and load-bearing: reachable only when every GRN on this PO
-   * is sub-cent. The completeness check above already refused if any receipt
-   * worth at least a cent lacked its journal, so no journals at all means no
-   * receipt qualified. `postGrnJournal` legitimately posts nothing for those, so
-   * nothing was ever booked and `NOTHING_TO_POST` is the honest answer. Without
-   * this early return that PO would fall through to an empty `apLines` and be
-   * reported as `AP_ACCOUNT_MISMATCH` — a mapping fault that does not exist.
+   * is exempt from the completeness check — each one either sub-cent or
+   * owner-declined. That check already refused if any receipt still owed lacked
+   * its journal, so no journals at all means no receipt qualified. Nothing was
+   * ever booked for an exempt receipt, so `NOTHING_TO_POST` is the honest
+   * answer. Without this early return that PO would fall through to an empty
+   * `apLines` and be reported as `AP_ACCOUNT_MISMATCH` — a mapping fault that
+   * does not exist.
    */
   if (journals.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
 

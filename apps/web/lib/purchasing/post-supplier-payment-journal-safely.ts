@@ -45,10 +45,10 @@ const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
  * to undo. Nothing to PAY is not: the PO is now flagged paid while no payable
  * was ever booked for it, which means either the payment does not correspond to
  * anything received (an advance) or receipts exist that could never book a
- * payable at all. A broken journal set is NOT one of these cases:
- * an un-journaled receipt returns `GRN_JOURNALS_INCOMPLETE` and a declined
- * receipt left un-reversed returns `GRN_REVERSAL_MISSING`, each carrying its own
- * remedy.
+ * payable at all — each one sub-cent or owner-declined. A broken journal set is
+ * NOT one of these cases: a receipt still owed with no journal returns
+ * `GRN_JOURNALS_INCOMPLETE` and a declined receipt left un-reversed returns
+ * `GRN_REVERSAL_MISSING`, each carrying its own remedy.
  */
 export async function attemptSupplierPaymentJournal(
   direction: SupplierPaymentDirection,
@@ -100,8 +100,8 @@ function messageFor(
   const retry = RETRY_HINT[direction];
   if (reason === "NOTHING_TO_POST") {
     /*
-     * Neither an un-journaled receipt nor a declined-but-un-reversed one can
-     * reach here — those return `GRN_JOURNALS_INCOMPLETE` and
+     * Neither a receipt still owed with no journal nor a declined-but-un-reversed
+     * one can reach here — those return `GRN_JOURNALS_INCOMPLETE` and
      * `GRN_REVERSAL_MISSING` — so the remaining causes are all "there is
      * genuinely nothing bookable", and the remedy is to question the payment
      * itself rather than to go post a journal.
@@ -109,8 +109,9 @@ function messageFor(
     return (
       "The PO was marked paid, but no payable was found booked to the GL for it, so no journal was posted — " +
       "payables and bank are both untouched. Either the PO has no receipts and this is an advance payment " +
-      "(which the GL cannot represent yet), its receipts are all worth under a cent, or its payable was already " +
-      `cleared by reversals. Confirm the PO should be marked paid at all; if a receipt is missing, receive it, then ${retry}.`
+      "(which the GL cannot represent yet), none of its receipts could ever book a payable (each one worth under " +
+      "a cent or declined by the owner), or its payable was already cleared by reversals. Confirm the PO should be " +
+      `marked paid at all; if a receipt is missing, receive it, then ${retry}.`
     );
   }
   if (reason === "GRN_JOURNALS_INCOMPLETE") {

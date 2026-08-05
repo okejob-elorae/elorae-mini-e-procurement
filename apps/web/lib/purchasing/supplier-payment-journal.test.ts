@@ -467,6 +467,99 @@ d("supplier payment journal (test bed only)", () => {
     }
   });
 
+  it("an owner-declined GRN that never got its journal does not block a sibling receipt's payment", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-18`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grnA = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-18A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 65_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnA.id);
+    /* The receipt journal was the best-effort post that failed, and the owner
+       then declined this over-receive — so it is worth well over a cent, has no
+       GRN journal, and never will legitimately. */
+    const grnDeclined = await prisma.gRN.create({
+      data: {
+        docNumber: `GRN-TEST-${token}-18B`,
+        poId: po.id,
+        supplierId,
+        receivedBy: userId,
+        totalAmount: 30_000,
+        items: [],
+        ownerDeclinedAt: new Date("2026-04-09T00:00:00.000Z"),
+      },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnDeclined.id);
+
+    try {
+      expect(await postGrnJournal(grnA.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      /* Nothing was ever booked for the declined receipt, so it has nothing to
+         contribute to the payable and must not hold the PO hostage: paying A's
+         65,000 is the whole and correct payable. Without the exemption this
+         reports GRN_JOURNALS_INCOMPLETE forever, and its remedy — post the
+         missing GRN journal — would book a payable for goods inventory has
+         already reversed. */
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-10T00:00:00.000Z"), prisma);
+      expect(r).toMatchObject({ ok: true, created: true });
+
+      const journal = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+        include: { lines: true },
+      });
+      expect(amountsFor(journal.lines, accountIds.AP)).toEqual({ debit: 65_000, credit: 0 });
+      expect(amountsFor(journal.lines, accountIds.BANK)).toEqual({ debit: 0, credit: 65_000 });
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("a PO whose only receipt is declined and never journaled returns NOTHING_TO_POST, not a blocking refusal", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-19`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grnDeclined = await prisma.gRN.create({
+      data: {
+        docNumber: `GRN-TEST-${token}-19`,
+        poId: po.id,
+        supplierId,
+        receivedBy: userId,
+        totalAmount: 30_000,
+        items: [],
+        ownerDeclinedAt: new Date("2026-04-11T00:00:00.000Z"),
+      },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnDeclined.id);
+
+    try {
+      /*
+       * Walks every guard: the completeness check exempts the declined receipt,
+       * `GRN_REVERSAL_MISSING` needs the receipt journal to exist and it does
+       * not, so the zero-journals guard answers — nothing was ever booked, so
+       * `NOTHING_TO_POST`. That is the honest code: it questions the payment
+       * rather than sending the operator to post a journal for reversed goods.
+       */
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-12T00:00:00.000Z"), prisma);
+      expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+      });
+      expect(journal).toBeNull();
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
   it("a sub-cent GRN with no journal of its own does not block payment", async () => {
     const po = await prisma.purchaseOrder.create({
       data: { docNumber: `PO-TEST-${token}-14`, supplierId, createdById: userId },
