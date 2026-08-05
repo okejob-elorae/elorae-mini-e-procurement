@@ -169,6 +169,20 @@ EPIC-07 (Stock Opname & Reconciliation) decomposition:
 
 Launch posture: reconciliation `FLAG_ONLY` + threshold 0; auto-correct directions implemented but dormant until config flip.
 
+EPIC-11 (Marketplace Settlements) + EPIC-15 (Marketplace Adapter) decomposition — **both shipped incrementally during the settlement work and were never given a table here**; reconstructed 2026-08-05 by auditing the code against the two cards. Board issues stay OPEN pending the client's own verification of the match-rate and profit ACs:
+
+| Story | Scope | Status |
+|----|-------|--------|
+| **11-01** | Settlement upload + parse — `POST /api/finance/settlements/upload` → `parseSettlement()`; Shopee reads all four sheets (Summary/Income/Adjustment/Seller Fee), 43 Income columns; parse failures return 422 with `{sheet, row, message}[]` | ✅ shipped. Error *display* was broken until `fix/settlement-parse-error-display` (the client typed the payload as `string[]` and rendered objects into JSX → React "Objects are not valid as a React child" crash on any malformed upload) |
+| **11-02** | Match orders — `matchSettlement` + `salesorderNoForSettlement` (`match-key.ts`, prefix-aware: Shopee `salesorder_no`, TikTok/Tokopedia `ref_no` OR `salesorder_no`); unmatched list + per-line resync | ✅ shipped (PRs #165/#166) |
+| **11-03** | Profit per order — `cogsSnapshot` + `profit = netIncome − cogs` per `SettlementLine`; reconciling KPI trio (`matchedNetIncome − totalCogs = totalProfit`) + `matchRatePct`, `unmatchedCount`, `profitPendingCount` | ✅ shipped |
+| **11-04** | Reconcile + journal — `checksumOk` gate returns `CHECKSUM_BLOCKED` before any posting; `postSettlementJournal` then posts DR Bank + per-fee-category DR + CR AR | ✅ shipped (PR #157; fee split + sign fix in the financial-reports PR) |
+| **15-01** | Shopee adapter — `shopee-settlement-parser.ts` → `ParsedSettlement` | ✅ shipped |
+| **15-02** | TikTok adapter — `tiktok-settlement-parser.ts`, same `ParsedSettlement` shape; zeroes the four Shopee fee columns (TikTok itemizes nothing per line), derives period dates by scanning Date cells, normalizes `Total Biaya` with `Math.abs()` | ✅ shipped (PR #168, validated on a real 18-line TikTok income export) |
+| **15-03** | Marketplace selection on upload — `SUPPORTED_MARKETPLACES` dropdown (SHOPEE/TIKTOK) → `parseSettlement()` switch; unknown value → 400, wrong-format file → 422 parse errors (never silent corruption) | ✅ shipped |
+
+Caveat on 15's "identical normalized schema" AC: the *shape* is identical, but fee itemization is not — Shopee fills four fee columns, TikTok fills none, so a TikTok Laba Rugi shows all fees under `MARKETPLACE_FEE_OTHER`. Downstream matching/profit/reconciliation are genuinely marketplace-blind. `TOKOPEDIA` resolves in `match-key.ts` but has **no parser** and is absent from the dropdown — out of scope for EPIC-15 (Shopee + TikTok only).
+
 EPIC-13 (Journal Engine) decomposition:
 
 | Story | Scope | Status |
@@ -185,7 +199,7 @@ EPIC-13 (Journal Engine) decomposition:
 
 Already done before sub-1: 01-01 (token + cron + alert), 01-04 (API call audit log + 429 + admin dashboard), catalog ingest (`POST /jubelio/catalog/sync`), category sync (2026-06-05).
 
-**Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought. Same for the **Follow-ups / tech debt** checklist below — on merge, tick any shipped items (append the PR #) and move any new follow-ups there (never leave them only in PR bodies). **Also tick the matching story on the GitHub board** (the epic issue, `EPIC-NN` → #`NN+3`) — that's the canonical cross-EPIC status tracker now that `reference/todo/` is retired.
+**Maintenance rule:** When a sub-project, EPIC, or independently-shipped story merges to master, update the relevant table row here in the same session (status → ✅, append PR # + merge date). Stale decomposition tables caused at least one false-start ("sub-2 next" when sub-2 had shipped months earlier). Treat the table as part of the merge checklist, not an afterthought. Same for the **Follow-ups / tech debt** checklist below — on merge, tick any shipped items (append the PR #) and move any new follow-ups there (never leave them only in PR bodies). **Also tick the matching story on the GitHub board** (the epic issue, `EPIC-NN` → #`NN+4`) — that's the canonical cross-EPIC status tracker now that `reference/todo/` is retired.
 
 EPIC-14 (Financial Reports) decomposition:
 
@@ -209,6 +223,8 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] `postJournal` integrity-check query — surface any unbalanced or dangling journals.
 - [ ] Settlement journal `UNBALANCED` when the excel summary itself doesn't satisfy `Dilepas + Pengeluaran = Pendapatan`. The `MARKETPLACE_FEE_OTHER` residual absorbs fee-level gaps but is computed from `totalPengeluaran`, so it cannot absorb a summary-level mismatch (`settlement/journal.ts`) (PR #157, #17).
 - [ ] Settlement `SP-`+orderNo match coverage is low for pre-2026-06-14 settlements — revisit if old-period reconciliation matters.
+- [ ] Shopee fee itemization is coarse: `SettlementLine` persists 4 of ~10 charge columns on the Income sheet (captured: Komisi AMS, Administrasi, Layanan, Proses Pesanan; not itemized: Premi, Biaya Transaksi, Biaya Kampanye, Bea Masuk/PPN/PPh, Biaya Program Hemat Biaya Kirim, Biaya Isi Saldo Otomatis). Not a correctness gap — the journal totals from Summary's `Total Pengeluaran` with `MARKETPLACE_FEE_OTHER` absorbing the rest, and per-line profit uses `Total Penghasilan`, already net of every fee — so this only limits Laba Rugi's fee breakdown granularity. Verified against `reference/finance/Income.sudah dilepas.id.20260601_20260630.xlsx` (43 columns) on 2026-08-05. Adding columns means a migration + parser + journal-role work.
+- [ ] `Biaya Layanan` is itemized per order on Shopee's Seller Fee sheet (Gratis Ongkir XTRA kategori F/G, Promo XTRA, Shopee Live XTRA) but only stored as raw JSON in `Settlement.sellerFeesRaw` — never parsed into per-line columns. Same granularity theme as the item above.
 - [ ] Field-sales promo: order-level discount not pro-rated across `SalesHistory` lines — line totals sum > order total (`field-sales/writer.ts:194`), per D7 (PR #111).
 - [ ] Auto-journal offline sales (putus approve, van sale, SPG sale) — revenue + COGS are absent from the GL, so Laba Rugi understates by every offline channel.
 - [ ] Auto-journal supplier payments (DR Hutang / CR Bank) — AP never clears and cash never leaves in the Neraca.
@@ -326,6 +342,6 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 ## When you need more context
 
 - **Architecture/data ownership:** `docs/BOUNDARY.md`.
-- **EPIC story details + status:** the GitHub project board — each EPIC has a tracking issue (`EPIC-NN` → issue #`NN+3`, e.g. EPIC-13 → #17). `gh issue view <n>`. Update the issue's progress checklist on merge (the maintenance rule now applies to the board, not a local file).
+- **EPIC story details + status:** the GitHub project board — each EPIC has a tracking issue (`EPIC-NN` → issue #`NN+4`, e.g. EPIC-13 → #17, EPIC-15 → #19). `gh issue view <n>`. Update the issue's progress checklist on merge (the maintenance rule now applies to the board, not a local file).
 - **Past designs/plans:** `docs/superpowers/specs/` and `docs/superpowers/plans/` (local-only, gitignored).
 - **What changed and why:** `git log --oneline` (commit messages are descriptive; bodies are rare by convention).
