@@ -43,10 +43,31 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
     return map;
   }, [mappings]);
 
-  const options = useMemo(
-    () => accounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` })),
-    [accounts],
-  );
+  /**
+   * Per-role option lists so the picker signals which accounts are valid
+   * before the operator submits, instead of only after a rejection toast.
+   * Every account for the role stays in the list (an already-mismatched
+   * mapping — see the destructive badge below — must still resolve to a
+   * label), but the type-valid ones sort first and every label carries its
+   * account type.
+   */
+  const optionsByRole = useMemo(() => {
+    const map = new Map<PostingRole, { value: string; label: string }[]>();
+    for (const role of POSTING_ROLES) {
+      const validTypes = POSTING_ROLE_ACCOUNT_TYPES[role];
+      const sorted = [...accounts].sort((a, b) => {
+        const aValid = validTypes.includes(a.type);
+        const bValid = validTypes.includes(b.type);
+        if (aValid !== bValid) return aValid ? -1 : 1;
+        return a.code.localeCompare(b.code);
+      });
+      map.set(
+        role,
+        sorted.map((a) => ({ value: a.id, label: `${a.code} — ${a.name} (${a.type})` })),
+      );
+    }
+    return map;
+  }, [accounts]);
 
   function handleSelect(role: PostingRole, chartAccountId: string) {
     setSavingRole(role);
@@ -122,7 +143,7 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
                       <TableCell className="align-top">
                         <div className="flex items-center gap-1">
                           <SearchableCombobox
-                            options={options}
+                            options={optionsByRole.get(role) ?? []}
                             value={value}
                             onValueChange={(v) => handleSelect(role, v)}
                             placeholder={t("selectAccount")}
@@ -151,7 +172,7 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
                         {mapping && mapping.typeValid === false && (
                           <div className="mt-2 space-y-1">
                             <Badge variant="destructive">{t("typeMismatchBadge")}</Badge>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-sm text-destructive">
                               {t("typeMismatchHint", {
                                 code: mapping.accountCode ?? "",
                                 type: mapping.accountType ?? "",
