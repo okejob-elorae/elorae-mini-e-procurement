@@ -51,7 +51,7 @@ describe("bookedPayable", () => {
      * Per-line rounding: toCents(0.015) = round(1.5) = 2 cents per line
      * → 2 + 2 + 2 = 6 cents = 0.06
      * Sum-then-round would give: (0.015 + 0.015 + 0.015) * 100 = 4.5
-     * → round(4.5) = 4 cents = 0.04
+     * → round(4.5) = 5 cents = 0.05 (Math.round is half-up)
      * This case discriminates the two strategies.
      */
     const payable = bookedPayable([
