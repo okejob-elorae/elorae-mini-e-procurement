@@ -29,8 +29,10 @@ const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
  * `NOTHING_TO_POST` is silent for a reversal and loud for a payment. Nothing to
  * reverse is a genuine no-op — the payment never posted, so there is no journal
  * to undo. Nothing to PAY is not: the PO is now flagged paid while no payable
- * was ever found for it, and if someone later posts the missing GRN journal,
- * payables gains that amount with the PO already settled and no signal anywhere.
+ * was ever booked for it, which means either the payment does not correspond to
+ * anything received (an advance) or receipts exist that could never book a
+ * payable at all. An un-journaled receipt is NOT one of these cases — that
+ * returns `GRN_JOURNALS_INCOMPLETE`, which carries its own remedy.
  */
 export async function postSupplierPaymentJournalSafely(
   direction: SupplierPaymentDirection,
@@ -65,10 +67,17 @@ function messageFor(
 ): string {
   const retry = RETRY_HINT[direction];
   if (reason === "NOTHING_TO_POST") {
+    /*
+     * An un-journaled receipt cannot reach here — that returns
+     * `GRN_JOURNALS_INCOMPLETE` — so the remaining causes are all "there is
+     * genuinely nothing bookable", and the remedy is to question the payment
+     * itself rather than to go post a journal.
+     */
     return (
       "The PO was marked paid, but no payable was found booked to the GL for it, so no journal was posted — " +
-      "payables and bank are both untouched. The likely cause is that its receipts carry no GRN journal " +
-      `(receipts predating GRN auto-journalling never posted one). Post the GRN journal, then ${retry}.`
+      "payables and bank are both untouched. Either the PO has no receipts and this is an advance payment " +
+      "(which the GL cannot represent yet), its receipts are all worth under a cent, or its payable was already " +
+      `cleared by reversals. Confirm the PO should be marked paid at all; if a receipt is missing, receive it, then ${retry}.`
     );
   }
   if (reason === "GRN_JOURNALS_INCOMPLETE") {

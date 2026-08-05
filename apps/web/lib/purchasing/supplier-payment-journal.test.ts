@@ -321,7 +321,7 @@ d("supplier payment journal (test bed only)", () => {
     }
   });
 
-  it("a PO whose GRN has no journal at all returns NOTHING_TO_POST and posts nothing", async () => {
+  it("a PO whose only GRN has no journal at all returns GRN_JOURNALS_INCOMPLETE and posts nothing", async () => {
     const po = await prisma.purchaseOrder.create({
       data: { docNumber: `PO-TEST-${token}-3`, supplierId, createdById: userId },
       select: { id: true },
@@ -335,8 +335,11 @@ d("supplier payment journal (test bed only)", () => {
     tracked.grnIds.push(grn.id);
 
     try {
+      /* Every receipt un-journaled is the same fault as a partially-journaled
+         PO, only worse — so it gets the same precise code, not the vague
+         `NOTHING_TO_POST` that reads as "nothing was ever owed". */
       const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-02-03T00:00:00.000Z"), prisma);
-      expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+      expect(r).toEqual({ ok: false, code: "GRN_JOURNALS_INCOMPLETE" });
 
       const journal = await prisma.journal.findUnique({
         where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
@@ -418,6 +421,42 @@ d("supplier payment journal (test bed only)", () => {
       });
       expect(amountsFor(journal.lines, accountIds.AP)).toEqual({ debit: 35_000, credit: 0 });
       expect(amountsFor(journal.lines, accountIds.BANK)).toEqual({ debit: 0, credit: 35_000 });
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("a PO whose only receipt is sub-cent returns NOTHING_TO_POST — the sole remaining route to that guard", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-15`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grnZero = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-15`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 0, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnZero.id);
+
+    try {
+      /*
+       * The PO has a receipt and zero GRN journals, yet this is NOT
+       * `GRN_JOURNALS_INCOMPLETE`: the receipt is sub-cent, so `postGrnJournal`
+       * would refuse it too and nothing was ever bookable. Pins the
+       * `journals.length === 0` guard as live rather than dead code — without
+       * it this PO would fall through to an empty `apLines` and be reported as
+       * an AP mapping fault that does not exist.
+       */
+      expect(await postGrnJournal(grnZero.id, userId, prisma)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-04T00:00:00.000Z"), prisma);
+      expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+      });
+      expect(journal).toBeNull();
     } finally {
       await cleanupPo(tracked);
     }

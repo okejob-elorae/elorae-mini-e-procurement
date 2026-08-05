@@ -16,16 +16,18 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * — the historical journal lines still point at the old account, so a plain
  * amount-based read would come back short or zero.
  *
- * `GRN_JOURNALS_INCOMPLETE`: some of this PO's receipts carry a GRN journal and
- * some do not. GRN auto-journalling is best-effort, so a receipt can sit
- * un-journaled indefinitely; paying only the journaled subset under-pays, and
- * whoever later retries the missing GRN journal pushes payables back off zero
- * on a PO already shown as paid. Distinct from the mismatch code because the
- * remedy is different: post the missing GRN journal, not fix a mapping.
+ * `GRN_JOURNALS_INCOMPLETE`: at least one of this PO's receipts carries no GRN
+ * journal — whether that is one of several or every last one of them. GRN
+ * auto-journalling is best-effort, so a receipt can sit un-journaled
+ * indefinitely; paying only the journaled subset under-pays, and whoever later
+ * retries the missing GRN journal pushes payables back off zero on a PO already
+ * shown as paid. Distinct from the mismatch code because the remedy is
+ * different: post the missing GRN journal, not fix a mapping.
  *
- * Both stay distinct from the genuinely benign zero cases (no GRNs yet, NO GRN
- * journaled at all, net payable already cleared) so a caller can raise them
- * loudly instead of reporting success.
+ * Both stay distinct from the genuinely benign zero cases — no GRNs at all (an
+ * advance payment), every GRN sub-cent so nothing was ever bookable, or a net
+ * payable already cleared by reversals — so a caller can raise them loudly
+ * instead of reporting success.
  */
 export type PostSupplierPaymentResult =
   | GenerateAutoJournalResult
@@ -65,14 +67,9 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
     select: { sourceType: true, sourceId: true, lines: { select: { chartAccountId: true, debit: true, credit: true } } },
   });
 
-  /* No GRN journals posted at all yet is the benign, expected case (a GRN can sit
-     un-journaled for a while) — distinct from journals existing but missing the
-     currently-mapped AP account below. */
-  if (journals.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
-
   /*
    * Refuse while ANY receipt of this PO is still missing its GRN journal.
-   * `journals.length > 0` only proves SOME receipt booked a payable, and the AP
+   * Journals existing only proves SOME receipt booked a payable, and the AP
    * check below can only inspect journals that exist — a receipt whose journal
    * never posted contributes no line to see, so without this the payment posts
    * the journaled subset and reports success. The missing amount then reappears
@@ -82,6 +79,11 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    * itself returns `NOTHING_TO_POST` below one cent, so a sub-cent GRN
    * legitimately has no journal and must not block payment forever. Same
    * `Math.abs(...) < 0.01` predicate as that guard, deliberately.
+   *
+   * Checked BEFORE the zero-journals guard: a PO where EVERY receipt failed to
+   * journal is the same fault as a partially-journaled one, only worse, so it
+   * gets the same precise code instead of the vague `NOTHING_TO_POST` that
+   * guard used to hand it — the operator's remedy is identical either way.
    *
    * Checked BEFORE the AP-account check: a missing journal is the more concrete
    * remedy (post it from the GRN row), and it also makes any mismatch verdict
@@ -94,6 +96,17 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
     (g) => Math.abs(Number(g.totalAmount)) >= 0.01 && !journaledGrnIds.has(g.id),
   );
   if (anyReceiptUnjournaled) return { ok: false, code: "GRN_JOURNALS_INCOMPLETE" };
+
+  /*
+   * NOT dead code, and load-bearing: reachable only when every GRN on this PO
+   * is sub-cent. The check above already refused if any receipt worth at least
+   * a cent lacked its journal, so no journals at all means no receipt
+   * qualified. `postGrnJournal` legitimately posts nothing for those, so
+   * nothing was ever booked and `NOTHING_TO_POST` is the honest answer. Without
+   * this early return that PO would fall through to an empty `apLines` and be
+   * reported as `AP_ACCOUNT_MISMATCH` — a mapping fault that does not exist.
+   */
+  if (journals.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
 
   /*
    * Every GRN and GRN_REVERSAL journal books its counter-line against the AP
