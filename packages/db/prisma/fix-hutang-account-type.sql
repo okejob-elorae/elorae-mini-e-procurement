@@ -1,3 +1,16 @@
+-- ############################################################################
+-- DO NOT PASTE OR PIPE THIS WHOLE FILE AT ONCE (`mysql < file.sql`, or a GUI's
+-- "run all"). This is a flat sequence of statements with no stop-gate: every
+-- PRE-FLIGHT query would run, then THE UPDATE would run UNCONDITIONALLY,
+-- whatever those queries showed. The UPDATE's own WHERE clause protects against
+-- a wrong name, a wrong type, and a taken 2101 code (it matches 0 rows rather
+-- than corrupting anything) — but it does NOT protect against pre-flight
+-- queries 6 and 7. If a posting role is mapped to `21 Utang Lancar`, or journal
+-- lines already post against it, a blind run still promotes `21` to a parent
+-- and silently breaks every future posting for that role, because `postJournal`
+-- rejects accounts that have children. Run the sections one at a time.
+-- ############################################################################
+--
 -- Corrects the `13 Hutang` account, which was created as ASET while carrying the
 -- AP posting role: every GRN credits it, so payables rendered as a negative asset
 -- and the Neraca understated both sides (it still balanced, because the identity
