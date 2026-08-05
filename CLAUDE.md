@@ -329,6 +329,8 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 ### Testing / infra
 - [ ] DB-spec isolation: `vitest.config.ts` `fileParallelism:false` serializes the WHOLE suite (slow). Scope DB specs into a serial project, or add a tx-rollback harness for the ~20 real-row specs.
 - [ ] `apps/web/lib/finance/settlement/journal.test.ts`'s `afterEach` is order-fragile: a failure partway through leaves stale ids so a delete throws and aborts the hook before later cleanup, leaking a row into the shared dev database.
+- [ ] DB specs mutate the operator's real `JournalAccountMapping` on the shared `:3308` bed; a `beforeAll` that exceeds its timeout leaves a zombie hook that can re-point live GL config after `afterAll` has already restored it. Mitigated (single `beforeAll` window, `afterAll` net, loud restore failure) but only closed properly by DB-spec isolation — a dedicated schema or a tx-rollback harness. Note it caused a real incident on 2026-08-05.
+- [ ] `apps/web/lib/finance/settlement/journal.test.ts` still seeds 8 chart accounts and 8 mappings in `beforeEach` with an unguarded `afterEach`, the same shape as the fixture that failed — give it the `beforeAll` + guarded-`afterAll` treatment next time that file is opened.
 
 ## What NOT to do
 

@@ -115,14 +115,34 @@ d("van journals (test bed only)", () => {
    * The net: even if a beforeAll seeding step ran long and raced past some
    * other failure, this restores real GL config and removes every seeded row
    * once the whole suite is done — it does not depend on any single test's
-   * teardown completing. Each step is individually guarded so one failure
-   * cannot skip the rest.
+   * teardown completing. Each delete step is individually guarded so one
+   * failure cannot skip the rest.
+   *
+   * The mapping restore is the one step that must NEVER fail silently. A
+   * stranded JournalAccountMapping is worse than a failed test run: it keeps
+   * pointing real posting roles at throwaway test accounts, so every journal
+   * this dev DB posts afterwards — from the running local ERP UI, not just
+   * other specs — silently mis-posts against the wrong accounts with no
+   * error anywhere. If `beforeAll` itself times out, the vitest runner marks
+   * every test skipped and calls `afterAll` almost immediately while the
+   * timed-out hook keeps running as a zombie in the background; in that
+   * case `mappingSnapshot` may still be `undefined` here. That residual
+   * cannot be fully closed from inside this fixture (a zombie hook writing
+   * after `afterAll` has already returned is beyond any afterAll's reach —
+   * the real fix is DB-spec isolation, tracked as a follow-up in
+   * CLAUDE.md) — but it must not pass quietly, so a restore failure is
+   * loudly logged and rethrown after the rest of cleanup has run.
    */
   afterAll(async () => {
-    try {
-      await restoreMappings(mappingSnapshot);
-    } catch {
-      /* best-effort */
+    let restoreFailed: unknown;
+    if (mappingSnapshot === undefined) {
+      restoreFailed = new Error("mapping snapshot was never taken (beforeAll did not reach snapshotMappings)");
+    } else {
+      try {
+        await restoreMappings(mappingSnapshot);
+      } catch (e) {
+        restoreFailed = e;
+      }
     }
     try {
       await prisma.chartAccount.deleteMany({ where: { id: { in: Object.values(accountIds) } } });
@@ -143,6 +163,15 @@ d("van journals (test bed only)", () => {
       await prisma.user.deleteMany({ where: { id: userId } });
     } catch {
       /* best-effort */
+    }
+    if (restoreFailed) {
+      console.error(
+        "[van-journal.test.ts] FAILED TO RESTORE JournalAccountMapping for INVENTORY, INVENTORY_VAN, CASH, " +
+          "SALES_REVENUE, COGS, INVENTORY_VARIANCE — these roles may now point at throwaway test accounts. " +
+          "Check Finance → Pemetaan Akun on the :3308 dev DB and re-map by hand if needed.",
+        restoreFailed,
+      );
+      throw restoreFailed;
     }
   });
 
