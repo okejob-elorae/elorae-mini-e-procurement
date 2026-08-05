@@ -49,19 +49,19 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
   /**
    * Per-role option lists so the picker signals which accounts are valid
    * before the operator submits, instead of only after a rejection toast.
-   * Every account for the role stays in the list — an already-mismatched
-   * mapping (see the destructive badge below) must still resolve to a
-   * label — but type-invalid accounts are disabled (non-selectable) unless
-   * they are the account currently mapped to that role, so a bad mapping
-   * stays visible and replaceable instead of vanishing from the trigger.
-   * Type-valid accounts always sort first and every label carries its
-   * account type.
+   * Every account for the role stays in the list — type-invalid accounts
+   * are disabled outright, including one currently mapped to the role. A
+   * mismatched current mapping still resolves its trigger label, because
+   * `SearchableCombobox` looks up the label by matching `value` and never
+   * consults `disabled` (see `components/ui/searchable-combobox.tsx`), so
+   * the bad mapping stays visible (and flagged by the destructive badge
+   * below) without being re-selectable. Type-valid accounts always sort
+   * first and every label carries its account type.
    */
   const optionsByRole = useMemo(() => {
     const map = new Map<PostingRole, SearchableComboboxOption[]>();
     for (const role of POSTING_ROLES) {
       const validTypes = POSTING_ROLE_ACCOUNT_TYPES[role];
-      const currentAccountId = byRole.get(role)?.chartAccountId ?? null;
       const sorted = [...accounts].sort((a, b) => {
         const aValid = validTypes.includes(a.type);
         const bValid = validTypes.includes(b.type);
@@ -73,14 +73,15 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
         sorted.map((a) => ({
           value: a.id,
           label: `${a.code} — ${a.name} (${a.type})`,
-          disabled: !validTypes.includes(a.type) && a.id !== currentAccountId,
+          disabled: !validTypes.includes(a.type),
         })),
       );
     }
     return map;
-  }, [accounts, byRole]);
+  }, [accounts]);
 
   function handleSelect(role: PostingRole, chartAccountId: string) {
+    if (byRole.get(role)?.chartAccountId === chartAccountId) return;
     setSavingRole(role);
     startTransition(async () => {
       const result = await setAccountMappingAction(role, chartAccountId);
