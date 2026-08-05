@@ -88,6 +88,9 @@ export function VanSaleDetailClient({ sale }: Props) {
         case "FORBIDDEN":
           toast.error(tVanSale("journal.err.FORBIDDEN"));
           break;
+        case "NOT_RETRYABLE":
+          toast.error(tVanSale("journal.err.NOT_RETRYABLE"));
+          break;
         default:
           toast.error(tVanSale("journal.err.BAD_STATE"));
       }

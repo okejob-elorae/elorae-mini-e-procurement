@@ -98,6 +98,9 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
         case "FORBIDDEN":
           toast.error(t("journal.err.FORBIDDEN"));
           break;
+        case "NOT_RETRYABLE":
+          toast.error(t("journal.err.NOT_RETRYABLE"));
+          break;
         default:
           toast.error(t("journal.err.BAD_STATE"));
       }

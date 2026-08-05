@@ -37,3 +37,21 @@ export async function findPostableJournalDocIds(kind: VanJournalKind, docIds: st
   }
   return flagged;
 }
+
+/**
+ * Single-document convenience wrapper over `findPostableJournalDocIds`.
+ *
+ * This is the server-side enforcement of the same invariant the read path
+ * (`hasPostableJournal` on the query layer) uses to decide whether to render
+ * a "Post journal" retry button. It exists because the retry server actions
+ * (`postVanLoadJournalAction`, `postVanSaleJournalAction`,
+ * `postVanReconcileJournalAction`) must not rely on the UI having hidden the
+ * button — every exported function in a `"use server"` module is an
+ * independently callable endpoint, reachable by anyone holding
+ * `journals:manage`, a backfill script, or a hand-crafted request, regardless
+ * of what the button's visibility implies.
+ */
+export async function isJournalRetryable(kind: VanJournalKind, docId: string): Promise<boolean> {
+  const postable = await findPostableJournalDocIds(kind, [docId]);
+  return postable.has(docId);
+}

@@ -8,6 +8,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordVanReconcile } from "@/lib/canvassing/reconcile-writer";
 import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
 import { postVanReconcileJournal } from "@/lib/canvassing/van-journal";
+import { isJournalRetryable } from "@/lib/canvassing/journal-pending";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type RecordVanReconcileActionResult =
@@ -44,7 +45,7 @@ export async function recordVanReconcileAction(input: unknown): Promise<RecordVa
  */
 export async function postVanReconcileJournalAction(
   vanReconcileId: string,
-): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" | "NOT_RETRYABLE" }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
     return { ok: false, code: "FORBIDDEN" };
@@ -52,6 +53,20 @@ export async function postVanReconcileJournalAction(
 
   const recon = await prisma.vanReconcile.findUnique({ where: { id: vanReconcileId }, select: { canvasserId: true } });
   if (!recon) return { ok: false, code: "BAD_STATE" };
+
+  /**
+   * Mirrors the read-path invariant enforced by `findPostableJournalDocIds`
+   * (`lib/canvassing/journal-pending.ts`): this van reconcile may only be
+   * journaled retroactively if a `JOURNAL_PENDING` notification proves
+   * auto-posting was attempted and failed for THIS document. The query
+   * layer's `hasPostableJournal` only controls whether the backoffice UI
+   * renders the retry button — it is not itself a guard, since this action is
+   * reachable directly by anyone with `journals:manage` regardless of what
+   * the UI shows. Do not remove this as "redundant" with the UI check.
+   */
+  if (!(await isJournalRetryable("van_reconcile", vanReconcileId))) {
+    return { ok: false, code: "NOT_RETRYABLE" };
+  }
 
   const r = await postVanReconcileJournal(vanReconcileId, session.user.id);
   revalidatePath(`/backoffice/canvassing/reconcile/${vanReconcileId}`);

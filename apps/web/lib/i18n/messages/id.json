@@ -2474,6 +2474,7 @@
         "NOTHING_TO_POST": "Tidak ada nilai untuk dijurnal.",
         "BAD_STATE": "Dokumen tidak ditemukan.",
         "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
+        "NOT_RETRYABLE": "Dokumen ini belum pernah gagal diposting otomatis, jadi tidak bisa diposting ulang di sini — memposting sekarang akan menghasilkan jurnal timpang sebelah. Jika dokumen ini benar-benar perlu dijurnal, gunakan entri jurnal manual.",
         "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
       }
     }
@@ -2541,6 +2542,7 @@
         "NOTHING_TO_POST": "Tidak ada nilai untuk dijurnal.",
         "BAD_STATE": "Dokumen tidak ditemukan.",
         "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
+        "NOT_RETRYABLE": "Dokumen ini belum pernah gagal diposting otomatis, jadi tidak bisa diposting ulang di sini — memposting sekarang akan menghasilkan jurnal timpang sebelah. Jika dokumen ini benar-benar perlu dijurnal, gunakan entri jurnal manual.",
         "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
       }
     },

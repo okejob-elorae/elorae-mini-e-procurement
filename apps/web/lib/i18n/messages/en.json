@@ -2474,6 +2474,7 @@
         "NOTHING_TO_POST": "No value to journal.",
         "BAD_STATE": "Document not found.",
         "FORBIDDEN": "You don't have permission to post journals.",
+        "NOT_RETRYABLE": "This document never had a failed automatic posting attempt, so it can't be retried here — posting it now would create a one-sided journal entry. If it genuinely needs a journal, use a manual journal entry instead.",
         "UNEXPECTED": "Something unexpected went wrong posting the journal."
       }
     }
@@ -2541,6 +2542,7 @@
         "NOTHING_TO_POST": "No value to journal.",
         "BAD_STATE": "Document not found.",
         "FORBIDDEN": "You don't have permission to post journals.",
+        "NOT_RETRYABLE": "This document never had a failed automatic posting attempt, so it can't be retried here — posting it now would create a one-sided journal entry. If it genuinely needs a journal, use a manual journal entry instead.",
         "UNEXPECTED": "Something unexpected went wrong posting the journal."
       }
     },
