@@ -36,6 +36,7 @@ type Props = {
 
 export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
   const t = useTranslations("financeAccountMapping");
+  const tAccountType = useTranslations("finance.coa.type");
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [savingRole, setSavingRole] = useState<PostingRole | null>(null);
@@ -187,8 +188,12 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
                             <p className="text-sm text-destructive">
                               {t("typeMismatchHint", {
                                 code: mapping.accountCode ?? "",
-                                type: mapping.accountType ?? "",
-                                expected: POSTING_ROLE_ACCOUNT_TYPES[role].join(" / "),
+                                type: mapping.accountType
+                                  ? tAccountType(mapping.accountType as never)
+                                  : "",
+                                expected: POSTING_ROLE_ACCOUNT_TYPES[role]
+                                  .map((type) => tAccountType(type as never))
+                                  .join(" / "),
                               })}
                             </p>
                           </div>
