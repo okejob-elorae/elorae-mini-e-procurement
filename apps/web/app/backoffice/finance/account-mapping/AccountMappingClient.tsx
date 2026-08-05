@@ -56,22 +56,32 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
    * `SearchableCombobox` looks up the label by matching `value` and never
    * consults `disabled` (see `components/ui/searchable-combobox.tsx`), so
    * the bad mapping stays visible (and flagged by the destructive badge
-   * below) without being re-selectable. Type-valid accounts always sort
-   * first and every label carries its account type.
+   * below) without being re-selectable.
+   *
+   * `accounts` is sorted numeric-aware ONCE (matching
+   * `getPostableAccounts`, `apps/web/lib/finance/coa/queries.ts`), then each
+   * role derives its option list by filtering that same sorted array into
+   * type-valid accounts followed by type-invalid ones. `Array.prototype.filter`
+   * is stable, so the numeric code order is preserved within each group
+   * without re-sorting per role. Type-valid accounts always come first and
+   * every label carries its account type.
    */
+  const sortedAccounts = useMemo(
+    () => [...accounts].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })),
+    [accounts],
+  );
+
   const optionsByRole = useMemo(() => {
     const map = new Map<PostingRole, SearchableComboboxOption[]>();
     for (const role of POSTING_ROLES) {
       const validTypes = POSTING_ROLE_ACCOUNT_TYPES[role];
-      const sorted = [...accounts].sort((a, b) => {
-        const aValid = validTypes.includes(a.type);
-        const bValid = validTypes.includes(b.type);
-        if (aValid !== bValid) return aValid ? -1 : 1;
-        return a.code.localeCompare(b.code);
-      });
+      const partitioned = [
+        ...sortedAccounts.filter((a) => validTypes.includes(a.type)),
+        ...sortedAccounts.filter((a) => !validTypes.includes(a.type)),
+      ];
       map.set(
         role,
-        sorted.map((a) => ({
+        partitioned.map((a) => ({
           value: a.id,
           label: `${a.code} — ${a.name} (${tAccountType(a.type as never)})`,
           disabled: !validTypes.includes(a.type),
@@ -79,7 +89,7 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
       );
     }
     return map;
-  }, [accounts, tAccountType]);
+  }, [sortedAccounts, tAccountType]);
 
   function handleSelect(role: PostingRole, chartAccountId: string) {
     if (byRole.get(role)?.chartAccountId === chartAccountId) return;
