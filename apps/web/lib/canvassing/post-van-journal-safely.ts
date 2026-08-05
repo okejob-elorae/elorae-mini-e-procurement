@@ -68,7 +68,20 @@ async function notify(
         metadata: { docId, kind: `van_${kind}`, reason, role },
       },
     });
-  } catch {
-    /* best-effort: a notification failure must never fail the source operation */
+  } catch (e) {
+    /*
+     * Best-effort: a notification failure must never fail the source
+     * operation (load/sale/reconcile already committed). But swallowing it
+     * silently is worse than it looks here: `hasPostableJournal` gates the
+     * retry button on a matching JOURNAL_PENDING notification existing, so
+     * if THIS write also fails, the document ends up with no journal, no
+     * notification, and no retry button — permanently unpostable except by
+     * hand. Log loudly so it is at least discoverable.
+     */
+    console.error(
+      `[postVanJournalSafely] FAILED TO NOTIFY for van ${kind} ${docId} — this document has no journal and will show ` +
+        "no retry button (JOURNAL_PENDING notification write also failed). It needs a manual journal entry.",
+      e,
+    );
   }
 }
