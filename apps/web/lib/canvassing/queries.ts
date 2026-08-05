@@ -1,10 +1,20 @@
 import { prisma } from "@elorae/db";
 import { variantDetailForSku } from "@/lib/items/variants";
+import { lineCostTotal } from "./van-journal-values";
+import { findPostableJournalDocIds } from "./journal-pending";
 
 export type CanvasserSummary = { id: string; name: string; email: string; lineCount: number; totalQty: number };
 export type VanStockRow = { itemId: string; sku: string; productName: string; variantSku: string | null; variantLabel: string | null; qty: number; avgCost: number };
 export type LoadableInventoryRow = { itemId: string; variantSku: string | null; available: number };
-export type VanLoadRow = { id: string; docNo: string; loadedByLabel: string; createdAtIso: string; lineCount: number };
+export type VanLoadRow = {
+  id: string;
+  docNo: string;
+  loadedByLabel: string;
+  createdAtIso: string;
+  lineCount: number;
+  journalId: string | null;
+  hasPostableJournal: boolean;
+};
 
 export async function listCanvassers(): Promise<CanvasserSummary[]> {
   const users = await prisma.user.findMany({
@@ -92,13 +102,42 @@ export async function listVanLoads(canvasserId: string, limit: number): Promise<
     where: { canvasserId },
     orderBy: { createdAt: "desc" },
     take: limit,
-    include: { loadedBy: { select: { name: true, email: true } }, _count: { select: { lines: true } } },
+    include: {
+      loadedBy: { select: { name: true, email: true } },
+      lines: { select: { qty: true, unitCost: true } },
+    },
   });
-  return rows.map((r) => ({
-    id: r.id,
-    docNo: r.docNo,
-    loadedByLabel: r.loadedBy.name ?? r.loadedBy.email,
-    createdAtIso: r.createdAt.toISOString(),
-    lineCount: r._count.lines,
-  }));
+  const ids = rows.map((r) => r.id);
+  const [journals, pendingIds] = await Promise.all([
+    ids.length
+      ? prisma.journal.findMany({
+          where: { sourceType: "VAN_LOAD", sourceId: { in: ids } },
+          select: { id: true, sourceId: true },
+        })
+      : Promise.resolve([]),
+    findPostableJournalDocIds("van_load", ids),
+  ]);
+  const journalByLoadId = new Map<string, string>();
+  for (const j of journals) {
+    if (j.sourceId !== null) journalByLoadId.set(j.sourceId, j.id);
+  }
+  return rows.map((r) => {
+    const journalId = journalByLoadId.get(r.id) ?? null;
+    const value = lineCostTotal(r.lines.map((l) => ({ qty: l.qty.toNumber(), unitCost: l.unitCost.toNumber() })));
+    return {
+      id: r.id,
+      docNo: r.docNo,
+      loadedByLabel: r.loadedBy.name ?? r.loadedBy.email,
+      createdAtIso: r.createdAt.toISOString(),
+      lineCount: r.lines.length,
+      journalId,
+      /*
+       * journalId === null alone is not sufficient: every van load created
+       * before auto-posting existed also has no journal, but auto-posting
+       * never ran for it. Only offer the retry when a JOURNAL_PENDING
+       * notification proves a post was attempted and failed for THIS load.
+       */
+      hasPostableJournal: journalId === null && Math.abs(value) >= 0.01 && pendingIds.has(r.id),
+    };
+  });
 }

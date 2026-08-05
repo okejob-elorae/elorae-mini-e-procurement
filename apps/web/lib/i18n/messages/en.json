@@ -2394,6 +2394,7 @@
     "colDocNo": "Doc No.",
     "colLoadedBy": "Loaded By",
     "colDate": "Date",
+    "colJournal": "Journal",
     "emptyLoads": "No loads yet.",
     "loadFormTitle": "Load Van",
     "item": "Item",
@@ -2460,7 +2461,23 @@
     "reconcileSuccess": "Reconciled ({docNo}), total variance {variance}",
     "reconcileErrEmptyVan": "The van is empty — nothing to reconcile.",
     "reconcileErrVarianceNeedsReason": "Enter a reason — there is a variance on one or more items.",
-    "reconcileErrCountMismatch": "Van contents changed. Reload the page and try again."
+    "reconcileErrCountMismatch": "Van contents changed. Reload the page and try again.",
+    "journal": {
+      "posted": "Journal posted",
+      "viewJournal": "View journal",
+      "postJournal": "Post journal",
+      "postedToast": "Journal posted successfully",
+      "alreadyPostedToast": "Journal was already posted",
+      "err": {
+        "UNMAPPED_ROLE": "Posting role \"{role}\" is unmapped — map it in Account Mapping, then try again.",
+        "UNBALANCED": "Journal is not balanced (debit ≠ credit).",
+        "NOTHING_TO_POST": "No value to journal.",
+        "BAD_STATE": "Document not found.",
+        "FORBIDDEN": "You don't have permission to post journals.",
+        "NOT_RETRYABLE": "This document never had a failed automatic posting attempt, so it can't be retried here — posting it now would create a one-sided journal entry. If it genuinely needs a journal, use a manual journal entry instead.",
+        "UNEXPECTED": "Something unexpected went wrong posting the journal."
+      }
+    }
   },
   "vanSale": {
     "homeCta": "Sell from Van",
@@ -2513,6 +2530,22 @@
     "shareText": "Receipt {docNo} · Total {total}",
     "shareError": "Failed to share the receipt.",
     "sellAgain": "Sell Again",
+    "journal": {
+      "posted": "Journal posted",
+      "viewJournal": "View journal",
+      "postJournal": "Post journal",
+      "postedToast": "Journal posted successfully",
+      "alreadyPostedToast": "Journal was already posted",
+      "err": {
+        "UNMAPPED_ROLE": "Posting role \"{role}\" is unmapped — map it in Account Mapping, then try again.",
+        "UNBALANCED": "Journal is not balanced (debit ≠ credit).",
+        "NOTHING_TO_POST": "No value to journal.",
+        "BAD_STATE": "Document not found.",
+        "FORBIDDEN": "You don't have permission to post journals.",
+        "NOT_RETRYABLE": "This document never had a failed automatic posting attempt, so it can't be retried here — posting it now would create a one-sided journal entry. If it genuinely needs a journal, use a manual journal entry instead.",
+        "UNEXPECTED": "Something unexpected went wrong posting the journal."
+      }
+    },
     "backoffice": {
       "list": {
         "pageTitle": "Van Sales",

@@ -2394,6 +2394,7 @@
     "colDocNo": "No. Dokumen",
     "colLoadedBy": "Dimuat Oleh",
     "colDate": "Tanggal",
+    "colJournal": "Jurnal",
     "emptyLoads": "Belum ada muatan.",
     "loadFormTitle": "Muat Mobil",
     "item": "Item",
@@ -2460,7 +2461,23 @@
     "reconcileSuccess": "Rekonsiliasi berhasil ({docNo}), total selisih {variance}",
     "reconcileErrEmptyVan": "Mobil kosong, tidak ada yang bisa direkonsiliasi.",
     "reconcileErrVarianceNeedsReason": "Isi alasan karena ada selisih pada satu atau lebih item.",
-    "reconcileErrCountMismatch": "Isi mobil telah berubah. Muat ulang halaman dan coba lagi."
+    "reconcileErrCountMismatch": "Isi mobil telah berubah. Muat ulang halaman dan coba lagi.",
+    "journal": {
+      "posted": "Jurnal terposting",
+      "viewJournal": "Lihat jurnal",
+      "postJournal": "Posting jurnal",
+      "postedToast": "Jurnal berhasil diposting",
+      "alreadyPostedToast": "Jurnal sudah pernah diposting",
+      "err": {
+        "UNMAPPED_ROLE": "Role posting \"{role}\" belum dipetakan — petakan di Pemetaan Akun lalu coba lagi.",
+        "UNBALANCED": "Jurnal tidak balance (debit ≠ kredit).",
+        "NOTHING_TO_POST": "Tidak ada nilai untuk dijurnal.",
+        "BAD_STATE": "Dokumen tidak ditemukan.",
+        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
+        "NOT_RETRYABLE": "Dokumen ini belum pernah gagal diposting otomatis, jadi tidak bisa diposting ulang di sini — memposting sekarang akan menghasilkan jurnal timpang sebelah. Jika dokumen ini benar-benar perlu dijurnal, gunakan entri jurnal manual.",
+        "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
+      }
+    }
   },
   "vanSale": {
     "homeCta": "Jual dari Van",
@@ -2513,6 +2530,22 @@
     "shareText": "Nota {docNo} · Total {total}",
     "shareError": "Gagal membagikan nota.",
     "sellAgain": "Jual Lagi",
+    "journal": {
+      "posted": "Jurnal terposting",
+      "viewJournal": "Lihat jurnal",
+      "postJournal": "Posting jurnal",
+      "postedToast": "Jurnal berhasil diposting",
+      "alreadyPostedToast": "Jurnal sudah pernah diposting",
+      "err": {
+        "UNMAPPED_ROLE": "Role posting \"{role}\" belum dipetakan — petakan di Pemetaan Akun lalu coba lagi.",
+        "UNBALANCED": "Jurnal tidak balance (debit ≠ kredit).",
+        "NOTHING_TO_POST": "Tidak ada nilai untuk dijurnal.",
+        "BAD_STATE": "Dokumen tidak ditemukan.",
+        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
+        "NOT_RETRYABLE": "Dokumen ini belum pernah gagal diposting otomatis, jadi tidak bisa diposting ulang di sini — memposting sekarang akan menghasilkan jurnal timpang sebelah. Jika dokumen ini benar-benar perlu dijurnal, gunakan entri jurnal manual.",
+        "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
+      }
+    },
     "backoffice": {
       "list": {
         "pageTitle": "Penjualan Van",
