@@ -101,6 +101,8 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
         default:
           toast.error(t("journal.err.BAD_STATE"));
       }
+    } catch {
+      toast.error(t("journal.err.UNEXPECTED"));
     } finally {
       setPostingLoadJournalId(null);
     }

@@ -96,6 +96,8 @@ export function ReconcileDetailClient({ reconcile }: Props) {
         default:
           toast.error(t("journal.err.BAD_STATE"));
       }
+    } catch {
+      toast.error(t("journal.err.UNEXPECTED"));
     } finally {
       setPostingJournal(false);
     }

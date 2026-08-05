@@ -2473,7 +2473,8 @@
         "UNBALANCED": "Jurnal tidak balance (debit ≠ kredit).",
         "NOTHING_TO_POST": "Tidak ada nilai untuk dijurnal.",
         "BAD_STATE": "Dokumen tidak ditemukan.",
-        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal."
+        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
+        "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
       }
     }
   },
@@ -2539,7 +2540,8 @@
         "UNBALANCED": "Jurnal tidak balance (debit ≠ kredit).",
         "NOTHING_TO_POST": "Tidak ada nilai untuk dijurnal.",
         "BAD_STATE": "Dokumen tidak ditemukan.",
-        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal."
+        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
+        "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
       }
     },
     "backoffice": {

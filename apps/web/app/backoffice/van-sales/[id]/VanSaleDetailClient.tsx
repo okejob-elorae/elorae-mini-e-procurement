@@ -91,6 +91,8 @@ export function VanSaleDetailClient({ sale }: Props) {
         default:
           toast.error(tVanSale("journal.err.BAD_STATE"));
       }
+    } catch {
+      toast.error(tVanSale("journal.err.UNEXPECTED"));
     } finally {
       setPostingJournal(false);
     }

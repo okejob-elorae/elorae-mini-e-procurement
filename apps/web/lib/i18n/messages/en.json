@@ -2473,7 +2473,8 @@
         "UNBALANCED": "Journal is not balanced (debit ≠ credit).",
         "NOTHING_TO_POST": "No value to journal.",
         "BAD_STATE": "Document not found.",
-        "FORBIDDEN": "You don't have permission to post journals."
+        "FORBIDDEN": "You don't have permission to post journals.",
+        "UNEXPECTED": "Something unexpected went wrong posting the journal."
       }
     }
   },
@@ -2539,7 +2540,8 @@
         "UNBALANCED": "Journal is not balanced (debit ≠ credit).",
         "NOTHING_TO_POST": "No value to journal.",
         "BAD_STATE": "Document not found.",
-        "FORBIDDEN": "You don't have permission to post journals."
+        "FORBIDDEN": "You don't have permission to post journals.",
+        "UNEXPECTED": "Something unexpected went wrong posting the journal."
       }
     },
     "backoffice": {
