@@ -71,18 +71,25 @@ SELECT code FROM ChartAccount WHERE code = '2101';
 -- STOP and pick a different free liability code, editing THE UPDATE below
 -- before running it.
 
--- 4. Does the parent `21` exist, and at what depth?
-SELECT id, code, name, depth FROM ChartAccount WHERE code = '21';
--- Expect: exactly one row. THE UPDATE derives the corrected row's `parentId`
--- and `depth` from this row. If it is missing, STOP — the UPDATE's parent
--- subqueries will resolve to NULL instead of erroring.
+-- 4. Does the parent `21` exist, is it a LIABILITAS, and at what depth?
+SELECT id, code, name, type, depth FROM ChartAccount WHERE code = '21';
+-- Expect: exactly one row, with type = 'LIABILITAS'. THE UPDATE derives the
+-- corrected row's `parentId` and `depth` from this row. If it is missing, the
+-- parent subqueries would resolve to NULL; if it is typed anything other than
+-- LIABILITAS, attaching a payables account under it would produce a parent/
+-- child type mismatch that the CoA UI itself refuses to create
+-- (`reparent_type_mismatch` in `finance/coa/validators.ts`). Both cases STOP
+-- the UPDATE by predicate.
 
--- 5. Does `13` already have children? (sanity check — it is supposed to be a
---    leaf account today; if it already has children, something else is wrong.)
+-- 5. Does `13` already have children? It is supposed to be a leaf today.
 SELECT id, code, name
 FROM ChartAccount
 WHERE parentId = (SELECT id FROM ChartAccount WHERE code = '13');
--- Expect: no rows.
+-- Expect: no rows. Children would keep their old `13xx` code prefixes and
+-- their depth relative to the OLD position, while the parent moves to `2101`
+-- under `21` — a tree state the app's own reparent rules reject
+-- (`has_children_reparent_forbidden`). This is a stop condition, enforced by
+-- predicate on the UPDATE.
 
 -- 6. FIX-2 guard — does ANY posting role currently map to `21` itself?
 --    Promoting `13` from a leaf into a child of `21` turns `21` into a
@@ -143,8 +150,13 @@ SELECT @@sql_mode;
 UPDATE ChartAccount
 SET type = 'LIABILITAS',
     code = '2101',
-    parentId = (SELECT id FROM (SELECT id FROM ChartAccount WHERE code = '21') AS p),
-    depth = (SELECT d FROM (SELECT depth + 1 AS d FROM ChartAccount WHERE code = '21') AS q)
+    parentId = (
+      SELECT id FROM (SELECT id FROM ChartAccount WHERE code = '21' AND type = 'LIABILITAS') AS p
+    ),
+    depth = (
+      SELECT d
+      FROM (SELECT depth + 1 AS d FROM ChartAccount WHERE code = '21' AND type = 'LIABILITAS') AS q
+    )
 WHERE code = '13'
   AND type = 'ASET'
   -- Pre-flight 2: this must be the account the AP role maps to.
@@ -154,8 +166,26 @@ WHERE code = '13'
   )
   -- Pre-flight 3: destination code must be free.
   AND NOT EXISTS (SELECT 1 FROM (SELECT code FROM ChartAccount) AS c WHERE c.code = '2101')
-  -- Pre-flight 4: parent must exist, else parentId/depth would resolve to NULL.
-  AND EXISTS (SELECT 1 FROM (SELECT code FROM ChartAccount) AS pe WHERE pe.code = '21')
+  -- Pre-flight 4: parent must exist AND be a liability. Existence alone would
+  -- let a hand-built chart attach payables under a non-liability `21`, which
+  -- the CoA UI rejects as `reparent_type_mismatch`.
+  AND EXISTS (
+    SELECT 1
+    FROM (SELECT code, type FROM ChartAccount) AS pe
+    WHERE pe.code = '21' AND pe.type = 'LIABILITAS'
+  )
+  -- Pre-flight 5: `13` must still be a leaf. Children would keep their old
+  -- `13xx` prefixes and stale depth while the parent moves under `21` — the
+  -- state `validateReparent` refuses as `has_children_reparent_forbidden`.
+  AND NOT EXISTS (
+    SELECT 1
+    FROM (
+      SELECT c.id
+      FROM ChartAccount c
+      JOIN ChartAccount p ON p.id = c.parentId
+      WHERE p.code = '13'
+    ) AS kids
+  )
   -- Pre-flight 6: no posting role may map to `21`, which this UPDATE turns into
   -- a non-leaf — postJournal rejects accounts that have children.
   AND NOT EXISTS (
@@ -204,13 +234,19 @@ JOIN ChartAccount a ON a.id = jl.chartAccountId
 WHERE a.code = '2101';
 
 -- ============================================================================
--- NOTE — if THE UPDATE reports 0 rows, work through the stop conditions in
--- order rather than editing predicates: 2101 already taken (pre-flight 3),
--- parent `21` missing (4), the `code = '13'` row not being the AP-mapped
--- account (2), a role already mapped to `21` (6), or lines already posted
--- against `21` (7). Conditions 6 and 7 are fixed by remapping that role to
--- another liability leaf first; the others mean the target is not what this
--- script assumes, and that needs a human decision, not a looser predicate.
+-- NOTE — if THE UPDATE reports 0 rows, work through the seven stop conditions
+-- rather than editing predicates. Every pre-flight query has a matching
+-- predicate on THE UPDATE:
+--   2  the `code = '13'` row is not the account the AP role maps to
+--   3  destination code 2101 is already taken
+--   4  parent `21` is missing, or is not typed LIABILITAS
+--   5  `13` already has children (they would keep stale codes and depth)
+--   6  a posting role is already mapped to `21`
+--   7  journal lines already post against `21`
+-- Conditions 6 and 7 are fixed by remapping that role to another liability
+-- leaf first. Condition 5 needs the children dealt with deliberately. The rest
+-- mean the target is not what this script assumes, which is a human decision,
+-- not a looser predicate.
 --
 -- If you do end up changing this file for a specific environment, re-commit it
 -- so the committed artifact matches what was actually run.
