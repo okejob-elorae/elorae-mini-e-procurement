@@ -77,8 +77,14 @@ d("mapping (test bed only)", () => {
     const taxRow = rows.find((r) => r.role === "TAX");
     expect(taxRow?.chartAccountId).toBe(leafId);
     expect(taxRow?.accountCode).toBe(`9${tag}11`);
+    // The fixture leaf is typed ASET; TAX only accepts LIABILITAS or BEBAN,
+    // so this mapping must come back flagged as a type mismatch.
+    expect(taxRow?.accountType).toBe("ASET");
+    expect(taxRow?.typeValid).toBe(false);
 
     const unmapped = rows.find((r) => r.role !== "TAX" && r.chartAccountId == null);
     expect(unmapped).toBeDefined();
+    // An unmapped role is not a mismatch — it is simply not wired yet.
+    expect(unmapped?.typeValid).toBe(true);
   });
 });
