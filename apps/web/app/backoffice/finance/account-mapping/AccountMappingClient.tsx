@@ -16,7 +16,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { SearchableCombobox } from "@/components/ui/searchable-combobox";
+import {
+  SearchableCombobox,
+  type SearchableComboboxOption,
+} from "@/components/ui/searchable-combobox";
 import { setAccountMappingAction, clearAccountMappingAction } from "@/app/actions/account-mapping";
 import { POSTING_ROLES, type PostingRole } from "@/lib/constants/journal-roles";
 import type { AccountMappingRow } from "@/lib/finance/journals/mapping";
@@ -46,15 +49,19 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
   /**
    * Per-role option lists so the picker signals which accounts are valid
    * before the operator submits, instead of only after a rejection toast.
-   * Every account for the role stays in the list (an already-mismatched
-   * mapping — see the destructive badge below — must still resolve to a
-   * label), but the type-valid ones sort first and every label carries its
+   * Every account for the role stays in the list — an already-mismatched
+   * mapping (see the destructive badge below) must still resolve to a
+   * label — but type-invalid accounts are disabled (non-selectable) unless
+   * they are the account currently mapped to that role, so a bad mapping
+   * stays visible and replaceable instead of vanishing from the trigger.
+   * Type-valid accounts always sort first and every label carries its
    * account type.
    */
   const optionsByRole = useMemo(() => {
-    const map = new Map<PostingRole, { value: string; label: string }[]>();
+    const map = new Map<PostingRole, SearchableComboboxOption[]>();
     for (const role of POSTING_ROLES) {
       const validTypes = POSTING_ROLE_ACCOUNT_TYPES[role];
+      const currentAccountId = byRole.get(role)?.chartAccountId ?? null;
       const sorted = [...accounts].sort((a, b) => {
         const aValid = validTypes.includes(a.type);
         const bValid = validTypes.includes(b.type);
@@ -63,11 +70,15 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
       });
       map.set(
         role,
-        sorted.map((a) => ({ value: a.id, label: `${a.code} — ${a.name} (${a.type})` })),
+        sorted.map((a) => ({
+          value: a.id,
+          label: `${a.code} — ${a.name} (${a.type})`,
+          disabled: !validTypes.includes(a.type) && a.id !== currentAccountId,
+        })),
       );
     }
     return map;
-  }, [accounts]);
+  }, [accounts, byRole]);
 
   function handleSelect(role: PostingRole, chartAccountId: string) {
     setSavingRole(role);
