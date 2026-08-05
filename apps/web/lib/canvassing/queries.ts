@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { lineCostTotal } from "./van-journal-values";
+import { findPostableJournalDocIds } from "./journal-pending";
 
 export type CanvasserSummary = { id: string; name: string; email: string; lineCount: number; totalQty: number };
 export type VanStockRow = { itemId: string; sku: string; productName: string; variantSku: string | null; variantLabel: string | null; qty: number; avgCost: number };
@@ -107,12 +108,15 @@ export async function listVanLoads(canvasserId: string, limit: number): Promise<
     },
   });
   const ids = rows.map((r) => r.id);
-  const journals = ids.length
-    ? await prisma.journal.findMany({
-        where: { sourceType: "VAN_LOAD", sourceId: { in: ids } },
-        select: { id: true, sourceId: true },
-      })
-    : [];
+  const [journals, pendingIds] = await Promise.all([
+    ids.length
+      ? prisma.journal.findMany({
+          where: { sourceType: "VAN_LOAD", sourceId: { in: ids } },
+          select: { id: true, sourceId: true },
+        })
+      : Promise.resolve([]),
+    findPostableJournalDocIds("van_load", ids),
+  ]);
   const journalByLoadId = new Map(journals.map((j) => [j.sourceId, j.id]));
   return rows.map((r) => {
     const journalId = journalByLoadId.get(r.id) ?? null;
@@ -124,7 +128,13 @@ export async function listVanLoads(canvasserId: string, limit: number): Promise<
       createdAtIso: r.createdAt.toISOString(),
       lineCount: r.lines.length,
       journalId,
-      hasPostableJournal: journalId === null && Math.abs(value) >= 0.01,
+      /*
+       * journalId === null alone is not sufficient: every van load created
+       * before auto-posting existed also has no journal, but auto-posting
+       * never ran for it. Only offer the retry when a JOURNAL_PENDING
+       * notification proves a post was attempted and failed for THIS load.
+       */
+      hasPostableJournal: journalId === null && Math.abs(value) >= 0.01 && pendingIds.has(r.id),
     };
   });
 }

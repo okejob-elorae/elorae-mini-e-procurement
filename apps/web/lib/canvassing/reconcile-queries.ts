@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { reconcileSplit } from "./van-journal-values";
+import { findPostableJournalDocIds } from "./journal-pending";
 
 export type VanReconcileRow = { itemId: string; sku: string; productName: string; variantSku: string | null; variantLabel: string | null; expectedQty: number; avgCost: number };
 export type VanReconcileListRow = { id: string; docNo: string; reconciledByLabel: string; totalReturnedQty: number; totalVarianceQty: number; createdAtIso: string };
@@ -62,6 +63,7 @@ export async function getVanReconcileById(id: string): Promise<VanReconcileDetai
   const { returned, variance } = reconcileSplit(
     r.lines.map((l) => ({ countedQty: Number(l.countedQty), varianceQty: Number(l.varianceQty), unitCost: Number(l.unitCost) })),
   );
+  const pendingIds = await findPostableJournalDocIds("van_reconcile", [r.id]);
   return {
     id: r.id, docNo: r.docNo,
     canvasserLabel: r.canvasser.name ?? r.canvasser.email,
@@ -70,6 +72,12 @@ export async function getVanReconcileById(id: string): Promise<VanReconcileDetai
     totalReturnedQty: Number(r.totalReturnedQty), totalVarianceQty: Number(r.totalVarianceQty),
     lines: r.lines.map((l) => ({ productName: l.productName, variantSku: l.variantSku, expectedQty: Number(l.expectedQty), countedQty: Number(l.countedQty), varianceQty: Number(l.varianceQty), unitCost: Number(l.unitCost) })),
     journalId: journal?.id ?? null,
-    hasPostableJournal: journal == null && (Math.abs(returned) >= 0.01 || Math.abs(variance) >= 0.01),
+    /*
+     * journal == null alone is not sufficient: a reconcile recorded before
+     * auto-posting existed also has no journal, but auto-posting never ran
+     * for it. Only offer the retry when a JOURNAL_PENDING notification
+     * proves a post was attempted and failed for THIS reconcile.
+     */
+    hasPostableJournal: journal == null && (Math.abs(returned) >= 0.01 || Math.abs(variance) >= 0.01) && pendingIds.has(r.id),
   };
 }

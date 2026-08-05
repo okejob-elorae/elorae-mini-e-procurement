@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { lineCostTotal } from "./van-journal-values";
+import { findPostableJournalDocIds } from "./journal-pending";
 
 export type SellableVanRow = { itemId: string; sku: string; productName: string; variantSku: string | null; variantLabel: string | null; qtyOnVan: number; price: number | null };
 export type VanSaleListRow = { id: string; docNo: string; salesmanLabel: string; buyerLabel: string; total: number; createdAtIso: string };
@@ -70,6 +71,7 @@ export async function getVanSaleById(id: string, opts?: { salesmanId?: string })
   });
   const revenue = Number(r.total);
   const cogs = lineCostTotal(r.lines.map((l) => ({ qty: Number(l.qty), unitCost: Number(l.unitCost) })));
+  const pendingIds = await findPostableJournalDocIds("van_sale", [r.id]);
   return {
     id: r.id, docNo: r.docNo,
     salesmanLabel: r.salesman.name ?? r.salesman.email,
@@ -79,6 +81,12 @@ export async function getVanSaleById(id: string, opts?: { salesmanId?: string })
     note: r.note, createdAtIso: r.createdAt.toISOString(),
     lines: r.lines.map((l) => ({ productName: l.productName, variantSku: l.variantSku, qty: Number(l.qty), unitPrice: Number(l.unitPrice), unitCost: Number(l.unitCost), lineTotal: Number(l.lineTotal) })),
     journalId: journal?.id ?? null,
-    hasPostableJournal: journal == null && (Math.abs(revenue) >= 0.01 || Math.abs(cogs) >= 0.01),
+    /*
+     * journal == null alone is not sufficient: a sale recorded before
+     * auto-posting existed also has no journal, but auto-posting never ran
+     * for it. Only offer the retry when a JOURNAL_PENDING notification
+     * proves a post was attempted and failed for THIS sale.
+     */
+    hasPostableJournal: journal == null && (Math.abs(revenue) >= 0.01 || Math.abs(cogs) >= 0.01) && pendingIds.has(r.id),
   };
 }
