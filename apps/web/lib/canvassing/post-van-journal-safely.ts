@@ -31,6 +31,25 @@ export async function postVanJournalSafely(
   }
 }
 
+/**
+ * Skips the write when an unread `JOURNAL_PENDING` already exists for the same
+ * document and kind. Mirrors `lib/finance/sales/sweep.ts`'s dedup: this MariaDB
+ * adapter's JSON-path filtering is unreliable, so recent unread rows are
+ * fetched and deduped in JS rather than filtered in the query.
+ */
+async function alreadyFlagged(kind: string, docId: string): Promise<boolean> {
+  const recent = await prisma.adminNotification.findMany({
+    where: { category: "JOURNAL_PENDING", readAt: null },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    select: { metadata: true },
+  });
+  return recent.some((n) => {
+    const m = n.metadata as { docId?: string; kind?: string } | null;
+    return m?.docId === docId && m?.kind === `van_${kind}`;
+  });
+}
+
 async function notify(
   kind: "load" | "sale" | "reconcile",
   docId: string,
@@ -39,6 +58,7 @@ async function notify(
   detail?: string,
 ): Promise<void> {
   try {
+    if (await alreadyFlagged(kind, docId)) return;
     await prisma.adminNotification.create({
       data: {
         category: "JOURNAL_PENDING",
