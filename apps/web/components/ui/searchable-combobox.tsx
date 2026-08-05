@@ -19,7 +19,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-export type SearchableComboboxOption = { value: string; label: string };
+export type SearchableComboboxOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+};
 
 export interface SearchableComboboxProps {
   options: SearchableComboboxOption[];
@@ -104,7 +108,9 @@ export function SearchableCombobox({
                 <CommandItem
                   key={opt.value}
                   value={opt.label}
+                  disabled={opt.disabled}
                   onSelect={() => {
+                    if (opt.disabled) return;
                     onValueChange(opt.value);
                     setOpen(false);
                   }}
@@ -115,7 +121,11 @@ export function SearchableCombobox({
                       value === opt.value ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  <span className="truncate">{opt.label}</span>
+                  <span
+                    className={cn("truncate", opt.disabled && "text-muted-foreground")}
+                  >
+                    {opt.label}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

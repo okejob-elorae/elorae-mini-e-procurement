@@ -5,11 +5,13 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { POSTING_ROLES, type PostingRole } from "@/lib/constants/journal-roles";
-import { setAccountMapping, clearAccountMapping } from "@/lib/finance/journals/mapping";
+import { setAccountMapping, clearAccountMapping, AccountTypeMismatchError } from "@/lib/finance/journals/mapping";
+import { isAccountTypeValidForRole } from "@/lib/finance/journals/role-account-types";
+import type { AccountType } from "@/lib/constants/enums";
 
 export type SetAccountMappingResult =
   | { ok: true }
-  | { ok: false; code: "FORBIDDEN" | "BAD_ROLE" | "NON_POSTABLE_ACCOUNT" };
+  | { ok: false; code: "FORBIDDEN" | "BAD_ROLE" | "NON_POSTABLE_ACCOUNT" | "WRONG_ACCOUNT_TYPE" };
 
 function isPostingRole(role: string): role is PostingRole {
   return (POSTING_ROLES as readonly string[]).includes(role);
@@ -39,7 +41,23 @@ export async function setAccountMappingAction(
     return { ok: false, code: "NON_POSTABLE_ACCOUNT" };
   }
 
-  await setAccountMapping(role, chartAccountId, prisma);
+  if (!isAccountTypeValidForRole(role, account.type as AccountType)) {
+    return { ok: false, code: "WRONG_ACCOUNT_TYPE" };
+  }
+
+  try {
+    await setAccountMapping(role, chartAccountId, prisma);
+  } catch (err) {
+    /*
+     * The pre-check above already covers this in the normal flow — this
+     * only guards against the writer's own type check (which cannot be
+     * bypassed) firing for a reason the pre-check missed.
+     */
+    if (err instanceof AccountTypeMismatchError) {
+      return { ok: false, code: "WRONG_ACCOUNT_TYPE" };
+    }
+    throw err;
+  }
 
   revalidatePath("/backoffice/finance/account-mapping");
   return { ok: true };

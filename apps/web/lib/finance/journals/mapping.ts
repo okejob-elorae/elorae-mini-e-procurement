@@ -1,5 +1,7 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { POSTING_ROLES, type PostingRole } from "@/lib/constants/journal-roles";
+import { isAccountTypeValidForRole } from "@/lib/finance/journals/role-account-types";
+import type { AccountType } from "@/lib/constants/enums";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -10,11 +12,20 @@ export class UnmappedRoleError extends Error {
   }
 }
 
+export class AccountTypeMismatchError extends Error {
+  constructor(public role: string, public accountType: string) {
+    super(`Account type "${accountType}" is not valid for posting role "${role}"`);
+    this.name = "AccountTypeMismatchError";
+  }
+}
+
 export type AccountMappingRow = {
   role: PostingRole;
   chartAccountId: string | null;
   accountCode: string | null;
   accountName: string | null;
+  accountType: AccountType | null;
+  typeValid: boolean;
 };
 
 export async function resolveAccount(role: PostingRole, client: AnyClient = prisma): Promise<string> {
@@ -25,25 +36,52 @@ export async function resolveAccount(role: PostingRole, client: AnyClient = pris
 
 export async function listAccountMappings(): Promise<AccountMappingRow[]> {
   const mappings = await prisma.journalAccountMapping.findMany({
-    include: { account: { select: { code: true, name: true } } },
+    include: { account: { select: { code: true, name: true, type: true } } },
   });
   const byRole = new Map(mappings.map((m) => [m.role, m]));
   return POSTING_ROLES.map((role) => {
     const mapping = byRole.get(role);
+    const accountType = (mapping?.account.type ?? null) as AccountType | null;
     return {
       role,
       chartAccountId: mapping?.chartAccountId ?? null,
       accountCode: mapping?.account.code ?? null,
       accountName: mapping?.account.name ?? null,
+      accountType,
+      /* An unmapped role is not a mismatch — it is simply not wired yet. */
+      typeValid: accountType === null ? true : isAccountTypeValidForRole(role, accountType),
     };
   });
 }
 
+/**
+ * Validated write path for wiring a posting role to a chart account. Account
+ * type is enforced here — via `isAccountTypeValidForRole` — so the guard
+ * cannot be bypassed by a future caller that skips `setAccountMappingAction`
+ * (apps/web/app/actions/account-mapping.ts). Throws `AccountTypeMismatchError`
+ * on a type mismatch and a plain `Error` if `chartAccountId` does not resolve
+ * to an existing account, rather than upserting a dangling id.
+ *
+ * Postable-account validation (active + not-a-parent) deliberately stays out
+ * of this function and lives only in the action: it is a UI-level concern
+ * with its own `NON_POSTABLE_ACCOUNT` result code, and duplicating it here
+ * would add another query per call for no additional safety.
+ */
 export async function setAccountMapping(
   role: PostingRole,
   chartAccountId: string,
   client: AnyClient = prisma,
 ): Promise<void> {
+  const account = await client.chartAccount.findUnique({
+    where: { id: chartAccountId },
+    select: { type: true },
+  });
+  if (!account) {
+    throw new Error(`Chart account "${chartAccountId}" not found`);
+  }
+  if (!isAccountTypeValidForRole(role, account.type as AccountType)) {
+    throw new AccountTypeMismatchError(role, account.type);
+  }
   await client.journalAccountMapping.upsert({
     where: { role },
     create: { role, chartAccountId },
