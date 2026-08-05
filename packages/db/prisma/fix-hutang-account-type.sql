@@ -1,14 +1,10 @@
 -- ############################################################################
--- DO NOT PASTE OR PIPE THIS WHOLE FILE AT ONCE (`mysql < file.sql`, or a GUI's
--- "run all"). This is a flat sequence of statements with no stop-gate: every
--- PRE-FLIGHT query would run, then THE UPDATE would run UNCONDITIONALLY,
--- whatever those queries showed. The UPDATE's own WHERE clause protects against
--- a wrong name, a wrong type, and a taken 2101 code (it matches 0 rows rather
--- than corrupting anything) — but it does NOT protect against pre-flight
--- queries 6 and 7. If a posting role is mapped to `21 Utang Lancar`, or journal
--- lines already post against it, a blind run still promotes `21` to a parent
--- and silently breaks every future posting for that role, because `postJournal`
--- rejects accounts that have children. Run the sections one at a time.
+-- RUN THE SECTIONS ONE AT A TIME and read each PRE-FLIGHT result. THE UPDATE
+-- is fail-closed — every pre-flight stop condition is also encoded as one of
+-- its predicates, so a blind full-file run (`mysql < file.sql`, or a GUI's
+-- "run all") degrades to `affectedRows = 0` rather than breaking anything.
+-- But a bare row count cannot tell you WHICH condition stopped it, and on 0
+-- you need to know. That is what the pre-flight queries are for.
 -- ############################################################################
 --
 -- Corrects the `13 Hutang` account, which was created as ASET while carrying the
@@ -23,12 +19,14 @@
 -- subquery selecting from the table being updated (error 1093).
 --
 -- HOW TO RUN: run every PRE-FLIGHT query below and read the result before
--- touching THE UPDATE. `affectedRows = 0` on the UPDATE is NOT proof the row
--- was already correct — it also fires silently if 2101 is already taken, or if
--- the account was hand-created under a name other than exactly `Hutang` (very
--- plausible: `Hutang Usaha` / `Hutang Dagang` are the conventional names). The
--- pre-flight exists so you know which of those it is instead of guessing from
--- a bare row count.
+-- touching THE UPDATE. `affectedRows = 0` is NOT proof the row was already
+-- correct — it fires for any of five stop conditions (2101 taken, parent `21`
+-- missing, the row not being the AP-mapped account, a role already mapped to
+-- `21`, or lines already posted against `21`). The pre-flight tells you which.
+--
+-- The account is identified by the AP posting role rather than by name, so a
+-- chart where it was hand-created as `Hutang Usaha` / `Hutang Dagang` needs no
+-- edit to this file.
 
 -- ============================================================================
 -- PRE-FLIGHT — run ALL of these first, on the SAME environment you are about
@@ -46,16 +44,13 @@ WHERE code = '13' OR name LIKE '%utang%';
 -- and `Utang Lancar` (code '21', the seeded liability leaf that always
 -- exists) both match the `%utang%` substring and are expected noise —
 -- ignore them. Locate the row with `code = '13'` among the hits; on an
--- unfixed environment that is `name = 'Hutang', type = 'ASET'`, the exact
--- row THE UPDATE's WHERE clause targets.
+-- unfixed environment it is `type = 'ASET'`, whatever it is named.
 -- If a row already shows code = '2101' / type = 'LIABILITAS', this script
 -- already ran here — stop, nothing to do.
--- If the `code = '13'` row exists but its `name` is NOT exactly `Hutang`
--- (e.g. `Hutang Usaha`), THE UPDATE's `name = 'Hutang'` predicate will not
--- match it and will silently affect 0 rows. Do not loosen the predicate on
--- your own judgment, and do not identify the target by name alone — confirm
--- identity with query 2 (the AP mapping join) instead, then see the note at
--- the bottom of this file for how to proceed.
+-- The name does NOT have to be exactly `Hutang`: THE UPDATE identifies the
+-- row by the AP posting role, not by name. Confirm with query 2 that the
+-- AP-mapped account is this `code = '13'` row; that is the identity that
+-- matters.
 
 -- 2. Whichever account the AP posting role is actually mapped to today. This
 --    is the identity that matters — it holds regardless of what the account
@@ -120,25 +115,68 @@ WHERE a.code = '21';
 SELECT @@sql_mode;
 
 -- ============================================================================
--- THE UPDATE — predicates and derived `depth` are unchanged from the original
--- version of this script. Do not loosen `name = 'Hutang'` here; see the note
--- at the bottom of this file if it turns out to be wrong on this environment.
+-- THE UPDATE — fail-closed. Do not loosen any predicate to force a match: each
+-- one corresponds to a PRE-FLIGHT stop condition, so removing one removes the
+-- protection it encodes.
 -- ============================================================================
 
 -- REQUIRED: after running this, check the client's affected-row count.
 -- affectedRows MUST be 1. On 0, STOP — do NOT re-run this statement and do
--- NOT loosen the predicate to make it match. Go back to the PRE-FLIGHT
--- queries above (especially 1, 2, and 3) to find out which of the known
--- no-op causes fired, and resolve that first.
+-- NOT loosen the predicates to make it match. Go back to the PRE-FLIGHT
+-- queries above to find out which stop condition fired, and resolve that
+-- first.
+--
+-- Every PRE-FLIGHT stop condition is also encoded as a predicate below, so a
+-- blind full-file run degrades to `affectedRows = 0` instead of silently
+-- breaking something. The pre-flight queries remain the primary checklist —
+-- they tell you WHICH condition failed, which a bare row count cannot.
+--
+-- Identity comes from the AP posting role (`chartAccountId`), not from the
+-- account's name. That is strictly TIGHTER than the old `name = 'Hutang'`
+-- predicate — it pins the row the ledger actually posts payables to, and it
+-- makes the script work unchanged on a chart where the account was created as
+-- `Hutang Usaha` or `Hutang Dagang`. If AP is unmapped, the subquery yields
+-- NULL, nothing matches, and the statement no-ops.
+--
+-- Every subquery that reads ChartAccount is wrapped in a derived table:
+-- MariaDB rejects a subquery selecting from the table being updated (1093).
 UPDATE ChartAccount
 SET type = 'LIABILITAS',
     code = '2101',
     parentId = (SELECT id FROM (SELECT id FROM ChartAccount WHERE code = '21') AS p),
     depth = (SELECT d FROM (SELECT depth + 1 AS d FROM ChartAccount WHERE code = '21') AS q)
 WHERE code = '13'
-  AND name = 'Hutang'
   AND type = 'ASET'
-  AND NOT EXISTS (SELECT 1 FROM (SELECT code FROM ChartAccount) AS c WHERE c.code = '2101');
+  -- Pre-flight 2: this must be the account the AP role maps to.
+  AND id = (
+    SELECT apAccountId
+    FROM (SELECT chartAccountId AS apAccountId FROM JournalAccountMapping WHERE role = 'AP') AS ap
+  )
+  -- Pre-flight 3: destination code must be free.
+  AND NOT EXISTS (SELECT 1 FROM (SELECT code FROM ChartAccount) AS c WHERE c.code = '2101')
+  -- Pre-flight 4: parent must exist, else parentId/depth would resolve to NULL.
+  AND EXISTS (SELECT 1 FROM (SELECT code FROM ChartAccount) AS pe WHERE pe.code = '21')
+  -- Pre-flight 6: no posting role may map to `21`, which this UPDATE turns into
+  -- a non-leaf — postJournal rejects accounts that have children.
+  AND NOT EXISTS (
+    SELECT 1
+    FROM (
+      SELECT m.role
+      FROM JournalAccountMapping m
+      JOIN ChartAccount a ON a.id = m.chartAccountId
+      WHERE a.code = '21'
+    ) AS roleOn21
+  )
+  -- Pre-flight 7: nothing may already post directly against `21`.
+  AND NOT EXISTS (
+    SELECT 1
+    FROM (
+      SELECT jl.id
+      FROM JournalLine jl
+      JOIN ChartAccount a ON a.id = jl.chartAccountId
+      WHERE a.code = '21'
+    ) AS linesOn21
+  );
 
 -- ============================================================================
 -- POST-CHECK — run immediately after THE UPDATE, whatever the affected-row
@@ -166,11 +204,14 @@ JOIN ChartAccount a ON a.id = jl.chartAccountId
 WHERE a.code = '2101';
 
 -- ============================================================================
--- NOTE — if the account's name genuinely differs on this environment (e.g. it
--- is `Hutang Usaha`, not `Hutang`), do NOT loosen the predicate blindly.
--- First confirm identity beyond doubt via query 2 above (the AP mapping join)
--- so you are certain which row is the one every GRN has been crediting. Only
--- then edit or drop the `name = 'Hutang'` predicate in THE UPDATE above, and
--- re-commit this file so the committed artifact matches what was actually run
--- against that environment.
+-- NOTE — if THE UPDATE reports 0 rows, work through the stop conditions in
+-- order rather than editing predicates: 2101 already taken (pre-flight 3),
+-- parent `21` missing (4), the `code = '13'` row not being the AP-mapped
+-- account (2), a role already mapped to `21` (6), or lines already posted
+-- against `21` (7). Conditions 6 and 7 are fixed by remapping that role to
+-- another liability leaf first; the others mean the target is not what this
+-- script assumes, and that needs a human decision, not a looser predicate.
+--
+-- If you do end up changing this file for a specific environment, re-commit it
+-- so the committed artifact matches what was actually run.
 -- ============================================================================
