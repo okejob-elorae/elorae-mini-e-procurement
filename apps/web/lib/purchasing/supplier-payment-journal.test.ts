@@ -14,7 +14,7 @@ const d = isProd ? describe.skip : describe;
 
 type TrackedPo = { poId: string; grnIds: string[] };
 
-/** Deletes the journal (+ lines) posted for a given source, if one exists. */
+/** Deletes the journal (+ lines) posted for a given exact source, if one exists. */
 async function deleteJournalFor(sourceType: string, sourceId: string): Promise<void> {
   const journal = await prisma.journal.findUnique({
     where: { sourceType_sourceId: { sourceType, sourceId } },
@@ -27,11 +27,29 @@ async function deleteJournalFor(sourceType: string, sourceId: string): Promise<v
 }
 
 /**
- * Cleans up one tracked PO (its GRNs' journals, its own payment/reversal
- * journals, its GRNs, then itself). Called from a test's own `finally` (fast
- * path) AND again from the shared `afterEach` (the net) — each step is
- * individually guarded so one failure cannot block the rest, and repeating
- * the same deletes is safe (guarded lookups / `deleteMany`).
+ * Deletes every journal (+ lines) of a given source type whose `sourceId`
+ * starts with `prefix`. Payment/reversal journals are keyed `poId#gen` (one
+ * row per mark/unmark cycle), so an exact-match lookup on the bare PO id would
+ * miss all of them — this sweeps every generation for one PO.
+ */
+async function deleteJournalsWithSourceIdPrefix(sourceType: string, prefix: string): Promise<void> {
+  const journals = await prisma.journal.findMany({
+    where: { sourceType, sourceId: { startsWith: prefix } },
+    select: { id: true },
+  });
+  const ids = journals.map((j) => j.id);
+  if (ids.length) {
+    await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
+    await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+  }
+}
+
+/**
+ * Cleans up one tracked PO (its GRNs' journals, every generation of its own
+ * payment/reversal journals, its GRNs, then itself). Called from a test's own
+ * `finally` (fast path) AND again from the shared `afterEach` (the net) —
+ * each step is individually guarded so one failure cannot block the rest, and
+ * repeating the same deletes is safe (guarded lookups / `deleteMany`).
  */
 async function cleanupPo(tracked: TrackedPo): Promise<void> {
   for (const grnId of tracked.grnIds) {
@@ -47,12 +65,12 @@ async function cleanupPo(tracked: TrackedPo): Promise<void> {
     }
   }
   try {
-    await deleteJournalFor("SUPPLIER_PAYMENT", tracked.poId);
+    await deleteJournalsWithSourceIdPrefix("SUPPLIER_PAYMENT", `${tracked.poId}#`);
   } catch {
     /* best-effort */
   }
   try {
-    await deleteJournalFor("SUPPLIER_PAYMENT_REVERSAL", tracked.poId);
+    await deleteJournalsWithSourceIdPrefix("SUPPLIER_PAYMENT_REVERSAL", `${tracked.poId}#`);
   } catch {
     /* best-effort */
   }
@@ -152,7 +170,8 @@ d("supplier payment journal (test bed only)", () => {
    * other failure, this restores real GL config and removes every seeded row
    * once the whole suite is done — it does not depend on any single test's
    * teardown completing. Each delete step is individually guarded so one
-   * failure cannot skip the rest.
+   * failure cannot skip the rest, and now also logs a warning so a leaked
+   * test row is at least discoverable instead of vanishing silently.
    *
    * The mapping restore is the one step that must NEVER fail silently. A
    * stranded JournalAccountMapping is worse than a failed test run: it keeps
@@ -175,23 +194,23 @@ d("supplier payment journal (test bed only)", () => {
     }
     try {
       await prisma.chartAccount.deleteMany({ where: { id: { in: Object.values(accountIds) } } });
-    } catch {
-      /* best-effort */
+    } catch (e) {
+      console.warn("[supplier-payment-journal.test.ts] failed to delete test chart accounts", accountIds, e);
     }
     try {
       await prisma.supplier.deleteMany({ where: { id: supplierId } });
-    } catch {
-      /* best-effort */
+    } catch (e) {
+      console.warn("[supplier-payment-journal.test.ts] failed to delete test supplier", supplierId, e);
     }
     try {
       await prisma.supplierType.deleteMany({ where: { id: supplierTypeId } });
-    } catch {
-      /* best-effort */
+    } catch (e) {
+      console.warn("[supplier-payment-journal.test.ts] failed to delete test supplier type", supplierTypeId, e);
     }
     try {
       await prisma.user.deleteMany({ where: { id: userId } });
-    } catch {
-      /* best-effort */
+    } catch (e) {
+      console.warn("[supplier-payment-journal.test.ts] failed to delete test user", userId, e);
     }
     if (restoreFailed) {
       console.error(
@@ -222,12 +241,13 @@ d("supplier payment journal (test bed only)", () => {
       data: { docNumber: `PO-TEST-${token}-1`, supplierId, createdById: userId },
       select: { id: true },
     });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
     const grn = await prisma.gRN.create({
       data: { docNumber: `GRN-TEST-${token}-1`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 50_000, items: [] },
       select: { id: true },
     });
-    const tracked: TrackedPo = { poId: po.id, grnIds: [grn.id] };
-    createdPos.push(tracked);
+    tracked.grnIds.push(grn.id);
 
     try {
       const posted = await postGrnJournal(grn.id, userId, prisma);
@@ -238,11 +258,14 @@ d("supplier payment journal (test bed only)", () => {
       expect(r).toMatchObject({ ok: true, created: true });
 
       const journal = await prisma.journal.findUniqueOrThrow({
-        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: po.id } },
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
         include: { lines: true },
       });
+      expect(journal.lines).toHaveLength(2);
       expect(amountsFor(journal.lines, accountIds.AP)).toEqual({ debit: 50_000, credit: 0 });
       expect(amountsFor(journal.lines, accountIds.BANK)).toEqual({ debit: 0, credit: 50_000 });
+      /* Guards against a stray third line on an unrelated account passing unnoticed. */
+      expect(amountsFor(journal.lines, accountIds.INVENTORY)).toEqual({ debit: 0, credit: 0 });
       expect(journal.date).toEqual(paidAt);
 
       const totalDebit = journal.lines.reduce((sum, l) => sum + Number(l.debit), 0);
@@ -258,16 +281,22 @@ d("supplier payment journal (test bed only)", () => {
       data: { docNumber: `PO-TEST-${token}-2`, supplierId, createdById: userId },
       select: { id: true },
     });
+    /* Tracked immediately after the PO create — before either GRN create —
+       so a throw from the second `gRN.create` still leaves the PO (and any
+       GRN already created) reachable by cleanup instead of orphaned. */
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+
     const grnA = await prisma.gRN.create({
       data: { docNumber: `GRN-TEST-${token}-2A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 80_000, items: [] },
       select: { id: true },
     });
+    tracked.grnIds.push(grnA.id);
     const grnB = await prisma.gRN.create({
       data: { docNumber: `GRN-TEST-${token}-2B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
       select: { id: true },
     });
-    const tracked: TrackedPo = { poId: po.id, grnIds: [grnA.id, grnB.id] };
-    createdPos.push(tracked);
+    tracked.grnIds.push(grnB.id);
 
     try {
       const postedA = await postGrnJournal(grnA.id, userId, prisma);
@@ -281,7 +310,7 @@ d("supplier payment journal (test bed only)", () => {
       expect(r).toMatchObject({ ok: true, created: true });
 
       const journal = await prisma.journal.findUniqueOrThrow({
-        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: po.id } },
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
         include: { lines: true },
       });
       /* GRN B was fully reversed, so only GRN A's 80,000 remains payable. */
@@ -297,19 +326,20 @@ d("supplier payment journal (test bed only)", () => {
       data: { docNumber: `PO-TEST-${token}-3`, supplierId, createdById: userId },
       select: { id: true },
     });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
     const grn = await prisma.gRN.create({
       data: { docNumber: `GRN-TEST-${token}-3`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 40_000, items: [] },
       select: { id: true },
     });
-    const tracked: TrackedPo = { poId: po.id, grnIds: [grn.id] };
-    createdPos.push(tracked);
+    tracked.grnIds.push(grn.id);
 
     try {
       const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-02-03T00:00:00.000Z"), prisma);
       expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
 
       const journal = await prisma.journal.findUnique({
-        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: po.id } },
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
       });
       expect(journal).toBeNull();
     } finally {
@@ -322,12 +352,13 @@ d("supplier payment journal (test bed only)", () => {
       data: { docNumber: `PO-TEST-${token}-4`, supplierId, createdById: userId },
       select: { id: true },
     });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
     const grn = await prisma.gRN.create({
       data: { docNumber: `GRN-TEST-${token}-4`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 60_000, items: [] },
       select: { id: true },
     });
-    const tracked: TrackedPo = { poId: po.id, grnIds: [grn.id] };
-    createdPos.push(tracked);
+    tracked.grnIds.push(grn.id);
 
     try {
       const posted = await postGrnJournal(grn.id, userId, prisma);
@@ -343,7 +374,7 @@ d("supplier payment journal (test bed only)", () => {
       expect(revR).toMatchObject({ ok: true, created: true });
 
       const revJournal = await prisma.journal.findUniqueOrThrow({
-        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: po.id } },
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: `${po.id}#1` } },
         include: { lines: true },
       });
       expect(amountsFor(revJournal.lines, accountIds.BANK)).toEqual({ debit: 60_000, credit: 0 });
@@ -352,8 +383,8 @@ d("supplier payment journal (test bed only)", () => {
       const postAp = await apNetForSources(
         [
           { sourceType: "GRN", sourceId: grn.id },
-          { sourceType: "SUPPLIER_PAYMENT", sourceId: po.id },
-          { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: po.id },
+          { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` },
+          { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: `${po.id}#1` },
         ],
         accountIds.AP,
       );
@@ -368,12 +399,13 @@ d("supplier payment journal (test bed only)", () => {
       data: { docNumber: `PO-TEST-${token}-5`, supplierId, createdById: userId },
       select: { id: true },
     });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
     const grn = await prisma.gRN.create({
       data: { docNumber: `GRN-TEST-${token}-5`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 25_000, items: [] },
       select: { id: true },
     });
-    const tracked: TrackedPo = { poId: po.id, grnIds: [grn.id] };
-    createdPos.push(tracked);
+    tracked.grnIds.push(grn.id);
 
     try {
       const posted = await postGrnJournal(grn.id, userId, prisma);
@@ -385,6 +417,219 @@ d("supplier payment journal (test bed only)", () => {
       const b = await postSupplierPaymentJournal(po.id, userId, paidAt, prisma);
       expect(b).toMatchObject({ ok: true, created: false });
       if (a.ok && b.ok) expect(b.journalId).toBe(a.journalId);
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("an unmapped AP role returns UNMAPPED_ROLE and posts nothing", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-6`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-6`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 10_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      const posted = await postGrnJournal(grn.id, userId, prisma);
+      expect(posted).toMatchObject({ ok: true, created: true });
+
+      await prisma.journalAccountMapping.deleteMany({ where: { role: "AP" } });
+      try {
+        const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-02-06T00:00:00.000Z"), prisma);
+        expect(r).toEqual({ ok: false, code: "UNMAPPED_ROLE", role: "AP" });
+
+        const journal = await prisma.journal.findUnique({
+          where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+        });
+        expect(journal).toBeNull();
+      } finally {
+        /* Restore before this test's own finally runs cleanupPo, and before
+           any later test in the file relies on the AP mapping being present. */
+        await setAccountMapping("AP", accountIds.AP);
+      }
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("a remapped AP account after GRN journals were posted returns AP_ACCOUNT_MISMATCH, not a silent NOTHING_TO_POST", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-7`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-7`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 15_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    const altAccount = await prisma.chartAccount.create({
+      data: { code: `9${token}9`, name: "AP alt (test)", type: "LIABILITAS", depth: 1, isActive: true },
+    });
+
+    try {
+      const posted = await postGrnJournal(grn.id, userId, prisma);
+      expect(posted).toMatchObject({ ok: true, created: true });
+
+      /* Simulates an operator repointing AP to a different account between
+         receipt and payment — the exact scenario this plan exists to fix. */
+      await setAccountMapping("AP", altAccount.id);
+      try {
+        const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-02-07T00:00:00.000Z"), prisma);
+        expect(r).toEqual({ ok: false, code: "AP_ACCOUNT_MISMATCH" });
+
+        const journal = await prisma.journal.findUnique({
+          where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+        });
+        expect(journal).toBeNull();
+      } finally {
+        await setAccountMapping("AP", accountIds.AP);
+      }
+    } finally {
+      try {
+        await prisma.chartAccount.deleteMany({ where: { id: altAccount.id } });
+      } catch {
+        /* best-effort */
+      }
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("a negative net payable (a reversal larger than the receipt) returns NOTHING_TO_POST", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-8`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-8`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 10_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      const posted = await postGrnJournal(grn.id, userId, prisma);
+      expect(posted).toMatchObject({ ok: true, created: true });
+
+      /* The reversal reads the GRN's CURRENT totalAmount, not the amount
+         already journaled — bumping it before reversing debits AP for more
+         than the original receipt credited it, driving the net negative. */
+      await prisma.gRN.update({ where: { id: grn.id }, data: { totalAmount: 90_000 } });
+      const reversed = await postGrnReversalJournal(grn.id, userId, prisma);
+      expect(reversed).toMatchObject({ ok: true, created: true });
+
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-02-08T00:00:00.000Z"), prisma);
+      expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("mark -> unmark -> re-mark produces two payment journals and one reversal, netting AP back to its pre-payment balance", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-9`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-9`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 45_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      const posted = await postGrnJournal(grn.id, userId, prisma);
+      expect(posted).toMatchObject({ ok: true, created: true });
+
+      const mark1 = await postSupplierPaymentJournal(po.id, userId, new Date("2026-03-01T00:00:00.000Z"), prisma);
+      expect(mark1).toMatchObject({ ok: true, created: true });
+
+      const unmark1 = await postSupplierPaymentReversalJournal(po.id, userId, prisma);
+      expect(unmark1).toMatchObject({ ok: true, created: true });
+
+      const mark2 = await postSupplierPaymentJournal(po.id, userId, new Date("2026-03-02T00:00:00.000Z"), prisma);
+      expect(mark2).toMatchObject({ ok: true, created: true });
+      if (mark1.ok && mark2.ok) expect(mark2.journalId).not.toBe(mark1.journalId);
+
+      const gen1 = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+        include: { lines: true },
+      });
+      const gen2 = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#2` } },
+        include: { lines: true },
+      });
+      const reversal = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: `${po.id}#1` } },
+        include: { lines: true },
+      });
+
+      expect(amountsFor(gen1.lines, accountIds.AP)).toEqual({ debit: 45_000, credit: 0 });
+      expect(amountsFor(gen2.lines, accountIds.AP)).toEqual({ debit: 45_000, credit: 0 });
+      expect(amountsFor(reversal.lines, accountIds.AP)).toEqual({ debit: 0, credit: 45_000 });
+
+      for (const j of [gen1, gen2, reversal]) {
+        const totalDebit = j.lines.reduce((sum, l) => sum + Number(l.debit), 0);
+        const totalCredit = j.lines.reduce((sum, l) => sum + Number(l.credit), 0);
+        expect(totalDebit).toBe(totalCredit);
+      }
+
+      /* GRN credited 45,000; gen-1 payment debited it to 0; the reversal
+         credited it back to 45,000; gen-2 payment debited it to 0 again —
+         i.e. paid, unmarked, and re-paid nets AP to zero. */
+      const apNet = await apNetForSources(
+        [
+          { sourceType: "GRN", sourceId: grn.id },
+          { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` },
+          { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: `${po.id}#1` },
+          { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#2` },
+        ],
+        accountIds.AP,
+      );
+      expect(apNet).toBe(0);
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("a retry of the first mark (double-submit, no intervening unmark) still produces exactly one payment journal", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-10`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-10`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 20_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      const posted = await postGrnJournal(grn.id, userId, prisma);
+      expect(posted).toMatchObject({ ok: true, created: true });
+
+      const paidAt = new Date("2026-03-03T00:00:00.000Z");
+      const a = await postSupplierPaymentJournal(po.id, userId, paidAt, prisma);
+      expect(a).toMatchObject({ ok: true, created: true });
+      const retry = await postSupplierPaymentJournal(po.id, userId, paidAt, prisma);
+      expect(retry).toMatchObject({ ok: true, created: false });
+      if (a.ok && retry.ok) expect(retry.journalId).toBe(a.journalId);
+
+      const journals = await prisma.journal.findMany({
+        where: { sourceType: "SUPPLIER_PAYMENT", sourceId: { startsWith: `${po.id}#` } },
+      });
+      expect(journals).toHaveLength(1);
     } finally {
       await cleanupPo(tracked);
     }
