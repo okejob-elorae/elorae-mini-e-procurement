@@ -2900,6 +2900,8 @@
     "selectAccount": "Pilih akun…",
     "searchAccount": "Cari kode atau nama akun…",
     "noAccounts": "Akun tidak ditemukan.",
+    "typeMismatchBadge": "Tipe akun salah",
+    "typeMismatchHint": "Akun {code} bertipe {type}, padahal peran ini harus dipetakan ke {expected}. Laporan keuangan akan salah sampai ini diperbaiki.",
     "col": {
       "role": "Peran",
       "description": "Deskripsi",

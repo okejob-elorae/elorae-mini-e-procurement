@@ -2900,6 +2900,8 @@
     "selectAccount": "Select account…",
     "searchAccount": "Search by code or name…",
     "noAccounts": "No accounts found.",
+    "typeMismatchBadge": "Wrong account type",
+    "typeMismatchHint": "Account {code} is {type}, but this role must map to {expected}. Financial reports will be wrong until this is corrected.",
     "col": {
       "role": "Role",
       "description": "Description",

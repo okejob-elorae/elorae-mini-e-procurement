@@ -21,6 +21,7 @@ import { setAccountMappingAction, clearAccountMappingAction } from "@/app/action
 import { POSTING_ROLES, type PostingRole } from "@/lib/constants/journal-roles";
 import type { AccountMappingRow } from "@/lib/finance/journals/mapping";
 import type { AccountType } from "@/lib/constants/enums";
+import { POSTING_ROLE_ACCOUNT_TYPES } from "@/lib/finance/journals/role-account-types";
 
 type Account = { id: string; code: string; name: string; type: AccountType };
 
@@ -147,6 +148,18 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
                             <span className="w-8 shrink-0" aria-hidden />
                           )}
                         </div>
+                        {mapping && mapping.typeValid === false && (
+                          <div className="mt-2 space-y-1">
+                            <Badge variant="destructive">{t("typeMismatchBadge")}</Badge>
+                            <p className="text-sm text-muted-foreground">
+                              {t("typeMismatchHint", {
+                                code: mapping.accountCode ?? "",
+                                type: mapping.accountType ?? "",
+                                expected: POSTING_ROLE_ACCOUNT_TYPES[role].join(" / "),
+                              })}
+                            </p>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
