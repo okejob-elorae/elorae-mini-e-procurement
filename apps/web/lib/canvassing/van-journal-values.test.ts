@@ -19,6 +19,20 @@ describe("lineCostTotal", () => {
   it("handles fractional quantities", () => {
     expect(lineCostTotal([{ qty: 2.5, unitCost: 400 }])).toBe(1000);
   });
+
+  it("rounds per-line before summing, not sum-then-round: pins rounding strategy", () => {
+    /*
+     * This test discriminates between the correct per-line rounding strategy
+     * and a broken sum-then-round approach. Three lines of { qty: 1, unitCost: 0.005 }:
+     * - Per-line rounding (correct): 0.005 → rounds to 1¢ per line → 3 lines = 3¢ → 0.03
+     * - Sum-then-round (wrong): raw sum 0.015 → 1.5¢ → rounds to 2¢ → 0.02
+     */
+    expect(lineCostTotal([
+      { qty: 1, unitCost: 0.005 },
+      { qty: 1, unitCost: 0.005 },
+      { qty: 1, unitCost: 0.005 },
+    ])).toBe(0.03);
+  });
 });
 
 describe("reconcileSplit", () => {
@@ -47,5 +61,21 @@ describe("reconcileSplit", () => {
     const split = reconcileSplit([{ countedQty: 12, varianceQty: -2, unitCost: 1000 }]);
     expect(split.returned).toBe(12_000);
     expect(split.variance).toBe(-2_000);
+  });
+
+  it("rounds per-line on both accumulators before summing: pins rounding strategy", () => {
+    /*
+     * This test discriminates between the correct per-line rounding strategy
+     * and a broken sum-then-round approach. Three lines of { countedQty: 1, varianceQty: 1, unitCost: 0.005 }:
+     * - Per-line rounding (correct): each value 0.005 → rounds to 1¢ per line → 3 lines = 3¢ per accumulator → 0.03
+     * - Sum-then-round (wrong): raw sum 0.015 → 1.5¢ → rounds to 2¢ → 0.02
+     */
+    const split = reconcileSplit([
+      { countedQty: 1, varianceQty: 1, unitCost: 0.005 },
+      { countedQty: 1, varianceQty: 1, unitCost: 0.005 },
+      { countedQty: 1, varianceQty: 1, unitCost: 0.005 },
+    ]);
+    expect(split.returned).toBe(0.03);
+    expect(split.variance).toBe(0.03);
   });
 });
