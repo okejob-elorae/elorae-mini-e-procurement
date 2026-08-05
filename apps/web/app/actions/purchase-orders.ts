@@ -455,15 +455,19 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
      * bookkeeping write must never be able to erase the only recovery signal for
      * a ledger inconsistency. The toggle has already committed and the journal
      * has already failed; if the history insert went first and threw — a
-     * transient DB error, an FK, anything — this function would exit before
-     * flagging anything. The PO would read paid with no payment journal, no
-     * `JOURNAL_PENDING` row anywhere, and a re-mark would be a CAS no-op because
-     * `paidAt` is already set, so the operator's obvious retry does nothing and
-     * nothing tells them to unmark first.
+     * transient DB error, an FK, anything — nothing would be flagged anywhere.
+     * The PO would read paid with no payment journal, no `JOURNAL_PENDING` row,
+     * and a re-mark would be a CAS no-op because `paidAt` is already set, so the
+     * operator's obvious retry does nothing and nothing tells them to unmark
+     * first.
      *
-     * Ordering rather than a `try`/`finally` was enough here, because the notify
-     * helper swallows and logs its own failures — putting it first cannot block
-     * the history insert either, so neither write can starve the other.
+     * The history insert below is now guarded too, so on its own that guard would
+     * also keep this reachable in either order. The ordering stays as the outer
+     * belt: the durable flag must not depend on a `catch` further down the
+     * function staying correct, and it costs nothing to keep.
+     *
+     * The notify helper swallows and logs its own failures, so putting it first
+     * cannot block the history insert either — neither write can starve the other.
      *
      * Written outside the transaction on purpose: a notification must not be
      * rolled back by, or contribute its own write to, transaction contention.
@@ -472,15 +476,39 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
       await notifySupplierPaymentJournalFailure(direction, poId, outcome.failure);
     }
 
-    await prisma.pOStatusHistory.create({
-      data: {
-        poId,
-        status: po.status,
-        changedById: actorId,
-        paymentEvent: paidAt != null ? 'MARKED' : 'UNMARKED',
-        notes: paidAt != null ? 'Supplier payment marked' : 'Supplier payment unmarked',
-      },
-    });
+    /**
+     * Guarded, not just ordered after the notification. Ordering alone protects
+     * the DURABLE record; this protects the IMMEDIATE one. An unguarded throw
+     * here rejects `setPOPaidAt` before it can return `journalFailure`, so the
+     * client falls into its generic error toast and the operator who clicked
+     * never sees the warning that explains the ledger gap or the unmark/re-mark
+     * remedy — a bookkeeping audit insert would have replaced the only in-UI
+     * explanation of a finance inconsistency. The two lessons are separate: the
+     * ordering keeps the notification from being skipped, the guard keeps the
+     * caller's answer from being replaced.
+     *
+     * Logged rather than swallowed: a missing payment-event history row is a real
+     * audit gap and must stay discoverable in the server log, it just must not
+     * change what the operator is told about the journal.
+     */
+    try {
+      await prisma.pOStatusHistory.create({
+        data: {
+          poId,
+          status: po.status,
+          changedById: actorId,
+          paymentEvent: paidAt != null ? 'MARKED' : 'UNMARKED',
+          notes: paidAt != null ? 'Supplier payment marked' : 'Supplier payment unmarked',
+        },
+      });
+    } catch (e) {
+      console.error(
+        `[setPOPaidAt] FAILED TO WRITE PAYMENT HISTORY for PO ${poId} — the paid toggle committed ` +
+          `(${paidAt != null ? 'MARKED' : 'UNMARKED'}) but its POStatusHistory row did not, so the payment event ` +
+          'is missing from the audit trail.',
+        e,
+      );
+    }
     getActorName(actorId)
       .then((triggeredByName) =>
         notifyPOPaymentToggled(poId, po.docNumber, paidAt != null, triggeredByName)
