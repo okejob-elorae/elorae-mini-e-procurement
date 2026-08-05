@@ -47,6 +47,12 @@ export async function listAccountMappings(): Promise<AccountMappingRow[]> {
   });
 }
 
+/**
+ * Unguarded — deliberately skips the role/account-type and postability checks
+ * so test fixtures can map arbitrary accounts. `setAccountMappingAction`
+ * (apps/web/app/actions/account-mapping.ts) is the validated entry point for
+ * any user-facing write; call this directly only from tests.
+ */
 export async function setAccountMapping(
   role: PostingRole,
   chartAccountId: string,
