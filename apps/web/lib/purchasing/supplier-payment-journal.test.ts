@@ -387,6 +387,86 @@ d("supplier payment journal (test bed only)", () => {
     }
   });
 
+  it("an owner-declined GRN whose reversal journal never posted returns GRN_REVERSAL_MISSING and posts nothing", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-16`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: {
+        docNumber: `GRN-TEST-${token}-16`,
+        poId: po.id,
+        supplierId,
+        receivedBy: userId,
+        totalAmount: 55_000,
+        items: [],
+        ownerDeclinedAt: new Date("2026-04-05T00:00:00.000Z"),
+      },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      /* The receipt journal posted at receive time; the decline's reversal is
+         the best-effort post that failed, leaving a JOURNAL_PENDING. The
+         completeness check is satisfied and the AP line is present, which is
+         exactly how a naive check pays a payable the decline already cancelled. */
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-06T00:00:00.000Z"), prisma);
+      expect(r).toEqual({ ok: false, code: "GRN_REVERSAL_MISSING" });
+
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+      });
+      expect(journal).toBeNull();
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("an owner-declined GRN WITH its reversal journal nets to zero and returns NOTHING_TO_POST, not GRN_REVERSAL_MISSING", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-17`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: {
+        docNumber: `GRN-TEST-${token}-17`,
+        poId: po.id,
+        supplierId,
+        receivedBy: userId,
+        totalAmount: 55_000,
+        items: [],
+        ownerDeclinedAt: new Date("2026-04-07T00:00:00.000Z"),
+      },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      /* Same declined receipt as the test above, this time with the reversal it
+         is supposed to have — so the new check must NOT fire. Pins it as a
+         refusal on a missing reversal only, never on the decline itself. */
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      expect(await postGrnReversalJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-08T00:00:00.000Z"), prisma);
+      expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+      });
+      expect(journal).toBeNull();
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
   it("a sub-cent GRN with no journal of its own does not block payment", async () => {
     const po = await prisma.purchaseOrder.create({
       data: { docNumber: `PO-TEST-${token}-14`, supplierId, createdById: userId },

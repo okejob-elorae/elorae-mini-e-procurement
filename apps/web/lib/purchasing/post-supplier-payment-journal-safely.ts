@@ -31,8 +31,10 @@ const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
  * to undo. Nothing to PAY is not: the PO is now flagged paid while no payable
  * was ever booked for it, which means either the payment does not correspond to
  * anything received (an advance) or receipts exist that could never book a
- * payable at all. An un-journaled receipt is NOT one of these cases — that
- * returns `GRN_JOURNALS_INCOMPLETE`, which carries its own remedy.
+ * payable at all. A broken journal set is NOT one of these cases:
+ * an un-journaled receipt returns `GRN_JOURNALS_INCOMPLETE` and a declined
+ * receipt left un-reversed returns `GRN_REVERSAL_MISSING`, each carrying its own
+ * remedy.
  */
 export async function postSupplierPaymentJournalSafely(
   direction: SupplierPaymentDirection,
@@ -56,6 +58,9 @@ function titleFor(direction: SupplierPaymentDirection, reason: string): string {
   if (reason === "GRN_JOURNALS_INCOMPLETE") {
     return "PO marked paid but one of its receipts has no GRN journal";
   }
+  if (reason === "GRN_REVERSAL_MISSING") {
+    return "PO marked paid but a declined receipt has no GRN reversal journal";
+  }
   return "Supplier payment journal not posted";
 }
 
@@ -68,8 +73,9 @@ function messageFor(
   const retry = RETRY_HINT[direction];
   if (reason === "NOTHING_TO_POST") {
     /*
-     * An un-journaled receipt cannot reach here — that returns
-     * `GRN_JOURNALS_INCOMPLETE` — so the remaining causes are all "there is
+     * Neither an un-journaled receipt nor a declined-but-un-reversed one can
+     * reach here — those return `GRN_JOURNALS_INCOMPLETE` and
+     * `GRN_REVERSAL_MISSING` — so the remaining causes are all "there is
      * genuinely nothing bookable", and the remedy is to question the payment
      * itself rather than to go post a journal.
      */
@@ -86,6 +92,14 @@ function messageFor(
       "payables and bank are both untouched. Paying only the journaled receipts would have under-paid, and the rest " +
       "would have reappeared in payables as soon as the missing GRN journal was retried. Post the missing GRN journal " +
       `from its GRN row, then ${retry}.`
+    );
+  }
+  if (reason === "GRN_REVERSAL_MISSING") {
+    return (
+      "The PO was marked paid, but one of its receipts was declined by the owner and its GRN journal was never " +
+      "reversed, so no payment journal was posted — payables and bank are both untouched. The declined receipt's " +
+      "payable is still booked, so paying now would have over-paid by that amount. Post the reversal journal from " +
+      `the declined GRN's row, then ${retry}.`
     );
   }
   if (reason === "AP_ACCOUNT_MISMATCH") {

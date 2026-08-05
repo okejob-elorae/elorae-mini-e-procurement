@@ -24,22 +24,33 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * shown as paid. Distinct from the mismatch code because the remedy is
  * different: post the missing GRN journal, not fix a mapping.
  *
- * Both stay distinct from the genuinely benign zero cases — no GRNs at all (an
- * advance payment), every GRN sub-cent so nothing was ever bookable, or a net
- * payable already cleared by reversals — so a caller can raise them loudly
+ * `GRN_REVERSAL_MISSING`: an owner-declined receipt still carries its GRN
+ * journal with no `GRN_REVERSAL` to undo it. Declining an over-receive GRN
+ * posts that reversal best-effort too, so a failed post leaves the declined
+ * receipt's payable booked as if it were still owed — the payable read here
+ * nets it in, and paying it over-pays both payables and bank by the declined
+ * amount. Its own code rather than `GRN_JOURNALS_INCOMPLETE` because the
+ * operator acts elsewhere: the reversal has a separate retry
+ * (`postGrnReversalJournalAction`) from the receipt journal's.
+ *
+ * All three stay distinct from the genuinely benign zero cases — no GRNs at all
+ * (an advance payment), every GRN sub-cent so nothing was ever bookable, or a
+ * net payable already cleared by reversals — so a caller can raise them loudly
  * instead of reporting success.
  */
 export type PostSupplierPaymentResult =
   | GenerateAutoJournalResult
   | { ok: false; code: "AP_ACCOUNT_MISMATCH" }
-  | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" };
+  | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" }
+  | { ok: false; code: "GRN_REVERSAL_MISSING" };
 
 type PayableLookup =
   | { ok: true; payable: number }
   | { ok: false; code: "UNMAPPED_ROLE"; role: "AP" }
   | { ok: false; code: "NOTHING_TO_POST" }
   | { ok: false; code: "AP_ACCOUNT_MISMATCH" }
-  | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" };
+  | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" }
+  | { ok: false; code: "GRN_REVERSAL_MISSING" };
 
 /**
  * Payable this purchase order's receipts booked to the GL, read from the journal
@@ -56,7 +67,10 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
     throw e;
   }
 
-  const grns = await client.gRN.findMany({ where: { poId }, select: { id: true, totalAmount: true } });
+  const grns = await client.gRN.findMany({
+    where: { poId },
+    select: { id: true, totalAmount: true, ownerDeclinedAt: true },
+  });
   if (grns.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
 
   const journals = await client.journal.findMany({
@@ -98,10 +112,35 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
   if (anyReceiptUnjournaled) return { ok: false, code: "GRN_JOURNALS_INCOMPLETE" };
 
   /*
+   * Refuse while an owner-declined receipt still has its GRN journal standing
+   * un-reversed. Sits beside the completeness check above, and for the same
+   * reason: both say the journal set this payable is read from is already known
+   * wrong, and a payable derived from a wrong journal set must not go on to
+   * produce an AP-mapping verdict — the mismatch check below can only inspect
+   * lines that exist, so a reversal that never posted would leave it reporting
+   * either a clean payable that over-pays or a remap that never happened.
+   *
+   * The two checks cannot both be the answer for one receipt: a declined GRN
+   * with no receipt journal at all is caught above, and this one requires the
+   * receipt journal to exist. That also makes the order between them and the
+   * zero-journals guard below immaterial to behaviour — grouping them is for
+   * the reader.
+   *
+   * Kept separate from `GRN_JOURNALS_INCOMPLETE` because the operator's action
+   * differs: the reversal is retried from the declined GRN's own reversal
+   * button, not the receipt-journal one.
+   */
+  const reversedGrnIds = new Set(journals.filter((j) => j.sourceType === "GRN_REVERSAL").map((j) => j.sourceId));
+  const anyDeclinedUnreversed = grns.some(
+    (g) => g.ownerDeclinedAt != null && journaledGrnIds.has(g.id) && !reversedGrnIds.has(g.id),
+  );
+  if (anyDeclinedUnreversed) return { ok: false, code: "GRN_REVERSAL_MISSING" };
+
+  /*
    * NOT dead code, and load-bearing: reachable only when every GRN on this PO
-   * is sub-cent. The check above already refused if any receipt worth at least
-   * a cent lacked its journal, so no journals at all means no receipt
-   * qualified. `postGrnJournal` legitimately posts nothing for those, so
+   * is sub-cent. The completeness check above already refused if any receipt
+   * worth at least a cent lacked its journal, so no journals at all means no
+   * receipt qualified. `postGrnJournal` legitimately posts nothing for those, so
    * nothing was ever booked and `NOTHING_TO_POST` is the honest answer. Without
    * this early return that PO would fall through to an empty `apLines` and be
    * reported as `AP_ACCOUNT_MISMATCH` — a mapping fault that does not exist.
