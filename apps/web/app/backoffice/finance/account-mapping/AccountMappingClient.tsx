@@ -73,13 +73,13 @@ export function AccountMappingClient({ mappings, accounts, canManage }: Props) {
         role,
         sorted.map((a) => ({
           value: a.id,
-          label: `${a.code} — ${a.name} (${a.type})`,
+          label: `${a.code} — ${a.name} (${tAccountType(a.type as never)})`,
           disabled: !validTypes.includes(a.type),
         })),
       );
     }
     return map;
-  }, [accounts]);
+  }, [accounts, tAccountType]);
 
   function handleSelect(role: PostingRole, chartAccountId: string) {
     if (byRole.get(role)?.chartAccountId === chartAccountId) return;
