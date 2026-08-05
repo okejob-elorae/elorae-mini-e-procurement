@@ -6,6 +6,8 @@ import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
 import { FileSpreadsheet, Upload, AlertCircle } from "lucide-react";
 import type { SettlementListRow } from "@/lib/finance/settlement/queries";
+/* Type-only: erased at compile, so the parser's xlsx dependency never reaches the client bundle. */
+import type { SettlementParseError } from "@/lib/finance/settlement/shopee-settlement-parser";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -59,7 +61,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
   const [fileInputKey, setFileInputKey] = useState(0);
   const [marketplace, setMarketplace] = useState<UploadMarketplace>("SHOPEE");
   const [uploading, setUploading] = useState(false);
-  const [uploadErrors, setUploadErrors] = useState<string[] | null>(null);
+  const [uploadErrors, setUploadErrors] = useState<SettlementParseError[] | null>(null);
   const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(null);
 
   const formatDate = (iso: string) =>
@@ -104,8 +106,11 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
       }
 
       if (res.status === 422) {
-        const data = (await res.json().catch(() => ({ errors: [] }))) as { errors?: string[] };
-        setUploadErrors(data.errors && data.errors.length > 0 ? data.errors : [t("uploadGenericError")]);
+        const data = (await res.json().catch(() => ({ errors: [] }))) as {
+          errors?: SettlementParseError[];
+        };
+        if (data.errors && data.errors.length > 0) setUploadErrors(data.errors);
+        else setUploadErrorMessage(t("uploadGenericError"));
         return;
       }
 
@@ -197,7 +202,14 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                 </p>
                 <ul className="list-inside list-disc space-y-0.5">
                   {uploadErrors.map((err, i) => (
-                    <li key={i}>{err}</li>
+                    <li key={i}>
+                      <span className="font-medium">
+                        {err.row !== null
+                          ? t("uploadErrorAtRow", { sheet: err.sheet, row: String(err.row) })
+                          : t("uploadErrorAtSheet", { sheet: err.sheet })}
+                      </span>
+                      {` — ${err.message}`}
+                    </li>
                   ))}
                 </ul>
               </div>

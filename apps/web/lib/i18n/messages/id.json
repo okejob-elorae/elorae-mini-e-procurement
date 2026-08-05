@@ -2626,6 +2626,8 @@
     "selectedFile": "Terpilih: {name}",
     "uploadSuccess": "Settlement berhasil diunggah — {lineCount} baris diproses",
     "uploadErrorsTitle": "File tidak dapat diproses",
+    "uploadErrorAtRow": "Sheet {sheet}, baris {row}",
+    "uploadErrorAtSheet": "Sheet {sheet}",
     "uploadGenericError": "Unggah gagal. Silakan coba lagi.",
     "uploadFailed": "Unggah gagal. Silakan coba lagi atau hubungi dukungan jika masalah berlanjut.",
     "colPeriod": "Periode",
