@@ -1,5 +1,5 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
-import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { generateAutoJournal, type AutoJournalLine, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { lineCostTotal, reconcileSplit } from "./van-journal-values";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
@@ -56,7 +56,7 @@ export async function postVanSaleJournal(
   const cogs = lineCostTotal(sale.lines.map((l) => ({ qty: num(l.qty), unitCost: num(l.unitCost) })));
   if (Math.abs(revenue) < 0.01 && Math.abs(cogs) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
 
-  const lines = [];
+  const lines: AutoJournalLine[] = [];
   if (Math.abs(revenue) >= 0.01) {
     lines.push({ role: "CASH" as const, debit: revenue, credit: 0 });
     lines.push({ role: "SALES_REVENUE" as const, debit: 0, credit: revenue });
@@ -102,8 +102,8 @@ export async function postVanReconcileJournal(
     })),
   );
 
-  const lines = [];
-  if (Math.abs(returned) >= 0.01) {
+  const lines: AutoJournalLine[] = [];
+  if (returned >= 0.01) {
     lines.push({ role: "INVENTORY" as const, debit: returned, credit: 0 });
     lines.push({ role: "INVENTORY_VAN" as const, debit: 0, credit: returned });
   }
