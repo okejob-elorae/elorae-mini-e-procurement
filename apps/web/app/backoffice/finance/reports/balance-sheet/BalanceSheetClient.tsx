@@ -43,10 +43,18 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
     startTransition(() => router.push("/backoffice/finance/reports/balance-sheet"));
   }
 
+  /**
+   * Pinned to WIB so the SSR pass (prod runs UTC) and the browser agree, and so
+   * this matches `formatOpeningDate` in `disclosures.ts`, which the print view
+   * and the Excel export use for the same warning.
+   */
   const formattedEarliest = openingWarningDate
-    ? new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
-        new Date(openingWarningDate),
-      )
+    ? new Intl.DateTimeFormat(locale, {
+        timeZone: "Asia/Jakarta",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }).format(new Date(openingWarningDate))
     : "";
 
   return (

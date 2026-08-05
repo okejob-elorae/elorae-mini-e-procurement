@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { parseDateOnlyEnd } from "@/lib/date-only";
+import { parseDateOnlyEnd, endOfTodayJakarta } from "@/lib/date-only";
 import { getAccountBalances, getEarliestJournal } from "@/lib/finance/reports/balances";
 import { buildBalanceSheet } from "@/lib/finance/reports/balance-sheet";
 import { BalanceSheetClient } from "./BalanceSheetClient";
@@ -22,7 +22,7 @@ export default async function BalanceSheetPage({ searchParams }: PageProps) {
   }
 
   const sp = await searchParams;
-  const asOf = parseDateOnlyEnd(sp.asOf ?? "") ?? new Date();
+  const asOf = parseDateOnlyEnd(sp.asOf ?? "") ?? endOfTodayJakarta();
 
   const [balances, earliest] = await Promise.all([
     getAccountBalances({ to: asOf }),

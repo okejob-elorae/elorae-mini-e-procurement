@@ -3,7 +3,7 @@
 import * as XLSX from "xlsx";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { parseDateOnly, parseDateOnlyEnd, formatDateOnlyJakarta } from "@/lib/date-only";
+import { parseDateOnly, parseDateOnlyEnd, formatDateOnlyJakarta, endOfTodayJakarta } from "@/lib/date-only";
 import { getAccountBalances, getEarliestJournal } from "@/lib/finance/reports/balances";
 import { buildTrialBalance, type TrialBalance } from "@/lib/finance/reports/trial-balance";
 import { buildIncomeStatement, type IncomeStatement } from "@/lib/finance/reports/income-statement";
@@ -65,7 +65,7 @@ async function loadTrialBalanceReport(input: {
   to?: string;
   includeZero?: boolean;
 }): Promise<TrialBalance & { periodLabel: string }> {
-  const to = parseDateOnlyEnd(input.to ?? "") ?? new Date();
+  const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(input.from ?? "");
   const balances = await getAccountBalances({ from, to });
   return {
@@ -78,7 +78,7 @@ async function loadIncomeStatementReport(input: {
   from?: string;
   to?: string;
 }): Promise<IncomeStatement & { periodLabel: string }> {
-  const to = parseDateOnlyEnd(input.to ?? "") ?? new Date();
+  const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(input.from ?? "");
   const balances = await getAccountBalances({ from, to });
   return { ...buildIncomeStatement(balances), periodLabel: rangeLabel(from, to) };
@@ -87,7 +87,7 @@ async function loadIncomeStatementReport(input: {
 async function loadBalanceSheetReport(input: {
   asOf?: string;
 }): Promise<BalanceSheet & { periodLabel: string; openingWarningDate: string | null }> {
-  const asOf = parseDateOnlyEnd(input.asOf ?? "") ?? new Date();
+  const asOf = parseDateOnlyEnd(input.asOf ?? "") ?? endOfTodayJakarta();
   const [balances, earliest] = await Promise.all([
     getAccountBalances({ to: asOf }),
     getEarliestJournal(),

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
+import { parseDateOnly, parseDateOnlyEnd, endOfTodayJakarta } from "@/lib/date-only";
 import { getAccountBalances } from "@/lib/finance/reports/balances";
 import { buildIncomeStatement } from "@/lib/finance/reports/income-statement";
 import { IncomeStatementClient } from "./IncomeStatementClient";
@@ -22,7 +22,7 @@ export default async function IncomeStatementPage({ searchParams }: PageProps) {
   }
 
   const sp = await searchParams;
-  const to = parseDateOnlyEnd(sp.to ?? "") ?? new Date();
+  const to = parseDateOnlyEnd(sp.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(sp.from ?? "");
 
   const balances = await getAccountBalances({ from, to });

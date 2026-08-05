@@ -30,8 +30,14 @@ async function resolveFeeAccount(role: MarketplaceFeeRole, client: AnyClient): P
   try {
     return await resolveAccount(role, client);
   } catch (e) {
-    if (e instanceof UnmappedRoleError) return await resolveAccount("MARKETPLACE_FEE", client);
-    throw e;
+    if (!(e instanceof UnmappedRoleError)) throw e;
+    try {
+      return await resolveAccount("MARKETPLACE_FEE", client);
+    } catch (fallbackError) {
+      /* Name the category the operator actually hit, not the fallback they never chose. */
+      if (fallbackError instanceof UnmappedRoleError) throw new UnmappedRoleError(role);
+      throw fallbackError;
+    }
   }
 }
 

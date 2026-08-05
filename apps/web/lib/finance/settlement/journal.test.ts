@@ -409,6 +409,30 @@ d("postSettlementJournal (test bed only)", () => {
     }
   });
 
+  it("reports the category role, not the legacy fallback, when both are unmapped", async () => {
+    const feeSplitSettlementId = await seedSettlementWithLines({
+      totalPendapatan: 10_000,
+      totalPengeluaran: -1_000,
+      totalDilepas: 9_000,
+      lines: [{ biayaAdministrasi: -1_000, biayaLayanan: 0, biayaKomisiAms: 0, biayaProsesPesanan: 0 }],
+    });
+    /* Neither the category the settlement hits nor the legacy fallback is mapped. */
+    await clearAccountMapping("MARKETPLACE_FEE_ADMIN");
+    await clearAccountMapping("MARKETPLACE_FEE");
+
+    try {
+      const res = await postSettlementJournal(feeSplitSettlementId, adminId, prisma);
+
+      expect(res).toMatchObject({
+        ok: false,
+        code: "UNMAPPED_ROLE",
+        role: "MARKETPLACE_FEE_ADMIN",
+      });
+    } finally {
+      await teardownSettlementJournal(feeSplitSettlementId);
+    }
+  });
+
   it("mixes fallback and directly-mapped fee accounts across the five roles", async () => {
     /*
      * ADMIN and SERVICE are unmapped (fall back to the legacy MARKETPLACE_FEE
