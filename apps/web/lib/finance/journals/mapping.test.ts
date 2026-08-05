@@ -69,7 +69,18 @@ d("mapping (test bed only)", () => {
 
   it("listAccountMappings returns all posting roles, mapped and unmapped", async () => {
     await prisma.journalAccountMapping.deleteMany({ where: { role: "TAX" } });
-    await setAccountMapping("TAX", leafId, prisma);
+    /*
+     * setAccountMapping now guards account type at the writer level, so it
+     * would reject this mapping. This test needs the exact bad state (TAX
+     * mapped to an ASET leaf) that the guard exists to prevent, in order to
+     * verify listAccountMappings reports it as a mismatch — bypass the
+     * guard with a direct upsert.
+     */
+    await prisma.journalAccountMapping.upsert({
+      where: { role: "TAX" },
+      create: { role: "TAX", chartAccountId: leafId },
+      update: { chartAccountId: leafId },
+    });
 
     const rows = await listAccountMappings();
     expect(rows.length).toBeGreaterThanOrEqual(9);

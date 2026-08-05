@@ -12,6 +12,13 @@ export class UnmappedRoleError extends Error {
   }
 }
 
+export class AccountTypeMismatchError extends Error {
+  constructor(public role: string, public accountType: string) {
+    super(`Account type "${accountType}" is not valid for posting role "${role}"`);
+    this.name = "AccountTypeMismatchError";
+  }
+}
+
 export type AccountMappingRow = {
   role: PostingRole;
   chartAccountId: string | null;
@@ -48,16 +55,33 @@ export async function listAccountMappings(): Promise<AccountMappingRow[]> {
 }
 
 /**
- * Unguarded — deliberately skips the role/account-type and postability checks
- * so test fixtures can map arbitrary accounts. `setAccountMappingAction`
- * (apps/web/app/actions/account-mapping.ts) is the validated entry point for
- * any user-facing write; call this directly only from tests.
+ * Validated write path for wiring a posting role to a chart account. Account
+ * type is enforced here — via `isAccountTypeValidForRole` — so the guard
+ * cannot be bypassed by a future caller that skips `setAccountMappingAction`
+ * (apps/web/app/actions/account-mapping.ts). Throws `AccountTypeMismatchError`
+ * on a type mismatch and a plain `Error` if `chartAccountId` does not resolve
+ * to an existing account, rather than upserting a dangling id.
+ *
+ * Postable-account validation (active + not-a-parent) deliberately stays out
+ * of this function and lives only in the action: it is a UI-level concern
+ * with its own `NON_POSTABLE_ACCOUNT` result code, and duplicating it here
+ * would add another query per call for no additional safety.
  */
 export async function setAccountMapping(
   role: PostingRole,
   chartAccountId: string,
   client: AnyClient = prisma,
 ): Promise<void> {
+  const account = await client.chartAccount.findUnique({
+    where: { id: chartAccountId },
+    select: { type: true },
+  });
+  if (!account) {
+    throw new Error(`Chart account "${chartAccountId}" not found`);
+  }
+  if (!isAccountTypeValidForRole(role, account.type as AccountType)) {
+    throw new AccountTypeMismatchError(role, account.type);
+  }
   await client.journalAccountMapping.upsert({
     where: { role },
     create: { role, chartAccountId },
