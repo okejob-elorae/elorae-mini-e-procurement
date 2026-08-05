@@ -31,7 +31,9 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 import { getPOById, getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
+import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
 import { logPrint } from '@/app/actions/audit';
 import { buildPOPrintHtml } from '@/lib/print/po-html';
 import { buildPOPaymentReceiptHtml } from '@/lib/print/po-payment-receipt-html';
@@ -96,6 +98,8 @@ export default function SupplierPaymentsPage() {
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
   const [printingPoId, setPrintingPoId] = useState<string | null>(null);
+  const [togglingPoId, setTogglingPoId] = useState<string | null>(null);
+  const tSupplierPayments = useTranslations('supplierPayments');
 
   const fetchSuppliers = async () => {
     try {
@@ -167,13 +171,33 @@ export default function SupplierPaymentsPage() {
   const paidCount = pos.filter((p) => p.paidAt).length;
   const unpaidCount = pos.filter((p) => !p.paidAt).length;
 
+  /**
+   * The toggle always commits, so the outcome — not the absence of a throw —
+   * decides what the operator is told. A journal failure means payables and bank
+   * were left untouched; reporting "Marked as paid" there is positive
+   * confirmation of something that did not happen, and the only other trace is an
+   * `AdminNotification` row nothing in the UI renders yet.
+   */
   const handleMarkPaid = async (poId: string, paid: boolean) => {
+    setTogglingPoId(poId);
     try {
-      await setPOPaidAt(poId, paid ? new Date() : null);
-      toast.success(paid ? 'Marked as paid' : 'Marked as unpaid');
+      const result = await setPOPaidAt(poId, paid ? new Date() : null);
+      if (result.journalFailure) {
+        toast.warning(
+          tSupplierPayments(
+            supplierPaymentJournalErrorKey(result.journalFailure.code) as never,
+            { role: result.journalFailure.role ?? '' }
+          ),
+          { duration: 12000 }
+        );
+      } else {
+        toast.success(paid ? 'Marked as paid' : 'Marked as unpaid');
+      }
       fetchPOs();
     } catch (e: any) {
       toast.error(e.message || 'Failed');
+    } finally {
+      setTogglingPoId(null);
     }
   };
 
@@ -499,12 +523,21 @@ export default function SupplierPaymentsPage() {
                           </DropdownMenuContent>
                         </DropdownMenu>
                         {po.paidAt ? (
-                          <Button variant="outline" size="sm" onClick={() => handleMarkPaid(po.id, false)}>
-                            Unmark
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={togglingPoId === po.id}
+                            onClick={() => handleMarkPaid(po.id, false)}
+                          >
+                            {togglingPoId === po.id ? 'Unmarking…' : 'Unmark'}
                           </Button>
                         ) : (
-                          <Button size="sm" onClick={() => handleMarkPaid(po.id, true)}>
-                            Mark paid
+                          <Button
+                            size="sm"
+                            disabled={togglingPoId === po.id}
+                            onClick={() => handleMarkPaid(po.id, true)}
+                          >
+                            {togglingPoId === po.id ? 'Marking…' : 'Mark paid'}
                           </Button>
                         )}
                       </div>

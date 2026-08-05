@@ -365,8 +365,23 @@ export async function getPOStats() {
   };
 }
 
+/**
+ * What the toggle did to the ledger, so the caller can tell the operator instead
+ * of reporting success for a payment nothing was posted for. `journalFailure` is
+ * null on the happy path AND on a benign no-op (an already-paid PO re-marked, or
+ * a reversal with no payment journal to undo).
+ *
+ * Only the code and the posting role cross to the client. The `detail` string a
+ * thrown journal carries is a raw server error message — it stays in the
+ * `AdminNotification` and the server log, where the operator's toast cannot leak
+ * it. A toast maps the code to its own remedy sentence anyway.
+ */
+export type SetPOPaidAtResult = {
+  journalFailure: { code: string; role: string | null } | null;
+};
+
 /** Mark a PO as paid (or unmark by passing paidAt: null). */
-export async function setPOPaidAt(poId: string, paidAt: Date | null) {
+export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<SetPOPaidAtResult> {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
@@ -476,4 +491,17 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
   revalidatePath('/backoffice/purchase-orders');
   revalidatePath('/backoffice/purchase-orders/[id]');
   revalidatePath('/backoffice/supplier-payments');
+
+  /**
+   * Returned, not thrown: a journal problem must still not fail the toggle, which
+   * has already committed and is the operator's own retry handle. The
+   * `AdminNotification` written above stays either way — the toast is immediate
+   * feedback for whoever clicked, the notification is the durable record for
+   * whoever audits later.
+   */
+  return {
+    journalFailure: outcome.failure
+      ? { code: outcome.failure.reason, role: outcome.failure.role }
+      : null,
+  };
 }

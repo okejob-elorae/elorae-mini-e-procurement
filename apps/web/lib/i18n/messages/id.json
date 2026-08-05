@@ -1102,7 +1102,19 @@
   "supplierPayments": {
     "unpaid": "Belum dibayar",
     "paid": "Sudah dibayar",
-    "noPOsMatchFilters": "Tidak ada PO yang sesuai filter."
+    "noPOsMatchFilters": "Tidak ada PO yang sesuai filter.",
+    "journal": {
+      "err": {
+        "GRN_APPROVAL_PENDING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang masih menunggu keputusan owner. Minta owner menyetujui atau menolak penerimaan itu dulu, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "GRN_JOURNALS_INCOMPLETE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang belum punya jurnal GRN. Posting jurnal GRN yang belum ada dari baris GRN-nya, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "GRN_REVERSAL_MISSING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan yang ditolak owner tapi jurnal GRN-nya belum dibalik. Posting jurnal pembalik dari baris GRN yang ditolak, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "AP_ACCOUNT_MISMATCH": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Penerimaan mencatat utang ke akun yang berbeda dari akun yang dipetakan ke peran AP sekarang. Periksa pemetaan akun AP di Pemetaan Akun, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "UNMAPPED_ROLE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Peran akun \"{role}\" belum dipetakan. Petakan di Pemetaan Akun, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "NOTHING_TO_POST": "PO ditandai lunas, tapi tidak ada utang yang tercatat di buku besar untuk PO ini, jadi tidak ada jurnal yang diposting — utang dan bank belum tersentuh. Pastikan PO ini memang layak ditandai lunas; kalau ada penerimaan yang belum dibuat, terima barangnya dulu, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "UNBALANCED": "Status bayar tersimpan, tapi jurnal pembayaran tidak balance (debit ≠ kredit) jadi tidak diposting — utang dan bank belum tersentuh. Periksa jurnal PO ini di Finance sebelum mencoba lagi.",
+        "GENERIC": "Status bayar tersimpan, tapi jurnal pembayaran gagal diposting karena kesalahan tak terduga — utang dan bank belum tersentuh. Periksa pemetaan akun Finance, lalu coba lagi."
+      }
+    }
   },
   "purchaseOrders": {
     "noPurchaseOrdersFound": "Tidak ada pesanan pembelian ditemukan",

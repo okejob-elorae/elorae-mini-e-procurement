@@ -1102,7 +1102,19 @@
   "supplierPayments": {
     "unpaid": "Unpaid",
     "paid": "Paid",
-    "noPOsMatchFilters": "No POs match the filters."
+    "noPOsMatchFilters": "No POs match the filters.",
+    "journal": {
+      "err": {
+        "GRN_APPROVAL_PENDING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts is still awaiting the owner's decision. Have the owner approve or decline it first, then unmark payment and mark it paid again.",
+        "GRN_JOURNALS_INCOMPLETE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts has no GRN journal. Post the missing GRN journal from its GRN row, then unmark payment and mark it paid again.",
+        "GRN_REVERSAL_MISSING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. A receipt was declined by the owner and its GRN journal was never reversed. Post the reversal journal from the declined GRN's row, then unmark payment and mark it paid again.",
+        "AP_ACCOUNT_MISMATCH": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The receipts booked their payable to a different account than the AP posting role now resolves to. Check the AP account mapping in Account Mapping, then unmark payment and mark it paid again.",
+        "UNMAPPED_ROLE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The posting role \"{role}\" is not mapped to an account. Map it in Account Mapping, then unmark payment and mark it paid again.",
+        "NOTHING_TO_POST": "The PO was marked paid, but no payable was found booked to the GL for it, so no journal was posted — payables and bank are both untouched. Confirm this PO should be marked paid at all; if a receipt is missing, receive it first, then unmark payment and mark it paid again.",
+        "UNBALANCED": "The payment status was saved, but the payment journal was unbalanced (debit ≠ credit) so it was not posted — payables and bank are both untouched. Check this PO's journals in Finance before trying again.",
+        "GENERIC": "The payment status was saved, but the payment journal failed to post because of an unexpected error — payables and bank are both untouched. Check the Finance account mapping, then try again."
+      }
+    }
   },
   "purchaseOrders": {
     "noPurchaseOrdersFound": "No purchase orders found",

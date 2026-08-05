@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { useTranslations } from 'next-intl';
 import { getPOById, changePOStatus, updatePO, setPOPaidAt } from '@/app/actions/purchase-orders';
+import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
 import { POForm } from '@/components/forms/POForm';
 import { ETABadge } from '@/components/ui/ETABadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,6 +66,40 @@ export default function PODetailPage() {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<'cancel' | 'update' | null>(null);
   const [pendingUpdateData, setPendingUpdateData] = useState<any>(null);
+  const [isTogglingPaid, setIsTogglingPaid] = useState(false);
+  const tSupplierPayments = useTranslations('supplierPayments');
+
+  /**
+   * The toggle always commits, so the outcome — not the absence of a throw —
+   * decides what the operator is told. A journal failure means payables and bank
+   * were left untouched; reporting "Marked as paid" there is positive
+   * confirmation of something that did not happen, and the only other trace is an
+   * `AdminNotification` row nothing in the UI renders yet.
+   */
+  const handlePaidToggle = async (next: Date | null) => {
+    if (!po) return;
+    setIsTogglingPaid(true);
+    try {
+      const result = await setPOPaidAt(po.id, next);
+      if (result.journalFailure) {
+        toast.warning(
+          tSupplierPayments(
+            supplierPaymentJournalErrorKey(result.journalFailure.code) as never,
+            { role: result.journalFailure.role ?? '' }
+          ),
+          { duration: 12000 }
+        );
+      } else {
+        toast.success(next != null ? 'Marked as paid' : 'Marked as unpaid');
+      }
+      const updated = await getPOById(po.id);
+      setPO(updated);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed');
+    } finally {
+      setIsTogglingPaid(false);
+    }
+  };
 
   useEffect(() => {
     if (params.id && typeof params.id === 'string') {
@@ -415,34 +451,20 @@ export default function PODetailPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={async () => {
-                        try {
-                          await setPOPaidAt(po.id, null);
-                          toast.success('Marked as unpaid');
-                          const updated = await getPOById(po.id);
-                          setPO(updated);
-                        } catch (e: any) {
-                          toast.error(e.message || 'Failed');
-                        }
-                      }}
+                      disabled={isTogglingPaid}
+                      onClick={() => handlePaidToggle(null)}
                     >
+                      {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Unmark paid
                     </Button>
                   ) : (
                     <Button
                       variant="default"
                       size="sm"
-                      onClick={async () => {
-                        try {
-                          await setPOPaidAt(po.id, new Date());
-                          toast.success('Marked as paid');
-                          const updated = await getPOById(po.id);
-                          setPO(updated);
-                        } catch (e: any) {
-                          toast.error(e.message || 'Failed');
-                        }
-                      }}
+                      disabled={isTogglingPaid}
+                      onClick={() => handlePaidToggle(new Date())}
                     >
+                      {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Mark as paid
                     </Button>
                   )}
