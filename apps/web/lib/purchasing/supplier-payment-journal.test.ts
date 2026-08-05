@@ -832,6 +832,79 @@ d("supplier payment journal (test bed only)", () => {
     }
   });
 
+  /*
+   * The reversal writer's own precondition, asserted here rather than left to the
+   * recovery action's state check: that check is a prelude a concurrent mark can
+   * commit across, and reversing a PAID PO's payment is the exact inverse of the
+   * inconsistency this writer repairs — payables owed again and bank restored for
+   * a PO the ERP shows as paid. Both halves are asserted, so the guard cannot be
+   * satisfied by simply refusing always.
+   */
+  it("postSupplierPaymentReversalJournal refuses PO_IS_PAID while the PO still reads paid, and posts once it does not", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: {
+        docNumber: `PO-TEST-${token}-18`,
+        supplierId,
+        createdById: userId,
+        paidAt: new Date("2026-07-01T00:00:00.000Z"),
+      },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-18`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 70_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      expect(await postSupplierPaymentJournal(po.id, userId, new Date("2026-07-01T00:00:00.000Z"), prisma)).toMatchObject({
+        ok: true,
+        created: true,
+      });
+
+      const refused = await postSupplierPaymentReversalJournal(po.id, userId, prisma);
+      expect(refused).toEqual({ ok: false, code: "PO_IS_PAID" });
+
+      /* Nothing written, so the payment still clears the payable it was posted
+         for — the state the paid PO is supposed to be in. */
+      expect(
+        await prisma.journal.findUnique({
+          where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: `${po.id}#1` } },
+        }),
+      ).toBeNull();
+      expect(
+        await apNetForSources(
+          [
+            { sourceType: "GRN", sourceId: grn.id },
+            { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` },
+          ],
+          accountIds.AP,
+        ),
+      ).toBe(0);
+
+      /* The same call once `paidAt` is null — the order the toggle's unmark uses
+         inside its own transaction — posts normally, so the guard gates on state
+         rather than blocking the reversal outright. */
+      await prisma.purchaseOrder.update({ where: { id: po.id }, data: { paidAt: null } });
+      expect(await postSupplierPaymentReversalJournal(po.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      expect(
+        await apNetForSources(
+          [
+            { sourceType: "GRN", sourceId: grn.id },
+            { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` },
+            { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: `${po.id}#1` },
+          ],
+          accountIds.AP,
+        ),
+      ).toBe(70_000);
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
   it("calling postSupplierPaymentJournal twice is idempotent", async () => {
     const po = await prisma.purchaseOrder.create({
       data: { docNumber: `PO-TEST-${token}-5`, supplierId, createdById: userId },
@@ -1372,8 +1445,12 @@ d("supplier payment journal (test bed only)", () => {
           ok: true,
           created: true,
         });
-        expect(await postSupplierPaymentReversalJournal(po.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+        /* `paidAt` is cleared BEFORE the reversal, in that order, because that is
+           the order the toggle uses — it clears `paidAt` and posts the reversal in
+           one transaction — and the writer refuses `PO_IS_PAID` for a PO that
+           still reads paid. */
         await prisma.purchaseOrder.update({ where: { id: po.id }, data: { paidAt: null } });
+        expect(await postSupplierPaymentReversalJournal(po.id, userId, prisma)).toMatchObject({ ok: true, created: true });
 
         /* The reversal bumped the generation past the payment it undid, so no
            payment stands at the current one — the ledger and `paidAt` agree. */

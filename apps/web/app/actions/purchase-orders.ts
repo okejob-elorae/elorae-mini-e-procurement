@@ -585,6 +585,21 @@ export type PostSupplierPaymentReversalActionResult =
  * notification ever being written, and one that stops being true the moment the
  * reversal posts, which makes it both stricter and self-clearing.
  *
+ * The check and the post run in ONE serializable transaction, for the same reason
+ * the paid toggle wraps its own pair: a check outside the write is only a prelude,
+ * and a concurrent `setPOPaidAt(paidAt)` can commit between the two. That window
+ * was real and it inverted the very bug this control repairs — the mark
+ * CAS-succeeds, treats the standing journal as an idempotent same-amount hit and
+ * reports a clean payment, then this action posts the reversal anyway, leaving the
+ * PO reading PAID with payables owed again and bank restored. Serializing the pair
+ * removes the window; `postSupplierPaymentReversalJournal`'s own `PO_IS_PAID`
+ * guard closes it a second time from inside, so the invariant does not rest on a
+ * non-atomic prelude in either layer. That guard is unreachable from here once the
+ * pair is serialized, which is why it is folded into `BAD_STATE` rather than given
+ * a code of its own on the wire: both mean "the state this control requires no
+ * longer holds", and the operator's next step — reload and look again — is the
+ * same.
+ *
  * `postSupplierPaymentReversalJournal` handles idempotency (keyed
  * `(SUPPLIER_PAYMENT_REVERSAL, poId#gen)`), so a double-click cannot double-post.
  * Returns a typed result instead of throwing, so the caller can name the failure
@@ -597,12 +612,16 @@ export async function postSupplierPaymentReversalJournalAction(
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
     return { ok: false, code: 'FORBIDDEN' };
   }
+  const postedById = session.user.id;
 
-  if (!(await hasStandingPaymentJournalWhileUnpaid(poId))) {
-    return { ok: false, code: 'BAD_STATE' };
-  }
-
-  const result = await postSupplierPaymentReversalJournal(poId, session.user.id);
+  const result = await runSerializable<PostSupplierPaymentReversalActionResult>(async (tx) => {
+    if (!(await hasStandingPaymentJournalWhileUnpaid(poId, tx))) {
+      return { ok: false, code: 'BAD_STATE' };
+    }
+    const posted = await postSupplierPaymentReversalJournal(poId, postedById, tx);
+    if (!posted.ok && posted.code === 'PO_IS_PAID') return { ok: false, code: 'BAD_STATE' };
+    return posted;
+  });
 
   revalidatePath('/backoffice/purchase-orders');
   revalidatePath(`/backoffice/purchase-orders/${poId}`);

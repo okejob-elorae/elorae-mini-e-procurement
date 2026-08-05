@@ -1,6 +1,6 @@
 import { prisma } from "@elorae/db";
 import { isRetryableTxError } from "@/lib/db/tx-retry";
-import type { PostSupplierPaymentResult } from "./supplier-payment-journal";
+import type { PostSupplierPaymentResult, PostSupplierPaymentReversalResult } from "./supplier-payment-journal";
 import type { SupplierPaymentDirection } from "./supplier-payment-journal-message";
 
 /* Re-exported, not redeclared: the canonical definition lives in the client-safe
@@ -69,10 +69,17 @@ const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
  * un-reversed returns `GRN_REVERSAL_MISSING`, and one still awaiting the owner's
  * approve-or-decline returns `GRN_APPROVAL_PENDING`, each carrying its own
  * remedy.
+ *
+ * Takes either writer's result because the toggle runs one of the two by
+ * direction. `PO_IS_PAID` is in the reversal writer's union but unreachable from
+ * here: the unmark branch clears `paidAt` in the same transaction before posting,
+ * so the guard that raises it always sees null. It stays in the accepted type
+ * rather than being cast away, so a future caller that DOES hit it gets a
+ * classified failure instead of a type error.
  */
 export async function attemptSupplierPaymentJournal(
   direction: SupplierPaymentDirection,
-  post: () => Promise<PostSupplierPaymentResult>,
+  post: () => Promise<PostSupplierPaymentResult | PostSupplierPaymentReversalResult>,
 ): Promise<SupplierPaymentPostFailure | null> {
   try {
     const res = await post();

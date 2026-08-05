@@ -413,11 +413,56 @@ export async function hasStandingPaymentJournalWhileUnpaid(
   return standing != null;
 }
 
+/**
+ * `PO_IS_PAID` is the reversal's own precondition: the PO reads PAID, so its
+ * payment journal is supposed to be standing and undoing it would leave the
+ * ledger saying the opposite of the PO — payables owed again and bank restored
+ * for a purchase order the ERP shows as paid. That is the exact inverse of the
+ * inconsistency this writer exists to repair, so it is refused rather than
+ * posted.
+ *
+ * Its own code rather than `NOTHING_TO_POST` because the remedy is opposite:
+ * nothing-to-reverse means the payment never posted and there is nothing to do,
+ * while this means the payment posted and is CORRECT — the caller wanted a
+ * reversal for a state that no longer holds, and unmarking the PO is the only
+ * thing that could legitimately make one due.
+ */
+export type PostSupplierPaymentReversalResult =
+  | GenerateAutoJournalResult
+  | { ok: false; code: "PO_IS_PAID" };
+
 export async function postSupplierPaymentReversalJournal(
   poId: string,
   postedById: string,
   client: AnyClient = prisma,
-): Promise<GenerateAutoJournalResult> {
+): Promise<PostSupplierPaymentReversalResult> {
+  /*
+   * Read FIRST, before the generation and the standing-payment lookup, because a
+   * paid PO must not have its payment reversed no matter what those two say. The
+   * caller's own state check is not enough on its own: the recovery action reads
+   * `hasStandingPaymentJournalWhileUnpaid` and then calls this, and a check
+   * outside this writer can only be trusted while the pair runs in one
+   * serializable transaction. This guard makes the invariant hold even if a
+   * future caller forgets that.
+   *
+   * Safe for the paid toggle, which is the only other caller: its unmark branch
+   * sets `paidAt = null` with `updateMany` and then calls this INSIDE the same
+   * transaction, so this read sees its own uncommitted write and finds null. The
+   * mark branch never calls this at all.
+   *
+   * A PO row that does not exist is deliberately NOT this code — `paidAt` cannot
+   * be "set" for a row that is absent, and the standing-payment lookup below
+   * already answers that case with `NOTHING_TO_POST`.
+   *
+   * `docNumber` is taken from the same read the guard needs, so the description
+   * costs no extra query.
+   */
+  const po = await client.purchaseOrder.findUnique({
+    where: { id: poId },
+    select: { docNumber: true, paidAt: true },
+  });
+  if (po?.paidAt != null) return { ok: false, code: "PO_IS_PAID" };
+
   const gen = await currentGeneration(poId, client);
   const sourceId = `${poId}#${gen}`;
 
@@ -445,8 +490,6 @@ export async function postSupplierPaymentReversalJournal(
   /* Zero-value guard only, on the mirrored journal's debits as a whole — see
      `totalDebitCents` for why summing the whole journal is the right read. */
   if (totalDebitCents(lines) < 1) return { ok: false, code: "NOTHING_TO_POST" };
-
-  const po = await client.purchaseOrder.findUnique({ where: { id: poId }, select: { docNumber: true } });
 
   try {
     /* Dated to the payment it reverses, not today: marking on 31 Aug and
