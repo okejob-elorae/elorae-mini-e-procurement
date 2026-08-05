@@ -23,7 +23,7 @@ export async function postVanLoadJournal(
   if (!load) return { ok: false, code: "NOTHING_TO_POST" };
 
   const value = lineCostTotal(load.lines.map((l) => ({ qty: num(l.qty), unitCost: num(l.unitCost) })));
-  if (Math.abs(value) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
+  if (value < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
 
   return generateAutoJournal(
     client,
@@ -54,14 +54,14 @@ export async function postVanSaleJournal(
 
   const revenue = num(sale.total);
   const cogs = lineCostTotal(sale.lines.map((l) => ({ qty: num(l.qty), unitCost: num(l.unitCost) })));
-  if (Math.abs(revenue) < 0.01 && Math.abs(cogs) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
+  if (revenue < 0.01 && cogs < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
 
   const lines: AutoJournalLine[] = [];
-  if (Math.abs(revenue) >= 0.01) {
+  if (revenue >= 0.01) {
     lines.push({ role: "CASH" as const, debit: revenue, credit: 0 });
     lines.push({ role: "SALES_REVENUE" as const, debit: 0, credit: revenue });
   }
-  if (Math.abs(cogs) >= 0.01) {
+  if (cogs >= 0.01) {
     lines.push({ role: "COGS" as const, debit: cogs, credit: 0 });
     lines.push({ role: "INVENTORY_VAN" as const, debit: 0, credit: cogs });
   }
