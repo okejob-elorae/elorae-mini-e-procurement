@@ -91,14 +91,6 @@ type PayableLookup =
  * priced differently from the order.
  */
 async function poBookedPayable(poId: string, client: AnyClient): Promise<PayableLookup> {
-  let apAccountId: string;
-  try {
-    apAccountId = await resolveAccount("AP", client);
-  } catch (e) {
-    if (e instanceof UnmappedRoleError) return { ok: false, code: "UNMAPPED_ROLE", role: "AP" };
-    throw e;
-  }
-
   const grns = await client.gRN.findMany({
     where: { poId },
     select: {
@@ -109,7 +101,27 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
       ownerDeclinedAt: true,
     },
   });
+
+  /*
+   * Answered BEFORE the AP role is resolved, deliberately. A PO with no receipts
+   * at all has no payable to read on ANY account, so the mapping cannot change
+   * this verdict — and reporting `UNMAPPED_ROLE` for it would hand the operator a
+   * remedy that does not work: map the account, unmark, re-mark, and the same PO
+   * comes back `NOTHING_TO_POST` anyway. Same standard the notification dedup
+   * holds itself to — a report that sends someone to do work which cannot resolve
+   * their case is worse than a vaguer one. A PO that DOES have receipts still
+   * reports the unmapped role, from the resolve below, because there the mapping
+   * genuinely is what stands between it and a posted payment.
+   */
   if (grns.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
+
+  let apAccountId: string;
+  try {
+    apAccountId = await resolveAccount("AP", client);
+  } catch (e) {
+    if (e instanceof UnmappedRoleError) return { ok: false, code: "UNMAPPED_ROLE", role: "AP" };
+    throw e;
+  }
 
   /*
    * Refuse while ANY receipt of this PO can still be declined by the owner. An

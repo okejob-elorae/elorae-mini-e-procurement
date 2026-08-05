@@ -969,6 +969,41 @@ d("supplier payment journal (test bed only)", () => {
     }
   });
 
+  /*
+   * The complement of the case above, and the reason the AP role is resolved after
+   * the receipts are read: with no receipts there is nothing to pay on any
+   * account, so `UNMAPPED_ROLE` would send the operator to map an account and come
+   * back to the very same refusal. The verdict has to be the one that survives the
+   * mapping being fixed.
+   */
+  it("a PO with no receipts returns NOTHING_TO_POST even while AP is unmapped, not a mapping remedy it cannot use", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-19`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+
+    try {
+      await prisma.journalAccountMapping.deleteMany({ where: { role: "AP" } });
+      try {
+        const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-07-02T00:00:00.000Z"), prisma);
+        expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+      } finally {
+        await setAccountMapping("AP", accountIds.AP);
+      }
+
+      /* And the verdict is unchanged once the mapping is back — which is exactly
+         why reporting the mapping would have been the wrong remedy. */
+      expect(await postSupplierPaymentJournal(po.id, userId, new Date("2026-07-02T00:00:00.000Z"), prisma)).toEqual({
+        ok: false,
+        code: "NOTHING_TO_POST",
+      });
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
   it("a remapped AP account after GRN journals were posted returns AP_ACCOUNT_MISMATCH, not a silent NOTHING_TO_POST", async () => {
     const po = await prisma.purchaseOrder.create({
       data: { docNumber: `PO-TEST-${token}-7`, supplierId, createdById: userId },
