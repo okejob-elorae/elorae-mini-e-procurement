@@ -1103,6 +1103,10 @@
     "unpaid": "Unpaid",
     "paid": "Paid",
     "noPOsMatchFilters": "No POs match the filters.",
+    "noop": {
+      "alreadyPaid": "This PO was already marked paid — nothing changed and no journal was posted. If the earlier mark's payment journal never posted, unmark payment and mark it paid again.",
+      "alreadyUnpaid": "This PO was already marked unpaid — nothing changed and no journal was posted. If its reversal journal never posted, check this PO's journals in Finance."
+    },
     "journal": {
       "err": {
         "GRN_APPROVAL_PENDING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts is still awaiting the owner's decision. Have the owner approve or decline it first, then unmark payment and mark it paid again.",

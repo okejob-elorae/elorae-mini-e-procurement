@@ -367,9 +367,19 @@ export async function getPOStats() {
 
 /**
  * What the toggle did to the ledger, so the caller can tell the operator instead
- * of reporting success for a payment nothing was posted for. `journalFailure` is
- * null on the happy path AND on a benign no-op (an already-paid PO re-marked, or
- * a reversal with no payment journal to undo).
+ * of reporting success for a payment nothing was posted for.
+ *
+ * `changed` is the compare-and-swap's own verdict: false means the PO was
+ * ALREADY in the requested state, so no `paidAt` write, no status history, no
+ * notification and — critically — no journal happened. It has to cross to the
+ * client because a no-op is otherwise indistinguishable from a real toggle, and
+ * the two states where it matters are exactly the dangerous ones: a first mark
+ * that committed `paidAt` but failed to post, then re-marked from a stale tab,
+ * would be reported as a clean payment while the ledger gap persists.
+ *
+ * `journalFailure` is null on the happy path, on a no-op (nothing was attempted)
+ * AND on a reversal with no payment journal to undo, which is a genuine no-op on
+ * the ledger.
  *
  * Only the code and the posting role cross to the client. The `detail` string a
  * thrown journal carries is a raw server error message — it stays in the
@@ -377,6 +387,7 @@ export async function getPOStats() {
  * it. A toast maps the code to its own remedy sentence anyway.
  */
 export type SetPOPaidAtResult = {
+  changed: boolean;
   journalFailure: { code: string; role: string | null } | null;
 };
 
@@ -528,6 +539,7 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
    * whoever audits later.
    */
   return {
+    changed: outcome.changed,
     journalFailure: outcome.failure
       ? { code: outcome.failure.reason, role: outcome.failure.role }
       : null,

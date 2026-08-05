@@ -1103,6 +1103,10 @@
     "unpaid": "Belum dibayar",
     "paid": "Sudah dibayar",
     "noPOsMatchFilters": "Tidak ada PO yang sesuai filter.",
+    "noop": {
+      "alreadyPaid": "PO ini sudah bertanda lunas — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembayaran dari penandaan sebelumnya belum terposting, batalkan tanda lunas dan tandai lunas lagi.",
+      "alreadyUnpaid": "PO ini sudah bertanda belum dibayar — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembaliknya belum terposting, periksa jurnal PO ini di Finance."
+    },
     "journal": {
       "err": {
         "GRN_APPROVAL_PENDING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang masih menunggu keputusan owner. Minta owner menyetujui atau menolak penerimaan itu dulu, lalu batalkan tanda lunas dan tandai lunas lagi.",

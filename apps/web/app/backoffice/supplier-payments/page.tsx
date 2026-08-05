@@ -180,12 +180,25 @@ export default function SupplierPaymentsPage() {
    * positive confirmation of something that did not happen, and the only other
    * trace is an `AdminNotification` row nothing in the UI renders yet. Which of
    * the two it is, and the remedy, come from the code's own message.
+   *
+   * `changed: false` is checked FIRST and never reported as success: the PO was
+   * already in the requested state, so nothing was written and no journal was
+   * attempted. Green-toasting that is the same lie as green-toasting a failed
+   * post — worse from a stale list, where a re-mark whose first attempt left a
+   * ledger gap would read as a fresh clean payment. The neutral toast names the
+   * state the PO is actually in and points at the only remedy that reopens a
+   * journal attempt.
    */
   const handleMarkPaid = async (poId: string, paid: boolean) => {
     setTogglingPoId(poId);
     try {
       const result = await setPOPaidAt(poId, paid ? new Date() : null);
-      if (result.journalFailure) {
+      if (!result.changed) {
+        toast.info(
+          tSupplierPayments(paid ? 'noop.alreadyPaid' : 'noop.alreadyUnpaid'),
+          { duration: 10000 }
+        );
+      } else if (result.journalFailure) {
         toast.warning(
           tSupplierPayments(
             supplierPaymentJournalErrorKey(result.journalFailure.code) as never,
