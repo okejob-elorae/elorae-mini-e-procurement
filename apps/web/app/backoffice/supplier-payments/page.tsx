@@ -202,16 +202,20 @@ export default function SupplierPaymentsPage() {
           { duration: 10000 }
         );
       } else if (result.journalFailure) {
-        toast.warning(
-          tSupplierPayments(
-            supplierPaymentJournalErrorKey(
-              result.journalFailure.code,
-              result.journalFailure.direction
-            ) as never,
-            { role: result.journalFailure.role ?? '' }
-          ),
-          { duration: 12000 }
-        );
+        const failure = result.journalFailure;
+        /*
+         * `UNMAPPED_ROLE` is the only one of these messages that interpolates a
+         * value, so it is resolved from its literal key to keep next-intl's
+         * parameter typing intact. Passing values alongside the computed key
+         * would widen the whole call to `never` and drop that check.
+         */
+        const warning =
+          failure.code === 'UNMAPPED_ROLE'
+            ? tSupplierPayments('journal.err.UNMAPPED_ROLE', { role: failure.role ?? '' })
+            : tSupplierPayments(
+                supplierPaymentJournalErrorKey(failure.code, failure.direction) as never
+              );
+        toast.warning(warning, { duration: 12000 });
       } else {
         toast.success(paid ? 'Marked as paid' : 'Marked as unpaid');
       }
