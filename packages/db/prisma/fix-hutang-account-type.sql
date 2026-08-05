@@ -36,18 +36,25 @@
 -- ============================================================================
 
 -- 1. Find the target by code AND by a name that merely looks like Hutang, so a
---    rename doesn't hide the account from you.
+--    rename doesn't hide the account from you. The pattern is deliberately
+--    broad — it is meant to catch a payables account hand-created under a
+--    different name, not to return exactly one row.
 SELECT id, code, name, type, parentId, depth
 FROM ChartAccount
 WHERE code = '13' OR name LIKE '%utang%';
--- Expect: one row, code = '13', name = 'Hutang', type = 'ASET'. That is the
--- exact row THE UPDATE's WHERE clause targets.
+-- Expect: SEVERAL rows on any real chart, not one. `Piutang` (receivables)
+-- and `Utang Lancar` (code '21', the seeded liability leaf that always
+-- exists) both match the `%utang%` substring and are expected noise —
+-- ignore them. Locate the row with `code = '13'` among the hits; on an
+-- unfixed environment that is `name = 'Hutang', type = 'ASET'`, the exact
+-- row THE UPDATE's WHERE clause targets.
 -- If a row already shows code = '2101' / type = 'LIABILITAS', this script
 -- already ran here — stop, nothing to do.
 -- If the `code = '13'` row exists but its `name` is NOT exactly `Hutang`
 -- (e.g. `Hutang Usaha`), THE UPDATE's `name = 'Hutang'` predicate will not
 -- match it and will silently affect 0 rows. Do not loosen the predicate on
--- your own judgment — confirm identity with query 2, then see the note at
+-- your own judgment, and do not identify the target by name alone — confirm
+-- identity with query 2 (the AP mapping join) instead, then see the note at
 -- the bottom of this file for how to proceed.
 
 -- 2. Whichever account the AP posting role is actually mapped to today. This
