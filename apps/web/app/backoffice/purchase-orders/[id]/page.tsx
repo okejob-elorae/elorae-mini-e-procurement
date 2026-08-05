@@ -4,7 +4,13 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
-import { getPOById, changePOStatus, updatePO, setPOPaidAt } from '@/app/actions/purchase-orders';
+import {
+  getPOById,
+  changePOStatus,
+  updatePO,
+  setPOPaidAt,
+  postSupplierPaymentReversalJournalAction,
+} from '@/app/actions/purchase-orders';
 import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
 import { POForm } from '@/components/forms/POForm';
 import { ETABadge } from '@/components/ui/ETABadge';
@@ -19,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer } from 'lucide-react';
+import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer, AlertTriangle } from 'lucide-react';
 import { buildPOPrintHtml } from '@/lib/print/po-html';
 import { variantDetailForSku } from '@/lib/items/variants';
 import { logPrint } from '@/app/actions/audit';
@@ -67,6 +73,7 @@ export default function PODetailPage() {
   const [pendingAction, setPendingAction] = useState<'cancel' | 'update' | null>(null);
   const [pendingUpdateData, setPendingUpdateData] = useState<any>(null);
   const [isTogglingPaid, setIsTogglingPaid] = useState(false);
+  const [isPostingReversal, setIsPostingReversal] = useState(false);
   const tSupplierPayments = useTranslations('supplierPayments');
 
   /**
@@ -114,6 +121,42 @@ export default function PODetailPage() {
       toast.error(e.message || 'Failed');
     } finally {
       setIsTogglingPaid(false);
+    }
+  };
+
+  /**
+   * Posts the reversal a failed unmark left missing. The banner this hangs off
+   * is the only place the state is visible, and the toggle cannot reach it — see
+   * `postSupplierPaymentReversalJournalAction` for why this control is a
+   * deliberate exception to the "the toggle IS the retry" rule.
+   *
+   * Every non-ok outcome is named rather than collapsed into one "failed": a
+   * refused permission, a state that no longer holds (someone else posted the
+   * reversal, or re-marked the PO, between the page load and the click) and a
+   * journal that could not post are three different next steps.
+   */
+  const handlePostMissingReversal = async () => {
+    if (!po) return;
+    setIsPostingReversal(true);
+    try {
+      const result = await postSupplierPaymentReversalJournalAction(po.id);
+      if (result.ok) {
+        toast.success(tSupplierPayments('standingPayment.posted'));
+      } else if (result.code === 'FORBIDDEN') {
+        toast.error(tSupplierPayments('standingPayment.errForbidden'));
+      } else if (result.code === 'BAD_STATE') {
+        toast.info(tSupplierPayments('standingPayment.errBadState'), { duration: 10000 });
+      } else {
+        toast.warning(tSupplierPayments('standingPayment.errFailed', { code: result.code }), {
+          duration: 12000,
+        });
+      }
+      const updated = await getPOById(po.id);
+      setPO(updated);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed');
+    } finally {
+      setIsPostingReversal(false);
     }
   };
 
@@ -230,6 +273,10 @@ export default function PODetailPage() {
     return null;
   }
 
+  const canPostJournal = hasPermission(
+    session?.user?.permissions ?? [],
+    PERMISSIONS.JOURNALS_MANAGE
+  );
   const canEdit = po.status === 'DRAFT';
   const canEditPosted =
     po.status === 'SUBMITTED' ||
@@ -354,6 +401,35 @@ export default function PODetailPage() {
           )}
         </div>
       </div>
+
+      {po.paymentJournalStandingWhileUnpaid && (
+        <Card className="flex-row items-start gap-3 border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" />
+          <div className="flex-1 space-y-2">
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              {tSupplierPayments('standingPayment.title')}
+            </p>
+            <p className="text-sm text-amber-700/90 dark:text-amber-400/90">
+              {tSupplierPayments('standingPayment.body')}
+            </p>
+            {canPostJournal ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isPostingReversal}
+                onClick={handlePostMissingReversal}
+              >
+                {isPostingReversal && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {tSupplierPayments('standingPayment.action')}
+              </Button>
+            ) : (
+              <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                {tSupplierPayments('standingPayment.needsPermission')}
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
 
       {Array.isArray(po.chainSnapshot) && po.chainSnapshot.length > 0 && (
         <ChainPositionStrip

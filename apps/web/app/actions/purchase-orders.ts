@@ -7,7 +7,7 @@ import { generateDocNumber } from '@/lib/docNumber';
 import { POStatus } from '@elorae/db';
 import { poSchema } from '@/lib/validations';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
-import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { hasPermission, requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { getActorName, notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/app/actions/notifications';
@@ -16,9 +16,11 @@ import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/quer
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
 import {
+  hasStandingPaymentJournalWhileUnpaid,
   postSupplierPaymentJournal,
   postSupplierPaymentReversalJournal,
 } from '@/lib/purchasing/supplier-payment-journal';
+import type { GenerateAutoJournalResult } from '@/lib/finance/journal';
 import {
   attemptSupplierPaymentJournal,
   notifySupplierPaymentJournalFailure,
@@ -441,7 +443,9 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
    * not poison the surrounding transaction. The exception is a deadlock or
    * serialization abort, which MariaDB has already rolled back — that one
    * rethrows so `runSerializable` retries the toggle and the post together.
-   * There is still no retry button because the toggle IS the retry.
+   * A failed PAYMENT needs no retry button because the toggle IS the retry; a
+   * failed REVERSAL is the one case the toggle cannot re-reach, and it has its
+   * own control (`postSupplierPaymentReversalJournalAction`).
    */
   const outcome = await runSerializable<{ changed: boolean; failure: SupplierPaymentPostFailure | null }>(
     async (tx) => {
@@ -468,9 +472,9 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
      * has already failed; if the history insert went first and threw — a
      * transient DB error, an FK, anything — nothing would be flagged anywhere.
      * The PO would read paid with no payment journal, no `JOURNAL_PENDING` row,
-     * and a re-mark would be a CAS no-op because `paidAt` is already set, so the
-     * operator's obvious retry does nothing and nothing tells them to unmark
-     * first.
+     * and a re-mark would be a CAS no-op because `paidAt` is already set — that
+     * no-op is now reported as one instead of as a payment, but it still posts
+     * nothing, so nothing but this row would tell them to unmark first.
      *
      * The history insert below is now guarded too, so on its own that guard would
      * also keep this reachable in either order. The ordering stays as the outer
@@ -544,4 +548,57 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
       ? { code: outcome.failure.reason, role: outcome.failure.role }
       : null,
   };
+}
+
+export type PostSupplierPaymentReversalActionResult =
+  | GenerateAutoJournalResult
+  | { ok: false; code: 'FORBIDDEN' | 'BAD_STATE' };
+
+/**
+ * Posts the reversal a failed unmark never posted, for a PO that reads unpaid
+ * while its payment journal still stands.
+ *
+ * A DELIBERATE exception to this flow's "no retry button because the toggle IS
+ * the retry" rule, not an inconsistency with it. That rule holds wherever the
+ * toggle can reach the missing post again; it cannot reach this one. From unpaid
+ * the UI only offers "Mark paid", and marking either returns
+ * `PAYMENT_SUPERSEDED` (once the payable has moved) or an idempotent hit on the
+ * journal already standing — so the mark/unmark dance can be blocked outright,
+ * and even when it is not it never posts the reversal that is actually missing.
+ * Without this action the operator has no way out through the UI at all.
+ *
+ * The state check is server-side and re-read here, mirroring the van journal
+ * retries (`postVanSaleJournalAction` and siblings): the warning banner's
+ * visibility on the PO detail page is not a guard, because every export of a
+ * `"use server"` module is an independently callable endpoint reachable by
+ * anyone holding `journals:manage`. Do not remove it as "redundant" with the UI
+ * condition. Unlike the van retries the evidence is the LEDGER STATE, not a
+ * `JOURNAL_PENDING` notification — a state a mark/unmark can reach without any
+ * notification ever being written, and one that stops being true the moment the
+ * reversal posts, which makes it both stricter and self-clearing.
+ *
+ * `postSupplierPaymentReversalJournal` handles idempotency (keyed
+ * `(SUPPLIER_PAYMENT_REVERSAL, poId#gen)`), so a double-click cannot double-post.
+ * Returns a typed result instead of throwing, so the caller can name the failure
+ * the same way the toggle's own outcome is named.
+ */
+export async function postSupplierPaymentReversalJournalAction(
+  poId: string
+): Promise<PostSupplierPaymentReversalActionResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: 'FORBIDDEN' };
+  }
+
+  if (!(await hasStandingPaymentJournalWhileUnpaid(poId))) {
+    return { ok: false, code: 'BAD_STATE' };
+  }
+
+  const result = await postSupplierPaymentReversalJournal(poId, session.user.id);
+
+  revalidatePath('/backoffice/purchase-orders');
+  revalidatePath(`/backoffice/purchase-orders/${poId}`);
+  revalidatePath('/backoffice/supplier-payments');
+
+  return result;
 }

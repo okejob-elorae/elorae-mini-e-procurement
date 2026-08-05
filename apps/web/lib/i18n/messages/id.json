@@ -1105,7 +1105,17 @@
     "noPOsMatchFilters": "Tidak ada PO yang sesuai filter.",
     "noop": {
       "alreadyPaid": "PO ini sudah bertanda lunas — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembayaran dari penandaan sebelumnya belum terposting, batalkan tanda lunas dan tandai lunas lagi.",
-      "alreadyUnpaid": "PO ini sudah bertanda belum dibayar — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembaliknya belum terposting, periksa jurnal PO ini di Finance."
+      "alreadyUnpaid": "PO ini sudah bertanda belum dibayar — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembaliknya belum terposting, PO ini akan menampilkan peringatan pembayaran menggantung beserta tombol untuk memposting pembaliknya."
+    },
+    "standingPayment": {
+      "title": "Jurnal pembayaran masih berdiri padahal PO ini belum ditandai lunas",
+      "body": "Tanda lunas PO ini sudah dibatalkan, tapi jurnal pembaliknya gagal diposting, jadi jurnal pembayarannya masih berdiri di buku besar: utang sudah dihapus dan bank sudah dikredit untuk PO yang sekarang berstatus belum dibayar. Menandai lunas lagi tidak akan memperbaikinya — posting jurnal pembaliknya dari sini.",
+      "action": "Posting jurnal pembalik",
+      "needsPermission": "Butuh izin journals:manage untuk memposting jurnal pembalik ini. Minta pengguna Finance melakukannya dari halaman PO ini.",
+      "posted": "Jurnal pembalik diposting. Buku besar sudah sesuai dengan status belum dibayar PO ini.",
+      "errForbidden": "Anda tidak punya izin journals:manage untuk memposting jurnal pembalik.",
+      "errBadState": "PO ini sudah tidak dalam kondisi tersebut — jurnal pembaliknya sudah diposting atau PO-nya sudah ditandai lunas lagi. Halaman sudah dimuat ulang.",
+      "errFailed": "Jurnal pembalik gagal diposting ({code}). Periksa pemetaan akun dan jurnal PO ini di Finance, lalu coba lagi."
     },
     "journal": {
       "err": {
@@ -1113,7 +1123,7 @@
         "GRN_JOURNALS_INCOMPLETE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang belum punya jurnal GRN. Posting jurnal GRN yang belum ada dari baris GRN-nya, lalu batalkan tanda lunas dan tandai lunas lagi.",
         "GRN_REVERSAL_MISSING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan yang ditolak owner tapi jurnal GRN-nya belum dibalik. Posting jurnal pembalik dari baris GRN yang ditolak, lalu batalkan tanda lunas dan tandai lunas lagi.",
         "AP_ACCOUNT_MISMATCH": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Penerimaan mencatat utang ke akun yang berbeda dari akun yang dipetakan ke peran AP sekarang. Periksa pemetaan akun AP di Pemetaan Akun, lalu batalkan tanda lunas dan tandai lunas lagi.",
-        "PAYMENT_SUPERSEDED": "Status bayar tersimpan, tapi jurnal pembayaran dari penandaan sebelumnya masih berdiri dengan nilai yang berbeda dari utang PO ini sekarang, jadi tidak ada jurnal baru yang diposting. Di sini utang dan bank BUKAN belum tersentuh — keduanya masih memuat pembayaran lama itu, yang sudah tidak lagi menutup utang PO ini. Batalkan tanda lunas, pastikan di Finance jurnal pembaliknya benar-benar terposting kali ini, lalu tandai lunas lagi.",
+        "PAYMENT_SUPERSEDED": "Status bayar tersimpan, tapi jurnal pembayaran dari penandaan sebelumnya masih berdiri dengan nilai yang berbeda dari utang PO ini sekarang, jadi tidak ada jurnal baru yang diposting. Di sini utang dan bank BUKAN belum tersentuh — keduanya masih memuat pembayaran lama itu, yang sudah tidak lagi menutup utang PO ini. Batalkan tanda lunas, pastikan di Finance jurnal pembaliknya benar-benar terposting kali ini, lalu tandai lunas lagi. Kalau pembaliknya gagal lagi, PO ini akan menampilkan peringatan pembayaran menggantung beserta tombol untuk memposting pembaliknya langsung.",
         "UNMAPPED_ROLE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Peran akun \"{role}\" belum dipetakan. Petakan di Pemetaan Akun, lalu batalkan tanda lunas dan tandai lunas lagi.",
         "NOTHING_TO_POST": "PO ditandai lunas, tapi tidak ada utang yang tercatat di buku besar untuk PO ini, jadi tidak ada jurnal yang diposting — utang dan bank belum tersentuh. Pastikan PO ini memang layak ditandai lunas; kalau ada penerimaan yang belum dibuat, terima barangnya dulu, lalu batalkan tanda lunas dan tandai lunas lagi.",
         "UNBALANCED": "Status bayar tersimpan, tapi jurnal pembayaran tidak balance (debit ≠ kredit) jadi tidak diposting — utang dan bank belum tersentuh. Periksa jurnal PO ini di Finance sebelum mencoba lagi.",

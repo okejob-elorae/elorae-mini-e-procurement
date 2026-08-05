@@ -56,7 +56,9 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * telling the operator it went through. Its own code because the remedy is
  * neither a mapping nor a missing GRN journal: the standing payment journal has
  * to be reversed — unmark again, and confirm the reversal actually posted this
- * time — before this payment can post at its real amount.
+ * time — before this payment can post at its real amount. If that reversal fails
+ * again, `hasStandingPaymentJournalWhileUnpaid` flags the PO and the reversal can
+ * be posted directly from the detail page's standing-payment warning.
  *
  * The first four stay distinct from the genuinely benign zero cases — no GRNs at
  * all (an advance payment), no GRN that could ever book a payable (each one
@@ -289,7 +291,10 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
  * land on a payment journal standing for a stale amount. That is why the caller
  * does not trust `created: false` on its own and compares amounts
  * (`PAYMENT_SUPERSEDED`); the fix belongs there rather than in this count, since
- * counting payments to close it would reopen the duplicate-on-retry hole.
+ * counting payments to close it would reopen the duplicate-on-retry hole. The
+ * same property is what makes `hasStandingPaymentJournalWhileUnpaid` a one-query
+ * test: while a reversal is missing, the generation still points AT the payment
+ * that needs reversing.
  */
 async function currentGeneration(poId: string, client: AnyClient): Promise<number> {
   const reversalCount = await client.journal.count({
@@ -373,6 +378,39 @@ export async function postSupplierPaymentJournal(
   }
 
   return res;
+}
+
+/**
+ * True when this PO reads UNPAID while a payment journal still stands on the
+ * ledger for it — the state a failed reversal leaves behind. `paidAt` went back
+ * to null (the toggle's CAS committed), the reversal did not post, so payables
+ * are still cleared and bank still credited for a purchase order the ERP now
+ * shows as unpaid.
+ *
+ * The toggle cannot get out of it on its own, which is why the "no retry button
+ * because the toggle IS the retry" rule does not apply here and
+ * `postSupplierPaymentReversalJournalAction` exists: from unpaid the UI only
+ * offers "Mark paid", and marking either hits `PAYMENT_SUPERSEDED` (if the
+ * payable moved) or an idempotent same-amount hit that changes nothing on the
+ * ledger — never the missing reversal.
+ *
+ * Reading the payment journal AT the current generation is the whole test. The
+ * generation counts REVERSALS, so a payment that HAS been reversed sits one
+ * generation behind the current one and this lookup misses it by construction —
+ * no separate "is it reversed" query is needed, and adding one would duplicate
+ * the generation formula. `paidAt` is re-read here rather than taken from a
+ * caller so the server action can use this as its own state guard.
+ */
+export async function hasStandingPaymentJournalWhileUnpaid(
+  poId: string,
+  client: AnyClient = prisma,
+): Promise<boolean> {
+  const po = await client.purchaseOrder.findUnique({ where: { id: poId }, select: { paidAt: true } });
+  if (!po || po.paidAt != null) return false;
+
+  const gen = await currentGeneration(poId, client);
+  const standing = await postedPaymentJournal(poId, gen, client);
+  return standing != null;
 }
 
 export async function postSupplierPaymentReversalJournal(

@@ -2,6 +2,7 @@ import { prisma } from '@elorae/db';
 import { getETAStatus } from '@/lib/eta-alerts';
 import type { POStatus } from '@elorae/db';
 import { serializePODetail, serializePOListRow } from '@/lib/purchase-orders/serialize';
+import { hasStandingPaymentJournalWhileUnpaid } from '@/lib/purchasing/supplier-payment-journal';
 
 export type ListPOsFilters = {
   status?: POStatus;
@@ -148,8 +149,20 @@ export async function getPOById(id: string) {
     },
   });
   if (!po) return null;
+
+  /*
+   * Read here rather than in a parallel fetch from the detail page: the page
+   * takes its whole payload from this one query, and a second round trip for a
+   * warning banner would let the banner disagree with the paid badge beside it.
+   * Only asked for an unpaid PO — the detector answers false for a paid one
+   * anyway, this just skips two queries for the common case.
+   */
+  const paymentJournalStandingWhileUnpaid =
+    po.paidAt == null ? await hasStandingPaymentJournalWhileUnpaid(id) : false;
+
   return serializePODetail({
     ...po,
+    paymentJournalStandingWhileUnpaid,
     items: po.items.map((line) => ({
       ...line,
       item: line.item

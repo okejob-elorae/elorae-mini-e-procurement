@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
-import { postSupplierPaymentJournal, postSupplierPaymentReversalJournal } from "./supplier-payment-journal";
+import {
+  hasStandingPaymentJournalWhileUnpaid,
+  postSupplierPaymentJournal,
+  postSupplierPaymentReversalJournal,
+} from "./supplier-payment-journal";
 import { postGrnJournal, postGrnReversalJournal } from "../inventory/grn-journal";
 import { setAccountMapping } from "../finance/journals/mapping";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
@@ -1283,5 +1287,100 @@ d("supplier payment journal (test bed only)", () => {
     } finally {
       await cleanupPo(tracked);
     }
+  });
+
+  /*
+   * The detector behind the standing-payment warning and its retry action. Each
+   * case builds the ledger state through the real writers rather than asserting
+   * on a hand-inserted journal, so a change to the generation formula that broke
+   * the "payment at the CURRENT generation" premise would fail here.
+   */
+  describe("hasStandingPaymentJournalWhileUnpaid", () => {
+    it("is true for a PO left unpaid with its payment journal still standing", async () => {
+      const po = await prisma.purchaseOrder.create({
+        data: { docNumber: `PO-TEST-${token}-15`, supplierId, createdById: userId, paidAt: new Date("2026-06-01T00:00:00.000Z") },
+        select: { id: true },
+      });
+      const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+      createdPos.push(tracked);
+      const grn = await prisma.gRN.create({
+        data: { docNumber: `GRN-TEST-${token}-15`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 45_000, items: [] },
+        select: { id: true },
+      });
+      tracked.grnIds.push(grn.id);
+
+      try {
+        expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+        expect(await postSupplierPaymentJournal(po.id, userId, new Date("2026-06-01T00:00:00.000Z"), prisma)).toMatchObject({
+          ok: true,
+          created: true,
+        });
+        /* Marked paid, then unmarked with the reversal never posting — exactly
+           what the toggle leaves behind when `postJournal` fails on the reversal. */
+        expect(await hasStandingPaymentJournalWhileUnpaid(po.id, prisma)).toBe(false);
+        await prisma.purchaseOrder.update({ where: { id: po.id }, data: { paidAt: null } });
+
+        expect(await hasStandingPaymentJournalWhileUnpaid(po.id, prisma)).toBe(true);
+      } finally {
+        await cleanupPo(tracked);
+      }
+    });
+
+    it("is false for a normally-paid PO", async () => {
+      const po = await prisma.purchaseOrder.create({
+        data: { docNumber: `PO-TEST-${token}-16`, supplierId, createdById: userId, paidAt: new Date("2026-06-02T00:00:00.000Z") },
+        select: { id: true },
+      });
+      const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+      createdPos.push(tracked);
+      const grn = await prisma.gRN.create({
+        data: { docNumber: `GRN-TEST-${token}-16`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 25_000, items: [] },
+        select: { id: true },
+      });
+      tracked.grnIds.push(grn.id);
+
+      try {
+        expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+        expect(await postSupplierPaymentJournal(po.id, userId, new Date("2026-06-02T00:00:00.000Z"), prisma)).toMatchObject({
+          ok: true,
+          created: true,
+        });
+
+        /* A standing payment journal is only a problem while the PO reads unpaid. */
+        expect(await hasStandingPaymentJournalWhileUnpaid(po.id, prisma)).toBe(false);
+      } finally {
+        await cleanupPo(tracked);
+      }
+    });
+
+    it("is false for a PO whose payment was fully reversed", async () => {
+      const po = await prisma.purchaseOrder.create({
+        data: { docNumber: `PO-TEST-${token}-17`, supplierId, createdById: userId, paidAt: new Date("2026-06-03T00:00:00.000Z") },
+        select: { id: true },
+      });
+      const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+      createdPos.push(tracked);
+      const grn = await prisma.gRN.create({
+        data: { docNumber: `GRN-TEST-${token}-17`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 35_000, items: [] },
+        select: { id: true },
+      });
+      tracked.grnIds.push(grn.id);
+
+      try {
+        expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+        expect(await postSupplierPaymentJournal(po.id, userId, new Date("2026-06-03T00:00:00.000Z"), prisma)).toMatchObject({
+          ok: true,
+          created: true,
+        });
+        expect(await postSupplierPaymentReversalJournal(po.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+        await prisma.purchaseOrder.update({ where: { id: po.id }, data: { paidAt: null } });
+
+        /* The reversal bumped the generation past the payment it undid, so no
+           payment stands at the current one — the ledger and `paidAt` agree. */
+        expect(await hasStandingPaymentJournalWhileUnpaid(po.id, prisma)).toBe(false);
+      } finally {
+        await cleanupPo(tracked);
+      }
+    });
   });
 });

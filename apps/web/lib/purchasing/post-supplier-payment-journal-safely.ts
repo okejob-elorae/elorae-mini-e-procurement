@@ -13,15 +13,24 @@ const NOTIFICATION_KIND: Record<SupplierPaymentDirection, string> = {
 };
 
 /**
- * How an operator re-runs a failed post. There is no retry button because the
- * paid toggle IS the retry, but the order depends on where the PO now sits: a
- * failed payment left it marked paid, so the operator unmarks and re-marks,
- * while a failed reversal left it unpaid, where the UI only offers "Mark paid"
- * — so that direction has to mark first and unmark second.
+ * How an operator re-runs a failed post, which differs by direction.
+ *
+ * A failed PAYMENT needs no retry button: it left the PO marked paid, so the
+ * paid toggle IS the retry — unmark, then mark paid again, and the same post is
+ * attempted afresh.
+ *
+ * A failed REVERSAL cannot be retried that way, which is why it points at a
+ * dedicated control instead. It left the PO unpaid with its payment journal
+ * still standing, and from unpaid the UI only offers "Mark paid" — which either
+ * refuses with `PAYMENT_SUPERSEDED` (once the payable has moved) or hits the
+ * standing journal idempotently. Neither posts the reversal that is missing, so
+ * the mark/unmark dance this hint used to recommend was awkward at best and
+ * blocked at worst. `postSupplierPaymentReversalJournalAction`, surfaced by the
+ * standing-payment warning on the PO detail page, posts it directly.
  */
 const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
   payment: "unmark payment on the PO and mark it paid again",
-  reversal: "mark payment on the PO and unmark it again",
+  reversal: 'open the PO and use the standing-payment warning\'s "Post reversal journal" action',
 };
 
 /**
@@ -87,6 +96,16 @@ export async function notifySupplierPaymentJournalFailure(
 }
 
 function titleFor(direction: SupplierPaymentDirection, reason: string): string {
+  /*
+   * Checked before every reason below because none of them can describe a
+   * reversal: the codes that follow are all raised while READING the payable for
+   * a payment, and the reversal writer never reaches that read. What a failed
+   * reversal leaves behind is one state regardless of reason — the PO unpaid with
+   * its payment journal still standing — and that is what the title has to say.
+   */
+  if (direction === "reversal") {
+    return "PO unmarked as paid but its payment journal is still standing";
+  }
   if (direction === "payment" && reason === "NOTHING_TO_POST") {
     return "PO marked paid but no payable was booked for it";
   }
@@ -112,6 +131,41 @@ function messageFor(
   detail?: string,
 ): string {
   const retry = RETRY_HINT[direction];
+
+  /*
+   * Reversal-direction messages are their own sentences rather than the payment
+   * ones with a different retry hint. Two reasons why: a failed reversal did not
+   * leave the PO "marked paid" as every payment message below states, and it is
+   * the one direction where the ledger is definitely OUT OF STEP rather than
+   * untouched — the payment journal it failed to undo is still standing, with
+   * payables cleared and bank credited for a PO that now reads unpaid.
+   *
+   * Only two reasons reach here: `UNBALANCED` from `postJournal`'s balance check
+   * and the synthetic `ERROR` for a thrown post. `NOTHING_TO_POST` never does —
+   * `attemptSupplierPaymentJournal` treats nothing-to-reverse as a genuine no-op
+   * and stays silent. The payable-read codes (`GRN_*`, `AP_ACCOUNT_MISMATCH`,
+   * `UNMAPPED_ROLE`, `PAYMENT_SUPERSEDED`) are unreachable because the reversal
+   * writer mirrors the standing payment journal's own lines instead of resolving
+   * roles or reading the payable, so the trailing branch is a guard against a
+   * future code, not a live case.
+   */
+  if (direction === "reversal") {
+    const standing =
+      "The PO's paid mark was removed, but its reversal journal did not post, so the payment journal it should have " +
+      "undone is still standing on the ledger: payables are cleared and bank is credited for a PO that now reads " +
+      "unpaid. ";
+    if (reason === "UNBALANCED") {
+      return (
+        standing +
+        `The reversal was rejected as unbalanced (debit ≠ credit) before anything was written for it. To fix, ${retry}.`
+      );
+    }
+    if (reason === "ERROR") {
+      return standing + `The reversal errored (${detail ?? "unknown"}). To fix, ${retry}.`;
+    }
+    return standing + `The reversal reported ${reason}${role ? `: ${role}` : ""}. To fix, ${retry}.`;
+  }
+
   if (reason === "NOTHING_TO_POST") {
     /*
      * A receipt still owed with no journal, a declined-but-un-reversed one and
@@ -169,7 +223,8 @@ function messageFor(
       "here — they still hold that earlier payment, which no longer clears this PO's payable. This happens when an " +
       "unmark's reversal journal failed to post and the payable changed afterwards (another receipt was journaled, " +
       `for instance). To fix, ${retry} — and confirm the reversal journal actually posted this time before treating ` +
-      "the PO as paid."
+      "the PO as paid. If that unmark's reversal fails too, the PO detail page raises a standing-payment warning with " +
+      "a control that posts the reversal directly."
     );
   }
   if (reason === "AP_ACCOUNT_MISMATCH") {
