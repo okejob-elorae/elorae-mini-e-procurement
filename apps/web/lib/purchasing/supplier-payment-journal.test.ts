@@ -347,6 +347,82 @@ d("supplier payment journal (test bed only)", () => {
     }
   });
 
+  it("a PO with two GRNs where only one is journaled returns GRN_JOURNALS_INCOMPLETE and posts nothing", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-13`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grnA = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-13A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 60_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnA.id);
+    const grnB = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-13B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 25_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnB.id);
+
+    try {
+      /* Only GRN A journals — GRN B's auto-journal is the best-effort post that
+         failed, leaving a JOURNAL_PENDING. `journals.length` is 1 and A's AP
+         line is present, which is exactly how a naive check pays A's 60,000 and
+         reports success while B's 25,000 waits to reappear in payables. */
+      expect(await postGrnJournal(grnA.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-02T00:00:00.000Z"), prisma);
+      expect(r).toEqual({ ok: false, code: "GRN_JOURNALS_INCOMPLETE" });
+
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+      });
+      expect(journal).toBeNull();
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("a sub-cent GRN with no journal of its own does not block payment", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-14`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grnA = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-14A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 35_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnA.id);
+    /* `postGrnJournal` refuses anything under a cent, so this receipt can never
+       have a journal — the completeness check must exempt it rather than block
+       the PO's payment forever. */
+    const grnZero = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-14B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 0, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnZero.id);
+
+    try {
+      expect(await postGrnJournal(grnA.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      expect(await postGrnJournal(grnZero.id, userId, prisma)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-03T00:00:00.000Z"), prisma);
+      expect(r).toMatchObject({ ok: true, created: true });
+
+      const journal = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+        include: { lines: true },
+      });
+      expect(amountsFor(journal.lines, accountIds.AP)).toEqual({ debit: 35_000, credit: 0 });
+      expect(amountsFor(journal.lines, accountIds.BANK)).toEqual({ debit: 0, credit: 35_000 });
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
   it("postSupplierPaymentReversalJournal posts the mirror and running it after the payment restores the AP balance", async () => {
     const po = await prisma.purchaseOrder.create({
       data: { docNumber: `PO-TEST-${token}-4`, supplierId, createdById: userId },

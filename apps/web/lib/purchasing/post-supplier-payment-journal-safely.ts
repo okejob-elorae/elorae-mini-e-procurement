@@ -51,6 +51,9 @@ function titleFor(direction: SupplierPaymentDirection, reason: string): string {
   if (direction === "payment" && reason === "NOTHING_TO_POST") {
     return "PO marked paid but no payable was booked for it";
   }
+  if (reason === "GRN_JOURNALS_INCOMPLETE") {
+    return "PO marked paid but one of its receipts has no GRN journal";
+  }
   return "Supplier payment journal not posted";
 }
 
@@ -66,6 +69,14 @@ function messageFor(
       "The PO was marked paid, but no payable was found booked to the GL for it, so no journal was posted — " +
       "payables and bank are both untouched. The likely cause is that its receipts carry no GRN journal " +
       `(receipts predating GRN auto-journalling never posted one). Post the GRN journal, then ${retry}.`
+    );
+  }
+  if (reason === "GRN_JOURNALS_INCOMPLETE") {
+    return (
+      "The PO was marked paid, but at least one of its receipts has no GRN journal, so no payment journal was posted — " +
+      "payables and bank are both untouched. Paying only the journaled receipts would have under-paid, and the rest " +
+      "would have reappeared in payables as soon as the missing GRN journal was retried. Post the missing GRN journal " +
+      `from its GRN row, then ${retry}.`
     );
   }
   if (reason === "AP_ACCOUNT_MISMATCH") {

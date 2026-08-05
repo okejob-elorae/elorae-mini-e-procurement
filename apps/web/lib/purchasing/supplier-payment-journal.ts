@@ -6,23 +6,38 @@ import { bookedPayable, type ApLine } from "./supplier-payable";
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
 /**
- * `postSupplierPaymentJournal` can fail a way the shared `GenerateAutoJournalResult`
- * has no code for: GRN journals exist for this PO, but none of their lines sit on
- * the currently-resolved AP account. That happens if `AP` is remapped to a
- * different chart account between receipt and payment — the historical journal
- * lines still point at the old account, so a plain amount-based read would come
- * back zero and silently look like "nothing to post". `AP_ACCOUNT_MISMATCH`
- * keeps that distinct from the benign zero cases (no GRNs yet, GRNs never
- * journaled, net payable already cleared) so a caller can raise it loudly
- * instead of reporting success.
+ * `postSupplierPaymentJournal` can fail two ways the shared
+ * `GenerateAutoJournalResult` has no code for, both of which would otherwise
+ * read as a benign zero and let the PO report a clean "marked paid".
+ *
+ * `AP_ACCOUNT_MISMATCH`: GRN journals exist for this PO, but at least one of
+ * them contributed no line on the currently-resolved AP account. That happens
+ * if `AP` is remapped to a different chart account between receipt and payment
+ * — the historical journal lines still point at the old account, so a plain
+ * amount-based read would come back short or zero.
+ *
+ * `GRN_JOURNALS_INCOMPLETE`: some of this PO's receipts carry a GRN journal and
+ * some do not. GRN auto-journalling is best-effort, so a receipt can sit
+ * un-journaled indefinitely; paying only the journaled subset under-pays, and
+ * whoever later retries the missing GRN journal pushes payables back off zero
+ * on a PO already shown as paid. Distinct from the mismatch code because the
+ * remedy is different: post the missing GRN journal, not fix a mapping.
+ *
+ * Both stay distinct from the genuinely benign zero cases (no GRNs yet, NO GRN
+ * journaled at all, net payable already cleared) so a caller can raise them
+ * loudly instead of reporting success.
  */
-export type PostSupplierPaymentResult = GenerateAutoJournalResult | { ok: false; code: "AP_ACCOUNT_MISMATCH" };
+export type PostSupplierPaymentResult =
+  | GenerateAutoJournalResult
+  | { ok: false; code: "AP_ACCOUNT_MISMATCH" }
+  | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" };
 
 type PayableLookup =
   | { ok: true; payable: number }
   | { ok: false; code: "UNMAPPED_ROLE"; role: "AP" }
   | { ok: false; code: "NOTHING_TO_POST" }
-  | { ok: false; code: "AP_ACCOUNT_MISMATCH" };
+  | { ok: false; code: "AP_ACCOUNT_MISMATCH" }
+  | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" };
 
 /**
  * Payable this purchase order's receipts booked to the GL, read from the journal
@@ -39,7 +54,7 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
     throw e;
   }
 
-  const grns = await client.gRN.findMany({ where: { poId }, select: { id: true } });
+  const grns = await client.gRN.findMany({ where: { poId }, select: { id: true, totalAmount: true } });
   if (grns.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
 
   const journals = await client.journal.findMany({
@@ -47,13 +62,38 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
       sourceType: { in: ["GRN", "GRN_REVERSAL"] },
       sourceId: { in: grns.map((g) => g.id) },
     },
-    select: { lines: { select: { chartAccountId: true, debit: true, credit: true } } },
+    select: { sourceType: true, sourceId: true, lines: { select: { chartAccountId: true, debit: true, credit: true } } },
   });
 
   /* No GRN journals posted at all yet is the benign, expected case (a GRN can sit
      un-journaled for a while) — distinct from journals existing but missing the
      currently-mapped AP account below. */
   if (journals.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
+
+  /*
+   * Refuse while ANY receipt of this PO is still missing its GRN journal.
+   * `journals.length > 0` only proves SOME receipt booked a payable, and the AP
+   * check below can only inspect journals that exist — a receipt whose journal
+   * never posted contributes no line to see, so without this the payment posts
+   * the journaled subset and reports success. The missing amount then reappears
+   * the moment someone retries that GRN journal, on a PO already marked paid.
+   *
+   * Scoped to receipts with a non-trivial amount because `postGrnJournal`
+   * itself returns `NOTHING_TO_POST` below one cent, so a sub-cent GRN
+   * legitimately has no journal and must not block payment forever. Same
+   * `Math.abs(...) < 0.01` predicate as that guard, deliberately.
+   *
+   * Checked BEFORE the AP-account check: a missing journal is the more concrete
+   * remedy (post it from the GRN row), and it also makes any mismatch verdict
+   * untrustworthy while it holds — a journal that does not exist cannot
+   * contribute an AP line, so reporting a remapped account first would send the
+   * operator auditing a mapping that may be perfectly fine.
+   */
+  const journaledGrnIds = new Set(journals.filter((j) => j.sourceType === "GRN").map((j) => j.sourceId));
+  const anyReceiptUnjournaled = grns.some(
+    (g) => Math.abs(Number(g.totalAmount)) >= 0.01 && !journaledGrnIds.has(g.id),
+  );
+  if (anyReceiptUnjournaled) return { ok: false, code: "GRN_JOURNALS_INCOMPLETE" };
 
   /*
    * Every GRN and GRN_REVERSAL journal books its counter-line against the AP
