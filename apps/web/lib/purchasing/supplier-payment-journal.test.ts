@@ -1186,4 +1186,102 @@ d("supplier payment journal (test bed only)", () => {
       }
     }
   });
+
+  it("a re-mark whose payable grew while the reversal never posted returns PAYMENT_SUPERSEDED and posts no second journal", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-13`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grnA = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-13A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 50_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grnA.id);
+
+    try {
+      expect(await postGrnJournal(grnA.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      expect(await postSupplierPaymentJournal(po.id, userId, new Date("2026-05-01T00:00:00.000Z"), prisma)).toMatchObject({
+        ok: true,
+        created: true,
+      });
+
+      /*
+       * The unmark's reversal FAILING is modelled by simply never posting one:
+       * `paidAt` cleared, payment #1 still standing, generation still 1. Then a
+       * second receipt is journaled onto the same PO, so the payable this PO owes
+       * grows to 80,000 while the generation cannot move.
+       */
+      const grnB = await prisma.gRN.create({
+        data: { docNumber: `GRN-TEST-${token}-13B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
+        select: { id: true },
+      });
+      tracked.grnIds.push(grnB.id);
+      expect(await postGrnJournal(grnB.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      const reMark = await postSupplierPaymentJournal(po.id, userId, new Date("2026-05-02T00:00:00.000Z"), prisma);
+      expect(reMark).toEqual({ ok: false, code: "PAYMENT_SUPERSEDED" });
+
+      /* Nothing new posted, and generation 1 still carries the ORIGINAL 50,000
+         rather than being quietly rewritten to the larger payable. */
+      const payments = await prisma.journal.findMany({
+        where: { sourceType: "SUPPLIER_PAYMENT", sourceId: { startsWith: `${po.id}#` } },
+        include: { lines: true },
+      });
+      expect(payments).toHaveLength(1);
+      expect(payments[0].sourceId).toBe(`${po.id}#1`);
+      expect(amountsFor(payments[0].lines, accountIds.AP)).toEqual({ debit: 50_000, credit: 0 });
+
+      /* 80,000 booked by the two receipts, only 50,000 of it cleared — the gap
+         the refusal exists to stop anyone reporting as paid. */
+      const apNet = await apNetForSources(
+        [
+          { sourceType: "GRN", sourceId: grnA.id },
+          { sourceType: "GRN", sourceId: grnB.id },
+          { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` },
+        ],
+        accountIds.AP,
+      );
+      expect(apNet).toBe(30_000);
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("a re-mark whose payable is UNCHANGED still succeeds on the standing journal, so the guard cannot over-refuse", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-14`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-TEST-${token}-14`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 40_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      const mark = await postSupplierPaymentJournal(po.id, userId, new Date("2026-05-03T00:00:00.000Z"), prisma);
+      expect(mark).toMatchObject({ ok: true, created: true });
+
+      /* Same PO re-marked on a LATER date with no reversal in between and no new
+         receipt: the standing journal already cleared exactly this payable, so
+         the ledger reflects the payment and `created: false` is the honest
+         answer — not a superseded one. */
+      const reMark = await postSupplierPaymentJournal(po.id, userId, new Date("2026-05-04T00:00:00.000Z"), prisma);
+      expect(reMark).toMatchObject({ ok: true, created: false });
+      if (mark.ok && reMark.ok) expect(reMark.journalId).toBe(mark.journalId);
+
+      const payments = await prisma.journal.findMany({
+        where: { sourceType: "SUPPLIER_PAYMENT", sourceId: { startsWith: `${po.id}#` } },
+      });
+      expect(payments).toHaveLength(1);
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
 });

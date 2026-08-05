@@ -173,10 +173,13 @@ export default function SupplierPaymentsPage() {
 
   /**
    * The toggle always commits, so the outcome — not the absence of a throw —
-   * decides what the operator is told. A journal failure means payables and bank
-   * were left untouched; reporting "Marked as paid" there is positive
-   * confirmation of something that did not happen, and the only other trace is an
-   * `AdminNotification` row nothing in the UI renders yet.
+   * decides what the operator is told. A journal failure means the ledger does
+   * not reflect this payment: for most codes because payables and bank were left
+   * untouched, and for `PAYMENT_SUPERSEDED` because they still hold an earlier
+   * payment for a different amount. Reporting "Marked as paid" for either is
+   * positive confirmation of something that did not happen, and the only other
+   * trace is an `AdminNotification` row nothing in the UI renders yet. Which of
+   * the two it is, and the remedy, come from the code's own message.
    */
   const handleMarkPaid = async (poId: string, paid: boolean) => {
     setTogglingPoId(poId);

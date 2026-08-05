@@ -6,9 +6,10 @@ import { bookedPayable, type ApLine } from "./supplier-payable";
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
 /**
- * `postSupplierPaymentJournal` can fail four ways the shared
+ * `postSupplierPaymentJournal` can fail five ways the shared
  * `GenerateAutoJournalResult` has no code for, every one of which would
- * otherwise read as a benign zero and let the PO report a clean "marked paid".
+ * otherwise read as a benign zero — or a benign idempotent hit — and let the PO
+ * report a clean "marked paid".
  *
  * `AP_ACCOUNT_MISMATCH`: GRN journals exist for this PO, but at least one of
  * them contributed no line on the currently-resolved AP account. That happens
@@ -44,17 +45,33 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * operator acts elsewhere: the reversal has a separate retry
  * (`postGrnReversalJournalAction`) from the receipt journal's.
  *
- * All four stay distinct from the genuinely benign zero cases — no GRNs at all
- * (an advance payment), no GRN that could ever book a payable (each one either
- * sub-cent or owner-declined), or a net payable already cleared by reversals —
- * so a caller can raise them loudly instead of reporting success.
+ * `PAYMENT_SUPERSEDED`: a payment journal is already standing at this
+ * generation, but it posted a different amount than the payable read now. The
+ * generation counts REVERSALS, so a reversal that failed to post leaves it put
+ * while `paidAt` keeps toggling: unmark (the reversal fails, so payment `#1`
+ * still stands on the ledger), receive and journal another receipt, re-mark —
+ * the payable is now larger, the generation is still 1, and `postJournal`
+ * matches the standing journal and reports `created: false`. Treated as success
+ * that clears the old, smaller amount against the new, larger payable while
+ * telling the operator it went through. Its own code because the remedy is
+ * neither a mapping nor a missing GRN journal: the standing payment journal has
+ * to be reversed — unmark again, and confirm the reversal actually posted this
+ * time — before this payment can post at its real amount.
+ *
+ * The first four stay distinct from the genuinely benign zero cases — no GRNs at
+ * all (an advance payment), no GRN that could ever book a payable (each one
+ * either sub-cent or owner-declined), or a net payable already cleared by
+ * reversals — so a caller can raise them loudly instead of reporting success.
+ * `PAYMENT_SUPERSEDED` does the same for the other silent success: an idempotent
+ * hit that no longer matches what the ledger owes.
  */
 export type PostSupplierPaymentResult =
   | GenerateAutoJournalResult
   | { ok: false; code: "AP_ACCOUNT_MISMATCH" }
   | { ok: false; code: "GRN_APPROVAL_PENDING" }
   | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" }
-  | { ok: false; code: "GRN_REVERSAL_MISSING" };
+  | { ok: false; code: "GRN_REVERSAL_MISSING" }
+  | { ok: false; code: "PAYMENT_SUPERSEDED" };
 
 type PayableLookup =
   | { ok: true; payable: number }
@@ -266,12 +283,44 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
  * unmark-then-re-mark cycle bumps the count and opens a fresh generation.
  * Counting payments instead would break that: a retry would see one more
  * payment than reversals and post a duplicate.
+ *
+ * The cost of that choice: a reversal that FAILED to post leaves the count — and
+ * so the generation — put while `paidAt` toggles freely, so a later re-mark can
+ * land on a payment journal standing for a stale amount. That is why the caller
+ * does not trust `created: false` on its own and compares amounts
+ * (`PAYMENT_SUPERSEDED`); the fix belongs there rather than in this count, since
+ * counting payments to close it would reopen the duplicate-on-retry hole.
  */
 async function currentGeneration(poId: string, client: AnyClient): Promise<number> {
   const reversalCount = await client.journal.count({
     where: { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: { startsWith: `${poId}#` } },
   });
   return reversalCount + 1;
+}
+
+/**
+ * The payment journal one generation already posted, with the lines its value is
+ * read from. ONE lookup, shared by the reversal writer (which mirrors those
+ * lines) and by the stale-hit guard in `postSupplierPaymentJournal` (which
+ * compares their value against a freshly-read payable), so a standing payment is
+ * never read two different ways.
+ */
+async function postedPaymentJournal(poId: string, gen: number, client: AnyClient) {
+  return client.journal.findUnique({
+    where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${poId}#${gen}` } },
+    select: { date: true, lines: { select: { chartAccountId: true, debit: true, credit: true } } },
+  });
+}
+
+/**
+ * Total debits of a journal's lines in cents. Summing the journal AS A WHOLE
+ * rather than picking out the line assumed to carry the payable is legitimate
+ * because `postJournal` balanced it at creation, and it keeps working if a
+ * payment journal ever grows past its two lines — or if `AP` was repointed after
+ * it posted, which would make an account-keyed read come back short.
+ */
+function totalDebitCents(lines: Array<{ debit: Prisma.Decimal | number }>): number {
+  return lines.reduce((cents, l) => cents + Math.round(Number(l.debit) * 100), 0);
 }
 
 export async function postSupplierPaymentJournal(
@@ -287,7 +336,7 @@ export async function postSupplierPaymentJournal(
   const sourceId = `${poId}#${gen}`;
   const po = await client.purchaseOrder.findUnique({ where: { id: poId }, select: { docNumber: true } });
 
-  return generateAutoJournal(
+  const res = await generateAutoJournal(
     client,
     "SUPPLIER_PAYMENT",
     sourceId,
@@ -297,6 +346,33 @@ export async function postSupplierPaymentJournal(
     ],
     { date: paidAt, description: `Supplier payment ${po?.docNumber ?? poId}`, postedById },
   );
+
+  /*
+   * `created: false` means a payment journal was already standing at this
+   * generation, and it is only benign while that journal posted the SAME amount
+   * as the payable just read — a plain double-submit of one mark. It is not
+   * benign after a reversal failed to post: the generation stays put (it counts
+   * reversals) while `paidAt` toggles, so an unmark whose reversal failed, a new
+   * receipt journaled onto the same PO, and a re-mark all land back on the
+   * original journal — which cleared the smaller, older payable. Passing that
+   * through as success under-pays the supplier on the books and confirms it to
+   * the operator, so it is refused instead: the standing journal must be reversed
+   * first.
+   *
+   * Compared in cents, matching `bookedPayable`'s own rounding, so two amounts
+   * equal to the cent never differ on a float tail. A standing journal that
+   * cannot be read back at all is left to `res` — `postJournal` only reports
+   * `created: false` because it found one, so this is unreachable rather than a
+   * state with a verdict of its own.
+   */
+  if (res.ok && !res.created) {
+    const standing = await postedPaymentJournal(poId, gen, client);
+    if (standing && totalDebitCents(standing.lines) !== Math.round(lookup.payable * 100)) {
+      return { ok: false, code: "PAYMENT_SUPERSEDED" };
+    }
+  }
+
+  return res;
 }
 
 export async function postSupplierPaymentReversalJournal(
@@ -307,10 +383,7 @@ export async function postSupplierPaymentReversalJournal(
   const gen = await currentGeneration(poId, client);
   const sourceId = `${poId}#${gen}`;
 
-  const paid = await client.journal.findUnique({
-    where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId } },
-    select: { date: true, lines: { select: { chartAccountId: true, debit: true, credit: true } } },
-  });
+  const paid = await postedPaymentJournal(poId, gen, client);
   if (!paid) return { ok: false, code: "NOTHING_TO_POST" };
 
   /*
@@ -331,14 +404,9 @@ export async function postSupplierPaymentReversalJournal(
     credit: Number(l.debit),
   }));
 
-  /*
-   * Zero-value guard only. This sums the mirrored journal's debits as a whole
-   * — legitimate because `postJournal` balanced it at creation — rather than
-   * assuming which single line carries the payable, so it stays correct if a
-   * payment journal ever grows beyond its two lines.
-   */
-  const totalCents = lines.reduce((cents, l) => cents + Math.round(l.debit * 100), 0);
-  if (totalCents < 1) return { ok: false, code: "NOTHING_TO_POST" };
+  /* Zero-value guard only, on the mirrored journal's debits as a whole — see
+     `totalDebitCents` for why summing the whole journal is the right read. */
+  if (totalDebitCents(lines) < 1) return { ok: false, code: "NOTHING_TO_POST" };
 
   const po = await client.purchaseOrder.findUnique({ where: { id: poId }, select: { docNumber: true } });
 

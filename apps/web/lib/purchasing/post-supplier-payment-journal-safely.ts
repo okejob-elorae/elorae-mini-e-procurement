@@ -40,6 +40,12 @@ const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
  * so swallowing it would commit nothing while reporting a toggle that happened.
  * Letting it out lets `runSerializable` retry the toggle and the post together.
  *
+ * An `ok` result is silent even when nothing was created, because the writer only
+ * reports an idempotent hit as `ok` once it has confirmed the journal already
+ * standing posted the same payable this attempt computed — a stale one comes back
+ * as `PAYMENT_SUPERSEDED` instead. So `ok` here genuinely means the ledger
+ * reflects this payment, whether this attempt posted it or an earlier one did.
+ *
  * `NOTHING_TO_POST` is silent for a reversal and loud for a payment. Nothing to
  * reverse is a genuine no-op — the payment never posted, so there is no journal
  * to undo. Nothing to PAY is not: the PO is now flagged paid while no payable
@@ -93,6 +99,9 @@ function titleFor(direction: SupplierPaymentDirection, reason: string): string {
   if (reason === "GRN_REVERSAL_MISSING") {
     return "PO marked paid but a declined receipt has no GRN reversal journal";
   }
+  if (reason === "PAYMENT_SUPERSEDED") {
+    return "PO marked paid but an earlier payment journal still stands for a different amount";
+  }
   return "Supplier payment journal not posted";
 }
 
@@ -144,6 +153,23 @@ function messageFor(
       "reversed, so no payment journal was posted — payables and bank are both untouched. The declined receipt's " +
       "payable is still booked, so paying now would have over-paid by that amount. Post the reversal journal from " +
       `the declined GRN's row, then ${retry}.`
+    );
+  }
+  if (reason === "PAYMENT_SUPERSEDED") {
+    /*
+     * The one failure where payables and bank are NOT untouched, so this message
+     * deliberately says the opposite of every other one here: an earlier payment
+     * journal is still standing, for an amount that no longer clears the PO.
+     * Saying "untouched" would send the operator looking for a missing journal
+     * instead of the stale one they have to reverse.
+     */
+    return (
+      "The PO was marked paid, but a payment journal from an earlier mark is still standing on the ledger for a " +
+      "different amount than this PO now owes, so no new journal was posted. Payables and bank are NOT untouched " +
+      "here — they still hold that earlier payment, which no longer clears this PO's payable. This happens when an " +
+      "unmark's reversal journal failed to post and the payable changed afterwards (another receipt was journaled, " +
+      `for instance). To fix, ${retry} — and confirm the reversal journal actually posted this time before treating ` +
+      "the PO as paid."
     );
   }
   if (reason === "AP_ACCOUNT_MISMATCH") {
