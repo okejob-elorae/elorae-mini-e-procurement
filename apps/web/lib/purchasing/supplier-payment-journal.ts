@@ -6,15 +6,24 @@ import { bookedPayable, type ApLine } from "./supplier-payable";
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
 /**
- * `postSupplierPaymentJournal` can fail two ways the shared
- * `GenerateAutoJournalResult` has no code for, both of which would otherwise
- * read as a benign zero and let the PO report a clean "marked paid".
+ * `postSupplierPaymentJournal` can fail four ways the shared
+ * `GenerateAutoJournalResult` has no code for, every one of which would
+ * otherwise read as a benign zero and let the PO report a clean "marked paid".
  *
  * `AP_ACCOUNT_MISMATCH`: GRN journals exist for this PO, but at least one of
  * them contributed no line on the currently-resolved AP account. That happens
  * if `AP` is remapped to a different chart account between receipt and payment
  * — the historical journal lines still point at the old account, so a plain
  * amount-based read would come back short or zero.
+ *
+ * `GRN_APPROVAL_PENDING`: one of this PO's receipts is an over-receive still
+ * awaiting the owner's approve-or-decline. Its receipt journal already credited
+ * payables in full at receive time, so the payable read here includes an amount
+ * the owner can still cancel: pay it, then decline, and the decline's
+ * `GRN_REVERSAL` debits payables a second time while the bank cash-out stands —
+ * payables go negative and the supplier reads as overpaid on the books, with
+ * nothing adjusting the payment. Its own code because the remedy is neither a
+ * mapping nor a journal to post: the owner has to make the decision first.
  *
  * `GRN_JOURNALS_INCOMPLETE`: at least one of this PO's receipts is still owed
  * and carries no GRN journal — whether that is one of several or every last one
@@ -35,7 +44,7 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * operator acts elsewhere: the reversal has a separate retry
  * (`postGrnReversalJournalAction`) from the receipt journal's.
  *
- * All three stay distinct from the genuinely benign zero cases — no GRNs at all
+ * All four stay distinct from the genuinely benign zero cases — no GRNs at all
  * (an advance payment), no GRN that could ever book a payable (each one either
  * sub-cent or owner-declined), or a net payable already cleared by reversals —
  * so a caller can raise them loudly instead of reporting success.
@@ -43,6 +52,7 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
 export type PostSupplierPaymentResult =
   | GenerateAutoJournalResult
   | { ok: false; code: "AP_ACCOUNT_MISMATCH" }
+  | { ok: false; code: "GRN_APPROVAL_PENDING" }
   | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" }
   | { ok: false; code: "GRN_REVERSAL_MISSING" };
 
@@ -51,6 +61,7 @@ type PayableLookup =
   | { ok: false; code: "UNMAPPED_ROLE"; role: "AP" }
   | { ok: false; code: "NOTHING_TO_POST" }
   | { ok: false; code: "AP_ACCOUNT_MISMATCH" }
+  | { ok: false; code: "GRN_APPROVAL_PENDING" }
   | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" }
   | { ok: false; code: "GRN_REVERSAL_MISSING" };
 
@@ -71,9 +82,55 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
 
   const grns = await client.gRN.findMany({
     where: { poId },
-    select: { id: true, totalAmount: true, ownerDeclinedAt: true },
+    select: {
+      id: true,
+      totalAmount: true,
+      requiresOwnerApproval: true,
+      ownerApprovedAt: true,
+      ownerDeclinedAt: true,
+    },
   });
   if (grns.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
+
+  /*
+   * Refuse while ANY receipt of this PO can still be declined by the owner. An
+   * over-receive posts its receipt journal at receive time — payables credited
+   * in full — and only then waits for the decision, so the payable read below
+   * already contains an amount the owner can still cancel. Paying it and then
+   * declining leaves `postGrnReversalJournal` debiting payables a second time
+   * with the bank cash-out untouched: payables negative, supplier overpaid on
+   * the books, and nothing adjusts the payment. Nothing else here catches it —
+   * the receipt journal exists, so the completeness check is satisfied, and the
+   * receipt is not declined yet, so the reversal check is not either.
+   *
+   * "Can still be declined" is `declineGRNByOwner`'s own guard
+   * (`app/actions/grn.ts`), mirrored term for term: it permits a decline exactly
+   * when `requiresOwnerApproval` is set AND neither `ownerApprovedAt` nor
+   * `ownerDeclinedAt` is stamped. Mirroring rather than keying on the flag alone
+   * matters for the approved case: `approveGRNByOwner` happens to clear the flag
+   * today, but if it ever stopped, a flag-only read would block payment forever
+   * on every approved over-receive. The `ownerApprovedAt` term makes the guard
+   * independent of that.
+   *
+   * Deliberately NOT exempt below one cent, unlike the completeness check that
+   * follows. That exemption exists to avoid a PERMANENT block — `postGrnJournal`
+   * can never post for a sub-cent receipt, so a receipt waiting on a journal
+   * that will never exist would hold the PO hostage forever. An outstanding
+   * decision is temporary by construction: `approveGRNByOwner` always clears it,
+   * so the worst a sub-cent over-receive costs here is one decision.
+   *
+   * Checked FIRST of the three preconditions, and before the journal query it
+   * does not need, because the owner's decision is a prerequisite of the other
+   * two remedies rather than a peer of them. A pending receipt that is ALSO
+   * un-journaled would otherwise be told to post its GRN journal — work the
+   * decline then has to reverse — and a PO holding both a pending receipt and a
+   * declined-un-reversed one resolves in either order anyway, since no receipt
+   * can be pending and declined at once.
+   */
+  const anyReceiptPendingDecision = grns.some(
+    (g) => g.requiresOwnerApproval && g.ownerApprovedAt === null && g.ownerDeclinedAt === null,
+  );
+  if (anyReceiptPendingDecision) return { ok: false, code: "GRN_APPROVAL_PENDING" };
 
   const journals = await client.journal.findMany({
     where: {
@@ -108,6 +165,10 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    * it requires the receipt journal to exist, because a declined receipt that
    * WAS journaled genuinely still needs its reversal on the ledger.
    *
+   * A receipt still awaiting the owner's decision never reaches this check —
+   * `GRN_APPROVAL_PENDING` above refuses first, deliberately, so nobody is sent
+   * to post a journal for a receipt that may be declined.
+   *
    * Checked BEFORE the zero-journals guard: a PO where EVERY receipt failed to
    * journal is the same fault as a partially-journaled one, only worse, so it
    * gets the same precise code instead of the vague `NOTHING_TO_POST` that
@@ -134,13 +195,15 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    * lines that exist, so a reversal that never posted would leave it reporting
    * either a clean payable that over-pays or a remap that never happened.
    *
-   * The two checks cannot both be the answer for one receipt: the one above
-   * fires only for a receipt still owed, and this one only for a declined
-   * receipt whose journal exists. A declined receipt with no journal at all is
-   * neither — nothing was booked for it and nothing needs reversing, so it is
-   * simply not this PO's problem. That also makes the order between them and
-   * the zero-journals guard below immaterial to behaviour — grouping them is
-   * for the reader.
+   * Neither the completeness check nor `GRN_APPROVAL_PENDING` can be the answer
+   * for the same receipt as this one: the completeness check fires only for a
+   * receipt still owed, the pending check only for a receipt with no decision
+   * stamped either way, and this one only for a declined receipt whose journal
+   * exists. A declined receipt with no journal at all is none of the three —
+   * nothing was booked for it and nothing needs reversing, so it is simply not
+   * this PO's problem. Per receipt that makes the order between this check and
+   * the two above immaterial to behaviour; across receipts it is not, which is
+   * why the pending check goes first — see its own note.
    *
    * Kept separate from `GRN_JOURNALS_INCOMPLETE` because the operator's action
    * differs: the reversal is retried from the declined GRN's own reversal
@@ -155,7 +218,8 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
   /*
    * NOT dead code, and load-bearing: reachable only when every GRN on this PO
    * is exempt from the completeness check — each one either sub-cent or
-   * owner-declined. That check already refused if any receipt still owed lacked
+   * owner-declined, and none of them awaiting a decision, which is refused
+   * earlier. That check already refused if any receipt still owed lacked
    * its journal, so no journals at all means no receipt qualified. Nothing was
    * ever booked for an exempt receipt, so `NOTHING_TO_POST` is the honest
    * answer. Without this early return that PO would fall through to an empty

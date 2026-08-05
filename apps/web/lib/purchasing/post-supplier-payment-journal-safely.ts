@@ -45,10 +45,12 @@ const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
  * to undo. Nothing to PAY is not: the PO is now flagged paid while no payable
  * was ever booked for it, which means either the payment does not correspond to
  * anything received (an advance) or receipts exist that could never book a
- * payable at all — each one sub-cent or owner-declined. A broken journal set is
- * NOT one of these cases: a receipt still owed with no journal returns
- * `GRN_JOURNALS_INCOMPLETE` and a declined receipt left un-reversed returns
- * `GRN_REVERSAL_MISSING`, each carrying its own remedy.
+ * payable at all — each one sub-cent or owner-declined. A receipt whose booked
+ * payable is wrong or not final yet is NOT one of these cases: one still owed
+ * with no journal returns `GRN_JOURNALS_INCOMPLETE`, a declined one left
+ * un-reversed returns `GRN_REVERSAL_MISSING`, and one still awaiting the owner's
+ * approve-or-decline returns `GRN_APPROVAL_PENDING`, each carrying its own
+ * remedy.
  */
 export async function attemptSupplierPaymentJournal(
   direction: SupplierPaymentDirection,
@@ -82,6 +84,9 @@ function titleFor(direction: SupplierPaymentDirection, reason: string): string {
   if (direction === "payment" && reason === "NOTHING_TO_POST") {
     return "PO marked paid but no payable was booked for it";
   }
+  if (reason === "GRN_APPROVAL_PENDING") {
+    return "PO marked paid but one of its receipts is still awaiting the owner's decision";
+  }
   if (reason === "GRN_JOURNALS_INCOMPLETE") {
     return "PO marked paid but one of its receipts has no GRN journal";
   }
@@ -100,9 +105,10 @@ function messageFor(
   const retry = RETRY_HINT[direction];
   if (reason === "NOTHING_TO_POST") {
     /*
-     * Neither a receipt still owed with no journal nor a declined-but-un-reversed
-     * one can reach here — those return `GRN_JOURNALS_INCOMPLETE` and
-     * `GRN_REVERSAL_MISSING` — so the remaining causes are all "there is
+     * A receipt still owed with no journal, a declined-but-un-reversed one and
+     * one still awaiting the owner's decision all fail earlier with their own
+     * codes — `GRN_JOURNALS_INCOMPLETE`, `GRN_REVERSAL_MISSING` and
+     * `GRN_APPROVAL_PENDING` — so the remaining causes are all "there is
      * genuinely nothing bookable", and the remedy is to question the payment
      * itself rather than to go post a journal.
      */
@@ -112,6 +118,16 @@ function messageFor(
       "(which the GL cannot represent yet), none of its receipts could ever book a payable (each one worth under " +
       "a cent or declined by the owner), or its payable was already cleared by reversals. Confirm the PO should be " +
       `marked paid at all; if a receipt is missing, receive it, then ${retry}.`
+    );
+  }
+  if (reason === "GRN_APPROVAL_PENDING") {
+    return (
+      "The PO was marked paid, but one of its receipts is an over-receive still waiting for the owner to approve or " +
+      "decline it, so no payment journal was posted — payables and bank are both untouched. That receipt already " +
+      "credited payables in full when it was received, and declining it reverses that against inventory without ever " +
+      "touching the bank: paying now would leave the cash-out standing while the decline debits payables a second " +
+      "time, driving payables negative and overpaying the supplier on the books. Have the owner approve or decline " +
+      `the pending receipt first, then ${retry}.`
     );
   }
   if (reason === "GRN_JOURNALS_INCOMPLETE") {

@@ -387,6 +387,152 @@ d("supplier payment journal (test bed only)", () => {
     }
   });
 
+  it("an over-receive GRN still awaiting the owner's decision returns GRN_APPROVAL_PENDING and posts nothing", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-20`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    /* Exactly what `receiveGRN` leaves for an over-receive: approval required,
+       neither decision stamped. */
+    const grn = await prisma.gRN.create({
+      data: {
+        docNumber: `GRN-TEST-${token}-20`,
+        poId: po.id,
+        supplierId,
+        receivedBy: userId,
+        totalAmount: 75_000,
+        items: [],
+        requiresOwnerApproval: true,
+      },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      /*
+       * The receipt journal posted at receive time, so the completeness check is
+       * satisfied and the AP line is present; the receipt is not declined, so the
+       * reversal check is not the answer either. Paying here and letting the owner
+       * decline afterwards leaves the bank cash-out standing while the decline
+       * debits payables a second time — payables negative, supplier overpaid.
+       */
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-13T00:00:00.000Z"), prisma);
+      expect(r).toEqual({ ok: false, code: "GRN_APPROVAL_PENDING" });
+
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+      });
+      expect(journal).toBeNull();
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("the same over-receive GRN once owner-APPROVED pays normally", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-21`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    /* Exactly what `approveGRNByOwner` leaves: the flag cleared AND the approval
+       stamped. */
+    const grn = await prisma.gRN.create({
+      data: {
+        docNumber: `GRN-TEST-${token}-21`,
+        poId: po.id,
+        supplierId,
+        receivedBy: userId,
+        totalAmount: 75_000,
+        items: [],
+        requiresOwnerApproval: false,
+        ownerApprovedAt: new Date("2026-04-14T00:00:00.000Z"),
+        ownerApprovedById: userId,
+      },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      /* The over-blocking case: the payable is final now, so the pending guard
+         must not fire and the whole 75,000 is payable. */
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-15T00:00:00.000Z"), prisma);
+      expect(r).toMatchObject({ ok: true, created: true });
+
+      const journal = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+        include: { lines: true },
+      });
+      expect(amountsFor(journal.lines, accountIds.AP)).toEqual({ debit: 75_000, credit: 0 });
+      expect(amountsFor(journal.lines, accountIds.BANK)).toEqual({ debit: 0, credit: 75_000 });
+
+      /*
+       * `approveGRNByOwner` clears `requiresOwnerApproval` today, so keying the
+       * guard on that flag alone would ALSO pass the assertions above — this pins
+       * the `ownerApprovedAt` term that the mirrored decline guard actually turns
+       * on. With the flag set again but the approval still stamped the receipt is
+       * no longer declinable, so the guard must stay quiet: the re-run returns the
+       * same journal idempotently rather than GRN_APPROVAL_PENDING (the guard runs
+       * before the idempotent short-circuit, so a flag-only read fails here).
+       */
+      await prisma.gRN.update({ where: { id: grn.id }, data: { requiresOwnerApproval: true } });
+      const rerun = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-15T00:00:00.000Z"), prisma);
+      expect(rerun).toMatchObject({ ok: true, created: false });
+      if (r.ok && rerun.ok) expect(rerun.journalId).toBe(r.journalId);
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  it("the same over-receive GRN once owner-DECLINED and reversed still returns NOTHING_TO_POST, not GRN_APPROVAL_PENDING", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: `PO-TEST-${token}-22`, supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    /* Exactly what `declineGRNByOwner` leaves: the flag cleared AND the decline
+       stamped. */
+    const grn = await prisma.gRN.create({
+      data: {
+        docNumber: `GRN-TEST-${token}-22`,
+        poId: po.id,
+        supplierId,
+        receivedBy: userId,
+        totalAmount: 75_000,
+        items: [],
+        requiresOwnerApproval: false,
+        ownerDeclinedAt: new Date("2026-04-16T00:00:00.000Z"),
+      },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      /* The declined-and-reversed path must read exactly as it did before the
+         pending guard existed — the new guard must not shadow it with a refusal
+         on a decision that has already been made. */
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      expect(await postGrnReversalJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-04-17T00:00:00.000Z"), prisma);
+      expect(r).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+      });
+      expect(journal).toBeNull();
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
   it("an owner-declined GRN whose reversal journal never posted returns GRN_REVERSAL_MISSING and posts nothing", async () => {
     const po = await prisma.purchaseOrder.create({
       data: { docNumber: `PO-TEST-${token}-16`, supplierId, createdById: userId },
