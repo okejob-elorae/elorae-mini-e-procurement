@@ -15,6 +15,10 @@ import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/muta
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
+import {
+  postSupplierPaymentJournal,
+  postSupplierPaymentReversalJournal,
+} from '@/lib/purchasing/supplier-payment-journal';
 
 function poReceiptLineKey(itemId: string, variantSku?: string | null) {
   return `${itemId}\n${variantSku ?? ''}`;
@@ -387,6 +391,50 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
         notifyPOPaymentToggled(poId, po.docNumber, paidAt != null, triggeredByName)
       )
       .catch(() => {});
+
+    /**
+     * Best-effort journal post. The toggle and its status history have already
+     * committed, so nothing below may throw or change what this action returns —
+     * a journal problem surfaces as a JOURNAL_PENDING notification instead. There
+     * is no retry button because the toggle IS the retry: a failed post leaves
+     * nothing to reverse, so unmarking then re-marking posts cleanly.
+     */
+    try {
+      const jr =
+        paidAt != null
+          ? await postSupplierPaymentJournal(poId, session.user.id, paidAt)
+          : await postSupplierPaymentReversalJournal(poId, session.user.id);
+      if (!jr.ok && jr.code !== 'NOTHING_TO_POST') {
+        const role = 'role' in jr ? (jr.role ?? null) : null;
+        const remedy =
+          jr.code === 'AP_ACCOUNT_MISMATCH'
+            ? 'The receipts booked their payable to a different account than the AP posting role now resolves to. Check the AP account mapping against the account the receipts actually credited, then unmark and re-mark payment on the PO.'
+            : 'Map the account, then unmark and re-mark payment on the PO.';
+        await prisma.adminNotification.create({
+          data: {
+            category: 'JOURNAL_PENDING',
+            severity: 'WARNING',
+            title: 'Supplier payment journal not posted',
+            message: `Supplier payment journal could not be posted (${jr.code}${role ? `: ${role}` : ''}). ${remedy}`,
+            metadata: { poId, kind: paidAt != null ? 'payment' : 'reversal', reason: jr.code, role },
+          },
+        });
+      }
+    } catch (e) {
+      try {
+        await prisma.adminNotification.create({
+          data: {
+            category: 'JOURNAL_PENDING',
+            severity: 'WARNING',
+            title: 'Supplier payment journal not posted',
+            message: `Supplier payment journal errored (${e instanceof Error ? e.message : 'unknown'}). Verify the account mapping, then unmark and re-mark payment on the PO.`,
+            metadata: { poId, kind: paidAt != null ? 'payment' : 'reversal', reason: 'ERROR', role: null },
+          },
+        });
+      } catch {
+        /* best-effort: a notification failure must never fail the payment toggle */
+      }
+    }
   }
 
   revalidatePath('/backoffice/purchase-orders');
