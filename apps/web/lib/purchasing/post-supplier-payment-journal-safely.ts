@@ -145,12 +145,36 @@ function messageFor(
 
 /**
  * Skips the write when an unread `JOURNAL_PENDING` already exists for the same
- * PO and direction, so a repeated toggle does not pile up duplicate rows.
- * Mirrors `lib/canvassing/post-van-journal-safely.ts`: this MariaDB adapter's
- * JSON-path filtering is unreliable, so recent unread rows are fetched and
- * matched in JS rather than filtered in the query.
+ * PO, direction AND failure reason, so a toggle that keeps failing the same way
+ * does not pile up duplicate rows.
+ *
+ * The reason is part of the match, unlike the van sibling's `(docId, kind)`,
+ * because this flow has several codes with several different remedies. Dedup on
+ * the pair alone silently swallows a CHANGED failure: the first mark fails
+ * `UNMAPPED_ROLE`, the operator maps the account and re-marks, the post now
+ * fails `GRN_JOURNALS_INCOMPLETE`, and the only surviving signal is the unread
+ * `UNMAPPED_ROLE` row telling them to do what they just did. That is worse than
+ * no dedup, because it actively misdirects. Matching on the reason keeps both
+ * properties: the same failure repeated writes nothing, a different one always
+ * writes. Accumulation stays bounded at one unread row per distinct reason per
+ * PO and direction.
+ *
+ * Chosen over updating the existing row in place because `AdminNotification` has
+ * no `updatedAt` and a refreshed row would keep its original `createdAt` — it
+ * would rank by the stale first-failure time in any feed reading these (the bell
+ * is still an open follow-up), and it would age out of the recency window this
+ * very dedup scans, at which point the dedup breaks anyway AND leaves the stale
+ * row behind. A new row is honest about when the new failure happened.
+ *
+ * Mirrors `lib/canvassing/post-van-journal-safely.ts` on the read shape: this
+ * MariaDB adapter's JSON-path filtering is unreliable, so recent unread rows are
+ * fetched and matched in JS rather than filtered in the query.
  */
-async function alreadyFlagged(direction: SupplierPaymentDirection, poId: string): Promise<boolean> {
+async function alreadyFlagged(
+  direction: SupplierPaymentDirection,
+  poId: string,
+  reason: string,
+): Promise<boolean> {
   const recent = await prisma.adminNotification.findMany({
     where: { category: "JOURNAL_PENDING", readAt: null },
     orderBy: { createdAt: "desc" },
@@ -158,8 +182,8 @@ async function alreadyFlagged(direction: SupplierPaymentDirection, poId: string)
     select: { metadata: true },
   });
   return recent.some((n) => {
-    const m = n.metadata as { docId?: string; kind?: string } | null;
-    return m?.docId === poId && m?.kind === NOTIFICATION_KIND[direction];
+    const m = n.metadata as { docId?: string; kind?: string; reason?: string } | null;
+    return m?.docId === poId && m?.kind === NOTIFICATION_KIND[direction] && m?.reason === reason;
   });
 }
 
@@ -171,7 +195,7 @@ async function notify(
   detail?: string,
 ): Promise<void> {
   try {
-    if (await alreadyFlagged(direction, poId)) return;
+    if (await alreadyFlagged(direction, poId, reason)) return;
     await prisma.adminNotification.create({
       data: {
         category: "JOURNAL_PENDING",
