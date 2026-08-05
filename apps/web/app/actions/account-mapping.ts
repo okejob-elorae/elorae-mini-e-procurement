@@ -6,10 +6,12 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { POSTING_ROLES, type PostingRole } from "@/lib/constants/journal-roles";
 import { setAccountMapping, clearAccountMapping } from "@/lib/finance/journals/mapping";
+import { isAccountTypeValidForRole } from "@/lib/finance/journals/role-account-types";
+import type { AccountType } from "@/lib/constants/enums";
 
 export type SetAccountMappingResult =
   | { ok: true }
-  | { ok: false; code: "FORBIDDEN" | "BAD_ROLE" | "NON_POSTABLE_ACCOUNT" };
+  | { ok: false; code: "FORBIDDEN" | "BAD_ROLE" | "NON_POSTABLE_ACCOUNT" | "WRONG_ACCOUNT_TYPE" };
 
 function isPostingRole(role: string): role is PostingRole {
   return (POSTING_ROLES as readonly string[]).includes(role);
@@ -37,6 +39,10 @@ export async function setAccountMappingAction(
   const hasChildren = await prisma.chartAccount.findFirst({ where: { parentId: account.id } });
   if (hasChildren) {
     return { ok: false, code: "NON_POSTABLE_ACCOUNT" };
+  }
+
+  if (!isAccountTypeValidForRole(role, account.type as AccountType)) {
+    return { ok: false, code: "WRONG_ACCOUNT_TYPE" };
   }
 
   await setAccountMapping(role, chartAccountId, prisma);

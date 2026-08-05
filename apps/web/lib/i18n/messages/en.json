@@ -2946,7 +2946,8 @@
     "error": {
       "FORBIDDEN": "You do not have permission to change account mappings.",
       "BAD_ROLE": "Unrecognized posting role.",
-      "NON_POSTABLE_ACCOUNT": "The selected account cannot be posted to (not an active leaf account)."
+      "NON_POSTABLE_ACCOUNT": "The selected account cannot be posted to (not an active leaf account).",
+      "WRONG_ACCOUNT_TYPE": "That account has the wrong type for this role — e.g. the Accounts Payable role must map to a LIABILITAS account."
     }
   },
 

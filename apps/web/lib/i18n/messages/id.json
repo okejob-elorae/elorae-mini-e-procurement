@@ -2946,7 +2946,8 @@
     "error": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk mengubah pemetaan akun.",
       "BAD_ROLE": "Peran posting tidak dikenali.",
-      "NON_POSTABLE_ACCOUNT": "Akun yang dipilih tidak dapat diposting (bukan akun aktif tanpa turunan)."
+      "NON_POSTABLE_ACCOUNT": "Akun yang dipilih tidak dapat diposting (bukan akun aktif tanpa turunan).",
+      "WRONG_ACCOUNT_TYPE": "Akun ini bertipe salah untuk peran tersebut — mis. peran Utang Usaha harus dipetakan ke akun bertipe LIABILITAS."
     }
   },
 
