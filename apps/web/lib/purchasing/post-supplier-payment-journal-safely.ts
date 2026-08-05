@@ -1,7 +1,11 @@
 import { prisma } from "@elorae/db";
+import { isRetryableTxError } from "@/lib/db/tx-retry";
 import type { PostSupplierPaymentResult } from "./supplier-payment-journal";
 
 export type SupplierPaymentDirection = "payment" | "reversal";
+
+/** A post that did not produce a journal, in the shape `notify` needs. */
+export type SupplierPaymentPostFailure = { reason: string; role: string | null; detail?: string };
 
 const NOTIFICATION_KIND: Record<SupplierPaymentDirection, string> = {
   payment: "supplier_payment",
@@ -21,10 +25,20 @@ const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
 };
 
 /**
- * Posts a supplier payment journal without ever failing the caller. The paid
- * toggle and its status history have already committed, so a finance
- * misconfiguration becomes a `JOURNAL_PENDING` notification instead of an
- * error the operator cannot act on.
+ * Runs the journal post and classifies the outcome, returning `null` when there
+ * is nothing to tell the operator. Deliberately split from the notification
+ * write: the caller runs this INSIDE the same serializable transaction as the
+ * paid toggle (so a concurrent toggle cannot interleave between the two), then
+ * writes the notification after that transaction has committed. A notification
+ * must never be rolled back by transaction contention, nor add its own write to
+ * it.
+ *
+ * Never throws for a journal problem, so a finance misconfiguration cannot fail
+ * the toggle — it becomes a `JOURNAL_PENDING` notification instead of an error
+ * the operator cannot act on. A RETRYABLE transaction error is the one thing it
+ * does rethrow: MariaDB has already rolled the whole transaction back by then,
+ * so swallowing it would commit nothing while reporting a toggle that happened.
+ * Letting it out lets `runSerializable` retry the toggle and the post together.
  *
  * `NOTHING_TO_POST` is silent for a reversal and loud for a payment. Nothing to
  * reverse is a genuine no-op — the payment never posted, so there is no journal
@@ -36,19 +50,32 @@ const RETRY_HINT: Record<SupplierPaymentDirection, string> = {
  * receipt left un-reversed returns `GRN_REVERSAL_MISSING`, each carrying its own
  * remedy.
  */
-export async function postSupplierPaymentJournalSafely(
+export async function attemptSupplierPaymentJournal(
   direction: SupplierPaymentDirection,
-  poId: string,
   post: () => Promise<PostSupplierPaymentResult>,
-): Promise<void> {
+): Promise<SupplierPaymentPostFailure | null> {
   try {
     const res = await post();
-    if (res.ok) return;
-    if (res.code === "NOTHING_TO_POST" && direction === "reversal") return;
-    await notify(direction, poId, res.code, "role" in res ? (res.role ?? null) : null);
+    if (res.ok) return null;
+    if (res.code === "NOTHING_TO_POST" && direction === "reversal") return null;
+    return { reason: res.code, role: "role" in res ? (res.role ?? null) : null };
   } catch (e) {
-    await notify(direction, poId, "ERROR", null, e instanceof Error ? e.message : "unknown");
+    if (isRetryableTxError(e)) throw e;
+    return { reason: "ERROR", role: null, detail: e instanceof Error ? e.message : "unknown" };
   }
+}
+
+/**
+ * Writes the `JOURNAL_PENDING` row for a failure `attemptSupplierPaymentJournal`
+ * reported. Must run AFTER the toggle's transaction has committed — see that
+ * function's note.
+ */
+export async function notifySupplierPaymentJournalFailure(
+  direction: SupplierPaymentDirection,
+  poId: string,
+  failure: SupplierPaymentPostFailure,
+): Promise<void> {
+  await notify(direction, poId, failure.reason, failure.role, failure.detail);
 }
 
 function titleFor(direction: SupplierPaymentDirection, reason: string): string {
@@ -162,7 +189,7 @@ async function notify(
      * loudly to keep it discoverable in the server log at least.
      */
     console.error(
-      `[postSupplierPaymentJournalSafely] FAILED TO NOTIFY for supplier ${direction} on PO ${poId} — the journal did ` +
+      `[notifySupplierPaymentJournalFailure] FAILED TO NOTIFY for supplier ${direction} on PO ${poId} — the journal did ` +
         `not post and the JOURNAL_PENDING notification write also failed (${reason}). To recover: ${RETRY_HINT[direction]}.`,
       e,
     );

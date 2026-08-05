@@ -19,7 +19,12 @@ import {
   postSupplierPaymentJournal,
   postSupplierPaymentReversalJournal,
 } from '@/lib/purchasing/supplier-payment-journal';
-import { postSupplierPaymentJournalSafely } from '@/lib/purchasing/post-supplier-payment-journal-safely';
+import {
+  attemptSupplierPaymentJournal,
+  notifySupplierPaymentJournalFailure,
+  type SupplierPaymentPostFailure,
+} from '@/lib/purchasing/post-supplier-payment-journal-safely';
+import { runSerializable } from '@/lib/db/tx-retry';
 
 function poReceiptLineKey(itemId: string, variantSku?: string | null) {
   return `${itemId}\n${variantSku ?? ''}`;
@@ -372,24 +377,51 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
   });
   if (!po) throw new Error('PO not found');
 
-  /**
-   * Compare-and-swap on the paid state instead of an unconditional write. Two
-   * operators toggling the same PO — one unmarking, one marking — could
-   * otherwise both proceed: the unmark posts the reversal, the mark's journal
-   * call resolves to the already-existing payment journal and comes back
-   * `created: false` (which reads as ok, so nothing is flagged), and its
-   * `paidAt` UPDATE commits last. The PO would then show Paid with its payment
-   * reversed and the payable still outstanding, silently. Zero rows changed
-   * means the PO is already in the requested state, so the status history,
-   * the notification, and the journal are all skipped.
-   */
-  const toggled = await prisma.purchaseOrder.updateMany({
-    where: { id: poId, paidAt: paidAt != null ? null : { not: null } },
-    data: { paidAt },
-  });
-
   const actorId = session.user?.id;
-  if (toggled.count > 0 && actorId) {
+  const direction = paidAt != null ? 'payment' : 'reversal';
+
+  /**
+   * The toggle and its journal in ONE serializable transaction, so a concurrent
+   * toggle can neither interleave between them nor read a half-applied state.
+   *
+   * The compare-and-swap alone (which is what this used to be) only ordered the
+   * two `paidAt` writes. It still left this open: a mark CAS-succeeds and starts
+   * posting; an unmark CAS-succeeds because the PO now reads paid, runs its
+   * reversal, finds no payment journal yet and returns NOTHING_TO_POST — silent
+   * by design in that direction — and then the mark's journal commits. The PO
+   * ends up unpaid with DR payables / CR bank standing, and nothing flagged.
+   * Serializing the pair removes the window the second toggle needed.
+   *
+   * Zero rows changed means the PO is already in the requested state, so the
+   * status history, the notification and the journal are all skipped.
+   *
+   * The journal stays best-effort: `attemptSupplierPaymentJournal` catches a
+   * journal problem INSIDE the callback and hands it back as a value, so the CAS
+   * still commits and the failure becomes a JOURNAL_PENDING notification written
+   * after the transaction. Verified on MariaDB: a caught statement error does
+   * not poison the surrounding transaction. The exception is a deadlock or
+   * serialization abort, which MariaDB has already rolled back — that one
+   * rethrows so `runSerializable` retries the toggle and the post together.
+   * There is still no retry button because the toggle IS the retry.
+   */
+  const outcome = await runSerializable<{ changed: boolean; failure: SupplierPaymentPostFailure | null }>(
+    async (tx) => {
+      const toggled = await tx.purchaseOrder.updateMany({
+        where: { id: poId, paidAt: paidAt != null ? null : { not: null } },
+        data: { paidAt },
+      });
+      if (toggled.count === 0 || !actorId) return { changed: toggled.count > 0, failure: null };
+
+      const failure = await attemptSupplierPaymentJournal(direction, () =>
+        paidAt != null
+          ? postSupplierPaymentJournal(poId, actorId, paidAt, tx)
+          : postSupplierPaymentReversalJournal(poId, actorId, tx)
+      );
+      return { changed: true, failure };
+    }
+  );
+
+  if (outcome.changed && actorId) {
     await prisma.pOStatusHistory.create({
       data: {
         poId,
@@ -405,18 +437,11 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
       )
       .catch(() => {});
 
-    /**
-     * Best-effort journal post. The toggle and its status history have already
-     * committed, so nothing below may throw or change what this action returns —
-     * a journal problem surfaces as a JOURNAL_PENDING notification instead. There
-     * is no retry button because the toggle IS the retry: a failed post leaves
-     * nothing to reverse, so unmarking then re-marking posts cleanly.
-     */
-    await postSupplierPaymentJournalSafely(paidAt != null ? 'payment' : 'reversal', poId, () =>
-      paidAt != null
-        ? postSupplierPaymentJournal(poId, actorId, paidAt)
-        : postSupplierPaymentReversalJournal(poId, actorId)
-    );
+    /* Written outside the transaction on purpose: a notification must not be
+       rolled back by, or contribute its own write to, transaction contention. */
+    if (outcome.failure) {
+      await notifySupplierPaymentJournalFailure(direction, poId, outcome.failure);
+    }
   }
 
   revalidatePath('/backoffice/purchase-orders');
