@@ -219,6 +219,8 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 
 ### Finance — Journal & CoA
 - [x] Account-mapping UI: unmap/clear control (X button per mapped role) — PR #162.
+- [ ] Audit prod's full chart of accounts against `POSTING_ROLE_ACCOUNT_TYPES` — `13 Hutang` was typed ASET while mapped to the AP role, so the hand-built CoA was clearly never validated. The account-mapping page now flags mismatches; check it on prod after running `fix-hutang-account-type.sql`.
+- [ ] `Kas` (1101) had no posting role until the van cash journals; confirm on prod that `CASH` is mapped to it and `BANK` to 1102, or van sales will flag `JOURNAL_PENDING` on every sale.
 - [ ] Seed CoA detail postable leaves — Persediaan, Piutang, Selisih Persediaan, Marketplace Fee (Bank `1102` already seeded) so posting-role mappings are wireable out-of-box. Seed is a 10-account SAK-EMKM skeleton (`coa-sak-emkm.json`).
 - [ ] `postJournal` integrity-check query — surface any unbalanced or dangling journals.
 - [ ] Settlement journal `UNBALANCED` when the excel summary itself doesn't satisfy `Dilepas + Pengeluaran = Pendapatan`. The `MARKETPLACE_FEE_OTHER` residual absorbs fee-level gaps but is computed from `totalPengeluaran`, so it cannot absorb a summary-level mismatch (`settlement/journal.ts`) (PR #157, #17).
