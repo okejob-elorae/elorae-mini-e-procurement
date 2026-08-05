@@ -377,7 +377,20 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
   });
   if (!po) throw new Error('PO not found');
 
+  /**
+   * Fails closed before the transaction opens, matching this file's own
+   * `throw new Error('Unauthorized')` convention for a missing session. A
+   * missing actor used to be treated as a silent journal skip INSIDE the
+   * transaction: the CAS still committed, the outcome reported `changed: true,
+   * failure: null`, and the post-commit block was gated on the same actor, so
+   * the status history, the payment notification AND any journal-failure
+   * notification were all skipped. The PO ended up marked paid with nothing
+   * posted to the GL and nothing flagged anywhere. A write that needs an actor
+   * to be auditable and journalable must not commit without one.
+   */
   const actorId = session.user?.id;
+  if (!actorId) throw new Error('Unauthorized');
+
   const direction = paidAt != null ? 'payment' : 'reversal';
 
   /**
@@ -410,7 +423,7 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
         where: { id: poId, paidAt: paidAt != null ? null : { not: null } },
         data: { paidAt },
       });
-      if (toggled.count === 0 || !actorId) return { changed: toggled.count > 0, failure: null };
+      if (toggled.count === 0) return { changed: false, failure: null };
 
       const failure = await attemptSupplierPaymentJournal(direction, () =>
         paidAt != null
@@ -421,7 +434,7 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
     }
   );
 
-  if (outcome.changed && actorId) {
+  if (outcome.changed) {
     /**
      * FIRST of the post-commit writes, ahead of the status history, because a
      * bookkeeping write must never be able to erase the only recovery signal for
@@ -433,10 +446,9 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
      * `paidAt` is already set, so the operator's obvious retry does nothing and
      * nothing tells them to unmark first.
      *
-     * Ordering rather than a `finally` was enough here: `notifySupplierPayment-
-     * JournalFailure` swallows and logs its own failures, so putting it first
-     * cannot block the history insert either — neither write can starve the
-     * other.
+     * Ordering rather than a `try`/`finally` was enough here, because the notify
+     * helper swallows and logs its own failures — putting it first cannot block
+     * the history insert either, so neither write can starve the other.
      *
      * Written outside the transaction on purpose: a notification must not be
      * rolled back by, or contribute its own write to, transaction contention.
