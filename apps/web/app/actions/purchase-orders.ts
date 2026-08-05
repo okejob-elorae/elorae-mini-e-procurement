@@ -19,6 +19,7 @@ import {
   postSupplierPaymentJournal,
   postSupplierPaymentReversalJournal,
 } from '@/lib/purchasing/supplier-payment-journal';
+import { postSupplierPaymentJournalSafely } from '@/lib/purchasing/post-supplier-payment-journal-safely';
 
 function poReceiptLineKey(itemId: string, variantSku?: string | null) {
   return `${itemId}\n${variantSku ?? ''}`;
@@ -371,22 +372,34 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
   });
   if (!po) throw new Error('PO not found');
 
-  await prisma.purchaseOrder.update({
-    where: { id: poId },
+  /**
+   * Compare-and-swap on the paid state instead of an unconditional write. Two
+   * operators toggling the same PO — one unmarking, one marking — could
+   * otherwise both proceed: the unmark posts the reversal, the mark's journal
+   * call resolves to the already-existing payment journal and comes back
+   * `created: false` (which reads as ok, so nothing is flagged), and its
+   * `paidAt` UPDATE commits last. The PO would then show Paid with its payment
+   * reversed and the payable still outstanding, silently. Zero rows changed
+   * means the PO is already in the requested state, so the status history,
+   * the notification, and the journal are all skipped.
+   */
+  const toggled = await prisma.purchaseOrder.updateMany({
+    where: { id: poId, paidAt: paidAt != null ? null : { not: null } },
     data: { paidAt },
   });
 
-  if (session?.user?.id) {
+  const actorId = session.user?.id;
+  if (toggled.count > 0 && actorId) {
     await prisma.pOStatusHistory.create({
       data: {
         poId,
         status: po.status,
-        changedById: session.user.id,
+        changedById: actorId,
         paymentEvent: paidAt != null ? 'MARKED' : 'UNMARKED',
         notes: paidAt != null ? 'Supplier payment marked' : 'Supplier payment unmarked',
       },
     });
-    getActorName(session.user.id)
+    getActorName(actorId)
       .then((triggeredByName) =>
         notifyPOPaymentToggled(poId, po.docNumber, paidAt != null, triggeredByName)
       )
@@ -399,42 +412,11 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
      * is no retry button because the toggle IS the retry: a failed post leaves
      * nothing to reverse, so unmarking then re-marking posts cleanly.
      */
-    try {
-      const jr =
-        paidAt != null
-          ? await postSupplierPaymentJournal(poId, session.user.id, paidAt)
-          : await postSupplierPaymentReversalJournal(poId, session.user.id);
-      if (!jr.ok && jr.code !== 'NOTHING_TO_POST') {
-        const role = 'role' in jr ? (jr.role ?? null) : null;
-        const remedy =
-          jr.code === 'AP_ACCOUNT_MISMATCH'
-            ? 'The receipts booked their payable to a different account than the AP posting role now resolves to. Check the AP account mapping against the account the receipts actually credited, then unmark and re-mark payment on the PO.'
-            : 'Map the account, then unmark and re-mark payment on the PO.';
-        await prisma.adminNotification.create({
-          data: {
-            category: 'JOURNAL_PENDING',
-            severity: 'WARNING',
-            title: 'Supplier payment journal not posted',
-            message: `Supplier payment journal could not be posted (${jr.code}${role ? `: ${role}` : ''}). ${remedy}`,
-            metadata: { poId, kind: paidAt != null ? 'payment' : 'reversal', reason: jr.code, role },
-          },
-        });
-      }
-    } catch (e) {
-      try {
-        await prisma.adminNotification.create({
-          data: {
-            category: 'JOURNAL_PENDING',
-            severity: 'WARNING',
-            title: 'Supplier payment journal not posted',
-            message: `Supplier payment journal errored (${e instanceof Error ? e.message : 'unknown'}). Verify the account mapping, then unmark and re-mark payment on the PO.`,
-            metadata: { poId, kind: paidAt != null ? 'payment' : 'reversal', reason: 'ERROR', role: null },
-          },
-        });
-      } catch {
-        /* best-effort: a notification failure must never fail the payment toggle */
-      }
-    }
+    await postSupplierPaymentJournalSafely(paidAt != null ? 'payment' : 'reversal', poId, () =>
+      paidAt != null
+        ? postSupplierPaymentJournal(poId, actorId, paidAt)
+        : postSupplierPaymentReversalJournal(poId, actorId)
+    );
   }
 
   revalidatePath('/backoffice/purchase-orders');
