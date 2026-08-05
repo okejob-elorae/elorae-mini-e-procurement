@@ -117,7 +117,10 @@ export async function listVanLoads(canvasserId: string, limit: number): Promise<
       : Promise.resolve([]),
     findPostableJournalDocIds("van_load", ids),
   ]);
-  const journalByLoadId = new Map(journals.map((j) => [j.sourceId, j.id]));
+  const journalByLoadId = new Map<string, string>();
+  for (const j of journals) {
+    if (j.sourceId !== null) journalByLoadId.set(j.sourceId, j.id);
+  }
   return rows.map((r) => {
     const journalId = journalByLoadId.get(r.id) ?? null;
     const value = lineCostTotal(r.lines.map((l) => ({ qty: l.qty.toNumber(), unitCost: l.unitCost.toNumber() })));
