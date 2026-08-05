@@ -2,6 +2,16 @@ import { prisma } from "@elorae/db";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 /**
+ * Where a `journals:manage` operator retries each van document kind once the
+ * missing posting role is mapped in Account Mapping.
+ */
+const RETRY_HINT: Record<"load" | "sale" | "reconcile", string> = {
+  load: "retry from the canvasser's van detail page (Load History)",
+  sale: "retry from the van sale's detail page",
+  reconcile: "retry from the van reconcile's detail page",
+};
+
+/**
  * Posts a van journal without ever failing the caller. A canvassing sale is a
  * terminal point-of-sale transaction: a finance misconfiguration must not fail
  * it in front of a customer, so a problem becomes a JOURNAL_PENDING notification
@@ -22,7 +32,7 @@ export async function postVanJournalSafely(
 }
 
 async function notify(
-  kind: string,
+  kind: "load" | "sale" | "reconcile",
   docId: string,
   reason: string,
   role: string | null,
@@ -34,7 +44,7 @@ async function notify(
         category: "JOURNAL_PENDING",
         severity: "WARNING",
         title: `Van ${kind} journal not posted`,
-        message: `Van ${kind} journal could not be posted (${reason}${role ? `: ${role}` : ""}${detail ? `: ${detail}` : ""}). Map the account, then retry from the canvassing page.`,
+        message: `Van ${kind} journal could not be posted (${reason}${role ? `: ${role}` : ""}${detail ? `: ${detail}` : ""}). Map the account, then ${RETRY_HINT[kind]}.`,
         metadata: { docId, kind: `van_${kind}`, reason, role },
       },
     });

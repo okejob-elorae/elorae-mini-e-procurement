@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { loadVan } from "@/lib/canvassing/writer";
 import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
 import { postVanLoadJournal } from "@/lib/canvassing/van-journal";
+import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type LoadVanActionResult =
   | { ok: true; docNo: string }
@@ -42,4 +44,25 @@ export async function loadVanAction(input: {
   revalidatePath("/backoffice/canvassing");
   revalidatePath(`/backoffice/canvassing/${parsed.data.canvasserId}`);
   return { ok: true, docNo: res.docNo };
+}
+
+/**
+ * Permission-gated retry: re-posts a van load journal that failed at load time
+ * (e.g. `CASH`/`INVENTORY_VAN` were unmapped). Idempotent — `generateAutoJournal`
+ * no-ops if the journal already exists.
+ */
+export async function postVanLoadJournalAction(
+  vanLoadId: string,
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  const load = await prisma.vanLoad.findUnique({ where: { id: vanLoadId }, select: { canvasserId: true } });
+  if (!load) return { ok: false, code: "BAD_STATE" };
+
+  const r = await postVanLoadJournal(vanLoadId, session.user.id);
+  revalidatePath(`/backoffice/canvassing/${load.canvasserId}`);
+  return r;
 }

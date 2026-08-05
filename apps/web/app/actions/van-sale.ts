@@ -1,10 +1,14 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordVanSale } from "@/lib/canvassing/sale-writer";
 import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
 import { postVanSaleJournal } from "@/lib/canvassing/van-journal";
+import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type RecordVanSaleActionResult =
   | { ok: true; saleId: string; docNo: string; changeAmount: number }
@@ -38,4 +42,25 @@ export async function recordVanSaleAction(input: unknown): Promise<RecordVanSale
   }
   if (res.code === "INSUFFICIENT_VAN_STOCK") return { ok: false, reason: "INSUFFICIENT_VAN_STOCK", shortLines: res.shortLines };
   return { ok: false, reason: res.code };
+}
+
+/**
+ * Permission-gated retry: re-posts a van sale journal that failed at sale time
+ * (e.g. `CASH`/`INVENTORY_VAN` were unmapped). Idempotent — `generateAutoJournal`
+ * no-ops if the journal already exists.
+ */
+export async function postVanSaleJournalAction(
+  vanSaleId: string,
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  const sale = await prisma.vanSale.findUnique({ where: { id: vanSaleId }, select: { id: true } });
+  if (!sale) return { ok: false, code: "BAD_STATE" };
+
+  const r = await postVanSaleJournal(vanSaleId, session.user.id);
+  revalidatePath(`/backoffice/van-sales/${vanSaleId}`);
+  return r;
 }

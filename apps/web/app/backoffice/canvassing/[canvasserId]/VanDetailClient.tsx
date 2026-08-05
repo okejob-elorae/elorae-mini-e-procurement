@@ -1,15 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, ClipboardCheck, Clock, Package, Truck } from "lucide-react";
+import { ArrowLeft, BookText, ClipboardCheck, Clock, ExternalLink, Package, Truck } from "lucide-react";
 import type { VanStockRow, VanLoadRow, LoadableInventoryRow } from "@/lib/canvassing/queries";
 import type { VanReconcileRow, VanReconcileListRow } from "@/lib/canvassing/reconcile-queries";
 import { logPrint } from "@/app/actions/audit";
 import { getVanLoadPrintData } from "@/app/actions/van-load-print";
+import { postVanLoadJournalAction } from "@/app/actions/canvassing";
 import { buildVanLoadPrintHtml } from "@/lib/print/van-load-html";
+import { hasPermission } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -65,6 +69,42 @@ function printHtml(html: string, title: string) {
 export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, itemOptions, loadableInventory, reconcileRows, reconciles }: Props) {
   const t = useTranslations("canvassing");
   const router = useRouter();
+  const { data: session } = useSession();
+  const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
+  const [postingLoadJournalId, setPostingLoadJournalId] = useState<string | null>(null);
+
+  async function handlePostLoadJournal(loadId: string) {
+    setPostingLoadJournalId(loadId);
+    try {
+      const res = await postVanLoadJournalAction(loadId);
+      if (res.ok) {
+        toast.success(t(res.created ? "journal.postedToast" : "journal.alreadyPostedToast"));
+        router.refresh();
+        return;
+      }
+      switch (res.code) {
+        case "UNMAPPED_ROLE":
+          toast.error(t("journal.err.UNMAPPED_ROLE", { role: res.role ?? "" }));
+          break;
+        case "UNBALANCED":
+          toast.error(t("journal.err.UNBALANCED"));
+          break;
+        case "NOTHING_TO_POST":
+          toast.error(t("journal.err.NOTHING_TO_POST"));
+          break;
+        case "BAD_STATE":
+          toast.error(t("journal.err.BAD_STATE"));
+          break;
+        case "FORBIDDEN":
+          toast.error(t("journal.err.FORBIDDEN"));
+          break;
+        default:
+          toast.error(t("journal.err.BAD_STATE"));
+      }
+    } finally {
+      setPostingLoadJournalId(null);
+    }
+  }
 
   async function handlePrintLoad(loadId: string) {
     const data = await getVanLoadPrintData(loadId);
@@ -181,6 +221,7 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                         <TableHead>{t("colLoadedBy")}</TableHead>
                         <TableHead>{t("colDate")}</TableHead>
                         <TableHead className="text-right">{t("colLines")}</TableHead>
+                        <TableHead>{t("colJournal")}</TableHead>
                         <TableHead className="text-right">{t("print.vanLoadButton")}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -193,6 +234,29 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
                             {formatDateTime(load.createdAtIso)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{load.lineCount}</TableCell>
+                          <TableCell>
+                            {load.journalId ? (
+                              <Button asChild variant="ghost" size="sm">
+                                <Link href={`/backoffice/finance/journals/${load.journalId}`}>
+                                  <BookText className="h-3.5 w-3.5 mr-1.5" />
+                                  {t("journal.viewJournal")}
+                                  <ExternalLink className="h-3 w-3 ml-1" />
+                                </Link>
+                              </Button>
+                            ) : load.hasPostableJournal && canPostJournal ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={postingLoadJournalId === load.id}
+                                onClick={() => handlePostLoadJournal(load.id)}
+                              >
+                                <BookText className={`h-3.5 w-3.5 mr-1.5 ${postingLoadJournalId === load.id ? "animate-pulse" : ""}`} />
+                                {t("journal.postJournal")}
+                              </Button>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">
                             <Button variant="ghost" size="sm" onClick={() => handlePrintLoad(load.id)}>
                               {t("print.vanLoadButton")}

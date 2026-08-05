@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordVanReconcile } from "@/lib/canvassing/reconcile-writer";
 import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
 import { postVanReconcileJournal } from "@/lib/canvassing/van-journal";
+import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type RecordVanReconcileActionResult =
   | { ok: true; docNo: string; totalReturned: number; totalVarianceQty: number }
@@ -33,4 +35,26 @@ export async function recordVanReconcileAction(input: unknown): Promise<RecordVa
     return { ok: true, docNo: res.docNo, totalReturned: res.totalReturned, totalVarianceQty: res.totalVarianceQty };
   }
   return { ok: false, reason: res.code };
+}
+
+/**
+ * Permission-gated retry: re-posts a van reconcile journal that failed at
+ * reconcile time (e.g. `INVENTORY_VAN`/`INVENTORY_VARIANCE` were unmapped).
+ * Idempotent — `generateAutoJournal` no-ops if the journal already exists.
+ */
+export async function postVanReconcileJournalAction(
+  vanReconcileId: string,
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+
+  const recon = await prisma.vanReconcile.findUnique({ where: { id: vanReconcileId }, select: { canvasserId: true } });
+  if (!recon) return { ok: false, code: "BAD_STATE" };
+
+  const r = await postVanReconcileJournal(vanReconcileId, session.user.id);
+  revalidatePath(`/backoffice/canvassing/reconcile/${vanReconcileId}`);
+  revalidatePath(`/backoffice/canvassing/${recon.canvasserId}`);
+  return r;
 }

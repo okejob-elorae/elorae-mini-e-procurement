@@ -1,12 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, ExternalLink, MapPin, Printer } from "lucide-react";
+import { toast } from "sonner";
+import { ArrowLeft, BookText, ExternalLink, MapPin, Printer } from "lucide-react";
 import type { VanSaleDetail } from "@/lib/canvassing/sale-queries";
+import { postVanSaleJournalAction } from "@/app/actions/van-sale";
 import { vanSaleNotaHtml } from "@/lib/print/van-sale-nota-html";
+import { hasPermission } from "@/lib/rbac";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -51,6 +58,43 @@ function Field({ label, value }: { label: string; value: string | null }) {
 export function VanSaleDetailClient({ sale }: Props) {
   const t = useTranslations("vanSale.backoffice.detail");
   const tVanSale = useTranslations("vanSale");
+  const router = useRouter();
+  const { data: session } = useSession();
+  const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
+  const [postingJournal, setPostingJournal] = useState(false);
+
+  async function handlePostJournal() {
+    setPostingJournal(true);
+    try {
+      const res = await postVanSaleJournalAction(sale.id);
+      if (res.ok) {
+        toast.success(tVanSale(res.created ? "journal.postedToast" : "journal.alreadyPostedToast"));
+        router.refresh();
+        return;
+      }
+      switch (res.code) {
+        case "UNMAPPED_ROLE":
+          toast.error(tVanSale("journal.err.UNMAPPED_ROLE", { role: res.role ?? "" }));
+          break;
+        case "UNBALANCED":
+          toast.error(tVanSale("journal.err.UNBALANCED"));
+          break;
+        case "NOTHING_TO_POST":
+          toast.error(tVanSale("journal.err.NOTHING_TO_POST"));
+          break;
+        case "BAD_STATE":
+          toast.error(tVanSale("journal.err.BAD_STATE"));
+          break;
+        case "FORBIDDEN":
+          toast.error(tVanSale("journal.err.FORBIDDEN"));
+          break;
+        default:
+          toast.error(tVanSale("journal.err.BAD_STATE"));
+      }
+    } finally {
+      setPostingJournal(false);
+    }
+  }
 
   function handlePrint() {
     const html = vanSaleNotaHtml(sale);
@@ -77,10 +121,31 @@ export function VanSaleDetailClient({ sale }: Props) {
           </Button>
           <h1 className="text-2xl font-semibold font-mono">{sale.docNo}</h1>
         </div>
-        <Button variant="outline" size="sm" onClick={handlePrint}>
-          <Printer className="mr-2 h-4 w-4" />
-          {tVanSale("printButton")}
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {sale.journalId ? (
+            <>
+              <Badge variant="default" className="gap-1">
+                <BookText className="h-3.5 w-3.5" />
+                {tVanSale("journal.posted")}
+              </Badge>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/backoffice/finance/journals/${sale.journalId}`}>
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  {tVanSale("journal.viewJournal")}
+                </Link>
+              </Button>
+            </>
+          ) : sale.hasPostableJournal && canPostJournal ? (
+            <Button size="sm" variant="outline" onClick={handlePostJournal} disabled={postingJournal}>
+              <BookText className={`h-4 w-4 mr-2 ${postingJournal ? "animate-pulse" : ""}`} />
+              {tVanSale("journal.postJournal")}
+            </Button>
+          ) : null}
+          <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            {tVanSale("printButton")}
+          </Button>
+        </div>
       </div>
 
       <Card className="p-4 space-y-2">
