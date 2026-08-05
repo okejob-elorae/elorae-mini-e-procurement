@@ -422,6 +422,29 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
   );
 
   if (outcome.changed && actorId) {
+    /**
+     * FIRST of the post-commit writes, ahead of the status history, because a
+     * bookkeeping write must never be able to erase the only recovery signal for
+     * a ledger inconsistency. The toggle has already committed and the journal
+     * has already failed; if the history insert went first and threw — a
+     * transient DB error, an FK, anything — this function would exit before
+     * flagging anything. The PO would read paid with no payment journal, no
+     * `JOURNAL_PENDING` row anywhere, and a re-mark would be a CAS no-op because
+     * `paidAt` is already set, so the operator's obvious retry does nothing and
+     * nothing tells them to unmark first.
+     *
+     * Ordering rather than a `finally` was enough here: `notifySupplierPayment-
+     * JournalFailure` swallows and logs its own failures, so putting it first
+     * cannot block the history insert either — neither write can starve the
+     * other.
+     *
+     * Written outside the transaction on purpose: a notification must not be
+     * rolled back by, or contribute its own write to, transaction contention.
+     */
+    if (outcome.failure) {
+      await notifySupplierPaymentJournalFailure(direction, poId, outcome.failure);
+    }
+
     await prisma.pOStatusHistory.create({
       data: {
         poId,
@@ -436,12 +459,6 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null) {
         notifyPOPaymentToggled(poId, po.docNumber, paidAt != null, triggeredByName)
       )
       .catch(() => {});
-
-    /* Written outside the transaction on purpose: a notification must not be
-       rolled back by, or contribute its own write to, transaction contention. */
-    if (outcome.failure) {
-      await notifySupplierPaymentJournalFailure(direction, poId, outcome.failure);
-    }
   }
 
   revalidatePath('/backoffice/purchase-orders');
