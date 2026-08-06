@@ -343,9 +343,11 @@ function generationPrefix(poId: string): string {
 /**
  * The PO a generation-keyed `sourceId` belongs to, or null if it is not shaped
  * like one. Split at the LAST `#` so the answer stays correct even if a PO id
- * ever gained one.
+ * ever gained one. Takes the nullable `sourceId` a `Journal` row actually has,
+ * because "absent" and "not generation-keyed" are the same answer here.
  */
-function poIdFromGenerationSourceId(sourceId: string): string | null {
+function poIdFromGenerationSourceId(sourceId: string | null): string | null {
+  if (sourceId == null) return null;
   const at = sourceId.lastIndexOf("#");
   return at <= 0 ? null : sourceId.slice(0, at);
 }
@@ -512,7 +514,9 @@ export async function poIdsWithStandingPaymentJournalWhileUnpaid(
 
   /* Bucketed by parsing each row's own `sourceId` back to a PO, and dropped
      unless that PO is one of the unpaid ones asked about — a row is never
-     attributed to an id whose prefix it merely resembles. */
+     attributed to an id whose prefix it merely resembles. `sourceId` is nullable
+     on `Journal` (a manual entry has none), which no `startsWith` or `in`
+     predicate can match, so both loops here narrow it rather than assert. */
   const reversalCounts = new Map<string, number>();
   for (const { sourceId } of reversals) {
     const poId = poIdFromGenerationSourceId(sourceId);
@@ -531,6 +535,7 @@ export async function poIdsWithStandingPaymentJournalWhileUnpaid(
     select: { sourceId: true },
   });
   for (const { sourceId } of standing) {
+    if (sourceId == null) continue;
     const poId = poIdByCurrentSourceId.get(sourceId);
     if (poId != null) flagged.add(poId);
   }
