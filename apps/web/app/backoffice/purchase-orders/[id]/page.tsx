@@ -299,6 +299,16 @@ export default function PODetailPage() {
     po.status === 'SUBMITTED' ||
     po.status === 'PARTIAL' ||
     po.status === 'OVER';
+  /*
+   * While an earlier mark's payment journal still stands on an unpaid PO,
+   * marking it paid is the one click that destroys its own recovery control:
+   * the post refuses `PAYMENT_SUPERSEDED` as soon as the payable has moved, and
+   * the refreshed detector — which requires `paidAt == null` — then drops the
+   * banner carrying the reversal button, leaving a paid PO, a stale payment
+   * journal, and nothing persistent to recover from. So the mark is withheld
+   * while the banner is up and recovery goes through the reversal instead.
+   */
+  const markPaidBlockedByStandingPayment = Boolean(po.paymentJournalStandingWhileUnpaid);
 
   const handlePrint = async () => {
     await logPrint('PurchaseOrder', String(params.id));
@@ -548,27 +558,34 @@ export default function PODetailPage() {
                 </div>
               )}
               {po.status !== 'DRAFT' && po.status !== 'CANCELLED' && (
-                <div className="pt-2 flex gap-2">
-                  {po.paidAt ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isTogglingPaid}
-                      onClick={() => handlePaidToggle(null)}
-                    >
-                      {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Unmark paid
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      disabled={isTogglingPaid}
-                      onClick={() => handlePaidToggle(new Date())}
-                    >
-                      {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Mark as paid
-                    </Button>
+                <div className="pt-2 space-y-2">
+                  <div className="flex gap-2">
+                    {po.paidAt ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isTogglingPaid}
+                        onClick={() => handlePaidToggle(null)}
+                      >
+                        {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Unmark paid
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        disabled={isTogglingPaid || markPaidBlockedByStandingPayment}
+                        onClick={() => handlePaidToggle(new Date())}
+                      >
+                        {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Mark as paid
+                      </Button>
+                    )}
+                  </div>
+                  {markPaidBlockedByStandingPayment && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      {tSupplierPayments('standingPayment.markBlocked')}
+                    </p>
                   )}
                 </div>
               )}

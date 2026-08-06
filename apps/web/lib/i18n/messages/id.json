@@ -1112,6 +1112,7 @@
       "body": "Tanda lunas PO ini sudah dibatalkan, tapi jurnal pembaliknya gagal diposting, jadi jurnal pembayarannya masih berdiri di buku besar: utang sudah dihapus dan bank sudah dikredit untuk PO yang sekarang berstatus belum dibayar. Menandai lunas lagi tidak akan memperbaikinya — posting jurnal pembaliknya dari sini.",
       "action": "Posting jurnal pembalik",
       "needsPermission": "Butuh izin journals:manage untuk memposting jurnal pembalik ini. Minta pengguna Finance melakukannya dari halaman PO ini.",
+      "markBlocked": "Tombol \"Mark as paid\" dimatikan selama jurnal pembayaran ini masih berdiri — menandai lunas lagi hanya menyembunyikan peringatan di atas tanpa memperbaiki buku besar. Posting jurnal pembaliknya dulu dari peringatan itu, lalu tandai lunas kembali.",
       "posted": "Jurnal pembalik diposting. Buku besar sudah sesuai dengan status belum dibayar PO ini.",
       "errForbidden": "Anda tidak punya izin journals:manage untuk memposting jurnal pembalik.",
       "errBadState": "PO ini sudah tidak dalam kondisi tersebut — jurnal pembaliknya sudah diposting atau PO-nya sudah ditandai lunas lagi. Halaman sudah dimuat ulang.",
