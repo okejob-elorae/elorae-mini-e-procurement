@@ -96,11 +96,20 @@ export async function postPendingSalesJournals(
   /*
    * The cutover floor is a WHERE term, not a post-fetch filter: applied after the
    * LIMIT, a batch of 50 pre-cutover rows would fill every tick and starve eligible
-   * orders forever. `shippedAt` is nullable (an order can reach COMPLETED without a
-   * ship stamp), so fall back to the NOT NULL `transactionDate` — never letting a row
-   * with an unknown ship date past the floor, and biasing toward exclusion, since an
-   * order wrongly excluded is a visible gap while one wrongly posted into a closed
-   * period cannot be undone.
+   * orders forever.
+   *
+   * `shippedAt` is the economic date and is what the journal is dated by, but it is
+   * nullable — an order can reach COMPLETED with no ship stamp. The COALESCE keeps
+   * such a row in the comparison instead of dropping it, standing in the NOT NULL
+   * `transactionDate`: every row is measured against SOME real date, and NULL is
+   * never treated as unbounded (a bare `so.shippedAt >= ?` would make NULL fail the
+   * predicate silently, and `OR shippedAt IS NULL` would let it through unmeasured).
+   *
+   * Do not simplify away the COALESCE. Because the transaction always precedes the
+   * ship, the substitute date can only ever be EARLIER, so the fallback's only
+   * possible effect is to push a row below the floor — never above it. That is the
+   * intended bias: an order wrongly excluded is a visible, recoverable gap, while one
+   * wrongly posted into an already-reported period cannot be undone.
    */
   const cutoverFilter = Prisma.sql`AND COALESCE(so.shippedAt, so.transactionDate) >= ${cutover}`;
 
