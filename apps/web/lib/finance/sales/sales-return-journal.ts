@@ -67,10 +67,20 @@ async function returnMeta(
  * shown to reverse a recognized sale, and "cannot be shown" has to fail closed
  * for the same reason the cutover floor does — an entry wrongly withheld is a
  * visible, recoverable gap, while one wrongly posted into an already-reported
- * period cannot be undone. Note the ingest sets the link on CREATE only, so a
- * return that landed before its own sales order keeps a null link permanently;
- * that is a gap to backfill (`SalesReturn.jubelioReturnId` IS the Jubelio
- * `salesorder_id`), not a reason to loosen this.
+ * period cannot be undone.
+ *
+ * A null link is a TRANSIENT state, not a dead end — the return commonly arrives
+ * before its sales order, so the first ingest had nothing to resolve. Two things
+ * heal it, both in apps/api: the ingest upsert re-links on UPDATE whenever the
+ * lookup finds an order, and the returns sweeper deliberately re-ingests a row
+ * whose `salesOrderId` is still null instead of skipping it for merely existing.
+ * So a refusal here clears itself once the order lands and its sale is journaled,
+ * and the operator's retry is what picks it up.
+ *
+ * What that does NOT cover is a return outside the sweeper's window that no
+ * further webhook touches; those need a one-shot relink, which is derivable
+ * because `SalesReturn.jubelioReturnId` IS the Jubelio `salesorder_id`. Either
+ * way the answer is to restore the link, never to loosen this gate.
  */
 async function saleLegIsOnTheBooks(
   salesOrderId: string | null,

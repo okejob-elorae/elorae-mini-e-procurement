@@ -57,10 +57,14 @@ export class SalesReturnIngestService {
           /*
            * Re-link on every ingest, because the order often lands AFTER the return:
            * the create branch resolved `salesOrderId` from an order that did not exist
-           * yet and stored null, and nothing else ever fills it in. A permanently null
-           * link now blocks the return's journal for good — the GL posts a return only
-           * against the original sale's own journal, so an unlinked return can never
-           * prove there is anything to reverse.
+           * yet and stored null. A null link blocks the return's journal entirely —
+           * the GL posts a return only against the original sale's own journal, so an
+           * unlinked return can never prove there is anything to reverse.
+           *
+           * This branch is only reached when something re-ingests the row, which is why
+           * `ReturnsSweeperService` skips on "present AND linked" rather than on mere
+           * presence: without that, a null-linked row would never re-enter here and the
+           * race would be permanent instead of self-healing.
            *
            * Only written when the lookup actually found an order: re-ingesting while
            * the order is still absent must not overwrite a link established earlier.

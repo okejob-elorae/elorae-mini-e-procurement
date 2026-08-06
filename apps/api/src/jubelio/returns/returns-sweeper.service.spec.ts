@@ -46,13 +46,30 @@ describe("ReturnsSweeperService", () => {
     expect(ingest.upsertFromApiDetail).toHaveBeenCalledTimes(2);
   });
 
-  it("skips returns that already exist locally", async () => {
+  it("skips returns that already exist locally AND are linked to their sales order", async () => {
     client.listReturnedOrders.mockResolvedValue([{ salesorder_id: 1 } as any]);
-    (prisma.salesReturn.findUnique as jest.Mock).mockResolvedValue({ id: "r1" });
+    (prisma.salesReturn.findUnique as jest.Mock).mockResolvedValue({ id: "r1", salesOrderId: "so1" });
 
     await service.sweep();
 
     expect(client.getSalesOrder).not.toHaveBeenCalled();
     expect(ingest.upsertFromApiDetail).not.toHaveBeenCalled();
+  });
+
+  /*
+   * The return routinely arrives before its sales order, so the first ingest had no
+   * order to resolve and stored null. Skipping on mere presence stranded those rows:
+   * nothing re-entered the ingest upsert, so the link was never filled in and the GL
+   * refused the return's journal for good. Re-ingesting is what makes it self-heal.
+   */
+  it("re-ingests an existing return whose sales order link is still null", async () => {
+    client.listReturnedOrders.mockResolvedValue([{ salesorder_id: 1 } as any]);
+    (prisma.salesReturn.findUnique as jest.Mock).mockResolvedValue({ id: "r1", salesOrderId: null });
+    client.getSalesOrder.mockResolvedValueOnce({ salesorder_id: 1, items: [] } as any);
+
+    await service.sweep();
+
+    expect(client.getSalesOrder).toHaveBeenCalledTimes(1);
+    expect(ingest.upsertFromApiDetail).toHaveBeenCalledTimes(1);
   });
 });
