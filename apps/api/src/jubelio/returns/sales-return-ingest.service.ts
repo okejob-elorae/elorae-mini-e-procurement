@@ -8,6 +8,11 @@ function toNum(v: unknown): number {
   return typeof v === "number" ? v : Number(v);
 }
 
+/* The link as it stands AFTER the upsert — null while the sales order is still absent. */
+export type SalesReturnIngestResult = {
+  salesOrderId: string | null;
+};
+
 /**
  * Ingest the SalesReturn audit row from a Jubelio SalesOrder detail that's in
  * a RETURNED state. Returns ARE SalesOrders in Jubelio's data model — there is
@@ -26,8 +31,8 @@ function toNum(v: unknown): number {
 export class SalesReturnIngestService {
   private readonly logger = new Logger(SalesReturnIngestService.name);
 
-  async upsertFromApiDetail(detail: JubelioSalesOrderDetail): Promise<void> {
-    await prisma.$transaction(async (tx) => {
+  async upsertFromApiDetail(detail: JubelioSalesOrderDetail): Promise<SalesReturnIngestResult> {
+    return prisma.$transaction(async (tx) => {
       const salesOrder = await tx.salesOrder.findUnique({
         where: { salesorderId: detail.salesorder_id },
         select: { id: true },
@@ -62,9 +67,11 @@ export class SalesReturnIngestService {
            * unlinked return can never prove there is anything to reverse.
            *
            * This branch is only reached when something re-ingests the row, which is why
-           * `ReturnsSweeperService` skips on "present AND linked" rather than on mere
-           * presence: without that, a null-linked row would never re-enter here and the
-           * race would be permanent instead of self-healing.
+           * `ReturnsSweeperService` re-ingests a null-linked return rather than skipping
+           * on mere presence: without that, a null-linked row would never re-enter here
+           * and the race would be permanent instead of self-healing. That sweeper spends
+           * the fetch only once the order it would resolve against is present locally,
+           * mirroring the lookup above — while it is absent, re-ingesting cannot help.
            *
            * Only written when the lookup actually found an order: re-ingesting while
            * the order is still absent must not overwrite a link established earlier.
@@ -141,6 +148,8 @@ export class SalesReturnIngestService {
           });
         }
       }
+
+      return { salesOrderId: ret.salesOrderId };
     });
   }
 }
