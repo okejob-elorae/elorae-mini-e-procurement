@@ -310,9 +310,44 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
  */
 async function currentGeneration(poId: string, client: AnyClient): Promise<number> {
   const reversalCount = await client.journal.count({
-    where: { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: { startsWith: `${poId}#` } },
+    where: { sourceType: "SUPPLIER_PAYMENT_REVERSAL", sourceId: { startsWith: generationPrefix(poId) } },
   });
+  return generationFromReversalCount(reversalCount);
+}
+
+/**
+ * The generation formula itself, extracted so the per-PO reader above and the
+ * batched detector at the bottom of this file cannot drift apart. Both have to
+ * turn a reversal COUNT into a generation, and a second copy of `+ 1` is exactly
+ * the kind of duplication that would silently un-gate one of the two screens
+ * that ask this question — the register reads the batched answer, the PO detail
+ * reads the per-PO one, and they must agree for every input.
+ */
+function generationFromReversalCount(reversalCount: number): number {
   return reversalCount + 1;
+}
+
+/** `sourceId` of one generation's journal — the payment and the reversal that
+    undoes it share it. */
+function generationSourceId(poId: string, gen: number): string {
+  return `${poId}#${gen}`;
+}
+
+/** Every generation of one PO, for counting reversals without knowing how many
+    there are. A PO id never contains `#`, so this prefix cannot reach another
+    PO's journals. */
+function generationPrefix(poId: string): string {
+  return `${poId}#`;
+}
+
+/**
+ * The PO a generation-keyed `sourceId` belongs to, or null if it is not shaped
+ * like one. Split at the LAST `#` so the answer stays correct even if a PO id
+ * ever gained one.
+ */
+function poIdFromGenerationSourceId(sourceId: string): string | null {
+  const at = sourceId.lastIndexOf("#");
+  return at <= 0 ? null : sourceId.slice(0, at);
 }
 
 /**
@@ -324,7 +359,7 @@ async function currentGeneration(poId: string, client: AnyClient): Promise<numbe
  */
 async function postedPaymentJournal(poId: string, gen: number, client: AnyClient) {
   return client.journal.findUnique({
-    where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${poId}#${gen}` } },
+    where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: generationSourceId(poId, gen) } },
     select: { date: true, lines: { select: { chartAccountId: true, debit: true, credit: true } } },
   });
 }
@@ -423,6 +458,84 @@ export async function hasStandingPaymentJournalWhileUnpaid(
   const gen = await currentGeneration(poId, client);
   const standing = await postedPaymentJournal(poId, gen, client);
   return standing != null;
+}
+
+/**
+ * The same verdict as `hasStandingPaymentJournalWhileUnpaid`, for many purchase
+ * orders at once: the subset of `poIds` that reads UNPAID while a payment journal
+ * still stands at its current generation. Both readers of that verdict — the PO
+ * detail page's banner and the supplier-payments register's withheld mark — have
+ * to agree, so this derives it from the same three shared internals
+ * (`generationPrefix`, `generationFromReversalCount`, `generationSourceId`)
+ * rather than restating any of them.
+ *
+ * THREE queries whatever the id count is, which is the whole reason it exists:
+ * the per-PO helper costs three of its own, so calling it per row would be 3N on
+ * every register page load. Set-wise the same derivation still works because the
+ * generation is a reversal COUNT and nothing else — count each PO's reversals in
+ * one pass, turn each count into that PO's current generation, then ask for the
+ * payment journals at exactly those `sourceId`s.
+ *
+ * Two early returns cost fewer, not more: no ids at all costs none, and a page
+ * with no unpaid PO on it stops after the first — a paid PO can never be in this
+ * state, so the journal reads are scoped to the unpaid ones only.
+ *
+ * The reversal read is one query with an `OR` term per unpaid id, so the id count
+ * shows up as predicate width rather than round trips. Callers keep that bounded
+ * by asking only for a page of rows; `listPOs` makes it opt-in for exactly that
+ * reason.
+ */
+export async function poIdsWithStandingPaymentJournalWhileUnpaid(
+  poIds: string[],
+  client: AnyClient = prisma,
+): Promise<Set<string>> {
+  const flagged = new Set<string>();
+  const requested = Array.from(new Set(poIds));
+  if (requested.length === 0) return flagged;
+
+  const unpaid = await client.purchaseOrder.findMany({
+    where: { id: { in: requested }, paidAt: null },
+    select: { id: true },
+  });
+  if (unpaid.length === 0) return flagged;
+
+  const unpaidIds = unpaid.map((po) => po.id);
+  const unpaidIdSet = new Set(unpaidIds);
+
+  const reversals = await client.journal.findMany({
+    where: {
+      sourceType: "SUPPLIER_PAYMENT_REVERSAL",
+      OR: unpaidIds.map((id) => ({ sourceId: { startsWith: generationPrefix(id) } })),
+    },
+    select: { sourceId: true },
+  });
+
+  /* Bucketed by parsing each row's own `sourceId` back to a PO, and dropped
+     unless that PO is one of the unpaid ones asked about — a row is never
+     attributed to an id whose prefix it merely resembles. */
+  const reversalCounts = new Map<string, number>();
+  for (const { sourceId } of reversals) {
+    const poId = poIdFromGenerationSourceId(sourceId);
+    if (poId == null || !unpaidIdSet.has(poId)) continue;
+    reversalCounts.set(poId, (reversalCounts.get(poId) ?? 0) + 1);
+  }
+
+  const poIdByCurrentSourceId = new Map<string, string>();
+  for (const poId of unpaidIds) {
+    const gen = generationFromReversalCount(reversalCounts.get(poId) ?? 0);
+    poIdByCurrentSourceId.set(generationSourceId(poId, gen), poId);
+  }
+
+  const standing = await client.journal.findMany({
+    where: { sourceType: "SUPPLIER_PAYMENT", sourceId: { in: Array.from(poIdByCurrentSourceId.keys()) } },
+    select: { sourceId: true },
+  });
+  for (const { sourceId } of standing) {
+    const poId = poIdByCurrentSourceId.get(sourceId);
+    if (poId != null) flagged.add(poId);
+  }
+
+  return flagged;
 }
 
 /**

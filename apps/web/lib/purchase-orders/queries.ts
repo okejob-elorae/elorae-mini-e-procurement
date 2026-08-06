@@ -2,7 +2,10 @@ import { prisma } from '@elorae/db';
 import { getETAStatus } from '@/lib/eta-alerts';
 import type { POStatus } from '@elorae/db';
 import { serializePODetail, serializePOListRow } from '@/lib/purchase-orders/serialize';
-import { hasStandingPaymentJournalWhileUnpaid } from '@/lib/purchasing/supplier-payment-journal';
+import {
+  hasStandingPaymentJournalWhileUnpaid,
+  poIdsWithStandingPaymentJournalWhileUnpaid,
+} from '@/lib/purchasing/supplier-payment-journal';
 
 export type ListPOsFilters = {
   status?: POStatus;
@@ -17,6 +20,53 @@ export type ListPOsFilters = {
 };
 
 export type ListPOsOpts = { page: number; pageSize: number };
+
+/**
+ * Per-row facts a list caller can ask for that are NOT columns on
+ * `PurchaseOrder` and cost their own queries, so no page pays for one it does
+ * not render.
+ */
+export type ListPOsExtras = {
+  /**
+   * Adds `paymentJournalStandingWhileUnpaid` to every returned row. Asked for by
+   * the surfaces that offer a paid toggle — the supplier-payments register — so
+   * they can withhold the mark on exactly the POs the PO detail page withholds it
+   * on. Costs a fixed three queries for the whole page (see
+   * `poIdsWithStandingPaymentJournalWhileUnpaid`), never three per row, and the
+   * id count reaches that detector as predicate width — which is why this is
+   * opt-in for a PAGINATED caller rather than always-on for the unpaginated ones.
+   */
+  withStandingPaymentJournal?: boolean;
+};
+
+/**
+ * A serialized list row, plus the opt-in flag. Optional because a caller that
+ * did not ask for it must not be handed `false` — that would read as "this PO is
+ * fine to mark paid" on a page that never checked.
+ */
+type POListRow = ReturnType<typeof serializePOListRow> & {
+  paymentJournalStandingWhileUnpaid?: boolean;
+};
+
+/**
+ * Stamps the standing-payment flag onto rows when it was asked for. Scoped to the
+ * rows that are actually UNPAID: a paid PO can never be in this state, so the
+ * detector is never asked about one.
+ */
+async function withStandingPaymentFlag(
+  rows: POListRow[],
+  extras?: ListPOsExtras
+): Promise<POListRow[]> {
+  if (!extras?.withStandingPaymentJournal) return rows;
+
+  const unpaidIds = rows.filter((row) => row.paidAt == null).map((row) => row.id);
+  const flagged = await poIdsWithStandingPaymentJournalWhileUnpaid(unpaidIds);
+
+  return rows.map((row) => ({
+    ...row,
+    paymentJournalStandingWhileUnpaid: flagged.has(row.id),
+  }));
+}
 
 function buildPOsWhere(filters?: ListPOsFilters) {
   const where: Record<string, unknown> = {};
@@ -87,7 +137,11 @@ const poListInclude = {
 } as const;
 
 /** Serialized PO rows safe for RSC → client props and server action responses. */
-export async function listPOs(filters?: ListPOsFilters, opts?: ListPOsOpts) {
+export async function listPOs(
+  filters?: ListPOsFilters,
+  opts?: ListPOsOpts,
+  extras?: ListPOsExtras
+) {
   const where = buildPOsWhere(filters);
 
   if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
@@ -101,7 +155,11 @@ export async function listPOs(filters?: ListPOsFilters, opts?: ListPOsOpts) {
       }),
       prisma.purchaseOrder.count({ where }),
     ]);
-    return { items: pos.map((po) => serializePOListRow(po)), totalCount };
+    const items = await withStandingPaymentFlag(
+      pos.map((po) => serializePOListRow(po)),
+      extras
+    );
+    return { items, totalCount };
   }
 
   const pos = await prisma.purchaseOrder.findMany({
@@ -110,7 +168,10 @@ export async function listPOs(filters?: ListPOsFilters, opts?: ListPOsOpts) {
     orderBy: { createdAt: 'desc' },
   });
 
-  return pos.map((po) => serializePOListRow(po));
+  return withStandingPaymentFlag(
+    pos.map((po) => serializePOListRow(po)),
+    extras
+  );
 }
 
 export async function getPOById(id: string) {

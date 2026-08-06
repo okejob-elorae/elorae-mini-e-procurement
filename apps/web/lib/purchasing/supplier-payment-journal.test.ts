@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { prisma } from "@elorae/db";
 import {
   hasStandingPaymentJournalWhileUnpaid,
+  poIdsWithStandingPaymentJournalWhileUnpaid,
   postSupplierPaymentJournal,
   postSupplierPaymentReversalJournal,
 } from "./supplier-payment-journal";
@@ -1506,6 +1507,188 @@ d("supplier payment journal (test bed only)", () => {
         expect(await hasStandingPaymentJournalWhileUnpaid(po.id, prisma)).toBe(false);
       } finally {
         await cleanupPo(tracked);
+      }
+    });
+  });
+
+  /*
+   * The batched detector the supplier-payments register gates its mark control
+   * on. It answers the same question as the per-PO helper above for a whole page
+   * of rows, and the two MUST agree for every input: they gate the same click on
+   * two different screens, so a divergence silently un-gates one of them. Both
+   * properties are asserted here — agreement against the per-PO helper itself
+   * (never against a hand-written expectation of what it "should" say), and the
+   * fixed query count that is the only reason a second detector exists at all.
+   */
+  describe("poIdsWithStandingPaymentJournalWhileUnpaid", () => {
+    /**
+     * Seeds a PO with one journaled receipt and returns its tracking record —
+     * registered with the shared `afterEach` net AND handed back so the test's own
+     * `finally` can run the same guarded cleanup with the GRN ids intact.
+     */
+    async function seedPoWithJournaledGrn(totalAmount: number, paidAt: Date | null): Promise<TrackedPo> {
+      const po = await prisma.purchaseOrder.create({
+        data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId, paidAt },
+        select: { id: true },
+      });
+      const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+      createdPos.push(tracked);
+      const grn = await prisma.gRN.create({
+        data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount, items: [] },
+        select: { id: true },
+      });
+      tracked.grnIds.push(grn.id);
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      return tracked;
+    }
+
+    type DetectorClient = NonNullable<Parameters<typeof poIdsWithStandingPaymentJournalWhileUnpaid>[1]>;
+
+    /**
+     * A stand-in client that counts the round trips the detector makes and
+     * forwards each one to the real client. Only the two reads the detector
+     * performs are implemented, so any query it grows that is NOT counted here
+     * fails loudly instead of slipping past the count assertion.
+     */
+    function countingClient(): { client: DetectorClient; queries: () => number } {
+      let queries = 0;
+      const forward = <T>(run: () => Promise<T>): Promise<T> => {
+        queries += 1;
+        return run();
+      };
+      const poFindMany = prisma.purchaseOrder.findMany as unknown as (args: unknown) => Promise<unknown>;
+      const journalFindMany = prisma.journal.findMany as unknown as (args: unknown) => Promise<unknown>;
+      const client = {
+        purchaseOrder: { findMany: (args: unknown) => forward(() => poFindMany(args)) },
+        journal: { findMany: (args: unknown) => forward(() => journalFindMany(args)) },
+      } as unknown as DetectorClient;
+      return { client, queries: () => queries };
+    }
+
+    it("agrees with the per-PO helper across a mixed set, including after a reversal moves the generation", async () => {
+      /* One PO per state the per-PO helper distinguishes. */
+      const standing = await seedPoWithJournaledGrn(45_000, new Date("2026-06-10T00:00:00.000Z"));
+      const reversed = await seedPoWithJournaledGrn(35_000, new Date("2026-06-11T00:00:00.000Z"));
+      const neverPaid = await seedPoWithJournaledGrn(25_000, null);
+      const paid = await seedPoWithJournaledGrn(15_000, new Date("2026-06-13T00:00:00.000Z"));
+      const seeded = [standing, reversed, neverPaid, paid];
+      const standingId = standing.poId;
+      const reversedId = reversed.poId;
+      const paidId = paid.poId;
+      /* An id that is not a PO at all: the register can hold a row whose PO was
+         deleted under it, and "absent" must read as "not flagged". */
+      const missingId = `missing-po-${token}`;
+
+      const allIds = [standingId, reversedId, neverPaid.poId, paidId, missingId];
+
+      /** Every id's batched verdict against the per-PO helper's own answer. */
+      const expectAgreement = async () => {
+        const batched = await poIdsWithStandingPaymentJournalWhileUnpaid(allIds, prisma);
+        for (const id of allIds) {
+          expect([id, batched.has(id)]).toEqual([id, await hasStandingPaymentJournalWhileUnpaid(id, prisma)]);
+        }
+        return batched;
+      };
+
+      try {
+        /* `standingId`: marked paid, then unmarked with the reversal never
+           posting — the state the register must withhold its mark on. */
+        expect(
+          await postSupplierPaymentJournal(standingId, userId, new Date("2026-06-10T00:00:00.000Z"), prisma),
+        ).toMatchObject({ ok: true, created: true });
+        await prisma.purchaseOrder.update({ where: { id: standingId }, data: { paidAt: null } });
+
+        /* `reversedId`: the same cycle with the reversal actually posting, so its
+           payment sits one generation behind the current one. */
+        expect(
+          await postSupplierPaymentJournal(reversedId, userId, new Date("2026-06-11T00:00:00.000Z"), prisma),
+        ).toMatchObject({ ok: true, created: true });
+        await prisma.purchaseOrder.update({ where: { id: reversedId }, data: { paidAt: null } });
+        expect(await postSupplierPaymentReversalJournal(reversedId, userId, prisma)).toMatchObject({
+          ok: true,
+          created: true,
+        });
+
+        /* `paidId`: a normal payment, still marked paid. The never-paid PO keeps
+           no payment journal at all. */
+        expect(
+          await postSupplierPaymentJournal(paidId, userId, new Date("2026-06-13T00:00:00.000Z"), prisma),
+        ).toMatchObject({ ok: true, created: true });
+
+        const batched = await expectAgreement();
+        expect(Array.from(batched)).toEqual([standingId]);
+
+        /*
+         * Recovering the flagged PO — posting the reversal that was missing —
+         * must drop it from the set. This is the assertion a batched detector
+         * that merely asked "does ANY payment journal exist for this PO" would
+         * fail: the payment row is still there, only the generation moved past
+         * it. So the shared generation derivation is pinned, not just the shape
+         * of the answer.
+         */
+        expect(await postSupplierPaymentReversalJournal(standingId, userId, prisma)).toMatchObject({
+          ok: true,
+          created: true,
+        });
+        const afterRecovery = await expectAgreement();
+        expect(Array.from(afterRecovery)).toEqual([]);
+      } finally {
+        /* Both cleanup paths run for these POs (here and in `afterEach`), and
+           each step is individually guarded. */
+        for (const tracked of seeded) {
+          await cleanupPo(tracked);
+        }
+      }
+    });
+
+    it("holds its query count at three however many ids it is given", async () => {
+      const standing = await seedPoWithJournaledGrn(55_000, new Date("2026-06-14T00:00:00.000Z"));
+      const paid = await seedPoWithJournaledGrn(20_000, new Date("2026-06-15T00:00:00.000Z"));
+      const standingId = standing.poId;
+      const paidId = paid.poId;
+
+      try {
+        expect(
+          await postSupplierPaymentJournal(standingId, userId, new Date("2026-06-14T00:00:00.000Z"), prisma),
+        ).toMatchObject({ ok: true, created: true });
+        await prisma.purchaseOrder.update({ where: { id: standingId }, data: { paidAt: null } });
+        expect(
+          await postSupplierPaymentJournal(paidId, userId, new Date("2026-06-15T00:00:00.000Z"), prisma),
+        ).toMatchObject({ ok: true, created: true });
+
+        /* One real unpaid PO: the full three reads — the PO rows, every
+           generation's reversal, then the payment journals at exactly the
+           current generations. */
+        const one = countingClient();
+        expect(Array.from(await poIdsWithStandingPaymentJournalWhileUnpaid([standingId], one.client))).toEqual([
+          standingId,
+        ]);
+        expect(one.queries()).toBe(3);
+
+        /* The same three reads with two hundred more ids in the request — the id
+           count reaches the database as predicate width, never as extra round
+           trips. Per-PO would have been 3N here. */
+        const padding = Array.from({ length: 200 }, (_, i) => `bulk-po-${token}-${i}`);
+        const many = countingClient();
+        expect(
+          Array.from(await poIdsWithStandingPaymentJournalWhileUnpaid([standingId, ...padding], many.client)),
+        ).toEqual([standingId]);
+        expect(many.queries()).toBe(3);
+
+        /* And the two early returns cost fewer rather than more: no ids at all
+           reads nothing, and a page holding only paid POs stops after the PO
+           read — a paid PO can never be in this state. */
+        const none = countingClient();
+        expect(Array.from(await poIdsWithStandingPaymentJournalWhileUnpaid([], none.client))).toEqual([]);
+        expect(none.queries()).toBe(0);
+
+        const paidOnly = countingClient();
+        expect(Array.from(await poIdsWithStandingPaymentJournalWhileUnpaid([paidId], paidOnly.client))).toEqual([]);
+        expect(paidOnly.queries()).toBe(1);
+      } finally {
+        for (const tracked of [standing, paid]) {
+          await cleanupPo(tracked);
+        }
       }
     });
   });

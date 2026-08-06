@@ -84,6 +84,13 @@ interface POForPayment {
   paidAt: Date | null;
   grandTotal: number;
   supplier: { name: string; code: string };
+  /**
+   * Unpaid while a payment journal from an earlier mark still stands on the
+   * ledger. Computed server-side by the list query — the same condition the PO
+   * detail page gates its own mark on, so the two screens cannot disagree about
+   * which POs are safe to mark paid.
+   */
+  paymentJournalStandingWhileUnpaid: boolean;
 }
 
 export default function SupplierPaymentsPage() {
@@ -125,7 +132,12 @@ export default function SupplierPaymentsPage() {
           paymentDueTo: to,
           paid: paymentFilter === 'all' ? undefined : paymentFilter === 'paid',
         },
-        { page, pageSize }
+        { page, pageSize },
+        /* This register offers the paid toggle, so it needs the same
+           standing-payment verdict the PO detail page gates its mark on. Asked
+           for explicitly because it costs its own queries — a fixed three for
+           the whole page, not three per row. */
+        { withStandingPaymentJournal: true }
       );
       const mapPo = (po: any) => ({
         id: po.id,
@@ -135,6 +147,7 @@ export default function SupplierPaymentsPage() {
         paidAt: po.paidAt ? new Date(po.paidAt) : null,
         grandTotal: Number(po.grandTotal),
         supplier: po.supplier,
+        paymentJournalStandingWhileUnpaid: Boolean(po.paymentJournalStandingWhileUnpaid),
       });
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
         const r = result as { items: any[]; totalCount: number };
@@ -560,13 +573,18 @@ export default function SupplierPaymentsPage() {
                         ) : (
                           <Button
                             size="sm"
-                            disabled={togglingPoId === po.id}
+                            disabled={togglingPoId === po.id || po.paymentJournalStandingWhileUnpaid}
                             onClick={() => handleMarkPaid(po.id, true)}
                           >
                             {togglingPoId === po.id ? 'Marking…' : 'Mark paid'}
                           </Button>
                         )}
                       </div>
+                      {po.paymentJournalStandingWhileUnpaid && (
+                        <p className="mt-1 ml-auto max-w-[260px] text-left text-xs text-amber-700 dark:text-amber-400">
+                          {tSupplierPayments('standingPayment.markBlockedRegister')}
+                        </p>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

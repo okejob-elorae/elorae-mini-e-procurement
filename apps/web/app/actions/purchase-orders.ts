@@ -324,9 +324,10 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
 
 export async function getPOs(
   filters?: Parameters<typeof listPOs>[0],
-  opts?: Parameters<typeof listPOs>[1]
+  opts?: Parameters<typeof listPOs>[1],
+  extras?: Parameters<typeof listPOs>[2]
 ) {
-  return listPOs(filters, opts);
+  return listPOs(filters, opts, extras);
 }
 
 export async function getPOById(id: string) {
