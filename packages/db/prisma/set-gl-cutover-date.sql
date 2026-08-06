@@ -14,12 +14,19 @@
 -- cutover date silently changes which periods enter the general ledger, and the
 -- posting it triggers cannot be undone except by deleting journals by hand.
 --
--- ORDER OF OPERATIONS (see docs/superpowers/specs/2026-08-06-prod-gl-cutover-design.md):
+-- ORDER OF OPERATIONS for the GL cutover:
 --   1. sweep date floor deployed        <- must already be live
---   2. chart-of-accounts detail leaves seeded
+--   2. chart-of-accounts detail leaves seeded, one postable LEAF per posting role
+--      (never a category node — postJournal rejects an account that has children,
+--      and it is only checked at write time, so the mapping page shows a broken
+--      mapping as healthy)
 --   3. THIS FILE
 --   4. posting roles mapped
---   5. opening-balance journal posted
+--   5. opening-balance journal posted, dated the day BEFORE the cutover, carrying
+--      the closing trial balance from whatever kept the books before this system
+--   6. stale pre-cutover JOURNAL_PENDING notifications marked read
+--   7. verify: Trial Balance balances, Neraca balances with no opening-balance
+--      warning, and no journal predates the cutover except the opening one
 -- Running this BEFORE step 2/4 is safe (nothing can post while roles are
 -- unmapped) and is the recommended order: arm the floor, then map, so the first
 -- tick after mapping is already bounded.
@@ -39,23 +46,41 @@ SELECT id, `key`, value, updatedAt FROM SystemSetting WHERE `key` = 'finance.glC
 -- LATER does not un-post anything already journaled. Understand which you are
 -- doing before proceeding.
 
--- 2. How many orders the chosen date would admit, and how many it excludes.
---    Replace the date in BOTH places with your intended cutover.
+-- 2. WHAT TIME ZONE IS THIS SESSION? Run this BEFORE query 3 — it decides which
+--    literal is correct there, and getting it wrong makes the whole count lie.
+SELECT @@session.time_zone AS sessionTz,
+       TIMESTAMPDIFF(HOUR, UTC_TIMESTAMP(), NOW()) AS offsetHours;
+-- Measured on this project's MariaDB: `SYSTEM` resolving to offsetHours = 0, i.e.
+-- UTC. Query 3 is written for that case.
+--
+-- Why it matters: the app's floor is WIB midnight. `parseDateOnly('2026-09-01')`
+-- yields the instant 2026-08-31T17:00:00Z, and Prisma stores DATETIME columns as
+-- UTC. On a UTC session, writing the WIB wall-clock string '2026-09-01 00:00:00'
+-- as the SQL literal therefore floors SEVEN HOURS LATE — it silently excludes the
+-- orders shipped between 17:00 and 24:00 UTC on 31 August that the app WILL post,
+-- so the count UNDERSTATES what arming does. Wrong direction for a safety check.
+--
+-- If offsetHours = 0  -> use the UTC literal, as query 3 does.
+-- If offsetHours = 7  -> the session is WIB; use '2026-09-01 00:00:00' instead.
+-- Anything else       -> stop and work out the correct instant by hand.
+
+-- 3. How many orders the chosen date would admit, and how many it excludes.
+--    Replace the instant in BOTH places. The literal below is a UTC instant and
+--    equals WIB midnight on 2026-09-01 — the cutover day itself is INCLUDED,
+--    matching the app.
 --    NOTE: this scans SalesOrder. On prod (8,649+ eligible rows) that is slow
 --    enough to have wedged an SSH tunnel once — run it off-hours, and do not
 --    widen it into an open-ended aggregate.
 SELECT
-  SUM(CASE WHEN COALESCE(so.shippedAt, so.transactionDate) >= '2026-09-01 00:00:00' THEN 1 ELSE 0 END) AS willPost,
-  SUM(CASE WHEN COALESCE(so.shippedAt, so.transactionDate) <  '2026-09-01 00:00:00' THEN 1 ELSE 0 END) AS excluded
+  SUM(CASE WHEN COALESCE(so.shippedAt, so.transactionDate) >= '2026-08-31 17:00:00' THEN 1 ELSE 0 END) AS willPost,
+  SUM(CASE WHEN COALESCE(so.shippedAt, so.transactionDate) <  '2026-08-31 17:00:00' THEN 1 ELSE 0 END) AS excluded
 FROM SalesOrder so
 WHERE (so.status IN ('SHIPPED','COMPLETED') OR so.fulfillmentStatus = 'SHIPPED');
--- The literal above is a WIB wall-clock time. If the DB session is not in WIB,
--- express it as the corresponding UTC instant instead ('2026-08-31 17:00:00').
 -- `willPost` is the number of journal PAIRS (revenue + COGS) the sweep will
 -- create, at 50 orders per 5-minute tick. If that number is not what you expect,
--- stop and re-read the cutover design doc rather than adjusting the date to suit.
+-- STOP — work out why before adjusting the date to make the number look right.
 
--- 3. Are the posting roles mapped yet? Determines whether arming has any
+-- 4. Are the posting roles mapped yet? Determines whether arming has any
 --    immediate effect.
 SELECT COUNT(*) AS mappedRoles FROM JournalAccountMapping;
 -- 0 means nothing can post regardless of this key — the safe order.
