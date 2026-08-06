@@ -134,6 +134,20 @@ d("supplier payment journal (test bed only)", () => {
   let createdPos: TrackedPo[] = [];
 
   /*
+   * Every seeded PO/GRN takes its document number from one monotonic per-suite
+   * counter instead of a hand-written suffix, so no two documents in this file
+   * can share a `docNumber` however many cases are added later. Hand-numbering
+   * had already collided across tests, and because cleanup is best-effort a
+   * single partial teardown then failed a LATER, unrelated case on the unique
+   * constraint — pointing the blame at the wrong scenario.
+   */
+  let docSeq = 0;
+  function nextDocNumber(prefix: "PO" | "GRN"): string {
+    docSeq += 1;
+    return `${prefix}-TEST-${token}-${docSeq}`;
+  }
+
+  /*
    * Invariant fixture (3 chart accounts, 3 mappings, 1 user, 1 supplier type,
    * 1 supplier) is identical across every test in this file, so it is seeded
    * ONCE here rather than in a per-test beforeEach. PO/GRN rows differ per
@@ -242,13 +256,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a PO with one fully-journaled GRN posts DR AP / CR BANK at that GRN's booked amount, dated paidAt, balanced", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-1`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-1`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 50_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 50_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -282,7 +296,7 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a PO with two GRNs, one of them reversed, posts the net", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-2`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     /* Tracked immediately after the PO create — before either GRN create —
@@ -292,12 +306,12 @@ d("supplier payment journal (test bed only)", () => {
     createdPos.push(tracked);
 
     const grnA = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-2A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 80_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 80_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnA.id);
     const grnB = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-2B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnB.id);
@@ -327,13 +341,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a PO whose only GRN has no journal at all returns GRN_JOURNALS_INCOMPLETE and posts nothing", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-3`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-3`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 40_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 40_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -356,18 +370,18 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a PO with two GRNs where only one is journaled returns GRN_JOURNALS_INCOMPLETE and posts nothing", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-13`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grnA = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-13A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 60_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 60_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnA.id);
     const grnB = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-13B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 25_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 25_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnB.id);
@@ -393,7 +407,7 @@ d("supplier payment journal (test bed only)", () => {
 
   it("an over-receive GRN still awaiting the owner's decision returns GRN_APPROVAL_PENDING and posts nothing", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-20`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
@@ -402,7 +416,7 @@ d("supplier payment journal (test bed only)", () => {
        neither decision stamped. */
     const grn = await prisma.gRN.create({
       data: {
-        docNumber: `GRN-TEST-${token}-20`,
+        docNumber: nextDocNumber("GRN"),
         poId: po.id,
         supplierId,
         receivedBy: userId,
@@ -438,7 +452,7 @@ d("supplier payment journal (test bed only)", () => {
 
   it("the same over-receive GRN once owner-APPROVED pays normally", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-21`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
@@ -447,7 +461,7 @@ d("supplier payment journal (test bed only)", () => {
        stamped. */
     const grn = await prisma.gRN.create({
       data: {
-        docNumber: `GRN-TEST-${token}-21`,
+        docNumber: nextDocNumber("GRN"),
         poId: po.id,
         supplierId,
         receivedBy: userId,
@@ -496,7 +510,7 @@ d("supplier payment journal (test bed only)", () => {
 
   it("the same over-receive GRN once owner-DECLINED and reversed still returns NOTHING_TO_POST, not GRN_APPROVAL_PENDING", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-22`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
@@ -505,7 +519,7 @@ d("supplier payment journal (test bed only)", () => {
        stamped. */
     const grn = await prisma.gRN.create({
       data: {
-        docNumber: `GRN-TEST-${token}-22`,
+        docNumber: nextDocNumber("GRN"),
         poId: po.id,
         supplierId,
         receivedBy: userId,
@@ -539,14 +553,14 @@ d("supplier payment journal (test bed only)", () => {
 
   it("an owner-declined GRN whose reversal journal never posted returns GRN_REVERSAL_MISSING and posts nothing", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-16`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
       data: {
-        docNumber: `GRN-TEST-${token}-16`,
+        docNumber: nextDocNumber("GRN"),
         poId: po.id,
         supplierId,
         receivedBy: userId,
@@ -579,14 +593,14 @@ d("supplier payment journal (test bed only)", () => {
 
   it("an owner-declined GRN WITH its reversal journal nets to zero and returns NOTHING_TO_POST, not GRN_REVERSAL_MISSING", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-17`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
       data: {
-        docNumber: `GRN-TEST-${token}-17`,
+        docNumber: nextDocNumber("GRN"),
         poId: po.id,
         supplierId,
         receivedBy: userId,
@@ -619,13 +633,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("an owner-declined GRN that never got its journal does not block a sibling receipt's payment", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-18`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grnA = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-18A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 65_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 65_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnA.id);
@@ -634,7 +648,7 @@ d("supplier payment journal (test bed only)", () => {
        GRN journal, and never will legitimately. */
     const grnDeclined = await prisma.gRN.create({
       data: {
-        docNumber: `GRN-TEST-${token}-18B`,
+        docNumber: nextDocNumber("GRN"),
         poId: po.id,
         supplierId,
         receivedBy: userId,
@@ -671,14 +685,14 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a PO whose only receipt is declined and never journaled returns NOTHING_TO_POST, not a blocking refusal", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-19`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grnDeclined = await prisma.gRN.create({
       data: {
-        docNumber: `GRN-TEST-${token}-19`,
+        docNumber: nextDocNumber("GRN"),
         poId: po.id,
         supplierId,
         receivedBy: userId,
@@ -712,13 +726,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a sub-cent GRN with no journal of its own does not block payment", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-14`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grnA = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-14A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 35_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 35_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnA.id);
@@ -726,7 +740,7 @@ d("supplier payment journal (test bed only)", () => {
        have a journal — the completeness check must exempt it rather than block
        the PO's payment forever. */
     const grnZero = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-14B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 0, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 0, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnZero.id);
@@ -751,13 +765,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a PO whose only receipt is sub-cent returns NOTHING_TO_POST — the sole remaining route to that guard", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-15`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grnZero = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-15`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 0, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 0, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnZero.id);
@@ -787,13 +801,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("postSupplierPaymentReversalJournal posts the mirror and running it after the payment restores the AP balance", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-4`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-4`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 60_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 60_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -843,7 +857,7 @@ d("supplier payment journal (test bed only)", () => {
   it("postSupplierPaymentReversalJournal refuses PO_IS_PAID while the PO still reads paid, and posts once it does not", async () => {
     const po = await prisma.purchaseOrder.create({
       data: {
-        docNumber: `PO-TEST-${token}-18`,
+        docNumber: nextDocNumber("PO"),
         supplierId,
         createdById: userId,
         paidAt: new Date("2026-07-01T00:00:00.000Z"),
@@ -853,7 +867,7 @@ d("supplier payment journal (test bed only)", () => {
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-18`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 70_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 70_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -907,13 +921,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("calling postSupplierPaymentJournal twice is idempotent", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-5`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-5`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 25_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 25_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -935,13 +949,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("an unmapped AP role returns UNMAPPED_ROLE and posts nothing", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-6`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-6`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 10_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 10_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -978,7 +992,7 @@ d("supplier payment journal (test bed only)", () => {
    */
   it("a PO with no receipts returns NOTHING_TO_POST even while AP is unmapped, not a mapping remedy it cannot use", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-19`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
@@ -1006,13 +1020,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a remapped AP account after GRN journals were posted returns AP_ACCOUNT_MISMATCH, not a silent NOTHING_TO_POST", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-7`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-7`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 15_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 15_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -1051,13 +1065,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a negative net payable (a reversal larger than the receipt) returns NOTHING_TO_POST", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-8`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-8`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 10_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 10_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -1082,13 +1096,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("mark -> unmark -> re-mark produces two payment journals and one reversal, netting AP back to its pre-payment balance", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-9`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-9`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 45_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 45_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -1150,13 +1164,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a retry of the first mark (double-submit, no intervening unmark) still produces exactly one payment journal", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-10`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-10`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 20_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 20_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -1183,18 +1197,18 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a PO whose receipts straddle an AP remap returns AP_ACCOUNT_MISMATCH instead of under-paying", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-11`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grnA = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-11A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 70_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 70_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnA.id);
     const grnB = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-11B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnB.id);
@@ -1237,13 +1251,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("the reversal mirrors the payment's own accounts and date, not whatever the roles resolve to at unmark time", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-12`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-12`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 55_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 55_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -1301,13 +1315,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a re-mark whose payable grew while the reversal never posted returns PAYMENT_SUPERSEDED and posts no second journal", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-13`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grnA = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-13A`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 50_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 50_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grnA.id);
@@ -1326,7 +1340,7 @@ d("supplier payment journal (test bed only)", () => {
        * grows to 80,000 while the generation cannot move.
        */
       const grnB = await prisma.gRN.create({
-        data: { docNumber: `GRN-TEST-${token}-13B`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
+        data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
         select: { id: true },
       });
       tracked.grnIds.push(grnB.id);
@@ -1363,13 +1377,13 @@ d("supplier payment journal (test bed only)", () => {
 
   it("a re-mark whose payable is UNCHANGED still succeeds on the standing journal, so the guard cannot over-refuse", async () => {
     const po = await prisma.purchaseOrder.create({
-      data: { docNumber: `PO-TEST-${token}-14`, supplierId, createdById: userId },
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
       select: { id: true },
     });
     const tracked: TrackedPo = { poId: po.id, grnIds: [] };
     createdPos.push(tracked);
     const grn = await prisma.gRN.create({
-      data: { docNumber: `GRN-TEST-${token}-14`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 40_000, items: [] },
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 40_000, items: [] },
       select: { id: true },
     });
     tracked.grnIds.push(grn.id);
@@ -1406,13 +1420,13 @@ d("supplier payment journal (test bed only)", () => {
   describe("hasStandingPaymentJournalWhileUnpaid", () => {
     it("is true for a PO left unpaid with its payment journal still standing", async () => {
       const po = await prisma.purchaseOrder.create({
-        data: { docNumber: `PO-TEST-${token}-15`, supplierId, createdById: userId, paidAt: new Date("2026-06-01T00:00:00.000Z") },
+        data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId, paidAt: new Date("2026-06-01T00:00:00.000Z") },
         select: { id: true },
       });
       const tracked: TrackedPo = { poId: po.id, grnIds: [] };
       createdPos.push(tracked);
       const grn = await prisma.gRN.create({
-        data: { docNumber: `GRN-TEST-${token}-15`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 45_000, items: [] },
+        data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 45_000, items: [] },
         select: { id: true },
       });
       tracked.grnIds.push(grn.id);
@@ -1436,13 +1450,13 @@ d("supplier payment journal (test bed only)", () => {
 
     it("is false for a normally-paid PO", async () => {
       const po = await prisma.purchaseOrder.create({
-        data: { docNumber: `PO-TEST-${token}-16`, supplierId, createdById: userId, paidAt: new Date("2026-06-02T00:00:00.000Z") },
+        data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId, paidAt: new Date("2026-06-02T00:00:00.000Z") },
         select: { id: true },
       });
       const tracked: TrackedPo = { poId: po.id, grnIds: [] };
       createdPos.push(tracked);
       const grn = await prisma.gRN.create({
-        data: { docNumber: `GRN-TEST-${token}-16`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 25_000, items: [] },
+        data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 25_000, items: [] },
         select: { id: true },
       });
       tracked.grnIds.push(grn.id);
@@ -1463,13 +1477,13 @@ d("supplier payment journal (test bed only)", () => {
 
     it("is false for a PO whose payment was fully reversed", async () => {
       const po = await prisma.purchaseOrder.create({
-        data: { docNumber: `PO-TEST-${token}-17`, supplierId, createdById: userId, paidAt: new Date("2026-06-03T00:00:00.000Z") },
+        data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId, paidAt: new Date("2026-06-03T00:00:00.000Z") },
         select: { id: true },
       });
       const tracked: TrackedPo = { poId: po.id, grnIds: [] };
       createdPos.push(tracked);
       const grn = await prisma.gRN.create({
-        data: { docNumber: `GRN-TEST-${token}-17`, poId: po.id, supplierId, receivedBy: userId, totalAmount: 35_000, items: [] },
+        data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 35_000, items: [] },
         select: { id: true },
       });
       tracked.grnIds.push(grn.id);
