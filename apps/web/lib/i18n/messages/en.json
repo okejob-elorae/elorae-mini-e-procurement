@@ -1114,6 +1114,8 @@
       "needsPermission": "Posting this reversal needs the journals:manage permission. Ask a Finance user to do it from this PO's page.",
       "markBlocked": "\"Mark as paid\" is disabled while this payment journal is still standing — marking it paid again only hides the warning above without fixing the ledger. Post the reversal journal from that warning first, then mark it paid.",
       "markBlockedRegister": "\"Mark paid\" is disabled: a payment journal from an earlier mark is still standing on the ledger even though this PO reads unpaid. Open this PO's detail page, post the reversal journal from the warning there, then mark it paid again.",
+      "markRefused": "The paid mark was not saved: a payment journal from an earlier mark is still standing on the ledger even though this PO reads unpaid. Nothing was written — the payment status, the journals and this PO's history are all unchanged. Post the reversal journal from the standing-payment warning on this page first, then mark it paid again.",
+      "markRefusedRegister": "The paid mark was not saved: a payment journal from an earlier mark is still standing on the ledger even though this PO reads unpaid. Nothing was written — the payment status, the journals and this PO's history are all unchanged. Open this PO's detail page, post the reversal journal from the warning there, then mark it paid again.",
       "posted": "Reversal journal posted. The ledger now matches this PO's unpaid status.",
       "errForbidden": "You do not have the journals:manage permission needed to post this reversal.",
       "errBadState": "This PO is no longer in that state — either the reversal has been posted or the PO was marked paid again. The page has been reloaded.",

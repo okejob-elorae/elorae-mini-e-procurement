@@ -381,9 +381,19 @@ export async function getPOStats() {
  * that committed `paidAt` but failed to post, then re-marked from a stale tab,
  * would be reported as a clean payment while the ledger gap persists.
  *
- * `journalFailure` is null on the happy path, on a no-op (nothing was attempted)
- * AND on a reversal with no payment journal to undo, which is a genuine no-op on
- * the ledger.
+ * `refusal` is a THIRD outcome, deliberately not folded into either of the other
+ * two. The mark direction is refused outright while the PO reads unpaid with a
+ * payment journal still standing at its current generation, and nothing at all is
+ * written for it — no `paidAt`, no journal, no status history, no notification.
+ * Reporting that as `changed: false` would be wrong in both directions: the
+ * no-op message says the PO was already in the requested state (it was not) and
+ * offers unmark-then-re-mark as the remedy (which cannot reach the missing
+ * reversal). It needs its own message naming the standing journal and the
+ * reversal control that clears it.
+ *
+ * `journalFailure` is null on the happy path, on a no-op (nothing was attempted),
+ * on a refusal (no post was reached) AND on a reversal with no payment journal to
+ * undo, which is a genuine no-op on the ledger.
  *
  * Only the code, the posting role and the direction cross to the client. The
  * `detail` string a thrown journal carries is a raw server error message — it
@@ -397,8 +407,11 @@ export async function getPOStats() {
  * from here rather than inferred by the caller from the button it pressed, so the
  * sentence describes the post that actually ran.
  */
+export type SetPOPaidAtRefusal = 'STANDING_PAYMENT_JOURNAL';
+
 export type SetPOPaidAtResult = {
   changed: boolean;
+  refusal: SetPOPaidAtRefusal | null;
   journalFailure: { code: string; role: string | null; direction: SupplierPaymentDirection } | null;
 };
 
@@ -456,20 +469,60 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
    * failed REVERSAL is the one case the toggle cannot re-reach, and it has its
    * own control (`postSupplierPaymentReversalJournalAction`).
    */
-  const outcome = await runSerializable<{ changed: boolean; failure: SupplierPaymentPostFailure | null }>(
+  const outcome = await runSerializable<{
+    changed: boolean;
+    refusal: SetPOPaidAtRefusal | null;
+    failure: SupplierPaymentPostFailure | null;
+  }>(
     async (tx) => {
+      /**
+       * A MARK is refused outright while this PO reads unpaid with its payment
+       * journal still standing — the state a failed reversal leaves behind. The
+       * post used to be the only thing that refused it (`PAYMENT_SUPERSEDED`,
+       * once the payable had moved), and by then the CAS had already committed
+       * `paidAt`. That is self-defeating: the standing-payment detector requires
+       * `paidAt == null`, so committing the mark makes it go false and drops the
+       * amber banner off the PO detail page — the only surface carrying the
+       * "Post reversal journal" control that actually clears the state. The
+       * operator ends up with a paid PO, a stale-amount payment journal, and
+       * nothing persistent to recover from. Both UIs already withhold the mark
+       * for this reason; every `"use server"` export is an independently callable
+       * endpoint, so a stale tab, the register before a refresh or a direct call
+       * still reaches this one.
+       *
+       * INSIDE the callback and BEFORE the compare-and-swap, for the same reason
+       * the toggle and its journal are serialized together in the first place: a
+       * check outside the write is only a prelude, and a concurrently-posted
+       * reversal — which is exactly what clears this state — could commit between
+       * the two and turn the answer stale before the CAS ran. Read under this
+       * transaction it cannot: the detector's own reads join this transaction's
+       * read set, so a serialization conflict aborts and `runSerializable` retries
+       * the check, the toggle and the post together rather than any one of them
+       * alone. This only widens the atom the surrounding comment argues for; it
+       * does not weaken it.
+       *
+       * MARK ONLY. Unmark stays available on both screens: it is not the
+       * dangerous direction, and it is the one that legitimately reaches the
+       * reversal writer. The detector is also false for a PO that already reads
+       * paid, so a redundant mark still falls through to the CAS and is reported
+       * as the no-op it is.
+       */
+      if (paidAt != null && (await hasStandingPaymentJournalWhileUnpaid(poId, tx))) {
+        return { changed: false, refusal: 'STANDING_PAYMENT_JOURNAL', failure: null };
+      }
+
       const toggled = await tx.purchaseOrder.updateMany({
         where: { id: poId, paidAt: paidAt != null ? null : { not: null } },
         data: { paidAt },
       });
-      if (toggled.count === 0) return { changed: false, failure: null };
+      if (toggled.count === 0) return { changed: false, refusal: null, failure: null };
 
       const failure = await attemptSupplierPaymentJournal(direction, () =>
         paidAt != null
           ? postSupplierPaymentJournal(poId, actorId, paidAt, tx)
           : postSupplierPaymentReversalJournal(poId, actorId, tx)
       );
-      return { changed: true, failure };
+      return { changed: true, refusal: null, failure };
     }
   );
 
@@ -553,6 +606,7 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
    */
   return {
     changed: outcome.changed,
+    refusal: outcome.refusal,
     journalFailure: outcome.failure
       ? { code: outcome.failure.reason, role: outcome.failure.role, direction }
       : null,

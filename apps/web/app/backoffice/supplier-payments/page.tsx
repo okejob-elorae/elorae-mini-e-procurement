@@ -197,7 +197,14 @@ export default function SupplierPaymentsPage() {
    * AND the direction resolve to — the same failure means opposite things on the
    * two halves of the toggle.
    *
-   * `changed: false` is checked FIRST and never reported as success: the PO was
+   * `refusal` is checked FIRST because it also carries `changed: false`, and the
+   * no-op message would be wrong for it twice over: nothing was written, but the
+   * PO was NOT already in the requested state, and unmark-then-re-mark cannot
+   * reach the reversal that is actually missing. The button is withheld for this
+   * state, so reaching it means the list was stale — and the remedy is on the PO
+   * detail page, which is what this surface's own message says.
+   *
+   * `changed: false` is checked next and never reported as success: the PO was
    * already in the requested state, so nothing was written and no journal was
    * attempted. Green-toasting that is the same lie as green-toasting a failed
    * post — worse from a stale list, where a re-mark whose first attempt left a
@@ -209,7 +216,9 @@ export default function SupplierPaymentsPage() {
     setTogglingPoId(poId);
     try {
       const result = await setPOPaidAt(poId, paid ? new Date() : null);
-      if (!result.changed) {
+      if (result.refusal) {
+        toast.warning(tSupplierPayments('standingPayment.markRefusedRegister'), { duration: 12000 });
+      } else if (!result.changed) {
         toast.info(
           tSupplierPayments(paid ? 'noop.alreadyPaid' : 'noop.alreadyUnpaid'),
           { duration: 10000 }
