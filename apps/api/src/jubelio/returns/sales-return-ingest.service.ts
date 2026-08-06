@@ -54,6 +54,18 @@ export class SalesReturnIngestService {
         update: {
           jubelioReturnNo: detail.salesorder_no ?? null,
           rawIngestPayload: detail as unknown as object,
+          /*
+           * Re-link on every ingest, because the order often lands AFTER the return:
+           * the create branch resolved `salesOrderId` from an order that did not exist
+           * yet and stored null, and nothing else ever fills it in. A permanently null
+           * link now blocks the return's journal for good — the GL posts a return only
+           * against the original sale's own journal, so an unlinked return can never
+           * prove there is anything to reverse.
+           *
+           * Only written when the lookup actually found an order: re-ingesting while
+           * the order is still absent must not overwrite a link established earlier.
+           */
+          ...(salesOrder?.id ? { salesOrderId: salesOrder.id } : {}),
           // Don't overwrite decision/status fields — admin-driven.
         },
       });
