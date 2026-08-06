@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { runCheckOverdue } from "./check-overdue";
 import { runReconciliationCron } from "@/app/actions/stock-reconciliation";
-import { postPendingSalesJournals } from "@/lib/finance/sales/sweep";
+import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "@/lib/finance/sales/sweep";
 
 let registered = false;
 
@@ -44,7 +44,19 @@ export function registerCronJobs(): void {
       console.log("[cron] sales-journal tick");
       try {
         const r = await postPendingSalesJournals();
-        if (r.posted > 0 || r.pending > 0) console.log(`[cron] sales-journal: +${r.revenue} rev, +${r.cogs} cogs, ${r.pending} pending`);
+        /*
+         * `NO_CUTOVER` is logged rather than passed over in silence: it means the
+         * sweep is inert by configuration, not that the backlog is empty, and an
+         * unset or malformed cutover date would otherwise look identical to a
+         * healthy idle tick for as long as it stayed wrong.
+         */
+        if (r.skipped === "NO_CUTOVER") {
+          console.warn(
+            `[cron] sales-journal: inert — ${GL_CUTOVER_SETTING_KEY} is unset or not a valid YYYY-MM-DD date, so no sales journals will post`,
+          );
+        } else if (r.posted > 0 || r.pending > 0) {
+          console.log(`[cron] sales-journal: +${r.revenue} rev, +${r.cogs} cogs, ${r.pending} pending`);
+        }
       } catch (err) {
         console.error("[cron] sales-journal failed:", err);
       }
