@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
 import { postSalesReturnRevenueJournal, postSalesReturnCogsJournal } from "./sales-return-journal";
+import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -12,6 +13,7 @@ d("sales return auto-journal (test bed only)", () => {
   let userId: string;
   let uomId: string;
   let itemId: string;
+  let orderId: string;
   let returnId: string;
   let adjIds: string[];
   let arId: string;
@@ -20,12 +22,59 @@ d("sales return auto-journal (test bed only)", () => {
   let invId: string;
   let mappingSnapshot: MappingSnapshot;
 
-  // Creates a return with 2 ACCEPTED items (subtotals 300+200; restock 3*40 + 2*50 = 220) + 1 REJECTED (subtotal 100).
+  /*
+   * The original sale every return here reverses: grandTotal 1000 and one line
+   * costed 400, so both sale legs carry a non-trivial value and can actually be
+   * journaled. Journaling it is a per-test decision — the gate under test asks
+   * whether this ledger recognized the sale, so the fixture has to be able to
+   * present it both ways.
+   */
+  async function makeOrder(): Promise<string> {
+    const so = await prisma.salesOrder.create({
+      data: {
+        salesorderId: token,
+        salesorderNo: `SO-RET-${token}`,
+        channel: "SHOPEE",
+        sourceName: "t",
+        status: "COMPLETED",
+        subTotal: 1000,
+        totalDisc: 0,
+        totalTax: 0,
+        shippingCost: 0,
+        grandTotal: 1000,
+        transactionDate: new Date("2026-03-01"),
+        shippedAt: new Date("2026-03-02"),
+        shippedById: userId,
+      },
+      select: { id: true },
+    });
+    await prisma.salesOrderItem.create({
+      data: {
+        salesOrderId: so.id,
+        salesorderDetailId: token,
+        jubelioItemId: 1,
+        jubelioItemCode: "x",
+        productName: "x",
+        qty: 5,
+        qtyInBase: 5,
+        unitPrice: 200,
+        pricePaid: 200,
+        discAmount: 0,
+        taxAmount: 0,
+        lineTotal: 1000,
+        cogs: 400,
+      },
+    });
+    return so.id;
+  }
+
+  /* Creates a return with 2 ACCEPTED items (subtotals 300+200; restock 3*40 + 2*50 = 220) + 1 REJECTED (subtotal 100). */
   async function makeReturn(): Promise<string> {
     const ret = await prisma.salesReturn.create({
       data: {
         jubelioReturnId: token,
         jubelioReturnNo: `RET-${token}`,
+        salesOrderId: orderId,
         channel: "SHOPEE",
         totalQty: 5,
         totalValue: 500,
@@ -61,6 +110,30 @@ d("sales return auto-journal (test bed only)", () => {
     return ret.id;
   }
 
+  /*
+   * Posts the sale's own two journals through the real writers rather than
+   * hand-inserting rows, so the gate is tested against exactly the
+   * `(sourceType, sourceId)` pairs production writes.
+   */
+  async function journalTheSale(): Promise<void> {
+    expect(await postSalesRevenueJournal(orderId, userId, prisma)).toMatchObject({ ok: true });
+    expect(await postSalesCogsJournal(orderId, userId, prisma)).toMatchObject({ ok: true });
+  }
+
+  /* Removes named sale legs from the ledger, to stage a sale this GL never recognized. */
+  async function unjournalTheSale(sourceTypes: string[]): Promise<void> {
+    const journals = await prisma.journal.findMany({
+      where: { sourceId: orderId, sourceType: { in: sourceTypes } },
+      select: { id: true },
+    });
+    const ids = journals.map((j) => j.id);
+    await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
+    await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+  }
+
+  const returnJournalCount = (): Promise<number> =>
+    prisma.journal.count({ where: { sourceId: returnId ?? "" } });
+
   beforeEach(async () => {
     token = Math.floor(Math.random() * 1_000_000);
     mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
@@ -70,7 +143,6 @@ d("sales return auto-journal (test bed only)", () => {
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku: `RET-${token}`, nameId: "t", nameEn: "t", type: "FINISHED_GOOD", isActive: true, uomId } });
     itemId = item.id;
-    returnId = await makeReturn();
 
     const mk = async (code: string, type: "ASET" | "PENDAPATAN" | "HPP") =>
       (await prisma.chartAccount.create({ data: { code, name: "t", type, depth: 1, isActive: true } })).id;
@@ -80,6 +152,10 @@ d("sales return auto-journal (test bed only)", () => {
     invId = await mk(`9${token}4`, "ASET");
     const map = async (role: string, id: string) => prisma.journalAccountMapping.upsert({ where: { role: role as never }, create: { role: role as never, chartAccountId: id }, update: { chartAccountId: id } });
     await map("AR", arId); await map("SALES_REVENUE", revId); await map("COGS", cogsId); await map("INVENTORY", invId);
+
+    orderId = await makeOrder();
+    returnId = await makeReturn();
+    await journalTheSale();
   });
 
   afterEach(async () => {
@@ -116,6 +192,8 @@ d("sales return auto-journal (test bed only)", () => {
     await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId].filter(Boolean) } } }));
     await step("returnItems", () => prisma.salesReturnItem.deleteMany({ where: { salesReturnId: returnId ?? "" } }));
     await step("returns", () => prisma.salesReturn.deleteMany({ where: { id: returnId ?? "" } }));
+    await step("orderItems", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: orderId ?? "" } }));
+    await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: orderId ?? "" } }));
     await step("adjustments", () => prisma.stockAdjustment.deleteMany({ where: { id: { in: adjIds ?? [] } } }));
     await step("item", () => prisma.item.deleteMany({ where: { id: itemId ?? "" } }));
     await step("uom", () => prisma.uOM.deleteMany({ where: { id: uomId ?? "" } }));
@@ -157,5 +235,45 @@ d("sales return auto-journal (test bed only)", () => {
     const b = await postSalesReturnRevenueJournal(returnId, userId, prisma);
     expect(a).toMatchObject({ ok: true, created: true });
     expect(b).toMatchObject({ ok: true, created: false });
+  });
+
+  it("original sale never journaled → both legs refuse ORIGINAL_SALE_NOT_JOURNALED and post nothing", async () => {
+    await unjournalTheSale(["SALESORDER_REVENUE", "SALESORDER_COGS"]);
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await returnJournalCount()).toBe(0);
+  });
+
+  it("return not traceable to an order (salesOrderId null) → both legs refuse and post nothing", async () => {
+    await prisma.salesReturn.update({ where: { id: returnId }, data: { salesOrderId: null } });
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await returnJournalCount()).toBe(0);
+  });
+
+  it("only the sale's revenue leg is on the books → revenue reversal posts, cogs reversal refuses", async () => {
+    await unjournalTheSale(["SALESORDER_COGS"]);
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: true, created: true });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await returnJournalCount()).toBe(1);
+  });
+
+  it("zero-value return still reports NOTHING_TO_POST, even with no sale journal to reverse", async () => {
+    await unjournalTheSale(["SALESORDER_REVENUE", "SALESORDER_COGS"]);
+    await prisma.salesReturnItem.updateMany({ where: { salesReturnId: returnId }, data: { decision: "REJECTED" } });
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
+  });
+
+  it("a retry after the sweep journals the sale posts what it refused before", async () => {
+    await unjournalTheSale(["SALESORDER_REVENUE", "SALESORDER_COGS"]);
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await returnJournalCount()).toBe(0);
+
+    await journalTheSale();
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: true, created: true });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: true, created: true });
+    expect(await returnJournalCount()).toBe(2);
   });
 });

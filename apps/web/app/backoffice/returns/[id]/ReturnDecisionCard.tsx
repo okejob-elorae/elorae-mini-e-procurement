@@ -120,6 +120,15 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
           case "UNBALANCED":
             toast.error(tj("journal.errUNBALANCED"));
             break;
+          /*
+           * Warning, not error, and given room to be read: the sales journal
+           * sweep can bring the original sale onto the ledger minutes from now,
+           * and the same button then posts. The "Post journal" button is gated
+           * on the return's own journals being absent, so it stays offered.
+           */
+          case "ORIGINAL_SALE_NOT_JOURNALED":
+            toast.warning(tj("journal.errORIGINAL_SALE_NOT_JOURNALED"), { duration: 12000 });
+            break;
           case "FORBIDDEN":
             toast.error(tj("journal.errFORBIDDEN"));
             break;

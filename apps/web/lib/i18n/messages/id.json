@@ -1889,6 +1889,7 @@
       "alreadyPostedToast": "Jurnal sudah ada.",
       "errUNMAPPED_ROLE": "Peran akun {role} belum dipetakan — petakan di Account Mapping lalu posting ulang.",
       "errUNBALANCED": "Jurnal tidak seimbang.",
+      "errORIGINAL_SALE_NOT_JOURNALED": "Penjualan asal belum punya jurnal di buku besar ini, jadi belum ada yang bisa dibalik. Kalau penjualannya pada atau setelah tanggal cutover GL, sweep jurnal penjualan akan memposting dalam beberapa menit — coba posting lagi setelah itu. Kalau sebelum cutover, penjualannya memang dibukukan di sistem lain dan retur ini tidak masuk buku besar ini.",
       "errBAD_STATE": "Retur belum bisa diposting.",
       "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
       "errUnexpected": "Terjadi kesalahan saat memposting jurnal."

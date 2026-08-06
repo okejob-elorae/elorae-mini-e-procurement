@@ -1889,6 +1889,7 @@
       "alreadyPostedToast": "Journal already exists.",
       "errUNMAPPED_ROLE": "Posting role {role} is unmapped — map it in Account Mapping, then post again.",
       "errUNBALANCED": "Journal is unbalanced.",
+      "errORIGINAL_SALE_NOT_JOURNALED": "The original sale has no journal in this ledger, so there is nothing to reverse yet. If the sale is on or after the GL cutover date, the sales journal sweep posts it within minutes — try posting again after that. If it is before the cutover, the sale is booked in another system by design and this return stays out of this ledger.",
       "errBAD_STATE": "Return is not in a postable state.",
       "errFORBIDDEN": "You don't have journal-posting permission.",
       "errUnexpected": "Something went wrong posting the journal."

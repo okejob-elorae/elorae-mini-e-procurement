@@ -12,6 +12,21 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { withSalesReturnLock, SalesReturnLockBusyError } from "@/lib/redis/lock";
 import { postSalesReturnRevenueJournal, postSalesReturnCogsJournal } from "@/lib/finance/sales/sales-return-journal";
 
+/**
+ * Remedy sentence carried by the `JOURNAL_PENDING` notification, per failure
+ * code. `ORIGINAL_SALE_NOT_JOURNALED` needs its own because the default remedy
+ * cannot resolve it: no account mapping brings the original sale onto this
+ * ledger. Naming the sweep instead keeps the notification honest about the
+ * transient case — a return decided minutes before the 5-minute sales sweep
+ * reaches its own order is postable shortly after, from the same button.
+ */
+function returnJournalRemedy(code: string): string {
+  if (code === "ORIGINAL_SALE_NOT_JOURNALED") {
+    return "The original sale has no journal in this ledger, so there is nothing to reverse. If the sale is on or after the GL cutover date, the sales journal sweep posts it within minutes — post from the return after that. If it is before the cutover, it is booked elsewhere by design and this return stays out of the ledger.";
+  }
+  return "Map the account, then post from the return.";
+}
+
 export type DecisionActionResult =
   | { ok: true }
   | {
@@ -130,13 +145,14 @@ export async function submitReturnDecisionAction(
       try {
         const jr = await post(salesReturnId, authResult.userId);
         if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
+          const role = "role" in jr ? jr.role ?? null : null;
           await prisma.adminNotification.create({
             data: {
               category: "JOURNAL_PENDING",
               severity: "WARNING",
               title: "Sales return journal not posted",
-              message: `Sales return ${kind} journal could not be posted (${jr.code}${jr.role ? `: ${jr.role}` : ""}). Map the account, then post from the return.`,
-              metadata: { salesReturnId, kind, reason: jr.code, role: jr.role ?? null },
+              message: `Sales return ${kind} journal could not be posted (${jr.code}${role ? `: ${role}` : ""}). ${returnJournalRemedy(jr.code)}`,
+              metadata: { salesReturnId, kind, reason: jr.code, role },
             },
           });
         }
@@ -165,7 +181,17 @@ export async function postSalesReturnJournalsAction(
   salesReturnId: string,
 ): Promise<
   | { ok: true; created: boolean }
-  | { ok: false; code: "UNMAPPED_ROLE" | "UNBALANCED" | "NOTHING_TO_POST" | "FORBIDDEN" | "BAD_STATE"; role?: string }
+  | {
+      ok: false;
+      code:
+        | "UNMAPPED_ROLE"
+        | "UNBALANCED"
+        | "NOTHING_TO_POST"
+        | "ORIGINAL_SALE_NOT_JOURNALED"
+        | "FORBIDDEN"
+        | "BAD_STATE";
+      role?: string;
+    }
 > {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
