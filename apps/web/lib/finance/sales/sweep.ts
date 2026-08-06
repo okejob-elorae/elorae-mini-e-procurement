@@ -30,8 +30,13 @@ export type SalesJournalSweepResult = {
  *
  * The round-trip check rejects rolled-over dates (`2026-02-31` parses to 3 March),
  * which would silently move the floor.
+ *
+ * Exported for the sales-return journal gate, which reads it only to REPORT
+ * whether a refusal is transient (the sale is above the floor and merely
+ * unswept) or permanent (below it, or no floor configured at all). That gate
+ * still keys on the counterpart journal, never on this date.
  */
-async function readGlCutover(): Promise<Date | null> {
+export async function readGlCutover(): Promise<Date | null> {
   const row = await prisma.systemSetting.findUnique({
     where: { key: GL_CUTOVER_SETTING_KEY },
     select: { value: true },

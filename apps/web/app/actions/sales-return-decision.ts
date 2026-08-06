@@ -10,21 +10,37 @@ import {
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { withSalesReturnLock, SalesReturnLockBusyError } from "@/lib/redis/lock";
-import { postSalesReturnRevenueJournal, postSalesReturnCogsJournal } from "@/lib/finance/sales/sales-return-journal";
+import {
+  postSalesReturnRevenueJournal,
+  postSalesReturnCogsJournal,
+  type SalesReturnGateCode,
+} from "@/lib/finance/sales/sales-return-journal";
 
 /**
  * Remedy sentence carried by the `JOURNAL_PENDING` notification, per failure
- * code. `ORIGINAL_SALE_NOT_JOURNALED` needs its own because the default remedy
- * cannot resolve it: no account mapping brings the original sale onto this
- * ledger. Naming the sweep instead keeps the notification honest about the
- * transient case — a return decided minutes before the 5-minute sales sweep
- * reaches its own order is postable shortly after, from the same button.
+ * code. The gate codes each need their own because the default remedy cannot
+ * resolve any of them — no account mapping brings the original sale onto this
+ * ledger — and because only ONE of them is worth waiting out. Telling the other
+ * three to retry after the sweep is advice that can never come true, and nothing
+ * reads `AdminNotification` to correct it later.
  */
+const RETURN_JOURNAL_REMEDIES: Record<SalesReturnGateCode, string> = {
+  ORIGINAL_SALE_NOT_JOURNALED_YET:
+    "The original sale is on this ledger but not journaled yet. The sales journal sweep runs every 5 minutes — post from the return after it has run.",
+  ORIGINAL_SALE_UNLINKED:
+    "This return is not linked to its sales order, so no sale journal can be found. Waiting will not help: restore the link (a Jubelio re-ingest does it once the order exists), then post from the return.",
+  ORIGINAL_SALE_OUTSIDE_LEDGER:
+    "The original sale's matching journal is not on this ledger and will not be — the sale is before the GL cutover date, or that leg of it had nothing to post. Nothing to retry; this return stays out of the ledger by design.",
+  GL_CUTOVER_NOT_CONFIGURED:
+    "No GL cutover date is configured, so the sales journal sweep is posting nothing at all. Set the cutover date in Finance settings, then post from the return.",
+};
+
+/* `in` rather than an index-and-`??`: this takes ANY failure code, and a Record
+ * lookup types as present even for the mapping codes that are not in it. */
 function returnJournalRemedy(code: string): string {
-  if (code === "ORIGINAL_SALE_NOT_JOURNALED") {
-    return "The original sale has no journal in this ledger, so there is nothing to reverse. If the sale is on or after the GL cutover date, the sales journal sweep posts it within minutes — post from the return after that. If it is before the cutover, it is booked elsewhere by design and this return stays out of the ledger.";
-  }
-  return "Map the account, then post from the return.";
+  return code in RETURN_JOURNAL_REMEDIES
+    ? RETURN_JOURNAL_REMEDIES[code as SalesReturnGateCode]
+    : "Map the account, then post from the return.";
 }
 
 export type DecisionActionResult =
@@ -187,7 +203,7 @@ export async function postSalesReturnJournalsAction(
         | "UNMAPPED_ROLE"
         | "UNBALANCED"
         | "NOTHING_TO_POST"
-        | "ORIGINAL_SALE_NOT_JOURNALED"
+        | SalesReturnGateCode
         | "FORBIDDEN"
         | "BAD_STATE";
       role?: string;

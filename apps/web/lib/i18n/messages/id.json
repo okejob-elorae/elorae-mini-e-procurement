@@ -1889,7 +1889,10 @@
       "alreadyPostedToast": "Jurnal sudah ada.",
       "errUNMAPPED_ROLE": "Peran akun {role} belum dipetakan — petakan di Account Mapping lalu posting ulang.",
       "errUNBALANCED": "Jurnal tidak seimbang.",
-      "errORIGINAL_SALE_NOT_JOURNALED": "Penjualan asal belum punya jurnal di buku besar ini, jadi belum ada yang bisa dibalik. Kalau penjualannya pada atau setelah tanggal cutover GL, sweep jurnal penjualan akan memposting dalam beberapa menit — coba posting lagi setelah itu. Kalau sebelum cutover, penjualannya memang dibukukan di sistem lain dan retur ini tidak masuk buku besar ini.",
+      "errORIGINAL_SALE_NOT_JOURNALED_YET": "Penjualan asal ada di buku besar ini tapi jurnalnya belum diposting. Sweep jurnal penjualan jalan tiap 5 menit — coba posting lagi setelah itu.",
+      "errORIGINAL_SALE_UNLINKED": "Retur ini belum tertaut ke pesanan penjualannya, jadi jurnal penjualan asalnya tidak bisa ditemukan. Menunggu tidak menolong: tautannya harus dipulihkan dulu (ingest ulang dari Jubelio memulihkannya begitu pesanannya ada), lalu posting lagi.",
+      "errORIGINAL_SALE_OUTSIDE_LEDGER": "Jurnal penjualan asalnya tidak ada di buku besar ini dan tidak akan ada — penjualannya sebelum tanggal cutover GL, atau sisi jurnal itu memang tidak punya nilai untuk diposting. Tidak ada yang perlu dicoba lagi: retur ini di luar buku besar ini sesuai desain.",
+      "errGL_CUTOVER_NOT_CONFIGURED": "Tanggal cutover GL belum diset, jadi sweep jurnal penjualan tidak memposting apa pun. Set tanggal cutover di pengaturan Finance, lalu posting lagi.",
       "errBAD_STATE": "Retur belum bisa diposting.",
       "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
       "errUnexpected": "Terjadi kesalahan saat memposting jurnal."

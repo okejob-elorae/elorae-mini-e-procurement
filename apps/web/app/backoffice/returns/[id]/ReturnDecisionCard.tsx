@@ -121,13 +121,26 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
             toast.error(tj("journal.errUNBALANCED"));
             break;
           /*
-           * Warning, not error, and given room to be read: the sales journal
-           * sweep can bring the original sale onto the ledger minutes from now,
-           * and the same button then posts. The "Post journal" button is gated
-           * on the return's own journals being absent, so it stays offered.
+           * The four gate codes are all correct refusals, so none is an error
+           * toast. Severity tracks what the operator can do rather than how bad
+           * it is: warning where something has to happen (wait for the sweep,
+           * restore the link, configure the cutover), info where the answer is
+           * that this return is out of the ledger by design and nothing will
+           * change that. All get room to be read. The "Post journal" button is
+           * gated on the return's own journals being absent, not on these codes,
+           * so it stays offered for the three refusals that can later clear.
            */
-          case "ORIGINAL_SALE_NOT_JOURNALED":
-            toast.warning(tj("journal.errORIGINAL_SALE_NOT_JOURNALED"), { duration: 12000 });
+          case "ORIGINAL_SALE_NOT_JOURNALED_YET":
+            toast.warning(tj("journal.errORIGINAL_SALE_NOT_JOURNALED_YET"), { duration: 12000 });
+            break;
+          case "ORIGINAL_SALE_UNLINKED":
+            toast.warning(tj("journal.errORIGINAL_SALE_UNLINKED"), { duration: 12000 });
+            break;
+          case "GL_CUTOVER_NOT_CONFIGURED":
+            toast.warning(tj("journal.errGL_CUTOVER_NOT_CONFIGURED"), { duration: 12000 });
+            break;
+          case "ORIGINAL_SALE_OUTSIDE_LEDGER":
+            toast.info(tj("journal.errORIGINAL_SALE_OUTSIDE_LEDGER"), { duration: 12000 });
             break;
           case "FORBIDDEN":
             toast.error(tj("journal.errFORBIDDEN"));

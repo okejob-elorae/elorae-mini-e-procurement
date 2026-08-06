@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
 import { postSalesReturnRevenueJournal, postSalesReturnCogsJournal } from "./sales-return-journal";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
+import { GL_CUTOVER_SETTING_KEY } from "./sweep";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -21,6 +22,25 @@ d("sales return auto-journal (test bed only)", () => {
   let cogsId: string;
   let invId: string;
   let mappingSnapshot: MappingSnapshot;
+  let cutoverSnapshot: string | null;
+
+  /*
+   * The gate reads the GL cutover to tell a permanently pre-cutover sale from one
+   * merely not swept yet, so this spec has to OWN that setting: left ambient, the
+   * refusal code every gate test asserts would depend on whatever the shared bed
+   * happens to hold (absent on dev → every refusal reads GL_CUTOVER_NOT_CONFIGURED).
+   * The fixture sale is dated 2026-03-02, so this floor puts it inside the ledger.
+   */
+  const CUTOVER_BEFORE_THE_SALE = "2026-01-01";
+  const CUTOVER_AFTER_THE_SALE = "2026-06-01";
+
+  const setCutover = async (value: string): Promise<void> => {
+    await prisma.systemSetting.upsert({
+      where: { key: GL_CUTOVER_SETTING_KEY },
+      create: { key: GL_CUTOVER_SETTING_KEY, value },
+      update: { value },
+    });
+  };
 
   /*
    * The original sale every return here reverses: grandTotal 1000 and one line
@@ -137,6 +157,12 @@ d("sales return auto-journal (test bed only)", () => {
   beforeEach(async () => {
     token = Math.floor(Math.random() * 1_000_000);
     mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: GL_CUTOVER_SETTING_KEY },
+      select: { value: true },
+    });
+    cutoverSnapshot = setting?.value ?? null;
+    await setCutover(CUTOVER_BEFORE_THE_SALE);
     const user = await prisma.user.create({ data: { email: `test-sret-journal-${token}@test.local`, name: "Test Admin" } });
     userId = user.id;
     const uom = await prisma.uOM.create({ data: { code: `UOM-${token}`, nameId: "t", nameEn: "t" } });
@@ -169,12 +195,22 @@ d("sales return auto-journal (test bed only)", () => {
     };
 
     /*
-     * Shared config first — JournalAccountMapping is live GL config the running ERP reads,
-     * and no bookkeeping delete below may stand between a failure and restoring it. The step
-     * name carries the mapping the bed should end up holding, so a failed restore names its
-     * own remedy.
+     * Shared config first — JournalAccountMapping and the GL cutover date are live config the
+     * running ERP reads, and no bookkeeping delete below may stand between a failure and
+     * restoring them. Each step name carries the value the bed should end up holding, so a
+     * failed restore names its own remedy.
      */
     await step(`restoreMappings (→ ${JSON.stringify(mappingSnapshot)})`, () => restoreMappings(mappingSnapshot));
+    await step(
+      `restoreCutover (→ ${cutoverSnapshot === null ? "absent (no row)" : JSON.stringify(cutoverSnapshot)})`,
+      async () => {
+        if (cutoverSnapshot === null) {
+          await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+        } else {
+          await setCutover(cutoverSnapshot);
+        }
+      },
+    );
 
     /*
      * Own-row filters below are coalesced to never-matching values: a beforeEach that dies
@@ -237,24 +273,57 @@ d("sales return auto-journal (test bed only)", () => {
     expect(b).toMatchObject({ ok: true, created: false });
   });
 
-  it("original sale never journaled → both legs refuse ORIGINAL_SALE_NOT_JOURNALED and post nothing", async () => {
+  /*
+   * The sale here is inside the ledger (2026-03-02, floor 2026-01-01) and both its
+   * legs carry value, so the ONLY reason it has no journal is that the sweep has
+   * not reached it — the one refusal a retry actually resolves.
+   */
+  it("eligible sale not yet swept → both legs refuse ORIGINAL_SALE_NOT_JOURNALED_YET and post nothing", async () => {
     await unjournalTheSale(["SALESORDER_REVENUE", "SALESORDER_COGS"]);
-    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
-    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED_YET" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED_YET" });
     expect(await returnJournalCount()).toBe(0);
   });
 
-  it("return not traceable to an order (salesOrderId null) → both legs refuse and post nothing", async () => {
+  it("return not traceable to an order (salesOrderId null) → both legs refuse ORIGINAL_SALE_UNLINKED and post nothing", async () => {
     await prisma.salesReturn.update({ where: { id: returnId }, data: { salesOrderId: null } });
-    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
-    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_UNLINKED" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_UNLINKED" });
+    expect(await returnJournalCount()).toBe(0);
+  });
+
+  it("sale below the cutover floor → both legs refuse ORIGINAL_SALE_OUTSIDE_LEDGER, never 'not yet'", async () => {
+    await setCutover(CUTOVER_AFTER_THE_SALE);
+    await unjournalTheSale(["SALESORDER_REVENUE", "SALESORDER_COGS"]);
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER" });
+    expect(await returnJournalCount()).toBe(0);
+  });
+
+  it("no cutover configured → both legs refuse GL_CUTOVER_NOT_CONFIGURED (the sweep is inert)", async () => {
+    await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+    await unjournalTheSale(["SALESORDER_REVENUE", "SALESORDER_COGS"]);
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "GL_CUTOVER_NOT_CONFIGURED" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "GL_CUTOVER_NOT_CONFIGURED" });
+    expect(await returnJournalCount()).toBe(0);
+  });
+
+  /*
+   * A sale carrying no cost has no SALESORDER_COGS journal and never will — the
+   * sale writer reports NOTHING_TO_POST for that leg forever — so the refusal is
+   * permanent even though the sale is eligible and above the floor.
+   */
+  it("sale's cogs leg has nothing to post → cogs reversal refuses ORIGINAL_SALE_OUTSIDE_LEDGER", async () => {
+    await unjournalTheSale(["SALESORDER_COGS"]);
+    await prisma.salesOrderItem.updateMany({ where: { salesOrderId: orderId ?? "" }, data: { cogs: 0 } });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_OUTSIDE_LEDGER" });
     expect(await returnJournalCount()).toBe(0);
   });
 
   it("only the sale's revenue leg is on the books → revenue reversal posts, cogs reversal refuses", async () => {
     await unjournalTheSale(["SALESORDER_COGS"]);
     expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: true, created: true });
-    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED_YET" });
     expect(await returnJournalCount()).toBe(1);
   });
 
@@ -267,8 +336,8 @@ d("sales return auto-journal (test bed only)", () => {
 
   it("a retry after the sweep journals the sale posts what it refused before", async () => {
     await unjournalTheSale(["SALESORDER_REVENUE", "SALESORDER_COGS"]);
-    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
-    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED" });
+    expect(await postSalesReturnRevenueJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED_YET" });
+    expect(await postSalesReturnCogsJournal(returnId, userId, prisma)).toMatchObject({ ok: false, code: "ORIGINAL_SALE_NOT_JOURNALED_YET" });
     expect(await returnJournalCount()).toBe(0);
 
     await journalTheSale();

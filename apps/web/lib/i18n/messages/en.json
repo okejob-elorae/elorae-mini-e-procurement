@@ -1889,7 +1889,10 @@
       "alreadyPostedToast": "Journal already exists.",
       "errUNMAPPED_ROLE": "Posting role {role} is unmapped — map it in Account Mapping, then post again.",
       "errUNBALANCED": "Journal is unbalanced.",
-      "errORIGINAL_SALE_NOT_JOURNALED": "The original sale has no journal in this ledger, so there is nothing to reverse yet. If the sale is on or after the GL cutover date, the sales journal sweep posts it within minutes — try posting again after that. If it is before the cutover, the sale is booked in another system by design and this return stays out of this ledger.",
+      "errORIGINAL_SALE_NOT_JOURNALED_YET": "The original sale is on this ledger but not journaled yet. The sales journal sweep runs every 5 minutes — try posting again after it has run.",
+      "errORIGINAL_SALE_UNLINKED": "This return is not linked to its sales order, so no sale journal can be found. Waiting will not help: the link has to be restored first (a Jubelio re-ingest does it once the order exists), then post again.",
+      "errORIGINAL_SALE_OUTSIDE_LEDGER": "The original sale's matching journal is not on this ledger and will not be — the sale is before the GL cutover date, or that leg of it had nothing to post. There is nothing to retry: this return stays out of this ledger by design.",
+      "errGL_CUTOVER_NOT_CONFIGURED": "No GL cutover date is configured, so the sales journal sweep is posting nothing at all. Set the cutover date in Finance settings, then post again.",
       "errBAD_STATE": "Return is not in a postable state.",
       "errFORBIDDEN": "You don't have journal-posting permission.",
       "errUnexpected": "Something went wrong posting the journal."
