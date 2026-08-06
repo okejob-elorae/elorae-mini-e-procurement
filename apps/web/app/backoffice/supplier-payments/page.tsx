@@ -31,7 +31,9 @@ import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 import { getPOById, getPOs, setPOPaidAt } from '@/app/actions/purchase-orders';
+import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
 import { logPrint } from '@/app/actions/audit';
 import { buildPOPrintHtml } from '@/lib/print/po-html';
 import { buildPOPaymentReceiptHtml } from '@/lib/print/po-payment-receipt-html';
@@ -82,6 +84,13 @@ interface POForPayment {
   paidAt: Date | null;
   grandTotal: number;
   supplier: { name: string; code: string };
+  /**
+   * Unpaid while a payment journal from an earlier mark still stands on the
+   * ledger. Computed server-side by the list query — the same condition the PO
+   * detail page gates its own mark on, so the two screens cannot disagree about
+   * which POs are safe to mark paid.
+   */
+  paymentJournalStandingWhileUnpaid: boolean;
 }
 
 export default function SupplierPaymentsPage() {
@@ -96,6 +105,8 @@ export default function SupplierPaymentsPage() {
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
   const [printingPoId, setPrintingPoId] = useState<string | null>(null);
+  const [togglingPoId, setTogglingPoId] = useState<string | null>(null);
+  const tSupplierPayments = useTranslations('supplierPayments');
 
   const fetchSuppliers = async () => {
     try {
@@ -121,7 +132,12 @@ export default function SupplierPaymentsPage() {
           paymentDueTo: to,
           paid: paymentFilter === 'all' ? undefined : paymentFilter === 'paid',
         },
-        { page, pageSize }
+        { page, pageSize },
+        /* This register offers the paid toggle, so it needs the same
+           standing-payment verdict the PO detail page gates its mark on. Asked
+           for explicitly because it costs its own queries — a fixed three for
+           the whole page, not three per row. */
+        { withStandingPaymentJournal: true }
       );
       const mapPo = (po: any) => ({
         id: po.id,
@@ -131,6 +147,7 @@ export default function SupplierPaymentsPage() {
         paidAt: po.paidAt ? new Date(po.paidAt) : null,
         grandTotal: Number(po.grandTotal),
         supplier: po.supplier,
+        paymentJournalStandingWhileUnpaid: Boolean(po.paymentJournalStandingWhileUnpaid),
       });
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
         const r = result as { items: any[]; totalCount: number };
@@ -167,13 +184,68 @@ export default function SupplierPaymentsPage() {
   const paidCount = pos.filter((p) => p.paidAt).length;
   const unpaidCount = pos.filter((p) => !p.paidAt).length;
 
+  /**
+   * The toggle always commits, so the outcome — not the absence of a throw —
+   * decides what the operator is told. A journal failure means the ledger does
+   * not reflect this toggle: for most payment codes because payables and bank
+   * were left untouched, for `PAYMENT_SUPERSEDED` because they still hold an
+   * earlier payment for a different amount, and on the reversal half because they
+   * still hold the payment this unmark failed to undo. Reporting "Marked as paid"
+   * for any of those is positive confirmation of something that did not happen,
+   * and the only other trace is an `AdminNotification` row nothing in the UI
+   * renders yet. Which case it is, and the remedy, come from the message the code
+   * AND the direction resolve to — the same failure means opposite things on the
+   * two halves of the toggle.
+   *
+   * `refusal` is checked FIRST because it also carries `changed: false`, and the
+   * no-op message would be wrong for it twice over: nothing was written, but the
+   * PO was NOT already in the requested state, and unmark-then-re-mark cannot
+   * reach the reversal that is actually missing. The button is withheld for this
+   * state, so reaching it means the list was stale — and the remedy is on the PO
+   * detail page, which is what this surface's own message says.
+   *
+   * `changed: false` is checked next and never reported as success: the PO was
+   * already in the requested state, so nothing was written and no journal was
+   * attempted. Green-toasting that is the same lie as green-toasting a failed
+   * post — worse from a stale list, where a re-mark whose first attempt left a
+   * ledger gap would read as a fresh clean payment. The neutral toast names the
+   * state the PO is actually in and points at the only remedy that reopens a
+   * journal attempt.
+   */
   const handleMarkPaid = async (poId: string, paid: boolean) => {
+    setTogglingPoId(poId);
     try {
-      await setPOPaidAt(poId, paid ? new Date() : null);
-      toast.success(paid ? 'Marked as paid' : 'Marked as unpaid');
+      const result = await setPOPaidAt(poId, paid ? new Date() : null);
+      if (result.refusal) {
+        toast.warning(tSupplierPayments('standingPayment.markRefusedRegister'), { duration: 12000 });
+      } else if (!result.changed) {
+        toast.info(
+          tSupplierPayments(paid ? 'noop.alreadyPaid' : 'noop.alreadyUnpaid'),
+          { duration: 10000 }
+        );
+      } else if (result.journalFailure) {
+        const failure = result.journalFailure;
+        /*
+         * `UNMAPPED_ROLE` is the only one of these messages that interpolates a
+         * value, so it is resolved from its literal key to keep next-intl's
+         * parameter typing intact. Passing values alongside the computed key
+         * would widen the whole call to `never` and drop that check.
+         */
+        const warning =
+          failure.code === 'UNMAPPED_ROLE'
+            ? tSupplierPayments('journal.err.UNMAPPED_ROLE', { role: failure.role ?? '' })
+            : tSupplierPayments(
+                supplierPaymentJournalErrorKey(failure.code, failure.direction) as never
+              );
+        toast.warning(warning, { duration: 12000 });
+      } else {
+        toast.success(paid ? 'Marked as paid' : 'Marked as unpaid');
+      }
       fetchPOs();
     } catch (e: any) {
       toast.error(e.message || 'Failed');
+    } finally {
+      setTogglingPoId(null);
     }
   };
 
@@ -499,15 +571,29 @@ export default function SupplierPaymentsPage() {
                           </DropdownMenuContent>
                         </DropdownMenu>
                         {po.paidAt ? (
-                          <Button variant="outline" size="sm" onClick={() => handleMarkPaid(po.id, false)}>
-                            Unmark
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={togglingPoId === po.id}
+                            onClick={() => handleMarkPaid(po.id, false)}
+                          >
+                            {togglingPoId === po.id ? 'Unmarking…' : 'Unmark'}
                           </Button>
                         ) : (
-                          <Button size="sm" onClick={() => handleMarkPaid(po.id, true)}>
-                            Mark paid
+                          <Button
+                            size="sm"
+                            disabled={togglingPoId === po.id || po.paymentJournalStandingWhileUnpaid}
+                            onClick={() => handleMarkPaid(po.id, true)}
+                          >
+                            {togglingPoId === po.id ? 'Marking…' : 'Mark paid'}
                           </Button>
                         )}
                       </div>
+                      {po.paymentJournalStandingWhileUnpaid && (
+                        <p className="mt-1 ml-auto max-w-[260px] text-left text-xs text-amber-700 dark:text-amber-400">
+                          {tSupplierPayments('standingPayment.markBlockedRegister')}
+                        </p>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -1102,7 +1102,44 @@
   "supplierPayments": {
     "unpaid": "Unpaid",
     "paid": "Paid",
-    "noPOsMatchFilters": "No POs match the filters."
+    "noPOsMatchFilters": "No POs match the filters.",
+    "noop": {
+      "alreadyPaid": "This PO was already marked paid — nothing changed and no journal was posted. If the earlier mark's payment journal never posted, unmark payment and mark it paid again.",
+      "alreadyUnpaid": "This PO was already marked unpaid — nothing changed and no journal was posted. If its reversal journal never posted, this PO shows a standing-payment warning with a button that posts the reversal."
+    },
+    "standingPayment": {
+      "title": "A payment journal is standing for a PO that is not marked paid",
+      "body": "This PO's paid mark was removed, but its reversal journal failed to post, so the payment journal still stands on the ledger: payables are cleared and bank is credited for a PO that now reads unpaid. Marking it paid again does not fix that — post the reversal from here.",
+      "action": "Post reversal journal",
+      "needsPermission": "Posting this reversal needs the journals:manage permission. Ask a Finance user to do it from this PO's page.",
+      "markBlocked": "\"Mark as paid\" is disabled while this payment journal is still standing — marking it paid again only hides the warning above without fixing the ledger. Post the reversal journal from that warning first, then mark it paid.",
+      "markBlockedRegister": "\"Mark paid\" is disabled: a payment journal from an earlier mark is still standing on the ledger even though this PO reads unpaid. Open this PO's detail page, post the reversal journal from the warning there, then mark it paid again.",
+      "markRefused": "The paid mark was not saved: a payment journal from an earlier mark is still standing on the ledger even though this PO reads unpaid. Nothing was written — the payment status, the journals and this PO's history are all unchanged. Post the reversal journal from the standing-payment warning on this page first, then mark it paid again.",
+      "markRefusedRegister": "The paid mark was not saved: a payment journal from an earlier mark is still standing on the ledger even though this PO reads unpaid. Nothing was written — the payment status, the journals and this PO's history are all unchanged. Open this PO's detail page, post the reversal journal from the warning there, then mark it paid again.",
+      "posted": "Reversal journal posted. The ledger now matches this PO's unpaid status.",
+      "errForbidden": "You do not have the journals:manage permission needed to post this reversal.",
+      "errBadState": "This PO is no longer in that state — either the reversal has been posted or the PO was marked paid again. The page has been reloaded.",
+      "errFailed": "The reversal journal could not be posted ({code}). Check the account mapping and this PO's journals in Finance, then try again."
+    },
+    "journal": {
+      "err": {
+        "GRN_APPROVAL_PENDING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts is still awaiting the owner's decision. Have the owner approve or decline it first, then unmark payment and mark it paid again.",
+        "GRN_JOURNALS_INCOMPLETE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts has no GRN journal. Post the missing GRN journal from its GRN row, then unmark payment and mark it paid again.",
+        "GRN_REVERSAL_MISSING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. A receipt was declined by the owner and its GRN journal was never reversed. Post the reversal journal from the declined GRN's row, then unmark payment and mark it paid again.",
+        "AP_ACCOUNT_MISMATCH": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The receipts booked their payable to a different account than the AP posting role now resolves to. Check the AP account mapping in Account Mapping, then unmark payment and mark it paid again.",
+        "PAYMENT_SUPERSEDED": "The payment status was saved, but a payment journal from an earlier mark is still standing for a different amount than this PO now owes, so no new journal was posted. Payables and bank are NOT untouched here — they still hold that earlier payment, which no longer clears this PO's payable. Unmark payment, confirm in Finance that the reversal journal actually posted this time, then mark it paid again. If that reversal fails too, this PO raises a standing-payment warning with a button that posts the reversal directly.",
+        "UNMAPPED_ROLE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The posting role \"{role}\" is not mapped to an account. Map it in Account Mapping, then unmark payment and mark it paid again.",
+        "NOTHING_TO_POST": "The PO was marked paid, but no payable was found booked to the GL for it, so no journal was posted — payables and bank are both untouched. Confirm this PO should be marked paid at all; if a receipt is missing, receive it first, then unmark payment and mark it paid again.",
+        "UNBALANCED": {
+          "payment": "The payment status was saved, but the payment journal was unbalanced (debit ≠ credit) so it was not posted — payables and bank are both untouched. Check this PO's journals in Finance, then unmark payment and mark it paid again.",
+          "reversal": "The paid mark was removed, but its reversal journal was unbalanced (debit ≠ credit) so it was not posted. Payables and bank are NOT untouched here — the earlier payment journal is still standing, so payables are cleared and bank is credited for a PO that now reads unpaid. This PO shows a standing-payment warning; post the reversal from the button on that warning."
+        },
+        "GENERIC": {
+          "payment": "The payment status was saved, but the payment journal failed to post because of an unexpected error. Check this PO's journals and the account mapping in Finance; if the payment journal really is missing, unmark payment and mark it paid again.",
+          "reversal": "The paid mark was removed, but its reversal journal failed to post because of an unexpected error, so the earlier payment journal is most likely still standing — payables cleared and bank credited for a PO that now reads unpaid. Check this PO's journals in Finance; if the standing-payment warning is shown on this PO, post the reversal from the button on it."
+        }
+      }
+    }
   },
   "purchaseOrders": {
     "noPurchaseOrdersFound": "No purchase orders found",
