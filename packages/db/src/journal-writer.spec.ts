@@ -56,7 +56,17 @@ d("postJournal (test bed only)", () => {
     // blocks removing a parent while a child still references it.
     await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(aId), seededId(bId)] } } });
     await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(kasParentId), seededId(bebanParentId)] } } });
-    await prisma.user.deleteMany({ where: { id: seededId(adminId) } });
+    /*
+     * Guarded `delete`, not `deleteMany`. On master this line was a `delete`,
+     * which Prisma REJECTS outright when the id is undefined — fail-closed by
+     * construction. `deleteMany` is fail-open: Prisma drops the undefined term
+     * and the call becomes an unfiltered delete of the whole `User` table on the
+     * shared bed, seeded logins included. `seededId` prevents that, but it would
+     * be the only thing preventing it, so the guard is kept structural: no id,
+     * no call. Last statement in the hook, so an early return skips nothing.
+     */
+    if (!adminId) return;
+    await prisma.user.delete({ where: { id: adminId } });
   });
 
   it("posts a balanced journal", async () => {

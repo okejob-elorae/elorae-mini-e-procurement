@@ -118,8 +118,15 @@ d("resolveBackfillCogs (test bed only)", () => {
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
+  /*
+   * Every call is scoped to this spec's own order. Unscoped, this helper stamps
+   * `cogs` on ANY line in the shared bed that has a matching FULFILLMENT_CONSUME
+   * adjustment — a write teardown never reverses, made before the assertion that
+   * would notice. Blast radius happens to be zero today only because no real
+   * consumed line currently has null cogs; that is state, not safety.
+   */
   it("backfills cogs from the consume adjustment; leaves unconsumed lines null", async () => {
-    const res = await resolveBackfillCogs(prisma, { apply: true });
+    const res = await resolveBackfillCogs(prisma, { apply: true, salesOrderIds: [seededId(salesOrderId)] });
 
     const l1 = await prisma.salesOrderItem.findUnique({ where: { salesorderDetailId: salesorderDetailId1 } });
     const l2 = await prisma.salesOrderItem.findUnique({ where: { salesorderDetailId: salesorderDetailId2 } });
@@ -130,7 +137,7 @@ d("resolveBackfillCogs (test bed only)", () => {
   });
 
   it("dry-run reports the would-update count without writing", async () => {
-    const res = await resolveBackfillCogs(prisma, { apply: false });
+    const res = await resolveBackfillCogs(prisma, { apply: false, salesOrderIds: [seededId(salesOrderId)] });
 
     const l1 = await prisma.salesOrderItem.findUnique({ where: { salesorderDetailId: salesorderDetailId1 } });
 

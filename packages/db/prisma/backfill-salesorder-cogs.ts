@@ -32,10 +32,21 @@ type BackfillClient = {
   stockAdjustment: Pick<PrismaClient["stockAdjustment"], "findMany">;
 };
 
+/**
+ * `salesOrderIds` narrows every read and write to those orders. The CLI never
+ * passes it — a backfill is DB-wide by definition — but the spec must, because
+ * it shares the `:3308` bed with real development data and this function
+ * otherwise stamps `cogs` onto any real line that happens to have a
+ * `FULFILLMENT_CONSUME` adjustment. Teardown deletes only the spec's own rows,
+ * so such a write is permanent, and the assertion that would notice runs after
+ * it. Scoping is the remedy CLAUDE.md prescribes for exactly this shape.
+ */
 export async function resolveBackfillCogs(
   client: BackfillClient,
-  opts: { apply: boolean },
+  opts: { apply: boolean; salesOrderIds?: string[] },
 ): Promise<{ updated: number; skipped: number }> {
+  const scope = opts.salesOrderIds;
+  if (scope != null && scope.length === 0) return { updated: 0, skipped: 0 };
   // 1. bulk-load consume adjustments → detailId -> cogs (one query, in-memory join)
   const adjustments = await client.stockAdjustment.findMany({
     where: { source: "FULFILLMENT_CONSUME" },
@@ -49,7 +60,7 @@ export async function resolveBackfillCogs(
 
   // 2. null-cogs lines → join
   const lines = await client.salesOrderItem.findMany({
-    where: { cogs: null },
+    where: { cogs: null, ...(scope != null ? { salesOrderId: { in: scope } } : {}) },
     select: { id: true, salesorderDetailId: true },
   });
   const targets: { id: string; cogs: number }[] = [];

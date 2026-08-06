@@ -14,7 +14,8 @@ d("consumeOrder (test bed only)", () => {
   let salesOrderId = "";
   const variantSku = "";
   const sku = `TEST-CONSUME-${Math.random().toString(36).slice(2, 10)}`;
-  const salesorderId = Math.floor(Date.now() / 1000);
+  // Random (not Date.now()/1000) so a re-run within the same second can't collide on SalesOrder_salesorderId_key.
+  const salesorderId = Math.floor(Math.random() * 2_000_000_000);
   const salesorderDetailId = salesorderId + 1;
 
   const AVG_COST = 1000;
