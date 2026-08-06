@@ -200,6 +200,26 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
     expect(await journalCount(orderIds.after)).toBe(0);
   });
 
+  /*
+   * Defends the round-trip check in `readGlCutover`, which nothing else reaches:
+   * `2026-02-31` passes the `YYYY-MM-DD` regex AND parses (Date rolls it over to
+   * 3 March), so the two malformed-input tests above — both stopped by the regex —
+   * cannot tell whether the check exists. Drop it, keeping `parseDateOnly(raw)`,
+   * and the floor silently arms at 2026-03-03: the pre-cutover order below then
+   * posts. Asserting BOTH the reported reason and zero journals is what pins it,
+   * since a rolled-over floor reports `skipped: null` and posts real journals.
+   */
+  it("rolled-over cutover date (2026-02-31) → posts nothing, reports NO_CUTOVER", async () => {
+    await setCutover("2026-02-31");
+    const res = await postPendingSalesJournals({
+      limit: 100,
+      orderIds: [orderIds.before, orderIds.after],
+    });
+    expect(res).toEqual({ posted: 0, revenue: 0, cogs: 0, pending: 0, skipped: "NO_CUTOVER" });
+    expect(await journalCount(orderIds.before)).toBe(0);
+    expect(await journalCount(orderIds.after)).toBe(0);
+  });
+
   it("order shipped before the cutover is skipped", async () => {
     const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.before] });
     expect(res).toEqual({ posted: 0, revenue: 0, cogs: 0, pending: 0, skipped: null });

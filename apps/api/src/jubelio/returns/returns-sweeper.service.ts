@@ -115,7 +115,7 @@ export class ReturnsSweeperService {
       where: { salesorderId },
       select: { id: true },
     });
-    const isPresent = order != null;
+    const isPresent = order !== null;
     presence.set(salesorderId, isPresent);
     return isPresent;
   }
