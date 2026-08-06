@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
-import { postPendingSalesJournals } from "./sweep";
+import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "./sweep";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -13,10 +13,15 @@ d("postPendingSalesJournals (test bed only)", () => {
   let orderId: string;
   let acctIds: string[];
   let mappingSnapshot: MappingSnapshot;
+  let cutoverSnapshot: string | null;
 
   beforeEach(async () => {
     token = Math.floor(Math.random() * 1_000_000);
     mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
+    /* The sweep is fail-closed on the GL cutover floor — without a setting it selects nothing. */
+    const cutoverRow = await prisma.systemSetting.findUnique({ where: { key: GL_CUTOVER_SETTING_KEY }, select: { value: true } });
+    cutoverSnapshot = cutoverRow?.value ?? null;
+    await prisma.systemSetting.upsert({ where: { key: GL_CUTOVER_SETTING_KEY }, create: { key: GL_CUTOVER_SETTING_KEY, value: "2026-01-01" }, update: { value: "2026-01-01" } });
     const user = await prisma.user.create({ data: { email: `test-sales-sweep-${token}@test.local`, name: "Sweeper", role: "ADMIN" } });
     userId = user.id;
     const so = await prisma.salesOrder.create({
@@ -38,6 +43,11 @@ d("postPendingSalesJournals (test bed only)", () => {
     const ids = journals.map((j) => j.id);
     if (ids.length) { await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } }); await prisma.journal.deleteMany({ where: { id: { in: ids } } }); }
     await restoreMappings(mappingSnapshot);
+    if (cutoverSnapshot === null) {
+      await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+    } else {
+      await prisma.systemSetting.update({ where: { key: GL_CUTOVER_SETTING_KEY }, data: { value: cutoverSnapshot } });
+    }
     await prisma.adminNotification.deleteMany({ where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } } });
     await prisma.chartAccount.deleteMany({ where: { id: { in: acctIds } } });
     await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: orderId } });
