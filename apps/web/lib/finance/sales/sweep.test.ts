@@ -15,13 +15,20 @@ d("postPendingSalesJournals (test bed only)", () => {
   let mappingSnapshot: MappingSnapshot;
   let cutoverSnapshot: string | null;
 
+  const setCutover = (value: string): Promise<unknown> =>
+    prisma.systemSetting.upsert({
+      where: { key: GL_CUTOVER_SETTING_KEY },
+      create: { key: GL_CUTOVER_SETTING_KEY, value },
+      update: { value },
+    });
+
   beforeEach(async () => {
     token = Math.floor(Math.random() * 1_000_000);
     mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
     /* The sweep is fail-closed on the GL cutover floor — without a setting it selects nothing. */
     const cutoverRow = await prisma.systemSetting.findUnique({ where: { key: GL_CUTOVER_SETTING_KEY }, select: { value: true } });
     cutoverSnapshot = cutoverRow?.value ?? null;
-    await prisma.systemSetting.upsert({ where: { key: GL_CUTOVER_SETTING_KEY }, create: { key: GL_CUTOVER_SETTING_KEY, value: "2026-01-01" }, update: { value: "2026-01-01" } });
+    await setCutover("2026-01-01");
     const user = await prisma.user.create({ data: { email: `test-sales-sweep-${token}@test.local`, name: "Sweeper", role: "ADMIN" } });
     userId = user.id;
     const so = await prisma.salesOrder.create({
@@ -39,20 +46,50 @@ d("postPendingSalesJournals (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const journals = await prisma.journal.findMany({ where: { postedById: userId }, select: { id: true } });
-    const ids = journals.map((j) => j.id);
-    if (ids.length) { await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } }); await prisma.journal.deleteMany({ where: { id: { in: ids } } }); }
-    await restoreMappings(mappingSnapshot);
-    if (cutoverSnapshot === null) {
-      await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
-    } else {
-      await prisma.systemSetting.update({ where: { key: GL_CUTOVER_SETTING_KEY }, data: { value: cutoverSnapshot } });
-    }
-    await prisma.adminNotification.deleteMany({ where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } } });
-    await prisma.chartAccount.deleteMany({ where: { id: { in: acctIds } } });
-    await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: orderId } });
-    await prisma.salesOrder.delete({ where: { id: orderId } });
-    await prisma.user.delete({ where: { id: userId } });
+    const failures: string[] = [];
+    const step = async (what: string, fn: () => Promise<unknown>) => {
+      try {
+        await fn();
+      } catch (e) {
+        failures.push(`${what}: ${String(e)}`);
+      }
+    };
+
+    /*
+     * Shared config first — both of these are live rows the running ERP reads, and no
+     * bookkeeping delete below may stand between a failure and restoring them. The step
+     * name carries the value the bed should end up holding, so a failed restore names
+     * its own remedy.
+     */
+    await step(`restoreMappings (→ ${JSON.stringify(mappingSnapshot)})`, () => restoreMappings(mappingSnapshot));
+    await step(
+      `restoreCutover (→ ${cutoverSnapshot === null ? "absent (no row)" : JSON.stringify(cutoverSnapshot)})`,
+      () =>
+        cutoverSnapshot === null
+          ? prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } })
+          : setCutover(cutoverSnapshot),
+    );
+
+    /*
+     * Every own-row filter below is coalesced to a never-matching value: a beforeEach that
+     * dies partway leaves these ids undefined, Prisma drops an undefined filter term, and a
+     * deleteMany with an empty where clears the whole table on the shared bed.
+     */
+    await step("journals", async () => {
+      const journals = await prisma.journal.findMany({ where: { postedById: userId ?? "" }, select: { id: true } });
+      const ids = journals.map((j) => j.id);
+      if (ids.length) {
+        await prisma.journalLine.deleteMany({ where: { journalId: { in: ids } } });
+        await prisma.journal.deleteMany({ where: { id: { in: ids } } });
+      }
+    });
+    await step("notifications", () => prisma.adminNotification.deleteMany({ where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } } }));
+    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: acctIds ?? [] } } }));
+    await step("items", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: orderId ?? "" } }));
+    await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: orderId ?? "" } }));
+    await step("user", () => prisma.user.deleteMany({ where: { id: userId ?? "" } }));
+
+    if (failures.length) throw new Error(`sales sweep spec teardown failed — ${failures.join(" | ")}`);
   });
 
   it("posts both journals for a shipped+consumed order, idempotently", async () => {

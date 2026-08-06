@@ -83,17 +83,45 @@ d("sales return auto-journal (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const journals = await prisma.journal.findMany({ where: { postedById: userId }, select: { id: true } });
-    const jids = journals.map((j) => j.id);
-    if (jids.length) { await prisma.journalLine.deleteMany({ where: { journalId: { in: jids } } }); await prisma.journal.deleteMany({ where: { id: { in: jids } } }); }
-    await restoreMappings(mappingSnapshot);
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId] } } });
-    await prisma.salesReturnItem.deleteMany({ where: { salesReturnId: returnId } });
-    await prisma.salesReturn.delete({ where: { id: returnId } });
-    await prisma.stockAdjustment.deleteMany({ where: { id: { in: adjIds } } });
-    await prisma.item.delete({ where: { id: itemId } });
-    await prisma.uOM.delete({ where: { id: uomId } });
-    await prisma.user.delete({ where: { id: userId } });
+    const failures: string[] = [];
+    const step = async (what: string, fn: () => Promise<unknown>) => {
+      try {
+        await fn();
+      } catch (e) {
+        failures.push(`${what}: ${String(e)}`);
+      }
+    };
+
+    /*
+     * Shared config first — JournalAccountMapping is live GL config the running ERP reads,
+     * and no bookkeeping delete below may stand between a failure and restoring it. The step
+     * name carries the mapping the bed should end up holding, so a failed restore names its
+     * own remedy.
+     */
+    await step(`restoreMappings (→ ${JSON.stringify(mappingSnapshot)})`, () => restoreMappings(mappingSnapshot));
+
+    /*
+     * Own-row filters below are coalesced to never-matching values: a beforeEach that dies
+     * partway leaves these ids undefined, Prisma drops an undefined filter term, and a
+     * deleteMany with an empty where clears the whole table on the shared bed.
+     */
+    await step("journals", async () => {
+      const journals = await prisma.journal.findMany({ where: { postedById: userId ?? "" }, select: { id: true } });
+      const jids = journals.map((j) => j.id);
+      if (jids.length) {
+        await prisma.journalLine.deleteMany({ where: { journalId: { in: jids } } });
+        await prisma.journal.deleteMany({ where: { id: { in: jids } } });
+      }
+    });
+    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: [arId, revId, cogsId, invId].filter(Boolean) } } }));
+    await step("returnItems", () => prisma.salesReturnItem.deleteMany({ where: { salesReturnId: returnId ?? "" } }));
+    await step("returns", () => prisma.salesReturn.deleteMany({ where: { id: returnId ?? "" } }));
+    await step("adjustments", () => prisma.stockAdjustment.deleteMany({ where: { id: { in: adjIds ?? [] } } }));
+    await step("item", () => prisma.item.deleteMany({ where: { id: itemId ?? "" } }));
+    await step("uom", () => prisma.uOM.deleteMany({ where: { id: uomId ?? "" } }));
+    await step("user", () => prisma.user.deleteMany({ where: { id: userId ?? "" } }));
+
+    if (failures.length) throw new Error(`sales return journal spec teardown failed — ${failures.join(" | ")}`);
   });
 
   it("revenue reversal posts DR SALES_REVENUE 500 / CR AR 500 (Σ accepted subtotal), dated decidedAt", async () => {

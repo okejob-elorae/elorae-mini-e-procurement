@@ -135,19 +135,31 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
       }
     };
 
-    /* Shared config first — a later failure must not leave live GL config pointing at test rows. */
-    await step("restoreMappings", () => restoreMappings(mappingSnapshot));
-    await step("restoreCutover", async () => {
-      if (cutoverSnapshot === null) {
-        await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
-      } else {
-        await setCutover(cutoverSnapshot);
-      }
-    });
+    /*
+     * Shared config first — a later failure must not leave live GL config pointing at test
+     * rows. The step names carry the value the bed should end up holding, so a failed restore
+     * names its own remedy.
+     */
+    await step(`restoreMappings (→ ${JSON.stringify(mappingSnapshot)})`, () => restoreMappings(mappingSnapshot));
+    await step(
+      `restoreCutover (→ ${cutoverSnapshot === null ? "absent (no row)" : JSON.stringify(cutoverSnapshot)})`,
+      async () => {
+        if (cutoverSnapshot === null) {
+          await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
+        } else {
+          await setCutover(cutoverSnapshot);
+        }
+      },
+    );
 
+    /*
+     * Own-row filters below are coalesced to never-matching values: a beforeEach that dies
+     * partway leaves these ids undefined, Prisma drops an undefined filter term, and an
+     * empty where would sweep the whole table on the shared bed.
+     */
     const ids = Object.values(orderIds ?? {});
     await step("journals", async () => {
-      const journals = await prisma.journal.findMany({ where: { postedById: userId }, select: { id: true } });
+      const journals = await prisma.journal.findMany({ where: { postedById: userId ?? "" }, select: { id: true } });
       const journalIds = journals.map((j) => j.id);
       if (journalIds.length) {
         await prisma.journalLine.deleteMany({ where: { journalId: { in: journalIds } } });
@@ -161,8 +173,8 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
     );
     await step("items", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: { in: ids } } }));
     await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: { in: ids } } }));
-    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: acctIds } } }));
-    await step("user", () => prisma.user.deleteMany({ where: { id: userId } }));
+    await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: acctIds ?? [] } } }));
+    await step("user", () => prisma.user.deleteMany({ where: { id: userId ?? "" } }));
 
     if (failures.length) throw new Error(`cutover spec teardown failed — ${failures.join(" | ")}`);
   });
