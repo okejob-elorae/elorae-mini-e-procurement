@@ -541,7 +541,7 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
   }
 
   revalidatePath('/backoffice/purchase-orders');
-  revalidatePath('/backoffice/purchase-orders/[id]');
+  revalidatePath(`/backoffice/purchase-orders/${poId}`);
   revalidatePath('/backoffice/supplier-payments');
 
   /**
