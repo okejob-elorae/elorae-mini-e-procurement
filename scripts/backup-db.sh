@@ -110,7 +110,17 @@ case "$R2_BACKUP_BUCKET" in
     die "R2_BACKUP_BUCKET is '$R2_BACKUP_BUCKET', which is an application bucket and is PUBLIC-READ. Backups need their own private bucket." ;;
 esac
 
-R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+# Endpoint comes from config when set. Constructing it from the account id only
+# yields the DEFAULT-jurisdiction URL, so a bucket created in a jurisdiction (EU,
+# FedRAMP) would be addressed at a host that does not hold it — the request goes
+# somewhere real and fails, or worse creates a parallel empty bucket. Cloudflare
+# shows the correct S3 API endpoint on the bucket's settings page.
+R2_ENDPOINT="${R2_ENDPOINT:-https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com}"
+case "$R2_ENDPOINT" in
+  https://*) ;;
+  *) die "R2_ENDPOINT must be an https:// URL, got '$R2_ENDPOINT'" ;;
+esac
+log "endpoint ${R2_ENDPOINT}"
 s3() { aws s3 --endpoint-url "$R2_ENDPOINT" "$@"; }
 s3api() { aws s3api --endpoint-url "$R2_ENDPOINT" "$@"; }
 
