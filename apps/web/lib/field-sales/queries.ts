@@ -284,12 +284,35 @@ export type StoreSentItemRow = {
   totalQty: number;
 };
 
+/**
+ * Putus counts what actually SHIPPED — the delivery lines — not what was approved. Approval became
+ * paperwork when delivery got its own document: an approved order can sit undelivered, or be
+ * partly delivered and have its remainder closed, and neither leaves the warehouse. Konsi has no
+ * delivery document (the transfer is recorded at approve and nothing ships afterwards), so its
+ * approved lines stay the only signal there.
+ */
 export async function getStoreSentItems(storeId: string): Promise<StoreSentItemRow[]> {
-  const grouped = await prisma.fieldSalesOrderLine.groupBy({
-    by: ["itemId", "variantSku"],
-    where: { order: { storeId, status: "APPROVED" } },
-    _sum: { qty: true },
-  });
+  const [deliveredPutus, approvedKonsi] = await Promise.all([
+    prisma.fieldSalesDeliveryLine.groupBy({
+      by: ["itemId", "variantSku"],
+      where: { delivery: { order: { storeId } } },
+      _sum: { qty: true },
+    }),
+    prisma.fieldSalesOrderLine.groupBy({
+      by: ["itemId", "variantSku"],
+      where: { order: { storeId, status: "APPROVED", orderType: "KONSI" } },
+      _sum: { qty: true },
+    }),
+  ]);
+
+  const byKey = new Map<string, { itemId: string; variantSku: string; totalQty: number }>();
+  for (const g of [...deliveredPutus, ...approvedKonsi]) {
+    const key = `${g.itemId}::${g.variantSku}`;
+    const existing = byKey.get(key);
+    if (existing) existing.totalQty += g._sum.qty ?? 0;
+    else byKey.set(key, { itemId: g.itemId, variantSku: g.variantSku, totalQty: g._sum.qty ?? 0 });
+  }
+  const grouped = Array.from(byKey.values());
   if (grouped.length === 0) return [];
 
   const itemIds = Array.from(new Set(grouped.map((g) => g.itemId)));
@@ -307,7 +330,7 @@ export async function getStoreSentItems(storeId: string): Promise<StoreSentItemR
         articleSku: item?.sku ?? "—",
         articleName: item?.nameId ?? "—",
         variantSku: g.variantSku && g.variantSku.trim() !== "" ? g.variantSku : "—",
-        totalQty: g._sum.qty ?? 0,
+        totalQty: g.totalQty,
       };
     })
     .sort((a, b) => a.articleSku.localeCompare(b.articleSku) || a.variantSku.localeCompare(b.variantSku));
