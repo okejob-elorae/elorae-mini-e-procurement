@@ -89,6 +89,10 @@
 --
 -- If the real pre-flight below errors, STOP. See "RECOVERY IF THE PRE-FLIGHT ABORTS" above, then
 -- fix the offending rows by hand, then re-run `migrate deploy`.
+--
+-- A POST-FLIGHT section at the FOOT of this file lists four verification queries to run after the
+-- migration, and documents the deploy-window hazard that the fourth of them detects. The pre-flight
+-- proves the migration is safe to start; nothing in this file proves it finished correctly.
 -- ============================================================================================
 SELECT IF(
   (SELECT COUNT(*) FROM `FieldSalesOrder` o
@@ -126,7 +130,10 @@ SELECT
   o.`approvedAt`,
   o.`approvedById`,
   o.`approvedAt`,
-  DATE_ADD(o.`approvedAt`, INTERVAL COALESCE(s.`paymentTempo`, 0) DAY),
+  -- GREATEST(..., 0) floors the tempo exactly the way `computeDueDate` does. `Store.paymentTempo`
+  -- is `Int @default(0)` with no CHECK constraint, so a negative is storable, and a bare COALESCE
+  -- would back-date a backfilled invoice below its own issue date.
+  DATE_ADD(o.`approvedAt`, INTERVAL GREATEST(COALESCE(s.`paymentTempo`, 0), 0) DAY),
   o.`subtotal`,
   o.`orderDiscountAmount`,
   o.`total`,
@@ -229,3 +236,60 @@ JOIN `FieldSalesOrderLine` l ON l.`id` = r.`fieldSalesLineId`
 JOIN `FieldSalesDeliveryLine` dl ON dl.`id` = CONCAT('bf_', l.`id`)
 SET r.`consumedQty` = r.`qty`
 WHERE r.`state` = 'CONSUMED' AND r.`source` = 'FIELD_SALES';
+
+-- ============================================================================================
+-- POST-FLIGHT (run by hand, NOT part of this migration). The pre-flight proves it is safe to
+-- start; nothing above proves it finished. Run queries 1-3 immediately after `migrate deploy`
+-- reports success, on the SAME database it ran against — dev :3308 and prod each need their own
+-- pass. Every one of the four must return 0 rows / a count of 0.
+--
+--   -- 1. Every approved putus order got a delivery.
+--   --    Non-zero = orders the backfill skipped. Almost always a dangling `storeId` (statement 2's
+--   --    inner JOIN Store drops those silently) or a NULL approvedAt/approvedById that the
+--   --    pre-flight should have caught — check those columns on the ids this returns. Such an
+--   --    order is INDISTINGUISHABLE from one nobody has delivered yet, so recordFieldSalesDelivery
+--   --    would happily consume its stock a second time and write its revenue twice. Fix before the
+--   --    app container serves the new code.
+--   SELECT COUNT(*) FROM FieldSalesOrder o WHERE o.status='APPROVED' AND o.orderType='PUTUS'
+--     AND NOT EXISTS (SELECT 1 FROM FieldSalesDelivery d WHERE d.orderId=o.id);
+--
+--   -- 2. Every line of those orders got a delivery line.
+--   --    Non-zero = a delivery header exists with lines missing under it, so the order's nota
+--   --    prints short and its outstanding qty reads above zero — the app would offer to "deliver"
+--   --    goods that already left at approve. Statement 3 is re-runnable; re-run it alone.
+--   SELECT COUNT(*) FROM FieldSalesOrderLine l JOIN FieldSalesOrder o ON o.id=l.orderId
+--    WHERE o.status='APPROVED' AND o.orderType='PUTUS'
+--      AND NOT EXISTS (SELECT 1 FROM FieldSalesDeliveryLine dl WHERE dl.orderLineId=l.id);
+--
+--   -- 3. No stranded reservation on a backfilled line.
+--   --    Non-zero = a line this migration marked fully delivered whose reservation is not CONSUMED,
+--   --    i.e. stock still counted as reserved for goods that already shipped. That depresses
+--   --    `available` for every other order on the same item, permanently, with nothing to release
+--   --    it — the order is settled. Investigate the reservation rows before touching them.
+--   SELECT COUNT(*) FROM StockReservation r JOIN FieldSalesOrderLine l ON l.id=r.fieldSalesLineId
+--    JOIN FieldSalesDeliveryLine dl ON dl.id=CONCAT('bf_',l.id) WHERE r.state <> 'CONSUMED';
+--
+--   -- 4. Run AFTER the app container swaps. Returns the orders caught in the deploy window below.
+--   --    Non-zero = each row is an order stuck behind an "exceeds outstanding" toast; see the
+--   --    remedy in the deploy-window note. This is the only query of the four that CANNOT be run
+--   --    straight after the migrate job — run it once the new image is serving.
+--   SELECT o.id,o.orderNo,o.approvedAt FROM FieldSalesOrder o
+--    WHERE o.status='APPROVED' AND o.orderType='PUTUS' AND o.deliveryStatus='PENDING';
+--
+-- THE DEPLOY WINDOW (a real operational hazard, previously undocumented). The prod `migrate` job
+-- runs while the OLD image is still serving; the container swaps 30s-3min later. An order approved
+-- inside that window is consumed and SalesHistory'd by the OLD approve path, gets no `bf_` header
+-- because this migration has already run, and comes up under the new app as
+-- `deliveryStatus = 'PENDING'` with its full quantity outstanding.
+--
+-- It FAILS CLOSED. The old consume left the reservation at `state = 'CONSUMED'`, so
+-- `consumeFieldSalesOrderPartial`'s `state = 'RESERVED'` guard matches nothing and it throws
+-- OVER_CONSUME, refusing the delivery. There is no double-consume and no duplicate revenue — the
+-- damage is that the order is permanently stuck, and the operator sees only a "quantity exceeds
+-- outstanding" toast that explains none of this.
+--
+-- REMEDY: hand-run statements 2 through 6 of this file scoped to that one order id (add
+-- `AND o.id = '<orderId>'` to each), which gives it the same `bf_` delivery, delivered quantities,
+-- DELIVERED status and consumedQty every pre-existing order got. Query 4 above is what finds them.
+-- Do NOT re-run this file whole after go-live — see the NOT COVERED note above statement 4.
+-- ============================================================================================
