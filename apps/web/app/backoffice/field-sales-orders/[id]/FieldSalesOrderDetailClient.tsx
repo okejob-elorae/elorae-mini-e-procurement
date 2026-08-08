@@ -79,9 +79,19 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: P
   const locale = useLocale();
   const isKonsi = order.orderType === "KONSI";
   const showMoney = !isKonsi || order.status === "APPROVED";
-  /* Outstanding only exists for putus deliveries, so konsi keeps the original column set. */
-  const showOutstanding = !isKonsi;
+  /**
+   * Outstanding only means something once a putus order is approved and can be delivered.
+   * Rejecting releases the reservation without cancelling the lines, so a rejected order
+   * would otherwise report its full qty as still owed.
+   */
+  const showOutstanding = !isKonsi && order.status === "APPROVED";
   const lineColumnCount = 4 + (showOutstanding ? 1 : 0) + (showMoney ? 3 : 0);
+  /**
+   * Putus reserves at create and consumes at delivery, so `available` stays depressed by this
+   * order's own reservation and would contradict the delivery dialog. Konsi reserves at approve
+   * and never delivers, so `available` is the honest number there.
+   */
+  const stockLabel = isKonsi ? t("colAvailable") : t("colOnHand");
   const deliverableLines: DeliverableLine[] = order.lines.map((line) => ({
     id: line.id,
     productName: line.productName,
@@ -317,7 +327,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: P
               {showOutstanding && (
                 <TableHead className="text-right">{t("delivery.outstanding")}</TableHead>
               )}
-              <TableHead className="text-right">{t("colAvailable")}</TableHead>
+              <TableHead className="text-right">{stockLabel}</TableHead>
               {showMoney && (
                 <>
                   <TableHead className="text-right">{t("colUnitPrice")}</TableHead>
@@ -337,7 +347,9 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: P
                   {showOutstanding && (
                     <TableCell className="text-right tabular-nums">{line.outstanding}</TableCell>
                   )}
-                  <TableCell className="text-right tabular-nums">{line.available}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {isKonsi ? line.available : line.onHand}
+                  </TableCell>
                   {showMoney && (
                     <>
                       <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>

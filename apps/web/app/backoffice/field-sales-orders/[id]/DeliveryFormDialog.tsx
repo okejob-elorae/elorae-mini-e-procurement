@@ -104,13 +104,22 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
 
   const canSubmit = !isPending && payload.length > 0;
 
+  /**
+   * A short line is snapped down to what the server just said is on hand, and the order is
+   * refreshed so the helper text stops contradicting the error. setQtyInputs is written
+   * directly rather than through setQty, which would clear the inline error we just set.
+   */
   function handleFailure(result: DeliveryFailure): void {
     if (result.reason === "INSUFFICIENT_STOCK" && result.shortLines?.length) {
       const next: Record<string, ShortLine> = {};
+      const clamped: Record<string, string> = {};
       for (const short of result.shortLines) {
         next[short.orderLineId] = { requested: short.requested, onHand: short.onHand };
+        clamped[short.orderLineId] = String(Math.max(0, Math.floor(short.onHand)));
       }
       setShortLines(next);
+      setQtyInputs((prev) => ({ ...prev, ...clamped }));
+      router.refresh();
     }
     toast.error(t(deliveryErrorKey(result.reason)));
   }

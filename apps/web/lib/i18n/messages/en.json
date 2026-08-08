@@ -2315,6 +2315,7 @@
     "storeSearchEmpty": "No stores found",
     "colType": "Type",
     "colAvailable": "Available",
+    "colOnHand": "On Hand",
     "konsiTransferNote": "Consignment transfer — not a sale; stock is reserved on approval.",
     "konsiMarginUnset": "Store margin invalid or not set — gross-up uses the raw selling price.",
     "approveConfirmKonsi": "Approve this consignment transfer? Stock will be reserved (not sold).",

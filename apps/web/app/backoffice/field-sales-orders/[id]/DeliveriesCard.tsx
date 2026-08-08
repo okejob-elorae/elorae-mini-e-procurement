@@ -65,11 +65,13 @@ const DELIVERY_BADGE_CLASS: Record<FieldSalesDeliveryStatus, string> = {
 
 /**
  * CardHeader places its action slot in a second grid column, which squeezes the title on a
- * phone. Below the sm breakpoint the actions drop to their own row under the title instead.
+ * phone. Below the sm breakpoint the actions drop to their own row under the title, which
+ * also means cancelling the base slot's row-span and its justify-self-end pin.
  */
 const ACTION_SLOT_CLASS = [
   "flex flex-wrap gap-2 justify-end",
-  "max-sm:col-start-1 max-sm:row-start-2 max-sm:justify-start",
+  "max-sm:col-start-1 max-sm:row-start-2 max-sm:row-span-1",
+  "max-sm:justify-self-start max-sm:justify-start",
 ].join(" ");
 
 function formatDay(date: Date, locale: string): string {

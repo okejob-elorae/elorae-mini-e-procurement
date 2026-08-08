@@ -2315,6 +2315,7 @@
     "storeSearchEmpty": "Toko tidak ditemukan",
     "colType": "Tipe",
     "colAvailable": "Tersedia",
+    "colOnHand": "Stok",
     "konsiTransferNote": "Transfer konsinyasi — bukan penjualan; stok direservasi saat disetujui.",
     "konsiMarginUnset": "Margin toko tidak valid atau belum diset — harga gross-up memakai harga jual apa adanya.",
     "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Stok akan direservasi (bukan dijual).",
