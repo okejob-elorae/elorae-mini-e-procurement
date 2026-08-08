@@ -122,13 +122,107 @@ describe("allocateDeliveryDiscounts", () => {
   });
 
   it("is safe when the order subtotal is zero", () => {
+    /*
+     * `orderedQty: 0` with `deliveredQty: 1` is deliberately inconsistent data — it is the only
+     * shape that reaches the line-side divide-by-zero guard, since a line delivering nothing is
+     * filtered out before the division. A regression there puts NaN into a Decimal money column.
+     */
     const got = allocateDeliveryDiscounts({
       closesOrder: false,
       orderSubtotal: 0,
       orderDiscount: 0,
       orderDiscountAllocated: 0,
-      lines: [{ orderLineId: "a", lineDiscount: 0, orderedQty: 0, deliveredQty: 0, lineDiscountAllocated: 0, deliveredSubtotal: 0 }],
+      lines: [{ orderLineId: "a", lineDiscount: 0, orderedQty: 0, deliveredQty: 1, lineDiscountAllocated: 0, deliveredSubtotal: 0 }],
     });
+    expect(got.lineDiscounts).toEqual([{ orderLineId: "a", discountAmount: 0 }]);
     expect(got.orderDiscountAmount).toBe(0);
+  });
+
+  it("gives no line discount to a line this delivery does not carry", () => {
+    const got = allocateDeliveryDiscounts({
+      closesOrder: false,
+      orderSubtotal: 400,
+      orderDiscount: 0,
+      orderDiscountAllocated: 0,
+      lines: [
+        { orderLineId: "a", lineDiscount: 100, orderedQty: 3, deliveredQty: 1, lineDiscountAllocated: 0, deliveredSubtotal: 100 },
+        { orderLineId: "b", lineDiscount: 0, orderedQty: 1, deliveredQty: 0, lineDiscountAllocated: 0, deliveredSubtotal: 0 },
+      ],
+    });
+    expect(got.lineDiscounts).toEqual([{ orderLineId: "a", discountAmount: 33 }]);
+  });
+
+  it("folds residue stranded on a line that finished earlier into the closing delivery's header discount", () => {
+    /*
+     * Line A: qty 3, discount 100, shipped one unit at a time. Line B: qty 1, no discount, shipped
+     * last. Each of A's three deliveries takes round(100/3) = 33, so A is fully delivered with 99
+     * of its 100 allocated — and A is absent from the delivery that closes the order. Without the
+     * fold, that last rupiah is stranded and the deliveries sum to one more than the order total.
+     */
+    const lineA = { orderLineId: "a", lineDiscount: 100, orderedQty: 3 };
+    const lineB = { orderLineId: "b", lineDiscount: 0, orderedQty: 1 };
+    const base = { orderSubtotal: 400, orderDiscount: 0, orderDiscountAllocated: 0 };
+
+    const first = allocateDeliveryDiscounts({
+      ...base,
+      closesOrder: false,
+      lines: [
+        { ...lineA, deliveredQty: 1, lineDiscountAllocated: 0, deliveredSubtotal: 100 },
+        { ...lineB, deliveredQty: 0, lineDiscountAllocated: 0, deliveredSubtotal: 0 },
+      ],
+    });
+    expect(first.lineDiscounts).toEqual([{ orderLineId: "a", discountAmount: 33 }]);
+
+    const second = allocateDeliveryDiscounts({
+      ...base,
+      closesOrder: false,
+      lines: [
+        { ...lineA, deliveredQty: 1, lineDiscountAllocated: 33, deliveredSubtotal: 100 },
+        { ...lineB, deliveredQty: 0, lineDiscountAllocated: 0, deliveredSubtotal: 0 },
+      ],
+    });
+    expect(second.lineDiscounts).toEqual([{ orderLineId: "a", discountAmount: 33 }]);
+
+    const third = allocateDeliveryDiscounts({
+      ...base,
+      closesOrder: false,
+      lines: [
+        { ...lineA, deliveredQty: 1, lineDiscountAllocated: 66, deliveredSubtotal: 100 },
+        { ...lineB, deliveredQty: 0, lineDiscountAllocated: 0, deliveredSubtotal: 0 },
+      ],
+    });
+    expect(third.lineDiscounts).toEqual([{ orderLineId: "a", discountAmount: 33 }]);
+
+    /* A is fully delivered and absent here; only B ships, and this delivery closes the order. */
+    const closing = allocateDeliveryDiscounts({
+      ...base,
+      closesOrder: true,
+      lines: [
+        { ...lineA, deliveredQty: 0, lineDiscountAllocated: 99, deliveredSubtotal: 0 },
+        { ...lineB, deliveredQty: 1, lineDiscountAllocated: 0, deliveredSubtotal: 100 },
+      ],
+    });
+    expect(closing.lineDiscounts).toEqual([{ orderLineId: "b", discountAmount: 0 }]);
+    expect(closing.orderDiscountAmount).toBe(1);
+
+    const allocatedToLines = [first, second, third, closing]
+      .flatMap((a) => a.lineDiscounts)
+      .reduce((sum, l) => sum + l.discountAmount, 0);
+    const allocatedToHeaders = [first, second, third, closing].reduce((sum, a) => sum + a.orderDiscountAmount, 0);
+    expect(allocatedToLines + allocatedToHeaders).toBe(100);
+  });
+
+  it("adds the stranded line residue to the order discount remainder rather than replacing it", () => {
+    const got = allocateDeliveryDiscounts({
+      closesOrder: true,
+      orderSubtotal: 400,
+      orderDiscount: 50,
+      orderDiscountAllocated: 20,
+      lines: [
+        { orderLineId: "a", lineDiscount: 100, orderedQty: 3, deliveredQty: 0, lineDiscountAllocated: 99, deliveredSubtotal: 0 },
+        { orderLineId: "b", lineDiscount: 0, orderedQty: 1, deliveredQty: 1, lineDiscountAllocated: 0, deliveredSubtotal: 100 },
+      ],
+    });
+    expect(got.orderDiscountAmount).toBe(31); /* 30 order remainder + 1 stranded on line a */
   });
 });

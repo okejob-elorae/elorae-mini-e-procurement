@@ -66,19 +66,39 @@ export function computeDueDate(invoiceDate: Date, paymentTempoDays: number): Dat
  * pro-rata share, capped at what is still unallocated. The delivery that drives the order's
  * outstanding qty to zero takes the entire remainder, so the deliveries sum back to the order
  * exactly and no rounding residue escapes.
+ *
+ * `lines` must carry EVERY line of the order, not only the ones in this delivery. A line that
+ * finished in an earlier delivery can still hold rounding residue — three 1-unit deliveries of a
+ * 3-unit line discounted 100 allocate round(100/3) = 33 each and strand 1 — and the closing
+ * delivery is the last place that residue can go. Lines with `deliveredQty` 0 get no line discount
+ * of their own; on the closing delivery their residue folds into the header `discountAmount`
+ * instead, which is what keeps the sum of delivery totals equal to the order total.
  */
 export function allocateDeliveryDiscounts(input: DiscountAllocationInput): DiscountAllocation {
-  const lineDiscounts = input.lines.map((l) => {
-    const remaining = Math.max(0, l.lineDiscount - l.lineDiscountAllocated);
-    if (input.closesOrder) return { orderLineId: l.orderLineId, discountAmount: remaining };
-    const share = l.orderedQty > 0 ? Math.round((l.lineDiscount * l.deliveredQty) / l.orderedQty) : 0;
-    return { orderLineId: l.orderLineId, discountAmount: Math.min(share, remaining) };
-  });
+  const lineDiscounts = input.lines
+    .filter((l) => l.deliveredQty > 0)
+    .map((l) => {
+      const remaining = Math.max(0, l.lineDiscount - l.lineDiscountAllocated);
+      if (input.closesOrder) return { orderLineId: l.orderLineId, discountAmount: remaining };
+      const share = l.orderedQty > 0 ? Math.round((l.lineDiscount * l.deliveredQty) / l.orderedQty) : 0;
+      return { orderLineId: l.orderLineId, discountAmount: Math.min(share, remaining) };
+    });
+
+  /**
+   * Residue on lines this delivery does not carry. Only the closing delivery can absorb it, and a
+   * cancelled line can never appear here: closing the remainder cancels every still-open line at
+   * once, so an order with any cancelled qty has no outstanding qty left to deliver.
+   */
+  const strandedLineRemainder = input.closesOrder
+    ? input.lines
+        .filter((l) => l.deliveredQty <= 0)
+        .reduce((sum, l) => sum + Math.max(0, l.lineDiscount - l.lineDiscountAllocated), 0)
+    : 0;
 
   const orderRemaining = Math.max(0, input.orderDiscount - input.orderDiscountAllocated);
   let orderDiscountAmount: number;
   if (input.closesOrder) {
-    orderDiscountAmount = orderRemaining;
+    orderDiscountAmount = orderRemaining + strandedLineRemainder;
   } else {
     const deliveredSubtotal = input.lines.reduce((s, l) => s + l.deliveredSubtotal, 0);
     const share =

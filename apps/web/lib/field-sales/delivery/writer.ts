@@ -75,14 +75,21 @@ export async function recordFieldSalesDelivery(input: {
       orderSubtotal: Number(order.subtotal),
       orderDiscount: Number(order.orderDiscountAmount),
       orderDiscountAllocated,
-      lines: deliveredLines.map((d) => ({
-        orderLineId: d.ol.id,
-        lineDiscount: Number(d.ol.discountAmount),
-        orderedQty: d.ol.qty,
-        deliveredQty: d.qty,
-        lineDiscountAllocated: lineDiscountAllocated.get(d.ol.id) ?? 0,
-        deliveredSubtotal: d.deliveredSubtotal,
-      })),
+      /**
+       * Every order line, not just the ones in this delivery: a line that finished in an earlier
+       * delivery can still be holding rounding residue that only the closing delivery can absorb.
+       */
+      lines: order.lines.map((ol) => {
+        const qty = requested.get(ol.id) ?? 0;
+        return {
+          orderLineId: ol.id,
+          lineDiscount: Number(ol.discountAmount),
+          orderedQty: ol.qty,
+          deliveredQty: qty,
+          lineDiscountAllocated: lineDiscountAllocated.get(ol.id) ?? 0,
+          deliveredSubtotal: qty * Number(ol.unitPrice),
+        };
+      }),
     });
     const lineDiscountByOrderLine = new Map(allocation.lineDiscounts.map((l) => [l.orderLineId, l.discountAmount]));
 
