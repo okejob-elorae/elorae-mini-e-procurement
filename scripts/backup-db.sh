@@ -204,7 +204,11 @@ log "upload confirmed at $REMOTE_SIZE bytes"
 MONTH_PREFIX="elorae-$(date -u +%Y-%m)"
 if ! s3 ls "s3://${R2_BACKUP_BUCKET}/monthly/${MONTH_PREFIX}" >/dev/null 2>&1; then
   log "no monthly copy for $(date -u +%Y-%m) yet — promoting today's"
-  s3 cp "s3://${R2_BACKUP_BUCKET}/daily/${KEY}" "s3://${R2_BACKUP_BUCKET}/monthly/${KEY}" --only-show-errors \
+  # `--copy-props none` is required on R2: a bucket-to-bucket `s3 cp` otherwise
+  # calls GetObjectTagging to carry tags across, and R2 does not implement it —
+  # the copy fails with `NotImplemented` while the source object is perfectly
+  # fine. Observed on the first live run, 2026-08-08.
+  s3 cp "s3://${R2_BACKUP_BUCKET}/daily/${KEY}" "s3://${R2_BACKUP_BUCKET}/monthly/${KEY}" --copy-props none --only-show-errors \
     || log "WARNING: monthly promotion failed — the daily copy is uploaded and safe"
 fi
 
