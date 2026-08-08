@@ -28,6 +28,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApproveRejectCard, type AppealedLine } from "./ApproveRejectCard";
+import { DeliveriesCard } from "./DeliveriesCard";
+import type { DeliverableLine } from "./DeliveryFormDialog";
 import { logPrint } from "@/app/actions/audit";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
@@ -36,6 +38,7 @@ import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
 type Props = {
   order: FieldSalesOrderDetail;
   canApprove: boolean;
+  canDeliver: boolean;
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldSalesOrderStatus, "secondary" | "default" | "destructive"> = {
@@ -71,11 +74,22 @@ function printHtml(html: string, title: string) {
   setTimeout(() => document.body.removeChild(iframe), 500);
 }
 
-export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
+export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const locale = useLocale();
   const isKonsi = order.orderType === "KONSI";
   const showMoney = !isKonsi || order.status === "APPROVED";
+  /* Outstanding only exists for putus deliveries, so konsi keeps the original column set. */
+  const showOutstanding = !isKonsi;
+  const lineColumnCount = 4 + (showOutstanding ? 1 : 0) + (showMoney ? 3 : 0);
+  const deliverableLines: DeliverableLine[] = order.lines.map((line) => ({
+    id: line.id,
+    productName: line.productName,
+    variantLabel: line.variantLabel,
+    variantSku: line.variantSku,
+    outstanding: line.outstanding,
+    onHand: line.onHand,
+  }));
   const appealedLines: AppealedLine[] = order.lines
     .filter((line) => line.requestedUnitPrice != null)
     .map((line) => ({
@@ -266,6 +280,16 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
         />
       )}
 
+      <DeliveriesCard
+        orderId={order.id}
+        orderType={order.orderType}
+        status={order.status}
+        deliveryStatus={order.deliveryStatus}
+        deliveries={order.deliveries}
+        lines={deliverableLines}
+        canDeliver={canDeliver}
+      />
+
       <Card className="p-4 space-y-2">
         <h2 className="font-semibold">{t("detailTitle")}</h2>
         <Field label={t("store")} value={order.storeName} />
@@ -290,6 +314,9 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
               <TableHead>{t("colProduct")}</TableHead>
               <TableHead>{t("colVariant")}</TableHead>
               <TableHead className="text-right">{t("colQty")}</TableHead>
+              {showOutstanding && (
+                <TableHead className="text-right">{t("delivery.outstanding")}</TableHead>
+              )}
               <TableHead className="text-right">{t("colAvailable")}</TableHead>
               {showMoney && (
                 <>
@@ -306,8 +333,11 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
                 <TableRow>
                   <TableCell>{line.productName}</TableCell>
                   <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
-                  <TableCell className="text-right">{line.qty}</TableCell>
-                  <TableCell className="text-right">{line.available}</TableCell>
+                  <TableCell className="text-right tabular-nums">{line.qty}</TableCell>
+                  {showOutstanding && (
+                    <TableCell className="text-right tabular-nums">{line.outstanding}</TableCell>
+                  )}
+                  <TableCell className="text-right tabular-nums">{line.available}</TableCell>
                   {showMoney && (
                     <>
                       <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>
@@ -323,7 +353,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove }: Props) {
                 </TableRow>
                 {line.requestedUnitPrice != null && (
                   <TableRow className="border-0 bg-amber-500/5 hover:bg-amber-500/5">
-                    <TableCell colSpan={showMoney ? 7 : 4} className="py-2">
+                    <TableCell colSpan={lineColumnCount} className="py-2">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                         <Badge variant="outline" className="border-amber-500/40 text-amber-700">
                           {t("appealBadge")}
