@@ -78,17 +78,30 @@ describe("buildNotaTagihanPrintHtml", () => {
     expect(html).not.toContain('<div class="footnote">');
   });
 
-  it("renders an em dash for a null unit price and line total, never null or NaN", () => {
+  it("renders an em dash in the price and line-total cells when they are null, never a zero-rupiah figure", () => {
+    /*
+     * Asserted on the CELLS, not on the document. `toContain("—")` is satisfied by the <title>
+     * (`${title} — ${docNo}`) no matter what `idr()` does, and the pre-fix `idr` rendered null as
+     * "Rp 0" — never the literal "null", never "NaN" — so a bare not-null / not-NaN pair passes
+     * against the very bug it is supposed to guard. The real defect is an unknown price printing
+     * as Rp 0 on a customer invoice.
+     *
+     * The discount is deliberately non-zero: with discountAmount 0 the discount cell legitimately
+     * renders `Rp 0`, which would make the negative assertion below fail on correct code.
+     */
     const html = buildNotaTagihanPrintHtml({
       docNo: "PTG/2607/0001", orderNo: "PUTUS/2607/0001", storeName: "Toko A", salesmanName: "Budi",
       invoiceDate: "2026-07-20T00:00:00Z", dueDate: "2026-08-19T00:00:00Z",
       subtotal: 0, orderDiscountAmount: 0, appliedOrderPromoName: null, total: 0,
-      lines: [{ productName: "Kaos", variantSku: "K-M", variantLabel: "size: M", qty: 6, unitPrice: null, lineTotal: null, discountAmount: 0, appliedPromoName: null }],
+      lines: [{ productName: "Kaos", variantSku: "K-M", variantLabel: "size: M", qty: 6, unitPrice: null, lineTotal: null, discountAmount: 500, appliedPromoName: null }],
       labels,
     });
-    expect(html).toContain("—");
-    expect(html).not.toContain("Rp null");
-    expect(html).not.toContain("NaN");
-    expect(html).not.toMatch(/>null</);
+    /* One for the unknown unit price, one for the unknown line total. */
+    expect(html.match(/<td class="col-num">—<\/td>/g) ?? []).toHaveLength(2);
+    /* The known figure on the same row still prints, so the em dashes are not a blanket blank-out. */
+    expect(html).toContain('<td class="col-num">Rp 500</td>');
+    expect(html).not.toContain('<td class="col-num">Rp 0</td>');
+    /* `null - 500` coerces to -500, which is what the guard in lineNetTotal exists to prevent. */
+    expect(html).not.toContain('<td class="col-num">Rp -500</td>');
   });
 });
