@@ -20,6 +20,12 @@
 -- then re-run `migrate deploy` (which re-applies this file from the top). On prod the migrate job
 -- gates the deploy job, so an abort halts the whole deploy pipeline until this is resolved.
 --
+-- WHERE TO RUN THE PRE-FLIGHT: both the shared dev bed on :3308 AND prod, not just prod. `:3308` is
+-- real shared data, not a scratch DB — spec teardowns in this repo do hard-delete `Store`, `User`,
+-- and `Item` rows there, and it already carries known orphan test rows from past partial teardowns.
+-- A leaked test order with a dangling reference halts dev `migrate:deploy` with the same P3009 as a
+-- prod incident would.
+--
 -- ============================================================================================
 -- PRE-FLIGHT (self-enforcing): every APPROVED putus order this migration would touch must have
 -- every reference the backfilled rows depend on resolvable, because none of the source columns
@@ -55,11 +61,31 @@
 -- yields two rows where a scalar is required — MariaDB raises ERROR 1242 ("Subquery returns more
 -- than 1 row") and the whole file stops before the first write. This depends on MariaDB NOT
 -- pre-evaluating the uncorrelated constant ELSE subquery at optimize time — UNPROVEN on the real
--- server as of this migration being written. Before this migration is first applied anywhere, run
--- this in isolation and confirm it ALSO errors 1242 (proving the trick fires on a true condition,
--- not just a false one):
---   SELECT IF(1 = 1, 'preflight ok', (SELECT 'ABORT' UNION ALL SELECT 'ABORT'));
--- If that does NOT error, this guard is inert and must be replaced before relying on it.
+-- server as of this migration being written. Before this migration is first applied anywhere
+-- (against BOTH the shared dev bed on :3308 and prod — see "WHERE TO RUN THE PRE-FLIGHT" below),
+-- run BOTH of these in isolation. Both must hold, or the mechanism is unusable and this guard must
+-- be replaced with a plain documented `SELECT` plus a human reading the result before proceeding:
+--
+--   -- 1. Lazy-branch check — exercises the HEALTHY-database path (condition is TRUE).
+--   --    MUST return 'preflight ok' with NO error.
+--   --    An error here means MariaDB pre-evaluates the ELSE subquery regardless of the condition,
+--   --    so the guard would abort on EVERY database, including a perfectly healthy prod — do not
+--   --    ship it in that state.
+--   SELECT IF(1 = 1, 'preflight ok', (SELECT 'ABORT' UNION ALL SELECT 'ABORT')) AS lazy_branch_check;
+--
+--   -- 2. Abort-fires check — exercises the UNHEALTHY-database path (condition is FALSE).
+--   --    MUST error 1242 ("Subquery returns more than 1 row").
+--   --    Returning a value here (no error) means the guard can never fire and enforces nothing.
+--   SELECT IF(1 = 0, 'preflight ok', (SELECT 'ABORT' UNION ALL SELECT 'ABORT')) AS abort_fires_check;
+--
+-- A SECOND, SEPARATE, ALSO-UNPROVEN ASSUMPTION: even both queries above passing only proves
+-- MariaDB's own expression semantics. It does NOT prove that `prisma migrate deploy` tolerates a
+-- result-set-returning `SELECT` inside a migration file and correctly propagates an error from one
+-- as a failed migration — that is the other half of this guard actually working, end to end, and
+-- it is untested. There is no precedent for it in this repo: as of this migration being written,
+-- the other 85 migration files contain zero standalone `SELECT` statements. If `migrate deploy`
+-- swallows the error, discards the result, or otherwise doesn't fail the migration on ERROR 1242,
+-- this guard silently does nothing and every write below runs unguarded.
 --
 -- If the real pre-flight below errors, STOP. See "RECOVERY IF THE PRE-FLIGHT ABORTS" above, then
 -- fix the offending rows by hand, then re-run `migrate deploy`.
@@ -159,12 +185,28 @@ WHERE o.`status` = 'APPROVED'
 --   - an order whose Store row is missing (no DB-level FK on FieldSalesOrder.storeId) is silently
 --     dropped by the INSERT's inner JOIN on Store; the JOIN below excludes it the same way, instead
 --     of this UPDATE stamping it delivered anyway.
---   - re-run after the feature is LIVE: a genuinely partial delivery (e.g. 3 of 10 shipped) has no
---     `bf_` delivery line for the remaining 7, because a real delivery — not this migration — wrote
---     its own non-`bf_` rows for what actually shipped. The JOIN only matches rows this migration
---     itself created, so a live partial order is never overwritten to fully delivered.
+--   - re-run BEFORE the feature is live (a partial deploy retry, still within the same rollout that
+--     shipped this migration): a genuinely partial delivery (e.g. 3 of 10 shipped) has no `bf_`
+--     delivery line for the remaining 7, because a real delivery — not this migration — wrote its
+--     own non-`bf_` rows for what actually shipped. The JOIN only matches rows this migration itself
+--     created, so a partial order from that window is never overwritten to fully delivered.
 -- Setting deliveredQty = qty a second time on an already-backfilled row is a no-op, so this is
 -- naturally re-runnable.
+--
+-- NOT COVERED, and not reachable through the documented P3009 recovery path, but worth naming: a
+-- re-run of this file AFTER the feature has been fully live for a while, against an order approved
+-- during that time and never delivered. Under the new flow, approve no longer consumes stock or
+-- writes SalesHistory — delivery is the only thing that does. Such an order has no `bf_` header
+-- today (this migration only runs once, gated by the pre-flight above), but IF this file were ever
+-- re-applied by hand well after go-live, it would hand that order a `bf_` header and lines,
+-- `deliveredQty = qty`, and `deliveryStatus = 'DELIVERED'` for goods that never left the warehouse
+-- — permanently hiding them from `recordFieldSalesDelivery` (its `outstandingQty` would read 0) and
+-- leaking the order's still-`RESERVED` reservation, which statement 6 below skips (it only touches
+-- `state = 'CONSUMED'` rows). This migration's own guards cannot distinguish "approved before
+-- delivery existed, consumed at the old approve path" from "approved after, awaiting its first
+-- delivery" — both are just APPROVED PUTUS orders with an approver and no delivery yet. Safe only
+-- because this file is meant to run exactly once, immediately after 20260809120000, before any
+-- order is ever approved under the new flow.
 UPDATE `FieldSalesOrderLine` l
 JOIN `FieldSalesDeliveryLine` dl ON dl.`id` = CONCAT('bf_', l.`id`)
 SET l.`deliveredQty` = l.`qty`;

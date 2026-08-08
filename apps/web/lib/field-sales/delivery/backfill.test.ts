@@ -37,13 +37,19 @@ describe("field sales delivery backfill migration text", () => {
      * raw file would fail this test permanently on a migration that is doing exactly what it
      * should. The file has no trailing `--` on a statement line and no C-style block comments, so
      * a leading-`--` line filter is a complete comment strip for this specific file.
+     *
+     * Lower-case both sides before comparing: MariaDB table names are case-insensitive under
+     * `lower_case_table_names=1`, so a statement written as INSERT INTO saleshistory (lowercase)
+     * would pass a case-sensitive `.toContain("SalesHistory")` check while still writing to the
+     * table.
      */
     const sql = readFileSync(MIGRATION_SQL_PATH, "utf8")
       .split("\n")
       .filter((line) => !line.trimStart().startsWith("--"))
-      .join("\n");
+      .join("\n")
+      .toLowerCase();
     for (const forbidden of ["InventoryValue", "StockAdjustment", "SalesHistory", "qtyOnHand", "reservedQty"]) {
-      expect(sql).not.toContain(forbidden);
+      expect(sql).not.toContain(forbidden.toLowerCase());
     }
   });
 });
