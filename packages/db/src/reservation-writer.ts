@@ -272,13 +272,24 @@ export async function consumeFieldSalesOrderPartial(
 ): Promise<ConsumeOrderResult> {
   const run = async (tx: Prisma.TransactionClient): Promise<ConsumeOrderResult> => {
     const shortLines: PartialConsumeShortLine[] = [];
-    const prepared: Array<{ line: PartialConsumeLine; reservationId: string; invId: string; avgCost: number; fullyConsumed: boolean }> = [];
+    const prepared: Array<{ line: PartialConsumeLine; invId: string; avgCost: number; fullyConsumed: boolean }> = [];
 
     for (const line of input.lines) {
-      const res = await tx.stockReservation.findUnique({ where: { fieldSalesLineId: line.fieldSalesLineId } });
-      if (!res || res.state !== "RESERVED") throw new PartialConsumeError("OVER_CONSUME");
-      const alreadyConsumed = Number(res.consumedQty);
-      if (alreadyConsumed + line.qty > Number(res.qty)) throw new PartialConsumeError("OVER_CONSUME");
+      // Atomic guard: only bump consumedQty if it still fits within the reserved qty.
+      // Folds the OVER_CONSUME check into the write so two concurrent partial consumes
+      // on the same fieldSalesLineId can't both pass a stale read (see reserveKonsiFieldSalesOrder
+      // for the same idiom against InventoryValue).
+      const affected = await tx.$executeRaw`
+        UPDATE StockReservation
+        SET consumedQty = consumedQty + ${line.qty}
+        WHERE fieldSalesLineId = ${line.fieldSalesLineId} AND state = 'RESERVED' AND consumedQty + ${line.qty} <= qty
+      `;
+      if (affected === 0) throw new PartialConsumeError("OVER_CONSUME");
+
+      // Re-read post-update so fullyConsumed reflects this call's own committed increment,
+      // not the pre-write snapshot.
+      const res = await tx.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: line.fieldSalesLineId } });
+      const fullyConsumed = Number(res.consumedQty) >= Number(res.qty);
 
       const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
@@ -295,10 +306,9 @@ export async function consumeFieldSalesOrderPartial(
       }
       prepared.push({
         line,
-        reservationId: res.id,
         invId: inv.id,
         avgCost: Number(inv.avgCost),
-        fullyConsumed: alreadyConsumed + line.qty >= Number(res.qty),
+        fullyConsumed,
       });
     }
 
@@ -317,13 +327,12 @@ export async function consumeFieldSalesOrderPartial(
         },
         select: { qtyOnHand: true },
       });
-      await tx.stockReservation.update({
-        where: { id: p.reservationId },
-        data: {
-          consumedQty: { increment: qty },
-          ...(p.fullyConsumed ? { state: "CONSUMED" as const, resolvedAt: new Date() } : {}),
-        },
-      });
+      if (p.fullyConsumed) {
+        await tx.stockReservation.updateMany({
+          where: { fieldSalesLineId: p.line.fieldSalesLineId, state: "RESERVED" },
+          data: { state: "CONSUMED", resolvedAt: new Date() },
+        });
+      }
       const newOnHand = Number(updated.qtyOnHand);
       await tx.stockAdjustment.create({
         data: {
@@ -359,7 +368,7 @@ export async function consumeFieldSalesOrder(
     let consumed = 0;
     for (const row of rows) {
       const upd = await tx.stockReservation.updateMany({
-        where: { fieldSalesLineId: row.fieldSalesLineId, state: "RESERVED" },
+        where: { fieldSalesLineId: row.fieldSalesLineId, state: "RESERVED", consumedQty: 0 },
         data: { state: "CONSUMED", consumedQty: row.qty, resolvedAt: new Date() },
       });
       if (upd.count === 0) continue;

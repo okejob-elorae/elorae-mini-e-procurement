@@ -1,14 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "./client";
+import { prisma } from "./index";
 import { seededId } from "./spec-teardown";
 import { consumeFieldSalesOrderPartial, PartialConsumeError } from "./reservation-writer";
 
-describe("consumeFieldSalesOrderPartial (test bed only)", () => {
+// Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host).
+const url = process.env.DATABASE_URL ?? "";
+const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
+const d = isProd ? describe.skip : describe;
+
+d("consumeFieldSalesOrderPartial (test bed only)", () => {
   let uomId = "";
   let itemId = "";
   let invId = "";
   let reservationId = "";
-  const lineId = "delivery-spec-line-1";
+  const runId = Math.random().toString(36).slice(2, 10);
+  const sku = `TEST-DLV-${runId}`;
+  const lineId = `delivery-spec-line-${runId}`;
 
   beforeEach(async () => {
     uomId = "";
@@ -16,10 +23,10 @@ describe("consumeFieldSalesOrderPartial (test bed only)", () => {
     invId = "";
     reservationId = "";
 
-    const uom = await prisma.uOM.create({ data: { code: "TEST-UOM-DLV", name: "Test UOM DLV" } });
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-${runId}`, nameId: "test", nameEn: "test" } });
     uomId = uom.id;
     const item = await prisma.item.create({
-      data: { sku: "TEST-DLV-1", name: "Delivery spec item", type: "FINISHED_GOOD", uomId },
+      data: { sku, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId },
     });
     itemId = item.id;
     const inv = await prisma.inventoryValue.create({
