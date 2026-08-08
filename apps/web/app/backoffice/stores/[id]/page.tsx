@@ -6,7 +6,7 @@ import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
 import { getStoreOrderSummary, getStoreSentItems } from "@/lib/field-sales/queries";
 import { StoreDetailView } from "./StoreDetailView";
 
-export default async function EditStorePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session) redirect("/login");
   const perms = session.user.permissions ?? [];

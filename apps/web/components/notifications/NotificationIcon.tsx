@@ -57,8 +57,9 @@ function NotificationInbox({
                 type="button"
                 onClick={() => onItemClick(item)}
                 className={cn(
-                  'w-full border-b px-4 py-3 text-left transition-colors hover:bg-accent',
-                  isUnread && 'bg-accent/50'
+                  "w-full border-b px-4 py-3 text-left transition-colors",
+                  "hover:bg-accent focus-visible:bg-accent focus-visible:outline-none",
+                  isUnread && "bg-muted",
                 )}
               >
                 <p className="font-medium text-foreground">{item.title}</p>
