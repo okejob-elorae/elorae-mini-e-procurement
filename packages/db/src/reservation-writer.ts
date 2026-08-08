@@ -246,6 +246,108 @@ export async function reserveFieldSalesOrder(
   return hasTx(client) ? client.$transaction(run) : run(client);
 }
 
+export type PartialConsumeShortLine = {
+  fieldSalesLineId: string;
+  itemId: string;
+  variantSku: string;
+  requested: number;
+  onHand: number;
+};
+
+export class PartialConsumeError extends Error {
+  constructor(
+    readonly code: "OVER_CONSUME" | "INSUFFICIENT_STOCK",
+    readonly shortLines: PartialConsumeShortLine[] = [],
+  ) {
+    super(`Partial consume rejected: ${code}`);
+    this.name = "PartialConsumeError";
+  }
+}
+
+export type PartialConsumeLine = { fieldSalesLineId: string; itemId: string; variantSku: string; qty: number };
+
+export async function consumeFieldSalesOrderPartial(
+  client: AnyClient,
+  input: { orderNo: string; deliveryId: string; lines: PartialConsumeLine[] },
+): Promise<ConsumeOrderResult> {
+  const run = async (tx: Prisma.TransactionClient): Promise<ConsumeOrderResult> => {
+    const shortLines: PartialConsumeShortLine[] = [];
+    const prepared: Array<{ line: PartialConsumeLine; reservationId: string; invId: string; avgCost: number; fullyConsumed: boolean }> = [];
+
+    for (const line of input.lines) {
+      const res = await tx.stockReservation.findUnique({ where: { fieldSalesLineId: line.fieldSalesLineId } });
+      if (!res || res.state !== "RESERVED") throw new PartialConsumeError("OVER_CONSUME");
+      const alreadyConsumed = Number(res.consumedQty);
+      if (alreadyConsumed + line.qty > Number(res.qty)) throw new PartialConsumeError("OVER_CONSUME");
+
+      const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
+      if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
+      const onHand = Number(inv.qtyOnHand);
+      if (onHand < line.qty) {
+        shortLines.push({
+          fieldSalesLineId: line.fieldSalesLineId,
+          itemId: line.itemId,
+          variantSku: line.variantSku,
+          requested: line.qty,
+          onHand,
+        });
+        continue;
+      }
+      prepared.push({
+        line,
+        reservationId: res.id,
+        invId: inv.id,
+        avgCost: Number(inv.avgCost),
+        fullyConsumed: alreadyConsumed + line.qty >= Number(res.qty),
+      });
+    }
+
+    if (shortLines.length > 0) throw new PartialConsumeError("INSUFFICIENT_STOCK", shortLines);
+
+    let consumed = 0;
+    for (const p of prepared) {
+      const qty = p.line.qty;
+      const updated = await tx.inventoryValue.update({
+        where: { id: p.invId },
+        data: {
+          qtyOnHand: { decrement: qty },
+          reservedQty: { decrement: qty },
+          totalValue: { decrement: qty * p.avgCost },
+          lastUpdated: new Date(),
+        },
+        select: { qtyOnHand: true },
+      });
+      await tx.stockReservation.update({
+        where: { id: p.reservationId },
+        data: {
+          consumedQty: { increment: qty },
+          ...(p.fullyConsumed ? { state: "CONSUMED" as const, resolvedAt: new Date() } : {}),
+        },
+      });
+      const newOnHand = Number(updated.qtyOnHand);
+      await tx.stockAdjustment.create({
+        data: {
+          docNumber: `CONSUME-${input.orderNo}-${input.deliveryId}-${p.line.fieldSalesLineId}`,
+          itemId: p.line.itemId,
+          type: AdjustmentType.NEGATIVE,
+          qtyChange: -qty,
+          reason: `Field-sales putus delivery for order ${input.orderNo}`,
+          prevQty: newOnHand + qty,
+          newQty: newOnHand,
+          prevAvgCost: p.avgCost,
+          newAvgCost: p.avgCost,
+          source: "FIELD_SALES_CONSUME" satisfies StockAdjustmentSource,
+          idempotencyKey: `fieldsales-${input.orderNo}-delivery-${input.deliveryId}-line-${p.line.fieldSalesLineId}`,
+          externalRef: `fieldsales:${input.orderNo}`,
+        },
+      });
+      consumed += 1;
+    }
+    return { consumed };
+  };
+  return hasTx(client) ? client.$transaction(run) : run(client);
+}
+
 export async function consumeFieldSalesOrder(
   client: AnyClient,
   input: { orderNo: string; fieldSalesLineIds: string[] },
@@ -258,7 +360,7 @@ export async function consumeFieldSalesOrder(
     for (const row of rows) {
       const upd = await tx.stockReservation.updateMany({
         where: { fieldSalesLineId: row.fieldSalesLineId, state: "RESERVED" },
-        data: { state: "CONSUMED", resolvedAt: new Date() },
+        data: { state: "CONSUMED", consumedQty: row.qty, resolvedAt: new Date() },
       });
       if (upd.count === 0) continue;
       const qty = Number(row.qty);
@@ -317,10 +419,13 @@ export async function releaseFieldSalesOrder(
       if (upd.count === 0) continue;
       const inv = await findFieldSalesInventory(tx, row.itemId, row.variantSku);
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
-      await tx.inventoryValue.update({
-        where: { id: inv.id },
-        data: { reservedQty: { decrement: Number(row.qty) }, lastUpdated: new Date() },
-      });
+      const stillHeld = Number(row.qty) - Number(row.consumedQty);
+      if (stillHeld > 0) {
+        await tx.inventoryValue.update({
+          where: { id: inv.id },
+          data: { reservedQty: { decrement: stillHeld }, lastUpdated: new Date() },
+        });
+      }
       released += 1;
     }
     return { released };
