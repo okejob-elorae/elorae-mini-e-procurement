@@ -11,33 +11,76 @@
 -- push to master), so the pre-flight below cannot be a comment asking a human to check a number —
 -- it has to make the file itself refuse to run.
 --
+-- RECOVERY IF THE PRE-FLIGHT ABORTS: `prisma migrate deploy` records this migration in
+-- `_prisma_migrations` BEFORE applying it, so an aborted run leaves it marked failed — it is NOT
+-- simply "nothing happened, re-run the file." Every later `migrate deploy` will itself fail with
+-- P3009 ("migrate found failed migrations") until someone runs, by hand:
+--   prisma migrate resolve --rolled-back 20260809130000_backfill_field_sales_deliveries
+-- Do that FIRST, then fix the offending FieldSalesOrder/Store/User/Item rows the pre-flight named,
+-- then re-run `migrate deploy` (which re-applies this file from the top). On prod the migrate job
+-- gates the deploy job, so an abort halts the whole deploy pipeline until this is resolved.
+--
 -- ============================================================================================
--- PRE-FLIGHT (self-enforcing): every APPROVED putus order must have BOTH a recorded approver AND
--- an approval timestamp, because:
---   - the backfilled delivery attributes itself to that user, and FieldSalesDelivery.deliveredById
---     is NOT NULL. The salesman did not deliver these orders, and stamping a system placeholder
---     would be a lie in an audit column.
---   - `approvedAt` feeds FOUR NOT NULL columns below (deliveredAt, invoiceDate, dueDate via
---     DATE_ADD, createdAt). A NULL `approvedAt` makes DATE_ADD(NULL, …) evaluate to NULL, and
---     MariaDB strict mode raises ERROR 1048 mid-INSERT. Prisma does not wrap a migration script's
---     statements in one transaction, so that error would abort with whatever already committed
---     left in place, and the migration marked failed on a live deploy.
+-- PRE-FLIGHT (self-enforcing): every APPROVED putus order this migration would touch must have
+-- every reference the backfilled rows depend on resolvable, because none of the source columns
+-- below carry a DB-level foreign key (FieldSalesOrder.storeId/approvedById, and
+-- FieldSalesOrderLine.itemId, are all `relationMode = "prisma"`) while the DESTINATION columns
+-- this migration writes into DO — `FieldSalesDelivery.deliveredById` and
+-- `FieldSalesDeliveryLine.itemId` are real, enforced foreign keys. A dangling source reference is
+-- invisible today and only surfaces as a foreign-key violation mid-migration, or worse, as a
+-- silent skip:
+--   - `approvedById IS NULL` / `approvedAt IS NULL` — the backfilled delivery attributes itself to
+--     that user, and FieldSalesDelivery.deliveredById is NOT NULL; the salesman did not deliver
+--     these orders, and stamping a system placeholder would be a lie in an audit column.
+--     `approvedAt` also feeds FOUR NOT NULL columns below (deliveredAt, invoiceDate, dueDate via
+--     DATE_ADD, createdAt) — DATE_ADD(NULL, …) is NULL, and MariaDB strict mode raises ERROR 1048
+--     mid-INSERT if it ever reached that far.
+--   - a dangling `storeId` (Store row deleted) — statement 2's `JOIN Store` silently DROPS such an
+--     order instead of erroring, which sounds safe but is not: with the round-1 fix, an order this
+--     INSERT skips gets no `bf_` delivery and is never marked DELIVERED, which is correct EXCEPT
+--     the order is then indistinguishable from one nobody has looked at yet — `recordFieldSalesDelivery`
+--     would happily "deliver" it later, running `consumeFieldSalesOrderPartial` against stock this
+--     order already consumed at approve, and writing `SalesHistory` revenue a SECOND time. Catching
+--     it here, loudly, is the only safe option — NOT switching the join to `LEFT JOIN Store`, which
+--     would silently date the invoice at payment tempo 0 instead of failing.
+--   - a dangling `approvedById` that no longer resolves to a `User` row — would violate
+--     `FieldSalesDelivery_deliveredById_fkey` at statement 2.
+--   - a dangling order-line `itemId` that no longer resolves to an `Item` row — would violate
+--     `FieldSalesDeliveryLine_itemId_fkey` at statement 3, AFTER statement 2 has already committed
+--     a delivery header with no lines under it.
 --
 -- The trick below is an intentional abuse of MariaDB scalar-subquery semantics, not a real
 -- pre-flight query: `IF(<count> = 0, 'ok', (SELECT 'ABORT' UNION ALL SELECT 'ABORT'))` returns the
 -- literal 'ok' when the guard is satisfied, but when it is not, the ELSE branch is a subquery that
 -- yields two rows where a scalar is required — MariaDB raises ERROR 1242 ("Subquery returns more
--- than 1 row") and the whole file stops before the first write. If this statement errors, STOP.
--- Fix the offending FieldSalesOrder rows by hand (set the real approvedById/approvedAt), then
--- re-run this file from the top.
+-- than 1 row") and the whole file stops before the first write. This depends on MariaDB NOT
+-- pre-evaluating the uncorrelated constant ELSE subquery at optimize time — UNPROVEN on the real
+-- server as of this migration being written. Before this migration is first applied anywhere, run
+-- this in isolation and confirm it ALSO errors 1242 (proving the trick fires on a true condition,
+-- not just a false one):
+--   SELECT IF(1 = 1, 'preflight ok', (SELECT 'ABORT' UNION ALL SELECT 'ABORT'));
+-- If that does NOT error, this guard is inert and must be replaced before relying on it.
+--
+-- If the real pre-flight below errors, STOP. See "RECOVERY IF THE PRE-FLIGHT ABORTS" above, then
+-- fix the offending rows by hand, then re-run `migrate deploy`.
 -- ============================================================================================
 SELECT IF(
-  (SELECT COUNT(*) FROM `FieldSalesOrder`
-    WHERE `status` = 'APPROVED' AND `orderType` = 'PUTUS'
-      AND (`approvedById` IS NULL OR `approvedAt` IS NULL)) = 0,
+  (SELECT COUNT(*) FROM `FieldSalesOrder` o
+    WHERE o.`status` = 'APPROVED' AND o.`orderType` = 'PUTUS'
+      AND (
+        o.`approvedById` IS NULL
+        OR o.`approvedAt` IS NULL
+        OR NOT EXISTS (SELECT 1 FROM `Store` s WHERE s.`id` = o.`storeId`)
+        OR NOT EXISTS (SELECT 1 FROM `User` u WHERE u.`id` = o.`approvedById`)
+        OR EXISTS (
+          SELECT 1 FROM `FieldSalesOrderLine` l
+          WHERE l.`orderId` = o.`id`
+            AND NOT EXISTS (SELECT 1 FROM `Item` i WHERE i.`id` = l.`itemId`)
+        )
+      )) = 0,
   'preflight ok',
   (SELECT 'ABORT' UNION ALL SELECT 'ABORT')
-) AS preflight_orders_without_approver_or_approved_at;
+) AS preflight_orders_with_unsafe_references;
 
 -- Backfill one FieldSalesDelivery per approved putus order that doesn't have one yet. `docNo` is
 -- deliberately the order's own `orderNo`, not a synthetic `DLV/...` number: a backfilled delivery

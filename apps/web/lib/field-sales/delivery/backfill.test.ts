@@ -30,7 +30,18 @@ const MIGRATION_SQL_PATH = resolve(
  */
 describe("field sales delivery backfill migration text", () => {
   it("never references the tables or columns a backfill must not touch", () => {
-    const sql = readFileSync(MIGRATION_SQL_PATH, "utf8");
+    /*
+     * Strip `--` comment lines before scanning: the migration's own prose NAMES several of these
+     * tokens while explaining the rule ("writes NO stock movement, NO StockAdjustment, and NO
+     * SalesHistory") — that is documentation of the rule, not a violation of it, and scanning the
+     * raw file would fail this test permanently on a migration that is doing exactly what it
+     * should. The file has no trailing `--` on a statement line and no C-style block comments, so
+     * a leading-`--` line filter is a complete comment strip for this specific file.
+     */
+    const sql = readFileSync(MIGRATION_SQL_PATH, "utf8")
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("--"))
+      .join("\n");
     for (const forbidden of ["InventoryValue", "StockAdjustment", "SalesHistory", "qtyOnHand", "reservedQty"]) {
       expect(sql).not.toContain(forbidden);
     }
