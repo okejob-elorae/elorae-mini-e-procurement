@@ -1,5 +1,13 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
+import { computeDueDate } from "./plan";
+
+const MIGRATION_SQL_PATH = resolve(
+  __dirname,
+  "../../../../../packages/db/prisma/migrations/20260809130000_backfill_field_sales_deliveries/migration.sql",
+);
 
 /**
  * This spec cannot invoke the backfill migration itself
@@ -12,6 +20,22 @@ import { prisma, seededId } from "@elorae/db";
  * invariants. It does not prove the migration file itself runs correctly against a real database
  * — only that the state it is supposed to produce is internally consistent.
  */
+
+/*
+ * This one needs no database and skips for nobody: it reads the migration file as text, so it is
+ * the only assertion in this file that can actually fail if `migration.sql` itself regresses (a
+ * future edit re-introducing a write to a table the backfill must never touch). Every check below
+ * it seeds and asserts Prisma-side state instead, which cannot detect that class of bug — see the
+ * file-level comment.
+ */
+describe("field sales delivery backfill migration text", () => {
+  it("never references the tables or columns a backfill must not touch", () => {
+    const sql = readFileSync(MIGRATION_SQL_PATH, "utf8");
+    for (const forbidden of ["InventoryValue", "StockAdjustment", "SalesHistory", "qtyOnHand", "reservedQty"]) {
+      expect(sql).not.toContain(forbidden);
+    }
+  });
+});
 
 /* Stock-mutating fixtures — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -172,7 +196,7 @@ d("field sales delivery backfill shape (test bed only)", () => {
         deliveredAt: order.approvedAt!,
         deliveredById: order.approvedById!,
         invoiceDate: order.approvedAt!,
-        dueDate: new Date(order.approvedAt!.getTime() + order.store.paymentTempo * 24 * 60 * 60 * 1000),
+        dueDate: computeDueDate(order.approvedAt!, order.store.paymentTempo),
         subtotal: order.subtotal,
         discountAmount: order.orderDiscountAmount,
         total: order.total,
@@ -204,6 +228,12 @@ d("field sales delivery backfill shape (test bed only)", () => {
     expect(deliveries).toHaveLength(1);
     expect(deliveries[0].docNo).toBe(orderNo);
     expect(deliveries[0].id).toBe(delivery.id);
+
+    /*
+     * A backfilled delivery must age identically to one the app produces — pinned to the same
+     * `computeDueDate` helper `recordFieldSalesDelivery` uses, not a re-derivation of its arithmetic.
+     */
+    expect(deliveries[0].dueDate).toEqual(computeDueDate(order.approvedAt!, order.store.paymentTempo));
 
     /* Delivery line quantities equal the order line quantities, one-for-one. */
     const deliveryLineByOrderLine = new Map(delivery.lines.map((dl) => [dl.orderLineId, dl]));
