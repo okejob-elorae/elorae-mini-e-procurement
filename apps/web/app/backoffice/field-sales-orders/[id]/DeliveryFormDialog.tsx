@@ -65,6 +65,13 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>({});
   const [shortLines, setShortLines] = useState<Record<string, ShortLine>>({});
   const [note, setNote] = useState("");
+  /**
+   * One key per dialog session, minted on open and rotated on a successful submit. It stays stable
+   * across a retry after a short-stock or network failure, so re-pressing Kirim replays the same
+   * delivery server-side instead of moving stock a second time. Empty until the open effect runs,
+   * which is why submit is gated on it.
+   */
+  const [idempotencyKey, setIdempotencyKey] = useState("");
 
   const rows = lines.filter((line) => line.outstanding > 0);
 
@@ -73,6 +80,7 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
     setQtyInputs(seedQtyInputs(lines));
     setShortLines({});
     setNote("");
+    setIdempotencyKey(crypto.randomUUID());
     /* eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per open; re-running on every parent render would wipe typed quantities */
   }, [open]);
 
@@ -102,7 +110,7 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
     .map((line) => ({ orderLineId: line.id, qty: Number(qtyInputs[line.id] ?? "0") }))
     .filter((line) => Number.isInteger(line.qty) && line.qty > 0);
 
-  const canSubmit = !isPending && payload.length > 0;
+  const canSubmit = !isPending && payload.length > 0 && idempotencyKey !== "";
 
   /**
    * A short line is snapped down to what the server just said is on hand, and the order is
@@ -129,13 +137,16 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
     const trimmedNote = note.trim();
     startTransition(async () => {
       try {
-        const result = await recordDeliveryAction(
+        const result = await recordDeliveryAction({
           orderId,
-          payload,
-          trimmedNote === "" ? undefined : trimmedNote,
-        );
+          lines: payload,
+          note: trimmedNote === "" ? undefined : trimmedNote,
+          idempotencyKey,
+        });
         if (result.ok) {
           toast.success(t("delivery.successCreated"));
+          /* Rotate before closing so a reopen can never replay the delivery that just succeeded. */
+          setIdempotencyKey(crypto.randomUUID());
           onOpenChange(false);
           router.refresh();
           return;

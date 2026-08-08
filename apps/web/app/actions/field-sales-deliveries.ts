@@ -10,7 +10,14 @@ export type DeliveryActionResult =
   | { ok: true }
   | {
       ok: false;
-      reason: "FORBIDDEN" | "NOT_FOUND" | "INVALID_STATE" | "NO_LINES" | "OVER_DELIVER" | "INSUFFICIENT_STOCK";
+      reason:
+        | "FORBIDDEN"
+        | "NOT_FOUND"
+        | "INVALID_STATE"
+        | "INVALID_REQUEST"
+        | "NO_LINES"
+        | "OVER_DELIVER"
+        | "INSUFFICIENT_STOCK";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
     };
 
@@ -22,18 +29,30 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
   return { userId: session.user.id };
 }
 
-export async function recordDeliveryAction(
-  orderId: string,
-  lines: Array<{ orderLineId: string; qty: number }>,
-  note?: string,
-): Promise<DeliveryActionResult> {
+/**
+ * `idempotencyKey` is required, not optional: it is the only thing between a double-submit and a
+ * second stock movement plus a second SalesHistory row, and a repeat only fails on its own if it
+ * exceeds the outstanding qty — a partial delivery would go through twice. Taking an object rather
+ * than positional args is what lets it be required after the optional `note`.
+ */
+export async function recordDeliveryAction(input: {
+  orderId: string;
+  lines: Array<{ orderLineId: string; qty: number }>;
+  note?: string;
+  idempotencyKey: string;
+}): Promise<DeliveryActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
+  const { orderId, lines, note, idempotencyKey } = input;
+  /* Refuse a malformed key rather than dropping it — passing undefined through restores the unprotected path. */
+  if (typeof idempotencyKey !== "string" || idempotencyKey.trim() === "" || idempotencyKey.length > 64) {
+    return { ok: false, reason: "INVALID_REQUEST" };
+  }
   if (!Array.isArray(lines) || lines.some((l) => typeof l.orderLineId !== "string" || !Number.isInteger(l.qty) || l.qty <= 0)) {
     return { ok: false, reason: "OVER_DELIVER" };
   }
   try {
-    await recordFieldSalesDelivery({ orderId, deliveredById: g.userId, lines, note });
+    await recordFieldSalesDelivery({ orderId, deliveredById: g.userId, lines, note, idempotencyKey });
   } catch (e) {
     if (e instanceof DeliveryError) return { ok: false, reason: e.code, shortLines: e.shortLines };
     throw e;

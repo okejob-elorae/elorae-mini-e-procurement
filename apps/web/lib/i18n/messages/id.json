@@ -2367,6 +2367,7 @@
         "FORBIDDEN": "Anda tidak memiliki izin untuk mengirim pesanan ini.",
         "NOT_FOUND": "Pesanan atau baris pesanan tidak ditemukan.",
         "INVALID_STATE": "Pesanan ini tidak bisa dikirim pada kondisi saat ini.",
+        "INVALID_REQUEST": "Permintaan pengiriman tidak valid. Tutup dialog ini lalu buka lagi.",
         "NO_LINES": "Tidak ada baris yang dipilih untuk dikirim.",
         "OVER_DELIVER": "Jumlah kirim melebihi sisa pesanan.",
         "INSUFFICIENT_STOCK": "Stok tidak cukup untuk pengiriman ini."

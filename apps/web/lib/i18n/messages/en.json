@@ -2367,6 +2367,7 @@
         "FORBIDDEN": "You don't have permission to deliver this order.",
         "NOT_FOUND": "Order or order line not found.",
         "INVALID_STATE": "This order cannot be delivered in its current state.",
+        "INVALID_REQUEST": "That delivery request was not valid. Close this dialog and open it again.",
         "NO_LINES": "No lines selected for delivery.",
         "OVER_DELIVER": "Delivered quantity exceeds the outstanding quantity.",
         "INSUFFICIENT_STOCK": "Not enough stock for this delivery."
