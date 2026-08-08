@@ -359,7 +359,8 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] `AdminNotification` is write-only — nothing reads/renders it. Three categories insert to it (`JOURNAL_PENDING` from opname 13-06 + GRN 13-01; `PENDING_ORDER_APPROVAL` from field-sales; `STORE_CHANGE_REQUEST` from store edits) but the in-app bell (`NotificationIcon` → `/api/notifications`) reads `notificationQueue` (FCM), a different table. Add an `AdminNotification` feed/bell so these flags surface (fixes all three at once). Until then the visible recovery path is the per-row retry button (e.g. "Post journal").
 
 ### Ops / infra
-- [ ] No DB backups — set up daily `mariadb-dump` → R2 cron (TiDB did this automatically) (PR #74).
+- [ ] DB backups: `scripts/backup-db.sh` ships (encrypted nightly dump → private R2, 14 daily + 6 monthly, self-verifying by decrypting and checking the `Dump completed on` trailer). **Still needs installing on the VPS** — private bucket + token, passphrase file, crontab entry; see README §Database backups. Until that is done there are STILL no backups (PR #226).
+- [ ] Backup failure is visible only in `backup.log` on the VPS — nothing renders it and nothing alerts. Same gap as the `AdminNotification` feed; a health-check ping or a "last successful backup" surface would close it.
 - [ ] Auto-schedule the R2 orphan sweeper (not registered in `lib/cron/jobs.ts`) (PR #86).
 - [ ] Queue observability: depth alert (AdminNotificationService) + dashboard panel; sweeper DEAD-letters after N attempts; prod-mode singleton smoke test (none in apps/api) (PR #73).
 - [ ] VPS log shipping (Loki/Logtail) for off-server retention + backup Redis + Caddy cert volumes (PR #53).

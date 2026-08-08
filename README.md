@@ -188,6 +188,11 @@ curl -fsS https://api.elorae.cloud/health           # 200 OK
 
 Caddy obtains a Let's Encrypt cert automatically on first HTTPS request to the domain. First boot may take ~30 s for cert issuance.
 
+> **Rebuilding this VPS? Set up backups as part of the build, not afterwards.** Nothing in
+> the repo installs the crontab, so a freshly provisioned host comes up healthy, serving
+> traffic, with zero backups and no signal that anything is missing. See
+> §Database backups below.
+
 ### apps/web on VPS
 
 `apps/web` runs as a Docker Compose service (`web`) alongside `apps/api`, exposed by the same Caddy instance at `https://elorae.cloud`.
@@ -308,6 +313,109 @@ Flags explained:
 - `--ssl-mode=REQUIRED` — MySQL 8 client syntax. If using mariadb-client, swap to `--ssl`. Drop the flag entirely if neither is recognised — TiDB Serverless enforces TLS server-side and the client upgrades the connection automatically when its capability bit is set.
 
 After migration, verify counts match between source and target on a few tables (`Item`, `JubelioOutbox`, `User`, etc.) before pointing local dev or DNS at the new DB.
+
+## Database backups (VPS → Cloudflare R2)
+
+`scripts/backup-db.sh` takes a nightly encrypted dump and uploads it to a **private** R2
+bucket. Retention is 14 daily plus the 1st of each month for 6 months, pruned by the date
+in the object key.
+
+**It verifies before it uploads.** The script decrypts the archive it just wrote and looks
+for the `Dump completed on` trailer that `mariadb-dump` emits only after a complete run.
+That single check proves the passphrase works, the gzip stream is intact and the dump is
+not truncated. Exit statuses prove none of it: `mariadb-dump | gzip` returns *gzip's*
+status, so a dump that fails outright still exits 0 and leaves a valid ~120-byte archive
+that looks fine in `ls`. That happened on 2026-08-08, twice, from two different causes.
+
+Two things that will bite anyone writing similar scripts against this server:
+
+- **`--skip-ssl` is required.** MariaDB 11.4's client demands TLS by default; this server
+  offers none, so a bare `mariadb`/`mariadb-dump` dies with `error 2026`.
+- **The application's R2 bucket is public-read** — it serves item images and visit photos
+  over a `pub-*.r2.dev` URL. A database dump there would expose every customer's name,
+  address, phone and order history to anyone who guesses a key. Backups need their own
+  private bucket and a token scoped to it.
+
+### Setup (once, on the VPS)
+
+Create the private bucket in Cloudflare first (suggested name `elorae-backups`) with an API
+token scoped to **that bucket only**, Object Read & Write. The script refuses to run if the
+bucket is named `elorae-erp` or `elorae-uploads`, because those are the application's
+public-read buckets.
+
+```bash
+sudo apt-get install -y awscli gnupg
+install -m 700 -d ~/.elorae-backup
+
+# Generated, not typed: a passphrase typed on the command line lives in
+# ~/.bash_history forever, surviving any later rotation.
+umask 077
+openssl rand -base64 48 > ~/.elorae-backup/passphrase
+
+cp /srv/elorae/scripts/backup-db.env.example ~/.elorae-backup/env
+chmod 600 ~/.elorae-backup/env
+$EDITOR ~/.elorae-backup/env            # fill in account id, bucket, token
+
+# The script refuses to start unless both are 600 — verify rather than assume.
+stat -c '%a %n' ~/.elorae-backup/passphrase ~/.elorae-backup/env
+```
+
+**Then copy the passphrase somewhere off this machine** — a password manager, not this
+server and not that bucket. It is the only way to read these backups; lose it and every
+backup is permanently unreadable, and you will not find out until you need one.
+
+Note the nightly verify proves the *local* passphrase file decrypts the archive. It cannot
+prove your off-site copy is correct — a transcription error there passes every night and
+surfaces only at restore. Verify the off-site copy once, by hand, against a real archive.
+
+### Schedule
+
+```bash
+crontab -e
+# 02:15 WIB — the VPS runs UTC, so 19:15 UTC the previous day
+15 19 * * * /srv/elorae/scripts/backup-db.sh >> /home/elorae/backup.log 2>&1
+```
+
+Run it once by hand first. The last line is `OK — backup complete, verified and uploaded`
+with a byte count.
+
+**Monitor the exit status, not the log text.** A `set -e` abort exits nonzero without
+printing `FAILED`, so grepping for that word misses a whole failure class. Nothing renders
+these anywhere yet, so until the `AdminNotification` feed exists an unread `backup.log` and
+the cron exit status are the only signals there are.
+
+### Restore
+
+The decrypted dump is plaintext customer PII. Restore it in a private temp directory —
+never in `/srv/elorae`, which is a git working tree where a later `git add -A` would commit
+it — and delete it when finished.
+
+```bash
+set -a; . ~/.elorae-backup/env; set +a          # aws needs the token from here
+umask 077
+WORK=$(mktemp -d); cd "$WORK"
+
+aws s3 cp "s3://$R2_BACKUP_BUCKET/daily/<file>" . \
+  --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+
+gpg --batch --decrypt --passphrase-file ~/.elorae-backup/passphrase <file> | gunzip > restore.sql
+```
+
+Load it into a **scratch database** and inspect it before going anywhere near prod:
+
+```bash
+docker compose -f /srv/elorae/docker-compose.prod.yml exec -T db \
+  sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --skip-ssl -u root -e "CREATE DATABASE elorae_restore_check"'
+docker compose -f /srv/elorae/docker-compose.prod.yml exec -T db \
+  sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --skip-ssl -u root elorae_restore_check' < restore.sql
+
+# When done:
+cd / && rm -rf "$WORK"
+```
+
+A restore straight over the live database is how a bad backup becomes a bad outage.
+`MYSQL_PWD` rather than `-p` for the same reason the script uses it: `-p` with no TTY
+silently becomes a password *prompt*, and `/proc/<pid>/cmdline` is world-readable.
 
 ## Common scripts
 
