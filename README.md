@@ -343,8 +343,28 @@ token scoped to **that bucket only**, Object Read & Write. The script refuses to
 bucket is named `elorae-erp` or `elorae-uploads`, because those are the application's
 public-read buckets.
 
+**The AWS CLI is not installable from apt on this host.** Ubuntu 24.04 keeps `awscli` in
+`universe`, which is not enabled here — `apt-get install awscli` fails with *"no installation
+candidate"*, and because apt aborts the whole transaction, `gnupg` in the same command does
+not install either. `unzip` is also absent. Install the official v2 CLI into the user's own
+tree instead; it needs no sudo and no extra packages:
+
 ```bash
-sudo apt-get install -y awscli gnupg
+cd /tmp && rm -rf awscli-inst && mkdir awscli-inst && cd awscli-inst
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o awscliv2.zip
+python3 -m zipfile -e awscliv2.zip .          # python3 stands in for the missing unzip
+chmod +x aws/install aws/dist/aws
+./aws/install -i "$HOME/.local/aws-cli" -b "$HOME/.local/bin"
+"$HOME/.local/bin/aws" --version
+```
+
+`python3 -m zipfile` does not preserve the executable bit, hence the `chmod`. Installing to
+`~/.local/bin` means **cron will not find it** unless the crontab sets `PATH` — see below.
+
+`gpg`, `openssl`, `curl` and `flock` are already present on this host; verify with
+`command -v` before assuming.
+
+```bash
 install -m 700 -d ~/.elorae-backup
 
 # Generated, not typed: a passphrase typed on the command line lives in
@@ -372,6 +392,13 @@ surfaces only at restore. Verify the off-site copy once, by hand, against a real
 
 ```bash
 crontab -e
+```
+```
+# Required: the AWS CLI lives in ~/.local/bin, which cron's default PATH omits.
+# Without this the nightly run dies at "aws cli not installed" while a manual run
+# from an interactive shell keeps working — the worst kind of divergence.
+PATH=/home/elorae/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 # 02:15 WIB — the VPS runs UTC, so 19:15 UTC the previous day
 15 19 * * * /srv/elorae/scripts/backup-db.sh >> /home/elorae/backup.log 2>&1
 ```
