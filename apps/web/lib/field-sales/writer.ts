@@ -1,5 +1,5 @@
-import { reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
-import { effectiveMinQty, validateMinQtyLines, buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
+import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
+import { effectiveMinQty, validateMinQtyLines } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { applyItemAggregatedPromos } from "./promo-apply";
 import { fetchActivePromosForStore } from "@/lib/promos/queries";
@@ -216,8 +216,9 @@ export async function approveFieldSalesOrder(input: {
       return { ok: true };
     }
 
-    // PUTUS: apply owner's final appeal prices (Decision A — no promo recompute), then consume +
-    // materialize SalesHistory with NET figures. Create-time discounts are kept as-is.
+    // PUTUS: apply owner's final appeal prices (Decision A — no promo recompute) and recompute the
+    // order total. Create-time discounts are kept as-is. Stock consumption and SalesHistory happen
+    // at delivery, not here (see delivery/writer.ts).
     const finalPriceByLineId = new Map((input.finalPrices ?? []).map((f) => [f.lineId, f.finalUnitPrice]));
     let subtotal = 0;
     const finalLines: Array<
@@ -238,26 +239,9 @@ export async function approveFieldSalesOrder(input: {
     const discountTotal = finalLines.reduce((s, l) => s + Number(l.discountAmount), 0);
     const total = subtotal - discountTotal - Number(order.orderDiscountAmount);
 
-    await consumeFieldSalesOrder(tx, { orderNo: order.orderNo, fieldSalesLineIds: order.lines.map((l) => l.id) });
-    const now = new Date();
-    const rows = buildOfflineSalesHistoryRows({
-      orderNo: order.orderNo,
-      orderTotal: total,
-      lines: finalLines.map((l) => {
-        const net = l.lineTotal - Number(l.discountAmount);
-        return {
-          itemId: l.itemId,
-          variantSku: l.variantSku,
-          parentSku: l.item.sku,
-          productName: l.productName,
-          qty: l.qty,
-          unitPrice: l.qty > 0 ? net / l.qty : 0,
-          lineTotal: net,
-          productCategory: l.item.category?.name ?? null,
-        };
-      }),
-    }).map((row) => ({ ...row, orderDate: now, completedDate: now }));
-    await tx.salesHistory.createMany({ data: rows });
+    /* Stock consumption and SalesHistory no longer happen here — a putus order ships in one or
+       more deliveries (see delivery/writer.ts), and stock only leaves + SalesHistory is only
+       written when a delivery is recorded. */
     await tx.fieldSalesOrder.update({
       where: { id: order.id },
       data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal, total },
