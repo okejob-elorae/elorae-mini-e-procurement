@@ -309,6 +309,67 @@ Flags explained:
 
 After migration, verify counts match between source and target on a few tables (`Item`, `JubelioOutbox`, `User`, etc.) before pointing local dev or DNS at the new DB.
 
+## Database backups (VPS → Cloudflare R2)
+
+`scripts/backup-db.sh` takes a nightly encrypted dump and uploads it to a **private** R2
+bucket. Retention is 14 daily plus the 1st of each month for 6 months, pruned by the date
+in the object key.
+
+**It verifies before it uploads.** The script decrypts the archive it just wrote and looks
+for the `Dump completed on` trailer that `mariadb-dump` emits only after a complete run.
+That single check proves the passphrase works, the gzip stream is intact and the dump is
+not truncated. Exit statuses prove none of it: `mariadb-dump | gzip` returns *gzip's*
+status, so a dump that fails outright still exits 0 and leaves a valid ~120-byte archive
+that looks fine in `ls`. That happened on 2026-08-08, twice, from two different causes.
+
+Two things that will bite anyone writing similar scripts against this server:
+
+- **`--skip-ssl` is required.** MariaDB 11.4's client demands TLS by default; this server
+  offers none, so a bare `mariadb`/`mariadb-dump` dies with `error 2026`.
+- **The application's R2 bucket is public-read** — it serves item images and visit photos
+  over a `pub-*.r2.dev` URL. A database dump there would expose every customer's name,
+  address, phone and order history to anyone who guesses a key. Backups need their own
+  private bucket and a token scoped to it.
+
+### Setup (once, on the VPS)
+
+```bash
+sudo apt-get install -y awscli gnupg
+install -m 700 -d ~/.elorae-backup
+printf '%s' 'a-long-random-passphrase' > ~/.elorae-backup/passphrase
+chmod 600 ~/.elorae-backup/passphrase
+cp /srv/elorae/scripts/backup-db.env.example ~/.elorae-backup/env   # fill in, then chmod 600
+```
+
+Create the private bucket in Cloudflare (default `elorae-backups`) with an API token
+scoped to that bucket only, Object Read & Write.
+
+**The passphrase is the only way to read these backups.** Lose it and every backup is
+permanently unreadable. Store a copy somewhere that is neither this server nor that bucket.
+
+### Schedule
+
+```bash
+crontab -e
+# 02:15 WIB — the VPS runs UTC, so 19:15 UTC the previous day
+15 19 * * * /srv/elorae/scripts/backup-db.sh >> /home/elorae/backup.log 2>&1
+```
+
+Run it once by hand first and read the output — the last line is `OK — backup complete and
+verified` with a byte count. Then check `tail backup.log` occasionally: nothing renders
+these anywhere, so an unread log is the only failure signal until the `AdminNotification`
+feed exists.
+
+### Restore
+
+```bash
+aws s3 cp s3://<bucket>/daily/<file> . --endpoint-url "https://<account>.r2.cloudflarestorage.com"
+gpg --batch --decrypt --passphrase-file ~/.elorae-backup/passphrase <file> | gunzip > restore.sql
+```
+
+Load it into a scratch database and inspect it before going anywhere near prod. A restore
+straight over the live database is how a bad backup becomes a bad outage.
+
 ## Common scripts
 
 | Command | What it does |
