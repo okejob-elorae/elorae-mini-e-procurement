@@ -2341,6 +2341,8 @@
       "closeTitle": "Close Remaining Quantity",
       "closeDescription": "The undelivered remainder will be cancelled and its reserved stock released. This cannot be undone.",
       "closeReason": "Reason for closing (required)",
+      "closeReasonLabel": "Remainder close reason",
+      "closedAt": "Remainder closed",
       "docNo": "Delivery No.",
       "date": "Delivered",
       "dueDate": "Due Date",

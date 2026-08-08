@@ -414,6 +414,9 @@ model FieldSalesOrder {
   rejectedAt    DateTime?
   rejectedById  String?
   rejectReason  String?               @db.Text
+  closedAt      DateTime?
+  closedById    String?
+  closeReason   String?               @db.Text
   idempotencyKey String?              @unique
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt

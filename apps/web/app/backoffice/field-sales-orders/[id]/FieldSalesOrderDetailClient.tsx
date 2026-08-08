@@ -196,11 +196,18 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: P
         <Field label={t("createdAt")} value={formatDate(order.createdAt)} />
         <Field label={t("approvedAt")} value={order.approvedAt ? formatDate(order.approvedAt) : null} />
         <Field label={t("rejectedAt")} value={order.rejectedAt ? formatDate(order.rejectedAt) : null} />
+        <Field label={t("delivery.closedAt")} value={order.closedAt ? formatDate(order.closedAt) : null} />
         <Field label={t("note")} value={order.note} />
         {order.status === "REJECTED" && order.rejectReason && (
           <div className="pt-2 border-t">
             <div className="text-sm text-muted-foreground mb-1">{t("rejectReason")}</div>
             <div className="text-sm">{order.rejectReason}</div>
+          </div>
+        )}
+        {order.closeReason && (
+          <div className="pt-2 border-t">
+            <div className="text-sm text-muted-foreground mb-1">{t("delivery.closeReasonLabel")}</div>
+            <div className="text-sm">{order.closeReason}</div>
           </div>
         )}
       </Card>

@@ -226,9 +226,19 @@ export async function closeFieldSalesOrderRemainder(input: {
       deliveredQty: l.deliveredQty,
       cancelledQty: l.cancelledQty + outstandingQty(l),
     }));
+    /**
+     * The reason lands in its own column, never in `note` — that field is the salesman's PWA note
+     * and is rendered as "Catatan" on the detail page, so appending to it would blend an admin's
+     * cancellation reason into user-authored text with no way to separate them later.
+     */
     await tx.fieldSalesOrder.update({
       where: { id: order.id },
-      data: { deliveryStatus: nextDeliveryStatus(settled), note: order.note ? `${order.note}\n${input.reason}` : input.reason },
+      data: {
+        deliveryStatus: nextDeliveryStatus(settled),
+        closedAt: new Date(),
+        closedById: input.closedById,
+        closeReason: input.reason,
+      },
     });
 
     return { ok: true };

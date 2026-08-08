@@ -2341,6 +2341,8 @@
       "closeTitle": "Tutup Sisa Pesanan",
       "closeDescription": "Sisa yang belum dikirim akan dibatalkan dan stok yang direservasi dilepas. Tindakan ini tidak bisa dibatalkan.",
       "closeReason": "Alasan penutupan (wajib diisi)",
+      "closeReasonLabel": "Alasan Penutupan Sisa",
+      "closedAt": "Sisa Ditutup",
       "docNo": "No. Kiriman",
       "date": "Tanggal Kirim",
       "dueDate": "Jatuh Tempo",

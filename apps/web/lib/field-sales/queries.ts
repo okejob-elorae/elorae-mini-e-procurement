@@ -50,6 +50,8 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   approvedAt: Date | null;
   rejectedAt: Date | null;
   rejectReason: string | null;
+  closedAt: Date | null;
+  closeReason: string | null;
   marginPercent: number | null;
   orderDiscountAmount: number;
   appliedOrderPromoName: string | null;
@@ -133,6 +135,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     select: {
       id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
+      closedAt: true, closeReason: true,
       orderDiscountAmount: true, appliedOrderPromoId: true, deliveryStatus: true,
       store: { select: { name: true, marginPercent: true } },
       salesman: { select: { name: true } },
@@ -198,6 +201,8 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     approvedAt: row.approvedAt,
     rejectedAt: row.rejectedAt,
     rejectReason: row.rejectReason,
+    closedAt: row.closedAt,
+    closeReason: row.closeReason,
     marginPercent: row.store.marginPercent === null ? null : Number(row.store.marginPercent),
     orderDiscountAmount: toNum(row.orderDiscountAmount),
     appliedOrderPromoName: row.appliedOrderPromoId ? promoNameById.get(row.appliedOrderPromoId) ?? null : null,

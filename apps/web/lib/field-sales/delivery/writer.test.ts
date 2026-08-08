@@ -197,6 +197,16 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
     expect(order.deliveryStatus).toBe("CLOSED");
   });
+
+  it("stamps the closure reason and its author, leaving the salesman's note alone", async () => {
+    await prisma.fieldSalesOrder.update({ where: { id: orderId }, data: { note: "titip di kasir" } });
+    await closeFieldSalesOrderRemainder({ orderId, closedById: userId, reason: "stok habis" });
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.closeReason).toBe("stok habis");
+    expect(order.closedById).toBe(userId);
+    expect(order.closedAt).not.toBeNull();
+    expect(order.note).toBe("titip di kasir");
+  });
 });
 
 d("recordFieldSalesDelivery — two distinct items in one call (test bed only)", () => {
