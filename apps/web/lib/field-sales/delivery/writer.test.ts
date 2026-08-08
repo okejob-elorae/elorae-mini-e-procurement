@@ -128,6 +128,24 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(err.shortLines).toHaveLength(1);
   });
 
+  it("hard-blocks when two lines share the same item+variant and their combined qty exceeds on-hand, moving no stock", async () => {
+    // lineA and lineB both resolve to invId (same item, variantSku "") — 6 on hand covers either
+    // line alone (5) but not both (10) delivered in one call.
+    await prisma.inventoryValue.update({ where: { id: invId }, data: { qtyOnHand: 6 } });
+    const err = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [
+        { orderLineId: lineAId, qty: 5 },
+        { orderLineId: lineBId, qty: 5 },
+      ],
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DeliveryError);
+    expect(err.code).toBe("INSUFFICIENT_STOCK");
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.qtyOnHand)).toBe(6);
+  });
+
   it("rejects an empty line set", async () => {
     const err = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [] }).catch((e) => e);
     expect(err.code).toBe("NO_LINES");
@@ -178,5 +196,237 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(Number(inv.qtyOnHand)).toBe(8);
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
     expect(order.deliveryStatus).toBe("CLOSED");
+  });
+});
+
+d("recordFieldSalesDelivery — two distinct items in one call (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemAId = "";
+  let itemBId = "";
+  let invAId = "";
+  let invBId = "";
+  let storeId = "";
+  let userId = "";
+  let orderId = "";
+  let lineAId = "";
+  let lineBId = "";
+
+  beforeEach(async () => {
+    uomId = ""; itemAId = ""; itemBId = ""; invAId = ""; invBId = ""; storeId = ""; userId = ""; orderId = ""; lineAId = ""; lineBId = "";
+
+    const uom = await prisma.uOM.create({
+      data: { code: `TEST-UOM-FSD2-${token}`, nameId: "test", nameEn: "test" },
+    });
+    uomId = uom.id;
+
+    const itemA = await prisma.item.create({
+      data: { sku: `TEST-FSD2-A-${token}`, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId, sellingPrice: 1000 },
+    });
+    itemAId = itemA.id;
+    const itemB = await prisma.item.create({
+      data: { sku: `TEST-FSD2-B-${token}`, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId, sellingPrice: 2000 },
+    });
+    itemBId = itemB.id;
+
+    const invA = await prisma.inventoryValue.create({
+      data: { itemId: itemAId, variantSku: "", qtyOnHand: 10, reservedQty: 3, avgCost: 500, totalValue: 5000 },
+    });
+    invAId = invA.id;
+    const invB = await prisma.inventoryValue.create({
+      data: { itemId: itemBId, variantSku: "", qtyOnHand: 10, reservedQty: 4, avgCost: 800, totalValue: 8000 },
+    });
+    invBId = invB.id;
+
+    const store = await prisma.store.create({
+      data: { code: `TEST-FSD2-STORE-${token}`, name: "Test FSD2 Store", address: "Test address", termsType: "PUTUS", paymentTempo: 14, isActive: true },
+    });
+    storeId = store.id;
+
+    const user = await prisma.user.create({
+      data: { email: `test-fsd2-${token}@example.com`, name: "Test FSD2 Salesman" },
+    });
+    userId = user.id;
+
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `PUTUS/TEST-FSD2-${token}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: 11000,
+        total: 11000,
+        lines: {
+          create: [
+            { itemId: itemAId, variantSku: "", productName: "Test FSD2 Product A", qty: 3, unitPrice: 1000, lineTotal: 3000 },
+            { itemId: itemBId, variantSku: "", productName: "Test FSD2 Product B", qty: 4, unitPrice: 2000, lineTotal: 8000 },
+          ],
+        },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    lineAId = order.lines.find((l) => l.itemId === itemAId)!.id;
+    lineBId = order.lines.find((l) => l.itemId === itemBId)!.id;
+
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: lineAId, itemId: itemAId, variantSku: "", qty: 3, state: "RESERVED" },
+    });
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: lineBId, itemId: itemBId, variantSku: "", qty: 4, state: "RESERVED" },
+    });
+  });
+
+  afterEach(async () => {
+    await prisma.salesHistory.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
+    await prisma.inventoryValue.deleteMany({ where: { id: { in: [seededId(invAId), seededId(invBId)] } } });
+    await prisma.item.deleteMany({ where: { id: { in: [seededId(itemAId), seededId(itemBId)] } } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+  });
+
+  it("delivering two lines on two distinct items in one call writes one correctly-shaped SalesHistory row per item", async () => {
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [
+        { orderLineId: lineAId, qty: 3 },
+        { orderLineId: lineBId, qty: 4 },
+      ],
+    });
+
+    const rows = await prisma.salesHistory.findMany({ where: { itemId: { in: [itemAId, itemBId] } } });
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.channel).toBe("OFFLINE");
+      expect(row.orderStatus).toBe("COMPLETED");
+      expect(row.importBatchId).toBeNull();
+    }
+    const rowA = rows.find((r) => r.itemId === itemAId)!;
+    const rowB = rows.find((r) => r.itemId === itemBId)!;
+    expect(rowA.quantity).toBe(3);
+    expect(Number(rowA.lineTotal)).toBe(3000);
+    expect(rowB.quantity).toBe(4);
+    expect(Number(rowB.lineTotal)).toBe(8000);
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.deliveryStatus).toBe("DELIVERED");
+  });
+});
+
+d("recordFieldSalesDelivery — discount allocation across two deliveries (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let invId = "";
+  let storeId = "";
+  let userId = "";
+  let orderId = "";
+  let lineId = "";
+
+  beforeEach(async () => {
+    uomId = ""; itemId = ""; invId = ""; storeId = ""; userId = ""; orderId = ""; lineId = "";
+
+    const uom = await prisma.uOM.create({
+      data: { code: `TEST-UOM-FSD3-${token}`, nameId: "test", nameEn: "test" },
+    });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: { sku: `TEST-FSD3-${token}`, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId, sellingPrice: 1000 },
+    });
+    itemId = item.id;
+
+    const inv = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 10, reservedQty: 10, avgCost: 500, totalValue: 5000 },
+    });
+    invId = inv.id;
+
+    const store = await prisma.store.create({
+      data: { code: `TEST-FSD3-STORE-${token}`, name: "Test FSD3 Store", address: "Test address", termsType: "PUTUS", paymentTempo: 30, isActive: true },
+    });
+    storeId = store.id;
+
+    const user = await prisma.user.create({
+      data: { email: `test-fsd3-${token}@example.com`, name: "Test FSD3 Salesman" },
+    });
+    userId = user.id;
+
+    // Line-level 1000 discount (10% of 10000) + an order-level 500 on top: total = 10000-1000-500 = 8500.
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `PUTUS/TEST-FSD3-${token}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: 10000,
+        total: 8500,
+        orderDiscountAmount: 500,
+        lines: {
+          create: [{ itemId, variantSku: "", productName: "Test FSD3 Product", qty: 10, unitPrice: 1000, lineTotal: 10000, discountAmount: 1000 }],
+        },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    lineId = order.lines[0].id;
+
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: lineId, itemId, variantSku: "", qty: 10, state: "RESERVED" },
+    });
+  });
+
+  afterEach(async () => {
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
+    await prisma.inventoryValue.deleteMany({ where: { id: seededId(invId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+  });
+
+  it("a partial delivery then the closing delivery split the discount exactly, and SalesHistory is net of it", async () => {
+    // Delivery 1: 6 of 10 — pro-rated share. 10% line discount → 600; order discount pro-rata → 300.
+    const d1 = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineId, qty: 6 }] });
+    // Delivery 2: the remaining 4 — closes the order, so it takes whatever discount is left over exactly.
+    const d2 = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineId, qty: 4 }] });
+
+    const delivery1 = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: d1.deliveryId } });
+    const delivery2 = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: d2.deliveryId } });
+    expect(Number(delivery1.discountAmount)).toBe(300);
+    expect(Number(delivery2.discountAmount)).toBe(200);
+    expect(Number(delivery1.discountAmount) + Number(delivery2.discountAmount)).toBe(500); // == order.orderDiscountAmount
+
+    const deliveryLines1 = await prisma.fieldSalesDeliveryLine.findMany({ where: { deliveryId: d1.deliveryId } });
+    const deliveryLines2 = await prisma.fieldSalesDeliveryLine.findMany({ where: { deliveryId: d2.deliveryId } });
+    expect(Number(deliveryLines1[0].discountAmount) + Number(deliveryLines2[0].discountAmount)).toBe(1000); // == line.discountAmount
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.deliveryStatus).toBe("DELIVERED");
+
+    const hist1 = await prisma.salesHistory.findFirst({ where: { orderId: d1.docNo } });
+    expect(Number(hist1!.unitPriceAfterDiscount)).toBe(900); // (6000 - 600) / 6
+    expect(Number(hist1!.lineTotal)).toBe(5400);
+    expect(Number(hist1!.orderTotal)).toBe(5100); // delivery 1's own total: 6000 - 600 - 300
+
+    const hist2 = await prisma.salesHistory.findFirst({ where: { orderId: d2.docNo } });
+    expect(Number(hist2!.unitPriceAfterDiscount)).toBe(900); // (4000 - 400) / 4
+    expect(Number(hist2!.lineTotal)).toBe(3600);
+    expect(Number(hist2!.orderTotal)).toBe(3400); // delivery 2's own total: 4000 - 400 - 200
   });
 });

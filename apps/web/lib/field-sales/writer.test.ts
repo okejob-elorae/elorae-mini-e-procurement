@@ -179,7 +179,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
 
     const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
     expect(order!.status).toBe("APPROVED");
-    expect(Number(order!.total)).toBe(180); // 200 subtotal - 20 line discount (10%), unchanged by approve
+    expect(Number(order!.total)).toBe(180); /* 200 subtotal - 20 line discount (10%), unchanged by approve */
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
     expect(hist).toHaveLength(0);
   });
@@ -324,7 +324,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.subtotal)).toBe(6 * 30000 + 6 * 40000);
     expect(Number(order!.total)).toBe(6 * 30000 + 6 * 40000); // no promo active → discounts stay 0
 
-    // Stock consumption and SalesHistory happen at delivery now, not at approve.
+    /* Stock consumption and SalesHistory happen at delivery now, not at approve. */
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
     expect(hist).toHaveLength(0);
   });

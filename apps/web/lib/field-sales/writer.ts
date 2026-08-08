@@ -216,9 +216,11 @@ export async function approveFieldSalesOrder(input: {
       return { ok: true };
     }
 
-    // PUTUS: apply owner's final appeal prices (Decision A — no promo recompute) and recompute the
-    // order total. Create-time discounts are kept as-is. Stock consumption and SalesHistory happen
-    // at delivery, not here (see delivery/writer.ts).
+    /**
+     * PUTUS: apply owner's final appeal prices (Decision A — no promo recompute) and recompute the
+     * order total. Create-time discounts are kept as-is. Stock consumption and SalesHistory happen
+     * at delivery, not here (see delivery/writer.ts).
+     */
     const finalPriceByLineId = new Map((input.finalPrices ?? []).map((f) => [f.lineId, f.finalUnitPrice]));
     let subtotal = 0;
     const finalLines: Array<
@@ -239,9 +241,11 @@ export async function approveFieldSalesOrder(input: {
     const discountTotal = finalLines.reduce((s, l) => s + Number(l.discountAmount), 0);
     const total = subtotal - discountTotal - Number(order.orderDiscountAmount);
 
-    /* Stock consumption and SalesHistory no longer happen here — a putus order ships in one or
-       more deliveries (see delivery/writer.ts), and stock only leaves + SalesHistory is only
-       written when a delivery is recorded. */
+    /**
+     * Stock consumption and SalesHistory no longer happen here — a putus order ships in one or
+     * more deliveries (see delivery/writer.ts), and stock only leaves + SalesHistory is only
+     * written when a delivery is recorded.
+     */
     await tx.fieldSalesOrder.update({
       where: { id: order.id },
       data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal, total },

@@ -38,7 +38,7 @@ export async function recordFieldSalesDelivery(input: {
     const lineById = new Map(order.lines.map((l) => [l.id, l]));
     const requested = new Map<string, number>();
     for (const l of input.lines) {
-      if (l.qty <= 0) throw new DeliveryError("OVER_DELIVER");
+      if (!Number.isInteger(l.qty) || l.qty <= 0) throw new DeliveryError("OVER_DELIVER");
       const orderLine = lineById.get(l.orderLineId);
       if (!orderLine) throw new DeliveryError("NOT_FOUND");
       const outstanding = outstandingQty({
@@ -123,9 +123,11 @@ export async function recordFieldSalesDelivery(input: {
       select: { id: true, docNo: true },
     });
 
-    /* Consume AFTER the delivery row exists so the audit adjustment can key on the real delivery
-       id. Everything here is one serializable transaction, so a short-stock throw rolls the
-       delivery back with it. */
+    /**
+     * Consume AFTER the delivery row exists so the audit adjustment can key on the real delivery
+     * id. Everything here is one serializable transaction, so a short-stock throw rolls the
+     * delivery back with it.
+     */
     try {
       await consumeFieldSalesOrderPartial(tx, {
         orderNo: order.orderNo,
@@ -165,8 +167,10 @@ export async function recordFieldSalesDelivery(input: {
       data: { deliveryStatus: nextDeliveryStatus(settled) },
     });
 
-    /* SalesHistory is keyed (channel, orderId, variantSku), so each delivery files under its own
-       docNo — an order number would collide on the second delivery of the same variant. */
+    /**
+     * SalesHistory is keyed (channel, orderId, variantSku), so each delivery files under its own
+     * docNo — an order number would collide on the second delivery of the same variant.
+     */
     const rows = buildOfflineSalesHistoryRows({
       orderNo: delivery.docNo,
       orderTotal: total,

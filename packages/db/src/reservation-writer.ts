@@ -293,17 +293,6 @@ export async function consumeFieldSalesOrderPartial(
 
       const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
-      const onHand = Number(inv.qtyOnHand);
-      if (onHand < line.qty) {
-        shortLines.push({
-          fieldSalesLineId: line.fieldSalesLineId,
-          itemId: line.itemId,
-          variantSku: line.variantSku,
-          requested: line.qty,
-          onHand,
-        });
-        continue;
-      }
       prepared.push({
         line,
         invId: inv.id,
@@ -312,27 +301,40 @@ export async function consumeFieldSalesOrderPartial(
       });
     }
 
-    if (shortLines.length > 0) throw new PartialConsumeError("INSUFFICIENT_STOCK", shortLines);
-
     let consumed = 0;
     for (const p of prepared) {
       const qty = p.line.qty;
-      const updated = await tx.inventoryValue.update({
-        where: { id: p.invId },
-        data: {
-          qtyOnHand: { decrement: qty },
-          reservedQty: { decrement: qty },
-          totalValue: { decrement: qty * p.avgCost },
-          lastUpdated: new Date(),
-        },
-        select: { qtyOnHand: true },
-      });
+      /**
+       * Atomic guard: only decrement if on-hand still covers this line, the same idiom
+       * reserveKonsiFieldSalesOrder uses against InventoryValue. Two lines that resolve to the
+       * SAME row (same item + variant) each check against the row's state as of this
+       * transaction's OWN prior write, not a stale pre-loop snapshot — so the second line
+       * correctly fails instead of both passing off one read and driving stock negative. Also
+       * closes the cross-process race the old read-then-write left open.
+       */
+      const affected = await tx.$executeRaw`
+        UPDATE InventoryValue
+        SET qtyOnHand = qtyOnHand - ${qty}, reservedQty = reservedQty - ${qty}, totalValue = totalValue - ${qty * p.avgCost}, lastUpdated = NOW(3)
+        WHERE id = ${p.invId} AND qtyOnHand >= ${qty}
+      `;
+      if (affected === 0) {
+        const current = await tx.inventoryValue.findUniqueOrThrow({ where: { id: p.invId }, select: { qtyOnHand: true } });
+        shortLines.push({
+          fieldSalesLineId: p.line.fieldSalesLineId,
+          itemId: p.line.itemId,
+          variantSku: p.line.variantSku,
+          requested: qty,
+          onHand: Number(current.qtyOnHand),
+        });
+        continue;
+      }
       if (p.fullyConsumed) {
         await tx.stockReservation.updateMany({
           where: { fieldSalesLineId: p.line.fieldSalesLineId, state: "RESERVED" },
           data: { state: "CONSUMED", resolvedAt: new Date() },
         });
       }
+      const updated = await tx.inventoryValue.findUniqueOrThrow({ where: { id: p.invId }, select: { qtyOnHand: true } });
       const newOnHand = Number(updated.qtyOnHand);
       await tx.stockAdjustment.create({
         data: {
@@ -352,6 +354,7 @@ export async function consumeFieldSalesOrderPartial(
       });
       consumed += 1;
     }
+    if (shortLines.length > 0) throw new PartialConsumeError("INSUFFICIENT_STOCK", shortLines);
     return { consumed };
   };
   return hasTx(client) ? client.$transaction(run) : run(client);
