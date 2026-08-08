@@ -3,7 +3,7 @@ import { prisma } from "./index";
 import { seededId } from "./spec-teardown";
 import { consumeFieldSalesOrderPartial, PartialConsumeError } from "./reservation-writer";
 
-// Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host).
+/* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;

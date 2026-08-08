@@ -3,7 +3,7 @@ import { prisma, seededId } from "@elorae/db";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "./writer";
 import { DeliveryError } from "../errors";
 
-// Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host).
+/* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
@@ -129,8 +129,10 @@ d("recordFieldSalesDelivery (test bed only)", () => {
   });
 
   it("hard-blocks when two lines share the same item+variant and their combined qty exceeds on-hand, moving no stock", async () => {
-    // lineA and lineB both resolve to invId (same item, variantSku "") — 6 on hand covers either
-    // line alone (5) but not both (10) delivered in one call.
+    /**
+     * lineA and lineB both resolve to invId (same item, variantSku "") — 6 on hand covers either
+     * line alone (5) but not both (10) delivered in one call.
+     */
     await prisma.inventoryValue.update({ where: { id: invId }, data: { qtyOnHand: 6 } });
     const err = await recordFieldSalesDelivery({
       orderId,
@@ -370,7 +372,7 @@ d("recordFieldSalesDelivery — discount allocation across two deliveries (test 
     });
     userId = user.id;
 
-    // Line-level 1000 discount (10% of 10000) + an order-level 500 on top: total = 10000-1000-500 = 8500.
+    /* Line-level 1000 discount (10% of 10000) + an order-level 500 on top: total = 10000-1000-500 = 8500. */
     const order = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `PUTUS/TEST-FSD3-${token}`,
@@ -411,33 +413,33 @@ d("recordFieldSalesDelivery — discount allocation across two deliveries (test 
   });
 
   it("a partial delivery then the closing delivery split the discount exactly, and SalesHistory is net of it", async () => {
-    // Delivery 1: 6 of 10 — pro-rated share. 10% line discount → 600; order discount pro-rata → 300.
+    /* Delivery 1: 6 of 10 — pro-rated share. 10% line discount → 600; order discount pro-rata → 300. */
     const d1 = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineId, qty: 6 }] });
-    // Delivery 2: the remaining 4 — closes the order, so it takes whatever discount is left over exactly.
+    /* Delivery 2: the remaining 4 — closes the order, so it takes whatever discount is left over exactly. */
     const d2 = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineId, qty: 4 }] });
 
     const delivery1 = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: d1.deliveryId } });
     const delivery2 = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: d2.deliveryId } });
     expect(Number(delivery1.discountAmount)).toBe(300);
     expect(Number(delivery2.discountAmount)).toBe(200);
-    expect(Number(delivery1.discountAmount) + Number(delivery2.discountAmount)).toBe(500); // == order.orderDiscountAmount
+    expect(Number(delivery1.discountAmount) + Number(delivery2.discountAmount)).toBe(500); /* == order.orderDiscountAmount */
 
     const deliveryLines1 = await prisma.fieldSalesDeliveryLine.findMany({ where: { deliveryId: d1.deliveryId } });
     const deliveryLines2 = await prisma.fieldSalesDeliveryLine.findMany({ where: { deliveryId: d2.deliveryId } });
-    expect(Number(deliveryLines1[0].discountAmount) + Number(deliveryLines2[0].discountAmount)).toBe(1000); // == line.discountAmount
+    expect(Number(deliveryLines1[0].discountAmount) + Number(deliveryLines2[0].discountAmount)).toBe(1000); /* == line.discountAmount */
 
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
     expect(order.deliveryStatus).toBe("DELIVERED");
 
     const hist1 = await prisma.salesHistory.findFirst({ where: { orderId: d1.docNo } });
-    expect(Number(hist1!.unitPriceAfterDiscount)).toBe(900); // (6000 - 600) / 6
+    expect(Number(hist1!.unitPriceAfterDiscount)).toBe(900); /* (6000 - 600) / 6 */
     expect(Number(hist1!.lineTotal)).toBe(5400);
-    expect(Number(hist1!.orderTotal)).toBe(5100); // delivery 1's own total: 6000 - 600 - 300
+    expect(Number(hist1!.orderTotal)).toBe(5100); /* delivery 1's own total: 6000 - 600 - 300 */
 
     const hist2 = await prisma.salesHistory.findFirst({ where: { orderId: d2.docNo } });
-    expect(Number(hist2!.unitPriceAfterDiscount)).toBe(900); // (4000 - 400) / 4
+    expect(Number(hist2!.unitPriceAfterDiscount)).toBe(900); /* (4000 - 400) / 4 */
     expect(Number(hist2!.lineTotal)).toBe(3600);
-    expect(Number(hist2!.orderTotal)).toBe(3400); // delivery 2's own total: 4000 - 400 - 200
+    expect(Number(hist2!.orderTotal)).toBe(3400); /* delivery 2's own total: 4000 - 400 - 200 */
   });
 });
 
