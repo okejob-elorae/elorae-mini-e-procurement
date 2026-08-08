@@ -422,8 +422,9 @@ set -a; . ~/.elorae-backup/env; set +a          # aws needs the token from here
 umask 077
 WORK=$(mktemp -d); cd "$WORK"
 
+# Same endpoint the script uses: explicit when set, default-jurisdiction otherwise.
 aws s3 cp "s3://$R2_BACKUP_BUCKET/daily/<file>" . \
-  --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+  --endpoint-url "${R2_ENDPOINT:-https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com}"
 
 gpg --batch --decrypt --passphrase-file ~/.elorae-backup/passphrase <file> | gunzip > restore.sql
 ```

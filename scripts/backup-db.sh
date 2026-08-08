@@ -23,16 +23,10 @@
 # a database dump there would expose every customer's name, address, phone and
 # order history to anyone who guesses a key. Use a separate bucket.
 #
-# SETUP (once, on the VPS):
-#   sudo apt-get install -y awscli gnupg
-#   install -m 700 -d ~/.elorae-backup
-#   printf '%s' 'a-long-random-passphrase' > ~/.elorae-backup/passphrase
-#   chmod 600 ~/.elorae-backup/passphrase
-#   cp scripts/backup-db.env.example ~/.elorae-backup/env   # then fill it in
-#   chmod 600 ~/.elorae-backup/env
-#
-# CRON (daily 02:15 WIB — the VPS runs UTC, so 19:15 UTC the previous day):
-#   15 19 * * * /srv/elorae/scripts/backup-db.sh >> /home/elorae/backup.log 2>&1
+# SETUP AND CRON: see README §Database backups. Deliberately not duplicated here —
+# the steps are host-specific (the AWS CLI is not apt-installable on this box and
+# ends up in ~/.local/bin, which forces a PATH line in the crontab) and a stale
+# copy in this header would send an operator down a path that installs nothing.
 #
 # RESTORE: see README §Database backups → Restore. Do not improvise it from
 # memory; the documented procedure restores into a scratch database on purpose.
@@ -78,7 +72,7 @@ if [ "${ELORAE_BACKUP_LOCKED:-}" != "1" ]; then
   }
 fi
 
-[ -r "$ENV_FILE" ] || die "missing config: $ENV_FILE (see the SETUP block in this script)"
+[ -r "$ENV_FILE" ] || die "missing config: $ENV_FILE (see README §Database backups)"
 [ -r "$PASSPHRASE_FILE" ] || die "missing passphrase: $PASSPHRASE_FILE"
 
 # Both files hold material that reads the backups (passphrase) or deletes them
@@ -124,8 +118,12 @@ log "endpoint ${R2_ENDPOINT}"
 s3() { aws s3 --endpoint-url "$R2_ENDPOINT" "$@"; }
 s3api() { aws s3api --endpoint-url "$R2_ENDPOINT" "$@"; }
 
-command -v aws >/dev/null || die "aws cli not installed (apt-get install -y awscli)"
-command -v gpg >/dev/null || die "gpg not installed (apt-get install -y gnupg)"
+# The likeliest cause by far is a cron run with no PATH: the CLI lives in
+# ~/.local/bin (it is not apt-installable on this host), which cron's default PATH
+# omits, so the nightly job dies here while a manual run from a login shell works.
+# Naming that first matters — the remedy is a crontab line, not an install.
+command -v aws >/dev/null || die "aws cli not on PATH. If this was a cron run, add to the crontab: PATH=\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin — otherwise install it (see README §Database backups; it is NOT apt-installable on Ubuntu 24.04 here)"
+command -v gpg >/dev/null || die "gpg not on PATH (same PATH caveat as above; install with: sudo apt-get install -y gnupg)"
 
 STAMP="$(date -u +%Y-%m-%d)"
 [[ "$STAMP" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "date(1) produced '$STAMP', refusing to run"
