@@ -10,6 +10,7 @@ ALTER TABLE `StockReservation` ADD COLUMN `consumedQty` DECIMAL(15, 4) NOT NULL 
 
 -- AlterEnum
 ALTER TABLE `DocNumberConfig` MODIFY `docType` ENUM('PO', 'GRN', 'WO', 'ADJ', 'RET', 'ISSUE', 'RECEIPT', 'OPN', 'PUTUS', 'KONSI', 'VANLOAD', 'VANSALE', 'VANRECON', 'SPGSALE', 'DELIVERY') NOT NULL;
+ALTER TABLE `DocumentNumber` MODIFY `docType` ENUM('PO', 'GRN', 'WO', 'ADJ', 'RET', 'ISSUE', 'RECEIPT', 'OPN', 'PUTUS', 'KONSI', 'VANLOAD', 'VANSALE', 'VANRECON', 'SPGSALE', 'DELIVERY') NOT NULL;
 
 -- CreateTable
 CREATE TABLE `FieldSalesDelivery` (
