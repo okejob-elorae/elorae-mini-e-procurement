@@ -78,7 +78,7 @@ jobs:
             ghcr.io/okejob-elorae/elorae-web:${{ github.sha }}
             ghcr.io/okejob-elorae/elorae-web:master
           cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
+          cache-to: type=gha,mode=min,scope=web
           build-args: |
             NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
             NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
@@ -116,7 +116,7 @@ jobs:
             ghcr.io/okejob-elorae/elorae-api:${{ github.sha }}
             ghcr.io/okejob-elorae/elorae-api:master
           cache-from: type=gha,scope=api
-          cache-to: type=gha,mode=max,scope=api
+          cache-to: type=gha,mode=min,scope=api
 
   pull:
     name: Pull latest master on VPS
