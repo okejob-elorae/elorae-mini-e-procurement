@@ -649,7 +649,7 @@ export function DashboardPageClient({
                 {formatIdr(salesmenSales.totals.realised.amount)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {formatNumber(salesmenSales.totals.realised.count)} transaksi (putus disetujui + van sale)
+                {formatNumber(salesmenSales.totals.realised.count)} transaksi (pengiriman putus + van sale)
               </p>
             </CardContent>
           </Card>
@@ -675,8 +675,8 @@ export function DashboardPageClient({
               Realised vs Outstanding per Salesman
             </CardTitle>
             <CardDescription>
-              Realised = putus disetujui + van sale (all-time). Outstanding = putus menunggu approval. Konsi tidak
-              dihitung.
+              Realised = putus yang sudah dikirim + van sale (all-time). Outstanding = putus menunggu approval. Konsi
+              tidak dihitung.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -82,20 +82,19 @@ d("field-sales lifecycle writers (test bed only)", () => {
       .rejects.toBeInstanceOf(NoActiveVisitError);
   });
 
-  it("approve consumes stock and writes OFFLINE SalesHistory rows", async () => {
+  it("approve flips to APPROVED without consuming stock or writing SalesHistory (moved to delivery)", async () => {
     const { orderId, orderNo } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
     const inv = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku: "" } } });
-    expect(Number(inv!.qtyOnHand)).toBe(94);
-    expect(Number(inv!.reservedQty)).toBe(0);
+    expect(Number(inv!.qtyOnHand)).toBe(100);
+    expect(Number(inv!.reservedQty)).toBe(6);
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
-    expect(hist).toHaveLength(1);
-    expect(hist[0].channel).toBe("OFFLINE");
-    expect(hist[0].orderStatus).toBe("COMPLETED");
-    expect(hist[0].importBatchId).toBeNull();
+    expect(hist).toHaveLength(0);
   });
 
-  it("approve of a 2-line order (two distinct non-variant items) writes 2 SalesHistory rows", async () => {
+  it("approve of a 2-line order (two distinct non-variant items) flips to APPROVED and writes no SalesHistory", async () => {
     const sku2 = `${sku}-B`;
     const item2 = await prisma.item.create({ data: { sku: sku2, nameId: "T2", nameEn: "T2", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 } });
     itemId2 = item2.id;
@@ -109,10 +108,10 @@ d("field-sales lifecycle writers (test bed only)", () => {
     });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
 
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
-    expect(hist).toHaveLength(2);
-    expect(hist.map((h) => h.variantSku).sort()).toEqual([sku, sku2].sort());
-    expect(hist.every((h) => h.channel === "OFFLINE" && h.orderStatus === "COMPLETED")).toBe(true);
+    expect(hist).toHaveLength(0);
   });
 
   it("reject releases the hold", async () => {
@@ -154,7 +153,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.total)).toBe(180);
   });
 
-  it("putus approve writes net SalesHistory (discounted unit + line total)", async () => {
+  it("putus approve carries the create-time line discount through to APPROVED without writing SalesHistory", async () => {
     await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100 } });
     const promo = await prisma.promo.create({
       data: {
@@ -178,11 +177,11 @@ d("field-sales lifecycle writers (test bed only)", () => {
     });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
 
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
+    expect(Number(order!.total)).toBe(180); /* 200 subtotal - 20 line discount (10%), unchanged by approve */
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
-    expect(hist).toHaveLength(1);
-    expect(Number(hist[0].unitPriceAfterDiscount)).toBe(90);
-    expect(Number(hist[0].lineTotal)).toBe(180);
-    expect(Number(hist[0].orderTotal)).toBe(180);
+    expect(hist).toHaveLength(0);
   });
 
   it("createFieldSalesOrder dedups on idempotencyKey", async () => {
@@ -325,11 +324,9 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.subtotal)).toBe(6 * 30000 + 6 * 40000);
     expect(Number(order!.total)).toBe(6 * 30000 + 6 * 40000); // no promo active → discounts stay 0
 
+    /* Stock consumption and SalesHistory happen at delivery now, not at approve. */
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
-    expect(hist).toHaveLength(2);
-    const histAppealed = hist.find((h) => h.itemId === itemId)!;
-    expect(Number(histAppealed.lineTotal)).toBe(6 * 30000);
-    expect(Number(histAppealed.orderTotal)).toBe(6 * 30000 + 6 * 40000);
+    expect(hist).toHaveLength(0);
   });
 });
 

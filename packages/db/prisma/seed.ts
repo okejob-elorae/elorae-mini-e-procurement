@@ -119,6 +119,7 @@ async function main() {
     { code: 'sales_orders:fulfill', module: 'sales_orders', action: 'fulfill', description: 'Pick, pack, ship marketplace orders' },
     { code: 'field_sales_orders:view', module: 'field_sales_orders', action: 'view', description: 'View field-sales (putus) orders' },
     { code: 'field_sales_orders:approve', module: 'field_sales_orders', action: 'approve', description: 'Approve or reject field-sales (putus) orders' },
+    { code: 'field_sales_orders:deliver', module: 'field_sales_orders', action: 'deliver', description: 'Record deliveries and close the remainder on field-sales (putus) orders' },
     { code: 'items:create', module: 'items', action: 'create', description: 'Create items' },
     { code: 'items:edit', module: 'items', action: 'edit', description: 'Edit items' },
     { code: 'items:delete', module: 'items', action: 'delete', description: 'Delete items' },

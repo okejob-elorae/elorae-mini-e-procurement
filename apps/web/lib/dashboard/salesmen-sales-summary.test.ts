@@ -32,6 +32,7 @@ d("getSalesmenSalesSummary (test bed only)", () => {
 
   afterEach(async () => {
     await prisma.vanSale.deleteMany({ where: { id: { in: vanSaleIds } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: { in: fsoIds } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: fsoIds } } });
     await prisma.user.deleteMany({ where: { id: { in: [salesmanAId, salesmanBId] } } });
     await prisma.store.deleteMany({ where: { id: storeId } });
@@ -53,6 +54,22 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     return order;
   }
 
+  /* Realised is what shipped, so an approved order only counts once it carries a delivery. */
+  async function makeDelivery(seq: number, orderId: string, deliveredById: string, total: number) {
+    return prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `${tag}-DLV-${seq}`,
+        orderId,
+        deliveredAt: new Date(),
+        deliveredById,
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        subtotal: total,
+        total,
+      },
+    });
+  }
+
   async function makeVanSale(seq: number, salesmanId: string, total: number) {
     const sale = await prisma.vanSale.create({
       data: {
@@ -68,16 +85,18 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     return sale;
   }
 
-  it("realised = approved putus + van sale; outstanding = pending putus; konsi/rejected excluded; sorted by realised desc; totals correct", async () => {
-    // Salesman A: approved putus 1000, pending putus 500, konsi approved 300 (excluded), rejected putus 200 (excluded), van sale 400
-    await makeOrder(1, salesmanAId, "APPROVED", "PUTUS", 1000);
+  it("realised = delivered putus + van sale; outstanding = pending putus; konsi/rejected/undelivered excluded; sorted by realised desc; totals correct", async () => {
+    // Salesman A: approved putus 1000 delivered in full, pending putus 500, konsi approved 300 (excluded), rejected putus 200 (excluded), van sale 400
+    const orderA = await makeOrder(1, salesmanAId, "APPROVED", "PUTUS", 1000);
+    await makeDelivery(1, orderA.id, salesmanAId, 1000);
     await makeOrder(2, salesmanAId, "PENDING_APPROVAL", "PUTUS", 500);
     await makeOrder(3, salesmanAId, "APPROVED", "KONSI", 300);
     await makeOrder(4, salesmanAId, "REJECTED", "PUTUS", 200);
     await makeVanSale(1, salesmanAId, 400);
 
-    // Salesman B: approved putus 2000, pending putus 100, van sale 50
-    await makeOrder(5, salesmanBId, "APPROVED", "PUTUS", 2000);
+    // Salesman B: approved putus 2000 delivered in full, pending putus 100, van sale 50
+    const orderB = await makeOrder(5, salesmanBId, "APPROVED", "PUTUS", 2000);
+    await makeDelivery(2, orderB.id, salesmanBId, 2000);
     await makeOrder(6, salesmanBId, "PENDING_APPROVAL", "PUTUS", 100);
     await makeVanSale(2, salesmanBId, 50);
 
@@ -87,10 +106,10 @@ d("getSalesmenSalesSummary (test bed only)", () => {
 
     expect(rowA).toBeDefined();
     expect(rowB).toBeDefined();
-    // 1000 approved putus + 400 van = 1400, 2 realised transactions (1 order + 1 van sale)
+    // 1000 delivered putus + 400 van = 1400, 2 realised transactions (1 delivery + 1 van sale)
     expect(rowA!.realised).toEqual({ count: 2, amount: 1400 });
     expect(rowA!.outstanding).toEqual({ count: 1, amount: 500 });
-    // 2000 approved putus + 50 van = 2050
+    // 2000 delivered putus + 50 van = 2050
     expect(rowB!.realised).toEqual({ count: 2, amount: 2050 });
     expect(rowB!.outstanding).toEqual({ count: 1, amount: 100 });
 
@@ -108,6 +127,19 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     expect(summary.totals.outstanding.count).toBeGreaterThanOrEqual(
       rowA!.outstanding.count + rowB!.outstanding.count
     );
+  });
+
+  it("counts what shipped, not what was approved: no delivery means no realised value, a partial delivery counts only itself", async () => {
+    /* Approved and never delivered — the goods are still in the warehouse, so nothing is realised. */
+    await makeOrder(7, salesmanAId, "APPROVED", "PUTUS", 900);
+    /* Approved for 800, only 300 of it shipped. */
+    const partly = await makeOrder(8, salesmanBId, "APPROVED", "PUTUS", 800);
+    await makeDelivery(3, partly.id, salesmanBId, 300);
+
+    const summary = await getSalesmenSalesSummary();
+    expect(summary.rows.some((r) => r.salesmanId === salesmanAId)).toBe(false);
+    const rowB = summary.rows.find((r) => r.salesmanId === salesmanBId);
+    expect(rowB!.realised).toEqual({ count: 1, amount: 300 });
   });
 
   it("returns no row for a salesman with no eligible orders/van sales", async () => {

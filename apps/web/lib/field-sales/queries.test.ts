@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds, getStoreSentItems } from "./queries";
 import { createFieldSalesOrder } from "./writer";
-import { Prisma, prisma } from "@elorae/db";
+import { Prisma, prisma, seededId } from "@elorae/db";
 
 describe("serializeListItem", () => {
   it("flattens relations + coerces Decimal total to number", () => {
@@ -173,7 +173,9 @@ d("getStoreSentItems (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.salesHistory.deleteMany({ where: { itemId } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { order: { storeId: seededId(storeId) } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
     await prisma.storeVisit.deleteMany({ where: { id: visitId } });
@@ -206,21 +208,52 @@ d("getStoreSentItems (test bed only)", () => {
           })),
         },
       },
+      include: { lines: true },
     });
   };
 
-  it("aggregates qty by article+variant across APPROVED putus and konsi orders, excludes non-approved", async () => {
-    await seedOrder({ orderType: "PUTUS", status: "APPROVED", lines: [{ variantSku: "M", qty: 3 }, { variantSku: "L", qty: 2 }] });
+  /* Records what shipped against an order, one delivery line per order line at the given qty. */
+  const seedDelivery = async (
+    order: { id: string; lines: Array<{ id: string; itemId: string; variantSku: string }> },
+    shipped: Array<{ variantSku: string; qty: number }>,
+  ) => {
+    return prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `DLV/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        orderId: order.id,
+        deliveredAt: new Date(),
+        deliveredById: salesmanId,
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        subtotal: 0,
+        total: 0,
+        lines: {
+          create: shipped.map((s) => ({
+            orderLineId: order.lines.find((l) => l.variantSku === s.variantSku)!.id,
+            itemId,
+            variantSku: s.variantSku,
+            productName: "Kaos Test",
+            qty: s.qty,
+          })),
+        },
+      },
+    });
+  };
+
+  it("counts putus by what was delivered, not what was approved, and konsi by its approved lines", async () => {
+    /* Putus ordered 3 M + 2 L but only 1 M ever shipped — the other 4 units never left the warehouse. */
+    const putus = await seedOrder({ orderType: "PUTUS", status: "APPROVED", lines: [{ variantSku: "M", qty: 3 }, { variantSku: "L", qty: 2 }] });
+    await seedDelivery(putus, [{ variantSku: "M", qty: 1 }]);
     await seedOrder({ orderType: "KONSI", status: "APPROVED", lines: [{ variantSku: "M", qty: 4 }] });
     await seedOrder({ orderType: "PUTUS", status: "REJECTED", lines: [{ variantSku: "M", qty: 100 }] });
     await seedOrder({ orderType: "KONSI", status: "PENDING_APPROVAL", lines: [{ variantSku: "L", qty: 50 }] });
 
     const rows = await getStoreSentItems(storeId);
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
 
     const bySize = new Map(rows.map((r) => [r.variantSku, r]));
-    expect(bySize.get("M")?.totalQty).toBe(7); // 3 (putus) + 4 (konsi), excludes rejected 100
-    expect(bySize.get("L")?.totalQty).toBe(2); // excludes pending 50
+    expect(bySize.get("M")?.totalQty).toBe(5); // 1 delivered (putus) + 4 (konsi), excludes rejected 100
+    expect(bySize.has("L")).toBe(false); // approved but never delivered, and the pending konsi 50 is excluded
     for (const r of rows) {
       expect(r.itemId).toBe(itemId);
       expect(r.articleSku).toBe(sku);
@@ -228,8 +261,19 @@ d("getStoreSentItems (test bed only)", () => {
     }
   });
 
-  it("returns empty array when the store has no approved orders", async () => {
+  it("sums repeat deliveries of the same article+variant", async () => {
+    const putus = await seedOrder({ orderType: "PUTUS", status: "APPROVED", lines: [{ variantSku: "M", qty: 3 }] });
+    await seedDelivery(putus, [{ variantSku: "M", qty: 1 }]);
+    await seedDelivery(putus, [{ variantSku: "M", qty: 2 }]);
+
+    const rows = await getStoreSentItems(storeId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].totalQty).toBe(3);
+  });
+
+  it("returns empty array when the store has nothing delivered and no approved konsi", async () => {
     await seedOrder({ orderType: "PUTUS", status: "PENDING_APPROVAL", lines: [{ variantSku: "M", qty: 5 }] });
+    await seedOrder({ orderType: "PUTUS", status: "APPROVED", lines: [{ variantSku: "L", qty: 5 }] });
     const rows = await getStoreSentItems(storeId);
     expect(rows).toEqual([]);
   });
