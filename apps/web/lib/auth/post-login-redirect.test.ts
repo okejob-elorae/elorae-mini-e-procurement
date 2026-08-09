@@ -23,4 +23,16 @@ describe("computePostLoginRedirect", () => {
   it("returns /backoffice for empty permissions", () => {
     expect(computePostLoginRedirect([])).toBe("/backoffice");
   });
+
+  it("returns /packer when permissions contain packer:menu and no pwa/wildcard", () => {
+    expect(computePostLoginRedirect(["packer:menu", "packer:record"])).toBe(
+      "/packer",
+    );
+  });
+
+  it("prefers /pwa over /packer when both present", () => {
+    expect(
+      computePostLoginRedirect(["pwa:access", "packer:menu"]),
+    ).toBe("/pwa");
+  });
 });

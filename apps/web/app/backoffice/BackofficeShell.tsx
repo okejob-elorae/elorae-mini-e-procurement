@@ -172,6 +172,11 @@ const navItems: NavItem[] = [
         href: '/backoffice/spg-sales',
         permission: PERMISSIONS.SPG_SALES_VIEW,
       },
+      {
+        labelKey: 'navRecordPacker',
+        href: '/packer',
+        permission: PERMISSIONS.PACKER_MENU,
+      },
     ],
   },
   {

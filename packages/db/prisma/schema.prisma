@@ -89,6 +89,8 @@ model User {
   assignedStoreId String?
   spgSales      SpgSale[] @relation("SpgSaleSalesman")
   spgSalesCreated SpgSale[] @relation("SpgSaleCreatedBy")
+  packingVideosRecorded PackingVideo[] @relation("PackingVideoRecordedBy")
+  packingVideosUpdated  PackingVideo[] @relation("PackingVideoUpdatedBy")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -2089,6 +2091,7 @@ model SalesOrder {
   updatedAt           DateTime         @updatedAt
   items               SalesOrderItem[]
   salesReturns        SalesReturn[]
+  packingVideo        PackingVideo?
 
   @@index([channel])
   @@index([status])
@@ -2097,6 +2100,30 @@ model SalesOrder {
   @@index([shippingCity])
   @@index([fulfillmentStatus])
   @@index([channelOrderNo])
+}
+
+/// Packing process video for a marketplace sales order (1 active video per order).
+model PackingVideo {
+  id           String     @id @default(cuid())
+  salesOrderId String     @unique
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+
+  r2Key        String
+  videoUrl     String
+  contentType  String     @default("video/webm")
+  sizeBytes    Int?
+  durationSec  Decimal?   @db.Decimal(10, 2)
+
+  recordedById String
+  recordedBy   User       @relation("PackingVideoRecordedBy", fields: [recordedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  recordedAt   DateTime   @default(now())
+  updatedById  String?
+  updatedBy    User?      @relation("PackingVideoUpdatedBy", fields: [updatedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  updatedAt    DateTime   @updatedAt
+  replacedAt   DateTime?
+
+  @@index([recordedAt])
+  @@index([recordedById])
 }
 
 model SalesOrderItem {
