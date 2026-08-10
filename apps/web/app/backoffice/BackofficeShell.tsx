@@ -429,40 +429,38 @@ function Sidebar({
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <div className="ml-4 mt-1 space-y-0.5 border-l border-primary-foreground/20 pl-3">
-                    {item
-                      .children!.filter(
+                    {(() => {
+                      const visibleChildren = item.children!.filter(
                         (child) =>
                           !child.permission || hasPermission(permissions, child.permission)
-                      )
-                      .map((child) => {
-                      const isChildActive = (() => {
-                        if (child.href === '/backoffice/items') {
-                          return (
-                            pathname === '/backoffice/items' ||
-                            (pathname.startsWith('/backoffice/items/') &&
-                              !pathname.startsWith('/backoffice/items/categories'))
-                          );
-                        }
-                        return (
-                          pathname === child.href || pathname.startsWith(`${child.href}/`)
-                        );
-                      })();
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          onClick={onClose}
-                          className={cn(
-                            'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-                            isChildActive
-                              ? 'font-medium text-primary-foreground'
-                              : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
-                          )}
-                        >
-                          {tNav(child.labelKey as any)}
-                        </Link>
                       );
-                    })}
+                      return visibleChildren.map((child) => {
+                        // Prefer the longest matching child href so nested routes
+                        // (e.g. /work-orders/nota-register) don't also light up the parent list item.
+                        const matching = visibleChildren
+                          .filter(
+                            (c) =>
+                              pathname === c.href || pathname.startsWith(`${c.href}/`)
+                          )
+                          .sort((a, b) => b.href.length - a.href.length);
+                        const isChildActive = matching[0]?.href === child.href;
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={onClose}
+                            className={cn(
+                              'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+                              isChildActive
+                                ? 'font-medium text-primary-foreground'
+                                : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
+                            )}
+                          >
+                            {tNav(child.labelKey as any)}
+                          </Link>
+                        );
+                      });
+                    })()}
                   </div>
                 </CollapsibleContent>
               </Collapsible>

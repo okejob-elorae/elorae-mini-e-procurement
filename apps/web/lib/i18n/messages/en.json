@@ -2037,6 +2037,7 @@
       "searchNoApiKey": "Place search is not configured (missing SERPAPI_KEY). Use the map or paste coords.",
       "searchNoResults": "No places found. Try a more specific name or city.",
       "searchUpstream": "Place search failed. Try again or set the pin on the map.",
+      "searchRateLimited": "Too many searches. Wait a couple of seconds and try again.",
       "searchRating": "Rating {rating}",
       "mapHint": "Enter the address, search to place the pin, then drag to fine-tune. Check-in uses this pin.",
       "advancedCoords": "Advanced: lat/lng & paste",

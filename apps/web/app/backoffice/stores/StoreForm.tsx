@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -68,6 +68,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [placeResults, setPlaceResults] = useState<SerpPlaceResult[]>([]);
+  const searchSeqRef = useRef(0);
 
   const [form, setForm] = useState<StoreFields>(initial);
 
@@ -110,6 +111,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
       setSearchError(t("searchEmptyQuery"));
       return;
     }
+    const seq = ++searchSeqRef.current;
     setSearching(true);
     try {
       const result = await searchStorePlacesAction({
@@ -117,6 +119,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
         lat: form.lat,
         lng: form.lng,
       });
+      if (seq !== searchSeqRef.current) return;
       if (!result.ok) {
         if (result.code === "NO_API_KEY") {
           setPlaceSearchConfigured(false);
@@ -125,6 +128,8 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
           setSearchError(tErr("forbidden"));
         } else if (result.code === "EMPTY_QUERY") {
           setSearchError(t("searchEmptyQuery"));
+        } else if (result.code === "RATE_LIMITED") {
+          setSearchError(t("searchRateLimited"));
         } else {
           setSearchError(t("searchUpstream"));
         }
@@ -135,7 +140,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
         setSearchError(t("searchNoResults"));
       }
     } finally {
-      setSearching(false);
+      if (seq === searchSeqRef.current) setSearching(false);
     }
   }
 

@@ -2037,6 +2037,7 @@
       "searchNoApiKey": "Pencarian tempat belum dikonfigurasi (SERPAPI_KEY belum ada). Gunakan peta atau tempel koordinat.",
       "searchNoResults": "Tempat tidak ditemukan. Coba nama yang lebih spesifik atau tambahkan kota.",
       "searchUpstream": "Pencarian gagal. Coba lagi atau set pin di peta.",
+      "searchRateLimited": "Terlalu banyak pencarian. Tunggu beberapa detik lalu coba lagi.",
       "searchRating": "Rating {rating}",
       "mapHint": "Isi alamat, cari untuk menaruh pin, lalu geser untuk menyesuaikan. Check-in memakai pin ini.",
       "advancedCoords": "Lanjutan: lat/lng & tempel",
