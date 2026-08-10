@@ -18,7 +18,6 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: '/backoffice/reports', destination: '/backoffice/dashboard', permanent: false },
-      { source: '/backoffice/reports/hpp', destination: '/backoffice/dashboard?tab=hpp', permanent: false },
     ];
   },
   // Next.js 16 uses Turbopack by default; empty config silences webpack conflict (PWA is disabled in dev)

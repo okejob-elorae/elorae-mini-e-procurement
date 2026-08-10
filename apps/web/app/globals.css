@@ -129,8 +129,9 @@
    * position:absolute. Inside a nested overflow:auto scroller that
    * element still contributes to document scrollHeight, so the whole
    * app chrome (header/sidebar) can scroll away. Pin it to the viewport.
+   * Scoped to backoffice — the scroll bug is shell-specific.
    */
-  select[aria-hidden="true"] {
+  html.backoffice-shell select[aria-hidden="true"] {
     position: fixed !important;
     top: 0 !important;
     left: 0 !important;

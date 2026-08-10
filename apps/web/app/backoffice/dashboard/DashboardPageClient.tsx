@@ -73,8 +73,6 @@ import {
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { hasPermission, PERMISSIONS } from '@/lib/rbac';
-import { HppReportTab } from './HppReportTab';
 
 const DASHBOARD_TABS = [
   'overview',
@@ -83,7 +81,6 @@ const DASHBOARD_TABS = [
   'rp1',
   'rp2',
   'rp3',
-  'hpp',
 ] as const;
 type DashboardTab = (typeof DASHBOARD_TABS)[number];
 
@@ -204,18 +201,10 @@ export function DashboardPageClient({
   const searchParams = useSearchParams();
   const tDashboard = useTranslations('dashboard');
   const tWO = useTranslations('workOrders');
-  const canViewHpp = hasPermission(
-    session?.user?.permissions ?? [],
-    PERMISSIONS.REPORTS_HPP_VIEW,
-  );
   const tabFromUrl = searchParams.get('tab');
-  const activeTab: DashboardTab =
-    isDashboardTab(tabFromUrl) && (tabFromUrl !== 'hpp' || canViewHpp)
-      ? tabFromUrl
-      : 'overview';
+  const activeTab: DashboardTab = isDashboardTab(tabFromUrl) ? tabFromUrl : 'overview';
   const setActiveTab = (value: string) => {
     if (!isDashboardTab(value)) return;
-    if (value === 'hpp' && !canViewHpp) return;
     const params = new URLSearchParams(searchParams.toString());
     if (value === 'overview') params.delete('tab');
     else params.set('tab', value);
@@ -769,9 +758,6 @@ export function DashboardPageClient({
           <TabsTrigger value="rp1">{tDashboard('procurementRp1')}</TabsTrigger>
           <TabsTrigger value="rp2">{tDashboard('reportsSetoranCmt')}</TabsTrigger>
           <TabsTrigger value="rp3">{tDashboard('inventoryRp3')}</TabsTrigger>
-          {canViewHpp && (
-            <TabsTrigger value="hpp">{tDashboard('hppTab')}</TabsTrigger>
-          )}
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -1410,12 +1396,6 @@ export function DashboardPageClient({
             </CardContent>
           </Card>
         </TabsContent>
-
-        {canViewHpp && (
-          <TabsContent value="hpp" className="space-y-4">
-            <HppReportTab />
-          </TabsContent>
-        )}
       </Tabs>
     </div>
   );

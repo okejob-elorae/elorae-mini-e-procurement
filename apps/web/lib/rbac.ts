@@ -123,6 +123,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/production/planning',
   '/backoffice/production/colors',
   '/backoffice/vendor-returns',
+  '/backoffice/reports/hpp',
   '/backoffice/audit-trail',
   '/backoffice/jubelio/admin',
   '/backoffice/jubelio/settings',

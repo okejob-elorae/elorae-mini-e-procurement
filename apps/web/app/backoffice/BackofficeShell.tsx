@@ -22,6 +22,7 @@ import {
   Activity,
   Store,
   Wallet,
+  BarChart2,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -78,8 +79,16 @@ const navItems: NavItem[] = [
     icon: Building2,
     permission: PERMISSIONS.SUPPLIERS_VIEW,
     children: [
-      { labelKey: 'masterSuppliers', href: '/backoffice/suppliers' },
-      { labelKey: 'supplierType', href: '/backoffice/suppliers/types' },
+      {
+        labelKey: 'masterSuppliers',
+        href: '/backoffice/suppliers',
+        permission: PERMISSIONS.SUPPLIERS_VIEW,
+      },
+      {
+        labelKey: 'supplierType',
+        href: '/backoffice/suppliers/types',
+        permission: PERMISSIONS.SUPPLIER_TYPES_VIEW,
+      },
       {
         labelKey: 'masterStores',
         href: '/backoffice/stores',
@@ -245,6 +254,15 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    labelKey: 'reports',
+    href: '/backoffice/reports/hpp',
+    icon: BarChart2,
+    permission: PERMISSIONS.REPORTS_HPP_VIEW,
+    children: [
+      { labelKey: 'hppReport', href: '/backoffice/reports/hpp' },
+    ],
+  },
+  {
     labelKey: 'auditTrail',
     href: '/backoffice/audit-trail',
     icon: FileText,
@@ -331,6 +349,7 @@ function Sidebar({
     }
     if (path.startsWith('/backoffice/jubelio')) return '/backoffice/jubelio/admin';
     if (path.startsWith('/backoffice/finance')) return '#';
+    if (path.startsWith('/backoffice/reports')) return '/backoffice/reports/hpp';
     if (
       path.startsWith('/backoffice/sales-orders') ||
       path.startsWith('/backoffice/fulfillment') ||
