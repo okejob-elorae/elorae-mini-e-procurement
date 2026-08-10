@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { formatDistanceToNow } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -72,6 +73,20 @@ import {
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+
+const DASHBOARD_TABS = [
+  'overview',
+  'production',
+  'overdue',
+  'rp1',
+  'rp2',
+  'rp3',
+] as const;
+type DashboardTab = (typeof DASHBOARD_TABS)[number];
+
+function isDashboardTab(value: string | null): value is DashboardTab {
+  return value != null && (DASHBOARD_TABS as readonly string[]).includes(value);
+}
 
 function getCurrentMonthDateRange(): { from: string; to: string } {
   const d = new Date();
@@ -182,8 +197,22 @@ export function DashboardPageClient({
   initialSalesmenSales,
 }: DashboardPageClientProps) {
   const { data: session } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const tDashboard = useTranslations('dashboard');
   const tWO = useTranslations('workOrders');
+  const tabFromUrl = searchParams.get('tab');
+  const activeTab: DashboardTab = isDashboardTab(tabFromUrl) ? tabFromUrl : 'overview';
+  const setActiveTab = (value: string) => {
+    if (!isDashboardTab(value)) return;
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === 'overview') params.delete('tab');
+    else params.set('tab', value);
+    const qs = params.toString();
+    router.replace(qs ? `/backoffice/dashboard?${qs}` : '/backoffice/dashboard', {
+      scroll: false,
+    });
+  };
   const [stats] = useState(initialStats);
   const [error] = useState<string | null>(null);
   const [overduePOs] = useState(initialOverduePOs);
@@ -721,7 +750,7 @@ export function DashboardPageClient({
       </div>
 
       {/* Tabs: Overview + Reports */}
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="flex flex-wrap gap-1">
           <TabsTrigger value="overview">{tDashboard('overview')}</TabsTrigger>
           <TabsTrigger value="production">{tDashboard('productionTab')}</TabsTrigger>

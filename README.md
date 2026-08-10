@@ -34,6 +34,9 @@ docs/
 
 Both `.env` files are gitignored. Templates: `apps/web/.env.example`, `apps/api/.env.example`.
 
+Optional web keys worth knowing:
+- `SERPAPI_KEY` — enables **Find on map** place search on the backoffice store form (SerpAPI Google Maps). Map pin + paste-coords work without it.
+
 The api env-load cascade: `apps/api/.env` → `<root>/.env` → `apps/web/.env`. Earlier wins per key (dotenv default no-override). Lets api omit shared keys.
 
 ## First-time setup

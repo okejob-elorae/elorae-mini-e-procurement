@@ -424,7 +424,13 @@ export function ItemsPageClient({
                                           </span>
                                         )}
                                         {Object.entries(variant)
-                                          .filter(([k]) => k !== 'sku')
+                                          .filter(
+                                            ([k, v]) =>
+                                              k !== 'sku' &&
+                                              k !== 'barcode' &&
+                                              v != null &&
+                                              String(v).trim() !== ''
+                                          )
                                           .map(([k, v]) => (
                                             <span
                                               key={k}
@@ -433,6 +439,11 @@ export function ItemsPageClient({
                                               {k}: {v}
                                             </span>
                                           ))}
+                                        {variant.barcode?.trim() && (
+                                          <span className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs font-mono">
+                                            {tItems('variantBarcode')}: {variant.barcode.trim()}
+                                          </span>
+                                        )}
                                       </div>
                                     ))}
                                   </div>

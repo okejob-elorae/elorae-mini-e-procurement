@@ -60,6 +60,7 @@
     "navItemsRaw": "Barang Mentah",
     "navItemsFinished": "Barang Jadi",
     "stores": "Toko",
+    "masterStores": "Master Toko",
     "purchaseOrders": "Pesanan Pembelian",
     "supplierPayment": "Pembayaran Pemasok",
     "inventory": "Inventori",
@@ -757,6 +758,7 @@
     "noVariants": "Item ini tidak memiliki varian.",
     "noBOM": "Item ini tidak memiliki BOM.",
     "variantLabel": "Varian {index}:",
+    "variantBarcode": "Barcode",
     "pricing": {
       "section": "Harga",
       "sellingPriceLabel": "Harga Jual",
@@ -2012,6 +2014,7 @@
       "code": "Kode",
       "name": "Nama",
       "address": "Alamat",
+      "addressPlaceholder": "Jalan, area, kota — lalu Cari di peta",
       "phone": "Telepon",
       "contactName": "Kontak person",
       "termsType": "Tipe terms",
@@ -2026,8 +2029,18 @@
       "checkinRadiusPlaceholder": "Default 100",
       "checkinRadiusHint": "Kosongkan untuk pakai default global. Toleransi jarak GPS saat check-in.",
       "pasteCoords": "Tempel koordinat",
-      "pasteCoordsHint": "Tempel \"-6.2088, 106.8456\" untuk mengisi keduanya",
-      "pasteCoordsInvalid": "Gagal parsing. Format: \"lat, lng\"",
+      "pasteCoordsHint": "Tempel \"-6.2088, 106.8456\" atau tautan Google Maps",
+      "pasteCoordsInvalid": "Gagal parsing. Gunakan \"lat, lng\", \"lat lng\", atau URL Maps yang berisi koordinat.",
+      "pasteCoordsApplied": "Terisi {lat}, {lng}",
+      "searchOnMap": "Cari di peta",
+      "searchEmptyQuery": "Isi alamat atau nama toko terlebih dahulu.",
+      "searchNoApiKey": "Pencarian tempat belum dikonfigurasi (SERPAPI_KEY belum ada). Gunakan peta atau tempel koordinat.",
+      "searchNoResults": "Tempat tidak ditemukan. Coba nama yang lebih spesifik atau tambahkan kota.",
+      "searchUpstream": "Pencarian gagal. Coba lagi atau set pin di peta.",
+      "searchRateLimited": "Terlalu banyak pencarian. Tunggu beberapa detik lalu coba lagi.",
+      "searchRating": "Rating {rating}",
+      "mapHint": "Isi alamat, cari untuk menaruh pin, lalu geser untuk menyesuaikan. Check-in memakai pin ini.",
+      "advancedCoords": "Lanjutan: lat/lng & tempel",
       "isActive": "Aktif",
       "deactivate": "Nonaktifkan",
       "deactivateConfirm": "Nonaktifkan toko ini? Toko akan hilang dari daftar salesman.",
@@ -2036,9 +2049,10 @@
       "back": "Kembali",
       "sections": {
         "identity": "Identitas",
-        "contact": "Kontak & lokasi",
+        "contact": "Kontak",
+        "location": "Alamat & peta",
         "terms": "Terms bisnis",
-        "coords": "Koordinat peta"
+        "coords": "Alamat & peta"
       }
     },
     "badge": {
@@ -2052,13 +2066,18 @@
       "notFound": "Toko tidak ditemukan."
     },
     "detail": {
-      "infoTitle": "Info toko",
+      "infoTitle": "Detail toko",
       "editTitle": "Ubah detail",
+      "editButton": "Ubah toko",
       "historyTitle": "Riwayat kunjungan",
       "noVisits": "Belum ada kunjungan",
       "openInMaps": "Buka di Peta",
       "stillOpen": "Masih terbuka",
       "autoClosed": "Ditutup otomatis",
+      "locationLabel": "Pin peta",
+      "noLocation": "Koordinat belum diisi",
+      "checkinRadiusValue": "{meters} m",
+      "checkinRadiusDefault": "Default global (100 m)",
       "stats": {
         "totalVisits": "Total kunjungan",
         "lastVisit": "Kunjungan terakhir",
