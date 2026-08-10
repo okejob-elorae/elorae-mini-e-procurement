@@ -50,8 +50,8 @@ jobs:
           persist-credentials: false
 
       - name: Run bugbit review
-        # JuicyBurger/bugbit v1.2.0 — LGTM on empty findings (post-clean-summary)
-        uses: JuicyBurger/bugbit@1973872dc10239c51b2480f3e0549668b8dc85fe
+        # JuicyBurger/bugbit v1.2.1 — paginate pulls.listFiles (full PR file coverage)
+        uses: JuicyBurger/bugbit@bbe622e4f5bcd651706840a229cee6f2342c8c3f
         with:
           cursor-api-key: ${{ secrets.CURSOR_API_KEY }}
           github-token: ${{ github.token }}
