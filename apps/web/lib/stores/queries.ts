@@ -146,7 +146,7 @@ export async function deactivateStore(id: string): Promise<void> {
 export async function getActiveVisit(userId: string) {
   const v = await prisma.storeVisit.findFirst({
     where: { userId, checkoutAt: null },
-    include: { store: { select: { name: true } } },
+    include: { store: { select: { name: true, termsType: true } } },
     orderBy: { checkinAt: "desc" },
   });
   if (!v) return null;

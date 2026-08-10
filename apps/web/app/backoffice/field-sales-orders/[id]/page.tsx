@@ -22,6 +22,12 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     session.user.permissions ?? [],
     PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
   );
+  const canDeliver = hasPermission(
+    session.user.permissions ?? [],
+    PERMISSIONS.FIELD_SALES_ORDERS_DELIVER,
+  );
 
-  return <FieldSalesOrderDetailClient order={order} canApprove={canApprove} />;
+  return (
+    <FieldSalesOrderDetailClient order={order} canApprove={canApprove} canDeliver={canDeliver} />
+  );
 }

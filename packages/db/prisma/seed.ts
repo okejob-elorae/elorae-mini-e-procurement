@@ -119,6 +119,7 @@ async function main() {
     { code: 'sales_orders:fulfill', module: 'sales_orders', action: 'fulfill', description: 'Pick, pack, ship marketplace orders' },
     { code: 'field_sales_orders:view', module: 'field_sales_orders', action: 'view', description: 'View field-sales (putus) orders' },
     { code: 'field_sales_orders:approve', module: 'field_sales_orders', action: 'approve', description: 'Approve or reject field-sales (putus) orders' },
+    { code: 'field_sales_orders:deliver', module: 'field_sales_orders', action: 'deliver', description: 'Record deliveries and close the remainder on field-sales (putus) orders' },
     { code: 'items:create', module: 'items', action: 'create', description: 'Create items' },
     { code: 'items:edit', module: 'items', action: 'edit', description: 'Edit items' },
     { code: 'items:delete', module: 'items', action: 'delete', description: 'Delete items' },
@@ -192,6 +193,8 @@ async function main() {
     // Finance — Journal Engine
     { code: 'journals:view', module: 'journals', action: 'view', description: 'View journals + ledger' },
     { code: 'journals:manage', module: 'journals', action: 'manage', description: 'Create manual journals + post auto-journals' },
+    // Finance — Financial Reports
+    { code: 'finance_reports:view', module: 'finance_reports', action: 'view', description: 'View financial reports (trial balance, income statement, balance sheet)' },
     // Lead Time
     { code: 'lead_time:view', module: 'lead_time', action: 'view', description: 'View process library and supplier chains' },
     { code: 'lead_time:manage', module: 'lead_time', action: 'manage', description: 'Manage process library and supplier chains' },

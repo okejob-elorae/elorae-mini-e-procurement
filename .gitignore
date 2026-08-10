@@ -29,3 +29,10 @@ scripts/legacy-master
 apps/web/lib/**/*.js
 apps/web/lib/**/*.d.ts
 apps/web/lib/**/*.js.map
+
+# Database dumps / restore artefacts — full customer PII, must never be committed.
+# The restore procedure uses a temp dir, but a stray dump in the tree is one `git add -A`
+# away from being published in a public-ish repo.
+*.sql.gz
+*.sql.gz.gpg
+restore.sql

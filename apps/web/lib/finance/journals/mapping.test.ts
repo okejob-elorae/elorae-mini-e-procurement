@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "@elorae/db";
-import { resolveAccount, listAccountMappings, setAccountMapping, clearAccountMapping, UnmappedRoleError } from "./mapping";
+import {
+  resolveAccount,
+  listAccountMappings,
+  setAccountMapping,
+  clearAccountMapping,
+  UnmappedRoleError,
+  AccountTypeMismatchError,
+} from "./mapping";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "./mapping-test-fixture";
 
 // Mutates JournalAccountMapping + seeds ChartAccount rows — never run against the shared prod DB.
@@ -67,9 +74,35 @@ d("mapping (test bed only)", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("setAccountMapping rejects an account whose type is invalid for the role", async () => {
+    /*
+     * TAX accepts LIABILITAS or BEBAN; `leafId` is an ASET leaf, so this is the
+     * Hutang-class mistake the writer guard exists to stop. Asserted here
+     * because the listAccountMappings test below deliberately bypasses the
+     * writer to seed that bad state — without this case, deleting the throw
+     * would leave every other test green while the DB write path reopened.
+     */
+    await prisma.journalAccountMapping.deleteMany({ where: { role: "TAX" } });
+    await expect(setAccountMapping("TAX", leafId, prisma)).rejects.toBeInstanceOf(
+      AccountTypeMismatchError,
+    );
+    expect(await prisma.journalAccountMapping.findUnique({ where: { role: "TAX" } })).toBeNull();
+  });
+
   it("listAccountMappings returns all posting roles, mapped and unmapped", async () => {
     await prisma.journalAccountMapping.deleteMany({ where: { role: "TAX" } });
-    await setAccountMapping("TAX", leafId, prisma);
+    /*
+     * setAccountMapping now guards account type at the writer level, so it
+     * would reject this mapping. This test needs the exact bad state (TAX
+     * mapped to an ASET leaf) that the guard exists to prevent, in order to
+     * verify listAccountMappings reports it as a mismatch — bypass the
+     * guard with a direct upsert.
+     */
+    await prisma.journalAccountMapping.upsert({
+      where: { role: "TAX" },
+      create: { role: "TAX", chartAccountId: leafId },
+      update: { chartAccountId: leafId },
+    });
 
     const rows = await listAccountMappings();
     expect(rows.length).toBeGreaterThanOrEqual(9);
@@ -77,8 +110,14 @@ d("mapping (test bed only)", () => {
     const taxRow = rows.find((r) => r.role === "TAX");
     expect(taxRow?.chartAccountId).toBe(leafId);
     expect(taxRow?.accountCode).toBe(`9${tag}11`);
+    // The fixture leaf is typed ASET; TAX only accepts LIABILITAS or BEBAN,
+    // so this mapping must come back flagged as a type mismatch.
+    expect(taxRow?.accountType).toBe("ASET");
+    expect(taxRow?.typeValid).toBe(false);
 
     const unmapped = rows.find((r) => r.role !== "TAX" && r.chartAccountId == null);
     expect(unmapped).toBeDefined();
+    // An unmapped role is not a mismatch — it is simply not wired yet.
+    expect(unmapped?.typeValid).toBe(true);
   });
 });

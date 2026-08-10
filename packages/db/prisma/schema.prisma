@@ -78,6 +78,7 @@ model User {
   salesReturnItemsDecided SalesReturnItem[] @relation("SalesReturnItemDecidedBy")
   storeVisits   StoreVisit[]
   fieldSalesOrders FieldSalesOrder[] @relation("FieldSalesOrderSalesman")
+  fieldSalesDeliveries FieldSalesDelivery[] @relation("FieldSalesDeliveryUser")
   storeChangeRequestsMade      StoreChangeRequest[] @relation("StoreChangeRequestedBy")
   storeChangeRequestsReviewed  StoreChangeRequest[] @relation("StoreChangeReviewedBy")
   vanStock      VanStock[] @relation("VanStockUser")
@@ -401,6 +402,7 @@ model FieldSalesOrder {
   salesmanId    String
   visitId       String?
   status        FieldSalesOrderStatus @default(PENDING_APPROVAL)
+  deliveryStatus FieldSalesDeliveryStatus @default(PENDING)
   orderType     FieldSalesOrderType   @default(PUTUS)
   subtotal      Decimal               @db.Decimal(15, 2)
   total         Decimal               @db.Decimal(15, 2)
@@ -412,6 +414,9 @@ model FieldSalesOrder {
   rejectedAt    DateTime?
   rejectedById  String?
   rejectReason  String?               @db.Text
+  closedAt      DateTime?
+  closedById    String?
+  closeReason   String?               @db.Text
   idempotencyKey String?              @unique
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
@@ -419,6 +424,7 @@ model FieldSalesOrder {
   salesman      User                  @relation("FieldSalesOrderSalesman", fields: [salesmanId], references: [id])
   visit         StoreVisit?           @relation(fields: [visitId], references: [id])
   lines         FieldSalesOrderLine[]
+  deliveries    FieldSalesDelivery[]
   @@index([status, createdAt])
   @@index([storeId, createdAt])
   @@index([salesmanId, createdAt])
@@ -437,10 +443,52 @@ model FieldSalesOrderLine {
   appliedPromoId String?
   requestedUnitPrice Decimal?  @db.Decimal(15, 2)
   appealReason String?
+  deliveredQty Int @default(0)
+  cancelledQty Int @default(0)
   order        FieldSalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   item         Item            @relation(fields: [itemId], references: [id])
+  deliveryLines FieldSalesDeliveryLine[]
   @@index([orderId])
   @@index([itemId])
+}
+
+model FieldSalesDelivery {
+  id             String                   @id @default(cuid())
+  docNo          String                   @unique
+  orderId        String
+  deliveredAt    DateTime
+  deliveredById  String
+  invoiceDate    DateTime
+  dueDate        DateTime
+  subtotal       Decimal                  @db.Decimal(15, 2)
+  discountAmount Decimal                  @default(0) @db.Decimal(15, 2)
+  total          Decimal                  @db.Decimal(15, 2)
+  note           String?                  @db.Text
+  idempotencyKey String?                  @unique
+  createdAt      DateTime                 @default(now())
+  order          FieldSalesOrder          @relation(fields: [orderId], references: [id])
+  deliveredBy    User                     @relation("FieldSalesDeliveryUser", fields: [deliveredById], references: [id])
+  lines          FieldSalesDeliveryLine[]
+  @@index([orderId])
+  @@index([deliveredAt])
+}
+
+model FieldSalesDeliveryLine {
+  id             String              @id @default(cuid())
+  deliveryId     String
+  orderLineId    String
+  itemId         String
+  variantSku     String              @default("")
+  productName    String
+  qty            Int
+  unitPrice      Decimal?            @db.Decimal(15, 2)
+  discountAmount Decimal             @default(0) @db.Decimal(15, 2)
+  lineTotal      Decimal?            @db.Decimal(15, 2)
+  delivery       FieldSalesDelivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  orderLine      FieldSalesOrderLine @relation(fields: [orderLineId], references: [id])
+  item           Item                @relation(fields: [itemId], references: [id])
+  @@index([deliveryId])
+  @@index([orderLineId])
 }
 
 enum FieldSalesOrderStatus {
@@ -452,6 +500,13 @@ enum FieldSalesOrderStatus {
 enum FieldSalesOrderType {
   PUTUS
   KONSI
+}
+
+enum FieldSalesDeliveryStatus {
+  PENDING
+  PARTIAL
+  DELIVERED
+  CLOSED
 }
 
 enum ReserveSource {
@@ -565,6 +620,7 @@ model Item {
   forecastResults    ForecastResult[]
   images           ItemImage[]
   fieldSalesLines  FieldSalesOrderLine[]
+  fieldSalesDeliveryLines FieldSalesDeliveryLine[]
   promoItems       PromoItem[]
   vanStock         VanStock[]
   vanLoadLines     VanLoadLine[]
@@ -909,6 +965,7 @@ model StockReservation {
   itemId             String
   variantSku         String        @default("")
   qty                Decimal       @db.Decimal(15, 4)
+  consumedQty        Decimal       @default(0) @db.Decimal(15, 4)
   state              ReserveState
   createdAt          DateTime      @default(now())
   resolvedAt         DateTime?
@@ -1788,6 +1845,7 @@ enum DocType {
   VANSALE
   VANRECON
   SPGSALE
+  DELIVERY
 }
 
 enum OpnameScope {

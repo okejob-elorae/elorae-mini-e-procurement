@@ -112,6 +112,13 @@ type PODetailRow = {
   chainConfirmedAt: Date | null;
   chainConfirmedSource?: string | null;
   actualLeadDays: number | null;
+  /**
+   * Set by `getPOById` from `hasStandingPaymentJournalWhileUnpaid`, not by a
+   * column: the PO reads unpaid while a payment journal still stands for it.
+   * Optional so the flag never has to be recomputed by a caller that has no use
+   * for it — absent means "not flagged", never "unknown".
+   */
+  paymentJournalStandingWhileUnpaid?: boolean;
   supplier: Record<string, unknown>;
   items: Array<{
     id: string;
@@ -177,6 +184,7 @@ export function serializePODetail(po: PODetailRow) {
     chainConfirmedAt: toIso(po.chainConfirmedAt),
     chainConfirmedSource: po.chainConfirmedSource ?? null,
     actualLeadDays: po.actualLeadDays,
+    paymentJournalStandingWhileUnpaid: po.paymentJournalStandingWhileUnpaid ?? false,
     supplier: po.supplier,
     items: po.items.map((line) => ({
       id: line.id,

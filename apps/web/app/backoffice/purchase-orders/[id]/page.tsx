@@ -3,7 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { getPOById, changePOStatus, updatePO, setPOPaidAt } from '@/app/actions/purchase-orders';
+import { useTranslations } from 'next-intl';
+import {
+  getPOById,
+  changePOStatus,
+  updatePO,
+  setPOPaidAt,
+  postSupplierPaymentReversalJournalAction,
+} from '@/app/actions/purchase-orders';
+import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-payment-journal-message';
 import { POForm } from '@/components/forms/POForm';
 import { ETABadge } from '@/components/ui/ETABadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer } from 'lucide-react';
+import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer, AlertTriangle } from 'lucide-react';
 import { buildPOPrintHtml } from '@/lib/print/po-html';
 import { variantDetailForSku } from '@/lib/items/variants';
 import { logPrint } from '@/app/actions/audit';
@@ -64,6 +72,112 @@ export default function PODetailPage() {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<'cancel' | 'update' | null>(null);
   const [pendingUpdateData, setPendingUpdateData] = useState<any>(null);
+  const [isTogglingPaid, setIsTogglingPaid] = useState(false);
+  const [isPostingReversal, setIsPostingReversal] = useState(false);
+  const tSupplierPayments = useTranslations('supplierPayments');
+
+  /**
+   * The toggle always commits, so the outcome — not the absence of a throw —
+   * decides what the operator is told. A journal failure means the ledger does
+   * not reflect this toggle: for most payment codes because payables and bank
+   * were left untouched, for `PAYMENT_SUPERSEDED` because they still hold an
+   * earlier payment for a different amount, and on the reversal half because they
+   * still hold the payment this unmark failed to undo. Reporting "Marked as paid"
+   * for any of those is positive confirmation of something that did not happen,
+   * and the only other trace is an `AdminNotification` row nothing in the UI
+   * renders yet. Which case it is, and the remedy, come from the message the code
+   * AND the direction resolve to — the same failure means opposite things on the
+   * two halves of the toggle.
+   *
+   * `refusal` is checked FIRST because it also carries `changed: false`, and the
+   * no-op message would be wrong for it twice over: nothing was written, but the
+   * PO was NOT already in the requested state, and unmark-then-re-mark cannot
+   * reach the reversal that is actually missing. The button is withheld for this
+   * state, so reaching it means the page was stale — the toast has to name the
+   * standing journal and send the operator to the warning's own control.
+   *
+   * `changed: false` is checked next and never reported as success: the PO was
+   * already in the requested state, so nothing was written and no journal was
+   * attempted. Green-toasting that is the same lie as green-toasting a failed
+   * post — worse from a stale tab, where a re-mark whose first attempt left a
+   * ledger gap would read as a fresh clean payment. The neutral toast names the
+   * state the PO is actually in and points at the only remedy that reopens a
+   * journal attempt.
+   */
+  const handlePaidToggle = async (next: Date | null) => {
+    if (!po) return;
+    setIsTogglingPaid(true);
+    try {
+      const result = await setPOPaidAt(po.id, next);
+      if (result.refusal) {
+        toast.warning(tSupplierPayments('standingPayment.markRefused'), { duration: 12000 });
+      } else if (!result.changed) {
+        toast.info(
+          tSupplierPayments(next != null ? 'noop.alreadyPaid' : 'noop.alreadyUnpaid'),
+          { duration: 10000 }
+        );
+      } else if (result.journalFailure) {
+        const failure = result.journalFailure;
+        /*
+         * `UNMAPPED_ROLE` is the only one of these messages that interpolates a
+         * value, so it is resolved from its literal key to keep next-intl's
+         * parameter typing intact. Passing values alongside the computed key
+         * would widen the whole call to `never` and drop that check.
+         */
+        const warning =
+          failure.code === 'UNMAPPED_ROLE'
+            ? tSupplierPayments('journal.err.UNMAPPED_ROLE', { role: failure.role ?? '' })
+            : tSupplierPayments(
+                supplierPaymentJournalErrorKey(failure.code, failure.direction) as never
+              );
+        toast.warning(warning, { duration: 12000 });
+      } else {
+        toast.success(next != null ? 'Marked as paid' : 'Marked as unpaid');
+      }
+      const updated = await getPOById(po.id);
+      setPO(updated);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed');
+    } finally {
+      setIsTogglingPaid(false);
+    }
+  };
+
+  /**
+   * Posts the reversal a failed unmark left missing. The banner this hangs off
+   * is the only place the state is visible, and the toggle cannot reach it — see
+   * `postSupplierPaymentReversalJournalAction` for why this control is a
+   * deliberate exception to the "the toggle IS the retry" rule.
+   *
+   * Every non-ok outcome is named rather than collapsed into one "failed": a
+   * refused permission, a state that no longer holds (someone else posted the
+   * reversal, or re-marked the PO, between the page load and the click) and a
+   * journal that could not post are three different next steps.
+   */
+  const handlePostMissingReversal = async () => {
+    if (!po) return;
+    setIsPostingReversal(true);
+    try {
+      const result = await postSupplierPaymentReversalJournalAction(po.id);
+      if (result.ok) {
+        toast.success(tSupplierPayments('standingPayment.posted'));
+      } else if (result.code === 'FORBIDDEN') {
+        toast.error(tSupplierPayments('standingPayment.errForbidden'));
+      } else if (result.code === 'BAD_STATE') {
+        toast.info(tSupplierPayments('standingPayment.errBadState'), { duration: 10000 });
+      } else {
+        toast.warning(tSupplierPayments('standingPayment.errFailed', { code: result.code }), {
+          duration: 12000,
+        });
+      }
+      const updated = await getPOById(po.id);
+      setPO(updated);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed');
+    } finally {
+      setIsPostingReversal(false);
+    }
+  };
 
   useEffect(() => {
     if (params.id && typeof params.id === 'string') {
@@ -178,6 +292,10 @@ export default function PODetailPage() {
     return null;
   }
 
+  const canPostJournal = hasPermission(
+    session?.user?.permissions ?? [],
+    PERMISSIONS.JOURNALS_MANAGE
+  );
   const canEdit = po.status === 'DRAFT';
   const canEditPosted =
     po.status === 'SUBMITTED' ||
@@ -190,6 +308,16 @@ export default function PODetailPage() {
     po.status === 'SUBMITTED' ||
     po.status === 'PARTIAL' ||
     po.status === 'OVER';
+  /*
+   * While an earlier mark's payment journal still stands on an unpaid PO,
+   * marking it paid is the one click that destroys its own recovery control:
+   * the post refuses `PAYMENT_SUPERSEDED` as soon as the payable has moved, and
+   * the refreshed detector — which requires `paidAt == null` — then drops the
+   * banner carrying the reversal button, leaving a paid PO, a stale payment
+   * journal, and nothing persistent to recover from. So the mark is withheld
+   * while the banner is up and recovery goes through the reversal instead.
+   */
+  const markPaidBlockedByStandingPayment = Boolean(po.paymentJournalStandingWhileUnpaid);
 
   const handlePrint = async () => {
     await logPrint('PurchaseOrder', String(params.id));
@@ -303,6 +431,35 @@ export default function PODetailPage() {
         </div>
       </div>
 
+      {po.paymentJournalStandingWhileUnpaid && (
+        <Card className="flex-row items-start gap-3 border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700 dark:text-amber-400" />
+          <div className="flex-1 space-y-2">
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              {tSupplierPayments('standingPayment.title')}
+            </p>
+            <p className="text-sm text-amber-700/90 dark:text-amber-400/90">
+              {tSupplierPayments('standingPayment.body')}
+            </p>
+            {canPostJournal ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isPostingReversal}
+                onClick={handlePostMissingReversal}
+              >
+                {isPostingReversal && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {tSupplierPayments('standingPayment.action')}
+              </Button>
+            ) : (
+              <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                {tSupplierPayments('standingPayment.needsPermission')}
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
+
       {Array.isArray(po.chainSnapshot) && po.chainSnapshot.length > 0 && (
         <ChainPositionStrip
           docType="PO"
@@ -410,41 +567,34 @@ export default function PODetailPage() {
                 </div>
               )}
               {po.status !== 'DRAFT' && po.status !== 'CANCELLED' && (
-                <div className="pt-2 flex gap-2">
-                  {po.paidAt ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          await setPOPaidAt(po.id, null);
-                          toast.success('Marked as unpaid');
-                          const updated = await getPOById(po.id);
-                          setPO(updated);
-                        } catch (e: any) {
-                          toast.error(e.message || 'Failed');
-                        }
-                      }}
-                    >
-                      Unmark paid
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          await setPOPaidAt(po.id, new Date());
-                          toast.success('Marked as paid');
-                          const updated = await getPOById(po.id);
-                          setPO(updated);
-                        } catch (e: any) {
-                          toast.error(e.message || 'Failed');
-                        }
-                      }}
-                    >
-                      Mark as paid
-                    </Button>
+                <div className="pt-2 space-y-2">
+                  <div className="flex gap-2">
+                    {po.paidAt ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isTogglingPaid}
+                        onClick={() => handlePaidToggle(null)}
+                      >
+                        {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Unmark paid
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        disabled={isTogglingPaid || markPaidBlockedByStandingPayment}
+                        onClick={() => handlePaidToggle(new Date())}
+                      >
+                        {isTogglingPaid && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Mark as paid
+                      </Button>
+                    )}
+                  </div>
+                  {markPaidBlockedByStandingPayment && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      {tSupplierPayments('standingPayment.markBlocked')}
+                    </p>
                   )}
                 </div>
               )}

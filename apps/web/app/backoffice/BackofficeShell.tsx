@@ -179,6 +179,21 @@ const navItems: NavItem[] = [
         href: '/backoffice/finance/account-mapping',
         permission: PERMISSIONS.JOURNALS_VIEW,
       },
+      {
+        labelKey: 'navFinanceTrialBalance',
+        href: '/backoffice/finance/reports/trial-balance',
+        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
+      },
+      {
+        labelKey: 'navFinanceIncomeStatement',
+        href: '/backoffice/finance/reports/income-statement',
+        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
+      },
+      {
+        labelKey: 'navFinanceBalanceSheet',
+        href: '/backoffice/finance/reports/balance-sheet',
+        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
+      },
     ],
   },
   {

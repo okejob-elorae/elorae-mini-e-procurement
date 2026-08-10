@@ -1,9 +1,37 @@
 import { prisma, Prisma } from "@elorae/db";
 import { variantDetailForSku } from "@/lib/items/variants";
+import { outstandingQty } from "./delivery/plan";
+import type { PlanHistory } from "./smart-request/plan";
 
 export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 
 export type FieldSalesOrderType = "PUTUS" | "KONSI";
+
+export type FieldSalesDeliveryStatus = "PENDING" | "PARTIAL" | "DELIVERED" | "CLOSED";
+
+export type FieldSalesDeliveryLineSummary = {
+  id: string;
+  orderLineId: string;
+  productName: string;
+  variantSku: string;
+  qty: number;
+  unitPrice: number | null;
+  discountAmount: number;
+  lineTotal: number | null;
+};
+
+export type FieldSalesDeliverySummary = {
+  id: string;
+  docNo: string;
+  deliveredAt: Date;
+  invoiceDate: Date;
+  dueDate: Date;
+  subtotal: number;
+  discountAmount: number;
+  total: number;
+  deliveredByName: string;
+  lines: FieldSalesDeliveryLineSummary[];
+};
 
 export type FieldSalesOrderListItem = {
   id: string;
@@ -22,9 +50,13 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   approvedAt: Date | null;
   rejectedAt: Date | null;
   rejectReason: string | null;
+  closedAt: Date | null;
+  closeReason: string | null;
   marginPercent: number | null;
   orderDiscountAmount: number;
   appliedOrderPromoName: string | null;
+  deliveryStatus: FieldSalesDeliveryStatus;
+  deliveries: FieldSalesDeliverySummary[];
   lines: Array<{
     id: string;
     productName: string;
@@ -34,6 +66,8 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
     unitPrice: number;
     lineTotal: number;
     available: number;
+    onHand: number;
+    outstanding: number;
     discountAmount: number;
     appliedPromoName: string | null;
     belowCost: boolean;
@@ -101,14 +135,30 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     select: {
       id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
-      orderDiscountAmount: true, appliedOrderPromoId: true,
+      closedAt: true, closeReason: true,
+      orderDiscountAmount: true, appliedOrderPromoId: true, deliveryStatus: true,
       store: { select: { name: true, marginPercent: true } },
       salesman: { select: { name: true } },
       lines: {
         select: {
           id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true,
           discountAmount: true, appliedPromoId: true, requestedUnitPrice: true, appealReason: true,
+          deliveredQty: true, cancelledQty: true,
           item: { select: { variants: true } },
+        },
+      },
+      deliveries: {
+        orderBy: { deliveredAt: "asc" },
+        select: {
+          id: true, docNo: true, deliveredAt: true, invoiceDate: true, dueDate: true,
+          subtotal: true, discountAmount: true, total: true,
+          deliveredBy: { select: { name: true } },
+          lines: {
+            select: {
+              id: true, orderLineId: true, productName: true, variantSku: true, qty: true,
+              unitPrice: true, discountAmount: true, lineTotal: true,
+            },
+          },
         },
       },
     },
@@ -122,10 +172,17 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
   // Per-variant keyed (matches per-variant order lines). Variantless rows use null → "".
   const invKey = (itemId: string, variantSku: string | null | undefined) => `${itemId}::${variantSku ?? ""}`;
   const availByKey = new Map<string, number>();
+  /**
+   * Parallel to availByKey but holds raw qtyOnHand, not qtyOnHand - reservedQty. The delivery
+   * form caps on-hand, and this order's own reservation already sits inside reservedQty, so
+   * netting it again here would under-deliver.
+   */
+  const onHandByKey = new Map<string, number>();
   const avgCostByKey = new Map<string, number>();
   for (const iv of invs) {
     const k = invKey(iv.itemId, iv.variantSku);
     availByKey.set(k, (availByKey.get(k) ?? 0) + (Number(iv.qtyOnHand) - Number(iv.reservedQty)));
+    onHandByKey.set(k, (onHandByKey.get(k) ?? 0) + Number(iv.qtyOnHand));
     if (!avgCostByKey.has(k)) avgCostByKey.set(k, Number(iv.avgCost));
   }
 
@@ -144,9 +201,33 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     approvedAt: row.approvedAt,
     rejectedAt: row.rejectedAt,
     rejectReason: row.rejectReason,
+    closedAt: row.closedAt,
+    closeReason: row.closeReason,
     marginPercent: row.store.marginPercent === null ? null : Number(row.store.marginPercent),
     orderDiscountAmount: toNum(row.orderDiscountAmount),
     appliedOrderPromoName: row.appliedOrderPromoId ? promoNameById.get(row.appliedOrderPromoId) ?? null : null,
+    deliveryStatus: row.deliveryStatus,
+    deliveries: row.deliveries.map((d) => ({
+      id: d.id,
+      docNo: d.docNo,
+      deliveredAt: d.deliveredAt,
+      invoiceDate: d.invoiceDate,
+      dueDate: d.dueDate,
+      subtotal: toNum(d.subtotal),
+      discountAmount: toNum(d.discountAmount),
+      total: toNum(d.total),
+      deliveredByName: d.deliveredBy.name ?? "—",
+      lines: d.lines.map((dl) => ({
+        id: dl.id,
+        orderLineId: dl.orderLineId,
+        productName: dl.productName,
+        variantSku: dl.variantSku,
+        qty: dl.qty,
+        unitPrice: dl.unitPrice === null ? null : toNum(dl.unitPrice),
+        discountAmount: toNum(dl.discountAmount),
+        lineTotal: dl.lineTotal === null ? null : toNum(dl.lineTotal),
+      })),
+    })),
     lines: row.lines.map((l) => {
       const qty = l.qty;
       const discountAmount = toNum(l.discountAmount);
@@ -157,6 +238,8 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         variantLabel: variantDetailForSku(l.item.variants, l.variantSku),
         qty, unitPrice: toNum(l.unitPrice), lineTotal: toNum(l.lineTotal),
         available: availByKey.get(invKey(l.itemId, l.variantSku)) ?? 0,
+        onHand: onHandByKey.get(invKey(l.itemId, l.variantSku)) ?? 0,
+        outstanding: outstandingQty({ qty: l.qty, deliveredQty: l.deliveredQty, cancelledQty: l.cancelledQty }),
         discountAmount,
         appliedPromoName: l.appliedPromoId ? promoNameById.get(l.appliedPromoId) ?? null : null,
         belowCost: row.orderType === "PUTUS" && qty > 0 && netUnit < avgCost,
@@ -201,12 +284,35 @@ export type StoreSentItemRow = {
   totalQty: number;
 };
 
+/**
+ * Putus counts what actually SHIPPED — the delivery lines — not what was approved. Approval became
+ * paperwork when delivery got its own document: an approved order can sit undelivered, or be
+ * partly delivered and have its remainder closed, and neither leaves the warehouse. Konsi has no
+ * delivery document (the transfer is recorded at approve and nothing ships afterwards), so its
+ * approved lines stay the only signal there.
+ */
 export async function getStoreSentItems(storeId: string): Promise<StoreSentItemRow[]> {
-  const grouped = await prisma.fieldSalesOrderLine.groupBy({
-    by: ["itemId", "variantSku"],
-    where: { order: { storeId, status: "APPROVED" } },
-    _sum: { qty: true },
-  });
+  const [deliveredPutus, approvedKonsi] = await Promise.all([
+    prisma.fieldSalesDeliveryLine.groupBy({
+      by: ["itemId", "variantSku"],
+      where: { delivery: { order: { storeId } } },
+      _sum: { qty: true },
+    }),
+    prisma.fieldSalesOrderLine.groupBy({
+      by: ["itemId", "variantSku"],
+      where: { order: { storeId, status: "APPROVED", orderType: "KONSI" } },
+      _sum: { qty: true },
+    }),
+  ]);
+
+  const byKey = new Map<string, { itemId: string; variantSku: string; totalQty: number }>();
+  for (const g of [...deliveredPutus, ...approvedKonsi]) {
+    const key = `${g.itemId}::${g.variantSku}`;
+    const existing = byKey.get(key);
+    if (existing) existing.totalQty += g._sum.qty ?? 0;
+    else byKey.set(key, { itemId: g.itemId, variantSku: g.variantSku, totalQty: g._sum.qty ?? 0 });
+  }
+  const grouped = Array.from(byKey.values());
   if (grouped.length === 0) return [];
 
   const itemIds = Array.from(new Set(grouped.map((g) => g.itemId)));
@@ -224,7 +330,7 @@ export async function getStoreSentItems(storeId: string): Promise<StoreSentItemR
         articleSku: item?.sku ?? "—",
         articleName: item?.nameId ?? "—",
         variantSku: g.variantSku && g.variantSku.trim() !== "" ? g.variantSku : "—",
-        totalQty: g._sum.qty ?? 0,
+        totalQty: g.totalQty,
       };
     })
     .sort((a, b) => a.articleSku.localeCompare(b.articleSku) || a.variantSku.localeCompare(b.variantSku));
@@ -240,4 +346,22 @@ export async function sentItemIds(
     distinct: ["itemId"],
   });
   return new Set(rows.map((r) => r.itemId));
+}
+
+export async function getSmartRequestHistory(storeId: string, candidateItemIds: string[]): Promise<PlanHistory> {
+  const orderedRows = await prisma.fieldSalesOrderLine.findMany({
+    where: { order: { storeId, status: { not: "REJECTED" } } },
+    select: { itemId: true },
+    distinct: ["itemId"],
+  });
+  const ordered = new Set(orderedRows.map((r) => r.itemId));
+  const neverOrdered = new Set(candidateItemIds.filter((id) => !ordered.has(id)));
+
+  const grouped = await prisma.fieldSalesOrderLine.groupBy({
+    by: ["itemId"],
+    where: { order: { storeId, status: "APPROVED" } },
+    _sum: { qty: true },
+  });
+  const qtyByItem = new Map<string, number>(grouped.map((g) => [g.itemId, g._sum.qty ?? 0]));
+  return { neverOrdered, qtyByItem };
 }

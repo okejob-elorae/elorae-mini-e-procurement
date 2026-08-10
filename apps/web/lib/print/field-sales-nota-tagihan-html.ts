@@ -1,17 +1,32 @@
 import { esc, fmtDocDate, printCssBase, printPageLandscape } from "@/lib/print/print-theme";
 import type { FsPrintLine } from "@/lib/print/field-sales-nota-gudang-html";
 
-const idr = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+/* Nullable money renders as an em dash rather than "null" or "NaN" — never reaches arithmetic. */
+const idr = (n: number | null): string => (n == null ? "—" : `Rp ${Math.round(n).toLocaleString("id-ID")}`);
 
-export type FsTagihanLine = FsPrintLine & { unitPrice: number; lineTotal: number; discountAmount: number; appliedPromoName: string | null };
+export type FsTagihanLine = FsPrintLine & {
+  unitPrice: number | null;
+  lineTotal: number | null;
+  discountAmount: number;
+  appliedPromoName: string | null;
+};
+
+/**
+ * `lineTotal` is nullable purely as the konsi seam — every putus delivery line sets it.
+ * Guard the subtraction so a null never lands in arithmetic (JS would silently coerce
+ * `null - discountAmount` to `-discountAmount`).
+ */
+function lineNetTotal(l: FsTagihanLine): number | null {
+  return l.lineTotal == null ? null : l.lineTotal - l.discountAmount;
+}
 
 export interface BuildNotaTagihanOptions {
+  docNo: string;
   orderNo: string;
   storeName: string;
   salesmanName: string;
-  approvedAt: Date | string | null;
-  /** Print-time editable date (defaults to approvedAt when omitted). Not persisted. */
-  notaDate?: Date | string | null;
+  invoiceDate: Date | string;
+  dueDate: Date | string;
   /** Print-time custom footnote, rendered above the sign-row. Not persisted. */
   footnote?: string;
   subtotal: number;
@@ -23,9 +38,11 @@ export interface BuildNotaTagihanOptions {
   labels: {
     title: string;
     doc: string;
+    orderRef: string;
     store: string;
     salesman: string;
     date: string;
+    dueDate: string;
     no: string;
     product: string;
     qty: string;
@@ -43,11 +60,12 @@ export interface BuildNotaTagihanOptions {
 
 export function buildNotaTagihanPrintHtml(opts: BuildNotaTagihanOptions): string {
   const {
+    docNo,
     orderNo,
     storeName,
     salesmanName,
-    approvedAt,
-    notaDate,
+    invoiceDate,
+    dueDate,
     footnote,
     subtotal,
     orderDiscountAmount,
@@ -64,13 +82,13 @@ export function buildNotaTagihanPrintHtml(opts: BuildNotaTagihanOptions): string
       <td class="col-num">${Number(l.qty).toLocaleString("id-ID")}</td>
       <td class="col-num">${idr(l.unitPrice)}</td>
       <td class="col-num">${idr(l.discountAmount)}</td>
-      <td class="col-num">${idr(l.lineTotal - l.discountAmount)}</td>
+      <td class="col-num">${idr(lineNetTotal(l))}</td>
     </tr>`).join("");
   const footnoteHtml = footnote && footnote.trim() !== ""
     ? `<div class="footnote">${esc(footnote).replace(/\n/g, "<br>")}</div>`
     : "";
   return `<!DOCTYPE html>
-<html lang="id"><head><meta charset="utf-8"><title>${esc(labels.title)} — ${esc(orderNo)}</title>
+<html lang="id"><head><meta charset="utf-8"><title>${esc(labels.title)} — ${esc(docNo)}</title>
 <style>${printCssBase}${printPageLandscape}
   .sign-row { display:flex; justify-content:space-between; gap:48px; margin-top:56px; }
   .sign-box { flex:1; text-align:center; }
@@ -80,8 +98,10 @@ export function buildNotaTagihanPrintHtml(opts: BuildNotaTagihanOptions): string
 <body>
   <div class="doc-top">
     <div><h1 class="doc-title">${esc(labels.title)}</h1><p class="doc-sub">${esc(labels.issuedBy)} ${esc(issuerName)}</p></div>
-    <div class="doc-ref"><span class="lbl">${esc(labels.doc)}</span><span class="val">${esc(orderNo)}</span>
-      <span class="lbl">${esc(labels.date)}</span><span class="val">${esc(fmtDocDate(notaDate ?? approvedAt))}</span></div>
+    <div class="doc-ref"><span class="lbl">${esc(labels.doc)}</span><span class="val">${esc(docNo)}</span>
+      <span class="lbl">${esc(labels.orderRef)}</span><span class="val">${esc(orderNo)}</span>
+      <span class="lbl">${esc(labels.date)}</span><span class="val">${esc(fmtDocDate(invoiceDate))}</span>
+      <span class="lbl">${esc(labels.dueDate)}</span><span class="val">${esc(fmtDocDate(dueDate))}</span></div>
   </div>
   <div class="two-col">
     <div><p class="block-label">${esc(labels.store)}</p><p class="payee-name">${esc(storeName)}</p></div>

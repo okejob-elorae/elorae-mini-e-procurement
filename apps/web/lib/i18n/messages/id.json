@@ -51,6 +51,9 @@
     "navFinanceSettlements": "Settlement Marketplace",
     "navFinanceJournals": "Jurnal",
     "navFinanceAccountMapping": "Pemetaan Akun",
+    "navFinanceTrialBalance": "Neraca Saldo",
+    "navFinanceIncomeStatement": "Laba Rugi",
+    "navFinanceBalanceSheet": "Neraca",
     "items": "Item",
     "navItemsAll": "Semua Item",
     "navItemsCategory": "Kategori",
@@ -1102,7 +1105,44 @@
   "supplierPayments": {
     "unpaid": "Belum dibayar",
     "paid": "Sudah dibayar",
-    "noPOsMatchFilters": "Tidak ada PO yang sesuai filter."
+    "noPOsMatchFilters": "Tidak ada PO yang sesuai filter.",
+    "noop": {
+      "alreadyPaid": "PO ini sudah bertanda lunas — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembayaran dari penandaan sebelumnya belum terposting, batalkan tanda lunas dan tandai lunas lagi.",
+      "alreadyUnpaid": "PO ini sudah bertanda belum dibayar — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembaliknya belum terposting, PO ini akan menampilkan peringatan pembayaran menggantung beserta tombol untuk memposting pembaliknya."
+    },
+    "standingPayment": {
+      "title": "Jurnal pembayaran masih berdiri padahal PO ini belum ditandai lunas",
+      "body": "Tanda lunas PO ini sudah dibatalkan, tapi jurnal pembaliknya gagal diposting, jadi jurnal pembayarannya masih berdiri di buku besar: utang sudah dihapus dan bank sudah dikredit untuk PO yang sekarang berstatus belum dibayar. Menandai lunas lagi tidak akan memperbaikinya — posting jurnal pembaliknya dari sini.",
+      "action": "Posting jurnal pembalik",
+      "needsPermission": "Butuh izin journals:manage untuk memposting jurnal pembalik ini. Minta pengguna Finance melakukannya dari halaman PO ini.",
+      "markBlocked": "Tombol \"Mark as paid\" dimatikan selama jurnal pembayaran ini masih berdiri — menandai lunas lagi hanya menyembunyikan peringatan di atas tanpa memperbaiki buku besar. Posting jurnal pembaliknya dulu dari peringatan itu, lalu tandai lunas kembali.",
+      "markBlockedRegister": "Tombol \"Mark paid\" dimatikan: jurnal pembayaran dari penandaan sebelumnya masih berdiri di buku besar padahal PO ini berstatus belum dibayar. Buka detail PO ini, posting jurnal pembaliknya dari peringatan di halaman itu, lalu tandai lunas kembali.",
+      "markRefused": "Tanda lunas tidak disimpan: jurnal pembayaran dari penandaan sebelumnya masih berdiri di buku besar padahal PO ini berstatus belum dibayar. Tidak ada yang ditulis — status bayar, jurnal, dan riwayat PO ini semuanya tidak berubah. Posting jurnal pembaliknya dulu dari peringatan pembayaran menggantung di halaman ini, lalu tandai lunas kembali.",
+      "markRefusedRegister": "Tanda lunas tidak disimpan: jurnal pembayaran dari penandaan sebelumnya masih berdiri di buku besar padahal PO ini berstatus belum dibayar. Tidak ada yang ditulis — status bayar, jurnal, dan riwayat PO ini semuanya tidak berubah. Buka detail PO ini, posting jurnal pembaliknya dari peringatan di halaman itu, lalu tandai lunas kembali.",
+      "posted": "Jurnal pembalik diposting. Buku besar sudah sesuai dengan status belum dibayar PO ini.",
+      "errForbidden": "Anda tidak punya izin journals:manage untuk memposting jurnal pembalik.",
+      "errBadState": "PO ini sudah tidak dalam kondisi tersebut — jurnal pembaliknya sudah diposting atau PO-nya sudah ditandai lunas lagi. Halaman sudah dimuat ulang.",
+      "errFailed": "Jurnal pembalik gagal diposting ({code}). Periksa pemetaan akun dan jurnal PO ini di Finance, lalu coba lagi."
+    },
+    "journal": {
+      "err": {
+        "GRN_APPROVAL_PENDING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang masih menunggu keputusan owner. Minta owner menyetujui atau menolak penerimaan itu dulu, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "GRN_JOURNALS_INCOMPLETE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan barang yang belum punya jurnal GRN. Posting jurnal GRN yang belum ada dari baris GRN-nya, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "GRN_REVERSAL_MISSING": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Ada penerimaan yang ditolak owner tapi jurnal GRN-nya belum dibalik. Posting jurnal pembalik dari baris GRN yang ditolak, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "AP_ACCOUNT_MISMATCH": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Penerimaan mencatat utang ke akun yang berbeda dari akun yang dipetakan ke peran AP sekarang. Periksa pemetaan akun AP di Pemetaan Akun, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "PAYMENT_SUPERSEDED": "Status bayar tersimpan, tapi jurnal pembayaran dari penandaan sebelumnya masih berdiri dengan nilai yang berbeda dari utang PO ini sekarang, jadi tidak ada jurnal baru yang diposting. Di sini utang dan bank BUKAN belum tersentuh — keduanya masih memuat pembayaran lama itu, yang sudah tidak lagi menutup utang PO ini. Batalkan tanda lunas, pastikan di Finance jurnal pembaliknya benar-benar terposting kali ini, lalu tandai lunas lagi. Kalau pembaliknya gagal lagi, PO ini akan menampilkan peringatan pembayaran menggantung beserta tombol untuk memposting pembaliknya langsung.",
+        "UNMAPPED_ROLE": "Status bayar tersimpan, tapi jurnal pembayaran belum diposting — utang dan bank belum tersentuh. Peran akun \"{role}\" belum dipetakan. Petakan di Pemetaan Akun, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "NOTHING_TO_POST": "PO ditandai lunas, tapi tidak ada utang yang tercatat di buku besar untuk PO ini, jadi tidak ada jurnal yang diposting — utang dan bank belum tersentuh. Pastikan PO ini memang layak ditandai lunas; kalau ada penerimaan yang belum dibuat, terima barangnya dulu, lalu batalkan tanda lunas dan tandai lunas lagi.",
+        "UNBALANCED": {
+          "payment": "Status bayar tersimpan, tapi jurnal pembayaran tidak balance (debit ≠ kredit) jadi tidak diposting — utang dan bank belum tersentuh. Periksa jurnal PO ini di Finance, lalu batalkan tanda lunas dan tandai lunas lagi.",
+          "reversal": "Tanda lunas sudah dibatalkan, tapi jurnal pembaliknya tidak balance (debit ≠ kredit) jadi tidak diposting. Utang dan bank BUKAN belum tersentuh — jurnal pembayaran sebelumnya masih berdiri, jadi utang sudah dihapus dan bank sudah dikredit untuk PO yang sekarang berstatus belum dibayar. PO ini menampilkan peringatan pembayaran menggantung; posting jurnal pembaliknya dari tombol di peringatan itu."
+        },
+        "GENERIC": {
+          "payment": "Status bayar tersimpan, tapi jurnal pembayaran gagal diposting karena kesalahan tak terduga. Periksa jurnal PO ini dan pemetaan akun di Finance; kalau jurnal pembayarannya memang belum ada, batalkan tanda lunas dan tandai lunas lagi.",
+          "reversal": "Tanda lunas sudah dibatalkan, tapi jurnal pembaliknya gagal diposting karena kesalahan tak terduga, jadi jurnal pembayaran sebelumnya kemungkinan masih berdiri — utang sudah dihapus dan bank sudah dikredit untuk PO yang sekarang berstatus belum dibayar. Periksa jurnal PO ini di Finance; kalau peringatan pembayaran menggantung muncul di halaman PO ini, posting jurnal pembaliknya dari tombol di peringatan itu."
+        }
+      }
+    }
   },
   "purchaseOrders": {
     "noPurchaseOrdersFound": "Tidak ada pesanan pembelian ditemukan",
@@ -1852,6 +1892,10 @@
       "alreadyPostedToast": "Jurnal sudah ada.",
       "errUNMAPPED_ROLE": "Peran akun {role} belum dipetakan — petakan di Account Mapping lalu posting ulang.",
       "errUNBALANCED": "Jurnal tidak seimbang.",
+      "errORIGINAL_SALE_NOT_JOURNALED_YET": "Penjualan asal ada di buku besar ini tapi jurnalnya belum diposting. Sweep jurnal penjualan jalan tiap 5 menit — coba posting lagi setelah itu.",
+      "errORIGINAL_SALE_UNLINKED": "Retur ini belum tertaut ke pesanan penjualannya, jadi jurnal penjualan asalnya tidak bisa ditemukan. Menunggu tidak menolong: tautannya harus dipulihkan dulu (ingest ulang dari Jubelio memulihkannya begitu pesanannya ada), lalu posting lagi.",
+      "errORIGINAL_SALE_OUTSIDE_LEDGER": "Jurnal penjualan asalnya tidak ada di buku besar ini dan tidak akan ada — penjualannya sebelum tanggal cutover GL, atau sisi jurnal itu memang tidak punya nilai untuk diposting. Tidak ada yang perlu dicoba lagi: retur ini di luar buku besar ini sesuai desain.",
+      "errGL_CUTOVER_NOT_CONFIGURED": "Tanggal cutover GL belum diset, jadi sweep jurnal penjualan tidak memposting apa pun. Set tanggal cutover di pengaturan Finance, lalu posting lagi.",
       "errBAD_STATE": "Retur belum bisa diposting.",
       "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
       "errUnexpected": "Terjadi kesalahan saat memposting jurnal."
@@ -2202,6 +2246,36 @@
       "fieldContact": "Kontak",
       "fieldLocation": "Lokasi",
       "empty": "—"
+    },
+    "smartRequest": {
+      "cta": "Buat Pesanan Cepat",
+      "back": "Kembali",
+      "pickTitle": "Pilih Kategori",
+      "pickSubtitle": "Pilih kategori dan jumlah pack — kami susun barisnya otomatis sesuai rasio ukuran.",
+      "categoriesEmpty": "Tidak ada kategori produk aktif.",
+      "packsLabel": "Jumlah pack",
+      "build": "Bangun Pesanan",
+      "building": "Membangun pesanan…",
+      "noRatio": "Rasio pack belum diatur. Hubungi admin.",
+      "buildError": "Gagal membangun pesanan. Coba lagi.",
+      "reviewTitle": "Tinjau Pesanan",
+      "notIncluded": "Tidak masuk ({count})",
+      "dropMissingSize": "ukuran {detail} tidak ada",
+      "dropInsufficientStock": "stok kurang ({detail})",
+      "dropEmptyRatio": "rasio pack belum diatur",
+      "underfill": "Kategori {category}: diminta {requested} pack, terpasang {placed}",
+      "total": "Total",
+      "send": "Kirim",
+      "sending": "Mengirim…",
+      "retry": "Ulangi",
+      "remove": "Hapus",
+      "emptyResult": "Tidak ada produk yang cocok.",
+      "sentSuccess": "Pesanan {orderNo} terkirim",
+      "errorGeneric": "Gagal mengirim pesanan. Coba lagi.",
+      "errorNoActiveVisit": "Check in dulu untuk memesan.",
+      "errorUnauthorized": "Sesi berakhir. Masuk lagi.",
+      "errorEmpty": "Tidak ada item.",
+      "errorMinQty": "Jumlah di bawah minimum."
     }
   },
   "fieldSalesOrders": {
@@ -2260,6 +2334,7 @@
     "storeSearchEmpty": "Toko tidak ditemukan",
     "colType": "Tipe",
     "colAvailable": "Tersedia",
+    "colOnHand": "Stok",
     "konsiTransferNote": "Transfer konsinyasi — bukan penjualan; stok direservasi saat disetujui.",
     "konsiMarginUnset": "Margin toko tidak valid atau belum diset — harga gross-up memakai harga jual apa adanya.",
     "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Stok akan direservasi (bukan dijual).",
@@ -2274,14 +2349,61 @@
     "appealSetFinalPriceHint": "Pesanan ini punya pengajuan harga. Tentukan harga final untuk setiap baris yang diajukan sebelum menyetujui.",
     "appealFinalPriceInvalid": "Isi harga final yang valid (0 atau lebih) untuk setiap baris yang diajukan.",
     "errInvalidFinalPrice": "Harga final tidak valid untuk satu atau lebih baris.",
+    "delivery": {
+      "title": "Pengiriman",
+      "empty": "Belum ada pengiriman untuk pesanan ini.",
+      "create": "Buat Pengiriman",
+      "createDescription": "Isi jumlah yang dikirim untuk tiap baris. Baris yang dibiarkan 0 tidak ikut dikirim.",
+      "noOutstanding": "Tidak ada sisa yang bisa dikirim.",
+      "noStockForLine": "Stok kosong — baris ini belum bisa dikirim.",
+      "close": "Tutup Sisa",
+      "closeTitle": "Tutup Sisa Pesanan",
+      "closeDescription": "Sisa yang belum dikirim akan dibatalkan dan stok yang direservasi dilepas. Tindakan ini tidak bisa dibatalkan.",
+      "closeReason": "Alasan penutupan (wajib diisi)",
+      "closeReasonLabel": "Alasan Penutupan Sisa",
+      "closedAt": "Sisa Ditutup",
+      "docNo": "No. Kiriman",
+      "date": "Tanggal Kirim",
+      "dueDate": "Jatuh Tempo",
+      "qty": "Qty",
+      "value": "Nilai",
+      "deliveredBy": "Dikirim Oleh",
+      "outstanding": "Sisa",
+      "onHand": "Stok",
+      "deliverable": "Bisa Dikirim",
+      "shortStock": "Stok tinggal {onHand}, diminta {requested}.",
+      "note": "Catatan pengiriman (opsional)",
+      "notePlaceholder": "Contoh: dikirim sebagian, sisanya menyusul",
+      "submit": "Kirim",
+      "submitting": "Memproses…",
+      "successCreated": "Pengiriman berhasil dibuat.",
+      "successClosed": "Sisa pesanan ditutup.",
+      "status": {
+        "PENDING": "Belum Dikirim",
+        "PARTIAL": "Terkirim Sebagian",
+        "DELIVERED": "Terkirim",
+        "CLOSED": "Ditutup"
+      },
+      "err": {
+        "FORBIDDEN": "Anda tidak memiliki izin untuk mengirim pesanan ini.",
+        "NOT_FOUND": "Pesanan atau baris pesanan tidak ditemukan.",
+        "INVALID_STATE": "Pesanan ini tidak bisa dikirim pada kondisi saat ini.",
+        "INVALID_REQUEST": "Permintaan pengiriman tidak valid. Tutup dialog ini lalu buka lagi.",
+        "NO_LINES": "Tidak ada baris yang dipilih untuk dikirim.",
+        "OVER_DELIVER": "Jumlah kirim melebihi sisa pesanan.",
+        "INSUFFICIENT_STOCK": "Stok tidak cukup untuk pengiriman ini."
+      }
+    },
     "print": {
       "notaGudang": "Cetak Nota Gudang",
       "notaTagihan": "Cetak Nota Tagihan",
       "suratKeluar": "Cetak Surat Keluar Barang",
       "docLabel": "No. Dokumen",
+      "orderRefLabel": "Ref. Pesanan",
       "storeLabel": "Toko",
       "salesmanLabel": "Sales",
       "dateLabel": "Tanggal",
+      "dueDateLabel": "Jatuh Tempo",
       "statusLabel": "Status",
       "colNo": "No",
       "colProduct": "Produk",
@@ -2302,7 +2424,6 @@
       "handedBy": "Diserahkan",
       "issuedBy": "Diterbitkan oleh",
       "tagihanDialogTitle": "Cetak Nota Tagihan",
-      "tagihanDialogDate": "Tanggal Nota",
       "tagihanDialogFootnote": "Catatan Kaki (opsional)",
       "tagihanDialogFootnotePlaceholder": "Contoh: Barang yang sudah dibeli tidak dapat ditukar/dikembalikan",
       "tagihanDialogCancel": "Batal",
@@ -2380,6 +2501,7 @@
     "colDocNo": "No. Dokumen",
     "colLoadedBy": "Dimuat Oleh",
     "colDate": "Tanggal",
+    "colJournal": "Jurnal",
     "emptyLoads": "Belum ada muatan.",
     "loadFormTitle": "Muat Mobil",
     "item": "Item",
@@ -2446,7 +2568,23 @@
     "reconcileSuccess": "Rekonsiliasi berhasil ({docNo}), total selisih {variance}",
     "reconcileErrEmptyVan": "Mobil kosong, tidak ada yang bisa direkonsiliasi.",
     "reconcileErrVarianceNeedsReason": "Isi alasan karena ada selisih pada satu atau lebih item.",
-    "reconcileErrCountMismatch": "Isi mobil telah berubah. Muat ulang halaman dan coba lagi."
+    "reconcileErrCountMismatch": "Isi mobil telah berubah. Muat ulang halaman dan coba lagi.",
+    "journal": {
+      "posted": "Jurnal terposting",
+      "viewJournal": "Lihat jurnal",
+      "postJournal": "Posting jurnal",
+      "postedToast": "Jurnal berhasil diposting",
+      "alreadyPostedToast": "Jurnal sudah pernah diposting",
+      "err": {
+        "UNMAPPED_ROLE": "Role posting \"{role}\" belum dipetakan — petakan di Pemetaan Akun lalu coba lagi.",
+        "UNBALANCED": "Jurnal tidak balance (debit ≠ kredit).",
+        "NOTHING_TO_POST": "Tidak ada nilai untuk dijurnal.",
+        "BAD_STATE": "Dokumen tidak ditemukan.",
+        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
+        "NOT_RETRYABLE": "Dokumen ini belum pernah gagal diposting otomatis, jadi tidak bisa diposting ulang di sini — memposting sekarang akan menghasilkan jurnal timpang sebelah. Jika dokumen ini benar-benar perlu dijurnal, gunakan entri jurnal manual.",
+        "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
+      }
+    }
   },
   "vanSale": {
     "homeCta": "Jual dari Van",
@@ -2499,6 +2637,22 @@
     "shareText": "Nota {docNo} · Total {total}",
     "shareError": "Gagal membagikan nota.",
     "sellAgain": "Jual Lagi",
+    "journal": {
+      "posted": "Jurnal terposting",
+      "viewJournal": "Lihat jurnal",
+      "postJournal": "Posting jurnal",
+      "postedToast": "Jurnal berhasil diposting",
+      "alreadyPostedToast": "Jurnal sudah pernah diposting",
+      "err": {
+        "UNMAPPED_ROLE": "Role posting \"{role}\" belum dipetakan — petakan di Pemetaan Akun lalu coba lagi.",
+        "UNBALANCED": "Jurnal tidak balance (debit ≠ kredit).",
+        "NOTHING_TO_POST": "Tidak ada nilai untuk dijurnal.",
+        "BAD_STATE": "Dokumen tidak ditemukan.",
+        "FORBIDDEN": "Anda tidak punya izin untuk posting jurnal.",
+        "NOT_RETRYABLE": "Dokumen ini belum pernah gagal diposting otomatis, jadi tidak bisa diposting ulang di sini — memposting sekarang akan menghasilkan jurnal timpang sebelah. Jika dokumen ini benar-benar perlu dijurnal, gunakan entri jurnal manual.",
+        "UNEXPECTED": "Terjadi kesalahan tak terduga saat memposting jurnal."
+      }
+    },
     "backoffice": {
       "list": {
         "pageTitle": "Penjualan Van",
@@ -2612,6 +2766,8 @@
     "selectedFile": "Terpilih: {name}",
     "uploadSuccess": "Settlement berhasil diunggah — {lineCount} baris diproses",
     "uploadErrorsTitle": "File tidak dapat diproses",
+    "uploadErrorAtRow": "Sheet {sheet}, baris {row}",
+    "uploadErrorAtSheet": "Sheet {sheet}",
     "uploadGenericError": "Unggah gagal. Silakan coba lagi.",
     "uploadFailed": "Unggah gagal. Silakan coba lagi atau hubungi dukungan jika masalah berlanjut.",
     "colPeriod": "Periode",
@@ -2663,10 +2819,11 @@
     "journalErr": {
       "CHECKSUM_BLOCKED": "Checksum harus sesuai sebelum jurnal dapat diposting.",
       "UNMAPPED_ROLE": "Bagan akun belum dipetakan untuk peran \"{role}\". Petakan dulu di pengaturan Finance.",
-      "UNBALANCED": "Total settlement tidak balance — periksa Ringkasan atau tambahkan akun \"lainnya\".",
+      "UNBALANCED": "Total settlement tidak balance. Sisa biaya sudah otomatis masuk ke akun \"Biaya Marketplace — Lainnya\", jadi pesan ini berarti ringkasan excel-nya sendiri tidak memenuhi Dilepas + Pengeluaran = Pendapatan. Periksa tab Ringkasan pada file settlement.",
       "NOT_FOUND": "Settlement tidak ditemukan.",
       "FORBIDDEN": "Anda tidak memiliki izin untuk memposting jurnal ini.",
-      "ALREADY_RECONCILED_DIFF": "Settlement ini sudah terekonsiliasi dengan jurnal yang berbeda."
+      "ALREADY_RECONCILED_DIFF": "Settlement ini sudah terekonsiliasi dengan jurnal yang berbeda.",
+      "NON_POSTABLE_ACCOUNT": "Salah satu akun yang dipetakan tidak dapat diposting — akunnya tidak aktif atau sudah punya akun turunan. Petakan peran tersebut ke akun aktif tanpa turunan di Finance → Pemetaan Akun."
     },
     "resyncButton": "Resync {count} Pesanan Belum Cocok",
     "resyncButtonPending": "Memulai Resync…",
@@ -2808,6 +2965,70 @@
     },
     "errGeneric": "Terjadi kesalahan. Silakan coba lagi."
   },
+  "financeReports": {
+    "trialBalance": {
+      "pageTitle": "Neraca Saldo",
+      "subtitle": "Total debit dan kredit setiap akun untuk periode terpilih.",
+      "listTitle": "Neraca Saldo",
+      "empty": "Belum ada jurnal pada periode ini.",
+      "emptyFiltered": "Tidak ada akun yang cocok dengan filter.",
+      "colCode": "Kode",
+      "colName": "Nama Akun",
+      "colDebit": "Debit",
+      "colCredit": "Kredit",
+      "colBalance": "Saldo",
+      "totalRow": "Total",
+      "balancedNote": "Debit dan kredit seimbang. Setiap jurnal sudah divalidasi seimbang saat diposting, jadi kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.",
+      "unbalancedNote": "Debit dan kredit TIDAK seimbang. Ini menandakan data jurnal rusak — periksa buku besar."
+    },
+    "incomeStatement": {
+      "pageTitle": "Laporan Laba Rugi",
+      "subtitle": "Pendapatan, harga pokok, dan beban untuk periode terpilih.",
+      "cardTitle": "Laba Rugi",
+      "sectionPendapatan": "Pendapatan",
+      "sectionHpp": "Harga Pokok Penjualan",
+      "sectionBeban": "Beban Operasional",
+      "totalPendapatan": "Total Pendapatan",
+      "totalHpp": "Total Harga Pokok Penjualan",
+      "totalBeban": "Total Beban Operasional",
+      "labaKotor": "Laba Kotor",
+      "labaBersih": "Laba Bersih",
+      "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
+      "coverageTitle": "Cakupan data",
+      "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, dan jurnal manual. BELUM termasuk: penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok."
+    },
+    "balanceSheet": {
+      "pageTitle": "Neraca",
+      "subtitle": "Posisi aset, liabilitas, dan ekuitas per tanggal terpilih.",
+      "cardTitle": "Neraca",
+      "sectionAset": "Aset",
+      "sectionLiabilitas": "Liabilitas",
+      "sectionEkuitas": "Ekuitas",
+      "totalAset": "Total Aset",
+      "totalLiabilitas": "Total Liabilitas",
+      "totalEkuitas": "Total Ekuitas",
+      "unclosedEarnings": "Laba (Rugi) Belum Ditutup",
+      "totalLiabilitasEkuitas": "Total Liabilitas dan Ekuitas",
+      "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
+      "balancedNote": "Aset seimbang dengan Liabilitas + Ekuitas. Baris \"Laba (Rugi) Belum Ditutup\" menggantikan jurnal penutup yang belum ada; karena setiap jurnal sudah seimbang saat diposting, kesamaan ini memang diharapkan.",
+      "unbalancedNote": "Aset TIDAK seimbang dengan Liabilitas + Ekuitas. Ini menandakan data jurnal rusak — periksa buku besar.",
+      "openingTitle": "Saldo awal belum dicatat",
+      "openingBody": "Jurnal paling awal bertanggal {date}. Posisi ini hanya mencakup jurnal sejak tanggal tersebut. Catat jurnal manual saldo awal (kas, piutang, persediaan, utang, ekuitas) bertanggal sebelum itu agar neraca mencerminkan posisi sebenarnya."
+    },
+    "filter": {
+      "dateFrom": "Dari tanggal",
+      "dateTo": "Sampai tanggal",
+      "asOf": "Per tanggal",
+      "reset": "Reset",
+      "showZero": "Tampilkan akun bersaldo nol"
+    },
+    "export": {
+      "excel": "Unduh Excel",
+      "print": "Cetak / PDF",
+      "started": "Unduhan dimulai",
+      "failed": "Ekspor gagal"
+    }
+  },
 
   "financeAccountMapping": {
     "title": "Pemetaan Akun",
@@ -2819,6 +3040,8 @@
     "selectAccount": "Pilih akun…",
     "searchAccount": "Cari kode atau nama akun…",
     "noAccounts": "Akun tidak ditemukan.",
+    "typeMismatchBadge": "Tipe akun salah",
+    "typeMismatchHint": "Akun {code} bertipe {type}, padahal peran ini harus dipetakan ke {expected}. Laporan keuangan akan salah sampai ini diperbaiki.",
     "col": {
       "role": "Peran",
       "description": "Deskripsi",
@@ -2827,31 +3050,46 @@
     "role": {
       "INVENTORY": "Persediaan",
       "INVENTORY_FG": "Persediaan Barang Jadi",
+      "INVENTORY_VAN": "Persediaan Van",
       "AP": "Utang Usaha",
       "AR": "Piutang Usaha",
       "SALES_REVENUE": "Pendapatan Penjualan",
       "COGS": "Harga Pokok Penjualan",
-      "BANK": "Bank/Kas",
+      "BANK": "Bank",
+      "CASH": "Kas",
       "MARKETPLACE_FEE": "Biaya Marketplace",
+      "MARKETPLACE_FEE_ADMIN": "Biaya Administrasi Marketplace",
+      "MARKETPLACE_FEE_SERVICE": "Biaya Layanan Marketplace",
+      "MARKETPLACE_FEE_COMMISSION": "Biaya Komisi Marketplace",
+      "MARKETPLACE_FEE_PROCESSING": "Biaya Proses Pesanan Marketplace",
+      "MARKETPLACE_FEE_OTHER": "Biaya Marketplace Lainnya",
       "INVENTORY_VARIANCE": "Selisih Persediaan",
       "TAX": "Pajak"
     },
     "desc": {
       "INVENTORY": "Akun aset yang didebit saat stok masuk dan dikredit saat stok keluar.",
       "INVENTORY_FG": "Akun persediaan barang jadi, didebit saat hasil work order diterima.",
+      "INVENTORY_VAN": "Persediaan yang sedang dibawa di van kanvasser; didebit saat van dimuat, dikredit saat terjual atau dikembalikan.",
       "AP": "Akun kewajiban untuk utang ke pemasok.",
       "AR": "Akun aset untuk piutang dari pelanggan/marketplace.",
       "SALES_REVENUE": "Akun pendapatan yang dikreditkan saat penjualan tercatat.",
       "COGS": "Akun beban untuk harga pokok barang yang terjual.",
-      "BANK": "Akun kas/bank untuk penerimaan dan pengeluaran pembayaran.",
+      "BANK": "Akun bank untuk penerimaan dan pengeluaran pembayaran via transfer/settlement. Untuk kas fisik, gunakan peran Kas.",
+      "CASH": "Akun kas fisik — didebit saat penjualan kanvas diterima tunai di lapangan.",
       "MARKETPLACE_FEE": "Akun beban untuk potongan biaya platform marketplace.",
+      "MARKETPLACE_FEE_ADMIN": "Beban biaya administrasi yang dipotong marketplace, dari kolom Biaya Administrasi.",
+      "MARKETPLACE_FEE_SERVICE": "Beban biaya layanan yang dipotong marketplace, dari kolom Biaya Layanan.",
+      "MARKETPLACE_FEE_COMMISSION": "Beban komisi yang dipotong marketplace, dari kolom Biaya Komisi AMS.",
+      "MARKETPLACE_FEE_PROCESSING": "Beban biaya proses pesanan, dari kolom Biaya Proses Pesanan.",
+      "MARKETPLACE_FEE_OTHER": "Sisa potongan marketplace yang tidak terinci — termasuk biaya iklan, subsidi pengiriman, penyesuaian, dan seluruh biaya TikTok.",
       "INVENTORY_VARIANCE": "Akun untuk mencatat selisih stock opname/rekonsiliasi.",
       "TAX": "Akun untuk kewajiban/beban pajak."
     },
     "error": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk mengubah pemetaan akun.",
       "BAD_ROLE": "Peran posting tidak dikenali.",
-      "NON_POSTABLE_ACCOUNT": "Akun yang dipilih tidak dapat diposting (bukan akun aktif tanpa turunan)."
+      "NON_POSTABLE_ACCOUNT": "Akun yang dipilih tidak dapat diposting (bukan akun aktif tanpa turunan).",
+      "WRONG_ACCOUNT_TYPE": "Akun ini bertipe salah untuk peran tersebut — mis. peran Utang Usaha harus dipetakan ke akun bertipe LIABILITAS."
     }
   },
 

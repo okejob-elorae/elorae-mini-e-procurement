@@ -11,10 +11,31 @@
   }
 }
 
+/* Financial statements are narrow (2 and 5 columns), so they get their own named
+ * page box instead of the landscape default above, which exists for the wide
+ * work-order reconciliation table. A named @page applies only to boxes that opt
+ * in via `page`, so nothing else on /print/* changes. */
+@page statement {
+  size: A4 portrait;
+  margin: 15mm 12mm 18mm;
+}
+
+.print-statement {
+  page: statement;
+}
+
 @media print {
   @page {
     size: A4 landscape;
     margin: 12mm 10mm 18mm;
+  }
+
+  /* Section header bands (PENDAPATAN / HPP / ASET / LIABILITAS / EKUITAS) lose
+   * their background otherwise — browsers strip backgrounds when printing
+   * unless a rule opts the element in. */
+  .print-statement-band {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   /* Prevent table from overflowing page */

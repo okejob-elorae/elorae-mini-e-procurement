@@ -10,7 +10,38 @@ import {
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { withSalesReturnLock, SalesReturnLockBusyError } from "@/lib/redis/lock";
-import { postSalesReturnRevenueJournal, postSalesReturnCogsJournal } from "@/lib/finance/sales/sales-return-journal";
+import {
+  postSalesReturnRevenueJournal,
+  postSalesReturnCogsJournal,
+  type SalesReturnGateCode,
+} from "@/lib/finance/sales/sales-return-journal";
+
+/**
+ * Remedy sentence carried by the `JOURNAL_PENDING` notification, per failure
+ * code. The gate codes each need their own because the default remedy cannot
+ * resolve any of them — no account mapping brings the original sale onto this
+ * ledger — and because only ONE of them is worth waiting out. Telling the other
+ * three to retry after the sweep is advice that can never come true, and nothing
+ * reads `AdminNotification` to correct it later.
+ */
+const RETURN_JOURNAL_REMEDIES: Record<SalesReturnGateCode, string> = {
+  ORIGINAL_SALE_NOT_JOURNALED_YET:
+    "The original sale is on this ledger but not journaled yet. The sales journal sweep runs every 5 minutes — post from the return after it has run.",
+  ORIGINAL_SALE_UNLINKED:
+    "This return is not linked to its sales order, so no sale journal can be found. Waiting will not help: restore the link (a Jubelio re-ingest does it once the order exists), then post from the return.",
+  ORIGINAL_SALE_OUTSIDE_LEDGER:
+    "The original sale's matching journal is not on this ledger and will not be — the sale is before the GL cutover date, or that leg of it had nothing to post. Nothing to retry; this return stays out of the ledger by design.",
+  GL_CUTOVER_NOT_CONFIGURED:
+    "No GL cutover date is configured, so the sales journal sweep is posting nothing at all. Set the cutover date in Finance settings, then post from the return.",
+};
+
+/* `in` rather than an index-and-`??`: this takes ANY failure code, and a Record
+ * lookup types as present even for the mapping codes that are not in it. */
+function returnJournalRemedy(code: string): string {
+  return code in RETURN_JOURNAL_REMEDIES
+    ? RETURN_JOURNAL_REMEDIES[code as SalesReturnGateCode]
+    : "Map the account, then post from the return.";
+}
 
 export type DecisionActionResult =
   | { ok: true }
@@ -130,13 +161,14 @@ export async function submitReturnDecisionAction(
       try {
         const jr = await post(salesReturnId, authResult.userId);
         if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
+          const role = "role" in jr ? jr.role ?? null : null;
           await prisma.adminNotification.create({
             data: {
               category: "JOURNAL_PENDING",
               severity: "WARNING",
               title: "Sales return journal not posted",
-              message: `Sales return ${kind} journal could not be posted (${jr.code}${jr.role ? `: ${jr.role}` : ""}). Map the account, then post from the return.`,
-              metadata: { salesReturnId, kind, reason: jr.code, role: jr.role ?? null },
+              message: `Sales return ${kind} journal could not be posted (${jr.code}${role ? `: ${role}` : ""}). ${returnJournalRemedy(jr.code)}`,
+              metadata: { salesReturnId, kind, reason: jr.code, role },
             },
           });
         }
@@ -165,7 +197,17 @@ export async function postSalesReturnJournalsAction(
   salesReturnId: string,
 ): Promise<
   | { ok: true; created: boolean }
-  | { ok: false; code: "UNMAPPED_ROLE" | "UNBALANCED" | "NOTHING_TO_POST" | "FORBIDDEN" | "BAD_STATE"; role?: string }
+  | {
+      ok: false;
+      code:
+        | "UNMAPPED_ROLE"
+        | "UNBALANCED"
+        | "NOTHING_TO_POST"
+        | SalesReturnGateCode
+        | "FORBIDDEN"
+        | "BAD_STATE";
+      role?: string;
+    }
 > {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {

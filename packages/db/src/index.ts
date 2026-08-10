@@ -96,6 +96,8 @@ export {
   releaseOrder,
   reserveFieldSalesOrder,
   consumeFieldSalesOrder,
+  consumeFieldSalesOrderPartial,
+  PartialConsumeError,
   releaseFieldSalesOrder,
   reserveKonsiFieldSalesOrder,
   type ReservationLine,
@@ -106,7 +108,10 @@ export {
   type ReleaseOrderResult,
   type FieldSalesReservationLine,
   type KonsiReserveResult,
+  type PartialConsumeLine,
+  type PartialConsumeShortLine,
 } from "./reservation-writer";
+export { seededId } from "./spec-teardown";
 export {
   classifyForBackfill,
   type BackfillDecision,

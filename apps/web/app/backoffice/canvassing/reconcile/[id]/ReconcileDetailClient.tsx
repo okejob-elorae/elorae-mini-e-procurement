@@ -1,11 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, Printer } from "lucide-react";
+import { toast } from "sonner";
+import { ArrowLeft, BookText, ExternalLink, Printer } from "lucide-react";
 import type { VanReconcileDetail } from "@/lib/canvassing/reconcile-queries";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -15,7 +20,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { logPrint } from "@/app/actions/audit";
+import { postVanReconcileJournalAction } from "@/app/actions/van-reconcile";
 import { buildVanReconcilePrintHtml } from "@/lib/print/van-reconcile-html";
+import { hasPermission } from "@/lib/rbac";
 
 type Props = {
   reconcile: VanReconcileDetail;
@@ -56,6 +63,48 @@ function Field({ label, value }: { label: string; value: string | null }) {
 
 export function ReconcileDetailClient({ reconcile }: Props) {
   const t = useTranslations("canvassing");
+  const router = useRouter();
+  const { data: session } = useSession();
+  const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
+  const [postingJournal, setPostingJournal] = useState(false);
+
+  const handlePostJournal = async () => {
+    setPostingJournal(true);
+    try {
+      const res = await postVanReconcileJournalAction(reconcile.id);
+      if (res.ok) {
+        toast.success(t(res.created ? "journal.postedToast" : "journal.alreadyPostedToast"));
+        router.refresh();
+        return;
+      }
+      switch (res.code) {
+        case "UNMAPPED_ROLE":
+          toast.error(t("journal.err.UNMAPPED_ROLE", { role: res.role ?? "" }));
+          break;
+        case "UNBALANCED":
+          toast.error(t("journal.err.UNBALANCED"));
+          break;
+        case "NOTHING_TO_POST":
+          toast.error(t("journal.err.NOTHING_TO_POST"));
+          break;
+        case "BAD_STATE":
+          toast.error(t("journal.err.BAD_STATE"));
+          break;
+        case "FORBIDDEN":
+          toast.error(t("journal.err.FORBIDDEN"));
+          break;
+        case "NOT_RETRYABLE":
+          toast.error(t("journal.err.NOT_RETRYABLE"));
+          break;
+        default:
+          toast.error(t("journal.err.BAD_STATE"));
+      }
+    } catch {
+      toast.error(t("journal.err.UNEXPECTED"));
+    } finally {
+      setPostingJournal(false);
+    }
+  };
 
   const handlePrint = async () => {
     await logPrint("VanReconcile", reconcile.id);
@@ -105,10 +154,31 @@ export function ReconcileDetailClient({ reconcile }: Props) {
           </Link>
         </Button>
         <h1 className="text-2xl font-semibold font-mono">{reconcile.docNo}</h1>
-        <Button variant="outline" size="sm" className="ml-auto" onClick={handlePrint}>
-          <Printer className="h-4 w-4 mr-2" />
-          {t("print.reconcileButton")}
-        </Button>
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {reconcile.journalId ? (
+            <>
+              <Badge variant="default" className="gap-1">
+                <BookText className="h-3.5 w-3.5" />
+                {t("journal.posted")}
+              </Badge>
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/backoffice/finance/journals/${reconcile.journalId}`}>
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  {t("journal.viewJournal")}
+                </Link>
+              </Button>
+            </>
+          ) : reconcile.hasPostableJournal && canPostJournal ? (
+            <Button size="sm" variant="outline" onClick={handlePostJournal} disabled={postingJournal}>
+              <BookText className={`h-4 w-4 mr-2 ${postingJournal ? "animate-pulse" : ""}`} />
+              {t("journal.postJournal")}
+            </Button>
+          ) : null}
+          <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Printer className="h-4 w-4 mr-2" />
+            {t("print.reconcileButton")}
+          </Button>
+        </div>
       </div>
 
       <Card className="p-4 space-y-2">

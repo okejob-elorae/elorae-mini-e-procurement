@@ -1,5 +1,5 @@
-import { reserveFieldSalesOrder, consumeFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
-import { effectiveMinQty, validateMinQtyLines, buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
+import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
+import { effectiveMinQty, validateMinQtyLines } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { applyItemAggregatedPromos } from "./promo-apply";
 import { fetchActivePromosForStore } from "@/lib/promos/queries";
@@ -24,6 +24,7 @@ export async function createFieldSalesOrder(input: {
   lines: CreateLine[];
   note?: string;
   idempotencyKey?: string;
+  skipMinQty?: boolean;
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[] }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
   return runSerializable(async (tx) => {
@@ -62,15 +63,17 @@ export async function createFieldSalesOrder(input: {
       const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
       const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, minOrderQty: true, sellingPrice: true } });
       for (const i of items) priceByItemId.set(i.id, i.sellingPrice === null ? null : Number(i.sellingPrice));
-      const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
-      const globalMin = globalRow ? Number(globalRow.value) : 6;
-      const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
-      // Aggregate qty per item so an item's variants collectively satisfy the min.
-      const qtyByItem = new Map<string, number>();
-      for (const l of input.lines) qtyByItem.set(l.itemId, (qtyByItem.get(l.itemId) ?? 0) + l.qty);
-      const aggLines = Array.from(qtyByItem, ([itemId, qty]) => ({ itemId, qty }));
-      const violations = validateMinQtyLines(aggLines, minByItemId);
-      if (violations.length > 0) throw new MinQtyViolationError(violations);
+      if (!input.skipMinQty) {
+        const globalRow = await tx.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
+        const globalMin = globalRow ? Number(globalRow.value) : 6;
+        const minByItemId = new Map(items.map((i) => [i.id, effectiveMinQty(i.minOrderQty, globalMin)]));
+        // Aggregate qty per item so an item's variants collectively satisfy the min.
+        const qtyByItem = new Map<string, number>();
+        for (const l of input.lines) qtyByItem.set(l.itemId, (qtyByItem.get(l.itemId) ?? 0) + l.qty);
+        const aggLines = Array.from(qtyByItem, ([itemId, qty]) => ({ itemId, qty }));
+        const violations = validateMinQtyLines(aggLines, minByItemId);
+        if (violations.length > 0) throw new MinQtyViolationError(violations);
+      }
     }
 
     const orderNo = await generateDocNumber(isKonsi ? "KONSI" : "PUTUS", tx);
@@ -213,8 +216,11 @@ export async function approveFieldSalesOrder(input: {
       return { ok: true };
     }
 
-    // PUTUS: apply owner's final appeal prices (Decision A — no promo recompute), then consume +
-    // materialize SalesHistory with NET figures. Create-time discounts are kept as-is.
+    /**
+     * PUTUS: apply owner's final appeal prices (Decision A — no promo recompute) and recompute the
+     * order total. Create-time discounts are kept as-is. Stock consumption and SalesHistory happen
+     * at delivery, not here (see delivery/writer.ts).
+     */
     const finalPriceByLineId = new Map((input.finalPrices ?? []).map((f) => [f.lineId, f.finalUnitPrice]));
     let subtotal = 0;
     const finalLines: Array<
@@ -235,26 +241,11 @@ export async function approveFieldSalesOrder(input: {
     const discountTotal = finalLines.reduce((s, l) => s + Number(l.discountAmount), 0);
     const total = subtotal - discountTotal - Number(order.orderDiscountAmount);
 
-    await consumeFieldSalesOrder(tx, { orderNo: order.orderNo, fieldSalesLineIds: order.lines.map((l) => l.id) });
-    const now = new Date();
-    const rows = buildOfflineSalesHistoryRows({
-      orderNo: order.orderNo,
-      orderTotal: total,
-      lines: finalLines.map((l) => {
-        const net = l.lineTotal - Number(l.discountAmount);
-        return {
-          itemId: l.itemId,
-          variantSku: l.variantSku,
-          parentSku: l.item.sku,
-          productName: l.productName,
-          qty: l.qty,
-          unitPrice: l.qty > 0 ? net / l.qty : 0,
-          lineTotal: net,
-          productCategory: l.item.category?.name ?? null,
-        };
-      }),
-    }).map((row) => ({ ...row, orderDate: now, completedDate: now }));
-    await tx.salesHistory.createMany({ data: rows });
+    /**
+     * Stock consumption and SalesHistory no longer happen here — a putus order ships in one or
+     * more deliveries (see delivery/writer.ts), and stock only leaves + SalesHistory is only
+     * written when a delivery is recorded.
+     */
     await tx.fieldSalesOrder.update({
       where: { id: order.id },
       data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal, total },

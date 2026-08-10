@@ -24,3 +24,20 @@ export class InsufficientStockError extends Error {
     this.name = "InsufficientStockError";
   }
 }
+
+export type DeliveryErrorCode =
+  | "NOT_FOUND"
+  | "INVALID_STATE"
+  | "NO_LINES"
+  | "OVER_DELIVER"
+  | "INSUFFICIENT_STOCK";
+
+export class DeliveryError extends Error {
+  constructor(
+    readonly code: DeliveryErrorCode,
+    readonly shortLines: Array<{ orderLineId: string; requested: number; onHand: number }> = [],
+  ) {
+    super(`Delivery rejected: ${code}`);
+    this.name = "DeliveryError";
+  }
+}

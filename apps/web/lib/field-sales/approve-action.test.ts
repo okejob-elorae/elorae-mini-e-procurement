@@ -59,7 +59,7 @@ d("field-sales order approve/reject actions (test bed only)", () => {
     await prisma.uOM.deleteMany({ where: { id: uomId } });
   });
 
-  it("approve as a permitted user consumes stock and sets APPROVED", async () => {
+  it("approve as a permitted user sets APPROVED without consuming stock (moved to delivery)", async () => {
     const result = await approveFieldSalesOrderAction(orderId);
     expect(result).toEqual({ ok: true });
 
@@ -67,8 +67,8 @@ d("field-sales order approve/reject actions (test bed only)", () => {
     expect(order!.status).toBe("APPROVED");
 
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
-    expect(Number(inv!.qtyOnHand)).toBe(94);
-    expect(Number(inv!.reservedQty)).toBe(0);
+    expect(Number(inv!.qtyOnHand)).toBe(100);
+    expect(Number(inv!.reservedQty)).toBe(6);
   });
 
   it("reject releases the reservation and sets REJECTED", async () => {

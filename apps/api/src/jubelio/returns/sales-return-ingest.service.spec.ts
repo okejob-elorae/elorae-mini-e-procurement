@@ -82,6 +82,65 @@ describe("SalesReturnIngestService", () => {
     expect(capturedSalesOrderId).toBe("so-local-1");
   });
 
+  /*
+   * The update branch matters as much as the create one: the return usually arrives
+   * before its sales order, so the create resolved nothing and stored null. Unless a
+   * later ingest re-links it, the GL will not journal that return at all — it posts a
+   * return only against the original sale's own journal.
+   */
+  it("re-links salesOrderId on update once the sales order exists", async () => {
+    let capturedUpdate: Record<string, unknown> = {};
+    (prisma.$transaction as jest.Mock).mockImplementation(async (fn) =>
+      fn({
+        salesReturn: {
+          upsert: jest.fn().mockImplementation(({ update }) => {
+            capturedUpdate = update;
+            return Promise.resolve({ id: "r1" });
+          }),
+        },
+        salesReturnItem: { upsert: jest.fn().mockResolvedValue({}) },
+        salesOrder: { findUnique: jest.fn().mockResolvedValue({ id: "so-local-1" }) },
+        item: { findFirst: jest.fn().mockResolvedValue(null) },
+        inventoryValue: { findFirst: jest.fn().mockResolvedValue(null) },
+      }),
+    );
+
+    await service.upsertFromApiDetail({
+      salesorder_id: 12345,
+      source_name: "Shop | Tokopedia",
+      items: [{ salesorder_detail_id: 1, item_code: "SKU-A", item_name: "A", qty_in_base: "1" }],
+    });
+
+    expect(capturedUpdate.salesOrderId).toBe("so-local-1");
+  });
+
+  /* Absent order must not blank a link an earlier ingest already established. */
+  it("omits salesOrderId from the update when no sales order is found", async () => {
+    let capturedUpdate: Record<string, unknown> = {};
+    (prisma.$transaction as jest.Mock).mockImplementation(async (fn) =>
+      fn({
+        salesReturn: {
+          upsert: jest.fn().mockImplementation(({ update }) => {
+            capturedUpdate = update;
+            return Promise.resolve({ id: "r1" });
+          }),
+        },
+        salesReturnItem: { upsert: jest.fn().mockResolvedValue({}) },
+        salesOrder: { findUnique: jest.fn().mockResolvedValue(null) },
+        item: { findFirst: jest.fn().mockResolvedValue(null) },
+        inventoryValue: { findFirst: jest.fn().mockResolvedValue(null) },
+      }),
+    );
+
+    await service.upsertFromApiDetail({
+      salesorder_id: 12345,
+      source_name: "Shop | Tokopedia",
+      items: [{ salesorder_detail_id: 1, item_code: "SKU-A", item_name: "A", qty_in_base: "1" }],
+    });
+
+    expect("salesOrderId" in capturedUpdate).toBe(false);
+  });
+
   it("creates fresh row each time when salesorder_detail_id missing (no stable key)", async () => {
     const itemUpsert = jest.fn();
     const itemCreate = jest.fn().mockResolvedValue({});

@@ -51,6 +51,9 @@
     "navFinanceSettlements": "Marketplace Settlements",
     "navFinanceJournals": "Journals",
     "navFinanceAccountMapping": "Account Mapping",
+    "navFinanceTrialBalance": "Trial Balance",
+    "navFinanceIncomeStatement": "Income Statement",
+    "navFinanceBalanceSheet": "Balance Sheet",
     "items": "Items",
     "navItemsAll": "All Items",
     "navItemsCategory": "Category",
@@ -1102,7 +1105,44 @@
   "supplierPayments": {
     "unpaid": "Unpaid",
     "paid": "Paid",
-    "noPOsMatchFilters": "No POs match the filters."
+    "noPOsMatchFilters": "No POs match the filters.",
+    "noop": {
+      "alreadyPaid": "This PO was already marked paid — nothing changed and no journal was posted. If the earlier mark's payment journal never posted, unmark payment and mark it paid again.",
+      "alreadyUnpaid": "This PO was already marked unpaid — nothing changed and no journal was posted. If its reversal journal never posted, this PO shows a standing-payment warning with a button that posts the reversal."
+    },
+    "standingPayment": {
+      "title": "A payment journal is standing for a PO that is not marked paid",
+      "body": "This PO's paid mark was removed, but its reversal journal failed to post, so the payment journal still stands on the ledger: payables are cleared and bank is credited for a PO that now reads unpaid. Marking it paid again does not fix that — post the reversal from here.",
+      "action": "Post reversal journal",
+      "needsPermission": "Posting this reversal needs the journals:manage permission. Ask a Finance user to do it from this PO's page.",
+      "markBlocked": "\"Mark as paid\" is disabled while this payment journal is still standing — marking it paid again only hides the warning above without fixing the ledger. Post the reversal journal from that warning first, then mark it paid.",
+      "markBlockedRegister": "\"Mark paid\" is disabled: a payment journal from an earlier mark is still standing on the ledger even though this PO reads unpaid. Open this PO's detail page, post the reversal journal from the warning there, then mark it paid again.",
+      "markRefused": "The paid mark was not saved: a payment journal from an earlier mark is still standing on the ledger even though this PO reads unpaid. Nothing was written — the payment status, the journals and this PO's history are all unchanged. Post the reversal journal from the standing-payment warning on this page first, then mark it paid again.",
+      "markRefusedRegister": "The paid mark was not saved: a payment journal from an earlier mark is still standing on the ledger even though this PO reads unpaid. Nothing was written — the payment status, the journals and this PO's history are all unchanged. Open this PO's detail page, post the reversal journal from the warning there, then mark it paid again.",
+      "posted": "Reversal journal posted. The ledger now matches this PO's unpaid status.",
+      "errForbidden": "You do not have the journals:manage permission needed to post this reversal.",
+      "errBadState": "This PO is no longer in that state — either the reversal has been posted or the PO was marked paid again. The page has been reloaded.",
+      "errFailed": "The reversal journal could not be posted ({code}). Check the account mapping and this PO's journals in Finance, then try again."
+    },
+    "journal": {
+      "err": {
+        "GRN_APPROVAL_PENDING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts is still awaiting the owner's decision. Have the owner approve or decline it first, then unmark payment and mark it paid again.",
+        "GRN_JOURNALS_INCOMPLETE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. One of this PO's receipts has no GRN journal. Post the missing GRN journal from its GRN row, then unmark payment and mark it paid again.",
+        "GRN_REVERSAL_MISSING": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. A receipt was declined by the owner and its GRN journal was never reversed. Post the reversal journal from the declined GRN's row, then unmark payment and mark it paid again.",
+        "AP_ACCOUNT_MISMATCH": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The receipts booked their payable to a different account than the AP posting role now resolves to. Check the AP account mapping in Account Mapping, then unmark payment and mark it paid again.",
+        "PAYMENT_SUPERSEDED": "The payment status was saved, but a payment journal from an earlier mark is still standing for a different amount than this PO now owes, so no new journal was posted. Payables and bank are NOT untouched here — they still hold that earlier payment, which no longer clears this PO's payable. Unmark payment, confirm in Finance that the reversal journal actually posted this time, then mark it paid again. If that reversal fails too, this PO raises a standing-payment warning with a button that posts the reversal directly.",
+        "UNMAPPED_ROLE": "The payment status was saved, but no payment journal was posted — payables and bank are both untouched. The posting role \"{role}\" is not mapped to an account. Map it in Account Mapping, then unmark payment and mark it paid again.",
+        "NOTHING_TO_POST": "The PO was marked paid, but no payable was found booked to the GL for it, so no journal was posted — payables and bank are both untouched. Confirm this PO should be marked paid at all; if a receipt is missing, receive it first, then unmark payment and mark it paid again.",
+        "UNBALANCED": {
+          "payment": "The payment status was saved, but the payment journal was unbalanced (debit ≠ credit) so it was not posted — payables and bank are both untouched. Check this PO's journals in Finance, then unmark payment and mark it paid again.",
+          "reversal": "The paid mark was removed, but its reversal journal was unbalanced (debit ≠ credit) so it was not posted. Payables and bank are NOT untouched here — the earlier payment journal is still standing, so payables are cleared and bank is credited for a PO that now reads unpaid. This PO shows a standing-payment warning; post the reversal from the button on that warning."
+        },
+        "GENERIC": {
+          "payment": "The payment status was saved, but the payment journal failed to post because of an unexpected error. Check this PO's journals and the account mapping in Finance; if the payment journal really is missing, unmark payment and mark it paid again.",
+          "reversal": "The paid mark was removed, but its reversal journal failed to post because of an unexpected error, so the earlier payment journal is most likely still standing — payables cleared and bank credited for a PO that now reads unpaid. Check this PO's journals in Finance; if the standing-payment warning is shown on this PO, post the reversal from the button on it."
+        }
+      }
+    }
   },
   "purchaseOrders": {
     "noPurchaseOrdersFound": "No purchase orders found",
@@ -1852,6 +1892,10 @@
       "alreadyPostedToast": "Journal already exists.",
       "errUNMAPPED_ROLE": "Posting role {role} is unmapped — map it in Account Mapping, then post again.",
       "errUNBALANCED": "Journal is unbalanced.",
+      "errORIGINAL_SALE_NOT_JOURNALED_YET": "The original sale is on this ledger but not journaled yet. The sales journal sweep runs every 5 minutes — try posting again after it has run.",
+      "errORIGINAL_SALE_UNLINKED": "This return is not linked to its sales order, so no sale journal can be found. Waiting will not help: the link has to be restored first (a Jubelio re-ingest does it once the order exists), then post again.",
+      "errORIGINAL_SALE_OUTSIDE_LEDGER": "The original sale's matching journal is not on this ledger and will not be — the sale is before the GL cutover date, or that leg of it had nothing to post. There is nothing to retry: this return stays out of this ledger by design.",
+      "errGL_CUTOVER_NOT_CONFIGURED": "No GL cutover date is configured, so the sales journal sweep is posting nothing at all. Set the cutover date in Finance settings, then post again.",
       "errBAD_STATE": "Return is not in a postable state.",
       "errFORBIDDEN": "You don't have journal-posting permission.",
       "errUnexpected": "Something went wrong posting the journal."
@@ -2202,6 +2246,36 @@
       "fieldContact": "Contact",
       "fieldLocation": "Location",
       "empty": "—"
+    },
+    "smartRequest": {
+      "cta": "Quick Order",
+      "back": "Back",
+      "pickTitle": "Select Categories",
+      "pickSubtitle": "Pick categories and pack counts — we'll assemble the lines automatically based on the size ratio.",
+      "categoriesEmpty": "No active product categories.",
+      "packsLabel": "Number of packs",
+      "build": "Build Order",
+      "building": "Building order…",
+      "noRatio": "Pack ratio not configured yet. Contact admin.",
+      "buildError": "Failed to build the order. Try again.",
+      "reviewTitle": "Review Order",
+      "notIncluded": "Not included ({count})",
+      "dropMissingSize": "size {detail} unavailable",
+      "dropInsufficientStock": "insufficient stock ({detail})",
+      "dropEmptyRatio": "pack ratio not configured",
+      "underfill": "Category {category}: requested {requested} packs, placed {placed}",
+      "total": "Total",
+      "send": "Send",
+      "sending": "Sending…",
+      "retry": "Start Over",
+      "remove": "Remove",
+      "emptyResult": "No matching products.",
+      "sentSuccess": "Order {orderNo} sent",
+      "errorGeneric": "Failed to send order. Try again.",
+      "errorNoActiveVisit": "Check in first to order.",
+      "errorUnauthorized": "Session expired. Log in again.",
+      "errorEmpty": "No items.",
+      "errorMinQty": "Quantity below the minimum."
     }
   },
   "fieldSalesOrders": {
@@ -2260,6 +2334,7 @@
     "storeSearchEmpty": "No stores found",
     "colType": "Type",
     "colAvailable": "Available",
+    "colOnHand": "On Hand",
     "konsiTransferNote": "Consignment transfer — not a sale; stock is reserved on approval.",
     "konsiMarginUnset": "Store margin invalid or not set — gross-up uses the raw selling price.",
     "approveConfirmKonsi": "Approve this consignment transfer? Stock will be reserved (not sold).",
@@ -2274,14 +2349,61 @@
     "appealSetFinalPriceHint": "This order has requested price appeals. Set the final price for each appealed line before approving.",
     "appealFinalPriceInvalid": "Enter a valid final price (0 or more) for every appealed line.",
     "errInvalidFinalPrice": "Invalid final price for one or more lines.",
+    "delivery": {
+      "title": "Deliveries",
+      "empty": "No deliveries recorded for this order yet.",
+      "create": "New Delivery",
+      "createDescription": "Enter the quantity shipped for each line. A line left at 0 is not shipped.",
+      "noOutstanding": "Nothing left to deliver.",
+      "noStockForLine": "Out of stock — this line cannot be shipped yet.",
+      "close": "Close Remainder",
+      "closeTitle": "Close Remaining Quantity",
+      "closeDescription": "The undelivered remainder will be cancelled and its reserved stock released. This cannot be undone.",
+      "closeReason": "Reason for closing (required)",
+      "closeReasonLabel": "Remainder close reason",
+      "closedAt": "Remainder closed",
+      "docNo": "Delivery No.",
+      "date": "Delivered",
+      "dueDate": "Due Date",
+      "qty": "Qty",
+      "value": "Value",
+      "deliveredBy": "Delivered By",
+      "outstanding": "Outstanding",
+      "onHand": "On Hand",
+      "deliverable": "Deliverable",
+      "shortStock": "Only {onHand} on hand, {requested} requested.",
+      "note": "Delivery note (optional)",
+      "notePlaceholder": "e.g. partial shipment, remainder to follow",
+      "submit": "Deliver",
+      "submitting": "Processing…",
+      "successCreated": "Delivery recorded.",
+      "successClosed": "Remaining quantity closed.",
+      "status": {
+        "PENDING": "Not Delivered",
+        "PARTIAL": "Partially Delivered",
+        "DELIVERED": "Delivered",
+        "CLOSED": "Closed"
+      },
+      "err": {
+        "FORBIDDEN": "You don't have permission to deliver this order.",
+        "NOT_FOUND": "Order or order line not found.",
+        "INVALID_STATE": "This order cannot be delivered in its current state.",
+        "INVALID_REQUEST": "That delivery request was not valid. Close this dialog and open it again.",
+        "NO_LINES": "No lines selected for delivery.",
+        "OVER_DELIVER": "Delivered quantity exceeds the outstanding quantity.",
+        "INSUFFICIENT_STOCK": "Not enough stock for this delivery."
+      }
+    },
     "print": {
       "notaGudang": "Print Warehouse Note",
       "notaTagihan": "Print Invoice",
       "suratKeluar": "Print Goods Issue Note",
       "docLabel": "Doc No.",
+      "orderRefLabel": "Ref. Order",
       "storeLabel": "Store",
       "salesmanLabel": "Salesperson",
       "dateLabel": "Date",
+      "dueDateLabel": "Due Date",
       "statusLabel": "Status",
       "colNo": "No",
       "colProduct": "Product",
@@ -2302,7 +2424,6 @@
       "handedBy": "Handed over by",
       "issuedBy": "Issued by",
       "tagihanDialogTitle": "Print Invoice",
-      "tagihanDialogDate": "Invoice Date",
       "tagihanDialogFootnote": "Footnote (optional)",
       "tagihanDialogFootnotePlaceholder": "e.g. Purchased items cannot be exchanged/returned",
       "tagihanDialogCancel": "Cancel",
@@ -2380,6 +2501,7 @@
     "colDocNo": "Doc No.",
     "colLoadedBy": "Loaded By",
     "colDate": "Date",
+    "colJournal": "Journal",
     "emptyLoads": "No loads yet.",
     "loadFormTitle": "Load Van",
     "item": "Item",
@@ -2446,7 +2568,23 @@
     "reconcileSuccess": "Reconciled ({docNo}), total variance {variance}",
     "reconcileErrEmptyVan": "The van is empty — nothing to reconcile.",
     "reconcileErrVarianceNeedsReason": "Enter a reason — there is a variance on one or more items.",
-    "reconcileErrCountMismatch": "Van contents changed. Reload the page and try again."
+    "reconcileErrCountMismatch": "Van contents changed. Reload the page and try again.",
+    "journal": {
+      "posted": "Journal posted",
+      "viewJournal": "View journal",
+      "postJournal": "Post journal",
+      "postedToast": "Journal posted successfully",
+      "alreadyPostedToast": "Journal was already posted",
+      "err": {
+        "UNMAPPED_ROLE": "Posting role \"{role}\" is unmapped — map it in Account Mapping, then try again.",
+        "UNBALANCED": "Journal is not balanced (debit ≠ credit).",
+        "NOTHING_TO_POST": "No value to journal.",
+        "BAD_STATE": "Document not found.",
+        "FORBIDDEN": "You don't have permission to post journals.",
+        "NOT_RETRYABLE": "This document never had a failed automatic posting attempt, so it can't be retried here — posting it now would create a one-sided journal entry. If it genuinely needs a journal, use a manual journal entry instead.",
+        "UNEXPECTED": "Something unexpected went wrong posting the journal."
+      }
+    }
   },
   "vanSale": {
     "homeCta": "Sell from Van",
@@ -2499,6 +2637,22 @@
     "shareText": "Receipt {docNo} · Total {total}",
     "shareError": "Failed to share the receipt.",
     "sellAgain": "Sell Again",
+    "journal": {
+      "posted": "Journal posted",
+      "viewJournal": "View journal",
+      "postJournal": "Post journal",
+      "postedToast": "Journal posted successfully",
+      "alreadyPostedToast": "Journal was already posted",
+      "err": {
+        "UNMAPPED_ROLE": "Posting role \"{role}\" is unmapped — map it in Account Mapping, then try again.",
+        "UNBALANCED": "Journal is not balanced (debit ≠ credit).",
+        "NOTHING_TO_POST": "No value to journal.",
+        "BAD_STATE": "Document not found.",
+        "FORBIDDEN": "You don't have permission to post journals.",
+        "NOT_RETRYABLE": "This document never had a failed automatic posting attempt, so it can't be retried here — posting it now would create a one-sided journal entry. If it genuinely needs a journal, use a manual journal entry instead.",
+        "UNEXPECTED": "Something unexpected went wrong posting the journal."
+      }
+    },
     "backoffice": {
       "list": {
         "pageTitle": "Van Sales",
@@ -2612,6 +2766,8 @@
     "selectedFile": "Selected: {name}",
     "uploadSuccess": "Settlement uploaded — {lineCount} lines parsed",
     "uploadErrorsTitle": "File could not be processed",
+    "uploadErrorAtRow": "Sheet {sheet}, row {row}",
+    "uploadErrorAtSheet": "Sheet {sheet}",
     "uploadGenericError": "Upload failed. Please try again.",
     "uploadFailed": "Upload failed. Please try again or contact support if the problem persists.",
     "colPeriod": "Period",
@@ -2663,10 +2819,11 @@
     "journalErr": {
       "CHECKSUM_BLOCKED": "Checksum must pass before the journal can be posted.",
       "UNMAPPED_ROLE": "Chart of accounts not mapped for role \"{role}\". Map it under Finance settings first.",
-      "UNBALANCED": "Settlement totals don't balance — check the Summary or add an \"other\" account.",
+      "UNBALANCED": "Settlement totals don't balance. The leftover fee already goes to the \"Marketplace Fee — Other\" account automatically, so this means the excel summary itself does not satisfy Released + Expenses = Income. Check the Summary sheet of the settlement file.",
       "NOT_FOUND": "Settlement not found.",
       "FORBIDDEN": "You don't have permission to post this journal.",
-      "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal."
+      "ALREADY_RECONCILED_DIFF": "This settlement is already reconciled with a different journal.",
+      "NON_POSTABLE_ACCOUNT": "One of the mapped accounts cannot be posted to — it is inactive or has child accounts. Map that role to an active account with no children under Finance → Account Mapping."
     },
     "resyncButton": "Resync {count} Unmatched Order(s)",
     "resyncButtonPending": "Starting Resync…",
@@ -2808,6 +2965,70 @@
     },
     "errGeneric": "Something went wrong. Please try again."
   },
+  "financeReports": {
+    "trialBalance": {
+      "pageTitle": "Trial Balance",
+      "subtitle": "Total debit and credit per account for the selected period.",
+      "listTitle": "Trial Balance",
+      "empty": "No journals in this period yet.",
+      "emptyFiltered": "No accounts match the filter.",
+      "colCode": "Code",
+      "colName": "Account",
+      "colDebit": "Debit",
+      "colCredit": "Credit",
+      "colBalance": "Balance",
+      "totalRow": "Total",
+      "balancedNote": "Debit and credit are equal. Every journal is validated as balanced when posted, so this equality is expected — the check only detects corrupted data.",
+      "unbalancedNote": "Debit and credit are NOT equal. This indicates corrupted journal data — inspect the ledger."
+    },
+    "incomeStatement": {
+      "pageTitle": "Income Statement",
+      "subtitle": "Revenue, cost of goods sold, and expenses for the selected period.",
+      "cardTitle": "Income Statement",
+      "sectionPendapatan": "Revenue",
+      "sectionHpp": "Cost of Goods Sold",
+      "sectionBeban": "Operating Expenses",
+      "totalPendapatan": "Total Revenue",
+      "totalHpp": "Total Cost of Goods Sold",
+      "totalBeban": "Total Operating Expenses",
+      "labaKotor": "Gross Profit",
+      "labaBersih": "Net Profit",
+      "sectionEmpty": "No accounts with a balance in this section yet.",
+      "coverageTitle": "Data coverage",
+      "coverageBody": "This report covers only transactions that produce journals: marketplace sales, returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, and manual journals. NOT yet included: field sales (putus), van sales, SPG sales, and supplier payments."
+    },
+    "balanceSheet": {
+      "pageTitle": "Balance Sheet",
+      "subtitle": "Assets, liabilities, and equity as of the selected date.",
+      "cardTitle": "Balance Sheet",
+      "sectionAset": "Assets",
+      "sectionLiabilitas": "Liabilities",
+      "sectionEkuitas": "Equity",
+      "totalAset": "Total Assets",
+      "totalLiabilitas": "Total Liabilities",
+      "totalEkuitas": "Total Equity",
+      "unclosedEarnings": "Unclosed Profit (Loss)",
+      "totalLiabilitasEkuitas": "Total Liabilities and Equity",
+      "sectionEmpty": "No accounts with a balance in this section yet.",
+      "balancedNote": "Assets equal Liabilities + Equity. The \"Unclosed Profit (Loss)\" line stands in for the closing entry that does not exist yet; since every journal is balanced when posted, this equality is expected.",
+      "unbalancedNote": "Assets do NOT equal Liabilities + Equity. This indicates corrupted journal data — inspect the ledger.",
+      "openingTitle": "Opening balances not recorded",
+      "openingBody": "The earliest journal is dated {date}. This position covers only journals from that date onward. Record a manual opening-balance journal (cash, receivables, inventory, payables, equity) dated before it so the balance sheet reflects the real position."
+    },
+    "filter": {
+      "dateFrom": "From date",
+      "dateTo": "To date",
+      "asOf": "As of",
+      "reset": "Reset",
+      "showZero": "Show zero-balance accounts"
+    },
+    "export": {
+      "excel": "Download Excel",
+      "print": "Print / PDF",
+      "started": "Download started",
+      "failed": "Export failed"
+    }
+  },
 
   "financeAccountMapping": {
     "title": "Account Mapping",
@@ -2819,6 +3040,8 @@
     "selectAccount": "Select account…",
     "searchAccount": "Search by code or name…",
     "noAccounts": "No accounts found.",
+    "typeMismatchBadge": "Wrong account type",
+    "typeMismatchHint": "Account {code} is {type}, but this role must map to {expected}. Financial reports will be wrong until this is corrected.",
     "col": {
       "role": "Role",
       "description": "Description",
@@ -2827,31 +3050,46 @@
     "role": {
       "INVENTORY": "Inventory",
       "INVENTORY_FG": "Finished Goods Inventory",
+      "INVENTORY_VAN": "Van Inventory",
       "AP": "Accounts Payable",
       "AR": "Accounts Receivable",
       "SALES_REVENUE": "Sales Revenue",
       "COGS": "Cost of Goods Sold",
-      "BANK": "Bank/Cash",
+      "BANK": "Bank",
+      "CASH": "Cash",
       "MARKETPLACE_FEE": "Marketplace Fee",
+      "MARKETPLACE_FEE_ADMIN": "Marketplace Admin Fee",
+      "MARKETPLACE_FEE_SERVICE": "Marketplace Service Fee",
+      "MARKETPLACE_FEE_COMMISSION": "Marketplace Commission Fee",
+      "MARKETPLACE_FEE_PROCESSING": "Marketplace Order Processing Fee",
+      "MARKETPLACE_FEE_OTHER": "Other Marketplace Fees",
       "INVENTORY_VARIANCE": "Inventory Variance",
       "TAX": "Tax"
     },
     "desc": {
       "INVENTORY": "Asset account debited on stock-in and credited on stock-out.",
       "INVENTORY_FG": "Finished-goods inventory account, debited when a work order's output is received.",
+      "INVENTORY_VAN": "Stock currently loaded on a canvasser's van; debited when the van is loaded, credited when sold or returned.",
       "AP": "Liability account for amounts owed to suppliers.",
       "AR": "Asset account for amounts owed by customers/marketplaces.",
       "SALES_REVENUE": "Revenue account credited when a sale is recorded.",
       "COGS": "Expense account for the cost of goods sold.",
-      "BANK": "Cash/bank account for payment receipts and disbursements.",
+      "BANK": "Bank account for payment receipts and disbursements via transfer/settlement. For physical cash, use the Cash role instead.",
+      "CASH": "Physical cash account — debited when a canvassing sale is paid in cash in the field.",
       "MARKETPLACE_FEE": "Expense account for marketplace platform fee deductions.",
+      "MARKETPLACE_FEE_ADMIN": "Expense for the admin fee deducted by the marketplace, from the Biaya Administrasi column.",
+      "MARKETPLACE_FEE_SERVICE": "Expense for the service fee deducted by the marketplace, from the Biaya Layanan column.",
+      "MARKETPLACE_FEE_COMMISSION": "Expense for the commission deducted by the marketplace, from the Biaya Komisi AMS column.",
+      "MARKETPLACE_FEE_PROCESSING": "Expense for the order processing fee, from the Biaya Proses Pesanan column.",
+      "MARKETPLACE_FEE_OTHER": "Unitemized remainder of marketplace deductions — including ad fees, shipping subsidies, adjustments, and every TikTok fee.",
       "INVENTORY_VARIANCE": "Account for recording stock opname/reconciliation variances.",
       "TAX": "Account for tax liabilities/expenses."
     },
     "error": {
       "FORBIDDEN": "You do not have permission to change account mappings.",
       "BAD_ROLE": "Unrecognized posting role.",
-      "NON_POSTABLE_ACCOUNT": "The selected account cannot be posted to (not an active leaf account)."
+      "NON_POSTABLE_ACCOUNT": "The selected account cannot be posted to (not an active leaf account).",
+      "WRONG_ACCOUNT_TYPE": "That account has the wrong type for this role — e.g. the Accounts Payable role must map to a LIABILITAS account."
     }
   },
 

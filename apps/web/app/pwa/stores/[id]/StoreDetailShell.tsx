@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import {
   ArrowLeft,
-  ChevronRight,
   Clock,
   ExternalLink,
   MapPin,
   Phone,
   ShoppingBag,
+  Sparkles,
   User as UserIcon,
 } from "lucide-react";
 import { CheckInButton } from "./CheckInButton";
@@ -103,6 +103,7 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
   const tBadge = useTranslations("stores.badge");
   const tList = useTranslations("pwa.stores");
   const tFso = useTranslations("fieldSalesOrders");
+  const tSmartRequest = useTranslations("pwa.smartRequest");
 
   const activeAtThisStore = active && active.storeId === store.id;
   const activeAtOtherStore = active && active.storeId !== store.id;
@@ -163,13 +164,22 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
         </Button>
       )}
 
-      <Button asChild variant="outline" className="w-full">
-        <Link href={`/pwa/stores/${store.id}/catalog`}>
-          <ShoppingBag className="h-4 w-4" />
-          Katalog Produk
-          <ChevronRight className="ml-auto h-3 w-3" />
-        </Link>
-      </Button>
+      <div className="flex gap-2">
+        <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
+          <Link href={`/pwa/stores/${store.id}/catalog`}>
+            <ShoppingBag className="h-4 w-4" />
+            <span className="truncate">Katalog Produk</span>
+          </Link>
+        </Button>
+        {store.termsType === "PUTUS" && (
+          <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
+            <Link href={`/pwa/stores/${store.id}/smart-request`}>
+              <Sparkles className="h-4 w-4" />
+              <span className="truncate">{tSmartRequest("cta")}</span>
+            </Link>
+          </Button>
+        )}
+      </div>
 
       {activeAtThisStore ? (
         <>
