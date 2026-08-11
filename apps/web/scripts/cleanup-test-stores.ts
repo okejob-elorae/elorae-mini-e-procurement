@@ -29,7 +29,13 @@ function assertApplyAllowed(url: string): void {
   }
 }
 
-function invKey(itemId: string, _variantSku?: string | null): string {
+/**
+ * Consume adjustments are grouped per item, never per variant: StockAdjustment
+ * carries no variantSku column, so the item id is the only key both sides of
+ * the match share. Reservations that differ only by variant therefore land in
+ * one bucket and are told apart by qtyChange further down.
+ */
+function invKey(itemId: string): string {
   return itemId;
 }
 
@@ -225,7 +231,7 @@ async function main() {
         const consumed = reservations.filter((x) => x.state === "CONSUMED");
         const adjByKey = new Map<string, typeof consumeAdjs>();
         for (const a of consumeAdjs) {
-          const k = invKey(a.itemId, a.variantSku);
+          const k = invKey(a.itemId);
           const list = adjByKey.get(k) ?? [];
           list.push(a);
           adjByKey.set(k, list);
@@ -242,7 +248,7 @@ async function main() {
           });
 
           // Delete matching FIELD_SALES_CONSUME row first (use its avgCost for totalValue restore)
-          const k = invKey(r.itemId, vs);
+          const k = invKey(r.itemId);
           const candidates = adjByKey.get(k) ?? [];
           const match =
             candidates.find((a) => Math.abs(Number(a.qtyChange)) === qty) ?? candidates[0];
