@@ -4,9 +4,10 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { MoreHorizontal, Printer, Receipt, Truck } from "lucide-react";
+import { MoreHorizontal, Pencil, Printer, Receipt, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,13 +44,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatDateTime, formatIDR } from "@/lib/sales-orders/format";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 import type {
   FieldSalesDeliveryStatus,
   FieldSalesDeliverySummary,
   FieldSalesOrderStatus,
   FieldSalesOrderType,
 } from "@/lib/field-sales/queries";
-import { closeRemainderAction } from "@/app/actions/field-sales-deliveries";
+import { closeRemainderAction, updateDeliveryDatesAction } from "@/app/actions/field-sales-deliveries";
 import { logPrint } from "@/app/actions/audit";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
@@ -150,6 +152,11 @@ export function DeliveriesCard({
   const [tagihanDialogOpen, setTagihanDialogOpen] = useState(false);
   const [tagihanTargetId, setTagihanTargetId] = useState<string | null>(null);
   const [tagihanFootnote, setTagihanFootnote] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTargetId, setEditTargetId] = useState<string | null>(null);
+  const [editInvoiceDate, setEditInvoiceDate] = useState("");
+  const [editDueDate, setEditDueDate] = useState("");
+  const [editReason, setEditReason] = useState("");
 
   /* Konsi transfers never deliver in this slice, and a not-yet-approved order has nothing to show. */
   if (orderType === "KONSI") return null;
@@ -276,6 +283,38 @@ export function DeliveriesCard({
     });
   }
 
+  function openEditDialog(delivery: FieldSalesDeliverySummary): void {
+    setEditTargetId(delivery.id);
+    setEditInvoiceDate(formatDateOnlyJakarta(delivery.invoiceDate));
+    setEditDueDate(formatDateOnlyJakarta(delivery.dueDate));
+    setEditReason("");
+    setEditOpen(true);
+  }
+
+  function callUpdateDates(): void {
+    const reason = editReason.trim();
+    if (!editTargetId || !reason) return;
+    startTransition(async () => {
+      try {
+        const result = await updateDeliveryDatesAction({
+          deliveryId: editTargetId,
+          invoiceDate: editInvoiceDate,
+          dueDate: editDueDate,
+          reason,
+        });
+        if (result.ok) {
+          toast.success(t("delivery.successDatesUpdated"));
+          setEditOpen(false);
+          router.refresh();
+          return;
+        }
+        toast.error(t(deliveryErrorKey(result.reason)));
+      } catch {
+        toast.error(t("errGeneric"));
+      }
+    });
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -361,6 +400,12 @@ export function DeliveriesCard({
                           <Receipt className="mr-2 h-4 w-4" />
                           {t("print.notaTagihan")}
                         </DropdownMenuItem>
+                        {canDeliver && (
+                          <DropdownMenuItem onClick={() => openEditDialog(delivery)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            {t("delivery.editDates")}
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -443,6 +488,70 @@ export function DeliveriesCard({
             <Button onClick={handleConfirmPrintTagihan}>
               <Printer className="h-4 w-4 mr-2" />
               {t("print.tagihanDialogPrint")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("delivery.editDatesTitle")}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{t("delivery.editDatesDescription")}</p>
+          <div className="grid grid-cols-1 gap-3 py-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="edit-invoice-date" className="text-xs text-muted-foreground">
+                {t("delivery.invoiceDate")}
+              </Label>
+              <Input
+                id="edit-invoice-date"
+                type="date"
+                className="h-10"
+                value={editInvoiceDate}
+                disabled={isPending}
+                onChange={(e) => setEditInvoiceDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="edit-due-date" className="text-xs text-muted-foreground">
+                {t("delivery.dueDate")}
+              </Label>
+              <Input
+                id="edit-due-date"
+                type="date"
+                className="h-10"
+                value={editDueDate}
+                min={editInvoiceDate || undefined}
+                disabled={isPending}
+                onChange={(e) => setEditDueDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="edit-dates-reason" className="text-xs text-muted-foreground">
+              {t("delivery.editReason")}
+            </Label>
+            <Textarea
+              id="edit-dates-reason"
+              value={editReason}
+              onChange={(e) => setEditReason(e.target.value)}
+              disabled={isPending}
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" className="h-10" disabled={isPending}>
+                {tCommon("cancel")}
+              </Button>
+            </DialogClose>
+            <Button
+              className="h-10"
+              disabled={isPending || !editReason.trim() || editInvoiceDate === "" || editDueDate === ""}
+              onClick={callUpdateDates}
+            >
+              {isPending ? t("delivery.submitting") : tCommon("save")}
             </Button>
           </DialogFooter>
         </DialogContent>
