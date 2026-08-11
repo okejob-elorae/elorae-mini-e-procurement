@@ -35,3 +35,19 @@ export function formatOpeningDate(iso: string): string {
     year: "numeric",
   }).format(new Date(iso));
 }
+
+export const CASH_FLOW_COVERAGE_TITLE = "Cakupan data";
+
+export const CASH_FLOW_COVERAGE_BODY =
+  "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok.";
+
+export const CASH_FLOW_RECONCILED_NOTE =
+  "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.";
+
+export const CASH_FLOW_UNRECONCILED_NOTE =
+  "Perubahan kas hasil perhitungan TIDAK sama dengan pergerakan saldo kas sebenarnya. Ini menandakan data jurnal rusak — periksa buku besar.";
+
+export const CASH_FLOW_UNCLASSIFIED_TITLE = "Ada akun yang belum diklasifikasi";
+
+export const CASH_FLOW_UNCLASSIFIED_BODY =
+  "Sebagian akun belum ditetapkan masuk aktivitas operasional, investasi, atau pendanaan, sehingga ditampilkan terpisah. Total tetap benar. Tetapkan lewat Keuangan → Klasifikasi Arus Kas.";

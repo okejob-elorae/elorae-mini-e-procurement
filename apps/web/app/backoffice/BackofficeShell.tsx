@@ -203,6 +203,16 @@ const navItems: NavItem[] = [
         href: '/backoffice/finance/reports/balance-sheet',
         permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
       },
+      {
+        labelKey: 'navFinanceCashFlow',
+        href: '/backoffice/finance/reports/cash-flow',
+        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
+      },
+      {
+        labelKey: 'navFinanceCashFlowSections',
+        href: '/backoffice/finance/cash-flow-sections',
+        permission: PERMISSIONS.JOURNALS_VIEW,
+      },
     ],
   },
   {

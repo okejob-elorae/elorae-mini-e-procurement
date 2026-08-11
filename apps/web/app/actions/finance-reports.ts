@@ -10,7 +10,28 @@ import { buildIncomeStatement, type IncomeStatement } from "@/lib/finance/report
 import { buildBalanceSheet, type BalanceSheet } from "@/lib/finance/reports/balance-sheet";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
 import {
+  buildCashFlow,
+  type CashFlowLine,
+  type CashFlowStatement,
+} from "@/lib/finance/reports/cash-flow";
+import {
+  compareCashFlow,
+  previousPeriod,
+  type CashFlowComparison,
+  type CashFlowComparisonLine,
+} from "@/lib/finance/reports/cash-flow-compare";
+import {
+  getCashOpeningBalance,
+  getSectionByAccountId,
+} from "@/lib/finance/reports/cash-flow-queries";
+import {
   BALANCE_SHEET_OPENING_TITLE,
+  CASH_FLOW_COVERAGE_BODY,
+  CASH_FLOW_COVERAGE_TITLE,
+  CASH_FLOW_RECONCILED_NOTE,
+  CASH_FLOW_UNCLASSIFIED_BODY,
+  CASH_FLOW_UNCLASSIFIED_TITLE,
+  CASH_FLOW_UNRECONCILED_NOTE,
   INCOME_STATEMENT_COVERAGE_BODY,
   INCOME_STATEMENT_COVERAGE_TITLE,
   TRIAL_BALANCE_BALANCED_NOTE,
@@ -135,6 +156,73 @@ export async function getBalanceSheetReport(input: {
   return { ...report, preparedBy, printedAt: printedAtLabel(new Date()) };
 }
 
+export type CashFlowReport = CashFlowStatement & {
+  periodLabel: string;
+  previousPeriodLabel: string | null;
+  comparison: CashFlowComparison | null;
+};
+
+/**
+ * Builds one period's statement. The section map and the balance rows are
+ * shared with the comparison window, so the caller resolves them once.
+ */
+async function buildCashFlowFor(
+  from: Date | undefined,
+  to: Date,
+  sectionByAccountId: Awaited<ReturnType<typeof getSectionByAccountId>>,
+): Promise<CashFlowStatement> {
+  const cashAccountIds = [...sectionByAccountId.entries()]
+    .filter(([, section]) => section === "KAS")
+    .map(([accountId]) => accountId);
+
+  const [rows, kasAwal] = await Promise.all([
+    getAccountBalances({ from, to }),
+    getCashOpeningBalance(from ? new Date(from.getTime() - 1) : undefined, cashAccountIds),
+  ]);
+
+  return buildCashFlow({ rows, sectionByAccountId, kasAwal });
+}
+
+async function loadCashFlowReport(input: {
+  from?: string;
+  to?: string;
+}): Promise<CashFlowReport> {
+  const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
+  const from = parseDateOnly(input.from ?? "");
+  const sectionByAccountId = await getSectionByAccountId();
+
+  const current = await buildCashFlowFor(from, to, sectionByAccountId);
+
+  /* Since-inception has no preceding window, so the comparison is withheld. */
+  if (!from) {
+    return {
+      ...current,
+      periodLabel: rangeLabel(from, to),
+      previousPeriodLabel: null,
+      comparison: null,
+    };
+  }
+
+  const prev = previousPeriod(from, to);
+  const previous = await buildCashFlowFor(prev.from, prev.to, sectionByAccountId);
+
+  return {
+    ...current,
+    periodLabel: rangeLabel(from, to),
+    previousPeriodLabel: rangeLabel(prev.from, prev.to),
+    comparison: compareCashFlow(current, previous),
+  };
+}
+
+export async function getCashFlowReport(input: {
+  from?: string;
+  to?: string;
+}): Promise<CashFlowReport & Attribution> {
+  const preparedBy = await assertCanView();
+  const report = await loadCashFlowReport(input);
+  return { ...report, preparedBy, printedAt: printedAtLabel(new Date()) };
+}
+
 type Cell = string | number;
 
 function headerRows(title: string, periodLabel: string, preparedBy: string): Cell[][] {
@@ -243,4 +331,92 @@ export async function exportBalanceSheetExcel(input: {
   ];
 
   return toWorkbook(rows, "Neraca", `neraca-${dateLabel(new Date())}.xlsx`);
+}
+
+/**
+ * Keys of `CashFlowComparison` that hold a single current/previous/delta triple
+ * rather than a line array. Naming them keeps `total` below honest — indexing
+ * the whole keyof union would also match the array-valued keys.
+ */
+type CashFlowTotalKey =
+  | "labaBersih"
+  | "totalOperasional"
+  | "totalInvestasi"
+  | "totalPendanaan"
+  | "totalUnclassified"
+  | "netChange"
+  | "kasAwal"
+  | "kasAkhir";
+
+/** Flattens cash-flow lines into label/amount rows, optionally with comparison columns. */
+function cashFlowLineRows(
+  lines: CashFlowLine[],
+  paired: CashFlowComparisonLine[] | null,
+): Cell[][] {
+  if (!paired) {
+    return lines.map((line): Cell[] => [`    ${line.code} ${line.name}`, line.amount]);
+  }
+  return paired.map((line): Cell[] => [
+    `    ${line.code} ${line.name}`,
+    line.current,
+    line.previous,
+    line.delta,
+  ]);
+}
+
+export async function exportCashFlowExcel(input: {
+  from?: string;
+  to?: string;
+}): Promise<{ base64: string; filename: string }> {
+  const preparedBy = await assertCanView();
+  const report = await loadCashFlowReport(input);
+  const cmp = report.comparison;
+
+  const header: Cell[] = cmp
+    ? ["Keterangan", "Periode ini", "Periode sebelumnya", "Selisih"]
+    : ["Keterangan", "Jumlah"];
+
+  const total = (label: string, key: CashFlowTotalKey, value: number): Cell[] => {
+    if (!cmp) return [label, value];
+    const t = cmp[key];
+    return [label, t.current, t.previous, t.delta];
+  };
+
+  const rows: Cell[][] = [
+    ...headerRows("Laporan Arus Kas", report.periodLabel, preparedBy),
+    ...(cmp && report.previousPeriodLabel
+      ? [[`Pembanding: ${report.previousPeriodLabel}`] as Cell[], [] as Cell[]]
+      : []),
+    header,
+    ["ARUS KAS DARI AKTIVITAS OPERASIONAL", ""],
+    total("    Laba Bersih", "labaBersih", report.labaBersih),
+    ...cashFlowLineRows(report.operasional, cmp?.operasional ?? null),
+    total("Kas Bersih dari Aktivitas Operasional", "totalOperasional", report.totalOperasional),
+    ["ARUS KAS DARI AKTIVITAS INVESTASI", ""],
+    ...cashFlowLineRows(report.investasi, cmp?.investasi ?? null),
+    total("Kas Bersih dari Aktivitas Investasi", "totalInvestasi", report.totalInvestasi),
+    ["ARUS KAS DARI AKTIVITAS PENDANAAN", ""],
+    ...cashFlowLineRows(report.pendanaan, cmp?.pendanaan ?? null),
+    total("Kas Bersih dari Aktivitas Pendanaan", "totalPendanaan", report.totalPendanaan),
+    ...(report.unclassified.length
+      ? [
+          ["BELUM DIKLASIFIKASI", ""] as Cell[],
+          ...cashFlowLineRows(report.unclassified, cmp?.unclassified ?? null),
+          total("Total Belum Diklasifikasi", "totalUnclassified", report.totalUnclassified),
+        ]
+      : []),
+    total("Kenaikan (Penurunan) Kas", "netChange", report.netChange),
+    total("Kas Awal Periode", "kasAwal", report.kasAwal),
+    total("Kas Akhir Periode", "kasAkhir", report.kasAkhir),
+    [],
+    [report.isReconciled ? CASH_FLOW_RECONCILED_NOTE : CASH_FLOW_UNRECONCILED_NOTE],
+    ...(report.unclassified.length
+      ? [[CASH_FLOW_UNCLASSIFIED_TITLE] as Cell[], [CASH_FLOW_UNCLASSIFIED_BODY] as Cell[]]
+      : []),
+    [],
+    [CASH_FLOW_COVERAGE_TITLE],
+    [CASH_FLOW_COVERAGE_BODY],
+  ];
+
+  return toWorkbook(rows, "Arus Kas", `arus-kas-${dateLabel(new Date())}.xlsx`);
 }
