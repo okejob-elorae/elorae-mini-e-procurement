@@ -3127,6 +3127,42 @@
     }
   },
 
+  "financeCashFlowSections": {
+    "title": "Klasifikasi Arus Kas",
+    "subtitle": "Tetapkan setiap akun neraca ke aktivitas operasional, investasi, atau pendanaan.",
+    "cardTitle": "Klasifikasi Akun",
+    "searchPlaceholder": "Cari kode atau nama akun…",
+    "searchSection": "Cari klasifikasi…",
+    "noSections": "Tidak ada klasifikasi.",
+    "empty": "Tidak ada akun yang cocok.",
+    "notSet": "Belum ditetapkan",
+    "clear": "Kembalikan ke default",
+    "unclassifiedBadge": "Belum diklasifikasi",
+    "derivedPlaceholder": "Default: {section}",
+    "derivedHint": "Mengikuti default: {section}.",
+    "unclassifiedBanner": "{count} akun belum diklasifikasi. Akun ini tetap dihitung dalam total arus kas, tetapi ditampilkan terpisah pada laporan.",
+    "savedToast": "Klasifikasi disimpan.",
+    "clearedToast": "Klasifikasi dikembalikan ke default.",
+    "col": {
+      "code": "Kode",
+      "name": "Nama Akun",
+      "type": "Tipe",
+      "section": "Klasifikasi"
+    },
+    "section": {
+      "KAS": "Kas dan Setara Kas",
+      "OPERASIONAL": "Operasional",
+      "INVESTASI": "Investasi",
+      "PENDANAAN": "Pendanaan"
+    },
+    "error": {
+      "FORBIDDEN": "Anda tidak memiliki akses untuk mengubah klasifikasi.",
+      "NOT_FOUND": "Akun tidak ditemukan.",
+      "NOT_CLASSIFIABLE": "Akun pendapatan, harga pokok, dan beban tidak diklasifikasi — sudah termasuk dalam laba bersih.",
+      "INVALID_SECTION": "Klasifikasi tidak dikenal."
+    }
+  },
+
   "leadTime": {
     "title": "Lead Time",
     "subtitle": "Daftar proses (pustaka) & papan untuk menarik proses ke tiap supplier",

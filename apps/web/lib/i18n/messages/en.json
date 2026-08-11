@@ -3127,6 +3127,42 @@
     }
   },
 
+  "financeCashFlowSections": {
+    "title": "Cash Flow Classification",
+    "subtitle": "Assign each balance-sheet account to operating, investing, or financing activities.",
+    "cardTitle": "Account Classification",
+    "searchPlaceholder": "Search account code or name…",
+    "searchSection": "Search classification…",
+    "noSections": "No classifications.",
+    "empty": "No matching accounts.",
+    "notSet": "Not set",
+    "clear": "Reset to default",
+    "unclassifiedBadge": "Unclassified",
+    "derivedPlaceholder": "Default: {section}",
+    "derivedHint": "Following the default: {section}.",
+    "unclassifiedBanner": "{count} accounts are unclassified. They are still counted in the cash-flow total, but shown separately on the report.",
+    "savedToast": "Classification saved.",
+    "clearedToast": "Classification reset to default.",
+    "col": {
+      "code": "Code",
+      "name": "Account Name",
+      "type": "Type",
+      "section": "Classification"
+    },
+    "section": {
+      "KAS": "Cash and Cash Equivalents",
+      "OPERASIONAL": "Operating",
+      "INVESTASI": "Investing",
+      "PENDANAAN": "Financing"
+    },
+    "error": {
+      "FORBIDDEN": "You do not have permission to change the classification.",
+      "NOT_FOUND": "Account not found.",
+      "NOT_CLASSIFIABLE": "Revenue, cost of goods, and expense accounts are not classified — they are already inside net profit.",
+      "INVALID_SECTION": "Unknown classification."
+    }
+  },
+
   "leadTime": {
     "title": "Lead Time",
     "subtitle": "Process library & board to assign processes to each supplier",
