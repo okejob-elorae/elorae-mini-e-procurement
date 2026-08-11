@@ -65,6 +65,7 @@ type Props = {
   deliveryStatus: FieldSalesDeliveryStatus;
   deliveries: FieldSalesDeliverySummary[];
   lines: DeliverableLine[];
+  paymentTempo: number;
   canDeliver: boolean;
 };
 
@@ -135,6 +136,7 @@ export function DeliveriesCard({
   deliveryStatus,
   deliveries,
   lines,
+  paymentTempo,
   canDeliver,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
@@ -372,6 +374,7 @@ export function DeliveriesCard({
       <DeliveryFormDialog
         orderId={orderId}
         lines={lines}
+        paymentTempo={paymentTempo}
         open={formOpen}
         onOpenChange={setFormOpen}
       />

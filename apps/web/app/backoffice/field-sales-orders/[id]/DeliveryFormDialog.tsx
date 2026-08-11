@@ -16,7 +16,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { deliverableQty } from "@/lib/field-sales/delivery/plan";
+import { computeDueDate, deliverableQty } from "@/lib/field-sales/delivery/plan";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 import {
   recordDeliveryAction,
   type DeliveryActionResult,
@@ -38,6 +39,7 @@ type ShortLine = { requested: number; onHand: number };
 type Props = {
   orderId: string;
   lines: DeliverableLine[];
+  paymentTempo: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
@@ -57,7 +59,17 @@ function seedQtyInputs(lines: DeliverableLine[]): Record<string, string> {
   return Object.fromEntries(entries);
 }
 
-export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props) {
+/**
+ * Parses a date input's `YYYY-MM-DD` value at WIB midnight, matching how the server reads it.
+ * Returns null on an empty or half-typed value so callers can simply do nothing.
+ */
+function parseDateOnlyInput(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00.000+07:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenChange }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
   const router = useRouter();
@@ -65,6 +77,8 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>({});
   const [shortLines, setShortLines] = useState<Record<string, ShortLine>>({});
   const [note, setNote] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const [dueDate, setDueDate] = useState("");
   /**
    * One key per dialog session, minted on open and rotated on a successful submit. It stays stable
    * across a retry after a short-stock or network failure, so re-pressing Kirim replays the same
@@ -80,6 +94,8 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
     setQtyInputs(seedQtyInputs(lines));
     setShortLines({});
     setNote("");
+    setInvoiceDate(formatDateOnlyJakarta(new Date()));
+    setDueDate("");
     setIdempotencyKey(crypto.randomUUID());
     /* eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per open; re-running on every parent render would wipe typed quantities */
   }, [open]);
@@ -106,11 +122,27 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
     setQty(line.id, String(Math.min(cap, Math.floor(parsed))));
   }
 
+  /**
+   * Fills the due date from the store's tempo on demand. The server never derives it — the
+   * client locked that the value must be put there by a human — so this is a shortcut for
+   * the common case, not a default.
+   */
+  function applyTempo(): void {
+    const parsed = parseDateOnlyInput(invoiceDate);
+    if (!parsed) return;
+    setDueDate(formatDateOnlyJakarta(computeDueDate(parsed, paymentTempo)));
+  }
+
   const payload = rows
     .map((line) => ({ orderLineId: line.id, qty: Number(qtyInputs[line.id] ?? "0") }))
     .filter((line) => Number.isInteger(line.qty) && line.qty > 0);
 
-  const canSubmit = !isPending && payload.length > 0 && idempotencyKey !== "";
+  const parsedInvoice = parseDateOnlyInput(invoiceDate);
+  const parsedDue = parseDateOnlyInput(dueDate);
+  const datesValid =
+    parsedInvoice !== null && parsedDue !== null && parsedDue.getTime() >= parsedInvoice.getTime();
+
+  const canSubmit = !isPending && payload.length > 0 && idempotencyKey !== "" && datesValid;
 
   /**
    * A short line is snapped down to what the server just said is on hand, and the order is
@@ -141,6 +173,8 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
           orderId,
           lines: payload,
           note: trimmedNote === "" ? undefined : trimmedNote,
+          invoiceDate,
+          dueDate,
           idempotencyKey,
         });
         if (result.ok) {
@@ -229,6 +263,58 @@ export function DeliveryFormDialog({ orderId, lines, open, onOpenChange }: Props
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {rows.length > 0 && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="delivery-invoice-date" className="text-xs text-muted-foreground">
+                {t("delivery.invoiceDate")}
+              </Label>
+              <Input
+                id="delivery-invoice-date"
+                type="date"
+                className="h-10"
+                value={invoiceDate}
+                disabled={isPending}
+                onChange={(e) => setInvoiceDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="delivery-due-date" className="text-xs text-muted-foreground">
+                {t("delivery.dueDate")}
+              </Label>
+              <Input
+                id="delivery-due-date"
+                type="date"
+                className="h-10"
+                value={dueDate}
+                min={invoiceDate || undefined}
+                disabled={isPending}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+              {paymentTempo > 0 && (
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  <span className="text-xs text-muted-foreground">
+                    {t("delivery.tempoHint", { days: paymentTempo })}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7"
+                    disabled={isPending || parsedInvoice === null}
+                    onClick={applyTempo}
+                  >
+                    {t("delivery.applyTempo")}
+                  </Button>
+                </div>
+              )}
+              {dueDate === "" && (
+                <p className="text-xs text-muted-foreground">{t("delivery.dueDateRequired")}</p>
+              )}
+            </div>
           </div>
         )}
 
