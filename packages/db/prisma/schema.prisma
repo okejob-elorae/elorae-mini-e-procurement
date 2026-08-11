@@ -2295,6 +2295,7 @@ model ChartAccount {
   children  ChartAccount[] @relation("CoaParent")
   depth     Int
   isActive  Boolean     @default(true)
+  cashFlowSection CashFlowSection?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
   lines     JournalLine[]
@@ -2312,6 +2313,13 @@ enum AccountType {
   PENDAPATAN
   HPP
   BEBAN
+}
+
+enum CashFlowSection {
+  KAS
+  OPERASIONAL
+  INVESTASI
+  PENDANAAN
 }
 
 // ==========================================
