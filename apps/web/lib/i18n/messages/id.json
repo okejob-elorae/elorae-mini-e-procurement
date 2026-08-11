@@ -3043,7 +3043,7 @@
       "reconciledNote": "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.",
       "unreconciledNote": "Perubahan kas hasil perhitungan TIDAK sama dengan pergerakan saldo kas sebenarnya. Ini menandakan data jurnal rusak — periksa buku besar.",
       "coverageTitle": "Cakupan data",
-      "coverageBody": "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok.",
+      "coverageBody": "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus/konsi) dan penjualan SPG.",
       "colCurrent": "Periode ini",
       "colPrevious": "Periode sebelumnya",
       "colDelta": "Selisih",

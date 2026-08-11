@@ -3043,7 +3043,7 @@
       "reconciledNote": "The computed change in cash equals the actual movement in cash balances. Every journal is validated as balanced when posted, so this agreement is expected — this check only detects corrupt data.",
       "unreconciledNote": "The computed change in cash does NOT equal the actual movement in cash balances. This indicates corrupt journal data — check the general ledger.",
       "coverageTitle": "Data coverage",
-      "coverageBody": "This report is built from general-ledger journals using the indirect method. Its coverage matches the income statement: it does NOT yet include field sales, van sales, SPG sales, or supplier payments.",
+      "coverageBody": "This report is built from general-ledger journals using the indirect method. Its coverage matches the income statement: it does NOT yet include field sales (putus/konsi) or SPG sales.",
       "colCurrent": "This period",
       "colPrevious": "Previous period",
       "colDelta": "Change",

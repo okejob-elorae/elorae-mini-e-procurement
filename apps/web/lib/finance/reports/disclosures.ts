@@ -39,7 +39,7 @@ export function formatOpeningDate(iso: string): string {
 export const CASH_FLOW_COVERAGE_TITLE = "Cakupan data";
 
 export const CASH_FLOW_COVERAGE_BODY =
-  "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus), penjualan kanvas, penjualan SPG, dan pembayaran ke pemasok.";
+  "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus/konsi) dan penjualan SPG.";
 
 export const CASH_FLOW_RECONCILED_NOTE =
   "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.";
