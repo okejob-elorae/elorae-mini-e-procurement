@@ -3037,6 +3037,7 @@
       "empty": "No journals in this period yet.",
       "noCashAccountTitle": "No cash account set",
       "noCashAccountBody": "A cash flow statement cannot be produced without a cash account. Map the BANK or CASH role under Finance → Account Mapping, or mark an account as Cash under Cash Flow Classification.",
+      "noCashAccountCta": "Open Account Mapping",
       "unclassifiedTitle": "Some accounts are unclassified",
       "unclassifiedBody": "{count} accounts have not been assigned to operating, investing, or financing activities, so they are shown separately. Totals remain correct.",
       "unclassifiedCta": "Open Cash Flow Classification",

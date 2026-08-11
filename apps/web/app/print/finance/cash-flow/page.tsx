@@ -8,6 +8,7 @@ import type { CashFlowLine } from "@/lib/finance/reports/cash-flow";
 import {
   CASH_FLOW_COVERAGE_BODY,
   CASH_FLOW_COVERAGE_TITLE,
+  CASH_FLOW_NO_CASH_ACCOUNT_NOTE,
   CASH_FLOW_RECONCILED_NOTE,
   CASH_FLOW_UNCLASSIFIED_BODY,
   CASH_FLOW_UNCLASSIFIED_TITLE,
@@ -105,9 +106,7 @@ export default function PrintCashFlowPage() {
       <div className="print-statement mx-auto max-w-2xl text-center">
         <h1 className="text-lg font-bold">Elorae</h1>
         <h2 className="text-base font-semibold">Laporan Arus Kas</h2>
-        <p className="mt-4 text-sm">
-          Akun kas belum ditetapkan, sehingga laporan arus kas tidak dapat disusun.
-        </p>
+        <p className="mt-4 text-sm">{CASH_FLOW_NO_CASH_ACCOUNT_NOTE}</p>
       </div>
     );
   }

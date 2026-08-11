@@ -23,6 +23,10 @@ export default async function CashFlowPage({ searchParams }: PageProps) {
   const report = await getCashFlowReport({ from: sp.from, to: sp.to });
 
   return (
-    <CashFlowClient report={report} filters={{ from: sp.from ?? "", to: sp.to ?? "" }} />
+    <CashFlowClient
+      report={report}
+      filters={{ from: sp.from ?? "", to: sp.to ?? "" }}
+      canManageJournals={hasPermission(permissions, PERMISSIONS.JOURNALS_VIEW)}
+    />
   );
 }

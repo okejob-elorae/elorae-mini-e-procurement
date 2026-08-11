@@ -3037,6 +3037,7 @@
       "empty": "Belum ada jurnal pada periode ini.",
       "noCashAccountTitle": "Akun kas belum ditetapkan",
       "noCashAccountBody": "Laporan arus kas tidak dapat disusun tanpa akun kas. Petakan peran BANK atau CASH di Keuangan → Pemetaan Akun, atau tetapkan sebuah akun sebagai Kas di Klasifikasi Arus Kas.",
+      "noCashAccountCta": "Buka Pemetaan Akun",
       "unclassifiedTitle": "Ada akun yang belum diklasifikasi",
       "unclassifiedBody": "{count} akun belum ditetapkan masuk aktivitas operasional, investasi, atau pendanaan, sehingga ditampilkan terpisah. Total tetap benar.",
       "unclassifiedCta": "Buka Klasifikasi Arus Kas",

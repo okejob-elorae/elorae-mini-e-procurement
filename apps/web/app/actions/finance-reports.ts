@@ -28,6 +28,7 @@ import {
   BALANCE_SHEET_OPENING_TITLE,
   CASH_FLOW_COVERAGE_BODY,
   CASH_FLOW_COVERAGE_TITLE,
+  CASH_FLOW_NO_CASH_ACCOUNT_NOTE,
   CASH_FLOW_RECONCILED_NOTE,
   CASH_FLOW_UNCLASSIFIED_BODY,
   CASH_FLOW_UNCLASSIFIED_TITLE,
@@ -370,6 +371,25 @@ export async function exportCashFlowExcel(input: {
 }): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
   const report = await loadCashFlowReport(input);
+
+  /**
+   * Refuse rather than ship a zero statement, matching the screen and the print
+   * view. With no cash account every section computes to zero and
+   * `netChange === cashDelta === 0`, so the workbook would otherwise append the
+   * reconciled note and assert that the computed change equals actual cash
+   * movement — on a file that leaves the app and gets emailed to an accountant.
+   */
+  if (!report.hasCashAccount) {
+    return toWorkbook(
+      [
+        ...headerRows("Laporan Arus Kas", report.periodLabel, preparedBy),
+        [CASH_FLOW_NO_CASH_ACCOUNT_NOTE],
+      ],
+      "Arus Kas",
+      `arus-kas-${dateLabel(new Date())}.xlsx`,
+    );
+  }
+
   const cmp = report.comparison;
 
   const header: Cell[] = cmp

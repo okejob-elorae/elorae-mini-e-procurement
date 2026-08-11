@@ -27,13 +27,21 @@ type Report = Awaited<ReturnType<typeof getCashFlowReport>>;
 type Props = {
   report: Report;
   filters: { from: string; to: string };
+  /**
+   * Both remedies for a cash-flow configuration problem live behind
+   * `journals:view`, which `finance_reports:view` does not imply. Without it
+   * the links are withheld rather than offered — every one of them redirects
+   * straight to the dashboard, which reads as the app breaking. The prose in
+   * each state names the fix, so a reader still learns what is wrong.
+   */
+  canManageJournals: boolean;
 };
 
 function formatRupiah(value: number): string {
   return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 }
 
-export function CashFlowClient({ report, filters }: Props) {
+export function CashFlowClient({ report, filters, canManageJournals }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeReports");
@@ -41,6 +49,14 @@ export function CashFlowClient({ report, filters }: Props) {
 
   const cmp = report.comparison;
   const columns = cmp ? 4 : 2;
+
+  /**
+   * Exports are withheld only when there is no cash account, because both the
+   * Excel and the print view refuse in that state anyway — offering a button
+   * that produces a refusal note is worse than not offering it. An empty period
+   * keeps them: exporting a quiet month is legitimate.
+   */
+  const canExport = report.hasCashAccount;
 
   function pushParam(key: string, value: string | undefined) {
     const params = new URLSearchParams(sp.toString());
@@ -138,10 +154,12 @@ export function CashFlowClient({ report, filters }: Props) {
           <h1 className="text-2xl font-bold tracking-tight">{t("cashFlow.pageTitle")}</h1>
           <p className="text-muted-foreground">{t("cashFlow.subtitle")}</p>
         </div>
-        <ReportExportButtons
-          onExcel={() => exportCashFlowExcel({ from: filters.from, to: filters.to })}
-          printHref={`/print/finance/cash-flow?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}`}
-        />
+        {canExport && (
+          <ReportExportButtons
+            onExcel={() => exportCashFlowExcel({ from: filters.from, to: filters.to })}
+            printHref={`/print/finance/cash-flow?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}`}
+          />
+        )}
       </div>
 
       <Card className="p-4">
@@ -181,11 +199,13 @@ export function CashFlowClient({ report, filters }: Props) {
             <p className="mx-auto mt-1 max-w-prose text-sm text-muted-foreground">
               {t("cashFlow.noCashAccountBody")}
             </p>
-            <Button variant="outline" className="mt-4" asChild>
-              <Link href="/backoffice/finance/account-mapping">
-                {t("cashFlow.unclassifiedCta")}
-              </Link>
-            </Button>
+            {canManageJournals && (
+              <Button variant="outline" className="mt-4" asChild>
+                <Link href="/backoffice/finance/account-mapping">
+                  {t("cashFlow.noCashAccountCta")}
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : !report.hasMovement ? (
@@ -204,12 +224,14 @@ export function CashFlowClient({ report, filters }: Props) {
                 <p className="text-muted-foreground">
                   {t("cashFlow.unclassifiedBody", { count: report.unclassified.length })}
                 </p>
-                <Link
-                  href="/backoffice/finance/cash-flow-sections"
-                  className="mt-1 inline-block underline underline-offset-4"
-                >
-                  {t("cashFlow.unclassifiedCta")}
-                </Link>
+                {canManageJournals && (
+                  <Link
+                    href="/backoffice/finance/cash-flow-sections"
+                    className="mt-1 inline-block underline underline-offset-4"
+                  >
+                    {t("cashFlow.unclassifiedCta")}
+                  </Link>
+                )}
               </div>
             </div>
           )}

@@ -41,6 +41,15 @@ export const CASH_FLOW_COVERAGE_TITLE = "Cakupan data";
 export const CASH_FLOW_COVERAGE_BODY =
   "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus/konsi) dan penjualan SPG.";
 
+/**
+ * Shown in place of the statement when no account is classified KAS. Without a
+ * cash account every section computes to zero, which would otherwise ship as a
+ * statement reporting no cash movement — carrying the reconciled note, since
+ * zero does equal zero. Refusing is the only honest output.
+ */
+export const CASH_FLOW_NO_CASH_ACCOUNT_NOTE =
+  "Akun kas belum ditetapkan, sehingga laporan arus kas tidak dapat disusun. Petakan peran BANK atau CASH di Keuangan → Pemetaan Akun, atau tetapkan sebuah akun sebagai Kas di Klasifikasi Arus Kas.";
+
 export const CASH_FLOW_RECONCILED_NOTE =
   "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.";
 
