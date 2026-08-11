@@ -28,19 +28,31 @@ export type AccountSectionRow = {
  * cash delta of zero, which reported no cash at all under a green "reconciled"
  * note.
  *
- * INACTIVE leaves are deliberately KEPT, matching `getAccountBalances`, which
- * retains an inactive account that still carries movement in range so the
- * debit-equals-credit identity cannot break. Filtering them out here would
- * desynchronise the two: a deactivated cash account still holding a balance
- * would drop out of `cashAccountIds`, so `kasAwal` would silently lose it while
- * its rows still reached the engine and landed in the unclassified bucket
- * inside `netChange` — `cashDelta` would then disagree with `netChange` and the
- * destructive "data jurnal rusak" banner would fire on a healthy ledger. That
- * is the same false-alarm class as a credit-normal account marked KAS, arriving
- * through a different door, and it is worse than the noise of listing a few
- * dead accounts on the classification page. Classifying an inactive leaf is
- * legitimate in its own right: its historical balance still belongs to a
- * section for any report covering a period when it was live.
+ * INACTIVE leaves are deliberately KEPT. `getAccountBalances` retains an
+ * inactive account that still carries movement in range, so its rows reach the
+ * engine either way; dropping it HERE would only strip its section, which is
+ * exactly the damaging half.
+ *
+ * The harm is the Finding 1a class — silently wrong figures under a green
+ * reconciled note — NOT a false alarm. Do not expect a banner and conclude this
+ * paragraph is paranoid: `isReconciled` CANNOT break this way. Every
+ * classifiable non-KAS row contributes `-(debit - credit)` (ASET negates
+ * `signed`; credit-normal types have `signed = -(debit - credit)` and add it),
+ * and `labaBersih` is `-(debit - credit)` summed over the P&L rows, so
+ * `netChange` always equals `Σ(debit - credit)` over the KAS partition — which
+ * is `cashDelta`. Moving an account between the buckets changes both sides
+ * together. What it does NOT change is `cashAccountIds`, which is built from
+ * this map: an excluded cash account drops out of `getCashOpeningBalance`, so
+ * `kasAwal` loses its whole pre-window balance while `netChange` loses only its
+ * in-range movement, and `kasAkhir` is understated by the sum of the two with
+ * nothing visibly amiss. Concretely: `1102 Bank Lama`, inactive, KAS override,
+ * 5.000.000 carried in and a 1.000.000 debit in range — closing cash prints
+ * 2.000.000 against a true 8.000.000, and the statement still certifies itself.
+ *
+ * Classifying an inactive leaf is legitimate in its own right, too: its
+ * historical balance still belongs to a section for any report covering a
+ * period when it was live. That is worth more than the noise of listing a few
+ * dead accounts on the classification page, where the row is merely dimmed.
  *
  * The parent set is therefore the only filter, and it is derived from the FULL
  * chart. That is where this deviates from `getPostableAccounts`
@@ -122,12 +134,21 @@ export async function getSectionByAccountId(): Promise<Map<string, CashFlowSecti
 /**
  * Cumulative cash balance strictly before the reporting window opens.
  *
- * Only cash accounts are summed, and every cash account is ASET, so the signed
- * balance is simply debit minus credit. Both routes to KAS enforce that: the
- * BANK and CASH posting roles are pinned to ASET by
- * `POSTING_ROLE_ACCOUNT_TYPES`, and `setCashFlowSectionAction` refuses a KAS
- * override on anything else. An omitted `before` means the report runs since
- * inception, where the opening balance is zero by definition.
+ * Only cash accounts are summed, and the balance is read as debit minus credit.
+ * Both routes to KAS constrain that to ASET: the BANK and CASH posting roles
+ * are pinned to ASET by `POSTING_ROLE_ACCOUNT_TYPES`, and
+ * `setCashFlowSectionAction` refuses a KAS override on anything else.
+ *
+ * Those guards are WRITE-TIME ONLY, though — nothing migrates a
+ * `cashFlowSection = 'KAS'` already stored on a non-ASET account, so a legacy
+ * override can still reach this query. It computes correctly anyway: this query
+ * and the engine's KAS accumulation now share the debit-minus-credit
+ * orientation, so a credit-normal cash account is read consistently on both
+ * sides rather than sign-flipped on one. Treat "every cash account is ASET" as
+ * the intent, not as an invariant the data guarantees.
+ *
+ * An omitted `before` means the report runs since inception, where the opening
+ * balance is zero by definition.
  */
 export async function getCashOpeningBalance(
   before: Date | undefined,
