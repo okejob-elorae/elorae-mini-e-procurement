@@ -53,6 +53,7 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   closedAt: Date | null;
   closeReason: string | null;
   marginPercent: number | null;
+  paymentTempo: number;
   orderDiscountAmount: number;
   appliedOrderPromoName: string | null;
   deliveryStatus: FieldSalesDeliveryStatus;
@@ -137,7 +138,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
       closedAt: true, closeReason: true,
       orderDiscountAmount: true, appliedOrderPromoId: true, deliveryStatus: true,
-      store: { select: { name: true, marginPercent: true } },
+      store: { select: { name: true, marginPercent: true, paymentTempo: true } },
       salesman: { select: { name: true } },
       lines: {
         select: {
@@ -204,6 +205,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     closedAt: row.closedAt,
     closeReason: row.closeReason,
     marginPercent: row.store.marginPercent === null ? null : Number(row.store.marginPercent),
+    paymentTempo: row.store.paymentTempo,
     orderDiscountAmount: toNum(row.orderDiscountAmount),
     appliedOrderPromoName: row.appliedOrderPromoId ? promoNameById.get(row.appliedOrderPromoId) ?? null : null,
     deliveryStatus: row.deliveryStatus,
