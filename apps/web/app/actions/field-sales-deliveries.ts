@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 import { DeliveryError } from "@/lib/field-sales/errors";
+import { parseDateOnly } from "@/lib/date-only";
 
 export type DeliveryActionResult =
   | { ok: true }
@@ -15,6 +16,7 @@ export type DeliveryActionResult =
         | "NOT_FOUND"
         | "INVALID_STATE"
         | "INVALID_REQUEST"
+        | "INVALID_DATES"
         | "NO_LINES"
         | "OVER_DELIVER"
         | "INSUFFICIENT_STOCK";
@@ -39,11 +41,13 @@ export async function recordDeliveryAction(input: {
   orderId: string;
   lines: Array<{ orderLineId: string; qty: number }>;
   note?: string;
+  invoiceDate: string;
+  dueDate: string;
   idempotencyKey: string;
 }): Promise<DeliveryActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
-  const { orderId, lines, note, idempotencyKey } = input;
+  const { orderId, lines, note, invoiceDate, dueDate, idempotencyKey } = input;
   /* Refuse a malformed key rather than dropping it — passing undefined through restores the unprotected path. */
   if (typeof idempotencyKey !== "string" || idempotencyKey.trim() === "" || idempotencyKey.length > 64) {
     return { ok: false, reason: "INVALID_REQUEST" };
@@ -51,8 +55,28 @@ export async function recordDeliveryAction(input: {
   if (!Array.isArray(lines) || lines.some((l) => typeof l.orderLineId !== "string" || !Number.isInteger(l.qty) || l.qty <= 0)) {
     return { ok: false, reason: "OVER_DELIVER" };
   }
+  /**
+   * Parsed WIB-anchored rather than with a bare `new Date`: production runs UTC, where a
+   * plain `YYYY-MM-DD` is read as UTC midnight and lands on the previous WIB calendar day.
+   */
+  const parsedInvoiceDate = parseDateOnly(invoiceDate ?? "");
+  const parsedDueDate = parseDateOnly(dueDate ?? "");
+  if (!parsedInvoiceDate || !parsedDueDate) {
+    return { ok: false, reason: "INVALID_REQUEST" };
+  }
+  if (parsedDueDate.getTime() < parsedInvoiceDate.getTime()) {
+    return { ok: false, reason: "INVALID_DATES" };
+  }
   try {
-    await recordFieldSalesDelivery({ orderId, deliveredById: g.userId, lines, note, idempotencyKey });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: g.userId,
+      lines,
+      note,
+      invoiceDate: parsedInvoiceDate,
+      dueDate: parsedDueDate,
+      idempotencyKey,
+    });
   } catch (e) {
     if (e instanceof DeliveryError) return { ok: false, reason: e.code, shortLines: e.shortLines };
     throw e;

@@ -2393,7 +2393,8 @@
         "INVALID_REQUEST": "That delivery request was not valid. Close this dialog and open it again.",
         "NO_LINES": "No lines selected for delivery.",
         "OVER_DELIVER": "Delivered quantity exceeds the outstanding quantity.",
-        "INSUFFICIENT_STOCK": "Not enough stock for this delivery."
+        "INSUFFICIENT_STOCK": "Not enough stock for this delivery.",
+        "INVALID_DATES": "The due date cannot be earlier than the invoice date."
       }
     },
     "print": {

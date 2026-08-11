@@ -2393,7 +2393,8 @@
         "INVALID_REQUEST": "Permintaan pengiriman tidak valid. Tutup dialog ini lalu buka lagi.",
         "NO_LINES": "Tidak ada baris yang dipilih untuk dikirim.",
         "OVER_DELIVER": "Jumlah kirim melebihi sisa pesanan.",
-        "INSUFFICIENT_STOCK": "Stok tidak cukup untuk pengiriman ini."
+        "INSUFFICIENT_STOCK": "Stok tidak cukup untuk pengiriman ini.",
+        "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota."
       }
     },
     "print": {
