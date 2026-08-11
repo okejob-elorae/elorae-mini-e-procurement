@@ -54,6 +54,8 @@
     "navFinanceTrialBalance": "Neraca Saldo",
     "navFinanceIncomeStatement": "Laba Rugi",
     "navFinanceBalanceSheet": "Neraca",
+    "navFinanceCashFlow": "Arus Kas",
+    "navFinanceCashFlowSections": "Klasifikasi Arus Kas",
     "items": "Item",
     "navItemsAll": "Semua Item",
     "navItemsCategory": "Kategori",
@@ -3015,6 +3017,39 @@
       "openingTitle": "Saldo awal belum dicatat",
       "openingBody": "Jurnal paling awal bertanggal {date}. Posisi ini hanya mencakup jurnal sejak tanggal tersebut. Catat jurnal manual saldo awal (kas, piutang, persediaan, utang, ekuitas) bertanggal sebelum itu agar neraca mencerminkan posisi sebenarnya."
     },
+    "cashFlow": {
+      "pageTitle": "Laporan Arus Kas",
+      "subtitle": "Arus kas masuk dan keluar untuk periode terpilih, metode tidak langsung.",
+      "cardTitle": "Arus Kas",
+      "sectionOperasional": "Arus Kas dari Aktivitas Operasional",
+      "sectionInvestasi": "Arus Kas dari Aktivitas Investasi",
+      "sectionPendanaan": "Arus Kas dari Aktivitas Pendanaan",
+      "sectionUnclassified": "Belum Diklasifikasi",
+      "labaBersih": "Laba Bersih",
+      "totalOperasional": "Kas Bersih dari Aktivitas Operasional",
+      "totalInvestasi": "Kas Bersih dari Aktivitas Investasi",
+      "totalPendanaan": "Kas Bersih dari Aktivitas Pendanaan",
+      "totalUnclassified": "Total Belum Diklasifikasi",
+      "netChange": "Kenaikan (Penurunan) Kas",
+      "kasAwal": "Kas Awal Periode",
+      "kasAkhir": "Kas Akhir Periode",
+      "sectionEmpty": "Tidak ada pergerakan pada bagian ini.",
+      "empty": "Belum ada jurnal pada periode ini.",
+      "noCashAccountTitle": "Akun kas belum ditetapkan",
+      "noCashAccountBody": "Laporan arus kas tidak dapat disusun tanpa akun kas. Petakan peran BANK atau CASH di Keuangan → Pemetaan Akun, atau tetapkan sebuah akun sebagai Kas di Klasifikasi Arus Kas.",
+      "noCashAccountCta": "Buka Pemetaan Akun",
+      "unclassifiedTitle": "Ada akun yang belum diklasifikasi",
+      "unclassifiedBody": "{count} akun belum ditetapkan masuk aktivitas operasional, investasi, atau pendanaan, sehingga ditampilkan terpisah. Total tetap benar.",
+      "unclassifiedCta": "Buka Klasifikasi Arus Kas",
+      "reconciledNote": "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.",
+      "unreconciledNote": "Perubahan kas hasil perhitungan TIDAK sama dengan pergerakan saldo kas sebenarnya. Ini menandakan data jurnal rusak — periksa buku besar.",
+      "coverageTitle": "Cakupan data",
+      "coverageBody": "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus/konsi) dan penjualan SPG.",
+      "colCurrent": "Periode ini",
+      "colPrevious": "Periode sebelumnya",
+      "colDelta": "Selisih",
+      "comparisonHint": "Dibandingkan dengan {period}."
+    },
     "filter": {
       "dateFrom": "Dari tanggal",
       "dateTo": "Sampai tanggal",
@@ -3090,6 +3125,43 @@
       "BAD_ROLE": "Peran posting tidak dikenali.",
       "NON_POSTABLE_ACCOUNT": "Akun yang dipilih tidak dapat diposting (bukan akun aktif tanpa turunan).",
       "WRONG_ACCOUNT_TYPE": "Akun ini bertipe salah untuk peran tersebut — mis. peran Utang Usaha harus dipetakan ke akun bertipe LIABILITAS."
+    }
+  },
+
+  "financeCashFlowSections": {
+    "title": "Klasifikasi Arus Kas",
+    "subtitle": "Tetapkan setiap akun neraca ke aktivitas operasional, investasi, atau pendanaan.",
+    "cardTitle": "Klasifikasi Akun",
+    "searchPlaceholder": "Cari kode atau nama akun…",
+    "searchSection": "Cari klasifikasi…",
+    "noSections": "Tidak ada klasifikasi.",
+    "empty": "Tidak ada akun yang cocok.",
+    "notSet": "Belum ditetapkan",
+    "clear": "Kembalikan ke default",
+    "unclassifiedBadge": "Belum diklasifikasi",
+    "derivedPlaceholder": "Default: {section}",
+    "derivedHint": "Mengikuti default: {section}.",
+    "unclassifiedBanner": "{count} akun belum diklasifikasi. Akun ini tetap dihitung dalam total arus kas, tetapi ditampilkan terpisah pada laporan.",
+    "savedToast": "Klasifikasi disimpan.",
+    "clearedToast": "Klasifikasi dikembalikan ke default.",
+    "col": {
+      "code": "Kode",
+      "name": "Nama Akun",
+      "type": "Tipe",
+      "section": "Klasifikasi"
+    },
+    "section": {
+      "KAS": "Kas dan Setara Kas",
+      "OPERASIONAL": "Operasional",
+      "INVESTASI": "Investasi",
+      "PENDANAAN": "Pendanaan"
+    },
+    "error": {
+      "FORBIDDEN": "Anda tidak memiliki akses untuk mengubah klasifikasi.",
+      "NOT_FOUND": "Akun tidak ditemukan.",
+      "NOT_CLASSIFIABLE": "Akun pendapatan, harga pokok, dan beban tidak diklasifikasi — sudah termasuk dalam laba bersih.",
+      "INVALID_SECTION": "Klasifikasi tidak dikenal.",
+      "KAS_REQUIRES_ASET": "Hanya akun bertipe ASET yang dapat ditetapkan sebagai Kas dan Setara Kas. Menetapkan akun liabilitas atau ekuitas sebagai kas akan membuat laporan arus kas salah."
     }
   },
 
