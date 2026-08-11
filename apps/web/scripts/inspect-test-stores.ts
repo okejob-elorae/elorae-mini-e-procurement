@@ -18,11 +18,12 @@ async function main() {
         createdAt: true,
         _count: {
           select: {
-                visits: true,
-                fieldSalesOrders: true,
-                promoStores: true,
-                storeChangeRequests: true,
-                vanSales: true,
+            visits: true,
+            fieldSalesOrders: true,
+            promoStores: true,
+            storeChangeRequests: true,
+            vanSales: true,
+            spgSales: true,
           },
         },
       },
