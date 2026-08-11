@@ -1,9 +1,51 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 
-const { mockAuth } = vi.hoisted(() => ({ mockAuth: vi.fn() }));
+const { mockAuth, staleSnapshot } = vi.hoisted(() => ({
+  mockAuth: vi.fn(),
+  staleSnapshot: { value: null as { invoiceDate: Date; dueDate: Date } | null },
+}));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+
+/**
+ * A lost-update race cannot be produced by two real transactions here: the action's snapshot read
+ * happens INSIDE its own serializable transaction, so a competing writer on another connection
+ * blocks on the lock instead of interleaving. What the compare-and-swap actually defends against
+ * is a snapshot that no longer describes the row, so that is what this fakes — `staleSnapshot`
+ * makes the transaction's read return dates the row does not hold, while every write still goes to
+ * the real table. Null (the default) leaves the real `runSerializable` untouched for every other
+ * test in this file.
+ */
+vi.mock("@/lib/db/tx-retry", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/db/tx-retry")>();
+  type TxCallback = Parameters<typeof actual.runSerializable>[0];
+  return {
+    ...actual,
+    runSerializable: async (cb: TxCallback) => {
+      const stale = staleSnapshot.value;
+      if (!stale) return actual.runSerializable(cb);
+      const { prisma: db } = await import("@elorae/db");
+      const tx = {
+        fieldSalesDelivery: {
+          findUnique: async (args: { where: { id: string } }) => {
+            const row = await db.fieldSalesDelivery.findUnique({
+              where: { id: args.where.id },
+              select: { id: true, orderId: true },
+            });
+            return row === null ? null : { ...row, invoiceDate: stale.invoiceDate, dueDate: stale.dueDate };
+          },
+          updateMany: (args: Parameters<typeof db.fieldSalesDelivery.updateMany>[0]) =>
+            db.fieldSalesDelivery.updateMany(args),
+        },
+        auditLog: {
+          create: (args: Parameters<typeof db.auditLog.create>[0]) => db.auditLog.create(args),
+        },
+      } as unknown as Parameters<TxCallback>[0];
+      return cb(tx);
+    },
+  };
+});
 
 import { updateDeliveryDatesAction } from "./field-sales-deliveries";
 
@@ -28,6 +70,8 @@ d("updateDeliveryDatesAction (test bed only)", () => {
 
   beforeEach(async () => {
     uomId = ""; itemId = ""; storeId = ""; userId = ""; orderId = ""; lineId = ""; deliveryId = ""; docNo = "";
+    /* Never leaks into the next test — a stale snapshot would silently fake a race everywhere. */
+    staleSnapshot.value = null;
 
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-FSDA-${token}`, nameId: "test", nameEn: "test" },
@@ -172,6 +216,74 @@ d("updateDeliveryDatesAction (test bed only)", () => {
         dueDate: new Date("2026-04-20T00:00:00.000+07:00").toISOString(),
       },
     });
+  });
+
+  it("rejects a payload whose reason is not a string instead of throwing on it", async () => {
+    const result = await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-04-10",
+      dueDate: "2026-04-20",
+    } as unknown as Parameters<typeof updateDeliveryDatesAction>[0]);
+
+    expect(result).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(await currentDates()).toMatchObject({ invoiceDate: INVOICE.toISOString() });
+    expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+  });
+
+  /* `new Date("2026-02-30")` rolls over to 2 March; without the round-trip check that day is STORED. */
+  it("rejects a date that is not a real calendar day and stores nothing", async () => {
+    const result = await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-02-30",
+      dueDate: "2026-04-20",
+      reason: "crafted payload",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(await currentDates()).toMatchObject({
+      invoiceDate: INVOICE.toISOString(),
+      dueDate: DUE.toISOString(),
+    });
+    expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+  });
+
+  it("reports CONFLICT and writes nothing when the row moved under the snapshot", async () => {
+    staleSnapshot.value = {
+      invoiceDate: new Date("2026-01-01T00:00:00.000+07:00"),
+      dueDate: new Date("2026-02-01T00:00:00.000+07:00"),
+    };
+
+    const result = await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-04-10",
+      dueDate: "2026-04-20",
+      reason: "correcting the tempo",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "CONFLICT" });
+    /* The other operator's values survive, and no audit row claims a `before` nobody ever held. */
+    expect(await currentDates()).toMatchObject({
+      invoiceDate: INVOICE.toISOString(),
+      dueDate: DUE.toISOString(),
+    });
+    expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+  });
+
+  /**
+   * Pins the compare-and-swap's one assumption: the mariadb driver reports MATCHED rows, not
+   * changed ones, so re-submitting the identical pair is a hit rather than a phantom CONFLICT.
+   * If this ever fails, the CAS is misreading an unchanged row as someone else's write.
+   */
+  it("still succeeds when the correction re-submits the dates the nota already holds", async () => {
+    const result = await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-04-01",
+      dueDate: "2026-05-01",
+      reason: "re-confirming the dates",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(1);
   });
 
   it("reports NOT_FOUND for an unknown delivery and writes no audit row", async () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 import {
   outstandingQty,
   deliverableQty,
@@ -69,6 +70,33 @@ describe("computeDueDate", () => {
 
   it("returns the invoice date itself when tempo is zero", () => {
     expect(computeDueDate(new Date("2026-08-09T00:00:00.000Z"), 0).toISOString()).toBe("2026-08-09T00:00:00.000Z");
+  });
+
+  /**
+   * The only production caller is the "Pakai tempo" button, which feeds a WIB-midnight instant —
+   * an instant that sits at 17:00 UTC on the PREVIOUS UTC day. `setUTCDate` therefore walks the
+   * UTC day while the operator is reading a WIB calendar, so these cases assert the property that
+   * actually matters: the WIB calendar day advances by exactly the tempo, and stays at WIB
+   * midnight. The UTC-midnight cases above cannot see that, because there the two calendars agree.
+   */
+  const WIB_MONTH_END = new Date("2026-08-31T00:00:00.000+07:00");
+
+  it("advances the WIB calendar day across a month boundary", () => {
+    const due = computeDueDate(WIB_MONTH_END, 1);
+    expect(formatDateOnlyJakarta(due)).toBe("2026-09-01");
+    expect(due.toISOString()).toBe("2026-08-31T17:00:00.000Z");
+  });
+
+  it("advances a WIB-midnight invoice date by a full 30-day tempo", () => {
+    const due = computeDueDate(WIB_MONTH_END, 30);
+    expect(formatDateOnlyJakarta(due)).toBe("2026-09-30");
+    expect(due.toISOString()).toBe("2026-09-29T17:00:00.000Z");
+  });
+
+  it("leaves a WIB-midnight invoice date on its own calendar day when the tempo is zero", () => {
+    const due = computeDueDate(WIB_MONTH_END, 0);
+    expect(formatDateOnlyJakarta(due)).toBe("2026-08-31");
+    expect(due.toISOString()).toBe("2026-08-30T17:00:00.000Z");
   });
 });
 
