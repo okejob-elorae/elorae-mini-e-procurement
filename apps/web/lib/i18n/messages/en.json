@@ -2404,7 +2404,8 @@
         "NO_LINES": "No lines selected for delivery.",
         "OVER_DELIVER": "Delivered quantity exceeds the outstanding quantity.",
         "INSUFFICIENT_STOCK": "Not enough stock for this delivery.",
-        "INVALID_DATES": "The due date cannot be earlier than the invoice date."
+        "INVALID_DATES": "The due date cannot be earlier than the invoice date.",
+        "CONFLICT": "Someone else just changed this nota's dates. Reload the page and try again."
       }
     },
     "print": {

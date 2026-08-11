@@ -2404,7 +2404,8 @@
         "NO_LINES": "Tidak ada baris yang dipilih untuk dikirim.",
         "OVER_DELIVER": "Jumlah kirim melebihi sisa pesanan.",
         "INSUFFICIENT_STOCK": "Stok tidak cukup untuk pengiriman ini.",
-        "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota."
+        "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota.",
+        "CONFLICT": "Tanggal nota ini baru saja diubah orang lain. Muat ulang halaman dan coba lagi."
       }
     },
     "print": {

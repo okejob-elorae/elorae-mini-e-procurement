@@ -1,12 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 import { DeliveryError } from "@/lib/field-sales/errors";
-import { parseDateOnly } from "@/lib/date-only";
+import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
+import { runSerializable } from "@/lib/db/tx-retry";
 
 export type DeliveryActionResult =
   | { ok: true }
@@ -18,11 +18,38 @@ export type DeliveryActionResult =
         | "INVALID_STATE"
         | "INVALID_REQUEST"
         | "INVALID_DATES"
+        | "CONFLICT"
         | "NO_LINES"
         | "OVER_DELIVER"
         | "INSUFFICIENT_STOCK";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
     };
+
+/**
+ * A `YYYY-MM-DD` calendar day at WIB midnight, or null for anything that is not one.
+ *
+ * Three separate rejections, all of which a crafted payload can reach because a server action is
+ * a network endpoint:
+ *
+ * - a non-string (a JSON number survives `?? ""` and makes `parseDateOnly` throw inside `.trim()`);
+ * - a value `new Date` silently rolls over — `"2026-02-30"` parses to 2 March and would be STORED;
+ * - a year outside MariaDB's `DATETIME` range, which raises 1292 in strict mode.
+ *
+ * The round-trip is what closes the last two: `formatDateOnlyJakarta` emits exactly the shape the
+ * input carries, so an instant that does not format back to the string it came from was not that
+ * calendar day. `parseDateOnly` itself is left alone — it has many other callers and widening its
+ * contract is not this feature's business.
+ *
+ * WIB-anchored rather than a bare `new Date`: production runs UTC, where a plain `YYYY-MM-DD` is
+ * read as UTC midnight and lands on the previous WIB calendar day.
+ */
+function parseCalendarDay(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  const parsed = parseDateOnly(trimmed);
+  if (!parsed) return null;
+  return formatDateOnlyJakarta(parsed) === trimmed ? parsed : null;
+}
 
 async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
   const session = await auth();
@@ -56,12 +83,8 @@ export async function recordDeliveryAction(input: {
   if (!Array.isArray(lines) || lines.some((l) => typeof l.orderLineId !== "string" || !Number.isInteger(l.qty) || l.qty <= 0)) {
     return { ok: false, reason: "OVER_DELIVER" };
   }
-  /**
-   * Parsed WIB-anchored rather than with a bare `new Date`: production runs UTC, where a
-   * plain `YYYY-MM-DD` is read as UTC midnight and lands on the previous WIB calendar day.
-   */
-  const parsedInvoiceDate = parseDateOnly(invoiceDate ?? "");
-  const parsedDueDate = parseDateOnly(dueDate ?? "");
+  const parsedInvoiceDate = parseCalendarDay(invoiceDate);
+  const parsedDueDate = parseCalendarDay(dueDate);
   if (!parsedInvoiceDate || !parsedDueDate) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
@@ -95,6 +118,13 @@ export async function recordDeliveryAction(input: {
  * The audit row is written with `tx.auditLog.create` inside the transaction rather than
  * through `logAudit`, which swallows its own errors by design. A controls trail that can
  * fail silently is worse than none, because its presence is taken as proof.
+ *
+ * Serializable + compare-and-swap for the same reason. A snapshot read followed by an
+ * unconditional update lets two corrections of one nota interleave: both read the same `before`,
+ * the second overwrites the first, and BOTH audit rows claim to have started from the original
+ * pair — so the trail shows a correction that never happened and loses one that did. The
+ * isolation level is what makes the re-read on retry honest; the CAS is what turns a lost update
+ * into an explicit `CONFLICT` for the operator who lost the race.
  */
 export async function updateDeliveryDatesAction(input: {
   deliveryId: string;
@@ -105,13 +135,21 @@ export async function updateDeliveryDatesAction(input: {
   const g = await guard();
   if ("ok" in g) return g;
 
+  /**
+   * Every dereference sits behind its own typeof. An omitted `reason` used to throw on `.trim()`
+   * before the guard that would have rejected it, and a thrown server action is digest-masked in
+   * production, so the operator saw a generic failure instead of the real reason.
+   */
+  if (typeof input.deliveryId !== "string" || input.deliveryId === "" || typeof input.reason !== "string") {
+    return { ok: false, reason: "INVALID_REQUEST" };
+  }
   const reason = input.reason.trim();
-  if (typeof input.deliveryId !== "string" || input.deliveryId === "" || reason === "") {
+  if (reason === "") {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
 
-  const parsedInvoiceDate = parseDateOnly(input.invoiceDate ?? "");
-  const parsedDueDate = parseDateOnly(input.dueDate ?? "");
+  const parsedInvoiceDate = parseCalendarDay(input.invoiceDate);
+  const parsedDueDate = parseCalendarDay(input.dueDate);
   if (!parsedInvoiceDate || !parsedDueDate) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
@@ -119,17 +157,27 @@ export async function updateDeliveryDatesAction(input: {
     return { ok: false, reason: "INVALID_DATES" };
   }
 
-  const orderId = await prisma.$transaction(async (tx) => {
+  const outcome = await runSerializable<
+    { kind: "OK"; orderId: string } | { kind: "NOT_FOUND" } | { kind: "CONFLICT" }
+  >(async (tx) => {
     const before = await tx.fieldSalesDelivery.findUnique({
       where: { id: input.deliveryId },
       select: { id: true, orderId: true, invoiceDate: true, dueDate: true },
     });
-    if (!before) return null;
+    if (!before) return { kind: "NOT_FOUND" };
 
-    await tx.fieldSalesDelivery.update({
-      where: { id: before.id },
+    /**
+     * The read pair is part of the filter, so the write only lands on the row the audit entry is
+     * about to describe. A miss means someone else moved it in between; the transaction returns
+     * without writing anything, so a `CONFLICT` never leaves an audit row behind. The mariadb
+     * driver reports MATCHED rows rather than changed ones (`foundRows` defaults on), so
+     * re-submitting the same dates still counts as a hit.
+     */
+    const swapped = await tx.fieldSalesDelivery.updateMany({
+      where: { id: before.id, invoiceDate: before.invoiceDate, dueDate: before.dueDate },
       data: { invoiceDate: parsedInvoiceDate, dueDate: parsedDueDate },
     });
+    if (swapped.count === 0) return { kind: "CONFLICT" };
 
     await tx.auditLog.create({
       data: {
@@ -151,13 +199,14 @@ export async function updateDeliveryDatesAction(input: {
       },
     });
 
-    return before.orderId;
+    return { kind: "OK", orderId: before.orderId };
   });
 
-  if (!orderId) return { ok: false, reason: "NOT_FOUND" };
+  if (outcome.kind === "NOT_FOUND") return { ok: false, reason: "NOT_FOUND" };
+  if (outcome.kind === "CONFLICT") return { ok: false, reason: "CONFLICT" };
 
   revalidatePath("/backoffice/field-sales-orders");
-  revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
+  revalidatePath(`/backoffice/field-sales-orders/${outcome.orderId}`);
   return { ok: true };
 }
 
