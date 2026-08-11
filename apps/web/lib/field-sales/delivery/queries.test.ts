@@ -100,6 +100,8 @@ d("getFieldSalesOrderById — deliveries (test bed only)", () => {
       orderId,
       deliveredById: userId,
       lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: new Date("2026-01-01T00:00:00.000+07:00"),
+      dueDate: new Date("2026-01-08T00:00:00.000+07:00"),
     });
 
     const detail = await getFieldSalesOrderById(orderId);

@@ -3,17 +3,22 @@ import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { DeliveryError } from "../errors";
-import { outstandingQty, nextDeliveryStatus, computeDueDate, allocateDeliveryDiscounts } from "./plan";
+import { outstandingQty, nextDeliveryStatus, allocateDeliveryDiscounts } from "./plan";
 
 export async function recordFieldSalesDelivery(input: {
   orderId: string;
   deliveredById: string;
   lines: Array<{ orderLineId: string; qty: number }>;
   note?: string;
-  invoiceDate?: Date;
+  invoiceDate: Date;
+  dueDate: Date;
   idempotencyKey?: string;
 }): Promise<{ deliveryId: string; docNo: string }> {
   if (input.lines.length === 0) throw new DeliveryError("NO_LINES");
+
+  if (input.dueDate.getTime() < input.invoiceDate.getTime()) {
+    throw new DeliveryError("INVALID_DATES");
+  }
 
   return runSerializable(async (tx) => {
     if (input.idempotencyKey) {
@@ -27,7 +32,6 @@ export async function recordFieldSalesDelivery(input: {
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
       include: {
-        store: { select: { paymentTempo: true } },
         lines: { include: { item: { select: { sku: true, category: { select: { name: true } } } } } },
         deliveries: { select: { discountAmount: true, lines: { select: { orderLineId: true, discountAmount: true } } } },
       },
@@ -99,7 +103,6 @@ export async function recordFieldSalesDelivery(input: {
 
     const docNo = await generateDocNumber("DELIVERY", tx);
     const now = new Date();
-    const invoiceDate = input.invoiceDate ?? now;
 
     const delivery = await tx.fieldSalesDelivery.create({
       data: {
@@ -107,8 +110,8 @@ export async function recordFieldSalesDelivery(input: {
         orderId: order.id,
         deliveredAt: now,
         deliveredById: input.deliveredById,
-        invoiceDate,
-        dueDate: computeDueDate(invoiceDate, order.store.paymentTempo),
+        invoiceDate: input.invoiceDate,
+        dueDate: input.dueDate,
         subtotal,
         discountAmount: allocation.orderDiscountAmount,
         total,
