@@ -237,6 +237,55 @@ describe("buildCashFlow", () => {
     expect(cf.netChange).toBe(0);
   });
 
+  it("reports a cash account from the section map even when no row carries it", () => {
+    /**
+     * A cash account that is inactive and had no movement in the window is
+     * dropped by `getAccountBalances`, so it never reaches `rows` — while
+     * `cashAccountIds`, built from this same map, still finds it and computes
+     * `kasAwal` from it. Deriving the flag from the row loop instead reported
+     * "no cash account configured" on a report that had one.
+     */
+    const rows = [row("ar", "1201", "ASET", 1_000_000, 0)];
+    const cf = buildCashFlow({
+      rows,
+      sectionByAccountId: sections([
+        ["kas", "KAS"],
+        ["ar", "OPERASIONAL"],
+      ]),
+      kasAwal: 250_000,
+    });
+
+    expect(cf.hasCashAccount).toBe(true);
+  });
+
+  it("accumulates a credit-normal cash account on the debit-minus-credit orientation", () => {
+    /**
+     * A bank overdraft (LIABILITAS) overridden to KAS, which the action now
+     * refuses but an override stored earlier could still carry.
+     * `DR 1101 Kas 10.000.000 / CR 2201 Cerukan 10.000.000` moves no net cash.
+     * Read off `signed`, the credit-normal row reports +10.000.000 instead of
+     * −10.000.000, so the cash side doubled to +20.000.000 against a
+     * `netChange` of 0 and the destructive corruption banner fired permanently
+     * on a balanced ledger.
+     */
+    const rows = [
+      row("kas", "1101", "ASET", 10_000_000, 0),
+      row("overdraft", "2201", "LIABILITAS", 0, 10_000_000),
+    ];
+    const cf = buildCashFlow({
+      rows,
+      sectionByAccountId: sections([
+        ["kas", "KAS"],
+        ["overdraft", "KAS"],
+      ]),
+      kasAwal: 5_000_000,
+    });
+
+    expect(cf.netChange).toBe(0);
+    expect(cf.kasAkhirActual).toBe(5_000_000);
+    expect(cf.isReconciled).toBe(true);
+  });
+
   it("reports no cash account when none is classified KAS", () => {
     const rows = [row("ar", "1201", "ASET", 1_000_000, 0)];
     const cf = buildCashFlow({

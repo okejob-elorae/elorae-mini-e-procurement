@@ -14,21 +14,51 @@ export type AccountSectionRow = {
 };
 
 /**
- * Every account with its stored override, the roles mapped to it, and the
- * section actually in force. `derived` is what the deriver returns when the
- * override is ignored, so the Klasifikasi page can show the default a cleared
- * override would fall back to.
+ * Every POSTABLE LEAF account with its stored override, the roles mapped to it,
+ * and the section actually in force. `derived` is what the deriver returns when
+ * the override is ignored, so the Klasifikasi page can show the default a
+ * cleared override would fall back to.
+ *
+ * Non-leaf and inactive accounts are excluded, and both callers want that. A
+ * non-leaf can never be posted to, so classifying one is inert for every
+ * section — and actively wrong for KAS, because the operator reasonably reads
+ * a parent as classifying the group beneath it. Tagging `11 Kas dan Bank` as
+ * KAS used to silence its `1101`/`1102` leaves out of the cash bucket while
+ * contributing a cash delta of zero, which reported no cash at all under a
+ * green "reconciled" note.
+ *
+ * The parent set is derived from the FULL chart rather than the active subset,
+ * which is where this deviates from `getPostableAccounts`
+ * (`apps/web/lib/finance/coa/queries.ts`). `postJournal` looks up children with
+ * no `isActive` filter (`packages/db/src/journal-writer.ts`), so an account
+ * whose only children are inactive is still rejected at write time; deriving
+ * the set the narrower way would classify an account nothing can ever post to.
  */
 export async function listAccountSections(): Promise<AccountSectionRow[]> {
   const [accounts, mappings] = await Promise.all([
     prisma.chartAccount.findMany({
       orderBy: { code: "asc" },
-      select: { id: true, code: true, name: true, type: true, cashFlowSection: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        type: true,
+        cashFlowSection: true,
+        isActive: true,
+        parentId: true,
+      },
     }),
     prisma.journalAccountMapping.findMany({
       select: { role: true, chartAccountId: true },
     }),
   ]);
+
+  const parentIds = new Set(
+    accounts.map((account) => account.parentId).filter((id): id is string => id !== null),
+  );
+  const postable = accounts.filter(
+    (account) => account.isActive && !parentIds.has(account.id),
+  );
 
   const rolesByAccount = new Map<string, PostingRole[]>();
   for (const mapping of mappings) {
@@ -37,7 +67,7 @@ export async function listAccountSections(): Promise<AccountSectionRow[]> {
     rolesByAccount.set(mapping.chartAccountId, list);
   }
 
-  return accounts.map((account) => {
+  return postable.map((account) => {
     const type = account.type as AccountType;
     const roles = rolesByAccount.get(account.id) ?? [];
     const override = (account.cashFlowSection ?? null) as CashFlowSection | null;
@@ -53,7 +83,15 @@ export async function listAccountSections(): Promise<AccountSectionRow[]> {
   });
 }
 
-/** Section in force per account, which is what the statement engine consumes. */
+/**
+ * Section in force per account, which is what the statement engine consumes.
+ *
+ * Keyed on postable leaves only, so a balance row with no entry here — a parent
+ * that carried journal lines before it gained children, or an account since
+ * deactivated — resolves to null and lands in the engine's unclassified bucket.
+ * That bucket is inside `netChange`, so the reconciliation identity survives:
+ * the delta is still counted exactly once, it just renders separately.
+ */
 export async function getSectionByAccountId(): Promise<Map<string, CashFlowSection | null>> {
   const rows = await listAccountSections();
   return new Map(
@@ -67,9 +105,11 @@ export async function getSectionByAccountId(): Promise<Map<string, CashFlowSecti
 /**
  * Cumulative cash balance strictly before the reporting window opens.
  *
- * Only cash accounts are summed, and every cash account is ASET (both the BANK
- * and CASH posting roles are constrained to it), so the signed balance is
- * simply debit minus credit. An omitted `before` means the report runs since
+ * Only cash accounts are summed, and every cash account is ASET, so the signed
+ * balance is simply debit minus credit. Both routes to KAS enforce that: the
+ * BANK and CASH posting roles are pinned to ASET by
+ * `POSTING_ROLE_ACCOUNT_TYPES`, and `setCashFlowSectionAction` refuses a KAS
+ * override on anything else. An omitted `before` means the report runs since
  * inception, where the opening balance is zero by definition.
  */
 export async function getCashOpeningBalance(

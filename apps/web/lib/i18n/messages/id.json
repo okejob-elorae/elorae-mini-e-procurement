@@ -3159,7 +3159,8 @@
       "FORBIDDEN": "Anda tidak memiliki akses untuk mengubah klasifikasi.",
       "NOT_FOUND": "Akun tidak ditemukan.",
       "NOT_CLASSIFIABLE": "Akun pendapatan, harga pokok, dan beban tidak diklasifikasi — sudah termasuk dalam laba bersih.",
-      "INVALID_SECTION": "Klasifikasi tidak dikenal."
+      "INVALID_SECTION": "Klasifikasi tidak dikenal.",
+      "KAS_REQUIRES_ASET": "Hanya akun bertipe ASET yang dapat ditetapkan sebagai Kas dan Setara Kas. Menetapkan akun liabilitas atau ekuitas sebagai kas akan membuat laporan arus kas salah."
     }
   },
 

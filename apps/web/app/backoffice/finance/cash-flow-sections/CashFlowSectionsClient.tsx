@@ -27,6 +27,7 @@ import {
 } from "@/app/actions/cash-flow-sections";
 import { CASH_FLOW_SECTIONS, type CashFlowSection } from "@/lib/finance/reports/cash-flow-classify";
 import type { AccountSectionRow } from "@/lib/finance/reports/cash-flow-queries";
+import type { AccountType } from "@/lib/constants/enums";
 
 type Props = {
   rows: AccountSectionRow[];
@@ -41,14 +42,33 @@ export function CashFlowSectionsClient({ rows, canManage }: Props) {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
-  const options: SearchableComboboxOption[] = useMemo(
-    () =>
-      CASH_FLOW_SECTIONS.map((section) => ({
-        value: section,
-        label: t(`section.${section}` as never),
-      })),
-    [t],
-  );
+  /**
+   * Per-account-type option lists so the picker signals which sections are
+   * valid before the operator submits, instead of only after a rejection toast
+   * — the same shape `AccountMappingClient` builds its `optionsByRole` with.
+   *
+   * Only KAS is ever disabled, and only off ASET, because every cash reader
+   * downstream is oriented debit-minus-credit; `setCashFlowSectionAction`
+   * enforces the same rule with `KAS_REQUIRES_ASET`. The option stays in the
+   * list rather than being filtered out, so an override set before this
+   * restriction existed still resolves its trigger label — `SearchableCombobox`
+   * matches the label by `value` and never consults `disabled`.
+   */
+  const optionsByType = useMemo(() => {
+    const map = new Map<AccountType, SearchableComboboxOption[]>();
+    for (const row of rows) {
+      if (map.has(row.type)) continue;
+      map.set(
+        row.type,
+        CASH_FLOW_SECTIONS.map((section) => ({
+          value: section,
+          label: t(`section.${section}` as never),
+          disabled: section === "KAS" && row.type !== "ASET",
+        })),
+      );
+    }
+    return map;
+  }, [rows, t]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -152,7 +172,7 @@ export function CashFlowSectionsClient({ rows, canManage }: Props) {
                         <TableCell className="align-top">
                           <div className="flex items-center gap-1">
                             <SearchableCombobox
-                              options={options}
+                              options={optionsByType.get(row.type) ?? []}
                               value={row.override ?? ""}
                               onValueChange={(v) => handleSelect(row, v)}
                               placeholder={

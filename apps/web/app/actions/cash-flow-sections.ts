@@ -13,7 +13,15 @@ import {
 
 type Result =
   | { ok: true }
-  | { ok: false; code: "FORBIDDEN" | "NOT_FOUND" | "NOT_CLASSIFIABLE" | "INVALID_SECTION" };
+  | {
+      ok: false;
+      code:
+        | "FORBIDDEN"
+        | "NOT_FOUND"
+        | "NOT_CLASSIFIABLE"
+        | "INVALID_SECTION"
+        | "KAS_REQUIRES_ASET";
+    };
 
 async function assertCanManage(): Promise<boolean> {
   const session = await auth();
@@ -40,8 +48,26 @@ export async function setCashFlowSectionAction(
   if (!account) return { ok: false, code: "NOT_FOUND" };
 
   /* Revenue, cost and expense accounts are inside net income and never carry a section. */
-  if (!isClassifiableType(account.type as AccountType)) {
+  const type = account.type as AccountType;
+  if (!isClassifiableType(type)) {
     return { ok: false, code: "NOT_CLASSIFIABLE" };
+  }
+
+  /**
+   * KAS is restricted to ASET, mirroring how `POSTING_ROLE_ACCOUNT_TYPES` pins
+   * the BANK and CASH roles. Everything downstream reads a cash account on the
+   * debit-minus-credit orientation — `getCashOpeningBalance` sums it that way
+   * and the engine accumulates it that way — while the balance rows carry
+   * `signed`, which flips for credit-normal types. Tagging a LIABILITAS account
+   * as KAS therefore double-counts its movement against `netChange` and fires
+   * the "corrupt journal data" banner on a perfectly balanced ledger.
+   *
+   * A bank overdraft inside cash and cash equivalents is legitimate under
+   * IAS 7, so this refuses a real accounting configuration. Supporting it means
+   * orienting the whole cash path off `AccountType`, not relaxing this check.
+   */
+  if (section === "KAS" && type !== "ASET") {
+    return { ok: false, code: "KAS_REQUIRES_ASET" };
   }
 
   await prisma.chartAccount.update({

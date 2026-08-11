@@ -72,7 +72,17 @@ export function buildCashFlow(input: {
   const pendanaan: CashFlowLine[] = [];
   const unclassified: CashFlowLine[] = [];
 
-  let hasCashAccount = false;
+  /**
+   * Derived from the classified set rather than the period's rows. A cash
+   * account that is inactive and had no movement in the window is dropped by
+   * `getAccountBalances`, so reading the rows would report no cash account
+   * configured while `cashAccountIds` — built from this same map — still found
+   * it and computed `kasAwal` from it. The two derivations have to agree about
+   * what "the cash accounts" are.
+   */
+  const hasCashAccount = [...input.sectionByAccountId.values()].some(
+    (section) => section === "KAS",
+  );
   let cashDeltaCents = 0;
 
   for (const row of input.rows) {
@@ -80,8 +90,16 @@ export function buildCashFlow(input: {
 
     const section = input.sectionByAccountId.get(row.accountId) ?? null;
     if (section === "KAS") {
-      hasCashAccount = true;
-      cashDeltaCents += toCents(row.signed);
+      /**
+       * Debit minus credit, NOT `row.signed`. `signed` flips orientation for
+       * credit-normal types, whereas `netChange` and `getCashOpeningBalance`
+       * both read cash as debit minus credit. `setCashFlowSectionAction` now
+       * restricts KAS to ASET, where the two coincide, so this is a no-op
+       * today — it is written out so the engine, the opening-balance query and
+       * the balance identity state one orientation rather than three paths
+       * that happen to agree.
+       */
+      cashDeltaCents += toCents(row.debit) - toCents(row.credit);
       continue;
     }
 

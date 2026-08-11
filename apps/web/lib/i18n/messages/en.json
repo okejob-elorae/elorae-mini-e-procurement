@@ -3159,7 +3159,8 @@
       "FORBIDDEN": "You do not have permission to change the classification.",
       "NOT_FOUND": "Account not found.",
       "NOT_CLASSIFIABLE": "Revenue, cost of goods, and expense accounts are not classified — they are already inside net profit.",
-      "INVALID_SECTION": "Unknown classification."
+      "INVALID_SECTION": "Unknown classification.",
+      "KAS_REQUIRES_ASET": "Only ASET accounts can be marked as Cash and Cash Equivalents. Marking a liability or equity account as cash would make the cash flow statement wrong."
     }
   },
 
