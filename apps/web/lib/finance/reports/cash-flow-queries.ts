@@ -8,31 +8,47 @@ export type AccountSectionRow = {
   code: string;
   name: string;
   type: AccountType;
+  isActive: boolean;
   override: CashFlowSection | null;
   derived: CashFlowSection | null;
   roles: PostingRole[];
 };
 
 /**
- * Every POSTABLE LEAF account with its stored override, the roles mapped to it,
- * and the section actually in force. `derived` is what the deriver returns when
- * the override is ignored, so the Klasifikasi page can show the default a
- * cleared override would fall back to.
+ * Every LEAF account with its stored override, the roles mapped to it, and the
+ * section actually in force. `derived` is what the deriver returns when the
+ * override is ignored, so the Klasifikasi page can show the default a cleared
+ * override would fall back to.
  *
- * Non-leaf and inactive accounts are excluded, and both callers want that. A
- * non-leaf can never be posted to, so classifying one is inert for every
- * section — and actively wrong for KAS, because the operator reasonably reads
- * a parent as classifying the group beneath it. Tagging `11 Kas dan Bank` as
- * KAS used to silence its `1101`/`1102` leaves out of the cash bucket while
- * contributing a cash delta of zero, which reported no cash at all under a
- * green "reconciled" note.
+ * Non-leaf accounts are excluded, and both callers want that. A non-leaf can
+ * never be posted to, so classifying one is inert for every section — and
+ * actively wrong for KAS, because the operator reasonably reads a parent as
+ * classifying the group beneath it. Tagging `11 Kas dan Bank` as KAS used to
+ * silence its `1101`/`1102` leaves out of the cash bucket while contributing a
+ * cash delta of zero, which reported no cash at all under a green "reconciled"
+ * note.
  *
- * The parent set is derived from the FULL chart rather than the active subset,
- * which is where this deviates from `getPostableAccounts`
- * (`apps/web/lib/finance/coa/queries.ts`). `postJournal` looks up children with
- * no `isActive` filter (`packages/db/src/journal-writer.ts`), so an account
- * whose only children are inactive is still rejected at write time; deriving
- * the set the narrower way would classify an account nothing can ever post to.
+ * INACTIVE leaves are deliberately KEPT, matching `getAccountBalances`, which
+ * retains an inactive account that still carries movement in range so the
+ * debit-equals-credit identity cannot break. Filtering them out here would
+ * desynchronise the two: a deactivated cash account still holding a balance
+ * would drop out of `cashAccountIds`, so `kasAwal` would silently lose it while
+ * its rows still reached the engine and landed in the unclassified bucket
+ * inside `netChange` — `cashDelta` would then disagree with `netChange` and the
+ * destructive "data jurnal rusak" banner would fire on a healthy ledger. That
+ * is the same false-alarm class as a credit-normal account marked KAS, arriving
+ * through a different door, and it is worse than the noise of listing a few
+ * dead accounts on the classification page. Classifying an inactive leaf is
+ * legitimate in its own right: its historical balance still belongs to a
+ * section for any report covering a period when it was live.
+ *
+ * The parent set is therefore the only filter, and it is derived from the FULL
+ * chart. That is where this deviates from `getPostableAccounts`
+ * (`apps/web/lib/finance/coa/queries.ts`), which collects parent ids from the
+ * active subset only. `postJournal` looks up children with no `isActive` filter
+ * (`packages/db/src/journal-writer.ts`), so an account whose only children are
+ * inactive is still rejected at write time; deriving the set the narrower way
+ * would classify an account nothing can ever post to.
  */
 export async function listAccountSections(): Promise<AccountSectionRow[]> {
   const [accounts, mappings] = await Promise.all([
@@ -56,9 +72,7 @@ export async function listAccountSections(): Promise<AccountSectionRow[]> {
   const parentIds = new Set(
     accounts.map((account) => account.parentId).filter((id): id is string => id !== null),
   );
-  const postable = accounts.filter(
-    (account) => account.isActive && !parentIds.has(account.id),
-  );
+  const leaves = accounts.filter((account) => !parentIds.has(account.id));
 
   const rolesByAccount = new Map<string, PostingRole[]>();
   for (const mapping of mappings) {
@@ -67,7 +81,7 @@ export async function listAccountSections(): Promise<AccountSectionRow[]> {
     rolesByAccount.set(mapping.chartAccountId, list);
   }
 
-  return postable.map((account) => {
+  return leaves.map((account) => {
     const type = account.type as AccountType;
     const roles = rolesByAccount.get(account.id) ?? [];
     const override = (account.cashFlowSection ?? null) as CashFlowSection | null;
@@ -75,6 +89,7 @@ export async function listAccountSections(): Promise<AccountSectionRow[]> {
       accountId: account.id,
       code: account.code,
       name: account.name,
+      isActive: account.isActive,
       type,
       override,
       derived: resolveCashFlowSection({ type, roles }),
@@ -86,11 +101,13 @@ export async function listAccountSections(): Promise<AccountSectionRow[]> {
 /**
  * Section in force per account, which is what the statement engine consumes.
  *
- * Keyed on postable leaves only, so a balance row with no entry here — a parent
- * that carried journal lines before it gained children, or an account since
- * deactivated — resolves to null and lands in the engine's unclassified bucket.
- * That bucket is inside `netChange`, so the reconciliation identity survives:
- * the delta is still counted exactly once, it just renders separately.
+ * Keyed on leaves only, so the one balance row that can miss an entry here is a
+ * parent that carried journal lines before it gained children. It resolves to
+ * null and lands in the engine's unclassified bucket, which is inside
+ * `netChange`, so the reconciliation identity survives: the delta is still
+ * counted exactly once, it just renders separately. Inactive leaves ARE keyed,
+ * so a deactivated cash account keeps contributing to `cashAccountIds` and to
+ * `kasAwal` — see `listAccountSections` for why that matters.
  */
 export async function getSectionByAccountId(): Promise<Map<string, CashFlowSection | null>> {
   const rows = await listAccountSections();

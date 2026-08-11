@@ -163,7 +163,10 @@ export function CashFlowSectionsClient({ rows, canManage }: Props) {
                     const rowPending = isPending && savingId === row.accountId;
                     const effective = row.override ?? row.derived;
                     return (
-                      <TableRow key={row.accountId}>
+                      <TableRow
+                        key={row.accountId}
+                        className={!row.isActive ? "opacity-50" : undefined}
+                      >
                         <TableCell className="align-top font-mono text-xs">{row.code}</TableCell>
                         <TableCell className="align-top">{row.name}</TableCell>
                         <TableCell className="align-top text-sm text-muted-foreground">
