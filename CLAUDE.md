@@ -216,6 +216,17 @@ EPIC-14 (Financial Reports) decomposition:
 | **14-04** | Export — Excel via `xlsx` server actions returning `{base64, filename}`; PDF via `/print/finance/*` + `print.css` browser print | ✅ shipped (PR #215 merged 2026-08-05). Prod permission seeded 2026-08-08. |
 | **Fee split** | Settlement journal posts one line per fee category (`MARKETPLACE_FEE_ADMIN`/`_SERVICE`/`_COMMISSION`/`_PROCESSING`) plus a `_OTHER` residual computed from `totalPengeluaran` so the journal still balances; unmapped category roles fall back to the legacy `MARKETPLACE_FEE` account. TikTok zeroes all four columns → all its fees land in `_OTHER`. Zero schema migration (`role` is a String). | ✅ shipped (PR #215 merged 2026-08-05) |
 
+EPIC-16 (Cash Flow) decomposition:
+
+| Story | Scope | Status |
+|----|-------|--------|
+| **16-01** | Cash flow generation — indirect method from journal data; net change derived from every non-cash account's period delta, so `ΔKas = LabaBersih + ΔLiabilitas + ΔEkuitas − ΔAsetNonKas` holds identically and the reconciliation is a corruption tripwire, not a real check. Section comes from a nullable `ChartAccount.cashFlowSection` override falling back to a read-time deriver (`BANK`/`CASH` ⇒ KAS, `AR`/`AP`/`INVENTORY*` ⇒ OPERASIONAL, `EKUITAS` ⇒ PENDANAAN, everything else unclassified). Unclassified accounts stay inside the total and render in their own bucket, so classification affects presentation only. | ✅ shipped |
+| **16-02** | Period comparison — immediately-preceding equal-length window, per-line delta over the union of both periods' accounts. Hidden when the range is since-inception. | ✅ shipped |
+| **16-03** | Export — Excel via `exportCashFlowExcel`, PDF via `/print/finance/cash-flow`. Print is single-period by design; three amount columns do not fit the portrait sheet. | ✅ shipped |
+| **Klasifikasi** | Finance → Klasifikasi Arus Kas, reusing `journals:view`/`journals:manage` — **no new permission rows, nothing to seed on prod**. | ✅ shipped |
+
+**Dormant until the GL cutover is armed** (see the GL blocker in Finance follow-ups): with no journals posting, the statement renders honest and empty, and the reconciliation criterion cannot be verified against real numbers.
+
 ## Follow-ups / tech debt (checklist)
 
 Canonical home for follow-ups + known debt. **New follow-ups go HERE** as `- [ ]` — not buried in PR bodies (they die on merge) or per-slice decomposition prose. When an item ships, flip it to `- [x]` and append the PR #. Feature names only (no EPIC labels — shared artifact). Cross-cutting code landmines also get a `memory/` note; this list is the actionable index.
@@ -287,6 +298,12 @@ Roadmap slices (not debt) live in the decomposition tables + the GitHub board, N
 - [ ] `MarketplaceFeeRole` in `finance/settlement/fee-split.ts` hand-duplicates five `POSTING_ROLES` entries — ``Extract<PostingRole, `MARKETPLACE_FEE_${string}`>`` would remove the drift risk (the compiler catches renames today, not additions).
 - [ ] Laba Rugi renders every active revenue/HPP/expense account even at zero for the period, with no "show zero accounts" toggle like the Trial Balance has.
 - [ ] `apps/web/lib/finance/settlement/tiktok-settlement-parser.ts`'s top-of-file comment is stale — it says the settlement journal posts `totalPengeluaran` as a single straight debit line, which stopped being true when the per-category fee split landed. Its `Math.abs()` rationale still stands.
+- [ ] Cash flow print view is single-period — the previous-period comparison appears on screen and in Excel but not in the PDF, because three amount columns do not fit the portrait statement sheet. A landscape variant would fix it.
+- [ ] Cash flow section classification has no bulk edit: clearing a large unclassified bucket is one account at a time. Fine for a small chart of accounts, painful for a real one.
+- [ ] The Klasifikasi Arus Kas page lists every balance-sheet account including non-postable parents. A parent can never carry a balance, so classifying one changes nothing and it is pure noise in the list — filter to postable leaves the way `getPostableAccounts` does.
+- [ ] `getCashFlowReport` runs `getAccountBalances` twice when a comparison is shown (once per window) plus one opening-balance query. Acceptable for a report, but it is the heaviest read in the finance module.
+- [ ] Cash flow has no DB-touching spec — `listAccountSections`, `getSectionByAccountId` and `getCashOpeningBalance` are covered only by reading. The pure engine, classifier and comparison are fully unit-tested.
+- [ ] A cash account is assumed to be ASET in `getCashOpeningBalance` (true today: `POSTING_ROLE_ACCOUNT_TYPES` constrains both `BANK` and `CASH` to ASET, and the deriver only assigns KAS from those roles). An override could mark a LIABILITAS account as KAS — a bank overdraft — and the opening balance would then carry the wrong sign. The engine itself is safe because it uses `signedDelta`; only the opening-balance query hard-codes debit-minus-credit.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
