@@ -2371,6 +2371,7 @@
       "tempoHint": "Store tempo: {days} days",
       "applyTempo": "Apply tempo",
       "dueDateRequired": "Enter a due date to continue.",
+      "dueDateBeforeInvoice": "The due date cannot be earlier than the invoice date.",
       "successDatesUpdated": "Nota dates updated.",
       "qty": "Qty",
       "value": "Value",

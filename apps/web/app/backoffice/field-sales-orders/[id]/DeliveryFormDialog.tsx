@@ -314,6 +314,12 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
               {dueDate === "" && (
                 <p className="text-xs text-muted-foreground">{t("delivery.dueDateRequired")}</p>
               )}
+              {dueDate !== "" &&
+                parsedInvoice !== null &&
+                parsedDue !== null &&
+                parsedDue.getTime() < parsedInvoice.getTime() && (
+                  <p className="text-xs text-destructive">{t("delivery.dueDateBeforeInvoice")}</p>
+                )}
             </div>
           </div>
         )}

@@ -2371,6 +2371,7 @@
       "tempoHint": "Tempo toko: {days} hari",
       "applyTempo": "Pakai tempo",
       "dueDateRequired": "Isi tanggal jatuh tempo untuk melanjutkan.",
+      "dueDateBeforeInvoice": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota.",
       "successDatesUpdated": "Tanggal nota diperbarui.",
       "qty": "Qty",
       "value": "Nilai",
