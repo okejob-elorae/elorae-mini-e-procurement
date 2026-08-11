@@ -62,8 +62,11 @@ function seedQtyInputs(lines: DeliverableLine[]): Record<string, string> {
 /**
  * Parses a date input's `YYYY-MM-DD` value at WIB midnight, matching how the server reads it.
  * Returns null on an empty or half-typed value so callers can simply do nothing.
+ *
+ * Exported for the edit dialog in DeliveriesCard, which enforces the same inverted-date rule —
+ * a third spelling of one rule is how the two dialogs drift apart.
  */
-function parseDateOnlyInput(value: string): Date | null {
+export function parseDateOnlyInput(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const parsed = new Date(`${value}T00:00:00.000+07:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
@@ -280,6 +283,9 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
                 disabled={isPending}
                 onChange={(e) => setInvoiceDate(e.target.value)}
               />
+              {invoiceDate === "" && (
+                <p className="text-xs text-muted-foreground">{t("delivery.invoiceDateRequired")}</p>
+              )}
             </div>
             <div className="space-y-1">
               <Label htmlFor="delivery-due-date" className="text-xs text-muted-foreground">
@@ -303,7 +309,7 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7"
+                    className="h-10"
                     disabled={isPending || parsedInvoice === null}
                     onClick={applyTempo}
                   >

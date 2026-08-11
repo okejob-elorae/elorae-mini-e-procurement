@@ -33,6 +33,7 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -55,7 +56,12 @@ import { closeRemainderAction, updateDeliveryDatesAction } from "@/app/actions/f
 import { logPrint } from "@/app/actions/audit";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
-import { DeliveryFormDialog, deliveryErrorKey, type DeliverableLine } from "./DeliveryFormDialog";
+import {
+  DeliveryFormDialog,
+  deliveryErrorKey,
+  parseDateOnlyInput,
+  type DeliverableLine,
+} from "./DeliveryFormDialog";
 
 type Props = {
   orderId: string;
@@ -165,6 +171,18 @@ export function DeliveriesCard({
   const hasOutstanding = lines.some((line) => line.outstanding > 0);
   const showActions = canDeliver && status === "APPROVED";
   const statusKey = `delivery.status.${deliveryStatus}`;
+
+  /**
+   * Same parsed-pair rule the create dialog applies, from the same helper. `min` on the due input
+   * does not cover it: moving the INVOICE date forward past a standing due date leaves the due
+   * input untouched, so without this the operator only learns about the inversion from a
+   * round-trip that the server was always going to refuse.
+   */
+  const parsedEditInvoice = parseDateOnlyInput(editInvoiceDate);
+  const parsedEditDue = parseDateOnlyInput(editDueDate);
+  const editDatesInverted =
+    parsedEditInvoice !== null && parsedEditDue !== null && parsedEditDue.getTime() < parsedEditInvoice.getTime();
+  const editDatesValid = parsedEditInvoice !== null && parsedEditDue !== null && !editDatesInverted;
 
   /* Delivery lines don't carry the order line's variant label, so look it up by orderLineId. */
   function lineVariantLabel(orderLineId: string): string | null {
@@ -293,7 +311,7 @@ export function DeliveriesCard({
 
   function callUpdateDates(): void {
     const reason = editReason.trim();
-    if (!editTargetId || !reason) return;
+    if (!editTargetId || !reason || !editDatesValid) return;
     startTransition(async () => {
       try {
         const result = await updateDeliveryDatesAction({
@@ -497,8 +515,8 @@ export function DeliveriesCard({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("delivery.editDatesTitle")}</DialogTitle>
+            <DialogDescription>{t("delivery.editDatesDescription")}</DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">{t("delivery.editDatesDescription")}</p>
           <div className="grid grid-cols-1 gap-3 py-2 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="edit-invoice-date" className="text-xs text-muted-foreground">
@@ -512,6 +530,9 @@ export function DeliveriesCard({
                 disabled={isPending}
                 onChange={(e) => setEditInvoiceDate(e.target.value)}
               />
+              {editInvoiceDate === "" && (
+                <p className="text-xs text-muted-foreground">{t("delivery.invoiceDateRequired")}</p>
+              )}
             </div>
             <div className="space-y-1">
               <Label htmlFor="edit-due-date" className="text-xs text-muted-foreground">
@@ -526,6 +547,12 @@ export function DeliveriesCard({
                 disabled={isPending}
                 onChange={(e) => setEditDueDate(e.target.value)}
               />
+              {editDueDate === "" && (
+                <p className="text-xs text-muted-foreground">{t("delivery.dueDateRequired")}</p>
+              )}
+              {editDatesInverted && (
+                <p className="text-xs text-destructive">{t("delivery.dueDateBeforeInvoice")}</p>
+              )}
             </div>
           </div>
           <div className="space-y-1">
@@ -548,7 +575,7 @@ export function DeliveriesCard({
             </DialogClose>
             <Button
               className="h-10"
-              disabled={isPending || !editReason.trim() || editInvoiceDate === "" || editDueDate === ""}
+              disabled={isPending || !editReason.trim() || !editDatesValid}
               onClick={callUpdateDates}
             >
               {isPending ? t("delivery.submitting") : tCommon("save")}
