@@ -2,12 +2,7 @@
 
 import { prisma } from '@elorae/db';
 import { messaging } from '@/lib/firebase/admin';
-import {
-  getUsersWithPermission,
-  sendNotificationToUsers,
-  type NotificationUser,
-  type NotificationPayload,
-} from '@/lib/notifications/recipients';
+import { getUsersWithPermission, sendNotificationToUsers } from '@/lib/notifications/recipients';
 
 const PO_OVERDUE_TYPE = 'PO_OVERDUE';
 const WO_OVERDUE_TYPE = 'WO_OVERDUE';
