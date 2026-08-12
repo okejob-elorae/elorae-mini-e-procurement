@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const { mockGetUsers, mockSend } = vi.hoisted(() => ({
   mockGetUsers: vi.fn(),
@@ -38,11 +38,18 @@ describe("toFcmData", () => {
 });
 
 describe("fanOutAdminNotification", () => {
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     mockGetUsers.mockReset();
     mockSend.mockReset();
     mockGetUsers.mockResolvedValue([{ id: "u1", fcmToken: null }]);
     mockSend.mockResolvedValue(undefined);
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
   });
 
   it("resolves recipients by the permission that can act on the category", async () => {
@@ -78,12 +85,18 @@ describe("fanOutAdminNotification", () => {
     await fanOutAdminNotification({ ...BASE, category: "SOMETHING_NEW" });
     expect(mockGetUsers).not.toHaveBeenCalled();
     expect(mockSend).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("no permission mapped for category SOMETHING_NEW"),
+    );
   });
 
   it("does not send when the permission resolves to nobody", async () => {
     mockGetUsers.mockResolvedValue([]);
     await fanOutAdminNotification({ ...BASE, category: "JOURNAL_PENDING" });
     expect(mockSend).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("no recipients hold journals:manage"),
+    );
   });
 
   it("never throws when delivery fails", async () => {
