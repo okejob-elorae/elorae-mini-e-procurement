@@ -30,6 +30,8 @@ export async function createFieldSalesOrder(input: {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
   let notification: AdminNotification | undefined;
   const result = await runSerializable(async (tx) => {
+    /* Retry re-runs this whole callback; reset so a rolled-back attempt's row never survives into the next one. */
+    notification = undefined;
     if (input.idempotencyKey) {
       const existing = await tx.fieldSalesOrder.findUnique({ where: { idempotencyKey: input.idempotencyKey }, select: { id: true, orderNo: true } });
       if (existing) return { orderId: existing.id, orderNo: existing.orderNo, oversell: [] as OversellAlert[] };
@@ -173,6 +175,7 @@ export async function createFieldSalesOrder(input: {
     return { orderId: order.id, orderNo, oversell };
   });
 
+  /* Outside the transaction on purpose — fanOutAdminNotification performs FCM network calls and must never run inside one. */
   if (notification) await fanOutAdminNotification(notification);
   return result;
 }

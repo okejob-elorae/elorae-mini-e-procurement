@@ -38,6 +38,8 @@ export async function submitStoreChangeRequest(input: {
 }): Promise<SubmitResult> {
   let notification: AdminNotification | undefined;
   const result = await runSerializable(async (tx) => {
+    /* Retry re-runs this whole callback; reset so a rolled-back attempt's row never survives into the next one. */
+    notification = undefined;
     const visit = await tx.storeVisit.findFirst({
       where: { id: input.visitId, storeId: input.storeId, userId: input.userId, checkoutAt: null },
       select: { id: true },
@@ -102,6 +104,7 @@ export async function submitStoreChangeRequest(input: {
     return { ok: true, requestId: created.id };
   });
 
+  /* Outside the transaction on purpose — fanOutAdminNotification performs FCM network calls and must never run inside one. */
   if (notification) await fanOutAdminNotification(notification);
   return result;
 }
