@@ -46,10 +46,19 @@ describe("fanOutAdminNotification", () => {
     mockGetUsers.mockResolvedValue([{ id: "u1", fcmToken: null }]);
     mockSend.mockResolvedValue(undefined);
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    /**
+     * The seam refuses to deliver whenever `VITEST` is set, which is every spec in this suite
+     * including this one. These cases are the only place the real path is meant to run, so the
+     * flag is cleared per-case — safely, because `./recipients` is mocked above, so nothing here
+     * can reach the database or FCM whichever way the guard falls. The guard itself is asserted
+     * in its own describe below, with the flag left in place.
+     */
+    vi.stubEnv("VITEST", "");
   });
 
   afterEach(() => {
     warnSpy.mockRestore();
+    vi.unstubAllEnvs();
   });
 
   it("resolves recipients by the permission that can act on the category", async () => {
@@ -111,5 +120,40 @@ describe("fanOutAdminNotification", () => {
     await expect(
       fanOutAdminNotification({ ...BASE, category: "JOURNAL_PENDING" }),
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The guard is what keeps a spec that never imports this module from writing permanent
+ * `NotificationQueue` rows onto the shared dev bed — and, where the Firebase credentials in
+ * `apps/web/.env` are live, from pushing to real phones. Asserted directly so it cannot be
+ * removed silently.
+ */
+describe("fanOutAdminNotification test-run guard", () => {
+  beforeEach(() => {
+    mockGetUsers.mockReset();
+    mockSend.mockReset();
+    mockGetUsers.mockResolvedValue([{ id: "u1", fcmToken: null }]);
+    mockSend.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("delivers nothing while VITEST is set, without resolving recipients", async () => {
+    vi.stubEnv("VITEST", "true");
+    await expect(
+      fanOutAdminNotification({ ...BASE, category: "JOURNAL_PENDING" }),
+    ).resolves.toBeUndefined();
+    expect(mockGetUsers).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("is already set by the runner, so an unmocked caller is covered by default", async () => {
+    expect(process.env.VITEST).toBeTruthy();
+    await fanOutAdminNotification({ ...BASE, category: "STORE_CHANGE_REQUEST" });
+    expect(mockGetUsers).not.toHaveBeenCalled();
+    expect(mockSend).not.toHaveBeenCalled();
   });
 });
