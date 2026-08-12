@@ -1,10 +1,11 @@
-import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert } from "@elorae/db";
+import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert, type AdminNotification } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { applyItemAggregatedPromos } from "./promo-apply";
 import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError } from "./errors";
 
 type CreateLine = {
@@ -27,7 +28,8 @@ export async function createFieldSalesOrder(input: {
   skipMinQty?: boolean;
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[] }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
-  return runSerializable(async (tx) => {
+  let notification: AdminNotification | undefined;
+  const result = await runSerializable(async (tx) => {
     if (input.idempotencyKey) {
       const existing = await tx.fieldSalesOrder.findUnique({ where: { idempotencyKey: input.idempotencyKey }, select: { id: true, orderNo: true } });
       if (existing) return { orderId: existing.id, orderNo: existing.orderNo, oversell: [] as OversellAlert[] };
@@ -156,7 +158,7 @@ export async function createFieldSalesOrder(input: {
       finalTotal = netTotal;
     }
 
-    await tx.adminNotification.create({
+    notification = await tx.adminNotification.create({
       data: {
         category: "PENDING_ORDER_APPROVAL",
         severity: "INFO",
@@ -170,6 +172,9 @@ export async function createFieldSalesOrder(input: {
 
     return { orderId: order.id, orderNo, oversell };
   });
+
+  if (notification) await fanOutAdminNotification(notification);
+  return result;
 }
 
 export async function approveFieldSalesOrder(input: {

@@ -1,5 +1,6 @@
-import { Prisma } from "@elorae/db";
+import { Prisma, type AdminNotification } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 export type ProposedStoreFields = {
   name: string;
@@ -35,7 +36,8 @@ export async function submitStoreChangeRequest(input: {
   userId: string;
   proposed: ProposedStoreFields;
 }): Promise<SubmitResult> {
-  return runSerializable(async (tx) => {
+  let notification: AdminNotification | undefined;
+  const result = await runSerializable(async (tx) => {
     const visit = await tx.storeVisit.findFirst({
       where: { id: input.visitId, storeId: input.storeId, userId: input.userId, checkoutAt: null },
       select: { id: true },
@@ -87,7 +89,7 @@ export async function submitStoreChangeRequest(input: {
       select: { id: true, storeId: true },
     });
 
-    await tx.adminNotification.create({
+    notification = await tx.adminNotification.create({
       data: {
         category: "STORE_CHANGE_REQUEST",
         severity: "INFO",
@@ -99,6 +101,9 @@ export async function submitStoreChangeRequest(input: {
 
     return { ok: true, requestId: created.id };
   });
+
+  if (notification) await fanOutAdminNotification(notification);
+  return result;
 }
 
 export async function approveStoreChangeRequest(input: {
