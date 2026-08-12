@@ -186,6 +186,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: P
         deliveryStatus={order.deliveryStatus}
         deliveries={order.deliveries}
         lines={deliverableLines}
+        paymentTempo={order.paymentTempo}
         canDeliver={canDeliver}
       />
 

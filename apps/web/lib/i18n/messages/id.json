@@ -2367,6 +2367,17 @@
       "docNo": "No. Kiriman",
       "date": "Tanggal Kirim",
       "dueDate": "Jatuh Tempo",
+      "invoiceDate": "Tanggal nota",
+      "tempoHint": "Tempo toko: {days} hari",
+      "applyTempo": "Pakai tempo",
+      "invoiceDateRequired": "Isi tanggal nota untuk melanjutkan.",
+      "dueDateRequired": "Isi tanggal jatuh tempo untuk melanjutkan.",
+      "dueDateBeforeInvoice": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota.",
+      "successDatesUpdated": "Tanggal nota diperbarui.",
+      "editDates": "Ubah tanggal nota",
+      "editDatesTitle": "Ubah tanggal nota",
+      "editDatesDescription": "Nomor dokumen tidak berubah. Alasan wajib diisi dan dicatat.",
+      "editReason": "Alasan perubahan (wajib diisi)",
       "qty": "Qty",
       "value": "Nilai",
       "deliveredBy": "Dikirim Oleh",
@@ -2393,7 +2404,9 @@
         "INVALID_REQUEST": "Permintaan pengiriman tidak valid. Tutup dialog ini lalu buka lagi.",
         "NO_LINES": "Tidak ada baris yang dipilih untuk dikirim.",
         "OVER_DELIVER": "Jumlah kirim melebihi sisa pesanan.",
-        "INSUFFICIENT_STOCK": "Stok tidak cukup untuk pengiriman ini."
+        "INSUFFICIENT_STOCK": "Stok tidak cukup untuk pengiriman ini.",
+        "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota.",
+        "CONFLICT": "Tanggal nota ini baru saja diubah orang lain. Muat ulang halaman dan coba lagi."
       }
     },
     "print": {

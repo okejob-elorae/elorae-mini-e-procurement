@@ -8,6 +8,10 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
+/* Fixture dates for tests that don't care about the exact value — the writer no longer derives one. */
+const defaultInvoiceDate = new Date("2026-01-01T00:00:00.000+07:00");
+const defaultDueDate = new Date("2026-01-08T00:00:00.000+07:00");
+
 d("recordFieldSalesDelivery (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
   let uomId = "";
@@ -97,6 +101,8 @@ d("recordFieldSalesDelivery (test bed only)", () => {
       orderId,
       deliveredById: userId,
       lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
     });
     const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
     expect(Number(inv.qtyOnHand)).toBe(8);
@@ -107,13 +113,28 @@ d("recordFieldSalesDelivery (test bed only)", () => {
   });
 
   it("sets DELIVERED once every line is fully delivered", async () => {
-    await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 5 }, { orderLineId: lineBId, qty: 5 }] });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [
+        { orderLineId: lineAId, qty: 5 },
+        { orderLineId: lineBId, qty: 5 },
+      ],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
     expect(order.deliveryStatus).toBe("DELIVERED");
   });
 
   it("rejects a qty above outstanding and moves no stock", async () => {
-    const err = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 6 }] }).catch((e) => e);
+    const err = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 6 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    }).catch((e) => e);
     expect(err).toBeInstanceOf(DeliveryError);
     expect(err.code).toBe("OVER_DELIVER");
     const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
@@ -122,7 +143,13 @@ d("recordFieldSalesDelivery (test bed only)", () => {
 
   it("hard-blocks when on-hand is short and names every short line", async () => {
     await prisma.inventoryValue.update({ where: { id: invId }, data: { qtyOnHand: 1 } });
-    const err = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 5 }] }).catch((e) => e);
+    const err = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 5 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    }).catch((e) => e);
     expect(err).toBeInstanceOf(DeliveryError);
     expect(err.code).toBe("INSUFFICIENT_STOCK");
     expect(err.shortLines).toHaveLength(1);
@@ -141,6 +168,8 @@ d("recordFieldSalesDelivery (test bed only)", () => {
         { orderLineId: lineAId, qty: 5 },
         { orderLineId: lineBId, qty: 5 },
       ],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
     }).catch((e) => e);
     expect(err).toBeInstanceOf(DeliveryError);
     expect(err.code).toBe("INSUFFICIENT_STOCK");
@@ -149,12 +178,24 @@ d("recordFieldSalesDelivery (test bed only)", () => {
   });
 
   it("rejects an empty line set", async () => {
-    const err = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [] }).catch((e) => e);
+    const err = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    }).catch((e) => e);
     expect(err.code).toBe("NO_LINES");
   });
 
   it("writes SalesHistory for the delivered qty only, keyed and dated by the delivery", async () => {
-    const first = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 2 }] });
+    const first = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
     const rows = await prisma.salesHistory.findMany({ where: { itemId: seededId(itemId) } });
     expect(rows).toHaveLength(1);
     expect(rows[0].quantity).toBe(2);
@@ -162,22 +203,87 @@ d("recordFieldSalesDelivery (test bed only)", () => {
   });
 
   it("does not collide on the SalesHistory unique key across two deliveries of the same variant", async () => {
-    await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 2 }] });
-    await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 3 }] });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 3 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
     const rows = await prisma.salesHistory.findMany({ where: { itemId: seededId(itemId) } });
     expect(rows).toHaveLength(2);
   });
 
-  it("stamps a due date at the store's payment tempo", async () => {
-    const { deliveryId } = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 2 }] });
+  it("stamps exactly the invoice and due dates it was given", async () => {
+    const { deliveryId } = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
     const dlv = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
-    const days = Math.round((dlv.dueDate.getTime() - dlv.invoiceDate.getTime()) / 86400000);
-    expect(days).toBe(30);
+    expect(dlv.invoiceDate.toISOString()).toBe(defaultInvoiceDate.toISOString());
+    expect(dlv.dueDate.toISOString()).toBe(defaultDueDate.toISOString());
+  });
+
+  it("stores the given dates and never consults the store payment tempo", async () => {
+    const invoiceDate = new Date("2026-03-01T00:00:00.000+07:00");
+    const dueDate = new Date("2026-03-05T00:00:00.000+07:00");
+
+    const { deliveryId } = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 1 }],
+      invoiceDate,
+      dueDate,
+      idempotencyKey: `${token}-dates`,
+    });
+
+    const dlv = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: deliveryId } });
+
+    /* The seeded store has paymentTempo 30, so a derived due date would be 31 Mar, not 5 Mar. */
+    expect(dlv.invoiceDate.toISOString()).toBe(invoiceDate.toISOString());
+    expect(dlv.dueDate.toISOString()).toBe(dueDate.toISOString());
+  });
+
+  it("refuses a due date earlier than the invoice date", async () => {
+    await expect(
+      recordFieldSalesDelivery({
+        orderId,
+        deliveredById: userId,
+        lines: [{ orderLineId: lineAId, qty: 1 }],
+        invoiceDate: new Date("2026-03-10T00:00:00.000+07:00"),
+        dueDate: new Date("2026-03-09T00:00:00.000+07:00"),
+        idempotencyKey: `${token}-inverted`,
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_DATES" });
   });
 
   it("replays an idempotencyKey without creating a second delivery or moving stock", async () => {
-    await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 2 }], idempotencyKey: `dlv-idem-${token}` });
-    await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 2 }], idempotencyKey: `dlv-idem-${token}` });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+      idempotencyKey: `dlv-idem-${token}`,
+    });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+      idempotencyKey: `dlv-idem-${token}`,
+    });
     const all = await prisma.fieldSalesDelivery.findMany({ where: { orderId: seededId(orderId) } });
     expect(all).toHaveLength(1);
     const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
@@ -186,12 +292,24 @@ d("recordFieldSalesDelivery (test bed only)", () => {
 
   it("refuses to deliver an order that is not APPROVED", async () => {
     await prisma.fieldSalesOrder.update({ where: { id: orderId }, data: { status: "PENDING_APPROVAL" } });
-    const err = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 1 }] }).catch((e) => e);
+    const err = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 1 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    }).catch((e) => e);
     expect(err.code).toBe("INVALID_STATE");
   });
 
   it("closing the remainder releases only the unconsumed reservation and sets CLOSED", async () => {
-    await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 2 }] });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
     await closeFieldSalesOrderRemainder({ orderId, closedById: userId, reason: "stok habis" });
     const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
     expect(Number(inv.reservedQty)).toBe(0);
@@ -313,6 +431,8 @@ d("recordFieldSalesDelivery — two distinct items in one call (test bed only)",
         { orderLineId: lineAId, qty: 3 },
         { orderLineId: lineBId, qty: 4 },
       ],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
     });
 
     const rows = await prisma.salesHistory.findMany({ where: { itemId: { in: [itemAId, itemBId] } } });
@@ -414,9 +534,21 @@ d("recordFieldSalesDelivery — discount allocation across two deliveries (test 
 
   it("a partial delivery then the closing delivery split the discount exactly, and SalesHistory is net of it", async () => {
     /* Delivery 1: 6 of 10 — pro-rated share. 10% line discount → 600; order discount pro-rata → 300. */
-    const d1 = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineId, qty: 6 }] });
+    const d1 = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineId, qty: 6 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
     /* Delivery 2: the remaining 4 — closes the order, so it takes whatever discount is left over exactly. */
-    const d2 = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineId, qty: 4 }] });
+    const d2 = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineId, qty: 4 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
 
     const delivery1 = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: d1.deliveryId } });
     const delivery2 = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: d2.deliveryId } });
@@ -533,10 +665,34 @@ d("recordFieldSalesDelivery — residue on a line that finishes before the order
   });
 
   it("the deliveries still sum to the order total when a line strands residue before the closing delivery", async () => {
-    await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 1 }] });
-    await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 1 }] });
-    await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineAId, qty: 1 }] });
-    const closing = await recordFieldSalesDelivery({ orderId, deliveredById: userId, lines: [{ orderLineId: lineBId, qty: 1 }] });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 1 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 1 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
+    await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 1 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
+    const closing = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineBId, qty: 1 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
 
     const deliveries = await prisma.fieldSalesDelivery.findMany({
       where: { orderId: seededId(orderId) },

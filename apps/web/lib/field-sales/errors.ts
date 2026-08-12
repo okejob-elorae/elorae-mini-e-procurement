@@ -30,7 +30,8 @@ export type DeliveryErrorCode =
   | "INVALID_STATE"
   | "NO_LINES"
   | "OVER_DELIVER"
-  | "INSUFFICIENT_STOCK";
+  | "INSUFFICIENT_STOCK"
+  | "INVALID_DATES";
 
 export class DeliveryError extends Error {
   constructor(

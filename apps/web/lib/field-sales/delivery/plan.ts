@@ -55,6 +55,14 @@ export function nextDeliveryStatus(lines: OrderLineState[]): DeliveryStatusValue
   return anyDelivered ? "DELIVERED" : "PENDING";
 }
 
+/**
+ * Invoice date plus a store's payment tempo, in whole days.
+ *
+ * This is a SUGGESTION, never an authority. The client locked that a nota's due date is
+ * entered by a human and must not be silently set from `Store.paymentTempo`, so the writer
+ * does not call this — the delivery dialog does, behind a button the operator presses. Keep
+ * it pure so it can run in the browser.
+ */
 export function computeDueDate(invoiceDate: Date, paymentTempoDays: number): Date {
   const due = new Date(invoiceDate.getTime());
   due.setUTCDate(due.getUTCDate() + Math.max(0, Math.floor(paymentTempoDays)));
