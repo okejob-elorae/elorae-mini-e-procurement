@@ -78,7 +78,7 @@ async function flag(
       metadata: { orderId, kind, reason: res.code, role: res.role ?? null },
     },
   });
-  await fanOutAdminNotification(salesJournalPendingNotification);
+  void fanOutAdminNotification(salesJournalPendingNotification);
 }
 
 export async function postPendingSalesJournals(

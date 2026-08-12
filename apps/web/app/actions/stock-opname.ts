@@ -312,7 +312,7 @@ export async function approveOpname(
             metadata: { opnameId, reason: jr.code, role: jr.role ?? null },
           },
         });
-        await fanOutAdminNotification(opnameJournalPendingNotification);
+        void fanOutAdminNotification(opnameJournalPendingNotification);
       }
     } catch { /* never let journaling fail the approve */ }
 

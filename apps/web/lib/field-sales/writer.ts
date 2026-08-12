@@ -175,8 +175,13 @@ export async function createFieldSalesOrder(input: {
     return { orderId: order.id, orderNo, oversell };
   });
 
-  /* Outside the transaction on purpose — fanOutAdminNotification performs FCM network calls and must never run inside one. */
-  if (notification) await fanOutAdminNotification(notification);
+  /**
+   * Outside the transaction on purpose — `fanOutAdminNotification` performs FCM network calls
+   * and must never run inside one — and not awaited, because the salesman is watching a PWA
+   * spinner on mobile data while the order that already committed waits on a bell ping. The
+   * seam swallows its own failures, so there is no outcome here for this function to report.
+   */
+  if (notification) void fanOutAdminNotification(notification);
   return result;
 }
 

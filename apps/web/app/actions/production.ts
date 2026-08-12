@@ -1279,7 +1279,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: jr.code, role: jr.role ?? null },
         },
       });
-      await fanOutAdminNotification(fgReceiptJournalPendingNotification);
+      void fanOutAdminNotification(fgReceiptJournalPendingNotification);
     }
   } catch (e) {
     try {
@@ -1292,7 +1292,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: "ERROR", role: null },
         },
       });
-      await fanOutAdminNotification(fgReceiptJournalErrorNotification);
+      void fanOutAdminNotification(fgReceiptJournalErrorNotification);
     } catch {
       // best-effort: never fail receiveFG on a journal/notification error
     }

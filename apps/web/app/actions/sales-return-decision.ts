@@ -172,7 +172,7 @@ export async function submitReturnDecisionAction(
               metadata: { salesReturnId, kind, reason: jr.code, role },
             },
           });
-          await fanOutAdminNotification(journalPendingNotification);
+          void fanOutAdminNotification(journalPendingNotification);
         }
       } catch (e) {
         try {
@@ -185,7 +185,7 @@ export async function submitReturnDecisionAction(
               metadata: { salesReturnId, kind, reason: "ERROR", role: null },
             },
           });
-          await fanOutAdminNotification(journalErrorNotification);
+          void fanOutAdminNotification(journalErrorNotification);
         } catch {
           // best-effort: never change the decision result on a journal/notification failure
         }

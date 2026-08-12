@@ -355,7 +355,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
           metadata: { grnId: result.id, kind: "receipt", reason: jr.code, role: jr.role ?? null },
         },
       });
-      await fanOutAdminNotification(receiptJournalPendingNotification);
+      void fanOutAdminNotification(receiptJournalPendingNotification);
     }
   } catch (e) {
     try {
@@ -368,7 +368,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
           metadata: { grnId: result.id, kind: "receipt", reason: "ERROR", role: null },
         },
       });
-      await fanOutAdminNotification(receiptJournalErrorNotification);
+      void fanOutAdminNotification(receiptJournalErrorNotification);
     } catch {
       // best-effort: a notification failure must never fail the GRN
     }
@@ -804,7 +804,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
           metadata: { grnId: id, kind: "reversal", reason: jr.code, role: jr.role ?? null },
         },
       });
-      await fanOutAdminNotification(reversalJournalPendingNotification);
+      void fanOutAdminNotification(reversalJournalPendingNotification);
     }
   } catch (e) {
     try {
@@ -817,7 +817,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
           metadata: { grnId: id, kind: "reversal", reason: "ERROR", role: null },
         },
       });
-      await fanOutAdminNotification(reversalJournalErrorNotification);
+      void fanOutAdminNotification(reversalJournalErrorNotification);
     } catch {
       // best-effort: a notification failure must never fail the decline
     }

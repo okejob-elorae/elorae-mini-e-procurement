@@ -1,4 +1,4 @@
-import { prisma } from "@elorae/db";
+import { prisma, type AdminNotification } from "@elorae/db";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
@@ -58,9 +58,10 @@ async function notify(
   role: string | null,
   detail?: string,
 ): Promise<void> {
+  let vanJournalNotification: AdminNotification | null = null;
   try {
     if (await alreadyFlagged(kind, docId)) return;
-    const vanJournalNotification = await prisma.adminNotification.create({
+    vanJournalNotification = await prisma.adminNotification.create({
       data: {
         category: "JOURNAL_PENDING",
         severity: "WARNING",
@@ -69,7 +70,6 @@ async function notify(
         metadata: { docId, kind: `van_${kind}`, reason, role },
       },
     });
-    await fanOutAdminNotification(vanJournalNotification);
   } catch (e) {
     /*
      * Best-effort: a notification failure must never fail the source
@@ -86,4 +86,17 @@ async function notify(
       e,
     );
   }
+
+  /**
+   * Below the try/catch, not inside it: reaching here means the `AdminNotification` row is
+   * committed, so the retry button WILL render — the catch above says the opposite, and a
+   * delivery failure must never be able to reach it.
+   *
+   * Not awaited either. A van sale is a terminal point-of-sale transaction: the canvasser is
+   * standing at the counter waiting for the thermal nota, and delivery walks recipients with an
+   * FCM call each, which firebase-admin retries for roughly a minute per recipient when the
+   * network is unreachable. A finance misconfiguration must not stall the sale any more than it
+   * may fail it.
+   */
+  if (vanJournalNotification) void fanOutAdminNotification(vanJournalNotification);
 }
