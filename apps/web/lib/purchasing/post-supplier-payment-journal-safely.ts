@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { isRetryableTxError } from "@/lib/db/tx-retry";
 import type { PostSupplierPaymentResult, PostSupplierPaymentReversalResult } from "./supplier-payment-journal";
 import type { SupplierPaymentDirection } from "./supplier-payment-journal-message";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 /* Re-exported, not redeclared: the canonical definition lives in the client-safe
    message module so the toast mapper can take it without importing Prisma. */
@@ -303,7 +304,7 @@ async function notify(
 ): Promise<void> {
   try {
     if (await alreadyFlagged(direction, poId, reason)) return;
-    await prisma.adminNotification.create({
+    const supplierPaymentJournalNotification = await prisma.adminNotification.create({
       data: {
         category: "JOURNAL_PENDING",
         severity: "WARNING",
@@ -312,6 +313,7 @@ async function notify(
         metadata: { docId: poId, kind: NOTIFICATION_KIND[direction], reason, role },
       },
     });
+    await fanOutAdminNotification(supplierPaymentJournalNotification);
   } catch (e) {
     /*
      * Best-effort: a notification failure must never fail the paid toggle,

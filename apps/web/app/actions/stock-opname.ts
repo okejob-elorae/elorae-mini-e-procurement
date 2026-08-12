@@ -28,6 +28,7 @@ import { freezeFabricRollSnapshot, freezeItemSnapshot } from "@/lib/inventory/op
 import { postOpnameJournal, opnameNetDelta } from "@/lib/inventory/opname-journal";
 import { serializeForClient } from "@/lib/serialize-for-client";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 const OPNAME_PATH = "/backoffice/inventory/stock-opname";
 
@@ -301,7 +302,7 @@ export async function approveOpname(
     try {
       const jr = await postOpnameJournal(opnameId, user.id);
       if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
-        await prisma.adminNotification.create({
+        const opnameJournalPendingNotification = await prisma.adminNotification.create({
           data: {
             category: "JOURNAL_PENDING", severity: "WARNING",
             title: `Opname ${opname.docNumber}: journal not posted`,
@@ -311,6 +312,7 @@ export async function approveOpname(
             metadata: { opnameId, reason: jr.code, role: jr.role ?? null },
           },
         });
+        await fanOutAdminNotification(opnameJournalPendingNotification);
       }
     } catch { /* never let journaling fail the approve */ }
 

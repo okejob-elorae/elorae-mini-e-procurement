@@ -24,6 +24,7 @@ import {
 import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
+import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
@@ -1269,7 +1270,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
   try {
     const jr = await postFgReceiptJournal(receiveResult.receipt.id, userId);
     if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
-      await prisma.adminNotification.create({
+      const fgReceiptJournalPendingNotification = await prisma.adminNotification.create({
         data: {
           category: "JOURNAL_PENDING",
           severity: "WARNING",
@@ -1278,10 +1279,11 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: jr.code, role: jr.role ?? null },
         },
       });
+      await fanOutAdminNotification(fgReceiptJournalPendingNotification);
     }
   } catch (e) {
     try {
-      await prisma.adminNotification.create({
+      const fgReceiptJournalErrorNotification = await prisma.adminNotification.create({
         data: {
           category: "JOURNAL_PENDING",
           severity: "WARNING",
@@ -1290,6 +1292,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: "ERROR", role: null },
         },
       });
+      await fanOutAdminNotification(fgReceiptJournalErrorNotification);
     } catch {
       // best-effort: never fail receiveFG on a journal/notification error
     }

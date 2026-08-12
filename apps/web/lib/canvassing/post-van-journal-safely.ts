@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 /**
  * Where a `journals:manage` operator retries each van document kind once the
@@ -59,7 +60,7 @@ async function notify(
 ): Promise<void> {
   try {
     if (await alreadyFlagged(kind, docId)) return;
-    await prisma.adminNotification.create({
+    const vanJournalNotification = await prisma.adminNotification.create({
       data: {
         category: "JOURNAL_PENDING",
         severity: "WARNING",
@@ -68,6 +69,7 @@ async function notify(
         metadata: { docId, kind: `van_${kind}`, reason, role },
       },
     });
+    await fanOutAdminNotification(vanJournalNotification);
   } catch (e) {
     /*
      * Best-effort: a notification failure must never fail the source

@@ -2,6 +2,7 @@ import { prisma, Prisma } from "@elorae/db";
 import { parseDateOnly, formatDateOnlyJakarta } from "@/lib/date-only";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 /** SystemSetting key holding the GL go-live day as a date-only `YYYY-MM-DD` string, read as WIB. */
 export const GL_CUTOVER_SETTING_KEY = "finance.glCutoverDate";
@@ -68,7 +69,7 @@ async function flag(
   });
   if (already) return;
 
-  await prisma.adminNotification.create({
+  const salesJournalPendingNotification = await prisma.adminNotification.create({
     data: {
       category: "JOURNAL_PENDING",
       severity: "WARNING",
@@ -77,6 +78,7 @@ async function flag(
       metadata: { orderId, kind, reason: res.code, role: res.role ?? null },
     },
   });
+  await fanOutAdminNotification(salesJournalPendingNotification);
 }
 
 export async function postPendingSalesJournals(
