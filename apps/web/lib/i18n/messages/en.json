@@ -2466,6 +2466,8 @@
       "errInsufficientStockNoAdditions": "Not enough stock — approval was not applied. Check the order lines: {lines}.",
       "errInsufficientStockWithAdditions": "Not enough stock — approval was not applied. Check the order lines and the added products: {lines}.",
       "errInvalidAddedLineUnknownItem": "One of the added products was not found or is no longer active. Reload the page and try again.",
+      "errInvalidAddedLineNoInventory": "One of the added products has no stock record for the chosen variant, so it cannot be transferred. Pick another variant.",
+      "errInvalidAddedLinePayload": "The added products could not be sent correctly. Remove them from the list and add them again.",
       "errInvalidAddedLineBadQty": "The quantity for one of the added products is invalid.",
       "errInvalidAddedLineDuplicate": "One of the added products is already on this order or was added twice.",
       "errInvalidAddedLineAlreadySent": "One of the added products has already been sent to this store. Reload the page to refresh the suggestions.",

@@ -137,6 +137,8 @@ export function ApproveRejectCard({
       toast.error(t("errAlreadyDecided"));
     } else if (r.reason === "INSUFFICIENT_STOCK") {
       const lines = r.shortLines && r.shortLines.length > 0 ? shortLineNames(r.shortLines) : "—";
+      /* The remedy is to edit the suggestions panel this modal covers — get out of the way. */
+      setApproveDialogOpen(false);
       toast.error(
         stagedAdditions.length > 0
           ? t("konsiSuggestions.errInsufficientStockWithAdditions", { lines })
@@ -147,6 +149,9 @@ export function ApproveRejectCard({
         case "UNKNOWN_ITEM":
           toast.error(t("konsiSuggestions.errInvalidAddedLineUnknownItem"));
           break;
+        case "NO_INVENTORY":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineNoInventory"));
+          break;
         case "BAD_QTY":
           toast.error(t("konsiSuggestions.errInvalidAddedLineBadQty"));
           break;
@@ -154,10 +159,18 @@ export function ApproveRejectCard({
           toast.error(t("konsiSuggestions.errInvalidAddedLineDuplicate"));
           break;
         case "ALREADY_SENT":
+          /* Same as the short-stock case: the staged row has to be removed, and it is behind
+           * this modal. */
+          setApproveDialogOpen(false);
           toast.error(t("konsiSuggestions.errInvalidAddedLineAlreadySent"));
           break;
         case "NOT_KONSI":
           toast.error(t("konsiSuggestions.errInvalidAddedLineNotKonsi"));
+          break;
+        case undefined:
+          /* No code means the ACTION rejected the payload shape before the writer ever ran — a
+           * client-side bug, not a stale suggestion list, so "reload the page" is the wrong hint. */
+          toast.error(t("konsiSuggestions.errInvalidAddedLinePayload"));
           break;
         default:
           toast.error(t("konsiSuggestions.errInvalidAddedLineGeneric"));
