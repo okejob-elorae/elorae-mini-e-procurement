@@ -243,6 +243,13 @@ export async function closeRemainderAction(orderId: string, reason: string): Pro
  *
  * The whole body is one try/catch returning void: the nota is already printed by the time this
  * runs, so a ping failure (or any other failure here) must never surface as a print failure.
+ *
+ * `logPrint` is wrapped in its OWN try/catch, separate from the outer one: it is the least
+ * important write here, but it runs before the CAS, so an unguarded throw from it would abort
+ * the whole function and leave `notaPrintedAt` null — vetoing both the stamp and the finance
+ * notification because the audit trail hiccuped. Left in its current position (before the CAS)
+ * on purpose, so a reprint still gets its own audit row; moving it after the early return would
+ * silently stop reprints being audited at all.
  */
 export async function recordNotaTagihanPrinted(deliveryId: string): Promise<void> {
   try {
@@ -250,7 +257,11 @@ export async function recordNotaTagihanPrinted(deliveryId: string): Promise<void
     if (!session?.user?.id) return;
     if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.FIELD_SALES_ORDERS_VIEW)) return;
 
-    await logPrint("FieldSalesNotaTagihan", deliveryId);
+    try {
+      await logPrint("FieldSalesNotaTagihan", deliveryId);
+    } catch (err) {
+      console.error("[nota-tagihan-print] failed to write the print audit row", err);
+    }
 
     const swapped = await prisma.taxInvoice.updateMany({
       where: { deliveryId, notaPrintedAt: null },

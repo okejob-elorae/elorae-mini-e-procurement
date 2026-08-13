@@ -9,7 +9,7 @@ const { mockAuth, staleSnapshot, mockUpdateMany, mockAdminNotificationCreate, mo
     mockAdminNotificationCreate: vi.fn(),
     mockFanOut: vi.fn(),
     mockLogAudit: vi.fn(),
-    notaDeliveryLookup: { impl: null as (() => Promise<unknown>) | null },
+    notaDeliveryLookup: { impl: null as ((args: unknown) => Promise<unknown>) | null },
   }));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -27,6 +27,12 @@ vi.mock("./audit", () => ({ logPrint: mockLogAudit }));
  * NOTHING, since its trap ignores its own empty target. Building a second Proxy that forwards
  * unknown props to `actual.prisma[prop]` is what keeps every other test in this file (which needs
  * the real DB) working unchanged.
+ *
+ * Touching `patchedPrisma.fieldSalesDelivery` — from either suite, on every access — runs the
+ * real client's lazy getter, which constructs a `PrismaClient` against whatever `DATABASE_URL`
+ * is set if one isn't already cached. Construction only: no connection is opened and no query
+ * runs until a method is actually awaited, so this is inert for the mocked describe block below,
+ * which never lets a call reach the real delegate.
  */
 vi.mock("@elorae/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@elorae/db")>();
@@ -349,15 +355,25 @@ d("updateDeliveryDatesAction (test bed only)", () => {
  */
 describe("recordNotaTagihanPrinted", () => {
   const deliveryId = "delivery-1";
+  const userId = "user-1";
+  const notificationId = "notif-1";
+
+  /*
+   * A `vi.fn()`, not a bare arrow function, precisely so the CAS predicate test below can assert
+   * on the `where`/`select` shape the action actually sent — a wrong relation path here would
+   * throw in production and get swallowed by the outer try/catch, silently leaving a nota
+   * un-notified with the test still green if this were unchecked.
+   */
+  const mockFindDelivery = vi.fn();
 
   beforeEach(() => {
     mockAuth.mockReset();
-    mockAuth.mockResolvedValue({ user: { id: "user-1", permissions: ["field_sales_orders:view"] } });
+    mockAuth.mockResolvedValue({ user: { id: userId, permissions: ["field_sales_orders:view"] } });
 
     mockUpdateMany.mockReset();
     mockAdminNotificationCreate.mockReset();
     mockAdminNotificationCreate.mockResolvedValue({
-      id: "notif-1",
+      id: notificationId,
       category: "TAX_INVOICE_PENDING",
       title: "Nota DLV/TEST-1 sudah di-print",
       message: "Nota DLV/TEST-1 untuk toko Toko Test sudah di-print. Pastikan buat faktur pajak.",
@@ -368,8 +384,9 @@ describe("recordNotaTagihanPrinted", () => {
     mockLogAudit.mockResolvedValue(undefined);
 
     /* Stands in for the delivery + store lookup the action makes after it wins the CAS. */
-    notaDeliveryLookup.impl = () =>
-      Promise.resolve({ docNo: "DLV/TEST-1", order: { store: { name: "Toko Test" } } });
+    mockFindDelivery.mockReset();
+    mockFindDelivery.mockResolvedValue({ docNo: "DLV/TEST-1", order: { store: { name: "Toko Test" } } });
+    notaDeliveryLookup.impl = mockFindDelivery;
   });
 
   afterEach(() => {
@@ -380,8 +397,26 @@ describe("recordNotaTagihanPrinted", () => {
   it("first print stamps notaPrintedAt and notifies", async () => {
     mockUpdateMany.mockResolvedValue({ count: 1 });
     await recordNotaTagihanPrinted(deliveryId);
+
+    /*
+     * The predicate IS the mechanism: an unconditional `updateMany({ where: { deliveryId } })`
+     * would also resolve `{ count: 1 }` from a stub and pass every other assertion in this file,
+     * while notifying finance on every reprint in production. Pinning the exact `where`/`data` is
+     * what would catch that regression.
+     */
+    expect(mockUpdateMany).toHaveBeenCalledWith({
+      where: { deliveryId, notaPrintedAt: null },
+      data: { notaPrintedAt: expect.any(Date), notaPrintedById: userId },
+    });
+    expect(mockFindDelivery).toHaveBeenCalledWith({
+      where: { id: deliveryId },
+      select: { docNo: true, order: { select: { store: { select: { name: true } } } } },
+    });
     expect(mockAdminNotificationCreate).toHaveBeenCalledTimes(1);
     expect(mockFanOut).toHaveBeenCalledTimes(1);
+    expect(mockFanOut).toHaveBeenCalledWith(
+      expect.objectContaining({ id: notificationId, category: "TAX_INVOICE_PENDING" }),
+    );
   });
 
   it("a reprint audits but does not notify", async () => {
@@ -399,7 +434,7 @@ describe("recordNotaTagihanPrinted", () => {
   });
 
   it("does nothing without the field_sales_orders:view permission", async () => {
-    mockAuth.mockResolvedValue({ user: { id: "user-1", permissions: [] } });
+    mockAuth.mockResolvedValue({ user: { id: userId, permissions: [] } });
     mockUpdateMany.mockResolvedValue({ count: 1 });
     await recordNotaTagihanPrinted(deliveryId);
     expect(mockLogAudit).not.toHaveBeenCalled();
