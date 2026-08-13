@@ -201,7 +201,17 @@ export async function approveFieldSalesOrder(input: {
       },
     });
     if (!order) throw new InvalidOrderTransitionError("MISSING", "APPROVED");
-    if (order.status === "APPROVED") return { ok: true };
+    /**
+     * Re-approving an already-APPROVED order is a no-op ONLY when the caller carries nothing new.
+     * With additions it is not idempotent at all: two admins can have the same order open, and the
+     * second one's staged products would be accepted, discarded, and reported as a success that
+     * created nothing. Refuse instead, so the operator sees the same "already decided" toast an
+     * already-approved order gets everywhere else.
+     */
+    if (order.status === "APPROVED") {
+      if ((input.addedLines ?? []).length > 0) throw new InvalidOrderTransitionError(order.status, "APPROVED");
+      return { ok: true };
+    }
     if (order.status !== "PENDING_APPROVAL") throw new InvalidOrderTransitionError(order.status, "APPROVED");
 
     if (order.orderType === "KONSI") {
@@ -243,7 +253,9 @@ export async function approveFieldSalesOrder(input: {
           // A variantSku with no matching InventoryValue row would otherwise surface later as
           // InventoryValueMissingError out of reserveKonsiFieldSalesOrder — a @elorae/db class
           // with no `code`, which the action layer has nothing to map to a UI-facing reason.
-          if (!(await hasInventoryRow(a.itemId, a.variantSku))) throw new InvalidAddedLineError("UNKNOWN_ITEM", a.itemId);
+          // Its own code, not UNKNOWN_ITEM: the product exists and is active, so "not found or no
+          // longer active" would be untrue and reloading the page would not surface the cause.
+          if (!(await hasInventoryRow(a.itemId, a.variantSku))) throw new InvalidAddedLineError("NO_INVENTORY", a.itemId);
           seen.add(key);
         }
         for (const a of added) {

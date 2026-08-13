@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { approveFieldSalesOrder, createFieldSalesOrder } from "./writer";
-import { InsufficientStockError } from "./errors";
+import { InsufficientStockError, InvalidOrderTransitionError } from "./errors";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -277,12 +277,31 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     expect(lines).toHaveLength(1);
   });
 
-  it("rejects a variantSku with no matching InventoryValue row as UNKNOWN_ITEM, not a raw db error", async () => {
+  it("rejects a variantSku with no matching InventoryValue row as NO_INVENTORY, not a raw db error", async () => {
     await expect(
       approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "GHOST-VARIANT", qty: 1 }] }),
-    ).rejects.toMatchObject({ code: "UNKNOWN_ITEM" });
+    ).rejects.toMatchObject({ code: "NO_INVENTORY" });
     const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
     expect(lines).toHaveLength(1);
+  });
+
+  it("refuses added lines on an already-APPROVED order instead of silently discarding them", async () => {
+    await approveFieldSalesOrder({ orderId, approvedById: userId });
+
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "", qty: 3 }] }),
+    ).rejects.toBeInstanceOf(InvalidOrderTransitionError);
+
+    /* The point of the test: the second call must not report success while creating nothing. */
+    const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
+    expect(lines).toHaveLength(1);
+    expect(lines.every((l) => l.itemId !== neverSentItemId)).toBe(true);
+  });
+
+  it("stays idempotent for a re-approve carrying no added lines", async () => {
+    await approveFieldSalesOrder({ orderId, approvedById: userId });
+    await expect(approveFieldSalesOrder({ orderId, approvedById: userId })).resolves.toEqual({ ok: true });
+    await expect(approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [] })).resolves.toEqual({ ok: true });
   });
 
   it("rejects addedLines on a PUTUS order", async () => {
