@@ -6,7 +6,8 @@ import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
-import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError } from "./errors";
+import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError } from "./errors";
+import { sentItemIds } from "./queries";
 
 type CreateLine = {
   itemId: string;
@@ -189,6 +190,7 @@ export async function approveFieldSalesOrder(input: {
   orderId: string;
   approvedById: string;
   finalPrices?: Array<{ lineId: string; finalUnitPrice: number }>;
+  addedLines?: Array<{ itemId: string; variantSku: string; qty: number }>;
 }): Promise<{ ok: true }> {
   return runSerializable(async (tx) => {
     const order = await tx.fieldSalesOrder.findUnique({
@@ -203,15 +205,56 @@ export async function approveFieldSalesOrder(input: {
     if (order.status !== "PENDING_APPROVAL") throw new InvalidOrderTransitionError(order.status, "APPROVED");
 
     if (order.orderType === "KONSI") {
+      const added = input.addedLines ?? [];
+      if (added.length > 0) {
+        const onOrder = new Set(order.lines.map((l) => `${l.itemId}::${l.variantSku}`));
+        const alreadySent = await sentItemIds(order.storeId, tx);
+        const seen = new Set<string>();
+        for (const a of added) {
+          const key = `${a.itemId}::${a.variantSku}`;
+          if (!Number.isInteger(a.qty) || a.qty <= 0) throw new InvalidAddedLineError("BAD_QTY", a.itemId);
+          if (onOrder.has(key) || seen.has(key)) throw new InvalidAddedLineError("DUPLICATE", a.itemId);
+          if (alreadySent.has(a.itemId)) throw new InvalidAddedLineError("ALREADY_SENT", a.itemId);
+          seen.add(key);
+        }
+        const items = await tx.item.findMany({
+          where: { id: { in: added.map((a) => a.itemId) }, isActive: true, type: "FINISHED_GOOD" },
+          select: { id: true, sku: true, nameId: true },
+        });
+        const byId = new Map(items.map((i) => [i.id, i]));
+        for (const a of added) {
+          const item = byId.get(a.itemId);
+          if (!item) throw new InvalidAddedLineError("UNKNOWN_ITEM", a.itemId);
+          await tx.fieldSalesOrderLine.create({
+            data: {
+              orderId: order.id,
+              itemId: item.id,
+              variantSku: a.variantSku,
+              productName: item.nameId,
+              qty: a.qty,
+              unitPrice: 0,
+              lineTotal: 0,
+              addedById: input.approvedById,
+            },
+          });
+        }
+      }
+
+      /* Re-read: the lines created above are not in the `order.lines` snapshot taken at the top. */
+      const lines = await tx.fieldSalesOrderLine.findMany({
+        where: { orderId: order.id },
+        include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } },
+      });
+
       const { shortLines } = await reserveKonsiFieldSalesOrder(tx, {
         orderNo: order.orderNo,
-        lines: order.lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
+        lines: lines.map((l) => ({ fieldSalesLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty })),
       });
       if (shortLines.length > 0) throw new InsufficientStockError(shortLines);
 
       const margin = order.store.marginPercent === null ? null : Number(order.store.marginPercent);
       let total = 0;
-      for (const l of order.lines) {
+      for (const l of lines) {
         const { price } = computeStorePrice({
           sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
           termsType: "KONSI",
@@ -227,6 +270,10 @@ export async function approveFieldSalesOrder(input: {
         data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal: total, total },
       });
       return { ok: true };
+    }
+
+    if ((input.addedLines ?? []).length > 0) {
+      throw new InvalidAddedLineError("NOT_KONSI", null);
     }
 
     /**

@@ -25,6 +25,18 @@ export class InsufficientStockError extends Error {
   }
 }
 
+export type InvalidAddedLineCode = "UNKNOWN_ITEM" | "BAD_QTY" | "DUPLICATE" | "ALREADY_SENT" | "NOT_KONSI";
+
+export class InvalidAddedLineError extends Error {
+  constructor(
+    public code: InvalidAddedLineCode,
+    public itemId: string | null = null,
+  ) {
+    super(code);
+    this.name = "InvalidAddedLineError";
+  }
+}
+
 export type DeliveryErrorCode =
   | "NOT_FOUND"
   | "INVALID_STATE"
