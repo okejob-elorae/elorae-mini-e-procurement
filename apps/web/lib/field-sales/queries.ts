@@ -412,21 +412,43 @@ export async function listKonsiSuggestions(orderId: string): Promise<KonsiSugges
     orderBy: { sku: "asc" },
   });
 
-  const rows: KonsiSuggestion[] = [];
+  /*
+   * `InventoryValue` is unique on (itemId, variantSku), but MariaDB permits multiple NULLs, so an
+   * item can carry both a `null` and an `""` row (e.g. a variant item restocked via ERP GRN/production
+   * writes a `null` pooled row the per-variant sale won't see — see CLAUDE.md). Both normalize to the
+   * same suggestion key. Dedupe by (itemId, normalized variantSku) rather than emitting one row per
+   * raw InventoryValue row, so a collision can't render two indistinguishable suggestions.
+   */
+  const byKey = new Map<string, { item: (typeof items)[number]; variantSku: string; available: number }>();
   for (const item of items) {
     for (const iv of item.inventoryValues) {
       const variantSku = iv.variantSku ?? "";
       /* Availability is derived, never stored: qtyOnHand - reservedQty. */
-      const available = aggregateInventoryValues([iv])?.available ?? 0;
-      rows.push({
-        itemId: item.id,
-        variantSku,
-        sku: item.sku,
-        name: item.nameId,
-        variantLabel: variantDetailForSku(item.variants, variantSku),
-        available,
-      });
+      const available = aggregateInventoryValues([iv])!.available;
+      const key = `${item.id}::${variantSku}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        /*
+         * On a collision, keep the MINIMUM available rather than summing. The writer reserves
+         * against a single row chosen by `findFieldSalesInventory`'s findFirst, so the minimum is
+         * the only figure guaranteed not to exceed what that reservation can actually satisfy.
+         * Summing (as getFieldSalesOrderById does) would offer more than the writer can honor and
+         * fail the approval; under-offering only hides a little stock. Fail-safe direction wins.
+         */
+        existing.available = Math.min(existing.available, available);
+      } else {
+        byKey.set(key, { item, variantSku, available });
+      }
     }
   }
+
+  const rows: KonsiSuggestion[] = Array.from(byKey.values()).map(({ item, variantSku, available }) => ({
+    itemId: item.id,
+    variantSku,
+    sku: item.sku,
+    name: item.nameId,
+    variantLabel: variantDetailForSku(item.variants, variantSku),
+    available,
+  }));
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
 }

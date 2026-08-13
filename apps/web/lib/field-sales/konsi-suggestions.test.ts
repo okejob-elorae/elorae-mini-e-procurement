@@ -13,10 +13,13 @@ d("listKonsiSuggestions (test bed only)", () => {
   let itemId = "";
   let neverSentItemId = "";
   let previouslySentItemId = "";
+  let variantItemId = "";
+  let collisionItemId = "";
   let storeId = "";
   let userId = "";
   let orderId = "";
   let priorOrderId = "";
+  let priorVariantOrderId = "";
   let putusStoreId = "";
   let putusOrderId = "";
 
@@ -25,10 +28,13 @@ d("listKonsiSuggestions (test bed only)", () => {
     itemId = "";
     neverSentItemId = "";
     previouslySentItemId = "";
+    variantItemId = "";
+    collisionItemId = "";
     storeId = "";
     userId = "";
     orderId = "";
     priorOrderId = "";
+    priorVariantOrderId = "";
     putusStoreId = "";
     putusOrderId = "";
 
@@ -52,6 +58,22 @@ d("listKonsiSuggestions (test bed only)", () => {
     });
     previouslySentItemId = previouslySentItem.id;
     await prisma.inventoryValue.create({ data: { itemId: previouslySentItemId, variantSku: "", qtyOnHand: 20, reservedQty: 0, avgCost: 900, totalValue: 18000 } });
+
+    /* Multi-variant item: only ONE of its two variants gets sent to the store on a separate order. */
+    const variantItem = await prisma.item.create({
+      data: { sku: `TEST-KSG-VAR-${token}`, nameId: "Variant item", nameEn: "Variant item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 20000 },
+    });
+    variantItemId = variantItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: variantItemId, variantSku: "RED", qtyOnHand: 20, reservedQty: 0, avgCost: 800, totalValue: 16000 } });
+    await prisma.inventoryValue.create({ data: { itemId: variantItemId, variantSku: "BLUE", qtyOnHand: 15, reservedQty: 0, avgCost: 800, totalValue: 12000 } });
+
+    /* Both a `null` and an `""` InventoryValue row for the same item — the real-world collision. */
+    const collisionItem = await prisma.item.create({
+      data: { sku: `TEST-KSG-COL-${token}`, nameId: "Collision item", nameEn: "Collision item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 25000 },
+    });
+    collisionItemId = collisionItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: collisionItemId, variantSku: null, qtyOnHand: 9, reservedQty: 0, avgCost: 700, totalValue: 6300 } });
+    await prisma.inventoryValue.create({ data: { itemId: collisionItemId, variantSku: "", qtyOnHand: 4, reservedQty: 0, avgCost: 700, totalValue: 2800 } });
 
     const store = await prisma.store.create({
       data: { code: `TEST-KSG-STORE-${token}`, name: "Test Konsi Suggestions Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
@@ -99,6 +121,23 @@ d("listKonsiSuggestions (test bed only)", () => {
     });
     priorOrderId = priorOrder.id;
 
+    /* A separate, already-APPROVED konsi order sending only the RED variant of `variantItemId`. */
+    const priorVariantOrder = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `KONSI/TEST-KSG-PRIOR-VAR-${token}`,
+        orderType: "KONSI",
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        subtotal: 1000,
+        total: 1000,
+        lines: {
+          create: [{ itemId: variantItemId, variantSku: "RED", productName: "Variant item", qty: 1, unitPrice: 1000, lineTotal: 1000 }],
+        },
+      },
+    });
+    priorVariantOrderId = priorVariantOrder.id;
+
     const putusOrder = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `PUTUS/TEST-KSG-${token}`,
@@ -117,8 +156,19 @@ d("listKonsiSuggestions (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const allItemIds = [seededId(itemId), seededId(neverSentItemId), seededId(previouslySentItemId)];
-    const allOrderIds = [seededId(orderId), seededId(priorOrderId), seededId(putusOrderId)];
+    const allItemIds = [
+      seededId(itemId),
+      seededId(neverSentItemId),
+      seededId(previouslySentItemId),
+      seededId(variantItemId),
+      seededId(collisionItemId),
+    ];
+    const allOrderIds = [
+      seededId(orderId),
+      seededId(priorOrderId),
+      seededId(priorVariantOrderId),
+      seededId(putusOrderId),
+    ];
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: allOrderIds } } });
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(putusStoreId)] } } });
@@ -152,5 +202,19 @@ d("listKonsiSuggestions (test bed only)", () => {
   it("returns an empty list for a non-KONSI order", async () => {
     const rows = await listKonsiSuggestions(putusOrderId);
     expect(rows).toEqual([]);
+  });
+
+  it("excludes BOTH variants of an item when only one variant was ever sent to this store", async () => {
+    const rows = await listKonsiSuggestions(orderId);
+    const variantRows = rows.filter((r) => r.itemId === variantItemId);
+    expect(variantRows).toHaveLength(0);
+  });
+
+  it("dedupes a null/empty-string InventoryValue collision into one suggestion at the minimum available", async () => {
+    const rows = await listKonsiSuggestions(orderId);
+    const collisionRows = rows.filter((r) => r.itemId === collisionItemId);
+    expect(collisionRows).toHaveLength(1);
+    expect(collisionRows[0].variantSku).toBe("");
+    expect(collisionRows[0].available).toBe(4);
   });
 });
