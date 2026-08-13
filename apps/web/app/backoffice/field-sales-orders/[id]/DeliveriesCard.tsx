@@ -52,7 +52,11 @@ import type {
   FieldSalesOrderStatus,
   FieldSalesOrderType,
 } from "@/lib/field-sales/queries";
-import { closeRemainderAction, updateDeliveryDatesAction } from "@/app/actions/field-sales-deliveries";
+import {
+  closeRemainderAction,
+  recordNotaTagihanPrinted,
+  updateDeliveryDatesAction,
+} from "@/app/actions/field-sales-deliveries";
 import { logPrint } from "@/app/actions/audit";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
@@ -232,7 +236,7 @@ export function DeliveriesCard({
   async function handleConfirmPrintTagihan(): Promise<void> {
     const delivery = deliveries.find((d) => d.id === tagihanTargetId);
     if (!delivery) return;
-    await logPrint("FieldSalesNotaTagihan", delivery.id);
+    await recordNotaTagihanPrinted(delivery.id);
     const html = buildNotaTagihanPrintHtml({
       docNo: delivery.docNo,
       orderNo,

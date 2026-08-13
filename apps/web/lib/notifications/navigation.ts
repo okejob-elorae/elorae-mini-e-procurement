@@ -96,6 +96,9 @@ export function getNotificationHref(
     }
     case 'DOC_NUMBER_ALTERED':
       return '/backoffice/settings/documents';
+    case 'TAX_INVOICE_PENDING': {
+      return '/backoffice/finance/faktur-pajak';
+    }
     default:
       return null;
   }
