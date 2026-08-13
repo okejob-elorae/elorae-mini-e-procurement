@@ -4,13 +4,19 @@
 -- No FOREIGN KEY is declared: these relations are `relationMode = "prisma"`, and the unique
 -- index on deliveryId is what enforces the one-row-per-delivery invariant this design relies on.
 --
--- This file is RE-RUNNABLE. MariaDB auto-commits DDL, so a CREATE TABLE that succeeds followed by
--- a failing backfill (a lock-wait timeout against a concurrently-written FieldSalesDelivery is the
--- realistic case) leaves the table in place with the migration recorded failed — and the next
--- deploy then stops at P3009 and applies nothing, blocking every deploy behind it. IF NOT EXISTS
--- plus the NOT EXISTS-guarded INSERT makes a re-run a no-op instead. The INSERT may also be run
--- standalone at any time to pick up deliveries created after this migration but before the app
--- image that writes the row went live.
+-- This file is RE-RUNNABLE, which makes RECOVERY safe — it does NOT make a failed deploy self-heal.
+-- MariaDB auto-commits DDL, so a CREATE TABLE that succeeds followed by a failing backfill (a
+-- lock-wait timeout against a concurrently-written FieldSalesDelivery is the realistic case) leaves
+-- the table in place with the migration recorded FAILED. From then on `migrate deploy` refuses to
+-- apply anything at all — including unrelated later migrations — until that record is resolved, and
+-- the deploy job is gated on the migrate job, so every deploy is blocked. Nothing clears it on its
+-- own. Recovery is `prisma migrate resolve --rolled-back 20260813120000_add_tax_invoice`, then
+-- re-run the deploy: IF NOT EXISTS plus the NOT EXISTS-guarded INSERT mean that re-run neither
+-- fails on the existing table nor double-inserts the rows already backfilled.
+--
+-- The INSERT alone may also be run standalone at any time, which is the post-deploy step recorded in
+-- CLAUDE.md: it picks up deliveries created after this migration ran but before the app image that
+-- writes the row went live.
 
 CREATE TABLE IF NOT EXISTS `TaxInvoice` (
   `id` VARCHAR(191) NOT NULL,

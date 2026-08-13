@@ -30,12 +30,12 @@ d("listTaxInvoices (test bed only)", () => {
   let userId = "";
   let orderId = "";
   let lineId = "";
-  let deliveryAId = "";
+  /* Only B's id is held: the teardown scopes on `orderId`, and B is the row flipped to CREATED. */
   let deliveryBId = "";
 
   beforeEach(async () => {
     uomId = ""; itemId = ""; invId = ""; storeId = ""; userId = ""; orderId = ""; lineId = "";
-    deliveryAId = ""; deliveryBId = "";
+    deliveryBId = "";
 
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-TIQ-${token}`, nameId: "test", nameEn: "test" },
@@ -84,14 +84,13 @@ d("listTaxInvoices (test bed only)", () => {
       data: { source: "FIELD_SALES", fieldSalesLineId: lineId, itemId, variantSku: "", qty: 10, state: "RESERVED" },
     });
 
-    const deliveryA = await recordFieldSalesDelivery({
+    await recordFieldSalesDelivery({
       orderId,
       deliveredById: userId,
       lines: [{ orderLineId: lineId, qty: 5 }],
       invoiceDate: invoiceDateA,
       dueDate: dueDateA,
     });
-    deliveryAId = deliveryA.deliveryId;
 
     const deliveryB = await recordFieldSalesDelivery({
       orderId,
