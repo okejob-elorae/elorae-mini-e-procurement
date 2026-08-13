@@ -142,11 +142,33 @@ d("tax-invoice status transitions (test bed only)", () => {
       .rejects.toMatchObject({ code: "INVALID_STATE" });
   });
 
-  it("writes an AuditLog row in the same transaction as the update", async () => {
+  /**
+   * Full transactional rollback (a status update and its audit row can never commit
+   * independently of each other) is confirmed structurally, not by a test: both early
+   * `throw`s in `transition()` precede the `tx.auditLog.create` call inside the same
+   * `runSerializable` callback, so a guard rejection or a lost compare-and-swap never
+   * reaches the audit write. A test that forced a failure BETWEEN the update and the
+   * audit insert would need to mock the transaction client, and this project already has
+   * a recorded example of that going wrong: a mocked-tx test "writes outside a real
+   * transaction, so it proves no audit row is written on a compare-and-swap miss but
+   * does not prove transactional rollback." It looks stronger than it is. The two tests
+   * below are the honest substitute — real DB, no mocking, each proving one visible half
+   * of the same guarantee.
+   */
+  it("writes exactly one AuditLog row on a successful transition", async () => {
     await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000005", userId });
     const logs = await prisma.auditLog.findMany({
       where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId) },
     });
     expect(logs).toHaveLength(1);
+  });
+
+  it("writes no AuditLog row when the transition is rejected", async () => {
+    await expect(revertTaxInvoiceToPending({ taxInvoiceId, reason: "x", userId }))
+      .rejects.toMatchObject({ code: "INVALID_STATE" });
+    const logs = await prisma.auditLog.findMany({
+      where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId) },
+    });
+    expect(logs).toHaveLength(0);
   });
 });
