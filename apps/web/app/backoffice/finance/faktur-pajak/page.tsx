@@ -38,7 +38,7 @@ export default async function FakturPajakPage({ searchParams }: PageProps) {
       status,
       q: q || undefined,
       page,
-      pageSize,
+      perPage: pageSize,
     });
 
     return (
