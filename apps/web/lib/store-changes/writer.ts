@@ -1,5 +1,6 @@
-import { Prisma } from "@elorae/db";
+import { Prisma, type AdminNotification } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 export type ProposedStoreFields = {
   name: string;
@@ -35,7 +36,16 @@ export async function submitStoreChangeRequest(input: {
   userId: string;
   proposed: ProposedStoreFields;
 }): Promise<SubmitResult> {
-  return runSerializable(async (tx) => {
+  let notification: AdminNotification | undefined;
+  /**
+   * The type argument is explicit because the result is captured in a `const` rather than
+   * returned directly. Without it the callback's `ok: false` literals widen to `boolean` and
+   * the union stops matching `SubmitResult` — the declared return type used to supply that
+   * context when this was a bare `return runSerializable(...)`.
+   */
+  const result = await runSerializable<SubmitResult>(async (tx) => {
+    /* Retry re-runs this whole callback; reset so a rolled-back attempt's row never survives into the next one. */
+    notification = undefined;
     const visit = await tx.storeVisit.findFirst({
       where: { id: input.visitId, storeId: input.storeId, userId: input.userId, checkoutAt: null },
       select: { id: true },
@@ -87,7 +97,7 @@ export async function submitStoreChangeRequest(input: {
       select: { id: true, storeId: true },
     });
 
-    await tx.adminNotification.create({
+    notification = await tx.adminNotification.create({
       data: {
         category: "STORE_CHANGE_REQUEST",
         severity: "INFO",
@@ -99,6 +109,15 @@ export async function submitStoreChangeRequest(input: {
 
     return { ok: true, requestId: created.id };
   });
+
+  /**
+   * Outside the transaction on purpose — `fanOutAdminNotification` performs FCM network calls
+   * and must never run inside one — and not awaited, because the salesman is watching a PWA
+   * spinner on mobile data while the request that already committed waits on a bell ping. The
+   * seam swallows its own failures, so there is no outcome here for this function to report.
+   */
+  if (notification) void fanOutAdminNotification(notification);
+  return result;
 }
 
 export async function approveStoreChangeRequest(input: {

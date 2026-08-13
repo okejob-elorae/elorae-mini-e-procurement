@@ -10,6 +10,9 @@ const { mockAuth } = vi.hoisted(() => ({ mockAuth: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
+/* Stubbed so the writer's post-commit fan-out cannot queue push notifications on the shared dev DB. */
+vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+
 import { approveFieldSalesOrderAction, rejectFieldSalesOrderAction } from "@/app/actions/field-sales-orders";
 
 d("field-sales order approve/reject actions (test bed only)", () => {

@@ -15,6 +15,7 @@ import {
   postSalesReturnCogsJournal,
   type SalesReturnGateCode,
 } from "@/lib/finance/sales/sales-return-journal";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 /**
  * Remedy sentence carried by the `JOURNAL_PENDING` notification, per failure
@@ -162,7 +163,7 @@ export async function submitReturnDecisionAction(
         const jr = await post(salesReturnId, authResult.userId);
         if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
           const role = "role" in jr ? jr.role ?? null : null;
-          await prisma.adminNotification.create({
+          const journalPendingNotification = await prisma.adminNotification.create({
             data: {
               category: "JOURNAL_PENDING",
               severity: "WARNING",
@@ -171,10 +172,11 @@ export async function submitReturnDecisionAction(
               metadata: { salesReturnId, kind, reason: jr.code, role },
             },
           });
+          void fanOutAdminNotification(journalPendingNotification);
         }
       } catch (e) {
         try {
-          await prisma.adminNotification.create({
+          const journalErrorNotification = await prisma.adminNotification.create({
             data: {
               category: "JOURNAL_PENDING",
               severity: "WARNING",
@@ -183,6 +185,7 @@ export async function submitReturnDecisionAction(
               metadata: { salesReturnId, kind, reason: "ERROR", role: null },
             },
           });
+          void fanOutAdminNotification(journalErrorNotification);
         } catch {
           // best-effort: never change the decision result on a journal/notification failure
         }

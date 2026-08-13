@@ -13,6 +13,7 @@ import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
+import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -345,7 +346,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   try {
     const jr = await postGrnJournal(result.id, userId);
     if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
-      await prisma.adminNotification.create({
+      const receiptJournalPendingNotification = await prisma.adminNotification.create({
         data: {
           category: "JOURNAL_PENDING",
           severity: "WARNING",
@@ -354,10 +355,11 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
           metadata: { grnId: result.id, kind: "receipt", reason: jr.code, role: jr.role ?? null },
         },
       });
+      void fanOutAdminNotification(receiptJournalPendingNotification);
     }
   } catch (e) {
     try {
-      await prisma.adminNotification.create({
+      const receiptJournalErrorNotification = await prisma.adminNotification.create({
         data: {
           category: "JOURNAL_PENDING",
           severity: "WARNING",
@@ -366,6 +368,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
           metadata: { grnId: result.id, kind: "receipt", reason: "ERROR", role: null },
         },
       });
+      void fanOutAdminNotification(receiptJournalErrorNotification);
     } catch {
       // best-effort: a notification failure must never fail the GRN
     }
@@ -792,7 +795,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
   try {
     const jr = await postGrnReversalJournal(id, userId);
     if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
-      await prisma.adminNotification.create({
+      const reversalJournalPendingNotification = await prisma.adminNotification.create({
         data: {
           category: "JOURNAL_PENDING",
           severity: "WARNING",
@@ -801,10 +804,11 @@ export async function declineGRNByOwner(id: string, userId: string) {
           metadata: { grnId: id, kind: "reversal", reason: jr.code, role: jr.role ?? null },
         },
       });
+      void fanOutAdminNotification(reversalJournalPendingNotification);
     }
   } catch (e) {
     try {
-      await prisma.adminNotification.create({
+      const reversalJournalErrorNotification = await prisma.adminNotification.create({
         data: {
           category: "JOURNAL_PENDING",
           severity: "WARNING",
@@ -813,6 +817,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
           metadata: { grnId: id, kind: "reversal", reason: "ERROR", role: null },
         },
       });
+      void fanOutAdminNotification(reversalJournalErrorNotification);
     } catch {
       // best-effort: a notification failure must never fail the decline
     }
