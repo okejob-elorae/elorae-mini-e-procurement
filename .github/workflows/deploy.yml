@@ -143,7 +143,25 @@ jobs:
 
   migrate:
     name: Migrate database
-    needs: pull
+    needs: [pull, build-push-web, build-push-api]
+    # The image builds are where `next build` and `tsc` type-check. They used to be SIBLINGS of
+    # this job (both only needed `changes`), so they raced it — and a migration takes seconds
+    # while an image build takes minutes. A web type error therefore let the schema advance and
+    # then failed the build, leaving prod serving the old image against the new schema with no
+    # rollback. That happened on PR #229 (deploy 31293514640). Gating here means the schema
+    # cannot move unless the image that must run against it actually compiles.
+    #
+    # always() is required because build-push-web/api are `if:`-gated and are legitimately
+    # SKIPPED on a single-service change; without it, an api-only push would cascade-skip this
+    # job and deploy nothing. The explicit checks then encode what we actually mean: pull must
+    # have succeeded, and neither image build may have FAILED — skipped is fine, failed is not.
+    if: |
+      always() &&
+      needs.pull.result == 'success' &&
+      needs.build-push-web.result != 'failure' &&
+      needs.build-push-web.result != 'cancelled' &&
+      needs.build-push-api.result != 'failure' &&
+      needs.build-push-api.result != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - name: SSH and apply migrations
