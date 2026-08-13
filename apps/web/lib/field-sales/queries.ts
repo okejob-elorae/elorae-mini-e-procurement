@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { aggregateInventoryValues } from "@/lib/items/queries";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { outstandingQty } from "./delivery/plan";
 import type { PlanHistory } from "./smart-request/plan";
@@ -60,6 +61,7 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   deliveries: FieldSalesDeliverySummary[];
   lines: Array<{
     id: string;
+    itemId: string;
     productName: string;
     variantSku: string;
     variantLabel: string | null;
@@ -74,6 +76,7 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
     belowCost: boolean;
     requestedUnitPrice: number | null;
     appealReason: string | null;
+    addedById: string | null;
   }>;
 };
 
@@ -144,7 +147,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         select: {
           id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true,
           discountAmount: true, appliedPromoId: true, requestedUnitPrice: true, appealReason: true,
-          deliveredQty: true, cancelledQty: true,
+          deliveredQty: true, cancelledQty: true, addedById: true,
           item: { select: { variants: true } },
         },
       },
@@ -236,7 +239,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       const netUnit = qty > 0 ? (toNum(l.lineTotal) - discountAmount) / qty : 0;
       const avgCost = avgCostByKey.get(invKey(l.itemId, l.variantSku)) ?? 0;
       return {
-        id: l.id, productName: l.productName, variantSku: l.variantSku,
+        id: l.id, itemId: l.itemId, productName: l.productName, variantSku: l.variantSku,
         variantLabel: variantDetailForSku(l.item.variants, l.variantSku),
         qty, unitPrice: toNum(l.unitPrice), lineTotal: toNum(l.lineTotal),
         available: availByKey.get(invKey(l.itemId, l.variantSku)) ?? 0,
@@ -247,6 +250,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         belowCost: row.orderType === "PUTUS" && qty > 0 && netUnit < avgCost,
         requestedUnitPrice: l.requestedUnitPrice === null ? null : toNum(l.requestedUnitPrice),
         appealReason: l.appealReason,
+        addedById: l.addedById,
       };
     }),
   };
@@ -366,4 +370,88 @@ export async function getSmartRequestHistory(storeId: string, candidateItemIds: 
   });
   const qtyByItem = new Map<string, number>(grouped.map((g) => [g.itemId, g._sum.qty ?? 0]));
   return { neverOrdered, qtyByItem };
+}
+
+export type KonsiSuggestion = {
+  itemId: string;
+  variantSku: string;
+  sku: string;
+  name: string;
+  variantLabel: string | null;
+  available: number;
+};
+
+/**
+ * Goods never sent to this store, for the admin to add while approving a konsi order.
+ * "Never sent" is ITEM-level (matches `sentItemIds` and the writer's ALREADY_SENT check): if any
+ * variant of an item was ever sent to this store, the whole item is excluded. Each surviving item
+ * is then expanded into one row per variant (real InventoryValue row), because availability and
+ * the writer's `addedLines` are both per-variant.
+ */
+export async function listKonsiSuggestions(orderId: string): Promise<KonsiSuggestion[]> {
+  const order = await prisma.fieldSalesOrder.findUnique({
+    where: { id: orderId },
+    select: { storeId: true, orderType: true, lines: { select: { itemId: true } } },
+  });
+  if (!order || order.orderType !== "KONSI") return [];
+
+  const sent = await sentItemIds(order.storeId);
+  const onOrder = new Set(order.lines.map((l) => l.itemId));
+  const exclude = new Set<string>([...sent, ...onOrder]);
+
+  const where: Prisma.ItemWhereInput = { isActive: true, type: "FINISHED_GOOD" };
+  /* Prisma's notIn with an empty array is untrustworthy to lean on — skip the filter entirely. */
+  if (exclude.size > 0) where.id = { notIn: [...exclude] };
+
+  const items = await prisma.item.findMany({
+    where,
+    select: {
+      id: true,
+      sku: true,
+      nameId: true,
+      variants: true,
+      inventoryValues: { select: { variantSku: true, qtyOnHand: true, reservedQty: true, totalValue: true } },
+    },
+    orderBy: { sku: "asc" },
+  });
+
+  /*
+   * `InventoryValue` is unique on (itemId, variantSku), but MariaDB permits multiple NULLs, so an
+   * item can carry both a `null` and an `""` row (e.g. a variant item restocked via ERP GRN/production
+   * writes a `null` pooled row the per-variant sale won't see — see CLAUDE.md). Both normalize to the
+   * same suggestion key. Dedupe by (itemId, normalized variantSku) rather than emitting one row per
+   * raw InventoryValue row, so a collision can't render two indistinguishable suggestions.
+   */
+  const byKey = new Map<string, { item: (typeof items)[number]; variantSku: string; available: number }>();
+  for (const item of items) {
+    for (const iv of item.inventoryValues) {
+      const variantSku = iv.variantSku ?? "";
+      /* Availability is derived, never stored: qtyOnHand - reservedQty. */
+      const available = aggregateInventoryValues([iv])!.available;
+      const key = `${item.id}::${variantSku}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        /*
+         * On a collision, keep the MINIMUM available rather than summing. The writer reserves
+         * against a single row chosen by `findFieldSalesInventory`'s findFirst, so the minimum is
+         * the only figure guaranteed not to exceed what that reservation can actually satisfy.
+         * Summing (as getFieldSalesOrderById does) would offer more than the writer can honor and
+         * fail the approval; under-offering only hides a little stock. Fail-safe direction wins.
+         */
+        existing.available = Math.min(existing.available, available);
+      } else {
+        byKey.set(key, { item, variantSku, available });
+      }
+    }
+  }
+
+  const rows: KonsiSuggestion[] = Array.from(byKey.values()).map(({ item, variantSku, available }) => ({
+    itemId: item.id,
+    variantSku,
+    sku: item.sku,
+    name: item.nameId,
+    variantLabel: variantDetailForSku(item.variants, variantSku),
+    available,
+  }));
+  return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
 }

@@ -25,6 +25,7 @@ import {
   rejectFieldSalesOrderAction,
   type ActionResult,
 } from "@/app/actions/field-sales-orders";
+import type { StagedAddition } from "./KonsiSuggestionsCard";
 
 export type AppealedLine = {
   id: string;
@@ -36,12 +37,26 @@ export type AppealedLine = {
   appealReason: string | null;
 };
 
+/**
+ * Enough to name a line by (itemId, variantSku) — the writer's `ShortLine` on an
+ * `INSUFFICIENT_STOCK` failure carries only that pair plus `available`, no name or SKU.
+ */
+export type LineRef = {
+  itemId: string;
+  variantSku: string;
+  productName: string;
+  variantLabel: string | null;
+};
+
 type Props = {
   orderId: string;
   status: FieldSalesOrderStatus;
   canApprove: boolean;
   orderType: FieldSalesOrderType;
   appealedLines: AppealedLine[];
+  orderLines: LineRef[];
+  stagedAdditions: StagedAddition[];
+  onStagedAdditionsChange: (staged: StagedAddition[]) => void;
 };
 
 function formatRupiah(value: number): string {
@@ -52,7 +67,20 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
-export function ApproveRejectCard({ orderId, status, canApprove, orderType, appealedLines }: Props) {
+function lineDisplayName(ref: Pick<LineRef, "productName" | "variantLabel">): string {
+  return ref.variantLabel ? `${ref.productName} (${ref.variantLabel})` : ref.productName;
+}
+
+export function ApproveRejectCard({
+  orderId,
+  status,
+  canApprove,
+  orderType,
+  appealedLines,
+  orderLines,
+  stagedAdditions,
+  onStagedAdditionsChange,
+}: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
   const [isPending, startTransition] = useTransition();
@@ -79,18 +107,74 @@ export function ApproveRejectCard({ orderId, status, canApprove, orderType, appe
     return Number.isFinite(n) && n >= 0;
   });
 
+  /**
+   * A short line only ever refers to one of the order's own lines or one of this session's
+   * staged additions — the writer never reserves against anything else — so both sources
+   * together should always resolve a name. Falls back to the raw pair on the defensive path.
+   */
+  function shortLineNames(shortLines: Array<{ itemId: string; variantSku: string; available: number }>): string {
+    return shortLines
+      .map((s) => {
+        const fromOrder = orderLines.find((l) => l.itemId === s.itemId && l.variantSku === s.variantSku);
+        if (fromOrder) return lineDisplayName(fromOrder);
+        const fromStaged = stagedAdditions.find((a) => a.itemId === s.itemId && a.variantSku === s.variantSku);
+        if (fromStaged) return lineDisplayName({ productName: fromStaged.name, variantLabel: fromStaged.variantLabel });
+        return s.variantSku ? `${s.itemId} (${s.variantSku})` : s.itemId;
+      })
+      .join(", ");
+  }
+
   function handleResult(r: ActionResult, successMessage: string): void {
     if (r.ok) {
       toast.success(successMessage);
       setApproveDialogOpen(false);
       setRejectDialogOpen(false);
       setRejectReason("");
+      onStagedAdditionsChange([]);
     } else if (r.reason === "FORBIDDEN") {
       toast.error(t("errForbidden"));
     } else if (r.reason === "INVALID_TRANSITION") {
       toast.error(t("errAlreadyDecided"));
     } else if (r.reason === "INSUFFICIENT_STOCK") {
-      toast.error(t("errInsufficientStock"));
+      const lines = r.shortLines && r.shortLines.length > 0 ? shortLineNames(r.shortLines) : "—";
+      /* The remedy is to edit the suggestions panel this modal covers — get out of the way. */
+      setApproveDialogOpen(false);
+      toast.error(
+        stagedAdditions.length > 0
+          ? t("konsiSuggestions.errInsufficientStockWithAdditions", { lines })
+          : t("konsiSuggestions.errInsufficientStockNoAdditions", { lines }),
+      );
+    } else if (r.reason === "INVALID_ADDED_LINE") {
+      switch (r.addedLineCode) {
+        case "UNKNOWN_ITEM":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineUnknownItem"));
+          break;
+        case "NO_INVENTORY":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineNoInventory"));
+          break;
+        case "BAD_QTY":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineBadQty"));
+          break;
+        case "DUPLICATE":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineDuplicate"));
+          break;
+        case "ALREADY_SENT":
+          /* Same as the short-stock case: the staged row has to be removed, and it is behind
+           * this modal. */
+          setApproveDialogOpen(false);
+          toast.error(t("konsiSuggestions.errInvalidAddedLineAlreadySent"));
+          break;
+        case "NOT_KONSI":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineNotKonsi"));
+          break;
+        case undefined:
+          /* No code means the ACTION rejected the payload shape before the writer ever ran — a
+           * client-side bug, not a stale suggestion list, so "reload the page" is the wrong hint. */
+          toast.error(t("konsiSuggestions.errInvalidAddedLinePayload"));
+          break;
+        default:
+          toast.error(t("konsiSuggestions.errInvalidAddedLineGeneric"));
+      }
     } else if (r.reason === "INVALID_FINAL_PRICE") {
       toast.error(t("errInvalidFinalPrice"));
     } else {
@@ -103,9 +187,13 @@ export function ApproveRejectCard({ orderId, status, canApprove, orderType, appe
     const finalPrices = hasAppeals
       ? appealedLines.map((l) => ({ lineId: l.id, finalUnitPrice: Number(finalPriceInputs[l.id]) }))
       : undefined;
+    const addedLines =
+      stagedAdditions.length > 0
+        ? stagedAdditions.map(({ itemId, variantSku, qty }) => ({ itemId, variantSku, qty }))
+        : undefined;
     startTransition(async () => {
       try {
-        const r = await approveFieldSalesOrderAction(orderId, finalPrices);
+        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines);
         handleResult(r, t("approved"));
       } catch {
         toast.error(t("errGeneric"));
@@ -200,6 +288,12 @@ export function ApproveRejectCard({ orderId, status, canApprove, orderType, appe
                 <p className="text-xs text-destructive">{t("appealFinalPriceInvalid")}</p>
               )}
             </div>
+          )}
+
+          {stagedAdditions.length > 0 && (
+            <p className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-700">
+              {t("konsiSuggestions.approveSummary", { count: stagedAdditions.length })}
+            </p>
           )}
 
           <AlertDialogFooter>

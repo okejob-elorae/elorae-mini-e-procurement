@@ -147,6 +147,38 @@ d("konsi queries (test bed only)", () => {
     expect(detail!.lines).toHaveLength(1);
     expect(detail!.lines[0].available).toBe(15); // qtyOnHand 20 - reservedQty 5
   });
+
+  it("getFieldSalesOrderById exposes addedById per line so the admin-added badge has something to read", async () => {
+    /*
+     * The writer specs assert addedById straight off the row via Prisma, which stays green even if
+     * the detail query stops selecting it — and the provenance badge would silently disappear.
+     * This asserts the passthrough itself.
+     */
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `KONSI/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        storeId,
+        salesmanId,
+        visitId,
+        status: "PENDING_APPROVAL",
+        orderType: "KONSI",
+        subtotal: 0,
+        total: 0,
+        lines: {
+          create: [
+            { itemId, variantSku: "", productName: "T", qty: 1, unitPrice: 0, lineTotal: 0 },
+            { itemId, variantSku: "ADDED", productName: "T added", qty: 2, unitPrice: 0, lineTotal: 0, addedById: salesmanId },
+          ],
+        },
+      },
+    });
+
+    const detail = await getFieldSalesOrderById(order.id);
+    const salesmanLine = detail!.lines.find((l) => l.variantSku === "")!;
+    const addedLine = detail!.lines.find((l) => l.variantSku === "ADDED")!;
+    expect(salesmanLine.addedById).toBeNull();
+    expect(addedLine.addedById).toBe(salesmanId);
+  });
 });
 
 d("getStoreSentItems (test bed only)", () => {

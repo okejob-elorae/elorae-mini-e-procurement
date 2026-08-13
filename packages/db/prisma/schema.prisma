@@ -79,6 +79,7 @@ model User {
   storeVisits   StoreVisit[]
   fieldSalesOrders FieldSalesOrder[] @relation("FieldSalesOrderSalesman")
   fieldSalesDeliveries FieldSalesDelivery[] @relation("FieldSalesDeliveryUser")
+  fieldSalesLinesAdded FieldSalesOrderLine[] @relation("FieldSalesLineAddedBy")
   taxInvoicesMarked TaxInvoice[] @relation("TaxInvoiceMarkedBy")
   storeChangeRequestsMade      StoreChangeRequest[] @relation("StoreChangeRequestedBy")
   storeChangeRequestsReviewed  StoreChangeRequest[] @relation("StoreChangeReviewedBy")
@@ -446,6 +447,8 @@ model FieldSalesOrderLine {
   appealReason String?
   deliveredQty Int @default(0)
   cancelledQty Int @default(0)
+  addedById    String?
+  addedBy      User?           @relation("FieldSalesLineAddedBy", fields: [addedById], references: [id])
   order        FieldSalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   item         Item            @relation(fields: [itemId], references: [id])
   deliveryLines FieldSalesDeliveryLine[]

@@ -1,10 +1,10 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft, Printer } from "lucide-react";
-import type { FieldSalesOrderDetail, FieldSalesOrderStatus } from "@/lib/field-sales/queries";
+import type { FieldSalesOrderDetail, FieldSalesOrderStatus, KonsiSuggestion } from "@/lib/field-sales/queries";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,8 +16,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ApproveRejectCard, type AppealedLine } from "./ApproveRejectCard";
+import { ApproveRejectCard, type AppealedLine, type LineRef } from "./ApproveRejectCard";
 import { DeliveriesCard } from "./DeliveriesCard";
+import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCard";
 import type { DeliverableLine } from "./DeliveryFormDialog";
 import { logPrint } from "@/app/actions/audit";
 import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
@@ -26,6 +27,7 @@ type Props = {
   order: FieldSalesOrderDetail;
   canApprove: boolean;
   canDeliver: boolean;
+  konsiSuggestions: KonsiSuggestion[];
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldSalesOrderStatus, "secondary" | "default" | "destructive"> = {
@@ -61,11 +63,14 @@ function printHtml(html: string, title: string) {
   setTimeout(() => document.body.removeChild(iframe), 500);
 }
 
-export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: Props) {
+export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, konsiSuggestions }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const locale = useLocale();
+  const [stagedAdditions, setStagedAdditions] = useState<StagedAddition[]>([]);
   const isKonsi = order.orderType === "KONSI";
   const showMoney = !isKonsi || order.status === "APPROVED";
+  const showKonsiSuggestions = isKonsi && order.status === "PENDING_APPROVAL" && canApprove;
+  const shortLineCount = order.lines.filter((line) => line.qty > line.available).length;
   /**
    * Outstanding only means something once a putus order is approved and can be delivered.
    * Rejecting releases the reservation without cancelling the lines, so a rejected order
@@ -98,6 +103,16 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: P
       requestedUnitPrice: line.requestedUnitPrice as number,
       appealReason: line.appealReason,
     }));
+  /*
+   * Lets ApproveRejectCard resolve a short-stock line back to a product name for the
+   * INSUFFICIENT_STOCK toast — the writer's ShortLine only carries (itemId, variantSku, available).
+   */
+  const orderLineRefs: LineRef[] = order.lines.map((line) => ({
+    itemId: line.itemId,
+    variantSku: line.variantSku,
+    productName: line.productName,
+    variantLabel: line.variantLabel,
+  }));
 
   const formatDate = (date: Date) =>
     new Intl.DateTimeFormat(locale, {
@@ -166,6 +181,15 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: P
         )}
       </div>
 
+      {showKonsiSuggestions && (
+        <KonsiSuggestionsCard
+          suggestions={konsiSuggestions}
+          shortLineCount={shortLineCount}
+          staged={stagedAdditions}
+          onStagedChange={setStagedAdditions}
+        />
+      )}
+
       {canApprove && (
         <ApproveRejectCard
           orderId={order.id}
@@ -173,6 +197,9 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: P
           canApprove={canApprove}
           orderType={order.orderType}
           appealedLines={appealedLines}
+          orderLines={orderLineRefs}
+          stagedAdditions={stagedAdditions}
+          onStagedAdditionsChange={setStagedAdditions}
         />
       )}
 
@@ -238,7 +265,17 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver }: P
             {order.lines.map((line) => (
               <Fragment key={line.id}>
                 <TableRow>
-                  <TableCell>{line.productName}</TableCell>
+                  <TableCell>
+                    {line.productName}
+                    {line.addedById != null && (
+                      <Badge
+                        variant="outline"
+                        className="ml-2 border-muted-foreground/30 text-muted-foreground align-middle"
+                      >
+                        {t("konsiSuggestions.addedByAdminBadge")}
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">{line.qty}</TableCell>
                   {showOutstanding && (
