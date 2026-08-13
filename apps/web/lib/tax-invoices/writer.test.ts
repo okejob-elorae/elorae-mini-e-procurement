@@ -90,7 +90,7 @@ d("tax-invoice status transitions (test bed only)", () => {
     await prisma.auditLog.deleteMany({ where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId) } });
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
-    await prisma.taxInvoice.deleteMany({ where: { id: seededId(taxInvoiceId) } });
+    await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -161,6 +161,29 @@ d("tax-invoice status transitions (test bed only)", () => {
       where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId) },
     });
     expect(logs).toHaveLength(1);
+  });
+
+  /**
+   * The row itself is last-write-wins, so once a revert clears `invoiceNo` the only surviving
+   * record of which faktur number was typed against this nota is the audit row's `before`.
+   */
+  it("captures the pre-transition invoiceNo in the audit changes when reverting a CREATED row", async () => {
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000006", userId });
+    await revertTaxInvoiceToPending({ taxInvoiceId, reason: "typed against the wrong nota", userId });
+
+    const logs = await prisma.auditLog.findMany({
+      where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId), action: "TAX_INVOICE_REVERTED" },
+    });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].reason).toBe("typed against the wrong nota");
+    expect(logs[0].changes).toMatchObject({
+      before: { status: "CREATED", invoiceNo: "010.000-26.00000006" },
+      after: { status: "PENDING", invoiceNo: null },
+    });
+
+    /* And the row it describes really has lost the number, which is why the audit row matters. */
+    const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
+    expect(row.invoiceNo).toBeNull();
   });
 
   it("writes no AuditLog row when the transition is rejected", async () => {

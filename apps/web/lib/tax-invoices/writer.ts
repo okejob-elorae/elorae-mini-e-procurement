@@ -14,7 +14,7 @@ async function transition(t: Transition): Promise<{ ok: true }> {
   return runSerializable(async (tx) => {
     const row = await tx.taxInvoice.findUnique({
       where: { id: t.taxInvoiceId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, invoiceNo: true, reason: true },
     });
     if (!row) throw new TaxInvoiceError("NOT_FOUND");
     if (!t.from.includes(row.status)) throw new TaxInvoiceError("INVALID_STATE");
@@ -25,12 +25,25 @@ async function transition(t: Transition): Promise<{ ok: true }> {
     });
     if (swapped.count !== 1) throw new TaxInvoiceError("CONFLICT");
 
+    /**
+     * `TaxInvoice.status`, `invoiceNo` and `reason` are all last-write-wins, so every transition
+     * overwrites the previous one — mark NOT_REQUIRED with a justification, revert it, mark
+     * CREATED with a faktur number, revert again, and both the justification and the number are
+     * gone from the row with no trace anywhere. The before/after pair plus the operator's reason
+     * is what makes this an audit trail rather than a list of timestamps, and it is written inside
+     * the same transaction as the update, exactly as nota-date correction does.
+     */
     await tx.auditLog.create({
       data: {
         userId: t.userId,
         action: t.action,
         entityType: "TaxInvoice",
         entityId: t.taxInvoiceId,
+        changes: {
+          before: { status: row.status, invoiceNo: row.invoiceNo, reason: row.reason },
+          after: { status: t.to, invoiceNo: t.data.invoiceNo, reason: t.data.reason },
+        },
+        reason: t.data.reason,
       },
     });
 
