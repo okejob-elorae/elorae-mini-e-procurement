@@ -215,6 +215,8 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
                               >
                                 <Minus className="h-4 w-4" />
                               </Button>
+                              {/* onWheel blurs because a focused number input eats wheel events —
+                                * without it, scrolling this list silently retypes the quantity. */}
                               <Input
                                 type="number"
                                 inputMode="numeric"
@@ -225,8 +227,6 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
                                 value={displayValue}
                                 onChange={(e) => handleQtyInputChange(s, e.target.value)}
                                 onBlur={() => handleQtyBlur(s)}
-                                /* A focused number input eats wheel events, so scrolling the
-                                 * surrounding list would silently retype the quantity. */
                                 onWheel={(e) => e.currentTarget.blur()}
                                 className="h-10 w-16 text-center tabular-nums px-1"
                               />
