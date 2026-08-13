@@ -83,6 +83,7 @@ export function NotificationIcon() {
   const [data, setData] = useState<NotificationsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [sendTestLoading, setSendTestLoading] = useState(false);
+  const [markAllLoading, setMarkAllLoading] = useState(false);
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -137,6 +138,26 @@ export function NotificationIcon() {
     }
   };
 
+  const handleMarkAllRead = async () => {
+    setMarkAllLoading(true);
+    try {
+      const res = await fetch('/api/notifications/read-all', { method: 'POST' });
+      if (res.ok) {
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.map((i) => ({ ...i, readAt: new Date().toISOString() })),
+                unreadCount: 0,
+              }
+            : null
+        );
+      }
+    } finally {
+      setMarkAllLoading(false);
+    }
+  };
+
   const handleSendTest = async () => {
     setSendTestLoading(true);
     try {
@@ -171,7 +192,19 @@ export function NotificationIcon() {
       </SheetTrigger>
       <SheetContent side="right" className="flex h-full w-full flex-col sm:max-w-sm">
         <SheetHeader>
-          <SheetTitle>{t('notifications.title')}</SheetTitle>
+          <div className="flex items-center justify-between gap-2">
+            <SheetTitle>{t('notifications.title')}</SheetTitle>
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleMarkAllRead}
+                disabled={markAllLoading}
+              >
+                {t('notifications.markAllRead')}
+              </Button>
+            )}
+          </div>
         </SheetHeader>
         <div className="min-h-0 flex-1">
           {loading ? (

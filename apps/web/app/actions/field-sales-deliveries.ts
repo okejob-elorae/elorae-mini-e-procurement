@@ -1,12 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
 import { DeliveryError } from "@/lib/field-sales/errors";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { logPrint } from "./audit";
 
 export type DeliveryActionResult =
   | { ok: true }
@@ -223,4 +226,69 @@ export async function closeRemainderAction(orderId: string, reason: string): Pro
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
   return { ok: true };
+}
+
+/**
+ * Stamps the first print of a nota tagihan and pings finance that a faktur pajak is now due.
+ *
+ * Compare-and-swap, not read-then-write: a double-click on the print button would otherwise pass
+ * a read-then-check twice before either write lands, notifying finance twice for the same
+ * document. `updateMany`'s `count` says whether THIS call was the one that flipped
+ * `notaPrintedAt` from null — 1 means it genuinely won the first print, 0 means somebody already
+ * had (a reprint), which must audit but never notify again.
+ *
+ * Gated on `FIELD_SALES_ORDERS_VIEW` — the same permission that renders the deliveries card —
+ * not a `tax_invoices:*` permission. Requiring faktur authority to print a nota would invert the
+ * role separation this feature exists to create.
+ *
+ * The whole body is one try/catch returning void: the nota is already printed by the time this
+ * runs, so a ping failure (or any other failure here) must never surface as a print failure.
+ *
+ * `logPrint` is wrapped in its OWN try/catch, separate from the outer one: it is the least
+ * important write here, but it runs before the CAS, so an unguarded throw from it would abort
+ * the whole function and leave `notaPrintedAt` null — vetoing both the stamp and the finance
+ * notification because the audit trail hiccuped. Left in its current position (before the CAS)
+ * on purpose, so a reprint still gets its own audit row; moving it after the early return would
+ * silently stop reprints being audited at all.
+ */
+export async function recordNotaTagihanPrinted(deliveryId: string): Promise<void> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) return;
+    if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.FIELD_SALES_ORDERS_VIEW)) return;
+
+    try {
+      await logPrint("FieldSalesNotaTagihan", deliveryId);
+    } catch (err) {
+      console.error("[nota-tagihan-print] failed to write the print audit row", err);
+    }
+
+    const swapped = await prisma.taxInvoice.updateMany({
+      where: { deliveryId, notaPrintedAt: null },
+      data: { notaPrintedAt: new Date(), notaPrintedById: session.user.id },
+    });
+    if (swapped.count !== 1) return;
+
+    const delivery = await prisma.fieldSalesDelivery.findUnique({
+      where: { id: deliveryId },
+      select: { docNo: true, order: { select: { store: { select: { name: true } } } } },
+    });
+    if (!delivery) return;
+
+    const storeName = delivery.order.store.name;
+    const notification = await prisma.adminNotification.create({
+      data: {
+        category: "TAX_INVOICE_PENDING",
+        severity: "INFO",
+        title: `Nota ${delivery.docNo} sudah di-print`,
+        message: `Nota ${delivery.docNo} untuk toko ${storeName} sudah di-print. Pastikan buat faktur pajak.`,
+        metadata: { deliveryId, docNo: delivery.docNo, storeName },
+      },
+    });
+
+    void fanOutAdminNotification(notification);
+  } catch (err) {
+    /* Best-effort: the nota is already printed by the time this runs, so a ping must never fail a print. */
+    console.error("[nota-tagihan-print] failed to record print", err);
+  }
 }

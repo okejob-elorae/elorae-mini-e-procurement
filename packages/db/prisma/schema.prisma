@@ -79,6 +79,7 @@ model User {
   storeVisits   StoreVisit[]
   fieldSalesOrders FieldSalesOrder[] @relation("FieldSalesOrderSalesman")
   fieldSalesDeliveries FieldSalesDelivery[] @relation("FieldSalesDeliveryUser")
+  taxInvoicesMarked TaxInvoice[] @relation("TaxInvoiceMarkedBy")
   storeChangeRequestsMade      StoreChangeRequest[] @relation("StoreChangeRequestedBy")
   storeChangeRequestsReviewed  StoreChangeRequest[] @relation("StoreChangeReviewedBy")
   vanStock      VanStock[] @relation("VanStockUser")
@@ -469,6 +470,7 @@ model FieldSalesDelivery {
   order          FieldSalesOrder          @relation(fields: [orderId], references: [id])
   deliveredBy    User                     @relation("FieldSalesDeliveryUser", fields: [deliveredById], references: [id])
   lines          FieldSalesDeliveryLine[]
+  taxInvoice     TaxInvoice?
   @@index([orderId])
   @@index([deliveredAt])
 }
@@ -491,6 +493,24 @@ model FieldSalesDeliveryLine {
   @@index([orderLineId])
 }
 
+model TaxInvoice {
+  id              String             @id @default(cuid())
+  deliveryId      String             @unique
+  status          TaxInvoiceStatus   @default(PENDING)
+  invoiceNo       String?
+  markedAt        DateTime?
+  markedById      String?
+  reason          String?            @db.Text
+  notaPrintedAt   DateTime?
+  notaPrintedById String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  delivery        FieldSalesDelivery @relation(fields: [deliveryId], references: [id])
+  markedBy        User?              @relation("TaxInvoiceMarkedBy", fields: [markedById], references: [id])
+
+  @@index([status])
+}
+
 enum FieldSalesOrderStatus {
   PENDING_APPROVAL
   APPROVED
@@ -507,6 +527,12 @@ enum FieldSalesDeliveryStatus {
   PARTIAL
   DELIVERED
   CLOSED
+}
+
+enum TaxInvoiceStatus {
+  PENDING
+  CREATED
+  NOT_REQUIRED
 }
 
 enum ReserveSource {

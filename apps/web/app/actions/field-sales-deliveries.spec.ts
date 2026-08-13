@@ -1,12 +1,59 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 
-const { mockAuth, staleSnapshot } = vi.hoisted(() => ({
-  mockAuth: vi.fn(),
-  staleSnapshot: { value: null as { invoiceDate: Date; dueDate: Date } | null },
-}));
+const { mockAuth, staleSnapshot, mockUpdateMany, mockAdminNotificationCreate, mockFanOut, mockLogAudit, notaDeliveryLookup } =
+  vi.hoisted(() => ({
+    mockAuth: vi.fn(),
+    staleSnapshot: { value: null as { invoiceDate: Date; dueDate: Date } | null },
+    mockUpdateMany: vi.fn(),
+    mockAdminNotificationCreate: vi.fn(),
+    mockFanOut: vi.fn(),
+    mockLogAudit: vi.fn(),
+    notaDeliveryLookup: { impl: null as ((args: unknown) => Promise<unknown>) | null },
+  }));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: mockFanOut }));
+vi.mock("./audit", () => ({ logPrint: mockLogAudit }));
+
+/**
+ * `TaxInvoice` and `AdminNotification` on `recordNotaTagihanPrinted`'s path need mocking, not the
+ * real test bed: `prisma.taxInvoice` does not exist in the generated client yet (`prisma
+ * generate` has not run since the model was added — see the task brief), so a real call would
+ * throw before any assertion runs. `fieldSalesDelivery` is patched too, but only its `findUnique`
+ * — everything else (`create`, `findUniqueOrThrow`, `deleteMany`, `$transaction`, every other
+ * model) still goes to the real client via `actual.prisma`, which is itself a `get`-only Proxy
+ * (see `packages/db/src/index.ts`) — spreading it (`{ ...actual.prisma }`) would silently copy
+ * NOTHING, since its trap ignores its own empty target. Building a second Proxy that forwards
+ * unknown props to `actual.prisma[prop]` is what keeps every other test in this file (which needs
+ * the real DB) working unchanged.
+ *
+ * Touching `patchedPrisma.fieldSalesDelivery` — from either suite, on every access — runs the
+ * real client's lazy getter, which constructs a `PrismaClient` against whatever `DATABASE_URL`
+ * is set if one isn't already cached. Construction only: no connection is opened and no query
+ * runs until a method is actually awaited, so this is inert for the mocked describe block below,
+ * which never lets a call reach the real delegate.
+ */
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
+  const patchedPrisma = new Proxy({} as typeof actual.prisma, {
+    get(_target, prop) {
+      if (prop === "taxInvoice") return { updateMany: mockUpdateMany };
+      if (prop === "adminNotification") return { create: mockAdminNotificationCreate };
+      if (prop === "fieldSalesDelivery") {
+        const real = actual.prisma.fieldSalesDelivery as unknown as Record<string, unknown>;
+        return new Proxy({} as typeof actual.prisma.fieldSalesDelivery, {
+          get(_t, p) {
+            if (p === "findUnique" && notaDeliveryLookup.impl) return notaDeliveryLookup.impl;
+            return real[p as string];
+          },
+        });
+      }
+      return (actual.prisma as unknown as Record<string, unknown>)[prop as string];
+    },
+  });
+  return { ...actual, prisma: patchedPrisma };
+});
 
 /**
  * A lost-update race cannot be produced by two real transactions here: the action's snapshot read
@@ -47,7 +94,7 @@ vi.mock("@/lib/db/tx-retry", async (importActual) => {
   };
 });
 
-import { updateDeliveryDatesAction } from "./field-sales-deliveries";
+import { recordNotaTagihanPrinted, updateDeliveryDatesAction } from "./field-sales-deliveries";
 
 /* Writes to real rows — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -70,8 +117,6 @@ d("updateDeliveryDatesAction (test bed only)", () => {
 
   beforeEach(async () => {
     uomId = ""; itemId = ""; storeId = ""; userId = ""; orderId = ""; lineId = ""; deliveryId = ""; docNo = "";
-    /* Never leaks into the next test — a stale snapshot would silently fake a race everywhere. */
-    staleSnapshot.value = null;
 
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-FSDA-${token}`, nameId: "test", nameEn: "test" },
@@ -131,6 +176,14 @@ d("updateDeliveryDatesAction (test bed only)", () => {
   });
 
   afterEach(async () => {
+    /**
+     * Cleared here rather than in `beforeEach` so the fake can never outlive this suite: a
+     * `beforeEach` reset only protects tests that run after one in the SAME suite, and a stale
+     * snapshot leaking into another file would silently fake a race there. Mirrors how
+     * `notaDeliveryLookup.impl` is reset.
+     */
+    staleSnapshot.value = null;
+
     await prisma.auditLog.deleteMany({ where: { entityId: seededId(deliveryId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
@@ -296,5 +349,103 @@ d("updateDeliveryDatesAction (test bed only)", () => {
 
     expect(result).toEqual({ ok: false, reason: "NOT_FOUND" });
     expect(await prisma.auditLog.count({ where: { entityId: "does-not-exist" } })).toBe(0);
+  });
+});
+
+/**
+ * Fully mocked, unlike the suite above: `recordNotaTagihanPrinted` touches `TaxInvoice` and
+ * `AdminNotification`, and the generated client has no `taxInvoice` delegate yet (see the
+ * `@elorae/db` mock at the top of this file), so there is no real row to write to in the first
+ * place. Nothing here writes to `:3308`, so it runs regardless of which DB the environment points
+ * at.
+ */
+describe("recordNotaTagihanPrinted", () => {
+  const deliveryId = "delivery-1";
+  const userId = "user-1";
+  const notificationId = "notif-1";
+
+  /*
+   * A `vi.fn()`, not a bare arrow function, precisely so the CAS predicate test below can assert
+   * on the `where`/`select` shape the action actually sent — a wrong relation path here would
+   * throw in production and get swallowed by the outer try/catch, silently leaving a nota
+   * un-notified with the test still green if this were unchecked.
+   */
+  const mockFindDelivery = vi.fn();
+
+  beforeEach(() => {
+    mockAuth.mockReset();
+    mockAuth.mockResolvedValue({ user: { id: userId, permissions: ["field_sales_orders:view"] } });
+
+    mockUpdateMany.mockReset();
+    mockAdminNotificationCreate.mockReset();
+    mockAdminNotificationCreate.mockResolvedValue({
+      id: notificationId,
+      category: "TAX_INVOICE_PENDING",
+      title: "Nota DLV/TEST-1 sudah di-print",
+      message: "Nota DLV/TEST-1 untuk toko Toko Test sudah di-print. Pastikan buat faktur pajak.",
+      metadata: { deliveryId, docNo: "DLV/TEST-1", storeName: "Toko Test" },
+    });
+    mockFanOut.mockReset();
+    mockLogAudit.mockReset();
+    mockLogAudit.mockResolvedValue(undefined);
+
+    /* Stands in for the delivery + store lookup the action makes after it wins the CAS. */
+    mockFindDelivery.mockReset();
+    mockFindDelivery.mockResolvedValue({ docNo: "DLV/TEST-1", order: { store: { name: "Toko Test" } } });
+    notaDeliveryLookup.impl = mockFindDelivery;
+  });
+
+  afterEach(() => {
+    /* Never leaks into the DB-backed suite above, whose `findUnique` calls must hit the real DB. */
+    notaDeliveryLookup.impl = null;
+  });
+
+  it("first print stamps notaPrintedAt and notifies", async () => {
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    await recordNotaTagihanPrinted(deliveryId);
+
+    /*
+     * The predicate IS the mechanism: an unconditional `updateMany({ where: { deliveryId } })`
+     * would also resolve `{ count: 1 }` from a stub and pass every other assertion in this file,
+     * while notifying finance on every reprint in production. Pinning the exact `where`/`data` is
+     * what would catch that regression.
+     */
+    expect(mockUpdateMany).toHaveBeenCalledWith({
+      where: { deliveryId, notaPrintedAt: null },
+      data: { notaPrintedAt: expect.any(Date), notaPrintedById: userId },
+    });
+    expect(mockFindDelivery).toHaveBeenCalledWith({
+      where: { id: deliveryId },
+      select: { docNo: true, order: { select: { store: { select: { name: true } } } } },
+    });
+    expect(mockAdminNotificationCreate).toHaveBeenCalledTimes(1);
+    expect(mockFanOut).toHaveBeenCalledTimes(1);
+    expect(mockFanOut).toHaveBeenCalledWith(
+      expect.objectContaining({ id: notificationId, category: "TAX_INVOICE_PENDING" }),
+    );
+  });
+
+  it("a reprint audits but does not notify", async () => {
+    mockUpdateMany.mockResolvedValue({ count: 0 });
+    await recordNotaTagihanPrinted(deliveryId);
+    expect(mockAdminNotificationCreate).not.toHaveBeenCalled();
+    expect(mockFanOut).not.toHaveBeenCalled();
+    expect(mockLogAudit).toHaveBeenCalledTimes(1);
+  });
+
+  it("never throws when the notification write fails", async () => {
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    mockAdminNotificationCreate.mockRejectedValue(new Error("db down"));
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toBeUndefined();
+  });
+
+  it("does nothing without the field_sales_orders:view permission", async () => {
+    mockAuth.mockResolvedValue({ user: { id: userId, permissions: [] } });
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    await recordNotaTagihanPrinted(deliveryId);
+    expect(mockLogAudit).not.toHaveBeenCalled();
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+    expect(mockAdminNotificationCreate).not.toHaveBeenCalled();
+    expect(mockFanOut).not.toHaveBeenCalled();
   });
 });

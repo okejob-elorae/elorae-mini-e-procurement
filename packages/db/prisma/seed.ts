@@ -195,6 +195,9 @@ async function main() {
     { code: 'journals:manage', module: 'journals', action: 'manage', description: 'Create manual journals + post auto-journals' },
     // Finance — Financial Reports
     { code: 'finance_reports:view', module: 'finance_reports', action: 'view', description: 'View financial reports (trial balance, income statement, balance sheet)' },
+    // Finance — Faktur Pajak
+    { code: 'tax_invoices:view', module: 'tax_invoices', action: 'view', description: 'View the faktur pajak queue for issued nota tagihan' },
+    { code: 'tax_invoices:manage', module: 'tax_invoices', action: 'manage', description: 'Record faktur pajak numbers and dismiss nota that need no faktur' },
     // Lead Time
     { code: 'lead_time:view', module: 'lead_time', action: 'view', description: 'View process library and supplier chains' },
     { code: 'lead_time:manage', module: 'lead_time', action: 'manage', description: 'Manage process library and supplier chains' },

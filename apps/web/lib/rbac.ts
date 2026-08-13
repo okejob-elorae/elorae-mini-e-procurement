@@ -94,6 +94,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/jubelio/migration': 'settings_security:view',
   '/backoffice/jubelio/couriers': 'settings_security:view',
   '/backoffice/finance/coa': 'coa:view',
+  '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
@@ -283,6 +284,9 @@ export const PERMISSIONS = {
   JOURNALS_MANAGE: "journals:manage",
   // Finance — Financial Reports
   FINANCE_REPORTS_VIEW: "finance_reports:view",
+  // Finance — Faktur Pajak
+  TAX_INVOICES_VIEW: "tax_invoices:view",
+  TAX_INVOICES_MANAGE: "tax_invoices:manage",
   // Lead Time
   LEAD_TIME_VIEW: "lead_time:view",
   LEAD_TIME_MANAGE: "lead_time:manage",

@@ -52,7 +52,11 @@ import type {
   FieldSalesOrderStatus,
   FieldSalesOrderType,
 } from "@/lib/field-sales/queries";
-import { closeRemainderAction, updateDeliveryDatesAction } from "@/app/actions/field-sales-deliveries";
+import {
+  closeRemainderAction,
+  recordNotaTagihanPrinted,
+  updateDeliveryDatesAction,
+} from "@/app/actions/field-sales-deliveries";
 import { logPrint } from "@/app/actions/audit";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
@@ -229,56 +233,66 @@ export function DeliveriesCard({
     setTagihanDialogOpen(true);
   }
 
-  async function handleConfirmPrintTagihan(): Promise<void> {
+  /**
+   * `recordNotaTagihanPrinted` now awaits four round trips (auth, audit write, the CAS, the
+   * delivery lookup, the notification create) where this used to await one `logPrint` call.
+   * Routed through `startTransition` — the same pattern `callClose`/`callUpdateDates` already
+   * use below — so the print button can be disabled on `isPending` and a second click in that
+   * window can't fire a second audit row and a second print iframe. The CAS already stops
+   * finance being told twice; this stops the OPERATOR seeing two print dialogs.
+   */
+  function callPrintTagihan(): void {
     const delivery = deliveries.find((d) => d.id === tagihanTargetId);
     if (!delivery) return;
-    await logPrint("FieldSalesNotaTagihan", delivery.id);
-    const html = buildNotaTagihanPrintHtml({
-      docNo: delivery.docNo,
-      orderNo,
-      storeName,
-      salesmanName,
-      invoiceDate: delivery.invoiceDate,
-      dueDate: delivery.dueDate,
-      footnote: tagihanFootnote,
-      subtotal: delivery.subtotal,
-      orderDiscountAmount: delivery.discountAmount,
-      appliedOrderPromoName: null,
-      total: delivery.total,
-      lines: delivery.lines.map((line) => ({
-        productName: line.productName,
-        variantSku: line.variantSku,
-        variantLabel: lineVariantLabel(line.orderLineId),
-        qty: line.qty,
-        unitPrice: line.unitPrice,
-        lineTotal: line.lineTotal,
-        discountAmount: line.discountAmount,
-        appliedPromoName: null,
-      })),
-      labels: {
-        title: t("print.tagihanTitle"),
-        doc: t("print.docLabel"),
-        orderRef: t("print.orderRefLabel"),
-        store: t("print.storeLabel"),
-        salesman: t("print.salesmanLabel"),
-        date: t("print.dateLabel"),
-        dueDate: t("print.dueDateLabel"),
-        no: t("print.colNo"),
-        product: t("print.colProduct"),
-        qty: t("print.colQty"),
-        price: t("print.colPrice"),
-        discount: t("print.colDiscount"),
-        lineTotal: t("print.colLineTotal"),
-        subtotal: t("print.subtotal"),
-        orderDiscount: t("print.orderDiscount"),
-        grandTotal: t("print.grandTotal"),
-        regards: t("print.regards"),
-        receivedBy: t("print.receivedBy"),
-        issuedBy: t("print.issuedBy"),
-      },
+    startTransition(async () => {
+      await recordNotaTagihanPrinted(delivery.id);
+      const html = buildNotaTagihanPrintHtml({
+        docNo: delivery.docNo,
+        orderNo,
+        storeName,
+        salesmanName,
+        invoiceDate: delivery.invoiceDate,
+        dueDate: delivery.dueDate,
+        footnote: tagihanFootnote,
+        subtotal: delivery.subtotal,
+        orderDiscountAmount: delivery.discountAmount,
+        appliedOrderPromoName: null,
+        total: delivery.total,
+        lines: delivery.lines.map((line) => ({
+          productName: line.productName,
+          variantSku: line.variantSku,
+          variantLabel: lineVariantLabel(line.orderLineId),
+          qty: line.qty,
+          unitPrice: line.unitPrice,
+          lineTotal: line.lineTotal,
+          discountAmount: line.discountAmount,
+          appliedPromoName: null,
+        })),
+        labels: {
+          title: t("print.tagihanTitle"),
+          doc: t("print.docLabel"),
+          orderRef: t("print.orderRefLabel"),
+          store: t("print.storeLabel"),
+          salesman: t("print.salesmanLabel"),
+          date: t("print.dateLabel"),
+          dueDate: t("print.dueDateLabel"),
+          no: t("print.colNo"),
+          product: t("print.colProduct"),
+          qty: t("print.colQty"),
+          price: t("print.colPrice"),
+          discount: t("print.colDiscount"),
+          lineTotal: t("print.colLineTotal"),
+          subtotal: t("print.subtotal"),
+          orderDiscount: t("print.orderDiscount"),
+          grandTotal: t("print.grandTotal"),
+          regards: t("print.regards"),
+          receivedBy: t("print.receivedBy"),
+          issuedBy: t("print.issuedBy"),
+        },
+      });
+      printHtml(html, t("print.notaTagihan"));
+      setTagihanDialogOpen(false);
     });
-    printHtml(html, t("print.notaTagihan"));
-    setTagihanDialogOpen(false);
   }
 
   function callClose(): void {
@@ -496,14 +510,17 @@ export function DeliveriesCard({
               value={tagihanFootnote}
               onChange={(e) => setTagihanFootnote(e.target.value)}
               placeholder={t("print.tagihanDialogFootnotePlaceholder")}
+              disabled={isPending}
               rows={3}
             />
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">{t("print.tagihanDialogCancel")}</Button>
+              <Button variant="outline" disabled={isPending}>
+                {t("print.tagihanDialogCancel")}
+              </Button>
             </DialogClose>
-            <Button onClick={handleConfirmPrintTagihan}>
+            <Button disabled={isPending} onClick={callPrintTagihan}>
               <Printer className="h-4 w-4 mr-2" />
               {t("print.tagihanDialogPrint")}
             </Button>
