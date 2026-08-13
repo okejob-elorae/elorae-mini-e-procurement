@@ -24,7 +24,7 @@ vi.mock("@/lib/field-sales/writer", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-import { InvalidAddedLineError } from "@/lib/field-sales/errors";
+import { InsufficientStockError, InvalidAddedLineError } from "@/lib/field-sales/errors";
 import { approveFieldSalesOrderAction } from "./field-sales-orders";
 
 describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
@@ -101,13 +101,23 @@ describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
     );
   });
 
-  it("maps InvalidAddedLineError from the writer onto INVALID_ADDED_LINE", async () => {
+  it("maps InvalidAddedLineError from the writer onto INVALID_ADDED_LINE, forwarding the code", async () => {
     mockHasPermission.mockReturnValue(true);
     mockApprove.mockRejectedValue(new InvalidAddedLineError("ALREADY_SENT", "i1"));
     const res = await approveFieldSalesOrderAction("o1", undefined, [
       { itemId: "i1", variantSku: "S", qty: 1 },
     ]);
-    expect(res).toEqual({ ok: false, reason: "INVALID_ADDED_LINE" });
+    expect(res).toEqual({ ok: false, reason: "INVALID_ADDED_LINE", addedLineCode: "ALREADY_SENT" });
+  });
+
+  it("maps InsufficientStockError from the writer onto INSUFFICIENT_STOCK, forwarding shortLines", async () => {
+    mockHasPermission.mockReturnValue(true);
+    const shortLines = [{ itemId: "i1", variantSku: "S", available: 2 }];
+    mockApprove.mockRejectedValue(new InsufficientStockError(shortLines));
+    const res = await approveFieldSalesOrderAction("o1", undefined, [
+      { itemId: "i1", variantSku: "S", qty: 5 },
+    ]);
+    expect(res).toEqual({ ok: false, reason: "INSUFFICIENT_STOCK", shortLines });
   });
 
   it("passes addedLines through to the writer unchanged", async () => {
