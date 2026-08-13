@@ -117,8 +117,6 @@ d("updateDeliveryDatesAction (test bed only)", () => {
 
   beforeEach(async () => {
     uomId = ""; itemId = ""; storeId = ""; userId = ""; orderId = ""; lineId = ""; deliveryId = ""; docNo = "";
-    /* Never leaks into the next test — a stale snapshot would silently fake a race everywhere. */
-    staleSnapshot.value = null;
 
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-FSDA-${token}`, nameId: "test", nameEn: "test" },
@@ -178,6 +176,14 @@ d("updateDeliveryDatesAction (test bed only)", () => {
   });
 
   afterEach(async () => {
+    /**
+     * Cleared here rather than in `beforeEach` so the fake can never outlive this suite: a
+     * `beforeEach` reset only protects tests that run after one in the SAME suite, and a stale
+     * snapshot leaking into another file would silently fake a race there. Mirrors how
+     * `notaDeliveryLookup.impl` is reset.
+     */
+    staleSnapshot.value = null;
+
     await prisma.auditLog.deleteMany({ where: { entityId: seededId(deliveryId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
