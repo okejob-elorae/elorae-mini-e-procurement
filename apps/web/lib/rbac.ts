@@ -94,6 +94,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/jubelio/migration': 'settings_security:view',
   '/backoffice/jubelio/couriers': 'settings_security:view',
   '/backoffice/finance/coa': 'coa:view',
+  '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',

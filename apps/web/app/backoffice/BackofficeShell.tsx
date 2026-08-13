@@ -213,6 +213,11 @@ const navItems: NavItem[] = [
         href: '/backoffice/finance/cash-flow-sections',
         permission: PERMISSIONS.JOURNALS_VIEW,
       },
+      {
+        labelKey: 'navFakturPajak',
+        href: '/backoffice/finance/faktur-pajak',
+        permission: PERMISSIONS.TAX_INVOICES_VIEW,
+      },
     ],
   },
   {
