@@ -25,6 +25,7 @@ import {
   rejectFieldSalesOrderAction,
   type ActionResult,
 } from "@/app/actions/field-sales-orders";
+import type { StagedAddition } from "./KonsiSuggestionsCard";
 
 export type AppealedLine = {
   id: string;
@@ -42,6 +43,8 @@ type Props = {
   canApprove: boolean;
   orderType: FieldSalesOrderType;
   appealedLines: AppealedLine[];
+  stagedAdditions: StagedAddition[];
+  onStagedAdditionsChange: (staged: StagedAddition[]) => void;
 };
 
 function formatRupiah(value: number): string {
@@ -52,7 +55,15 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
-export function ApproveRejectCard({ orderId, status, canApprove, orderType, appealedLines }: Props) {
+export function ApproveRejectCard({
+  orderId,
+  status,
+  canApprove,
+  orderType,
+  appealedLines,
+  stagedAdditions,
+  onStagedAdditionsChange,
+}: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
   const [isPending, startTransition] = useTransition();
@@ -85,12 +96,15 @@ export function ApproveRejectCard({ orderId, status, canApprove, orderType, appe
       setApproveDialogOpen(false);
       setRejectDialogOpen(false);
       setRejectReason("");
+      onStagedAdditionsChange([]);
     } else if (r.reason === "FORBIDDEN") {
       toast.error(t("errForbidden"));
     } else if (r.reason === "INVALID_TRANSITION") {
       toast.error(t("errAlreadyDecided"));
     } else if (r.reason === "INSUFFICIENT_STOCK") {
-      toast.error(t("errInsufficientStock"));
+      toast.error(t("konsiSuggestions.errInsufficientStock"));
+    } else if (r.reason === "INVALID_ADDED_LINE") {
+      toast.error(t("konsiSuggestions.errInvalidAddedLine"));
     } else if (r.reason === "INVALID_FINAL_PRICE") {
       toast.error(t("errInvalidFinalPrice"));
     } else {
@@ -103,9 +117,13 @@ export function ApproveRejectCard({ orderId, status, canApprove, orderType, appe
     const finalPrices = hasAppeals
       ? appealedLines.map((l) => ({ lineId: l.id, finalUnitPrice: Number(finalPriceInputs[l.id]) }))
       : undefined;
+    const addedLines =
+      stagedAdditions.length > 0
+        ? stagedAdditions.map(({ itemId, variantSku, qty }) => ({ itemId, variantSku, qty }))
+        : undefined;
     startTransition(async () => {
       try {
-        const r = await approveFieldSalesOrderAction(orderId, finalPrices);
+        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines);
         handleResult(r, t("approved"));
       } catch {
         toast.error(t("errGeneric"));
@@ -200,6 +218,12 @@ export function ApproveRejectCard({ orderId, status, canApprove, orderType, appe
                 <p className="text-xs text-destructive">{t("appealFinalPriceInvalid")}</p>
               )}
             </div>
+          )}
+
+          {stagedAdditions.length > 0 && (
+            <p className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-700">
+              {t("konsiSuggestions.approveSummary", { count: stagedAdditions.length })}
+            </p>
           )}
 
           <AlertDialogFooter>

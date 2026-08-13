@@ -2445,6 +2445,24 @@
       "tagihanDialogFootnotePlaceholder": "Contoh: Barang yang sudah dibeli tidak dapat ditukar/dikembalikan",
       "tagihanDialogCancel": "Batal",
       "tagihanDialogPrint": "Cetak"
+    },
+    "konsiSuggestions": {
+      "title": "Saran Produk Baru",
+      "toggleLabel": "Sarankan produk baru",
+      "shortLinesHeading": "{count} baris pesanan tidak bisa dipenuhi stoknya — sarankan produk pengganti yang belum pernah dikirim ke toko ini",
+      "colSku": "SKU",
+      "colName": "Nama Produk",
+      "colAvailable": "Tersedia",
+      "colQty": "Qty",
+      "filterPlaceholder": "Cari SKU atau nama produk",
+      "stagedHeading": "Akan ditambahkan",
+      "addLabel": "Tambah",
+      "removeLabel": "Hapus",
+      "empty": "Tidak ada produk yang bisa disarankan untuk toko ini.",
+      "approveSummary": "{count} produk baru akan ditambahkan ke transfer ini.",
+      "addedByAdminBadge": "ditambahkan admin",
+      "errInsufficientStock": "Stok tidak cukup — seluruh transfer ini dibatalkan, termasuk produk yang baru ditambahkan. Periksa kembali baris pesanan dan daftar tambahan, lalu sesuaikan jumlahnya.",
+      "errInvalidAddedLine": "Salah satu produk yang ditambahkan tidak valid (mungkin sudah pernah dikirim ke toko ini atau sudah ada di pesanan). Muat ulang halaman dan coba lagi."
     }
   },
   "promos": {

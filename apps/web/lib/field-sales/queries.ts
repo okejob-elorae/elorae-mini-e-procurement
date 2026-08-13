@@ -75,6 +75,7 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
     belowCost: boolean;
     requestedUnitPrice: number | null;
     appealReason: string | null;
+    addedById: string | null;
   }>;
 };
 
@@ -145,7 +146,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         select: {
           id: true, itemId: true, productName: true, variantSku: true, qty: true, unitPrice: true, lineTotal: true,
           discountAmount: true, appliedPromoId: true, requestedUnitPrice: true, appealReason: true,
-          deliveredQty: true, cancelledQty: true,
+          deliveredQty: true, cancelledQty: true, addedById: true,
           item: { select: { variants: true } },
         },
       },
@@ -248,6 +249,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         belowCost: row.orderType === "PUTUS" && qty > 0 && netUnit < avgCost,
         requestedUnitPrice: l.requestedUnitPrice === null ? null : toNum(l.requestedUnitPrice),
         appealReason: l.appealReason,
+        addedById: l.addedById,
       };
     }),
   };

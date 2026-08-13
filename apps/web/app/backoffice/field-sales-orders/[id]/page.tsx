@@ -1,6 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getFieldSalesOrderById } from "@/lib/field-sales/queries";
+import { getFieldSalesOrderById, listKonsiSuggestions } from "@/lib/field-sales/queries";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
 
@@ -27,7 +27,18 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     PERMISSIONS.FIELD_SALES_ORDERS_DELIVER,
   );
 
+  /* Never-sent suggestions are konsi-only and only useful while the transfer is still decidable. */
+  const konsiSuggestions =
+    order.orderType === "KONSI" && order.status === "PENDING_APPROVAL" && canApprove
+      ? await listKonsiSuggestions(id)
+      : [];
+
   return (
-    <FieldSalesOrderDetailClient order={order} canApprove={canApprove} canDeliver={canDeliver} />
+    <FieldSalesOrderDetailClient
+      order={order}
+      canApprove={canApprove}
+      canDeliver={canDeliver}
+      konsiSuggestions={konsiSuggestions}
+    />
   );
 }

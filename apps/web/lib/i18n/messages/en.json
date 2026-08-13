@@ -2445,6 +2445,24 @@
       "tagihanDialogFootnotePlaceholder": "e.g. Purchased items cannot be exchanged/returned",
       "tagihanDialogCancel": "Cancel",
       "tagihanDialogPrint": "Print"
+    },
+    "konsiSuggestions": {
+      "title": "New Product Suggestions",
+      "toggleLabel": "Suggest new products",
+      "shortLinesHeading": "{count} order line(s) can't be fully stocked — suggest replacement products never sent to this store",
+      "colSku": "SKU",
+      "colName": "Product Name",
+      "colAvailable": "Available",
+      "colQty": "Qty",
+      "filterPlaceholder": "Search SKU or product name",
+      "stagedHeading": "Will be added",
+      "addLabel": "Add",
+      "removeLabel": "Remove",
+      "empty": "No products can be suggested for this store.",
+      "approveSummary": "{count} new product(s) will be added to this transfer.",
+      "addedByAdminBadge": "added by admin",
+      "errInsufficientStock": "Not enough stock — the whole transfer was blocked, including the newly added products. Check the order lines and the added list, then adjust the quantities.",
+      "errInvalidAddedLine": "One of the added products is invalid (it may already have been sent to this store or is already on the order). Reload the page and try again."
     }
   },
   "promos": {
