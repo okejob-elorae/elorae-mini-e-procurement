@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { approveFieldSalesOrder, createFieldSalesOrder } from "./writer";
+import { InsufficientStockError } from "./errors";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -18,6 +19,7 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
   let neverSentItemId = "";
   let alreadySentItemId = "";
   let variantItemId = "";
+  let shortItemId = "";
   let storeId = "";
   let putusStoreId = "";
   let userId = "";
@@ -33,6 +35,7 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     neverSentItemId = "";
     alreadySentItemId = "";
     variantItemId = "";
+    shortItemId = "";
     storeId = "";
     putusStoreId = "";
     userId = "";
@@ -69,6 +72,12 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     variantItemId = variantItem.id;
     await prisma.inventoryValue.create({ data: { itemId: variantItemId, variantSku: "RED", qtyOnHand: 20, reservedQty: 0, avgCost: 800, totalValue: 16000 } });
     await prisma.inventoryValue.create({ data: { itemId: variantItemId, variantSku: "BLUE", qtyOnHand: 20, reservedQty: 0, avgCost: 800, totalValue: 16000 } });
+
+    const shortItem = await prisma.item.create({
+      data: { sku: `TEST-KAL-SHORT-${token}`, nameId: "Short stock item", nameEn: "Short stock item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 10000 },
+    });
+    shortItemId = shortItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: shortItemId, variantSku: "", qtyOnHand: 1, reservedQty: 0, avgCost: 500, totalValue: 500 } });
 
     const store = await prisma.store.create({
       data: { code: `TEST-KAL-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
@@ -123,7 +132,13 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const allItemIds = [seededId(itemId), seededId(neverSentItemId), seededId(alreadySentItemId), seededId(variantItemId)];
+    const allItemIds = [
+      seededId(itemId),
+      seededId(neverSentItemId),
+      seededId(alreadySentItemId),
+      seededId(variantItemId),
+      seededId(shortItemId),
+    ];
     const allOrderIds = [seededId(orderId), seededId(putusOrderId), seededId(priorOrderId)];
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: allItemIds } } });
@@ -157,24 +172,46 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     expect(requested.addedById).toBeNull();
   });
 
-  it("prices the added line with the konsi gross-up, not zero", async () => {
+  it("prices the added line with the konsi gross-up (sellingPrice 50000 / (1 - 20%) = 62500), not the passthrough price", async () => {
     await approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "", qty: 2 }] });
     const added = await prisma.fieldSalesOrderLine.findFirst({
       where: { orderId: seededId(orderId), itemId: neverSentItemId },
       select: { unitPrice: true, lineTotal: true },
     });
-    expect(Number(added!.unitPrice)).toBeGreaterThan(0);
-    expect(Number(added!.lineTotal)).toBe(Number(added!.unitPrice) * 2);
+    expect(Number(added!.unitPrice)).toBe(62500);
+    expect(Number(added!.lineTotal)).toBe(125000);
   });
 
   it("includes the added line in the order total", async () => {
     await approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "", qty: 2 }] });
-    const [order, lines] = await Promise.all([
-      prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, select: { total: true } }),
-      prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) }, select: { lineTotal: true } }),
-    ]);
-    const sum = lines.reduce((s, l) => s + Number(l.lineTotal), 0);
-    expect(Number(order.total)).toBe(sum);
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, select: { total: true } });
+    /*
+     * On-order line: sellingPrice 40000 / 0.8 = 50000, qty 2 -> lineTotal 100000.
+     * Added line: sellingPrice 50000 / 0.8 = 62500, qty 2 -> lineTotal 125000.
+     * Total = 100000 + 125000 = 225000. Asserted as an absolute figure (not Σ lineTotal, which
+     * both a correct and a stale-snapshot implementation would satisfy identically).
+     */
+    expect(Number(order.total)).toBe(225000);
+  });
+
+  it("reserves stock for the added line", async () => {
+    await approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "", qty: 3 }] });
+    const res = await prisma.stockReservation.findFirst({ where: { itemId: seededId(neverSentItemId), state: "RESERVED" } });
+    expect(res).not.toBeNull();
+    expect(res!.source).toBe("FIELD_SALES_KONSI");
+    expect(Number(res!.qty)).toBe(3);
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(neverSentItemId) } });
+    expect(Number(inv.reservedQty)).toBe(3);
+  });
+
+  it("hard-blocks an added line that exceeds available stock and creates no line", async () => {
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: shortItemId, variantSku: "", qty: 5 }] }),
+    ).rejects.toBeInstanceOf(InsufficientStockError);
+    const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
+    expect(lines).toHaveLength(1);
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, select: { status: true } });
+    expect(order.status).toBe("PENDING_APPROVAL");
   });
 
   it("rejects an item already on the order", async () => {
@@ -235,6 +272,14 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
   it("rejects an unknown item and creates nothing", async () => {
     await expect(
       approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: "does-not-exist", variantSku: "", qty: 1 }] }),
+    ).rejects.toMatchObject({ code: "UNKNOWN_ITEM" });
+    const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
+    expect(lines).toHaveLength(1);
+  });
+
+  it("rejects a variantSku with no matching InventoryValue row as UNKNOWN_ITEM, not a raw db error", async () => {
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "GHOST-VARIANT", qty: 1 }] }),
     ).rejects.toMatchObject({ code: "UNKNOWN_ITEM" });
     const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
     expect(lines).toHaveLength(1);
