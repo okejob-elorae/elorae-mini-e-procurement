@@ -133,6 +133,10 @@ export async function recordFieldSalesDelivery(input: {
       select: { id: true, docNo: true },
     });
 
+    await tx.taxInvoice.create({
+      data: { deliveryId: delivery.id },
+    });
+
     /**
      * Consume AFTER the delivery row exists so the audit adjustment can key on the real delivery
      * id. Everything here is one serializable transaction, so a short-stock throw rolls the
