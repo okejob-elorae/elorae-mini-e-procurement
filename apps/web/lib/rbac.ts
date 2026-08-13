@@ -283,6 +283,9 @@ export const PERMISSIONS = {
   JOURNALS_MANAGE: "journals:manage",
   // Finance — Financial Reports
   FINANCE_REPORTS_VIEW: "finance_reports:view",
+  // Finance — Faktur Pajak
+  TAX_INVOICES_VIEW: "tax_invoices:view",
+  TAX_INVOICES_MANAGE: "tax_invoices:manage",
   // Lead Time
   LEAD_TIME_VIEW: "lead_time:view",
   LEAD_TIME_MANAGE: "lead_time:manage",
