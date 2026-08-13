@@ -14,6 +14,7 @@ d("listKonsiSuggestions (test bed only)", () => {
   let neverSentItemId = "";
   let previouslySentItemId = "";
   let variantItemId = "";
+  let unsentVariantItemId = "";
   let collisionItemId = "";
   let storeId = "";
   let userId = "";
@@ -29,6 +30,7 @@ d("listKonsiSuggestions (test bed only)", () => {
     neverSentItemId = "";
     previouslySentItemId = "";
     variantItemId = "";
+    unsentVariantItemId = "";
     collisionItemId = "";
     storeId = "";
     userId = "";
@@ -66,6 +68,18 @@ d("listKonsiSuggestions (test bed only)", () => {
     variantItemId = variantItem.id;
     await prisma.inventoryValue.create({ data: { itemId: variantItemId, variantSku: "RED", qtyOnHand: 20, reservedQty: 0, avgCost: 800, totalValue: 16000 } });
     await prisma.inventoryValue.create({ data: { itemId: variantItemId, variantSku: "BLUE", qtyOnHand: 15, reservedQty: 0, avgCost: 800, totalValue: 12000 } });
+
+    /*
+     * A second multi-variant item where NEITHER variant was ever sent, so BOTH survive into the
+     * suggestion list. `variantItemId` above is excluded by sentItemIds before the per-variant
+     * expansion ever runs, so it cannot cover two surviving real variants.
+     */
+    const unsentVariantItem = await prisma.item.create({
+      data: { sku: `TEST-KSG-UVAR-${token}`, nameId: "Unsent variant item", nameEn: "Unsent variant item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 22000 },
+    });
+    unsentVariantItemId = unsentVariantItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: unsentVariantItemId, variantSku: "S", qtyOnHand: 30, reservedQty: 5, avgCost: 800, totalValue: 24000 } });
+    await prisma.inventoryValue.create({ data: { itemId: unsentVariantItemId, variantSku: "M", qtyOnHand: 8, reservedQty: 1, avgCost: 800, totalValue: 6400 } });
 
     /* Both a `null` and an `""` InventoryValue row for the same item — the real-world collision. */
     const collisionItem = await prisma.item.create({
@@ -161,6 +175,7 @@ d("listKonsiSuggestions (test bed only)", () => {
       seededId(neverSentItemId),
       seededId(previouslySentItemId),
       seededId(variantItemId),
+      seededId(unsentVariantItemId),
       seededId(collisionItemId),
     ];
     const allOrderIds = [
@@ -208,6 +223,21 @@ d("listKonsiSuggestions (test bed only)", () => {
     const rows = await listKonsiSuggestions(orderId);
     const variantRows = rows.filter((r) => r.itemId === variantItemId);
     expect(variantRows).toHaveLength(0);
+  });
+
+  it("returns one distinguishable row per variant when NEITHER variant was ever sent", async () => {
+    const rows = (await listKonsiSuggestions(orderId)).filter((r) => r.itemId === unsentVariantItemId);
+    expect(rows).toHaveLength(2);
+    /*
+     * Distinct variantSku is what the panel has to render: `sku` is the article SKU and is
+     * identical on both rows, so without the variant these two are indistinguishable to the
+     * admin choosing which physical goods leave the warehouse.
+     */
+    expect(rows.map((r) => r.variantSku).sort()).toEqual(["M", "S"]);
+    expect(rows.every((r) => r.sku === `TEST-KSG-UVAR-${token}`)).toBe(true);
+    const availableBySku = new Map(rows.map((r) => [r.variantSku, r.available]));
+    expect(availableBySku.get("S")).toBe(25);
+    expect(availableBySku.get("M")).toBe(7);
   });
 
   it("dedupes a null/empty-string InventoryValue collision into one suggestion at the minimum available", async () => {
