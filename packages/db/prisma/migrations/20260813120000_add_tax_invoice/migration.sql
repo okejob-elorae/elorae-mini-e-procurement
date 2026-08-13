@@ -3,8 +3,16 @@
 --
 -- No FOREIGN KEY is declared: these relations are `relationMode = "prisma"`, and the unique
 -- index on deliveryId is what enforces the one-row-per-delivery invariant this design relies on.
+--
+-- This file is RE-RUNNABLE. MariaDB auto-commits DDL, so a CREATE TABLE that succeeds followed by
+-- a failing backfill (a lock-wait timeout against a concurrently-written FieldSalesDelivery is the
+-- realistic case) leaves the table in place with the migration recorded failed — and the next
+-- deploy then stops at P3009 and applies nothing, blocking every deploy behind it. IF NOT EXISTS
+-- plus the NOT EXISTS-guarded INSERT makes a re-run a no-op instead. The INSERT may also be run
+-- standalone at any time to pick up deliveries created after this migration but before the app
+-- image that writes the row went live.
 
-CREATE TABLE `TaxInvoice` (
+CREATE TABLE IF NOT EXISTS `TaxInvoice` (
   `id` VARCHAR(191) NOT NULL,
   `deliveryId` VARCHAR(191) NOT NULL,
   `status` ENUM('PENDING', 'CREATED', 'NOT_REQUIRED') NOT NULL DEFAULT 'PENDING',
