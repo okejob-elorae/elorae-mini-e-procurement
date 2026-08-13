@@ -97,7 +97,8 @@
     "empty": "Tidak ada notifikasi",
     "sendTest": "Kirim notifikasi uji",
     "testTitle": "Notifikasi uji",
-    "testBody": "Ini adalah notifikasi uji dari aplikasi."
+    "testBody": "Ini adalah notifikasi uji dari aplikasi.",
+    "markAllRead": "Tandai semua dibaca"
   },
   "supplier": {
     "title": "Pemasok",

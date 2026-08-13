@@ -97,7 +97,8 @@
     "empty": "No notifications",
     "sendTest": "Send test notification",
     "testTitle": "Test notification",
-    "testBody": "This is a test notification from the app."
+    "testBody": "This is a test notification from the app.",
+    "markAllRead": "Mark all as read"
   },
   "supplier": {
     "title": "Suppliers",
