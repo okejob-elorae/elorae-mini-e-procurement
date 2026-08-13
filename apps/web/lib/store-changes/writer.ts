@@ -37,7 +37,13 @@ export async function submitStoreChangeRequest(input: {
   proposed: ProposedStoreFields;
 }): Promise<SubmitResult> {
   let notification: AdminNotification | undefined;
-  const result = await runSerializable(async (tx) => {
+  /**
+   * The type argument is explicit because the result is captured in a `const` rather than
+   * returned directly. Without it the callback's `ok: false` literals widen to `boolean` and
+   * the union stops matching `SubmitResult` — the declared return type used to supply that
+   * context when this was a bare `return runSerializable(...)`.
+   */
+  const result = await runSerializable<SubmitResult>(async (tx) => {
     /* Retry re-runs this whole callback; reset so a rolled-back attempt's row never survives into the next one. */
     notification = undefined;
     const visit = await tx.storeVisit.findFirst({
