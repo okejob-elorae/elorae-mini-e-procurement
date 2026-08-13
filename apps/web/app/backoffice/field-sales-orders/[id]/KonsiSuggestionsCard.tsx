@@ -41,6 +41,10 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
   const t = useTranslations("fieldSalesOrders");
   const [open, setOpen] = useState(() => shortLineCount > 0);
   const [filter, setFilter] = useState("");
+  /* Free-text draft per row, keyed the same way as staged entries. Only holds a value while the
+   * field is mid-edit (e.g. momentarily empty) — commitQty clears the entry once a valid qty is
+   * committed, so display otherwise always falls back to the staged qty. */
+  const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
 
   const stagedByKey = useMemo(() => {
     const map = new Map<string, number>();
@@ -56,21 +60,56 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
     );
   }, [suggestions, filter]);
 
-  function setQty(s: KonsiSuggestion, nextQty: number): void {
+  /* Nothing to suggest and no reason to look — don't render a card whose toggle opens onto an empty state. */
+  if (suggestions.length === 0 && shortLineCount === 0) return null;
+
+  function clearDraft(key: string): void {
+    setQtyDrafts((prev) => {
+      if (!(key in prev)) return prev;
+      const rest = { ...prev };
+      delete rest[key];
+      return rest;
+    });
+  }
+
+  /* Upserts in place so a qty edit never reorders the staged list (map when the row already
+   * exists; push only for a genuinely new row). */
+  function commitQty(s: KonsiSuggestion, nextQty: number): void {
     const clamped = Math.max(0, Math.min(s.available, Math.floor(nextQty)));
     const key = keyOf(s.itemId, s.variantSku);
-    const rest = staged.filter((a) => keyOf(a.itemId, a.variantSku) !== key);
-    if (clamped > 0) {
-      rest.push({
-        itemId: s.itemId,
-        variantSku: s.variantSku,
-        sku: s.sku,
-        name: s.name,
-        variantLabel: s.variantLabel,
-        qty: clamped,
-      });
+    const idx = staged.findIndex((a) => keyOf(a.itemId, a.variantSku) === key);
+    let next: StagedAddition[];
+    if (clamped <= 0) {
+      next = idx === -1 ? staged : staged.filter((_, i) => i !== idx);
+    } else if (idx === -1) {
+      next = [
+        ...staged,
+        { itemId: s.itemId, variantSku: s.variantSku, sku: s.sku, name: s.name, variantLabel: s.variantLabel, qty: clamped },
+      ];
+    } else {
+      next = staged.map((a, i) => (i === idx ? { ...a, qty: clamped } : a));
     }
-    onStagedChange(rest);
+    onStagedChange(next);
+    clearDraft(key);
+  }
+
+  /* Empty input stays empty (not force-clamped to 0) so backspace-to-retype doesn't
+   * momentarily unstage the row and doesn't fight multi-digit entry. Only a parseable
+   * value commits; blur resolves a still-empty field to 0. */
+  function handleQtyInputChange(s: KonsiSuggestion, raw: string): void {
+    const key = keyOf(s.itemId, s.variantSku);
+    if (raw.trim() === "") {
+      setQtyDrafts((prev) => ({ ...prev, [key]: "" }));
+      return;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+    commitQty(s, parsed);
+  }
+
+  function handleQtyBlur(s: KonsiSuggestion): void {
+    const key = keyOf(s.itemId, s.variantSku);
+    if (qtyDrafts[key] === "") commitQty(s, 0);
   }
 
   function removeStaged(itemId: string, variantSku: string): void {
@@ -93,9 +132,15 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
           </p>
         )}
 
-        <Button type="button" variant="outline" className="h-10" onClick={() => setOpen((o) => !o)}>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-10"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
           {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          {t("konsiSuggestions.toggleLabel")}
+          {open ? t("konsiSuggestions.toggleLabelExpanded") : t("konsiSuggestions.toggleLabelCollapsed")}
         </Button>
 
         {open && (
@@ -113,7 +158,7 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
                 <p className="text-sm text-muted-foreground">{t("konsiSuggestions.empty")}</p>
               </div>
             ) : filtered.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">{t("konsiSuggestions.empty")}</p>
+              <p className="py-4 text-center text-sm text-muted-foreground">{t("konsiSuggestions.noMatch")}</p>
             ) : (
               <div className="max-h-96 overflow-y-auto overflow-x-auto rounded-md border">
                 <Table>
@@ -129,6 +174,8 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
                     {filtered.map((s) => {
                       const key = keyOf(s.itemId, s.variantSku);
                       const qty = stagedByKey.get(key) ?? 0;
+                      const draft = qtyDrafts[key];
+                      const displayValue = draft !== undefined ? draft : String(qty);
                       const noStock = s.available === 0;
                       return (
                         <TableRow key={key}>
@@ -148,8 +195,8 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
                                 size="icon"
                                 className="h-10 w-10 shrink-0"
                                 disabled={noStock || qty <= 0}
-                                aria-label={t("konsiSuggestions.removeLabel")}
-                                onClick={() => setQty(s, qty - 1)}
+                                aria-label={t("konsiSuggestions.decreaseLabel")}
+                                onClick={() => commitQty(s, qty - 1)}
                               >
                                 <Minus className="h-4 w-4" />
                               </Button>
@@ -160,11 +207,9 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
                                 max={s.available}
                                 step={1}
                                 disabled={noStock}
-                                value={String(qty)}
-                                onChange={(e) => {
-                                  const n = Number(e.target.value);
-                                  if (Number.isFinite(n)) setQty(s, n);
-                                }}
+                                value={displayValue}
+                                onChange={(e) => handleQtyInputChange(s, e.target.value)}
+                                onBlur={() => handleQtyBlur(s)}
                                 className="h-10 w-16 text-center tabular-nums px-1"
                               />
                               <Button
@@ -174,7 +219,7 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
                                 className="h-10 w-10 shrink-0"
                                 disabled={noStock || qty >= s.available}
                                 aria-label={t("konsiSuggestions.addLabel")}
-                                onClick={() => setQty(s, qty + 1)}
+                                onClick={() => commitQty(s, qty + 1)}
                               >
                                 <Plus className="h-4 w-4" />
                               </Button>

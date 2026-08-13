@@ -8,6 +8,8 @@ import {
   InvalidOrderTransitionError,
   InsufficientStockError,
   InvalidAddedLineError,
+  type InvalidAddedLineCode,
+  type ShortLine,
 } from "@/lib/field-sales/errors";
 
 export type ActionResult =
@@ -21,6 +23,10 @@ export type ActionResult =
         | "INSUFFICIENT_STOCK"
         | "INVALID_FINAL_PRICE"
         | "INVALID_ADDED_LINE";
+      /* Only ever present on INSUFFICIENT_STOCK. Optional because rejectFieldSalesOrderAction shares this type. */
+      shortLines?: ShortLine[];
+      /* Only ever present on INVALID_ADDED_LINE. */
+      addedLineCode?: InvalidAddedLineCode;
     };
 
 function isValidFinalPrices(finalPrices: unknown): finalPrices is Array<{ lineId: string; finalUnitPrice: number }> {
@@ -74,8 +80,12 @@ export async function approveFieldSalesOrderAction(
   try {
     await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices, addedLines });
   } catch (e) {
-    if (e instanceof InsufficientStockError) return { ok: false, reason: "INSUFFICIENT_STOCK" };
-    if (e instanceof InvalidAddedLineError) return { ok: false, reason: "INVALID_ADDED_LINE" };
+    if (e instanceof InsufficientStockError) {
+      return { ok: false, reason: "INSUFFICIENT_STOCK", shortLines: e.shortLines };
+    }
+    if (e instanceof InvalidAddedLineError) {
+      return { ok: false, reason: "INVALID_ADDED_LINE", addedLineCode: e.code };
+    }
     if (e instanceof InvalidOrderTransitionError) {
       return { ok: false, reason: e.from === "MISSING" ? "NOT_FOUND" : "INVALID_TRANSITION" };
     }

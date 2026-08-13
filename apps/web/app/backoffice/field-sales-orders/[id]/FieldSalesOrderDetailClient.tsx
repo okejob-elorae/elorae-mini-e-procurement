@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ApproveRejectCard, type AppealedLine } from "./ApproveRejectCard";
+import { ApproveRejectCard, type AppealedLine, type LineRef } from "./ApproveRejectCard";
 import { DeliveriesCard } from "./DeliveriesCard";
 import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCard";
 import type { DeliverableLine } from "./DeliveryFormDialog";
@@ -103,6 +103,16 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
       requestedUnitPrice: line.requestedUnitPrice as number,
       appealReason: line.appealReason,
     }));
+  /*
+   * Lets ApproveRejectCard resolve a short-stock line back to a product name for the
+   * INSUFFICIENT_STOCK toast — the writer's ShortLine only carries (itemId, variantSku, available).
+   */
+  const orderLineRefs: LineRef[] = order.lines.map((line) => ({
+    itemId: line.itemId,
+    variantSku: line.variantSku,
+    productName: line.productName,
+    variantLabel: line.variantLabel,
+  }));
 
   const formatDate = (date: Date) =>
     new Intl.DateTimeFormat(locale, {
@@ -187,6 +197,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
           canApprove={canApprove}
           orderType={order.orderType}
           appealedLines={appealedLines}
+          orderLines={orderLineRefs}
           stagedAdditions={stagedAdditions}
           onStagedAdditionsChange={setStagedAdditions}
         />

@@ -2343,7 +2343,6 @@
     "konsiMarginUnset": "Margin toko tidak valid atau belum diset — harga gross-up memakai harga jual apa adanya.",
     "approveConfirmKonsi": "Setujui transfer konsinyasi ini? Stok akan direservasi (bukan dijual).",
     "rejectConfirmKonsi": "Tolak transfer konsinyasi ini?",
-    "errInsufficientStock": "Stok tidak cukup untuk direservasi.",
     "promoBelowCost": "Peringatan: harga bersih di bawah HPP",
     "appealBadge": "Diajukan",
     "appealStorePrice": "Harga toko",
@@ -2448,7 +2447,8 @@
     },
     "konsiSuggestions": {
       "title": "Saran Produk Baru",
-      "toggleLabel": "Sarankan produk baru",
+      "toggleLabelCollapsed": "Sarankan produk baru",
+      "toggleLabelExpanded": "Sembunyikan saran produk",
       "shortLinesHeading": "{count} baris pesanan tidak bisa dipenuhi stoknya — sarankan produk pengganti yang belum pernah dikirim ke toko ini",
       "colSku": "SKU",
       "colName": "Nama Produk",
@@ -2457,12 +2457,20 @@
       "filterPlaceholder": "Cari SKU atau nama produk",
       "stagedHeading": "Akan ditambahkan",
       "addLabel": "Tambah",
+      "decreaseLabel": "Kurangi jumlah",
       "removeLabel": "Hapus",
       "empty": "Tidak ada produk yang bisa disarankan untuk toko ini.",
+      "noMatch": "Tidak ada produk yang cocok dengan pencarian ini.",
       "approveSummary": "{count} produk baru akan ditambahkan ke transfer ini.",
       "addedByAdminBadge": "ditambahkan admin",
-      "errInsufficientStock": "Stok tidak cukup — seluruh transfer ini dibatalkan, termasuk produk yang baru ditambahkan. Periksa kembali baris pesanan dan daftar tambahan, lalu sesuaikan jumlahnya.",
-      "errInvalidAddedLine": "Salah satu produk yang ditambahkan tidak valid (mungkin sudah pernah dikirim ke toko ini atau sudah ada di pesanan). Muat ulang halaman dan coba lagi."
+      "errInsufficientStockNoAdditions": "Stok tidak cukup — persetujuan belum diterapkan. Periksa kembali baris pesanan: {lines}.",
+      "errInsufficientStockWithAdditions": "Stok tidak cukup — persetujuan belum diterapkan. Periksa baris pesanan dan produk yang ditambahkan: {lines}.",
+      "errInvalidAddedLineUnknownItem": "Salah satu produk yang ditambahkan tidak ditemukan atau sudah tidak aktif. Muat ulang halaman dan coba lagi.",
+      "errInvalidAddedLineBadQty": "Jumlah untuk salah satu produk yang ditambahkan tidak valid.",
+      "errInvalidAddedLineDuplicate": "Salah satu produk yang ditambahkan sudah ada di pesanan ini atau ditambahkan dua kali.",
+      "errInvalidAddedLineAlreadySent": "Salah satu produk yang ditambahkan sudah pernah dikirim ke toko ini. Muat ulang halaman untuk memperbarui daftar saran.",
+      "errInvalidAddedLineNotKonsi": "Penambahan produk hanya berlaku untuk transfer konsinyasi.",
+      "errInvalidAddedLineGeneric": "Salah satu produk yang ditambahkan tidak valid. Muat ulang halaman dan coba lagi."
     }
   },
   "promos": {

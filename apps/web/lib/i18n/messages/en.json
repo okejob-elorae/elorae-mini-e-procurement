@@ -2343,7 +2343,6 @@
     "konsiMarginUnset": "Store margin invalid or not set — gross-up uses the raw selling price.",
     "approveConfirmKonsi": "Approve this consignment transfer? Stock will be reserved (not sold).",
     "rejectConfirmKonsi": "Reject this consignment transfer?",
-    "errInsufficientStock": "Not enough stock to reserve.",
     "promoBelowCost": "Warning: net price below cost",
     "appealBadge": "Requested",
     "appealStorePrice": "Store price",
@@ -2448,7 +2447,8 @@
     },
     "konsiSuggestions": {
       "title": "New Product Suggestions",
-      "toggleLabel": "Suggest new products",
+      "toggleLabelCollapsed": "Suggest new products",
+      "toggleLabelExpanded": "Hide product suggestions",
       "shortLinesHeading": "{count} order line(s) can't be fully stocked — suggest replacement products never sent to this store",
       "colSku": "SKU",
       "colName": "Product Name",
@@ -2457,12 +2457,20 @@
       "filterPlaceholder": "Search SKU or product name",
       "stagedHeading": "Will be added",
       "addLabel": "Add",
+      "decreaseLabel": "Decrease quantity",
       "removeLabel": "Remove",
       "empty": "No products can be suggested for this store.",
+      "noMatch": "No products match this search.",
       "approveSummary": "{count} new product(s) will be added to this transfer.",
       "addedByAdminBadge": "added by admin",
-      "errInsufficientStock": "Not enough stock — the whole transfer was blocked, including the newly added products. Check the order lines and the added list, then adjust the quantities.",
-      "errInvalidAddedLine": "One of the added products is invalid (it may already have been sent to this store or is already on the order). Reload the page and try again."
+      "errInsufficientStockNoAdditions": "Not enough stock — approval was not applied. Check the order lines: {lines}.",
+      "errInsufficientStockWithAdditions": "Not enough stock — approval was not applied. Check the order lines and the added products: {lines}.",
+      "errInvalidAddedLineUnknownItem": "One of the added products was not found or is no longer active. Reload the page and try again.",
+      "errInvalidAddedLineBadQty": "The quantity for one of the added products is invalid.",
+      "errInvalidAddedLineDuplicate": "One of the added products is already on this order or was added twice.",
+      "errInvalidAddedLineAlreadySent": "One of the added products has already been sent to this store. Reload the page to refresh the suggestions.",
+      "errInvalidAddedLineNotKonsi": "Adding products only applies to consignment transfers.",
+      "errInvalidAddedLineGeneric": "One of the added products is invalid. Reload the page and try again."
     }
   },
   "promos": {

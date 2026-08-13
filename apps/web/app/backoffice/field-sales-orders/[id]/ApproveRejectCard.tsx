@@ -37,12 +37,24 @@ export type AppealedLine = {
   appealReason: string | null;
 };
 
+/**
+ * Enough to name a line by (itemId, variantSku) — the writer's `ShortLine` on an
+ * `INSUFFICIENT_STOCK` failure carries only that pair plus `available`, no name or SKU.
+ */
+export type LineRef = {
+  itemId: string;
+  variantSku: string;
+  productName: string;
+  variantLabel: string | null;
+};
+
 type Props = {
   orderId: string;
   status: FieldSalesOrderStatus;
   canApprove: boolean;
   orderType: FieldSalesOrderType;
   appealedLines: AppealedLine[];
+  orderLines: LineRef[];
   stagedAdditions: StagedAddition[];
   onStagedAdditionsChange: (staged: StagedAddition[]) => void;
 };
@@ -55,12 +67,17 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
+function lineDisplayName(ref: Pick<LineRef, "productName" | "variantLabel">): string {
+  return ref.variantLabel ? `${ref.productName} (${ref.variantLabel})` : ref.productName;
+}
+
 export function ApproveRejectCard({
   orderId,
   status,
   canApprove,
   orderType,
   appealedLines,
+  orderLines,
   stagedAdditions,
   onStagedAdditionsChange,
 }: Props) {
@@ -90,6 +107,23 @@ export function ApproveRejectCard({
     return Number.isFinite(n) && n >= 0;
   });
 
+  /**
+   * A short line only ever refers to one of the order's own lines or one of this session's
+   * staged additions — the writer never reserves against anything else — so both sources
+   * together should always resolve a name. Falls back to the raw pair on the defensive path.
+   */
+  function shortLineNames(shortLines: Array<{ itemId: string; variantSku: string; available: number }>): string {
+    return shortLines
+      .map((s) => {
+        const fromOrder = orderLines.find((l) => l.itemId === s.itemId && l.variantSku === s.variantSku);
+        if (fromOrder) return lineDisplayName(fromOrder);
+        const fromStaged = stagedAdditions.find((a) => a.itemId === s.itemId && a.variantSku === s.variantSku);
+        if (fromStaged) return lineDisplayName({ productName: fromStaged.name, variantLabel: fromStaged.variantLabel });
+        return s.variantSku ? `${s.itemId} (${s.variantSku})` : s.itemId;
+      })
+      .join(", ");
+  }
+
   function handleResult(r: ActionResult, successMessage: string): void {
     if (r.ok) {
       toast.success(successMessage);
@@ -102,9 +136,32 @@ export function ApproveRejectCard({
     } else if (r.reason === "INVALID_TRANSITION") {
       toast.error(t("errAlreadyDecided"));
     } else if (r.reason === "INSUFFICIENT_STOCK") {
-      toast.error(t("konsiSuggestions.errInsufficientStock"));
+      const lines = r.shortLines && r.shortLines.length > 0 ? shortLineNames(r.shortLines) : "—";
+      toast.error(
+        stagedAdditions.length > 0
+          ? t("konsiSuggestions.errInsufficientStockWithAdditions", { lines })
+          : t("konsiSuggestions.errInsufficientStockNoAdditions", { lines }),
+      );
     } else if (r.reason === "INVALID_ADDED_LINE") {
-      toast.error(t("konsiSuggestions.errInvalidAddedLine"));
+      switch (r.addedLineCode) {
+        case "UNKNOWN_ITEM":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineUnknownItem"));
+          break;
+        case "BAD_QTY":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineBadQty"));
+          break;
+        case "DUPLICATE":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineDuplicate"));
+          break;
+        case "ALREADY_SENT":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineAlreadySent"));
+          break;
+        case "NOT_KONSI":
+          toast.error(t("konsiSuggestions.errInvalidAddedLineNotKonsi"));
+          break;
+        default:
+          toast.error(t("konsiSuggestions.errInvalidAddedLineGeneric"));
+      }
     } else if (r.reason === "INVALID_FINAL_PRICE") {
       toast.error(t("errInvalidFinalPrice"));
     } else {

@@ -61,6 +61,7 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   deliveries: FieldSalesDeliverySummary[];
   lines: Array<{
     id: string;
+    itemId: string;
     productName: string;
     variantSku: string;
     variantLabel: string | null;
@@ -238,7 +239,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       const netUnit = qty > 0 ? (toNum(l.lineTotal) - discountAmount) / qty : 0;
       const avgCost = avgCostByKey.get(invKey(l.itemId, l.variantSku)) ?? 0;
       return {
-        id: l.id, productName: l.productName, variantSku: l.variantSku,
+        id: l.id, itemId: l.itemId, productName: l.productName, variantSku: l.variantSku,
         variantLabel: variantDetailForSku(l.item.variants, l.variantSku),
         qty, unitPrice: toNum(l.unitPrice), lineTotal: toNum(l.lineTotal),
         available: availByKey.get(invKey(l.itemId, l.variantSku)) ?? 0,
