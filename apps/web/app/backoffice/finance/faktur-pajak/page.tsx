@@ -54,7 +54,10 @@ export default async function FakturPajakPage({ searchParams }: PageProps) {
         loadError={false}
       />
     );
-  } catch {
+  } catch (err) {
+    /* The error card is the only user-facing signal, and it names no cause — without this the
+       container log holds nothing at all about why the page is blank. */
+    console.error("[faktur-pajak] list query failed", err);
     return (
       <FakturPajakPageClient
         rows={[]}

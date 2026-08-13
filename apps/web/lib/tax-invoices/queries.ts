@@ -29,9 +29,10 @@ export async function listTaxInvoices(params: {
   const baseWhere: Prisma.TaxInvoiceWhereInput = {};
   const q = params.q?.trim();
   if (q) {
-    baseWhere.delivery = {
-      OR: [{ docNo: { contains: q } }, { order: { store: { name: { contains: q } } } }],
-    };
+    baseWhere.OR = [
+      { invoiceNo: { contains: q } },
+      { delivery: { OR: [{ docNo: { contains: q } }, { order: { store: { name: { contains: q } } } }] } },
+    ];
   }
   const where: Prisma.TaxInvoiceWhereInput = params.status ? { ...baseWhere, status: params.status } : baseWhere;
 
@@ -71,19 +72,33 @@ export async function listTaxInvoices(params: {
     counts[c.status as TaxInvoiceStatusFilter] = c._count._all;
   }
 
-  return {
-    rows: rows.map((r) => ({
+  /**
+   * The migration declares no foreign key (`relationMode = "prisma"`), so a `TaxInvoice` can
+   * outlive its delivery. Prisma types the relation as always present, but a dangling row comes
+   * back with `delivery` null at runtime, and dereferencing it would reject the whole query — one
+   * orphan would blank the entire queue page, with no way to fix it from any UI. Orphans are
+   * skipped instead; `total` and `counts` still include them, which is a deliberately visible
+   * discrepancy rather than a silently smaller page.
+   */
+  const mapped = rows.map((r): TaxInvoiceRow | null => {
+    const delivery: (typeof r)["delivery"] | null = r.delivery;
+    if (!delivery) return null;
+    return {
       id: r.id,
       status: r.status,
       invoiceNo: r.invoiceNo,
       notaPrintedAt: r.notaPrintedAt,
-      docNo: r.delivery.docNo,
-      storeName: r.delivery.order.store.name,
-      orderId: r.delivery.orderId,
-      invoiceDate: r.delivery.invoiceDate,
-      dueDate: r.delivery.dueDate,
-      total: Number(r.delivery.total),
-    })),
+      docNo: delivery.docNo,
+      storeName: delivery.order.store.name,
+      orderId: delivery.orderId,
+      invoiceDate: delivery.invoiceDate,
+      dueDate: delivery.dueDate,
+      total: Number(delivery.total),
+    };
+  });
+
+  return {
+    rows: mapped.filter((r): r is TaxInvoiceRow => r !== null),
     total,
     counts,
   };

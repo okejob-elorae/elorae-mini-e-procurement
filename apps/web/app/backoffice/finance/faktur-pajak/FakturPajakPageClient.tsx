@@ -311,6 +311,14 @@ export function FakturPajakPageClient(props: Props) {
                                 <Badge variant={STATUS_BADGE_VARIANT[status]}>
                                   {t(STATUS_LABEL_KEY[status])}
                                 </Badge>
+                                {row.invoiceNo && (
+                                  <div
+                                    className="mt-1 text-xs text-muted-foreground break-all"
+                                    title={t("invoiceNoLabel", { invoiceNo: row.invoiceNo })}
+                                  >
+                                    {row.invoiceNo}
+                                  </div>
+                                )}
                               </TableCell>
                               {props.canManage && (
                                 <TableCell>
