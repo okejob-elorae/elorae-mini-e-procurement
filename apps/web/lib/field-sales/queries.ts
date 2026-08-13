@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { aggregateInventoryValues } from "@/lib/items/queries";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { outstandingQty } from "./delivery/plan";
 import type { PlanHistory } from "./smart-request/plan";
@@ -366,4 +367,66 @@ export async function getSmartRequestHistory(storeId: string, candidateItemIds: 
   });
   const qtyByItem = new Map<string, number>(grouped.map((g) => [g.itemId, g._sum.qty ?? 0]));
   return { neverOrdered, qtyByItem };
+}
+
+export type KonsiSuggestion = {
+  itemId: string;
+  variantSku: string;
+  sku: string;
+  name: string;
+  variantLabel: string | null;
+  available: number;
+};
+
+/**
+ * Goods never sent to this store, for the admin to add while approving a konsi order.
+ * "Never sent" is ITEM-level (matches `sentItemIds` and the writer's ALREADY_SENT check): if any
+ * variant of an item was ever sent to this store, the whole item is excluded. Each surviving item
+ * is then expanded into one row per variant (real InventoryValue row), because availability and
+ * the writer's `addedLines` are both per-variant.
+ */
+export async function listKonsiSuggestions(orderId: string): Promise<KonsiSuggestion[]> {
+  const order = await prisma.fieldSalesOrder.findUnique({
+    where: { id: orderId },
+    select: { storeId: true, orderType: true, lines: { select: { itemId: true } } },
+  });
+  if (!order || order.orderType !== "KONSI") return [];
+
+  const sent = await sentItemIds(order.storeId);
+  const onOrder = new Set(order.lines.map((l) => l.itemId));
+  const exclude = new Set<string>([...sent, ...onOrder]);
+
+  const where: Prisma.ItemWhereInput = { isActive: true, type: "FINISHED_GOOD" };
+  /* Prisma's notIn with an empty array is untrustworthy to lean on — skip the filter entirely. */
+  if (exclude.size > 0) where.id = { notIn: [...exclude] };
+
+  const items = await prisma.item.findMany({
+    where,
+    select: {
+      id: true,
+      sku: true,
+      nameId: true,
+      variants: true,
+      inventoryValues: { select: { variantSku: true, qtyOnHand: true, reservedQty: true, totalValue: true } },
+    },
+    orderBy: { sku: "asc" },
+  });
+
+  const rows: KonsiSuggestion[] = [];
+  for (const item of items) {
+    for (const iv of item.inventoryValues) {
+      const variantSku = iv.variantSku ?? "";
+      /* Availability is derived, never stored: qtyOnHand - reservedQty. */
+      const available = aggregateInventoryValues([iv])?.available ?? 0;
+      rows.push({
+        itemId: item.id,
+        variantSku,
+        sku: item.sku,
+        name: item.nameId,
+        variantLabel: variantDetailForSku(item.variants, variantSku),
+        available,
+      });
+    }
+  }
+  return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
 }
