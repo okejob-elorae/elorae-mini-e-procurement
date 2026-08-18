@@ -139,6 +139,16 @@ export default function WorkOrderIssuePage() {
     availableStock: undefined
   }));
 
+  const switchIssueType = (nextType: "FABRIC" | "ACCESSORIES") => {
+    if (nextType === issueType) return;
+    if (lines.length > 0) {
+      toast.info("Issue type changed. Cleared staged lines to keep the payload consistent.");
+      setLines([]);
+    }
+    setIssueType(nextType);
+    setRollBreakdown([]);
+  };
+
   const addLine = (itemId?: string) => {
     const p = planWithRemaining.find((x) => x.itemId === itemId || !itemId);
     if (!p) return;
@@ -146,7 +156,7 @@ export default function WorkOrderIssuePage() {
     if (existing) return;
     const remaining = p.plannedQty - p.issuedQty;
     const defaultPrice = itemAvgCosts[p.itemId];
-    setIssueType(isFabricItem(p.itemId) ? "FABRIC" : "ACCESSORIES");
+    switchIssueType(isFabricItem(p.itemId) ? "FABRIC" : "ACCESSORIES");
     setLines((prev) => [
       ...prev,
       {
@@ -402,17 +412,14 @@ export default function WorkOrderIssuePage() {
                   <Button
                     type="button"
                     variant={issueType === "FABRIC" ? "default" : "outline"}
-                    onClick={() => setIssueType("FABRIC")}
+                    onClick={() => switchIssueType("FABRIC")}
                   >
                     Fabric
                   </Button>
                   <Button
                     type="button"
                     variant={issueType === "ACCESSORIES" ? "default" : "outline"}
-                    onClick={() => {
-                      setIssueType("ACCESSORIES");
-                      setRollBreakdown([]);
-                    }}
+                    onClick={() => switchIssueType("ACCESSORIES")}
                   >
                     Accessories
                   </Button>

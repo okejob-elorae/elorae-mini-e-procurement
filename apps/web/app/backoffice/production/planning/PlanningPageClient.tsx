@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ItemType } from "@/lib/constants/enums";
+import { itemHasSkuVariants } from "@/lib/items/variants";
 import { PERMISSIONS, hasPermission } from "@/lib/rbac";
 import { getItemCategories } from "@/app/actions/item-categories";
 import { getItemsByType } from "@/app/actions/items";
@@ -188,7 +189,7 @@ export function PlanningPageClient() {
         const childHit = findVariantlessLinkedLeaf(node.children);
         if (childHit) return childHit;
       }
-      if (node.itemId && node.itemVariants.length === 0) {
+      if (node.itemId && !itemHasSkuVariants(node.itemVariants)) {
         return {
           code: node.code,
           itemLabel: node.itemName || node.code,

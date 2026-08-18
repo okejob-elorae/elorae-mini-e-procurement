@@ -785,12 +785,10 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
           `Total roll (${rollSum}) is less than issued fabric qty (${fabricQty})`
         );
       }
-      if (!(wo as { rollBreakdown?: unknown }).rollBreakdown) {
-        await tx.workOrder.update({
-          where: { id: data.woId },
-          data: { rollBreakdown: payloadRolls },
-        });
-      }
+      await tx.workOrder.update({
+        where: { id: data.woId },
+        data: { rollBreakdown: payloadRolls },
+      });
     }
 
     for (const item of validated.items) {
