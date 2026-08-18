@@ -247,4 +247,29 @@ d("listKonsiSuggestions (test bed only)", () => {
     expect(collisionRows[0].variantSku).toBe("");
     expect(collisionRows[0].available).toBe(4);
   });
+
+  it("omits never-sent rows with zero or negative available stock", async () => {
+    const zeroItem = await prisma.item.create({
+      data: {
+        sku: `TEST-KSG-ZERO-${token}`,
+        nameId: "Zero available",
+        nameEn: "Zero available",
+        type: "FINISHED_GOOD",
+        uomId,
+        isActive: true,
+        sellingPrice: 10000,
+      },
+    });
+    await prisma.inventoryValue.create({
+      data: { itemId: zeroItem.id, variantSku: "", qtyOnHand: 5, reservedQty: 5, avgCost: 1000, totalValue: 5000 },
+    });
+
+    try {
+      const rows = await listKonsiSuggestions(orderId);
+      expect(rows.map((r) => r.itemId)).not.toContain(zeroItem.id);
+    } finally {
+      await prisma.inventoryValue.deleteMany({ where: { itemId: zeroItem.id } });
+      await prisma.item.delete({ where: { id: zeroItem.id } });
+    }
+  });
 });

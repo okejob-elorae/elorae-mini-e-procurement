@@ -445,13 +445,20 @@ export async function listKonsiSuggestions(orderId: string): Promise<KonsiSugges
     }
   }
 
-  const rows: KonsiSuggestion[] = Array.from(byKey.values()).map(({ item, variantSku, available }) => ({
-    itemId: item.id,
-    variantSku,
-    sku: item.sku,
-    name: item.nameId,
-    variantLabel: variantDetailForSku(item.variants, variantSku),
-    available,
-  }));
+  /*
+   * Drop unavailable rows before shipping to the client. An open suggestions panel on a large
+   * catalog otherwise mounts one qty stepper per Habis SKU (hundreds of inert controls). The
+   * admin cannot stage qty > available anyway, so zero/negative availability is dead weight.
+   */
+  const rows: KonsiSuggestion[] = Array.from(byKey.values())
+    .filter(({ available }) => available > 0)
+    .map(({ item, variantSku, available }) => ({
+      itemId: item.id,
+      variantSku,
+      sku: item.sku,
+      name: item.nameId,
+      variantLabel: variantDetailForSku(item.variants, variantSku),
+      available,
+    }));
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
 }
