@@ -171,10 +171,21 @@ function serializeWorkOrder(wo: {
     updatedAt: wo.updatedAt,
     vendor: wo.vendor ?? undefined,
     finishedGood: serializeIncludedItemForClient(wo.finishedGood) as typeof wo.finishedGood,
-    issues: (wo.issues ?? []).map((iss) => ({
-      ...iss,
-      totalCost: Number(iss.totalCost),
-    })),
+    issues: (wo.issues ?? []).map((iss) => {
+      const row = iss as Record<string, unknown>;
+      return {
+        id: iss.id,
+        docNumber: iss.docNumber,
+        woId: typeof row.woId === "string" ? row.woId : "",
+        issueType: iss.issueType,
+        isPartial: Boolean(row.isPartial),
+        items: row.items ?? null,
+        totalCost: Number(iss.totalCost),
+        issuedAt: iss.issuedAt,
+        notes: typeof row.notes === "string" ? row.notes : null,
+        acknowledged: Boolean(row.acknowledged),
+      };
+    }),
     receipts: (wo.receipts ?? []).map((r) => ({
       id: r.id,
       docNumber: r.docNumber,
@@ -609,7 +620,8 @@ const issueSchema = z.object({
   issueType: z.enum(['FABRIC', 'ACCESSORIES']),
   isPartial: z.boolean().default(false),
   parentIssueId: idStr.optional(),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
 });
 
 export type IssueFormData = z.infer<typeof issueSchema>;
@@ -751,14 +763,35 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       });
     }
 
-    // Deduct from fabric rolls when the issued item is the WO consumption material and rollBreakdown exists
+    // Deduct from fabric rolls when the issued item is the WO consumption material
     const consumptionMaterialId = (wo as { consumptionMaterialId?: string | null }).consumptionMaterialId ?? null;
-    const rawRollBreakdown = (wo as { rollBreakdown?: unknown }).rollBreakdown;
-    const rollBreakdown = (() => {
-      if (rawRollBreakdown == null) return null;
-      const arr = typeof rawRollBreakdown === 'string' ? (() => { try { return JSON.parse(rawRollBreakdown); } catch { return null; } })() : rawRollBreakdown;
+    const parseRolls = (raw: unknown): Array<{ rollRef: string; qty: number }> | null => {
+      if (raw == null) return null;
+      const arr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
       return Array.isArray(arr) ? arr as Array<{ rollRef: string; qty: number }> : null;
-    })();
+    };
+    const payloadRolls = validated.rollBreakdown && validated.rollBreakdown.length > 0
+      ? validated.rollBreakdown
+      : null;
+    const rollBreakdown = payloadRolls ?? parseRolls((wo as { rollBreakdown?: unknown }).rollBreakdown);
+
+    if (payloadRolls && consumptionMaterialId) {
+      const fabricQty = validated.items
+        .filter((item) => item.itemId === consumptionMaterialId)
+        .reduce((sum, item) => sum + item.qty, 0);
+      const rollSum = payloadRolls.reduce((sum, row) => sum + row.qty, 0);
+      if (fabricQty > 0 && rollSum + 1e-6 < fabricQty) {
+        throw new Error(
+          `Total roll (${rollSum}) is less than issued fabric qty (${fabricQty})`
+        );
+      }
+      if (!(wo as { rollBreakdown?: unknown }).rollBreakdown) {
+        await tx.workOrder.update({
+          where: { id: data.woId },
+          data: { rollBreakdown: payloadRolls },
+        });
+      }
+    }
 
     for (const item of validated.items) {
       if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && rollBreakdown != null && rollBreakdown.length > 0) {
@@ -841,7 +874,11 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
     });
 
     revalidatePath(`/backoffice/work-orders/${data.woId}`);
-    return issue;
+    return {
+      id: issue.id,
+      docNumber: issue.docNumber,
+      totalCost: Number(issue.totalCost),
+    };
   });
 
   const wo = await prisma.workOrder.findUnique({
@@ -1298,7 +1335,10 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
     }
   }
 
-  return receiveResult.receipt;
+  return {
+    id: receiveResult.receipt.id,
+    docNumber: receiveResult.receipt.docNumber,
+  };
 }
 
 export async function postFgReceiptJournalAction(

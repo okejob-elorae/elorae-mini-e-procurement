@@ -182,7 +182,7 @@ export default function EditWorkOrderPage() {
         const [supplierData, fgList, posResult] = await Promise.all([
           getSuppliersForSelect({ approvedOnly: true }),
           getItemsByType(ItemType.FINISHED_GOOD),
-          getPOs({ statusIn: ['SUBMITTED', 'PARTIAL'] }, { page: 1, pageSize: 200 }),
+          getPOs({ statusIn: ["SUBMITTED", "PARTIAL", "CLOSED", "OVER"] }, { page: 1, pageSize: 200 }),
         ]);
         const list = Array.isArray(supplierData) ? supplierData : [];
         setTailors(list as TailorSupplier[]);

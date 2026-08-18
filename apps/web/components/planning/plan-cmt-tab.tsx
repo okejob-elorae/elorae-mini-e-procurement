@@ -33,6 +33,7 @@ type PlanCmtTabProps = {
     created: number;
     skipped: number;
     errors: number;
+    results?: Array<{ status: string; message?: string }>;
   }>;
 };
 

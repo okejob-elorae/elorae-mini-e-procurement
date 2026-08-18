@@ -96,4 +96,19 @@ describe("buildWoPayloadFromCmtRow", () => {
       )
     ).toThrow("finished good");
   });
+
+  it("throws when the CMT row has no variant SKU", () => {
+    expect(() =>
+      buildWoPayloadFromCmtRow(
+        { itemId: "item-1", code: "SHIRT-01" },
+        {
+          month: 1,
+          variantSku: "  ",
+          supplierId: "sup-1",
+          allocatedQty: 50,
+        },
+        2026
+      )
+    ).toThrow("no SKU variants");
+  });
 });

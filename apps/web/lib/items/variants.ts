@@ -34,3 +34,8 @@ export function variantSelectOptions(variants: ItemVariantRow[]): { sku: string;
   }
   return out;
 }
+
+/** True when the item has at least one variant row with a non-empty SKU. */
+export function itemHasSkuVariants(variants: unknown): boolean {
+  return variantSelectOptions(parseItemVariants(variants)).length > 0;
+}
