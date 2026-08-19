@@ -174,8 +174,8 @@ export default function WorkOrderIssuePage() {
 
   useEffect(() => {
     if (!wo || !availableRollsReady || issueType !== "FABRIC") return;
-    if (prefilledWoIdRef.current === wo.id) return;
-    prefilledWoIdRef.current = wo.id;
+    if (prefilledWoIdRef.current === id) return;
+    prefilledWoIdRef.current = id;
     setRollBreakdown((prev) => {
       if (prev.length > 0) return prev;
       return plannedRollsStillAvailable(
@@ -183,7 +183,7 @@ export default function WorkOrderIssuePage() {
         availableRolls
       );
     });
-  }, [wo, availableRolls, availableRollsReady, issueType]);
+  }, [wo, availableRolls, availableRollsReady, issueType, id]);
 
   const plan = (wo?.consumptionPlan as any[]) || [];
   const isFabricItem = (itemId: string) =>

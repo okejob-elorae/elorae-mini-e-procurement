@@ -771,11 +771,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       const arr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
       return Array.isArray(arr) ? arr as Array<{ rollRef: string; qty: number }> : null;
     };
-    const hasExplicitRolls = validated.rollBreakdown !== undefined;
-    const payloadRolls = hasExplicitRolls && validated.rollBreakdown.length > 0
-      ? validated.rollBreakdown
-      : null;
-    const rollsToDeduct = hasExplicitRolls
+    const explicitRolls = validated.rollBreakdown;
+    const payloadRolls = explicitRolls != null && explicitRolls.length > 0 ? explicitRolls : null;
+    const rollsToDeduct = explicitRolls !== undefined
       ? payloadRolls
       : parseRolls((wo as { rollBreakdown?: unknown }).rollBreakdown);
 
