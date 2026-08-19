@@ -636,7 +636,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
   const issueResult = await prisma.$transaction(async (tx) => {
     const wo = await tx.workOrder.findUnique({
       where: { id: data.woId },
-      select: { status: true, consumptionPlan: true, docNumber: true, poId: true, consumptionMaterialId: true, rollBreakdown: true }
+      select: { status: true, consumptionPlan: true, docNumber: true, poId: true, consumptionMaterialId: true }
     });
 
     if (!wo) throw new Error('Work Order not found');
@@ -765,15 +765,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
 
     // Deduct from fabric rolls when the issued item is the WO consumption material
     const consumptionMaterialId = (wo as { consumptionMaterialId?: string | null }).consumptionMaterialId ?? null;
-    const parseRolls = (raw: unknown): Array<{ rollRef: string; qty: number }> | null => {
-      if (raw == null) return null;
-      const arr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
-      return Array.isArray(arr) ? arr as Array<{ rollRef: string; qty: number }> : null;
-    };
     const payloadRolls = validated.rollBreakdown && validated.rollBreakdown.length > 0
       ? validated.rollBreakdown
       : null;
-    const rollBreakdown = payloadRolls ?? parseRolls((wo as { rollBreakdown?: unknown }).rollBreakdown);
 
     if (payloadRolls && consumptionMaterialId) {
       const fabricQty = validated.items
@@ -792,9 +786,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
     }
 
     for (const item of validated.items) {
-      if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && rollBreakdown != null && rollBreakdown.length > 0) {
+      if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && payloadRolls != null && payloadRolls.length > 0) {
         let remainingToAllocate = item.qty;
-        for (const entry of rollBreakdown) {
+        for (const entry of payloadRolls) {
           if (remainingToAllocate <= 0) break;
           const roll = await tx.fabricRoll.findFirst({
             where: {

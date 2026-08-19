@@ -156,18 +156,21 @@ export default function WorkOrderIssuePage() {
     if (existing) return;
     const remaining = p.plannedQty - p.issuedQty;
     const defaultPrice = itemAvgCosts[p.itemId];
-    switchIssueType(isFabricItem(p.itemId) ? "FABRIC" : "ACCESSORIES");
-    setLines((prev) => [
-      ...prev,
-      {
-        itemId: p.itemId,
-        itemName: p.itemName,
-        uomId: p.uomId,
-        qty: remaining > 0 ? Math.min(1, remaining) : 0,
-        maxQty: remaining,
-        unitPrice: defaultPrice != null && defaultPrice > 0 ? Math.round(defaultPrice * 100) / 100 : undefined,
-      }
-    ]);
+    const nextLine = {
+      itemId: p.itemId,
+      itemName: p.itemName,
+      uomId: p.uomId,
+      qty: remaining > 0 ? Math.min(1, remaining) : 0,
+      maxQty: remaining,
+      unitPrice: defaultPrice != null && defaultPrice > 0 ? Math.round(defaultPrice * 100) / 100 : undefined,
+    };
+    const nextType = isFabricItem(p.itemId) ? "FABRIC" : "ACCESSORIES";
+    if (nextType !== issueType) {
+      switchIssueType(nextType);
+      setLines([nextLine]);
+      return;
+    }
+    setLines((prev) => [...prev, nextLine]);
   };
 
   const updateLineQty = (itemId: string, qty: number) => {

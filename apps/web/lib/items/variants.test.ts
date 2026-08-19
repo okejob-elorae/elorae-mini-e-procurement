@@ -12,4 +12,8 @@ describe("itemHasSkuVariants", () => {
     expect(itemHasSkuVariants([{ color: "RED" }])).toBe(false);
     expect(itemHasSkuVariants([{ sku: "   " }])).toBe(false);
   });
+
+  it("does not treat plan-year { variantSku } rows as Item.variants JSON", () => {
+    expect(itemHasSkuVariants([{ variantSku: "FG-SHIRT-RED-M", label: "RED · M" }])).toBe(false);
+  });
 });
