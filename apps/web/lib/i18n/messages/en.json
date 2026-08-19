@@ -1426,6 +1426,7 @@
     "colors": {
       "noLeafCategories": "No leaf categories with linked items yet.",
       "linkItemFirst": "Link a finished good item on the Fill Grid tab before allocating colors.",
+      "needsSkuVariants": "This finished good has no SKU variants. Plan Kerja only supports items with variants — add variants on the item master, then link it again.",
       "month": "Month",
       "variant": "Variant SKU",
       "colorLabel": "Label",
@@ -1449,7 +1450,8 @@
       "generateCategory": "Category",
       "generateMonth": "Month",
       "allCategories": "All categories",
-      "allMonths": "All months"
+      "allMonths": "All months",
+      "generateSummary": "WO generation: {created} created, {skipped} skipped, {errors} errors"
     },
     "categories": {
       "addParent": "Add type from item category",
@@ -2455,6 +2457,18 @@
       "colAvailable": "Available",
       "colQty": "Qty",
       "filterPlaceholder": "Search SKU or product name",
+      "pickerHeading": "Add from all eligible products",
+      "pickerDescription": "Search every eligible suggestion, including products outside the current table page.",
+      "pickerProductLabel": "Product or variant",
+      "pickerPlaceholder": "Select an eligible product",
+      "pickerSearchPlaceholder": "Search SKU, name, or variant",
+      "pickerNoMatch": "No eligible products match this search.",
+      "pickerAvailable": "{available} available",
+      "pickerSelectedAvailability": "Maximum available quantity: {available}",
+      "pickerStage": "Stage product",
+      "pageStatus": "Page {page} of {pageCount} ({total} available)",
+      "prevPage": "Previous",
+      "nextPage": "Next",
       "stagedHeading": "Will be added",
       "addLabel": "Add",
       "decreaseLabel": "Decrease quantity",

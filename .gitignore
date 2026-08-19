@@ -36,3 +36,5 @@ apps/web/lib/**/*.js.map
 *.sql.gz
 *.sql.gz.gpg
 restore.sql
+
+test-run

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ItemType } from "@/lib/constants/enums";
 import { PERMISSIONS, hasPermission } from "@/lib/rbac";
@@ -48,6 +49,8 @@ export function PlanningPageClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { data: session } = useSession();
+  const tCmt = useTranslations("planning.cmt");
+  const tColors = useTranslations("planning.colors");
   const activeTab = searchParams.get("tab") || "grid";
 
   const isAdmin = session?.user?.role === "ADMIN";
@@ -110,10 +113,12 @@ export function PlanningPageClient() {
       getSuppliersForSelect({ approvedOnly: true, typeId: "st-tailor" }),
     ]).then(([fgRows, accRows, categories, suppliers, tailors]) => {
       setItemOptions(
-        (fgRows as Array<{ id: string; sku: string; nameId: string }>).map((row) => ({
-          value: row.id,
-          label: `${row.nameId} (${row.sku})`,
-        }))
+        (fgRows as Array<{ id: string; sku: string; nameId: string; hasSkuVariants?: boolean }>)
+          .filter((row) => row.hasSkuVariants)
+          .map((row) => ({
+            value: row.id,
+            label: `${row.nameId} (${row.sku})`,
+          }))
       );
       setItemCategoryOptions(
         (categories as Array<{ id: string; code: string | null; name: string }>).map((row) => ({
@@ -176,6 +181,24 @@ export function PlanningPageClient() {
     return map;
   }, [detail]);
 
+  const findVariantlessLinkedLeaf = (
+    nodes: PlanYearDetail["categories"]
+  ): { code: string; itemLabel: string } | null => {
+    for (const node of nodes) {
+      if (node.children.length > 0) {
+        const childHit = findVariantlessLinkedLeaf(node.children);
+        if (childHit) return childHit;
+      }
+      if (node.itemId && !node.itemVariants.some((v) => v.variantSku.trim() !== "")) {
+        return {
+          code: node.code,
+          itemLabel: node.itemName || node.code,
+        };
+      }
+    }
+    return null;
+  };
+
   const handleCreateWo = async (stageId: string) => {
     try {
       await createWorkOrderFromStage(stageId);
@@ -221,6 +244,11 @@ export function PlanningPageClient() {
       }}
       onActivatePlan={async () => {
         if (!detail || !canManage) return;
+        const variantlessLeaf = findVariantlessLinkedLeaf(detail.categories);
+        if (variantlessLeaf) {
+          toast.error(`${variantlessLeaf.itemLabel}: ${tColors("needsSkuVariants")}`);
+          return;
+        }
         try {
           await activatePlanYear(detail.id);
           await refreshAll(detail.id);
@@ -384,9 +412,17 @@ export function PlanningPageClient() {
             }}
             onGenerateWorkOrders={async (filters) => {
               const result = await generateWorkOrdersFromPlan(detail.id, filters);
-              toast.success(
-                `WO generation: ${result.created} created, ${result.skipped} skipped, ${result.errors} errors`
-              );
+              const summary = tCmt("generateSummary", {
+                created: result.created,
+                skipped: result.skipped,
+                errors: result.errors,
+              });
+              if (result.errors > 0) {
+                const firstError = result.results.find((r) => r.status === "error")?.message;
+                toast.error(firstError ? `${summary}. ${firstError}` : summary);
+              } else {
+                toast.success(summary);
+              }
               return result;
             }}
           />

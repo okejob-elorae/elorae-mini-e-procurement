@@ -1426,6 +1426,7 @@
     "colors": {
       "noLeafCategories": "Belum ada kategori leaf dengan item terhubung.",
       "linkItemFirst": "Hubungkan item barang jadi di tab Isi Grid sebelum alokasi warna.",
+      "needsSkuVariants": "Barang jadi ini tidak punya varian SKU. Plan Kerja hanya mendukung item ber-varian — tambahkan varian di master item, lalu tautkan lagi.",
       "month": "Bulan",
       "variant": "SKU varian",
       "colorLabel": "Label",
@@ -1449,7 +1450,8 @@
       "generateCategory": "Kategori",
       "generateMonth": "Bulan",
       "allCategories": "Semua kategori",
-      "allMonths": "Semua bulan"
+      "allMonths": "Semua bulan",
+      "generateSummary": "Generate WO: {created} dibuat, {skipped} dilewati, {errors} error"
     },
     "categories": {
       "addParent": "Tambah jenis dari kategori item",
@@ -2455,6 +2457,18 @@
       "colAvailable": "Tersedia",
       "colQty": "Qty",
       "filterPlaceholder": "Cari SKU atau nama produk",
+      "pickerHeading": "Tambah dari semua produk yang memenuhi syarat",
+      "pickerDescription": "Cari seluruh saran yang memenuhi syarat, termasuk produk di luar halaman tabel saat ini.",
+      "pickerProductLabel": "Produk atau varian",
+      "pickerPlaceholder": "Pilih produk yang memenuhi syarat",
+      "pickerSearchPlaceholder": "Cari SKU, nama, atau varian",
+      "pickerNoMatch": "Tidak ada produk yang memenuhi syarat dan cocok dengan pencarian ini.",
+      "pickerAvailable": "{available} tersedia",
+      "pickerSelectedAvailability": "Jumlah maksimum yang tersedia: {available}",
+      "pickerStage": "Tambahkan produk",
+      "pageStatus": "Halaman {page} dari {pageCount} ({total} tersedia)",
+      "prevPage": "Sebelumnya",
+      "nextPage": "Berikutnya",
       "stagedHeading": "Akan ditambahkan",
       "addLabel": "Tambah",
       "decreaseLabel": "Kurangi jumlah",
