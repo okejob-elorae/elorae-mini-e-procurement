@@ -91,6 +91,10 @@ export default function WorkOrderIssuePage() {
       .then(([woData, fabricItems]) => {
         setWO(woData);
         setMaterials((fabricItems as any) || []);
+        const plannedRolls = Array.isArray((woData as { rollBreakdown?: unknown } | null)?.rollBreakdown)
+          ? ((woData as { rollBreakdown: Array<{ rollRef: string; qty: number; notes?: string }> }).rollBreakdown)
+          : [];
+        setRollBreakdown(plannedRolls);
         const plan = (woData?.consumptionPlan as any[]) || [];
         const ids = [
           ...new Set(
@@ -146,7 +150,14 @@ export default function WorkOrderIssuePage() {
       setLines([]);
     }
     setIssueType(nextType);
-    setRollBreakdown([]);
+    if (nextType === "FABRIC") {
+      const plannedRolls = Array.isArray((wo as { rollBreakdown?: unknown } | null)?.rollBreakdown)
+        ? ((wo as { rollBreakdown: Array<{ rollRef: string; qty: number; notes?: string }> }).rollBreakdown)
+        : [];
+      setRollBreakdown(plannedRolls);
+    } else {
+      setRollBreakdown([]);
+    }
   };
 
   const addLine = (itemId?: string) => {

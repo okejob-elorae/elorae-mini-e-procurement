@@ -636,7 +636,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
   const issueResult = await prisma.$transaction(async (tx) => {
     const wo = await tx.workOrder.findUnique({
       where: { id: data.woId },
-      select: { status: true, consumptionPlan: true, docNumber: true, poId: true, consumptionMaterialId: true }
+      select: { status: true, consumptionPlan: true, docNumber: true, poId: true, consumptionMaterialId: true, rollBreakdown: true }
     });
 
     if (!wo) throw new Error('Work Order not found');
@@ -763,11 +763,18 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       });
     }
 
-    // Deduct from fabric rolls when the issued item is the WO consumption material
+    // Deduct from this issue's rolls, or the WO plan if the picker was left empty.
+    // Do not overwrite WorkOrder.rollBreakdown — that field is the planned allocation.
     const consumptionMaterialId = (wo as { consumptionMaterialId?: string | null }).consumptionMaterialId ?? null;
+    const parseRolls = (raw: unknown): Array<{ rollRef: string; qty: number }> | null => {
+      if (raw == null) return null;
+      const arr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+      return Array.isArray(arr) ? arr as Array<{ rollRef: string; qty: number }> : null;
+    };
     const payloadRolls = validated.rollBreakdown && validated.rollBreakdown.length > 0
       ? validated.rollBreakdown
       : null;
+    const rollsToDeduct = payloadRolls ?? parseRolls((wo as { rollBreakdown?: unknown }).rollBreakdown);
 
     if (payloadRolls && consumptionMaterialId) {
       const fabricQty = validated.items
@@ -779,16 +786,12 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
           `Total roll (${rollSum}) is less than issued fabric qty (${fabricQty})`
         );
       }
-      await tx.workOrder.update({
-        where: { id: data.woId },
-        data: { rollBreakdown: payloadRolls },
-      });
     }
 
     for (const item of validated.items) {
-      if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && payloadRolls != null && payloadRolls.length > 0) {
+      if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && rollsToDeduct != null && rollsToDeduct.length > 0) {
         let remainingToAllocate = item.qty;
-        for (const entry of payloadRolls) {
+        for (const entry of rollsToDeduct) {
           if (remainingToAllocate <= 0) break;
           const roll = await tx.fabricRoll.findFirst({
             where: {
@@ -812,6 +815,11 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
             data: { remainingLength: newRemaining }
           });
           remainingToAllocate -= deduct;
+        }
+        if (remainingToAllocate > 1e-6) {
+          throw new Error(
+            `Selected rolls cannot cover issued fabric qty (short ${remainingToAllocate})`
+          );
         }
       }
     }

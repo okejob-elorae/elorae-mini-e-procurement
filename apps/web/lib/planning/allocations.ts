@@ -86,10 +86,13 @@ export function stageNameFromAllocation(
 export const VARIANTLESS_FG_FOR_PLAN_MESSAGE =
   "Finished good has no SKU variants. Plan Kerja cannot process variantless items — add variants on the item, then link it again.";
 
+export const STAGE_MISSING_VARIANT_SKU_MESSAGE =
+  "Stage has no variant SKU. Assign a variant on this Plan Kerja stage before creating a Work Order.";
+
 export function assertVariantSkuForPlanWo(variantSku: string | null | undefined): string {
   const sku = (variantSku ?? "").trim();
   if (!sku) {
-    throw new Error(VARIANTLESS_FG_FOR_PLAN_MESSAGE);
+    throw new Error(STAGE_MISSING_VARIANT_SKU_MESSAGE);
   }
   return sku;
 }

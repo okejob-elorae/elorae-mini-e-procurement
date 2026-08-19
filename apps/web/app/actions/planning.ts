@@ -26,6 +26,7 @@ import {
 } from "@/lib/planning/calculations";
 import {
   VARIANTLESS_FG_FOR_PLAN_MESSAGE,
+  assertVariantSkuForPlanWo,
   buildWoPayloadFromCmtRow,
   stageNameFromAllocation,
   validateCmtAllocations,
@@ -2097,10 +2098,7 @@ export async function createWorkOrderFromStage(stageId: string) {
     throw new Error("Kategori harus terhubung ke item barang jadi sebelum membuat Work Order.");
   }
   await validateFinishedGoodItem(stage.planCategory.itemId);
-  const stageVariantSku = stage.variantSku?.trim() ?? "";
-  if (!stageVariantSku) {
-    throw new Error(VARIANTLESS_FG_FOR_PLAN_MESSAGE);
-  }
+  const stageVariantSku = assertVariantSkuForPlanWo(stage.variantSku);
 
   if (stage.workOrderId) {
     const existingWo = await prisma.workOrder.findUnique({

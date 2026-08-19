@@ -109,6 +109,6 @@ describe("buildWoPayloadFromCmtRow", () => {
         },
         2026
       )
-    ).toThrow("no SKU variants");
+    ).toThrow("Assign a variant on this Plan Kerja stage");
   });
 });
