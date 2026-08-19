@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -110,6 +110,7 @@ export default function WorkOrderIssuePage() {
   const [isSuggestingRolls, setIsSuggestingRolls] = useState(false);
 
   const [availableRollsReady, setAvailableRollsReady] = useState(false);
+  const prefilledWoIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -173,6 +174,8 @@ export default function WorkOrderIssuePage() {
 
   useEffect(() => {
     if (!wo || !availableRollsReady || issueType !== "FABRIC") return;
+    if (prefilledWoIdRef.current === wo.id) return;
+    prefilledWoIdRef.current = wo.id;
     setRollBreakdown((prev) => {
       if (prev.length > 0) return prev;
       return plannedRollsStillAvailable(
@@ -384,9 +387,7 @@ export default function WorkOrderIssuePage() {
             uomId: l.uomId,
             ...(l.unitPrice != null && l.unitPrice > 0 ? { unitPrice: l.unitPrice } : {}),
           })),
-          ...(issueType === "FABRIC" && rollBreakdown.length > 0
-            ? { rollBreakdown }
-            : {}),
+          ...(issueType === "FABRIC" ? { rollBreakdown } : {}),
         },
         session.user.id
       );

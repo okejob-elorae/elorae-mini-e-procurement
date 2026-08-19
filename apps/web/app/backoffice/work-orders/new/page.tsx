@@ -150,7 +150,7 @@ export default function NewWorkOrderPage() {
           getSuppliersForSelect({ approvedOnly: true }),
           getItemsByType(ItemType.FINISHED_GOOD),
           getPOs({ statusIn: ["SUBMITTED", "PARTIAL"] }, { page: 1, pageSize: 200 }),
-          getPOs({ statusIn: ["CLOSED", "OVER"] }, { page: 1, pageSize: 50 }),
+          getPOs({ statusIn: ["CLOSED", "OVER"] }, { page: 1, pageSize: 200 }),
         ]);
         const list = Array.isArray(supplierData) ? supplierData : [];
         setTailors(list as TailorSupplier[]);

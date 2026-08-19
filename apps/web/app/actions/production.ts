@@ -771,10 +771,13 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       const arr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
       return Array.isArray(arr) ? arr as Array<{ rollRef: string; qty: number }> : null;
     };
-    const payloadRolls = validated.rollBreakdown && validated.rollBreakdown.length > 0
+    const hasExplicitRolls = validated.rollBreakdown !== undefined;
+    const payloadRolls = hasExplicitRolls && validated.rollBreakdown.length > 0
       ? validated.rollBreakdown
       : null;
-    const rollsToDeduct = payloadRolls ?? parseRolls((wo as { rollBreakdown?: unknown }).rollBreakdown);
+    const rollsToDeduct = hasExplicitRolls
+      ? payloadRolls
+      : parseRolls((wo as { rollBreakdown?: unknown }).rollBreakdown);
 
     if (payloadRolls && consumptionMaterialId) {
       const fabricQty = validated.items

@@ -50,6 +50,7 @@ export function PlanningPageClient() {
   const router = useRouter();
   const { data: session } = useSession();
   const tCmt = useTranslations("planning.cmt");
+  const tColors = useTranslations("planning.colors");
   const activeTab = searchParams.get("tab") || "grid";
 
   const isAdmin = session?.user?.role === "ADMIN";
@@ -245,9 +246,7 @@ export function PlanningPageClient() {
         if (!detail || !canManage) return;
         const variantlessLeaf = findVariantlessLinkedLeaf(detail.categories);
         if (variantlessLeaf) {
-          toast.error(
-            `${variantlessLeaf.itemLabel}: Finished good has no SKU variants. Plan Kerja cannot process variantless items — add variants on the item, then link it again.`
-          );
+          toast.error(`${variantlessLeaf.itemLabel}: ${tColors("needsSkuVariants")}`);
           return;
         }
         try {
