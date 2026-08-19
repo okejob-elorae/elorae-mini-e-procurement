@@ -173,12 +173,13 @@ export default function WorkOrderIssuePage() {
 
   useEffect(() => {
     if (!wo || !availableRollsReady || issueType !== "FABRIC") return;
-    setRollBreakdown(
-      plannedRollsStillAvailable(
+    setRollBreakdown((prev) => {
+      if (prev.length > 0) return prev;
+      return plannedRollsStillAvailable(
         wo as { rollBreakdown?: unknown },
         availableRolls
-      )
-    );
+      );
+    });
   }, [wo, availableRolls, availableRollsReady, issueType]);
 
   const plan = (wo?.consumptionPlan as any[]) || [];

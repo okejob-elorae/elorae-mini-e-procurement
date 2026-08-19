@@ -1932,7 +1932,6 @@ export async function generateWorkOrderFromCmtAllocation(cmtAllocationId: string
   });
   if (!cmt) throw new Error("CMT allocation not found");
   await requirePlanYearActive(cmt.planCategory.planYear.id);
-  await validateFinishedGoodItem(cmt.planCategory.itemId);
 
   if (cmt.workOrderId) {
     const existingWo = await prisma.workOrder.findUnique({
@@ -1947,6 +1946,8 @@ export async function generateWorkOrderFromCmtAllocation(cmtAllocationId: string
       };
     }
   }
+
+  await validateFinishedGoodItem(cmt.planCategory.itemId);
 
   const woPayload = buildWoPayloadFromCmtRow(
     { itemId: cmt.planCategory.itemId, code: cmt.planCategory.code },
@@ -2097,8 +2098,6 @@ export async function createWorkOrderFromStage(stageId: string) {
   if (!stage.planCategory.itemId) {
     throw new Error("Kategori harus terhubung ke item barang jadi sebelum membuat Work Order.");
   }
-  await validateFinishedGoodItem(stage.planCategory.itemId);
-  const stageVariantSku = assertVariantSkuForPlanWo(stage.variantSku);
 
   if (stage.workOrderId) {
     const existingWo = await prisma.workOrder.findUnique({
@@ -2111,6 +2110,9 @@ export async function createWorkOrderFromStage(stageId: string) {
       );
     }
   }
+
+  await validateFinishedGoodItem(stage.planCategory.itemId);
+  const stageVariantSku = assertVariantSkuForPlanWo(stage.variantSku);
 
   const result = await createWorkOrder(
     {
