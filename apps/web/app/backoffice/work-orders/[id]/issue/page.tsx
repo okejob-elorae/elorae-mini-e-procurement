@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -64,6 +64,30 @@ interface IssueLine {
   unitPrice?: number;
 }
 
+type RollPick = { rollRef: string; qty: number; notes?: string };
+
+function plannedRollsStillAvailable(
+  woData: { rollBreakdown?: unknown } | null | undefined,
+  available: Array<{ rollCode: string; rollRef: string; remainingLength: number }>
+): RollPick[] {
+  const planned = Array.isArray(woData?.rollBreakdown)
+    ? (woData.rollBreakdown as Array<{ rollRef?: string; notes?: string }>)
+    : [];
+  const out: RollPick[] = [];
+  for (const row of planned) {
+    const ref = (row.rollRef ?? "").trim();
+    if (!ref) continue;
+    const live = available.find((r) => r.rollCode === ref || r.rollRef === ref);
+    if (!live || live.remainingLength <= 0) continue;
+    out.push({
+      rollRef: ref,
+      qty: live.remainingLength,
+      notes: typeof row.notes === "string" ? row.notes : "",
+    });
+  }
+  return out;
+}
+
 export default function WorkOrderIssuePage() {
   const t = useTranslations('toasts');
   const tWO = useTranslations('workOrders');
@@ -85,16 +109,15 @@ export default function WorkOrderIssuePage() {
   const [addRollValue, setAddRollValue] = useState("");
   const [isSuggestingRolls, setIsSuggestingRolls] = useState(false);
 
+  const [availableRollsReady, setAvailableRollsReady] = useState(false);
+  const rollsHydratedRef = useRef(false);
+
   useEffect(() => {
     if (!id) return;
     Promise.all([getWorkOrderById(id), getItemsByType(ItemType.FABRIC)])
       .then(([woData, fabricItems]) => {
         setWO(woData);
         setMaterials((fabricItems as any) || []);
-        const plannedRolls = Array.isArray((woData as { rollBreakdown?: unknown } | null)?.rollBreakdown)
-          ? ((woData as { rollBreakdown: Array<{ rollRef: string; qty: number; notes?: string }> }).rollBreakdown)
-          : [];
-        setRollBreakdown(plannedRolls);
         const plan = (woData?.consumptionPlan as any[]) || [];
         const ids = [
           ...new Set(
@@ -123,12 +146,31 @@ export default function WorkOrderIssuePage() {
   useEffect(() => {
     if (!consumptionMaterialId || issueType !== "FABRIC") {
       setAvailableRolls([]);
+      setAvailableRollsReady(true);
       return;
     }
+    setAvailableRollsReady(false);
     getAvailableFabricRolls(consumptionMaterialId)
-      .then(setAvailableRolls)
-      .catch(() => setAvailableRolls([]));
+      .then((rows) => {
+        setAvailableRolls(rows);
+        setAvailableRollsReady(true);
+      })
+      .catch(() => {
+        setAvailableRolls([]);
+        setAvailableRollsReady(true);
+      });
   }, [consumptionMaterialId, issueType]);
+
+  useEffect(() => {
+    if (rollsHydratedRef.current || !wo || !availableRollsReady) return;
+    rollsHydratedRef.current = true;
+    setRollBreakdown(
+      plannedRollsStillAvailable(
+        wo as { rollBreakdown?: unknown },
+        availableRolls
+      )
+    );
+  }, [wo, availableRolls, availableRollsReady]);
 
   const plan = (wo?.consumptionPlan as any[]) || [];
   const isFabricItem = (itemId: string) =>
@@ -151,10 +193,9 @@ export default function WorkOrderIssuePage() {
     }
     setIssueType(nextType);
     if (nextType === "FABRIC") {
-      const plannedRolls = Array.isArray((wo as { rollBreakdown?: unknown } | null)?.rollBreakdown)
-        ? ((wo as { rollBreakdown: Array<{ rollRef: string; qty: number; notes?: string }> }).rollBreakdown)
-        : [];
-      setRollBreakdown(plannedRolls);
+      setRollBreakdown(
+        plannedRollsStillAvailable(wo as { rollBreakdown?: unknown } | null, availableRolls)
+      );
     } else {
       setRollBreakdown([]);
     }

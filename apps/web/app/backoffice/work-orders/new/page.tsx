@@ -146,16 +146,19 @@ export default function NewWorkOrderPage() {
     const load = async () => {
       try {
         const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
-        const [supplierData, fgList, posResult] = await Promise.all([
+        const [supplierData, fgList, openPos, closedPos] = await Promise.all([
           getSuppliersForSelect({ approvedOnly: true }),
           getItemsByType(ItemType.FINISHED_GOOD),
-          getPOs({ statusIn: ["SUBMITTED", "PARTIAL", "CLOSED", "OVER"] }, { page: 1, pageSize: 200 }),
+          getPOs({ statusIn: ["SUBMITTED", "PARTIAL"] }, { page: 1, pageSize: 200 }),
+          getPOs({ statusIn: ["CLOSED", "OVER"] }, { page: 1, pageSize: 50 }),
         ]);
         const list = Array.isArray(supplierData) ? supplierData : [];
         setTailors(list as TailorSupplier[]);
         setFinishedGoods((fgList as FinishedGood[]) || []);
-        const pos = (posResult as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
-        setPurchaseOrders(pos);
+        const openItems = (openPos as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
+        const closedItems = (closedPos as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
+        const seen = new Set(openItems.map((p) => p.id));
+        setPurchaseOrders([...openItems, ...closedItems.filter((p) => !seen.has(p.id))]);
       } catch {
         toast.error(t('failedToLoadData'));
       } finally {

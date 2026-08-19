@@ -816,7 +816,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
           });
           remainingToAllocate -= deduct;
         }
-        if (remainingToAllocate > 1e-6) {
+        if (payloadRolls != null && remainingToAllocate > 1e-6) {
           throw new Error(
             `Selected rolls cannot cover issued fabric qty (short ${remainingToAllocate})`
           );

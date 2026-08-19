@@ -47,7 +47,7 @@ import {
 import { previewChainDays } from '@/app/actions/lead-time';
 import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
-import { getPOs } from '@/app/actions/purchase-orders';
+import { getPOs, getPOById } from '@/app/actions/purchase-orders';
 import { ItemType } from '@/lib/constants/enums';
 
 interface TailorSupplier {
@@ -179,16 +179,19 @@ export default function EditWorkOrderPage() {
     const load = async () => {
       try {
         const { getSuppliersForSelect } = await import('@/app/actions/suppliers');
-        const [supplierData, fgList, posResult] = await Promise.all([
+        const [supplierData, fgList, openPos, closedPos] = await Promise.all([
           getSuppliersForSelect({ approvedOnly: true }),
           getItemsByType(ItemType.FINISHED_GOOD),
-          getPOs({ statusIn: ["SUBMITTED", "PARTIAL", "CLOSED", "OVER"] }, { page: 1, pageSize: 200 }),
+          getPOs({ statusIn: ["SUBMITTED", "PARTIAL"] }, { page: 1, pageSize: 200 }),
+          getPOs({ statusIn: ["CLOSED", "OVER"] }, { page: 1, pageSize: 50 }),
         ]);
         const list = Array.isArray(supplierData) ? supplierData : [];
         setTailors(list as TailorSupplier[]);
         setFinishedGoods((fgList as FinishedGood[]) || []);
-        const pos = (posResult as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
-        setPurchaseOrders(pos);
+        const openItems = (openPos as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
+        const closedItems = (closedPos as { items?: Array<{ id: string; docNumber: string }> })?.items ?? [];
+        const seen = new Set(openItems.map((p) => p.id));
+        setPurchaseOrders([...openItems, ...closedItems.filter((p) => !seen.has(p.id))]);
       } catch {
         toast.error(t('failedToLoadData'));
       } finally {
@@ -199,6 +202,22 @@ export default function EditWorkOrderPage() {
     };
     load();
   }, [t]);
+
+  useEffect(() => {
+    const linkedPoId = (wo as { poId?: string | null } | null)?.poId;
+    if (!linkedPoId) return;
+    if (purchaseOrders.some((p) => p.id === linkedPoId)) return;
+    getPOById(linkedPoId)
+      .then((po) => {
+        if (!po) return;
+        setPurchaseOrders((prev) =>
+          prev.some((p) => p.id === po.id)
+            ? prev
+            : [{ id: po.id, docNumber: po.docNumber }, ...prev]
+        );
+      })
+      .catch(() => undefined);
+  }, [wo, purchaseOrders]);
 
   useEffect(() => {
     if (!wo || wo.status !== 'DRAFT' || !tailors.length || !finishedGoods.length) return;
