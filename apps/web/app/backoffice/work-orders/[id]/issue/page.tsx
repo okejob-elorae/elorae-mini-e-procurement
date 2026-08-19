@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -110,7 +110,6 @@ export default function WorkOrderIssuePage() {
   const [isSuggestingRolls, setIsSuggestingRolls] = useState(false);
 
   const [availableRollsReady, setAvailableRollsReady] = useState(false);
-  const rollsHydratedRef = useRef(false);
 
   useEffect(() => {
     if (!id) return;
@@ -144,33 +143,43 @@ export default function WorkOrderIssuePage() {
       : "";
 
   useEffect(() => {
+    if (!wo) {
+      setAvailableRolls([]);
+      setAvailableRollsReady(false);
+      return;
+    }
     if (!consumptionMaterialId || issueType !== "FABRIC") {
       setAvailableRolls([]);
       setAvailableRollsReady(true);
       return;
     }
+    let cancelled = false;
     setAvailableRollsReady(false);
     getAvailableFabricRolls(consumptionMaterialId)
       .then((rows) => {
+        if (cancelled) return;
         setAvailableRolls(rows);
         setAvailableRollsReady(true);
       })
       .catch(() => {
+        if (cancelled) return;
         setAvailableRolls([]);
         setAvailableRollsReady(true);
       });
-  }, [consumptionMaterialId, issueType]);
+    return () => {
+      cancelled = true;
+    };
+  }, [wo, consumptionMaterialId, issueType]);
 
   useEffect(() => {
-    if (rollsHydratedRef.current || !wo || !availableRollsReady) return;
-    rollsHydratedRef.current = true;
+    if (!wo || !availableRollsReady || issueType !== "FABRIC") return;
     setRollBreakdown(
       plannedRollsStillAvailable(
         wo as { rollBreakdown?: unknown },
         availableRolls
       )
     );
-  }, [wo, availableRolls, availableRollsReady]);
+  }, [wo, availableRolls, availableRollsReady, issueType]);
 
   const plan = (wo?.consumptionPlan as any[]) || [];
   const isFabricItem = (itemId: string) =>
@@ -192,11 +201,7 @@ export default function WorkOrderIssuePage() {
       setLines([]);
     }
     setIssueType(nextType);
-    if (nextType === "FABRIC") {
-      setRollBreakdown(
-        plannedRollsStillAvailable(wo as { rollBreakdown?: unknown } | null, availableRolls)
-      );
-    } else {
+    if (nextType !== "FABRIC") {
       setRollBreakdown([]);
     }
   };

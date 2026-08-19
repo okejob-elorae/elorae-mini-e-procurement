@@ -253,7 +253,6 @@ export function KonsiSuggestionsCard({ suggestions, shortLineCount, staged, onSt
                       searchPlaceholder={t("konsiSuggestions.pickerSearchPlaceholder")}
                       emptyMessage={t("konsiSuggestions.pickerNoMatch")}
                       triggerClassName="h-10 w-full"
-                      maxVisible={pickerOptions.length}
                     />
                   </div>
                   <div className="space-y-1.5">

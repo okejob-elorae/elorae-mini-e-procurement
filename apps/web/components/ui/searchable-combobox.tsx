@@ -38,8 +38,6 @@ export interface SearchableComboboxProps {
   "aria-invalid"?: boolean;
   /** Trigger width class (e.g. w-full, min-w-[200px]) */
   triggerClassName?: string;
-  /** Cap rendered options. Search still filters the full list. Default 100. */
-  maxVisible?: number;
 }
 
 const MAX_VISIBLE = 100;
@@ -56,7 +54,6 @@ export function SearchableCombobox({
   id,
   "aria-invalid": ariaInvalid,
   triggerClassName,
-  maxVisible = MAX_VISIBLE,
 }: SearchableComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -70,8 +67,8 @@ export function SearchableCombobox({
     return options.filter((opt) => opt.label.toLowerCase().includes(q));
   }, [options, query]);
 
-  const visible = filtered.slice(0, maxVisible);
-  const truncated = filtered.length > maxVisible;
+  const visible = filtered.slice(0, MAX_VISIBLE);
+  const truncated = filtered.length > MAX_VISIBLE;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -134,7 +131,7 @@ export function SearchableCombobox({
             </CommandGroup>
             {truncated && (
               <div className="border-t px-3 py-2 text-xs text-muted-foreground">
-                Showing {maxVisible} of {filtered.length} — refine search
+                Showing {MAX_VISIBLE} of {filtered.length} — refine search
               </div>
             )}
           </CommandList>
