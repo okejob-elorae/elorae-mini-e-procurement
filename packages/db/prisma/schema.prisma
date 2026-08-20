@@ -591,6 +591,7 @@ model FieldReturnLine {
   item       Item              @relation(fields: [itemId], references: [id])
 
   @@index([returnId])
+  @@index([itemId])
 }
 
 enum ReserveSource {
@@ -1931,6 +1932,7 @@ enum DocType {
   VANRECON
   SPGSALE
   DELIVERY
+  FIELDRET
 }
 
 enum OpnameScope {
