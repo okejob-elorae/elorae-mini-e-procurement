@@ -387,6 +387,7 @@ export async function deleteItem(id: string) {
     rejectedGoodsCount,
     planAccessoryCount,
     salesReturnItemCount,
+    fieldReturnLineCount,
   ] = await Promise.all([
     prisma.stockMovement.count({ where: { itemId: id } }),
     prisma.pOItem.count({ where: { itemId: id } }),
@@ -397,6 +398,7 @@ export async function deleteItem(id: string) {
     prisma.rejectedGoodsLedger.count({ where: { itemId: id } }),
     prisma.planAccessory.count({ where: { itemId: id } }),
     prisma.salesReturnItem.count({ where: { itemId: id } }),
+    prisma.fieldReturnLine.count({ where: { itemId: id } }),
   ]);
 
   const hasLinkedRecords =
@@ -408,7 +410,8 @@ export async function deleteItem(id: string) {
     stockAdjustmentCount > 0 ||
     rejectedGoodsCount > 0 ||
     planAccessoryCount > 0 ||
-    salesReturnItemCount > 0;
+    salesReturnItemCount > 0 ||
+    fieldReturnLineCount > 0;
 
   if (hasLinkedRecords) {
     throw new Error(ITEM_DELETE_BLOCKED);
