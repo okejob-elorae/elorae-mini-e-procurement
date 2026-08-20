@@ -538,6 +538,56 @@ enum TaxInvoiceStatus {
   NOT_REQUIRED
 }
 
+enum FieldReturnStatus {
+  PENDING_WAREHOUSE_RECEIVING
+  CANCELLED
+}
+
+enum FieldReturnReason {
+  DAMAGED
+  UNSOLD
+  EXPIRED
+  OTHER
+}
+
+enum FieldReturnTransport {
+  SELF_CARRY
+  EXPEDITION
+}
+
+model FieldReturn {
+  id             String               @id @default(cuid())
+  docNo          String               @unique
+  storeId        String
+  visitId        String?
+  raisedById     String
+  status         FieldReturnStatus    @default(PENDING_WAREHOUSE_RECEIVING)
+  transport      FieldReturnTransport
+  expeditionName String?
+  resiNo         String?
+  notaPhotoUrl   String
+  notaPhotoR2Key String
+  note           String?              @db.Text
+  createdAt      DateTime             @default(now())
+  lines          FieldReturnLine[]
+
+  @@index([storeId])
+  @@index([status])
+}
+
+model FieldReturnLine {
+  id         String            @id @default(cuid())
+  returnId   String
+  itemId     String
+  variantSku String            @default("")
+  qty        Int
+  reason     FieldReturnReason
+  reasonNote String?
+  returnDoc  FieldReturn       @relation(fields: [returnId], references: [id])
+
+  @@index([returnId])
+}
+
 enum ReserveSource {
   JUBELIO
   FIELD_SALES
