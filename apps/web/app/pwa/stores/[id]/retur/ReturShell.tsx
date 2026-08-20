@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { compressImage } from "@/lib/pwa/photo/compress";
+import { FIELD_RETURN_REASONS, type FieldReturnReasonInput } from "@/lib/field-sales/retur/types";
 
 type CatalogItem = {
   itemId: string;
@@ -38,7 +39,7 @@ type CatalogItem = {
 
 type Payload = { items: CatalogItem[] };
 type LoadState = "loading" | "ready" | "error";
-type Reason = "DAMAGED" | "UNSOLD" | "EXPIRED" | "OTHER";
+type Reason = FieldReturnReasonInput;
 type Transport = "SELF_CARRY" | "EXPEDITION";
 type CamMode = "idle" | "live" | "preview";
 
@@ -59,7 +60,7 @@ const REASON_LABEL: Record<Reason, string> = {
   EXPIRED: "Kadaluarsa",
   OTHER: "Lainnya",
 };
-const REASON_ORDER: Reason[] = ["DAMAGED", "UNSOLD", "EXPIRED", "OTHER"];
+const REASON_ORDER: readonly Reason[] = FIELD_RETURN_REASONS;
 
 const PAGE_SIZE = 10;
 const lineKey = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
@@ -78,12 +79,18 @@ function messageForFailure(status: number, body: unknown): string {
         return "Tambahkan minimal satu barang retur.";
       case "BAD_QTY":
         return "Jumlah barang tidak valid. Periksa kembali.";
+      case "BAD_LINE_SHAPE":
+        return "Data baris retur tidak terbaca. Muat ulang halaman lalu isi ulang barangnya.";
+      case "ITEM_NOT_FOUND":
+        return "Ada barang yang tidak dikenali sistem. Muat ulang katalog lalu pilih ulang barangnya.";
       case "STORE_NOT_FOUND":
         return "Toko tidak ditemukan atau sudah nonaktif.";
       case "VISIT_NOT_OWNED":
         return "Kunjungan tidak valid untuk akun ini. Coba check-in ulang.";
       case "MISSING_RESI":
         return "Nomor resi wajib diisi untuk pengiriman ekspedisi.";
+      case "MISSING_EXPEDITION_NAME":
+        return "Nama ekspedisi wajib diisi untuk pengiriman ekspedisi.";
       case "MISSING_REASON_NOTE":
         return "Catatan wajib diisi untuk alasan Lainnya.";
       default:
@@ -94,8 +101,8 @@ function messageForFailure(status: number, body: unknown): string {
   if (status === 403) return "Tidak punya akses untuk fitur ini.";
   if (status === 503) return "Layanan unggah foto belum tersedia. Coba lagi nanti.";
   if (status === 502) return "Gagal mengunggah foto. Periksa koneksi lalu coba lagi.";
-  // A generic 5xx (e.g. a bad itemId hitting a real FK) is a server-side failure, not
-  // something retaking the photo or re-filling the form fixes — do not blame the input.
+  // A generic 5xx is a server-side failure, not something retaking the photo or re-filling
+  // the form fixes — do not blame the input.
   if (status >= 500) return "Server sedang bermasalah. Coba lagi beberapa saat lagi.";
   if (error) return "Data retur tidak valid. Ambil ulang foto lalu coba lagi.";
   return "Gagal menyimpan retur. Coba lagi.";
@@ -121,6 +128,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   const [compressing, setCompressing] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const openingCamRef = useRef(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
@@ -187,6 +195,11 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   }
 
   async function openCam() {
+    // getUserMedia is awaited with the trigger still enabled, so a double tap would start a
+    // SECOND stream and overwrite streamRef — teardown then stops only the second and the
+    // first keeps the camera indicator lit until the tab closes. Guard synchronously.
+    if (openingCamRef.current || streamRef.current) return;
+    openingCamRef.current = true;
     setCamError(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -195,6 +208,8 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
     } catch {
       setCamError(true);
       fileRef.current?.click(); // fallback to the native camera / file picker
+    } finally {
+      openingCamRef.current = false;
     }
   }
 
@@ -349,8 +364,10 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
         }
         // The server committed (2xx) but the body did not parse or carry a docNo — this is
         // NOT the same as a failed create, so it must not say "coba lagi" (this endpoint has
-        // no idempotency key; inviting a resubmit here risks a duplicate retur).
-        setSubmitError("Retur kemungkinan sudah tersimpan tapi responsnya tidak lengkap. Cek daftar retur toko sebelum mengirim ulang.");
+        // no idempotency key; inviting a resubmit here risks a duplicate retur). The salesman
+        // is pointed at a PERSON, not a screen: the PWA has no retur list, and the backoffice
+        // register is gated on a permission a SALESMAN does not hold.
+        setSubmitError("Retur kemungkinan sudah tersimpan tapi responsnya tidak lengkap. Hubungi admin untuk memastikan sebelum mengirim ulang.");
         return;
       }
       setSubmitError(messageForFailure(res.status, body));
@@ -358,7 +375,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
       // A dropped connection/timeout does not tell us whether the server already committed
       // the retur and stored the photo — a 502 (upload failed, nothing written) is the only
       // status that is genuinely safe to retry, so this message must not read the same.
-      setSubmitError("Koneksi terputus. Retur MUNGKIN sudah tersimpan — cek daftar retur toko sebelum mengirim ulang.");
+      setSubmitError("Koneksi terputus. Retur MUNGKIN sudah tersimpan — hubungi admin untuk memastikan sebelum mengirim ulang.");
     } finally {
       setSubmitting(false);
       submittingRef.current = false;
