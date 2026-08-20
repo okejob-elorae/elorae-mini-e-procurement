@@ -42,6 +42,7 @@
     "navFulfillment": "Pemenuhan",
     "navSalesReturns": "Pengembalian",
     "navFieldSalesOrders": "Pesanan Lapangan",
+    "navFieldReturns": "Retur Lapangan",
     "navCanvassing": "Canvassing",
     "navVanSales": "Penjualan Van",
     "navSpgSales": "Penjualan SPG",
@@ -2473,6 +2474,54 @@
       "errInvalidAddedLineAlreadySent": "Salah satu produk yang ditambahkan sudah pernah dikirim ke toko ini. Muat ulang halaman untuk memperbarui daftar saran.",
       "errInvalidAddedLineNotKonsi": "Penambahan produk hanya berlaku untuk transfer konsinyasi.",
       "errInvalidAddedLineGeneric": "Salah satu produk yang ditambahkan tidak valid. Muat ulang halaman dan coba lagi."
+    }
+  },
+  "fieldReturns": {
+    "pageTitle": "Retur Lapangan",
+    "subtitle": "Retur toko yang diajukan oleh salesman lapangan, menunggu penerimaan gudang",
+    "search": "Cari",
+    "searchPlaceholder": "Cari berdasarkan nomor dokumen atau nama toko",
+    "reset": "Reset",
+    "cardTitle": "Daftar Retur",
+    "colDocNo": "No. Dokumen",
+    "colStore": "Toko",
+    "colRaisedAt": "Diajukan",
+    "colTransport": "Pengiriman",
+    "colLineCount": "Baris",
+    "colStatus": "Status",
+    "empty": "Belum ada retur lapangan.",
+    "emptyFiltered": "Tidak ada retur lapangan yang cocok dengan pencarian ini.",
+    "transport": {
+      "SELF_CARRY": "Dibawa Sendiri",
+      "EXPEDITION": "Ekspedisi"
+    },
+    "reason": {
+      "DAMAGED": "Rusak",
+      "UNSOLD": "Tidak Terjual",
+      "EXPIRED": "Kadaluarsa",
+      "OTHER": "Lainnya"
+    },
+    "status": {
+      "PENDING_WAREHOUSE_RECEIVING": "Menunggu Penerimaan Gudang",
+      "CANCELLED": "Dibatalkan"
+    },
+    "detail": {
+      "back": "Kembali",
+      "summaryTitle": "Ringkasan",
+      "store": "Toko",
+      "raisedBy": "Diajukan Oleh",
+      "raisedAt": "Tanggal Diajukan",
+      "transport": "Pengiriman",
+      "expeditionName": "Ekspedisi",
+      "resiNo": "No. Resi",
+      "note": "Catatan",
+      "notaPhoto": "Foto Nota Retur",
+      "linesTitle": "Rincian Barang",
+      "colProduct": "Produk",
+      "colVariant": "Varian",
+      "colQty": "Qty",
+      "colReason": "Alasan",
+      "colReasonNote": "Catatan Alasan"
     }
   },
   "promos": {
