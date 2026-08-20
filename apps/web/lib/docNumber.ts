@@ -20,6 +20,7 @@ const DEFAULT_CONFIGS: Record<
   VANRECON: { prefix: 'VRCN/', resetPeriod: 'YEARLY', padding: 4 },
   SPGSALE: { prefix: 'SPG/', resetPeriod: 'YEARLY', padding: 4 },
   DELIVERY: { prefix: 'DLV/', resetPeriod: 'MONTHLY', padding: 4 },
+  FIELDRET: { prefix: 'FRET/', resetPeriod: 'MONTHLY', padding: 4 },
 };
 
 type ConfigRow = {

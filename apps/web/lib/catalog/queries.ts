@@ -86,7 +86,10 @@ export function serializeCatalogItem(
   };
 }
 
-export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload | null> {
+export async function listCatalogForPwa(
+  storeId: string,
+  options?: { includeInactive?: boolean },
+): Promise<CatalogPayload | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
     select: { id: true, isActive: true, termsType: true, marginPercent: true },
@@ -104,8 +107,12 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
   const g = await prisma.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
   const globalMin = g ? Number(g.value) : 6;
 
+  // Retur capture opts in to also list discontinued items — a discontinued item is
+  // exactly the "Tidak Laku"/"Kadaluarsa" case a store returns, and the writer imposes
+  // no active check, so hiding it here would make a real return unfileable. The sell
+  // catalog (no option passed) keeps its existing active-only behavior untouched.
   const rows = await prisma.item.findMany({
-    where: { isActive: true, type: "FINISHED_GOOD" },
+    where: { isActive: options?.includeInactive ? undefined : true, type: "FINISHED_GOOD" },
     orderBy: { nameId: "asc" },
     select: {
       id: true,

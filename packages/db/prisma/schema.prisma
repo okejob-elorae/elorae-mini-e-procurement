@@ -312,6 +312,7 @@ model Store {
 
   visits         StoreVisit[]
   fieldSalesOrders FieldSalesOrder[]
+  fieldReturns   FieldReturn[]
   promoStores    PromoStore[]
   storeChangeRequests StoreChangeRequest[]
   vanSales       VanSale[]
@@ -337,6 +338,7 @@ model StoreVisit {
   store        Store     @relation(fields: [storeId], references: [id])
   user         User      @relation(fields: [userId], references: [id])
   fieldSalesOrders FieldSalesOrder[]
+  fieldReturns FieldReturn[]
   photos       VisitPhoto[]
   storeChangeRequests StoreChangeRequest[]
 
@@ -538,6 +540,60 @@ enum TaxInvoiceStatus {
   NOT_REQUIRED
 }
 
+enum FieldReturnStatus {
+  PENDING_WAREHOUSE_RECEIVING
+  CANCELLED
+}
+
+enum FieldReturnReason {
+  DAMAGED
+  UNSOLD
+  EXPIRED
+  OTHER
+}
+
+enum FieldReturnTransport {
+  SELF_CARRY
+  EXPEDITION
+}
+
+model FieldReturn {
+  id             String               @id @default(cuid())
+  docNo          String               @unique
+  storeId        String
+  visitId        String?
+  raisedById     String
+  status         FieldReturnStatus    @default(PENDING_WAREHOUSE_RECEIVING)
+  transport      FieldReturnTransport
+  expeditionName String?
+  resiNo         String?
+  notaPhotoUrl   String
+  notaPhotoR2Key String
+  note           String?              @db.Text
+  createdAt      DateTime             @default(now())
+  store          Store                @relation(fields: [storeId], references: [id])
+  visit          StoreVisit?          @relation(fields: [visitId], references: [id])
+  lines          FieldReturnLine[]
+
+  @@index([storeId])
+  @@index([status])
+}
+
+model FieldReturnLine {
+  id         String            @id @default(cuid())
+  returnId   String
+  itemId     String
+  variantSku String            @default("")
+  qty        Int
+  reason     FieldReturnReason
+  reasonNote String?
+  returnDoc  FieldReturn       @relation(fields: [returnId], references: [id])
+  item       Item              @relation(fields: [itemId], references: [id])
+
+  @@index([returnId])
+  @@index([itemId])
+}
+
 enum ReserveSource {
   JUBELIO
   FIELD_SALES
@@ -650,6 +706,7 @@ model Item {
   images           ItemImage[]
   fieldSalesLines  FieldSalesOrderLine[]
   fieldSalesDeliveryLines FieldSalesDeliveryLine[]
+  fieldReturnLines FieldReturnLine[]
   promoItems       PromoItem[]
   vanStock         VanStock[]
   vanLoadLines     VanLoadLine[]
@@ -1875,6 +1932,7 @@ enum DocType {
   VANRECON
   SPGSALE
   DELIVERY
+  FIELDRET
 }
 
 enum OpnameScope {
