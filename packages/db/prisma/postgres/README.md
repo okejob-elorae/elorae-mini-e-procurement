@@ -116,24 +116,74 @@ urutan tabel. Kalau nanti ingin FK asli ditegakkan Postgres, hapus baris
 `relationMode` di `schema.postgres.prisma` lalu regenerasi — DDL-nya akan ikut
 membawa `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY`.
 
-## Yang MASIH kurang agar aplikasi benar-benar jalan di Supabase
+## Kode aplikasi: sudah diport, satu basis kode untuk dua dialek
 
-`schema.sql` hanya membangun databasenya. Kode aplikasi masih bicara MariaDB:
+Aplikasi kini berjalan di MySQL **maupun** PostgreSQL tanpa flag build — yang
+menentukan hanyalah skema di `DATABASE_URL`.
 
-1. **Adapter Prisma** — `packages/db/src/index.ts` dan `prisma/seed.ts` memakai
-   `PrismaMariaDb` dari `@prisma/adapter-mariadb`. Perlu diganti ke
-   `@prisma/adapter-pg` (`PrismaPg`), dan dependensinya ditukar di
-   `packages/db/package.json`.
-2. **`prisma/schema.prisma`** — generator client masih provider `mysql`. Client
-   yang dipakai aplikasi harus di-generate dari skema Postgres.
-3. **3 query SQL mentah** di `packages/db/src/reservation-writer.ts`
-   (baris ~282, ~315, ~470). Dua masalah: identifier tanpa kutip
-   (`UPDATE StockReservation` → Postgres melipat ke huruf kecil, tabelnya
-   bernama `"StockReservation"`), dan `NOW(3)` yang bukan sintaks Postgres
-   (padanannya `CURRENT_TIMESTAMP(3)`).
-4. **`packages/db/src/db-connection.ts`** — normalisasi URL-nya khusus MySQL
-   (`mysql://`, `ssl=true`, `connectTimeout`). Untuk Supabase perlu
-   `postgresql://` + parameter pooler.
+| Berkas | Perubahan |
+|---|---|
+| `src/adapter.ts` (baru) | `createDbAdapter()` memilih `PrismaPg` atau `PrismaMariaDb` dari skema URL. Satu-satunya tempat adapter dibuat; 12 pemanggil lama diarahkan ke sini. |
+| `src/sql-dialect.ts` (baru) | `sqlId()` dan `nowMs()` — lihat di bawah. |
+| `src/db-connection.ts` | URL Postgres mendapat `sslmode=require`; knob MySQL (`ssl=true`, `connectTimeout`) tidak lagi bocor ke URL Postgres. |
+| `prisma.config.ts` | Memilih pasangan skema + riwayat migrasi berdasarkan `DATABASE_URL`. |
+| `apps/web/next.config.ts` | `@prisma/adapter-pg` dan `pg` masuk `serverExternalPackages`. |
+| 7 berkas dengan SQL mentah | Diperbaiki, rinciannya di bawah. |
 
-Selama keempat hal itu belum dikerjakan, `schema.sql` tetap sah dipakai untuk
-menyiapkan database Supabase-nya, tapi aplikasinya belum bisa connect ke sana.
+### Kenapa SQL mentah perlu disentuh
+
+Dua beda mekanis antara MySQL dan Postgres:
+
+1. **Postgres melipat identifier tanpa kutip menjadi huruf kecil.** Prisma
+   membuat semua tabel/kolom dalam camelCase, jadi `FROM SalesOrder` mencari
+   `salesorder` dan gagal dengan `42P01`. Yang lebih licin: alias keluaran.
+   `AS salesmanId` tanpa kutip kembali sebagai key `salesmanid`, sehingga kode
+   pemanggil menerima `undefined` **tanpa error apa pun**.
+2. **`NOW(3)` hanya ada di MySQL.**
+
+`sqlId()` mengutip identifier sesuai dialek aktif dan `nowMs()` memilih
+`NOW(3)` / `LOCALTIMESTAMP(3)`. Query tetap satu salinan, tidak dipecah jadi dua
+versi yang lama-lama saling menyimpang.
+
+| Berkas | Query | Peran |
+|---|---|---|
+| `src/reservation-writer.ts` | 3 | Guard atomik stok — reservasi, konsumsi, pengiriman |
+| `apps/web/lib/docNumber.ts` | 2 | Penomoran dokumen (PO/GRN/WO/…) |
+| `apps/web/lib/dashboard/queries.ts` | 1 | Ringkasan penjualan salesman |
+| `apps/web/lib/finance/sales/sweep.ts` | 1 | Sapuan jurnal penjualan |
+| `prisma/test-connection.ts` | 2 | Alias backtick MySQL diganti `AS ok` |
+| `prisma/seed-production-login.ts` | 4 | **Tetap MySQL-only**, diberi pagar |
+| `apps/web/scripts/reset-db-keep-auth.ts` | 4 | **Tetap MySQL-only**, diberi pagar |
+
+Dua skrip terakhir bertumpu pada `SET FOREIGN_KEY_CHECKS`, `DATABASE()`, dan
+kutip backtick — tidak ada padanannya di Postgres selain `TRUNCATE ... CASCADE`.
+Karena keduanya destruktif dan tidak dibutuhkan aplikasi, keduanya sekarang
+**berhenti dengan error jelas** kalau `DATABASE_URL` mengarah ke Postgres.
+Truncate yang berhenti separuh jalan di Supabase jauh lebih buruk daripada
+skrip yang menolak jalan.
+
+### Bukti uji
+
+Dijalankan sungguhan terhadap PostgreSQL lokal berisi `schema.sql`:
+
+- `prisma generate` memilih `schema.postgres.prisma` sendiri dari `DATABASE_URL`
+- Seed penuh tuntas — 2.800 warna Pantone, RBAC, master data, PO/GRN/WO/retur
+- `pnpm --filter @elorae/db test` — **66 tes lulus**, termasuk spec
+  reservation-writer yang mengeksekusi ketiga query mentah itu
+- `pnpm --filter @elorae/web test` — **942 tes lulus**
+- `tsc --noEmit` bersih di `packages/db` dan `apps/web`
+- Login berhasil, dashboard dan halaman purchase-orders / inventory / items /
+  work-orders render 200 tanpa error server
+- Penomoran dokumen diuji langsung: `PO/2026/0006` → `PO/2026/0007` berurutan,
+  membuktikan `UPDATE` atomiknya jalan di Postgres
+
+### Satu hal yang mudah terlewat
+
+Prisma Client hasil generate **terikat pada satu dialek**. Setiap kali
+`DATABASE_URL` berpindah antara MySQL dan Postgres, jalankan ulang:
+
+```bash
+pnpm --filter @elorae/db generate
+```
+
+Tanpa itu, client lama akan bicara dialek yang salah ke database yang baru.

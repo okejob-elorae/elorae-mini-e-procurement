@@ -17,9 +17,13 @@ for (const p of envCandidates) {
   }
 }
 
+function isPostgres(url: string): boolean {
+  return /^postgres(ql)?:\/\//i.test(url.trim());
+}
+
 function isLocalDatabaseUrl(url: string): boolean {
   try {
-    const parsed = new URL(url.replace(/^mysql:\/\//, "https://"));
+    const parsed = new URL(url.replace(/^(mysql|postgres(ql)?):\/\//, "https://"));
     const host = (parsed.hostname || "").toLowerCase();
     return host === "localhost" || host === "127.0.0.1";
   } catch {
@@ -31,6 +35,12 @@ function getDatasourceUrl(): string {
   const url = process.env.DATABASE_URL;
   if (!url) return "";
   if (isLocalDatabaseUrl(url)) return url;
+  // sslaccept/ssl are MySQL-driver spellings; Postgres wants sslmode.
+  if (isPostgres(url)) {
+    return /[?&]sslmode=/i.test(url)
+      ? url
+      : `${url}${url.includes("?") ? "&" : "?"}sslmode=require`;
+  }
   const hasSsl =
     /[?&]sslaccept=strict/i.test(url) ||
     /[?&]ssl=true/i.test(url) ||
@@ -40,10 +50,19 @@ function getDatasourceUrl(): string {
   return `${url}${separator}sslaccept=strict`;
 }
 
+/*
+ * The datamodel is the same in both dialects, but the datasource block and two
+ * native types are not — so each dialect gets its own schema file and its own
+ * migration history. DATABASE_URL decides which pair the CLI uses, so
+ * `prisma generate` / `migrate deploy` need no extra flag: point the env at
+ * Supabase and the Postgres schema is what gets generated.
+ */
+const usePostgres = isPostgres(process.env.DATABASE_URL ?? "");
+
 export default defineConfig({
-  schema: "prisma/schema.prisma",
+  schema: usePostgres ? "prisma/schema.postgres.prisma" : "prisma/schema.prisma",
   migrations: {
-    path: "prisma/migrations",
+    path: usePostgres ? "prisma/postgres/migrations" : "prisma/migrations",
     seed: "tsx prisma/seed.ts",
   },
   datasource: {

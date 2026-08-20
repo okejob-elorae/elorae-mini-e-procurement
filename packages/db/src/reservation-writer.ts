@@ -1,6 +1,43 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
+import { sqlId, nowMs } from "./sql-dialect";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 import { InventoryValueMissingError } from "./stock-writer";
+
+/*
+ * The three statements below stay raw SQL (see the comment at each call site:
+ * each folds a guard into the UPDATE so two concurrent writers can't both pass
+ * off one stale read). Raw SQL means dialect matters — see ./sql-dialect for
+ * what id() and nowMs() paper over between MySQL and PostgreSQL.
+ */
+function consumeReservationSql(fieldSalesLineId: string, qty: number): Prisma.Sql {
+  return Prisma.sql`
+    UPDATE ${sqlId("StockReservation")}
+    SET ${sqlId("consumedQty")} = ${sqlId("consumedQty")} + ${qty}
+    WHERE ${sqlId("fieldSalesLineId")} = ${fieldSalesLineId}
+      AND ${sqlId("state")} = 'RESERVED'
+      AND ${sqlId("consumedQty")} + ${qty} <= ${sqlId("qty")}
+  `;
+}
+
+function shipInventorySql(invId: string, qty: number, valueDelta: number): Prisma.Sql {
+  return Prisma.sql`
+    UPDATE ${sqlId("InventoryValue")}
+    SET ${sqlId("qtyOnHand")} = ${sqlId("qtyOnHand")} - ${qty},
+        ${sqlId("reservedQty")} = ${sqlId("reservedQty")} - ${qty},
+        ${sqlId("totalValue")} = ${sqlId("totalValue")} - ${valueDelta},
+        ${sqlId("lastUpdated")} = ${nowMs()}
+    WHERE ${sqlId("id")} = ${invId} AND ${sqlId("qtyOnHand")} >= ${qty}
+  `;
+}
+
+function reserveInventorySql(invId: string, qty: number): Prisma.Sql {
+  return Prisma.sql`
+    UPDATE ${sqlId("InventoryValue")}
+    SET ${sqlId("reservedQty")} = ${sqlId("reservedQty")} + ${qty},
+        ${sqlId("lastUpdated")} = ${nowMs()}
+    WHERE ${sqlId("id")} = ${invId} AND (${sqlId("qtyOnHand")} - ${sqlId("reservedQty")}) >= ${qty}
+  `;
+}
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -279,11 +316,9 @@ export async function consumeFieldSalesOrderPartial(
       // Folds the OVER_CONSUME check into the write so two concurrent partial consumes
       // on the same fieldSalesLineId can't both pass a stale read (see reserveKonsiFieldSalesOrder
       // for the same idiom against InventoryValue).
-      const affected = await tx.$executeRaw`
-        UPDATE StockReservation
-        SET consumedQty = consumedQty + ${line.qty}
-        WHERE fieldSalesLineId = ${line.fieldSalesLineId} AND state = 'RESERVED' AND consumedQty + ${line.qty} <= qty
-      `;
+      const affected = await tx.$executeRaw(
+        consumeReservationSql(line.fieldSalesLineId, line.qty),
+      );
       if (affected === 0) throw new PartialConsumeError("OVER_CONSUME");
 
       // Re-read post-update so fullyConsumed reflects this call's own committed increment,
@@ -312,11 +347,9 @@ export async function consumeFieldSalesOrderPartial(
        * correctly fails instead of both passing off one read and driving stock negative. Also
        * closes the cross-process race the old read-then-write left open.
        */
-      const affected = await tx.$executeRaw`
-        UPDATE InventoryValue
-        SET qtyOnHand = qtyOnHand - ${qty}, reservedQty = reservedQty - ${qty}, totalValue = totalValue - ${qty * p.avgCost}, lastUpdated = NOW(3)
-        WHERE id = ${p.invId} AND qtyOnHand >= ${qty}
-      `;
+      const affected = await tx.$executeRaw(
+        shipInventorySql(p.invId, qty, qty * p.avgCost),
+      );
       if (affected === 0) {
         const current = await tx.inventoryValue.findUniqueOrThrow({ where: { id: p.invId }, select: { qtyOnHand: true } });
         shortLines.push({
@@ -467,11 +500,9 @@ export async function reserveKonsiFieldSalesOrder(
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       // Atomic guard: only increment if available (qtyOnHand - reservedQty) still covers qty.
       // Prevents the check-then-write race under concurrent approvals.
-      const affected = await tx.$executeRaw`
-        UPDATE InventoryValue
-        SET reservedQty = reservedQty + ${line.qty}, lastUpdated = NOW(3)
-        WHERE id = ${inv.id} AND (qtyOnHand - reservedQty) >= ${line.qty}
-      `;
+      const affected = await tx.$executeRaw(
+        reserveInventorySql(inv.id, line.qty),
+      );
       if (affected === 0) {
         shortLines.push({ itemId: line.itemId, variantSku: line.variantSku, available: Number(inv.qtyOnHand) - Number(inv.reservedQty) });
         continue;

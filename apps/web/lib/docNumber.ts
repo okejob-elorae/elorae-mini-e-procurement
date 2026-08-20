@@ -1,5 +1,5 @@
 import { DocType } from '@elorae/db';
-import { prisma } from '@elorae/db';
+import { prisma, Prisma, sqlId } from '@elorae/db';
 
 const DEFAULT_CONFIGS: Record<
   DocType,
@@ -68,25 +68,27 @@ export async function generateDocNumber(
   }
 
   // Atomic increment (or reset) in the DB so no two callers get the same number
-  await prismaClient.$executeRaw`
-    UPDATE DocNumberConfig
+  await prismaClient.$executeRaw(Prisma.sql`
+    UPDATE ${sqlId('DocNumberConfig')}
     SET
-      lastNumber = CASE
-        WHEN resetPeriod = 'YEARLY' AND year = ${currentYear} THEN lastNumber + 1
-        WHEN resetPeriod = 'YEARLY' AND year <> ${currentYear} THEN 1
-        WHEN resetPeriod = 'MONTHLY' AND year = ${currentYear} AND month = ${currentMonth} THEN lastNumber + 1
+      ${sqlId('lastNumber')} = CASE
+        WHEN ${sqlId('resetPeriod')} = 'YEARLY' AND ${sqlId('year')} = ${currentYear} THEN ${sqlId('lastNumber')} + 1
+        WHEN ${sqlId('resetPeriod')} = 'YEARLY' AND ${sqlId('year')} <> ${currentYear} THEN 1
+        WHEN ${sqlId('resetPeriod')} = 'MONTHLY' AND ${sqlId('year')} = ${currentYear} AND ${sqlId('month')} = ${currentMonth} THEN ${sqlId('lastNumber')} + 1
         ELSE 1
       END,
-      year = ${currentYear},
-      month = ${currentMonth}
-    WHERE docType = ${type}
-  `;
+      ${sqlId('year')} = ${currentYear},
+      ${sqlId('month')} = ${currentMonth}
+    WHERE ${sqlId('docType')} = ${type}
+  `);
 
-  const rows = await prismaClient.$queryRaw<ConfigRow[]>`
-    SELECT lastNumber, year, month, prefix, padding, resetPeriod
-    FROM DocNumberConfig
-    WHERE docType = ${type}
-  `;
+  // `prismaClient` is `any` (it may be a transaction client), and TS refuses type
+  // arguments on an untyped call — so the row shape is asserted instead.
+  const rows = (await prismaClient.$queryRaw(Prisma.sql`
+    SELECT ${sqlId('lastNumber')}, ${sqlId('year')}, ${sqlId('month')}, ${sqlId('prefix')}, ${sqlId('padding')}, ${sqlId('resetPeriod')}
+    FROM ${sqlId('DocNumberConfig')}
+    WHERE ${sqlId('docType')} = ${type}
+  `)) as ConfigRow[];
   const row = rows[0];
   if (!row) throw new Error(`DocNumberConfig missing after update: ${type}`);
 

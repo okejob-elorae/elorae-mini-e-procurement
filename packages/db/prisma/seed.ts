@@ -3,7 +3,7 @@
  * Uses upsert for master data; creates transactional data only when count is 0 (guard) to avoid duplicates on re-run.
  */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "../src/adapter";
 import {
   PrismaClient,
   Role,
@@ -37,7 +37,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const adapter = new PrismaMariaDb(databaseUrl);
+const adapter = createDbAdapter(databaseUrl);
 const prisma = new PrismaClient({ adapter });
 
 const now = new Date();

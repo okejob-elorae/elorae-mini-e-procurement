@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ["@prisma/client", "@prisma/adapter-mariadb", "mariadb"],
+  serverExternalPackages: ["@prisma/client", "@prisma/adapter-mariadb", "mariadb", "@prisma/adapter-pg", "pg"],
   async redirects() {
     return [
       { source: '/backoffice/reports', destination: '/backoffice/dashboard', permanent: false },

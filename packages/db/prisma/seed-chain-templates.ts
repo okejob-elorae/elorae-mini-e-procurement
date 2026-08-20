@@ -6,7 +6,7 @@
  *
  * Run: pnpm -F @elorae/db exec tsx prisma/seed-chain-templates.ts
  */
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "../src/adapter";
 import { PrismaClient } from "../generated/prisma/client";
 import { getDatabaseUrl } from "../src/db-connection";
 import { loadDbEnv } from "../src/load-env";
@@ -111,7 +111,7 @@ async function main() {
     );
     process.exit(1);
   }
-  const adapter = new PrismaMariaDb(databaseUrl);
+  const adapter = createDbAdapter(databaseUrl);
   const prisma = new PrismaClient({ adapter });
   try {
     const n = await seedChainTemplates(prisma);

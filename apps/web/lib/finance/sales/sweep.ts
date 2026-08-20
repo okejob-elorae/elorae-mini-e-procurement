@@ -1,4 +1,4 @@
-import { prisma, Prisma } from "@elorae/db";
+import { prisma, Prisma, sqlId } from "@elorae/db";
 import { parseDateOnly, formatDateOnlyJakarta } from "@/lib/date-only";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
@@ -118,21 +118,21 @@ export async function postPendingSalesJournals(
    * intended bias: an order wrongly excluded is a visible, recoverable gap, while one
    * wrongly posted into an already-reported period cannot be undone.
    */
-  const cutoverFilter = Prisma.sql`AND COALESCE(so.shippedAt, so.transactionDate) >= ${cutover}`;
+  const cutoverFilter = Prisma.sql`AND COALESCE(so.${sqlId('shippedAt')}, so.${sqlId('transactionDate')}) >= ${cutover}`;
 
   const orders = await prisma.$queryRaw<Array<{ id: string; salesorderNo: string; shippedById: string | null }>>(
     Prisma.sql`
-    SELECT so.id, so.salesorderNo, so.shippedById
-    FROM SalesOrder so
-    WHERE (so.status IN ('SHIPPED','COMPLETED') OR so.fulfillmentStatus = 'SHIPPED')
+    SELECT so.${sqlId('id')}, so.${sqlId('salesorderNo')}, so.${sqlId('shippedById')}
+    FROM ${sqlId('SalesOrder')} so
+    WHERE (so.${sqlId('status')} IN ('SHIPPED','COMPLETED') OR so.${sqlId('fulfillmentStatus')} = 'SHIPPED')
       ${cutoverFilter}
       ${idFilter}
       AND NOT (
-        EXISTS (SELECT 1 FROM Journal j  WHERE j.sourceType  = 'SALESORDER_REVENUE' AND j.sourceId  = so.id)
+        EXISTS (SELECT 1 FROM ${sqlId('Journal')} j  WHERE j.${sqlId('sourceType')}  = 'SALESORDER_REVENUE' AND j.${sqlId('sourceId')}  = so.${sqlId('id')})
         AND
-        EXISTS (SELECT 1 FROM Journal j2 WHERE j2.sourceType = 'SALESORDER_COGS'    AND j2.sourceId = so.id)
+        EXISTS (SELECT 1 FROM ${sqlId('Journal')} j2 WHERE j2.${sqlId('sourceType')} = 'SALESORDER_COGS'    AND j2.${sqlId('sourceId')} = so.${sqlId('id')})
       )
-    ORDER BY so.createdAt ASC
+    ORDER BY so.${sqlId('createdAt')} ASC
     LIMIT ${limit}
   `,
   );

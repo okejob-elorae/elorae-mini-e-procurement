@@ -1,4 +1,4 @@
-import { prisma } from '@elorae/db';
+import { prisma, Prisma, sqlId } from '@elorae/db';
 
 function getWeekStart(d: Date): Date {
   const date = new Date(d);
@@ -504,15 +504,15 @@ type RealisedDeliveryRow = {
  */
 export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
   const [realisedDeliveries, realisedVan, outstandingPutus] = await Promise.all([
-    prisma.$queryRaw<RealisedDeliveryRow[]>`
-      SELECT o.salesmanId AS salesmanId,
-             COUNT(*) AS deliveryCount,
-             SUM(d.total) AS totalAmount
-      FROM FieldSalesDelivery d
-      JOIN FieldSalesOrder o ON o.id = d.orderId
-      WHERE o.orderType = 'PUTUS'
-      GROUP BY o.salesmanId
-    `,
+    prisma.$queryRaw<RealisedDeliveryRow[]>(Prisma.sql`
+      SELECT o.${sqlId('salesmanId')} AS ${sqlId('salesmanId')},
+             COUNT(*) AS ${sqlId('deliveryCount')},
+             SUM(d.${sqlId('total')}) AS ${sqlId('totalAmount')}
+      FROM ${sqlId('FieldSalesDelivery')} d
+      JOIN ${sqlId('FieldSalesOrder')} o ON o.${sqlId('id')} = d.${sqlId('orderId')}
+      WHERE o.${sqlId('orderType')} = 'PUTUS'
+      GROUP BY o.${sqlId('salesmanId')}
+    `),
     prisma.vanSale.groupBy({
       by: ['salesmanId'],
       _count: true,
