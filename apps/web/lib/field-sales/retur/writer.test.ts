@@ -11,21 +11,23 @@ d("createFieldReturn (test bed only)", () => {
   let uomId = "";
   let itemId = "";
   let storeId = "";
+  let inactiveStoreId = "";
   let userId = "";
   let otherUserId = "";
   let visitId = "";
   let otherUsersVisitId = "";
-  let returnId = "";
+  let returnIds: string[] = [];
 
   beforeEach(async () => {
     uomId = "";
     itemId = "";
     storeId = "";
+    inactiveStoreId = "";
     userId = "";
     otherUserId = "";
     visitId = "";
     otherUsersVisitId = "";
-    returnId = "";
+    returnIds = [];
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-FR-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -39,6 +41,11 @@ d("createFieldReturn (test bed only)", () => {
       data: { code: `TEST-FR-STORE-${token}`, name: "Test Retur Store", address: "Test address", termsType: "PUTUS", isActive: true },
     });
     storeId = store.id;
+
+    const inactiveStore = await prisma.store.create({
+      data: { code: `TEST-FR-INACTIVE-${token}`, name: "Test Inactive Retur Store", address: "Test address", termsType: "PUTUS", isActive: false },
+    });
+    inactiveStoreId = inactiveStore.id;
 
     const user = await prisma.user.create({ data: { email: `test-fr-${token}@example.com`, name: "Test Retur Salesman" } });
     userId = user.id;
@@ -54,10 +61,11 @@ d("createFieldReturn (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
-    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
+    const seededReturnIds = returnIds.map((id) => seededId(id));
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: seededReturnIds } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: seededReturnIds } } });
     await prisma.storeVisit.deleteMany({ where: { id: { in: [seededId(visitId), seededId(otherUsersVisitId)] } } });
-    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(inactiveStoreId)] } } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(userId), seededId(otherUserId)] } } });
@@ -72,7 +80,7 @@ d("createFieldReturn (test bed only)", () => {
       notaPhotoR2Key: "field-returns/x/nota.jpg",
       lines: [{ itemId, variantSku: "", qty: 3, reason: "DAMAGED" }],
     });
-    returnId = res.returnId;
+    returnIds.push(res.returnId);
 
     expect(res.docNo.startsWith("RET/")).toBe(true);
     const lines = await prisma.fieldReturnLine.findMany({ where: { returnId: seededId(res.returnId) } });
@@ -81,13 +89,46 @@ d("createFieldReturn (test bed only)", () => {
     expect(lines[0].reason).toBe("DAMAGED");
   });
 
+  it("issues a strictly incrementing doc number from generateDocNumber, not a client-side stamp", async () => {
+    /*
+     * A hardcoded "RET/" + Date.now() string, or a call to generateDocNumber outside the
+     * transaction, would both still satisfy a bare startsWith("RET/") check. This asserts
+     * the real contract: two returns created back to back get distinct numbers whose
+     * numeric suffix (the last "/"-segment, per docNumber.ts's MONTHLY layout
+     * "<prefix>/<year>/<month>/<padded lastNumber>") differs by exactly one.
+     */
+    const res1 = await createFieldReturn({
+      storeId, raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+    });
+    returnIds.push(res1.returnId);
+
+    const res2 = await createFieldReturn({
+      storeId, raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+    });
+    returnIds.push(res2.returnId);
+
+    expect(res2.docNo).not.toBe(res1.docNo);
+    const suffix = (docNo: string) => {
+      const segments = docNo.split("/");
+      return Number(segments[segments.length - 1]);
+    };
+    expect(suffix(res2.docNo)).toBe(suffix(res1.docNo) + 1);
+
+    const config = await prisma.docNumberConfig.findUnique({ where: { docType: "RET" } });
+    expect(config?.lastNumber).toBe(suffix(res2.docNo));
+  });
+
   it("defaults the status to PENDING_WAREHOUSE_RECEIVING", async () => {
     const res = await createFieldReturn({
       storeId, raisedById: userId, transport: "SELF_CARRY",
       notaPhotoUrl: "u", notaPhotoR2Key: "k",
       lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
     });
-    returnId = res.returnId;
+    returnIds.push(res.returnId);
 
     const row = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(res.returnId) } });
     expect(row.status).toBe("PENDING_WAREHOUSE_RECEIVING");
@@ -119,6 +160,36 @@ d("createFieldReturn (test bed only)", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("refuses an empty lines array", async () => {
+    await expect(createFieldReturn({
+      storeId, raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [],
+    })).rejects.toMatchObject({ code: "NO_LINES" });
+    const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("refuses a store that does not exist", async () => {
+    await expect(createFieldReturn({
+      storeId: "does-not-exist",
+      raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+    })).rejects.toMatchObject({ code: "STORE_NOT_FOUND" });
+  });
+
+  it("refuses an inactive store", async () => {
+    await expect(createFieldReturn({
+      storeId: inactiveStoreId,
+      raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+    })).rejects.toMatchObject({ code: "STORE_NOT_FOUND" });
+    const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(inactiveStoreId) } });
+    expect(rows).toHaveLength(0);
+  });
+
   it("refuses a visitId belonging to another user", async () => {
     await expect(createFieldReturn({
       storeId, visitId: otherUsersVisitId, raisedById: userId, transport: "SELF_CARRY",
@@ -133,7 +204,7 @@ d("createFieldReturn (test bed only)", () => {
       notaPhotoUrl: "u", notaPhotoR2Key: "k",
       lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
     });
-    returnId = res.returnId;
+    returnIds.push(res.returnId);
 
     const row = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(res.returnId) } });
     expect(row.visitId).toBe(visitId);
@@ -145,9 +216,23 @@ d("createFieldReturn (test bed only)", () => {
       notaPhotoUrl: "u", notaPhotoR2Key: "k",
       lines: [{ itemId, variantSku: "", qty: 5, reason: "DAMAGED" }],
     });
-    returnId = res.returnId;
+    returnIds.push(res.returnId);
 
     const adj = await prisma.stockAdjustment.findMany({ where: { itemId: seededId(itemId) } });
     expect(adj).toHaveLength(0);
+  });
+
+  it("nulls stray expedition fields on a SELF_CARRY retur instead of persisting them", async () => {
+    const res = await createFieldReturn({
+      storeId, raisedById: userId, transport: "SELF_CARRY",
+      expeditionName: "JNE", resiNo: "RESI-123",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+    });
+    returnIds.push(res.returnId);
+
+    const row = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(res.returnId) } });
+    expect(row.expeditionName).toBeNull();
+    expect(row.resiNo).toBeNull();
   });
 });
