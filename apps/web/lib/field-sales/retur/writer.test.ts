@@ -71,7 +71,7 @@ d("createFieldReturn (test bed only)", () => {
     await prisma.user.deleteMany({ where: { id: { in: [seededId(userId), seededId(otherUserId)] } } });
   });
 
-  it("issues a RET/ doc number and creates the lines", async () => {
+  it("issues a FRET/ doc number and creates the lines", async () => {
     const res = await createFieldReturn({
       storeId,
       raisedById: userId,
@@ -82,7 +82,7 @@ d("createFieldReturn (test bed only)", () => {
     });
     returnIds.push(res.returnId);
 
-    expect(res.docNo.startsWith("RET/")).toBe(true);
+    expect(res.docNo.startsWith("FRET/")).toBe(true);
     const lines = await prisma.fieldReturnLine.findMany({ where: { returnId: seededId(res.returnId) } });
     expect(lines).toHaveLength(1);
     expect(lines[0].qty).toBe(3);
@@ -97,14 +97,17 @@ d("createFieldReturn (test bed only)", () => {
      * "<prefix>/<year>/<month>/<padded lastNumber>") differs by exactly one, and that
      * suffix matches the `DocNumberConfig.lastNumber` row afterwards.
      *
+     * The `docType` asserted here is FIELDRET, not RET: `RET` is the vendor-return
+     * sequence (app/actions/vendor-returns.ts), so field returns own their own counter.
+     *
      * They do NOT prove the transaction client is forwarded to `generateDocNumber` —
      * that would need a forced rollback (predict the next number, pre-seed a row to
      * collide on the unique `docNo`, assert `lastNumber` did not advance), which was
      * deliberately not written here. The regression that check would catch is a *gap*
-     * in the RET/ sequence, not wrong data on any record: `docNo` is an internal code a
+     * in the FRET/ sequence, not wrong data on any record: `docNo` is an internal code a
      * salesman writes on a sack, not a tax document where sequence gaps must be
      * explained. So this is verified by reading `writer.ts` (the transaction client is
-     * passed as `generateDocNumber("RET", tx)`) rather than by a contrived-collision test.
+     * passed as `generateDocNumber("FIELDRET", tx)`) rather than by a contrived-collision test.
      */
     const res1 = await createFieldReturn({
       storeId, raisedById: userId, transport: "SELF_CARRY",
@@ -127,7 +130,7 @@ d("createFieldReturn (test bed only)", () => {
     };
     expect(suffix(res2.docNo)).toBe(suffix(res1.docNo) + 1);
 
-    const config = await prisma.docNumberConfig.findUnique({ where: { docType: "RET" } });
+    const config = await prisma.docNumberConfig.findUnique({ where: { docType: "FIELDRET" } });
     expect(config?.lastNumber).toBe(suffix(res2.docNo));
   });
 
@@ -141,6 +144,82 @@ d("createFieldReturn (test bed only)", () => {
 
     const row = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(res.returnId) } });
     expect(row.status).toBe("PENDING_WAREHOUSE_RECEIVING");
+  });
+
+  it("refuses an itemId that does not exist and creates nothing", async () => {
+    /**
+     * There is no FOREIGN KEY (relationMode = "prisma"), so without this check the row is
+     * written verbatim and the backoffice detail page — which includes the required `item`
+     * relation — throws "Inconsistent query result" forever with no UI path to repair it.
+     */
+    await expect(createFieldReturn({
+      storeId, raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId: "does-not-exist", variantSku: "", qty: 1, reason: "UNSOLD" }],
+    })).rejects.toMatchObject({ code: "ITEM_NOT_FOUND" });
+    const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("refuses a mix of a real itemId and an unknown one, and creates nothing", async () => {
+    await expect(createFieldReturn({
+      storeId, raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [
+        { itemId, variantSku: "", qty: 1, reason: "UNSOLD" },
+        { itemId: "does-not-exist", variantSku: "", qty: 2, reason: "DAMAGED" },
+      ],
+    })).rejects.toMatchObject({ code: "ITEM_NOT_FOUND" });
+    const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("refuses a reason that is not an enum member and creates nothing", async () => {
+    await expect(createFieldReturn({
+      storeId, raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "BROKEN" as never }],
+    })).rejects.toMatchObject({ code: "BAD_LINE_SHAPE" });
+    const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("refuses an empty itemId and creates nothing", async () => {
+    await expect(createFieldReturn({
+      storeId, raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId: "  ", variantSku: "", qty: 1, reason: "UNSOLD" }],
+    })).rejects.toMatchObject({ code: "BAD_LINE_SHAPE" });
+    const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("refuses a non-string variantSku and creates nothing", async () => {
+    await expect(createFieldReturn({
+      storeId, raisedById: userId, transport: "SELF_CARRY",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: 12 as never, qty: 1, reason: "UNSOLD" }],
+    })).rejects.toMatchObject({ code: "BAD_LINE_SHAPE" });
+    const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("refuses EXPEDITION without an expedition name", async () => {
+    await expect(createFieldReturn({
+      storeId, raisedById: userId, transport: "EXPEDITION", resiNo: "RESI-123",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+    })).rejects.toMatchObject({ code: "MISSING_EXPEDITION_NAME" });
+    const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+    expect(rows).toHaveLength(0);
+  });
+
+  it("refuses EXPEDITION with a whitespace-only expedition name", async () => {
+    await expect(createFieldReturn({
+      storeId, raisedById: userId, transport: "EXPEDITION", expeditionName: "   ", resiNo: "RESI-123",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+    })).rejects.toMatchObject({ code: "MISSING_EXPEDITION_NAME" });
   });
 
   it("refuses EXPEDITION without a resi", async () => {

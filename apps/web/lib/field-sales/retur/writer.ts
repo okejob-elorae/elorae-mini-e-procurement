@@ -1,14 +1,26 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { FieldReturnError } from "./errors";
+import { FIELD_RETURN_REASONS, type FieldReturnLineInput } from "./types";
 
-type Line = {
-  itemId: string;
-  variantSku: string;
-  qty: number;
-  reason: "DAMAGED" | "UNSOLD" | "EXPIRED" | "OTHER";
-  reasonNote?: string | null;
-};
+type Line = FieldReturnLineInput;
+
+/**
+ * Line shape is validated here rather than trusted from the caller. `FieldReturnLine` has
+ * NO database foreign key (relationMode = "prisma"), so an unchecked `itemId` is written
+ * verbatim and the detail page — which includes the now-required `item` relation — throws
+ * "Inconsistent query result" forever, with no UI path to repair the row.
+ */
+function assertLineShape(l: Line): void {
+  if (typeof l?.itemId !== "string" || l.itemId.trim() === "") {
+    throw new FieldReturnError("BAD_LINE_SHAPE");
+  }
+  if (typeof l.variantSku !== "string") throw new FieldReturnError("BAD_LINE_SHAPE");
+  if (!FIELD_RETURN_REASONS.includes(l.reason)) throw new FieldReturnError("BAD_LINE_SHAPE");
+  if (l.reasonNote !== undefined && l.reasonNote !== null && typeof l.reasonNote !== "string") {
+    throw new FieldReturnError("BAD_LINE_SHAPE");
+  }
+}
 
 export async function createFieldReturn(input: {
   storeId: string;
@@ -24,13 +36,17 @@ export async function createFieldReturn(input: {
 }): Promise<{ returnId: string; docNo: string }> {
   if (input.lines.length === 0) throw new FieldReturnError("NO_LINES");
   for (const l of input.lines) {
+    assertLineShape(l);
     if (!Number.isInteger(l.qty) || l.qty <= 0) throw new FieldReturnError("BAD_QTY");
     if (l.reason === "OTHER" && (l.reasonNote ?? "").trim() === "") {
       throw new FieldReturnError("MISSING_REASON_NOTE");
     }
   }
-  if (input.transport === "EXPEDITION" && (input.resiNo ?? "").trim() === "") {
-    throw new FieldReturnError("MISSING_RESI");
+  if (input.transport === "EXPEDITION") {
+    if ((input.expeditionName ?? "").trim() === "") {
+      throw new FieldReturnError("MISSING_EXPEDITION_NAME");
+    }
+    if ((input.resiNo ?? "").trim() === "") throw new FieldReturnError("MISSING_RESI");
   }
 
   return runSerializable(async (tx) => {
@@ -48,7 +64,14 @@ export async function createFieldReturn(input: {
       if (!visit) throw new FieldReturnError("VISIT_NOT_OWNED");
     }
 
-    const docNo = await generateDocNumber("RET", tx);
+    const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
+    const foundItems = await tx.item.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true },
+    });
+    if (foundItems.length !== itemIds.length) throw new FieldReturnError("ITEM_NOT_FOUND");
+
+    const docNo = await generateDocNumber("FIELDRET", tx);
     const created = await tx.fieldReturn.create({
       data: {
         docNo,

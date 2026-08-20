@@ -4,11 +4,31 @@ import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { uploadToR2, isConfigured } from "@/lib/r2";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { FieldReturnError } from "@/lib/field-sales/retur/errors";
+import { FIELD_RETURN_REASONS, type FieldReturnLineInput } from "@/lib/field-sales/retur/types";
 
 export const dynamic = "force-dynamic";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const REASONS: ReadonlySet<string> = new Set(FIELD_RETURN_REASONS);
+
+/**
+ * Shape-checks one submitted line. The writer re-validates every one of these — this is not
+ * the guarantee — but it runs BEFORE the R2 upload, so a malformed payload 400s without
+ * leaving an orphan object behind.
+ */
+function isLinePayload(value: unknown): value is FieldReturnLineInput {
+  if (typeof value !== "object" || value === null) return false;
+  const l = value as Record<string, unknown>;
+  if (typeof l.itemId !== "string" || l.itemId.trim() === "") return false;
+  if (typeof l.variantSku !== "string") return false;
+  if (typeof l.qty !== "number" || !Number.isInteger(l.qty) || l.qty <= 0) return false;
+  if (typeof l.reason !== "string" || !REASONS.has(l.reason)) return false;
+  if (l.reasonNote !== undefined && l.reasonNote !== null && typeof l.reasonNote !== "string") {
+    return false;
+  }
+  return true;
+}
 
 /**
  * POST /pwa/api/retur
@@ -55,6 +75,13 @@ export async function POST(req: NextRequest) {
   if (!Array.isArray(lines) || lines.length === 0) {
     return NextResponse.json({ error: "lines required" }, { status: 400 });
   }
+  const linePayload: FieldReturnLineInput[] = [];
+  for (const raw of lines) {
+    if (!isLinePayload(raw)) {
+      return NextResponse.json({ code: "BAD_LINE_SHAPE" }, { status: 400 });
+    }
+    linePayload.push(raw);
+  }
 
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
   const r2Key = `field-returns/${storeId}/${crypto.randomUUID()}.${ext}`;
@@ -79,11 +106,12 @@ export async function POST(req: NextRequest) {
       notaPhotoUrl: url,
       notaPhotoR2Key: r2Key,
       note,
-      lines: lines as never,
+      lines: linePayload,
     });
     return NextResponse.json(res);
   } catch (err) {
     if (err instanceof FieldReturnError) {
+      /* Every writer refusal is a bad request except a store that is gone or inactive. */
       const status = err.code === "STORE_NOT_FOUND" ? 404 : 400;
       return NextResponse.json({ code: err.code }, { status });
     }
