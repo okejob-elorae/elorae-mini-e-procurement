@@ -10,6 +10,7 @@ import {
   Phone,
   ShoppingBag,
   Sparkles,
+  Undo2,
   User as UserIcon,
 } from "lucide-react";
 import { CheckInButton } from "./CheckInButton";
@@ -179,6 +180,12 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
             </Link>
           </Button>
         )}
+        <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
+          <Link href={`/pwa/stores/${store.id}/retur`}>
+            <Undo2 className="h-4 w-4" />
+            <span className="truncate">Retur</span>
+          </Link>
+        </Button>
       </div>
 
       {activeAtThisStore ? (
