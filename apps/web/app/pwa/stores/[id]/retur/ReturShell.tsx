@@ -94,6 +94,9 @@ function messageForFailure(status: number, body: unknown): string {
   if (status === 403) return "Tidak punya akses untuk fitur ini.";
   if (status === 503) return "Layanan unggah foto belum tersedia. Coba lagi nanti.";
   if (status === 502) return "Gagal mengunggah foto. Periksa koneksi lalu coba lagi.";
+  // A generic 5xx (e.g. a bad itemId hitting a real FK) is a server-side failure, not
+  // something retaking the photo or re-filling the form fixes — do not blame the input.
+  if (status >= 500) return "Server sedang bermasalah. Coba lagi beberapa saat lagi.";
   if (error) return "Data retur tidak valid. Ambil ulang foto lalu coba lagi.";
   return "Gagal menyimpan retur. Coba lagi.";
 }
@@ -121,13 +124,14 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<{ docNo: string } | null>(null);
 
   useEffect(() => {
     let alive = true;
     setState("loading");
-    fetch(`/pwa/api/catalog?storeId=${encodeURIComponent(storeId)}`)
+    fetch(`/pwa/api/catalog?storeId=${encodeURIComponent(storeId)}&includeInactive=1`)
       .then((r) => {
         if (!r.ok) throw new Error(String(r.status));
         return r.json() as Promise<Payload>;
@@ -308,7 +312,8 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   const canSubmit = lineArr.length > 0 && notaPhoto !== null && !hasOtherWithoutNote && expeditionValid && !submitting;
 
   async function onSubmit() {
-    if (!canSubmit || !notaPhoto) return;
+    if (submittingRef.current || !canSubmit || !notaPhoto) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -337,19 +342,33 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
 
       const res = await fetch("/pwa/api/retur", { method: "POST", body: fd });
       const body = await res.json().catch(() => null);
-      if (res.ok && body?.docNo) {
-        setResult({ docNo: body.docNo });
+      if (res.ok) {
+        if (body?.docNo) {
+          setResult({ docNo: body.docNo });
+          return;
+        }
+        // The server committed (2xx) but the body did not parse or carry a docNo — this is
+        // NOT the same as a failed create, so it must not say "coba lagi" (this endpoint has
+        // no idempotency key; inviting a resubmit here risks a duplicate retur).
+        setSubmitError("Retur kemungkinan sudah tersimpan tapi responsnya tidak lengkap. Cek daftar retur toko sebelum mengirim ulang.");
         return;
       }
       setSubmitError(messageForFailure(res.status, body));
     } catch {
-      setSubmitError("Gagal terhubung ke server. Periksa koneksi lalu coba lagi.");
+      // A dropped connection/timeout does not tell us whether the server already committed
+      // the retur and stored the photo — a 502 (upload failed, nothing written) is the only
+      // status that is genuinely safe to retry, so this message must not read the same.
+      setSubmitError("Koneksi terputus. Retur MUNGKIN sudah tersimpan — cek daftar retur toko sebelum mengirim ulang.");
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   }
 
   function resetForm() {
+    setQ("");
+    setPage(1);
+    setExpandedItemId(null);
     setLines(new Map());
     setTransport("SELF_CARRY");
     setExpeditionName("");
@@ -432,7 +451,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   }
 
   return (
-    <div className="flex flex-col gap-3 p-4 pb-24">
+    <div className="flex flex-col gap-3 p-4">
       <header className="-ml-2">
         <Button asChild variant="ghost" size="sm">
           <Link href={`/pwa/stores/${storeId}`}>
@@ -458,7 +477,11 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
           </div>
         )}
         {state === "error" && <p className="text-sm text-destructive">Gagal memuat katalog. Periksa koneksi lalu coba lagi.</p>}
-        {state === "ready" && filtered.length === 0 && <p className="text-sm text-muted-foreground">Tidak ada produk cocok.</p>}
+        {state === "ready" && filtered.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            {items.length === 0 ? "Belum ada produk di katalog toko ini." : "Tidak ada produk cocok."}
+          </p>
+        )}
 
         <div className="flex flex-col gap-2">
           {shown.map((it) => {
@@ -559,8 +582,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
           <div className="flex items-center justify-center gap-3 pt-1">
             <Button
               variant="outline"
-              size="icon"
-              className="h-8 w-8"
+              size="icon-lg"
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
               aria-label="Halaman sebelumnya"
@@ -572,8 +594,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
             </span>
             <Button
               variant="outline"
-              size="icon"
-              className="h-8 w-8"
+              size="icon-lg"
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
               aria-label="Halaman berikutnya"
@@ -618,7 +639,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
                     <Button
                       type="button"
                       variant="ghost"
-                      size="icon"
+                      size="icon-lg"
                       className="shrink-0"
                       onClick={() => removeLine(key)}
                       aria-label={`Hapus ${l.nameId}`}
@@ -735,7 +756,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
 
       {submitError && <p className="text-sm text-destructive">{submitError}</p>}
 
-      <div className="fixed inset-x-0 bottom-0 border-t bg-background p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <div className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <Button type="button" className="w-full" size="lg" onClick={() => void onSubmit()} disabled={!canSubmit}>
           {submitting ? (
             <>

@@ -165,22 +165,22 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
         </Button>
       )}
 
-      <div className="flex gap-2">
-        <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
+      <div className="grid grid-cols-2 gap-2">
+        <Button asChild variant="outline" className="min-w-0 overflow-hidden">
           <Link href={`/pwa/stores/${store.id}/catalog`}>
             <ShoppingBag className="h-4 w-4" />
             <span className="truncate">Katalog Produk</span>
           </Link>
         </Button>
         {store.termsType === "PUTUS" && (
-          <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
+          <Button asChild variant="outline" className="min-w-0 overflow-hidden">
             <Link href={`/pwa/stores/${store.id}/smart-request`}>
               <Sparkles className="h-4 w-4" />
               <span className="truncate">{tSmartRequest("cta")}</span>
             </Link>
           </Button>
         )}
-        <Button asChild variant="outline" className="min-w-0 flex-1 overflow-hidden">
+        <Button asChild variant="outline" className="min-w-0 overflow-hidden">
           <Link href={`/pwa/stores/${store.id}/retur`}>
             <Undo2 className="h-4 w-4" />
             <span className="truncate">Retur</span>
