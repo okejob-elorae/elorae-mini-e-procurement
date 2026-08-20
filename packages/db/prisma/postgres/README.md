@@ -8,6 +8,7 @@ PostgreSQL, untuk dipakai di Supabase.
 | `schema.sql` | DDL lengkap: 46 enum, 102 tabel, 296 index. Jalankan sekali di database kosong. |
 | `migrations/0_init/migration.sql` | Isi identik `schema.sql`, dibungkus sebagai baseline migration Prisma. |
 | `migrations/migration_lock.toml` | Penanda provider `postgresql` untuk Prisma Migrate. |
+| `supabase-lockdown.sql` | **Wajib dijalankan setelah `schema.sql`.** Menutup 102 tabel dari REST API Supabase. |
 | `../schema.postgres.prisma` | Skema Prisma versi PostgreSQL — sumber kebenaran dari mana `schema.sql` dibuat. |
 
 Sudah diuji: `schema.sql` dieksekusi utuh di PostgreSQL 18.4 asli, hasilnya
@@ -22,6 +23,7 @@ dipakai Supabase.
 1. Buka project Supabase → SQL Editor → New query.
 2. Paste seluruh isi `schema.sql`, Run.
 3. Cek di Table Editor: harus muncul 102 tabel di schema `public`.
+4. **Jalankan `supabase-lockdown.sql`** di query baru (lihat bagian Keamanan).
 
 **Opsi B — psql**
 
@@ -55,6 +57,39 @@ sed -i '' -e 's/onDelete: NoAction/onDelete: Restrict/g' \
 pnpm exec prisma migrate diff --from-empty \
   --to-schema prisma/schema.postgres.prisma --script -o prisma/postgres/schema.sql
 ```
+
+## Keamanan — jangan lewatkan `supabase-lockdown.sql`
+
+Supabase menerbitkan **setiap tabel di schema `public` sebagai REST API**
+(PostgREST) secara otomatis. `schema.sql` membuat 102 tabel tanpa Row Level
+Security, artinya begitu skema diterapkan, siapa pun yang memegang **anon key**
+— dan anon key memang dirancang untuk ditempel di browser, jadi anggap saja
+publik — bisa membaca dan menulis seluruh data ERP lewat HTTPS: harga, supplier,
+pesanan, jurnal keuangan, akun user.
+
+`supabase-lockdown.sql` menutup itu: menyalakan RLS di semua tabel tanpa
+membuat satu pun policy (RLS aktif tanpa policy = tolak semua), lalu mencabut
+GRANT yang Supabase berikan ke role `anon` dan `authenticated`.
+
+Diuji di PostgreSQL asli dengan role `anon`/`authenticated` tiruan Supabase:
+
+| | sebelum | sesudah |
+|---|---|---|
+| Tabel tanpa RLS | 102 | 0 |
+| Hak akses tabel untuk `anon` | 714 | 0 |
+| `anon` membaca tabel `User` | bisa | ditolak — `permission denied` |
+| Prisma (role `postgres`) tulis + baca | bisa | **tetap bisa** |
+
+Aplikasi tidak terganggu karena Elorae tidak memakai PostgREST sama sekali —
+ia connect langsung ke Postgres lewat Prisma sebagai role `postgres`, pemilik
+tabel, yang otomatis melewati RLS.
+
+> Catatan: kalau suatu saat Prisma disambungkan memakai role selain `postgres`
+> (atau tabelnya di-`FORCE ROW LEVEL SECURITY`), RLS akan ikut memblokir
+> aplikasi. Tetap pakai role `postgres` di `DATABASE_URL`.
+
+Anon key **tidak dipakai di mana pun** dalam kode ini — tidak ada `supabase-js`.
+Yang dibutuhkan aplikasi hanyalah connection string Postgres biasa.
 
 ## Perbedaan terhadap skema MySQL
 
