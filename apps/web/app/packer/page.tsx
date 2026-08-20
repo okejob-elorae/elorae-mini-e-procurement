@@ -1,10 +1,7 @@
-import { listPackingVideos } from "@/lib/packer/queries";
-import { serializePackingVideos } from "@/lib/packer/serialize";
-import { PackerListClient } from "./PackerListClient";
+import { PackerCameraKiosk } from "./PackerCameraKiosk";
 
 export const dynamic = "force-dynamic";
 
-export default async function PackerHomePage() {
-  const items = await listPackingVideos(50);
-  return <PackerListClient items={serializePackingVideos(items)} />;
+export default function PackerHomePage() {
+  return <PackerCameraKiosk />;
 }

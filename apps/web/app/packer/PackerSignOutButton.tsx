@@ -7,7 +7,7 @@ export function PackerSignOutButton() {
     <button
       type="button"
       onClick={() => signOut({ callbackUrl: "/login" })}
-      className="text-xs text-slate-500 underline-offset-2 hover:underline"
+      className="text-xs text-white/80 underline-offset-2 hover:text-white hover:underline"
     >
       Keluar
     </button>

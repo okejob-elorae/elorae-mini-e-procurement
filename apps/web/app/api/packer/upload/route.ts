@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, isConfigured } from "@/lib/r2";
+import { prisma } from "@elorae/db";
+import { getFallbackSalesOrderId } from "@/lib/packer/queries";
 import {
   upsertPackingVideo,
   PackerOrderNotFoundError,
@@ -27,8 +29,10 @@ export async function POST(req: NextRequest) {
   const perms = session.user.permissions ?? [];
   const form = await req.formData();
   const replace = String(form.get("replace") ?? "false") === "true";
-  const needed = replace ? PERMISSIONS.PACKER_EDIT : PERMISSIONS.PACKER_RECORD;
-  if (!hasPermission(perms, needed)) {
+  const canUpload =
+    hasPermission(perms, PERMISSIONS.PACKER_RECORD) ||
+    hasPermission(perms, PERMISSIONS.PACKER_EDIT);
+  if (!canUpload) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (!isConfigured()) {
@@ -36,12 +40,19 @@ export async function POST(req: NextRequest) {
   }
 
   const file = form.get("file") as File | null;
-  const salesOrderId = (form.get("salesOrderId") as string | null)?.trim();
+  let salesOrderId = (form.get("salesOrderId") as string | null)?.trim() || "";
   const durationRaw = form.get("durationSec") as string | null;
 
-  if (!file || !salesOrderId) {
+  if (!file) {
+    return NextResponse.json({ error: "file required" }, { status: 400 });
+  }
+
+  if (!salesOrderId) {
+    salesOrderId = (await getFallbackSalesOrderId()) ?? "";
+  }
+  if (!salesOrderId) {
     return NextResponse.json(
-      { error: "file and salesOrderId required" },
+      { error: "Tidak ada sales order di database untuk menampung video" },
       { status: 400 },
     );
   }
@@ -78,6 +89,10 @@ export async function POST(req: NextRequest) {
       buffer,
       file.type || "video/webm",
     );
+    const existing = await prisma.packingVideo.findUnique({
+      where: { salesOrderId },
+      select: { id: true },
+    });
     const row = await upsertPackingVideo({
       salesOrderId,
       userId: session.user.id,
@@ -89,7 +104,7 @@ export async function POST(req: NextRequest) {
         durationSec != null && Number.isFinite(durationSec)
           ? Math.round(durationSec * 100) / 100
           : null,
-      replace,
+      replace: replace || !!existing,
     });
     return NextResponse.json({
       id: row.id,

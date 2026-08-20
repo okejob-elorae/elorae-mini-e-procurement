@@ -131,6 +131,16 @@ export type PackerOrderDetail = PackerOrderOption & {
   hasPackingVideo: boolean;
 };
 
+/** Temporary: attach packing videos to any available sales order (demo: 1 row). */
+export async function getFallbackSalesOrderId(): Promise<string | null> {
+  const row = await prisma.salesOrder.findFirst({
+    where: { isCanceled: false },
+    orderBy: { transactionDate: "desc" },
+    select: { id: true },
+  });
+  return row?.id ?? null;
+}
+
 export async function getPackerOrderDetail(
   salesOrderId: string,
 ): Promise<PackerOrderDetail | null> {
