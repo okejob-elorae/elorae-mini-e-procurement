@@ -90,12 +90,21 @@ d("createFieldReturn (test bed only)", () => {
   });
 
   it("issues a strictly incrementing doc number from generateDocNumber, not a client-side stamp", async () => {
-    /*
-     * A hardcoded "RET/" + Date.now() string, or a call to generateDocNumber outside the
-     * transaction, would both still satisfy a bare startsWith("RET/") check. This asserts
-     * the real contract: two returns created back to back get distinct numbers whose
+    /**
+     * These assertions prove the doc number comes from `generateDocNumber` rather than a
+     * fabricated string: two returns created back to back get distinct numbers whose
      * numeric suffix (the last "/"-segment, per docNumber.ts's MONTHLY layout
-     * "<prefix>/<year>/<month>/<padded lastNumber>") differs by exactly one.
+     * "<prefix>/<year>/<month>/<padded lastNumber>") differs by exactly one, and that
+     * suffix matches the `DocNumberConfig.lastNumber` row afterwards.
+     *
+     * They do NOT prove the transaction client is forwarded to `generateDocNumber` —
+     * that would need a forced rollback (predict the next number, pre-seed a row to
+     * collide on the unique `docNo`, assert `lastNumber` did not advance), which was
+     * deliberately not written here. The regression that check would catch is a *gap*
+     * in the RET/ sequence, not wrong data on any record: `docNo` is an internal code a
+     * salesman writes on a sack, not a tax document where sequence gaps must be
+     * explained. So this is verified by reading `writer.ts` (the transaction client is
+     * passed as `generateDocNumber("RET", tx)`) rather than by a contrived-collision test.
      */
     const res1 = await createFieldReturn({
       storeId, raisedById: userId, transport: "SELF_CARRY",
@@ -140,6 +149,20 @@ d("createFieldReturn (test bed only)", () => {
       notaPhotoUrl: "u", notaPhotoR2Key: "k",
       lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
     })).rejects.toMatchObject({ code: "MISSING_RESI" });
+  });
+
+  it("persists expeditionName and resiNo on a valid EXPEDITION retur", async () => {
+    const res = await createFieldReturn({
+      storeId, raisedById: userId, transport: "EXPEDITION",
+      expeditionName: "JNE", resiNo: "RESI-123",
+      notaPhotoUrl: "u", notaPhotoR2Key: "k",
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+    });
+    returnIds.push(res.returnId);
+
+    const row = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(res.returnId) } });
+    expect(row.expeditionName).toBe("JNE");
+    expect(row.resiNo).toBe("RESI-123");
   });
 
   it("refuses OTHER without a reasonNote", async () => {
