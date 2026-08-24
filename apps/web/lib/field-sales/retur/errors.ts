@@ -13,7 +13,8 @@ export type FieldReturnErrorCode =
   | "UNKNOWN_LINE"
   | "MISSING_LINE"
   | "NOT_FOUND"
-  | "DUPLICATE_LINE";
+  | "DUPLICATE_LINE"
+  | "NO_VARIANCE";
 
 export class FieldReturnError extends Error {
   constructor(public code: FieldReturnErrorCode) {
