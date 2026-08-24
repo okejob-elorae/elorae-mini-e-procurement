@@ -191,9 +191,9 @@ d("approveFieldReturn (test bed only)", () => {
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
     await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.store.delete({ where: { id: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     await prisma.item.deleteMany({ where: { id: { in: itemIds } } });
-    await prisma.uOM.delete({ where: { id: seededId(uomId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(raisedById), seededId(adminId)] } } });
   });
 
@@ -238,6 +238,16 @@ d("approveFieldReturn (test bed only)", () => {
     expect(Number(after.qtyOnHand)).toBe(4);
     expect(Number(after.avgCost)).toBe(0);
     expect(Number(after.totalValue)).toBe(0);
+    /* A fresh variantless row must land at null, not "" — the shape the OR-tolerant lookup
+       (and every other writer) expects, not a phantom "" row alongside a null one. */
+    expect(after.variantSku).toBeNull();
+  });
+
+  it("stamps approvedAt and approvedById on approve", async () => {
+    await approveFieldReturn({ returnId, approvedById: adminId });
+    const row = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(returnId) } });
+    expect(row.approvedAt).not.toBeNull();
+    expect(row.approvedById).toBe(adminId);
   });
 
   it("writes a POSITIVE StockAdjustment sourced FIELD_RETURN with the real before/after qty and cost", async () => {

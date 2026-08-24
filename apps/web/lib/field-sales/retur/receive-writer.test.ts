@@ -79,10 +79,10 @@ d("receiveFieldReturn (test bed only)", () => {
 
   afterEach(async () => {
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
-    await prisma.fieldReturn.delete({ where: { id: seededId(returnId) } });
-    await prisma.store.delete({ where: { id: seededId(storeId) } });
+    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemAId), seededId(itemBId)] } } });
-    await prisma.uOM.delete({ where: { id: seededId(uomId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(raisedById), seededId(adminId)] } } });
   });
 
@@ -165,6 +165,34 @@ d("receiveFieldReturn (test bed only)", () => {
     })).rejects.toMatchObject({ code: "SPLIT_MISMATCH" });
     const a = await prisma.fieldReturnLine.findUniqueOrThrow({ where: { id: seededId(lineAId) } });
     expect(a.receivedQty).toBeNull();
+  });
+
+  it("refuses a negative receivedQty with BAD_QTY and writes nothing", async () => {
+    await expect(receiveFieldReturn({
+      returnId,
+      receivedById: adminId,
+      counts: [
+        { lineId: lineAId, receivedQty: -1, sellableQty: -1, rejectedQty: 0 },
+        { lineId: lineBId, receivedQty: 2, sellableQty: 2, rejectedQty: 0 },
+      ],
+    })).rejects.toMatchObject({ code: "BAD_QTY" });
+    const a = await prisma.fieldReturnLine.findUniqueOrThrow({ where: { id: seededId(lineAId) } });
+    expect(a.receivedQty).toBeNull();
+  });
+
+  it("refuses a fractional sellableQty with BAD_QTY and writes nothing", async () => {
+    await expect(receiveFieldReturn({
+      returnId,
+      receivedById: adminId,
+      counts: [
+        { lineId: lineAId, receivedQty: 3, sellableQty: 2.5, rejectedQty: 0.5 },
+        { lineId: lineBId, receivedQty: 2, sellableQty: 2, rejectedQty: 0 },
+      ],
+    })).rejects.toMatchObject({ code: "BAD_QTY" });
+    const a = await prisma.fieldReturnLine.findUniqueOrThrow({ where: { id: seededId(lineAId) } });
+    expect(a.receivedQty).toBeNull();
+    const b = await prisma.fieldReturnLine.findUniqueOrThrow({ where: { id: seededId(lineBId) } });
+    expect(b.receivedQty).toBeNull();
   });
 
   it("refuses a count that omits a line", async () => {

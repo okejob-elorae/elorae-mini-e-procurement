@@ -107,7 +107,10 @@ export async function approveFieldReturn(input: {
           await tx.inventoryValue.create({
             data: {
               itemId: line.itemId,
-              variantSku: line.variantSku ?? "",
+              /* Same null-for-variantless normalisation as the RejectedGoodsLedger create
+                 below — a fresh row must land in the shape the OR-tolerant lookup above (and
+                 every other writer) expects, not fork a "" row alongside a null one. */
+              variantSku: line.variantSku || null,
               qtyOnHand: newQty,
               reservedQty: 0,
               avgCost: newAvgCost,
@@ -136,9 +139,10 @@ export async function approveFieldReturn(input: {
       if (rejectedQty > 0) {
         /*
          * variantSku is normalised to null here, not "" — every existing writer of this
-         * table passes null, FieldReturnLine.variantSku defaults to "", and writing ""
-         * would fork the running balance that getAvailableRejectQtyByItem sums and the
-         * rejected-goods recap groups by.
+         * table passes null, and FieldReturnLine.variantSku defaults to "". Writing "" would
+         * not fork getAvailableRejectQtyByItem's running balance (it sums by itemId alone and
+         * ignores variantSku entirely) — but it would fork the rejected-goods recap, which
+         * groups by variantSku, into a separate "" bucket alongside the null one.
          */
         await tx.rejectedGoodsLedger.create({
           data: {
