@@ -43,7 +43,6 @@ jobs:
           fi
 
       - name: Checkout PR head
-        # Pin to v4.2.2 (not mutable @v4)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
@@ -51,12 +50,11 @@ jobs:
           persist-credentials: false
 
       - name: Run bugbit review + describe
-        # JuicyBurger/bugbit v1.4.2 — describe first, then review; labels inferred from diff
-        uses: JuicyBurger/bugbit@5ba1236
+        # JuicyBurger/bugbit v1.4.2
+        uses: JuicyBurger/bugbit@5ba1236d9138bf7517e989c183ea099638b06cdd
         with:
           cursor-api-key: ${{ secrets.CURSOR_API_KEY }}
           github-token: ${{ github.token }}
-          # Cursor SDK Auto (server-selected). Avoids pinning Claude/GPT/etc.
           model: auto
           review-modes: code-review
           auto-describe: true
