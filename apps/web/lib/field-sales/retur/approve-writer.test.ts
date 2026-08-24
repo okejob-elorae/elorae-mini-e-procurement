@@ -14,6 +14,7 @@ d("approveFieldReturn (test bed only)", () => {
   let uomId = "";
   let itemId = "";
   let shortItemId = "";
+  let noRowItemId = "";
   let storeId = "";
   let raisedById = "";
   let adminId = "";
@@ -37,10 +38,17 @@ d("approveFieldReturn (test bed only)", () => {
   /* Retur D: claimed 3 == received 3, split 1 sellable / 2 rejected. */
   let rejectedReturnId = "";
 
+  /* Retur E: claimed 2 == received 2, fully rejected — sellableQty 0. */
+  let fullyRejectedReturnId = "";
+
+  /* Retur F: claimed 4 == received 4, all sellable, for an item with NO pre-existing InventoryValue row. */
+  let noRowReturnId = "";
+
   beforeEach(async () => {
     uomId = "";
     itemId = "";
     shortItemId = "";
+    noRowItemId = "";
     storeId = "";
     raisedById = "";
     adminId = "";
@@ -48,6 +56,8 @@ d("approveFieldReturn (test bed only)", () => {
     mismatchedReturnId = "";
     shortReturnId = "";
     rejectedReturnId = "";
+    fullyRejectedReturnId = "";
+    noRowReturnId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-FRA-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -61,6 +71,13 @@ d("approveFieldReturn (test bed only)", () => {
       data: { sku: `TEST-FRA-SHORT-${token}`, nameId: "Retur approve item short", nameEn: "Retur approve item short", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 },
     });
     shortItemId = shortItem.id;
+
+    const noRowItem = await prisma.item.create({
+      data: { sku: `TEST-FRA-NOROW-${token}`, nameId: "Retur approve item no row", nameEn: "Retur approve item no row", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 },
+    });
+    noRowItemId = noRowItem.id;
+    /* Deliberately no InventoryValue row seeded for noRowItemId — this fixture pins the
+       no-row → avgCost 0 path. */
 
     /*
      * Seed the main inventory row with variantSku: null — the real shape a Jubelio-ingested
@@ -136,30 +153,60 @@ d("approveFieldReturn (test bed only)", () => {
       receivedById: adminId,
       counts: [{ lineId: lineD.id, receivedQty: 3, sellableQty: 1, rejectedQty: 2 }],
     });
+
+    /* Retur E — fully rejected, sellableQty 0. */
+    const createdE = await mkReturn({ itemId, qty: 2, reason: "DAMAGED" });
+    fullyRejectedReturnId = createdE.returnId;
+    const lineE = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(fullyRejectedReturnId) } });
+    await receiveFieldReturn({
+      returnId: fullyRejectedReturnId,
+      receivedById: adminId,
+      counts: [{ lineId: lineE.id, receivedQty: 2, sellableQty: 0, rejectedQty: 2 }],
+    });
+
+    /* Retur F — no pre-existing InventoryValue row for noRowItemId. */
+    const createdF = await mkReturn({ itemId: noRowItemId, qty: 4, reason: "UNSOLD" });
+    noRowReturnId = createdF.returnId;
+    const lineF = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(noRowReturnId) } });
+    await receiveFieldReturn({
+      returnId: noRowReturnId,
+      receivedById: adminId,
+      counts: [{ lineId: lineF.id, receivedQty: 4, sellableQty: 4, rejectedQty: 0 }],
+    });
   });
 
   afterEach(async () => {
-    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId)] } } });
-    await prisma.rejectedGoodsLedger.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId)] } } });
-    await prisma.fieldReturnResolution.deleteMany({
-      where: { line: { returnId: { in: [seededId(returnId), seededId(mismatchedReturnId), seededId(shortReturnId), seededId(rejectedReturnId)] } } },
-    });
-    await prisma.fieldReturnLine.deleteMany({
-      where: { returnId: { in: [seededId(returnId), seededId(mismatchedReturnId), seededId(shortReturnId), seededId(rejectedReturnId)] } },
-    });
-    await prisma.fieldReturn.deleteMany({
-      where: { id: { in: [seededId(returnId), seededId(mismatchedReturnId), seededId(shortReturnId), seededId(rejectedReturnId)] } },
-    });
-    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId)] } } });
+    const itemIds = [seededId(itemId), seededId(shortItemId), seededId(noRowItemId)];
+    const returnIds = [
+      seededId(returnId),
+      seededId(mismatchedReturnId),
+      seededId(shortReturnId),
+      seededId(rejectedReturnId),
+      seededId(fullyRejectedReturnId),
+      seededId(noRowReturnId),
+    ];
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
+    await prisma.rejectedGoodsLedger.deleteMany({ where: { itemId: { in: itemIds } } });
+    await prisma.fieldReturnResolution.deleteMany({ where: { line: { returnId: { in: returnIds } } } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.store.delete({ where: { id: seededId(storeId) } });
-    await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(shortItemId)] } } });
+    await prisma.item.deleteMany({ where: { id: { in: itemIds } } });
     await prisma.uOM.delete({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(raisedById), seededId(adminId)] } } });
   });
 
-  it("refuses while any line is unsettled", async () => {
+  it("refuses a retur whose status has drifted out of sync with its lines", async () => {
     await expect(approveFieldReturn({ returnId: mismatchedReturnId, approvedById: adminId }))
       .rejects.toMatchObject({ code: "UNRESOLVED_LINES" });
+  });
+
+  it("refuses a nonexistent retur with NOT_FOUND, not INVALID_STATE", async () => {
+    /* Syntactically cuid-shaped but never seeded — must not be created and then deleted. */
+    const unseededReturnId = "clnonexistentreturnid00000000";
+    await expect(approveFieldReturn({ returnId: unseededReturnId, approvedById: adminId }))
+      .rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("restores sellableQty to qtyOnHand", async () => {
@@ -169,11 +216,46 @@ d("approveFieldReturn (test bed only)", () => {
     expect(Number(after.qtyOnHand)).toBe(Number(before.qtyOnHand) + 3);
   });
 
-  it("writes a POSITIVE StockAdjustment sourced FIELD_RETURN", async () => {
+  it("does not fork a phantom variantSku row on the OR-tolerant lookup", async () => {
+    await approveFieldReturn({ returnId, approvedById: adminId });
+    const count = await prisma.inventoryValue.count({ where: { itemId: seededId(itemId) } });
+    expect(count).toBe(1);
+  });
+
+  it("restores stock at the current average cost, unchanged — never a blend", async () => {
+    const before = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    await approveFieldReturn({ returnId, approvedById: adminId });
+    const after = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(after.avgCost)).toBe(Number(before.avgCost));
+    expect(Number(after.totalValue)).toBe(Number(after.qtyOnHand) * Number(after.avgCost));
+  });
+
+  it("lands a brand-new inventory row at avgCost 0 when none existed", async () => {
+    const beforeCount = await prisma.inventoryValue.count({ where: { itemId: seededId(noRowItemId) } });
+    expect(beforeCount).toBe(0);
+    await approveFieldReturn({ returnId: noRowReturnId, approvedById: adminId });
+    const after = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(noRowItemId) } });
+    expect(Number(after.qtyOnHand)).toBe(4);
+    expect(Number(after.avgCost)).toBe(0);
+    expect(Number(after.totalValue)).toBe(0);
+  });
+
+  it("writes a POSITIVE StockAdjustment sourced FIELD_RETURN with the real before/after qty and cost", async () => {
+    const before = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
     await approveFieldReturn({ returnId, approvedById: adminId });
     const adj = await prisma.stockAdjustment.findFirstOrThrow({ where: { itemId: seededId(itemId), source: "FIELD_RETURN" } });
     expect(adj.type).toBe("POSITIVE");
     expect(Number(adj.qtyChange)).toBe(3);
+    expect(Number(adj.prevQty)).toBe(Number(before.qtyOnHand));
+    expect(Number(adj.newQty)).toBe(Number(before.qtyOnHand) + 3);
+    expect(Number(adj.prevAvgCost)).toBe(Number(before.avgCost));
+    expect(Number(adj.newAvgCost)).toBe(Number(before.avgCost));
+  });
+
+  it("writes no StockAdjustment when a line's sellableQty is zero", async () => {
+    await approveFieldReturn({ returnId: fullyRejectedReturnId, approvedById: adminId });
+    const count = await prisma.stockAdjustment.count({ where: { itemId: seededId(itemId), source: "FIELD_RETURN" } });
+    expect(count).toBe(0);
   });
 
   it("restores the RECEIVED quantity, not the claimed one", async () => {
@@ -197,6 +279,12 @@ d("approveFieldReturn (test bed only)", () => {
     const after = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
     /* received 3 = 1 sellable + 2 rejected; only the 1 lands in stock */
     expect(Number(after.qtyOnHand)).toBe(Number(before.qtyOnHand) + 1);
+  });
+
+  it("writes no RejectedGoodsLedger row when a line's rejectedQty is zero", async () => {
+    await approveFieldReturn({ returnId, approvedById: adminId });
+    const count = await prisma.rejectedGoodsLedger.count({ where: { itemId: seededId(itemId) } });
+    expect(count).toBe(0);
   });
 
   it("refuses a second approve", async () => {

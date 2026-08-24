@@ -1,7 +1,7 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { FieldReturnError } from "./errors";
-import { lineVariance, isSettled } from "./variance";
+import { allDiscrepantLinesSettled } from "./variance";
 
 /**
  * The point where goods a store sent back physically re-enter sellable stock. Runs inside
@@ -44,23 +44,19 @@ export async function approveFieldReturn(input: {
 
     /*
      * Every line whose claimed qty differs from what was actually received must carry a
-     * SETTLING resolution as its latest one. This matches resolveFieldReturnLine's own
-     * definition of "settled" exactly (same lineVariance + isSettled helpers, same
-     * latest-resolution-wins rule) — two definitions of the same thing that could drift is
-     * how this class of bug ships. In the normal flow the retur's own status already tracks
-     * this (receiveFieldReturn and resolveFieldReturnLine keep it in sync on every write), so
-     * this check is defense-in-depth against a status that has drifted out of sync with its
-     * lines rather than something the UI can normally trigger.
+     * SETTLING resolution as its latest one — shared allDiscrepantLinesSettled, the exact
+     * same rule resolveFieldReturnLine itself recomputes on every write. In the normal flow
+     * the retur's own status already tracks this, so this check is defense-in-depth against
+     * a status that has drifted out of sync with its lines rather than something the UI can
+     * normally trigger.
      */
-    const allSettled = ret.lines.every((line) => {
-      if (lineVariance(line.qty, line.receivedQty) === 0) return true;
-      return isSettled(line.resolutions[0]?.type ?? null);
-    });
-    if (!allSettled) throw new FieldReturnError("UNRESOLVED_LINES");
+    if (!allDiscrepantLinesSettled(ret.lines)) throw new FieldReturnError("UNRESOLVED_LINES");
 
-    // receivedAt is stamped by receiveFieldReturn in the same transaction that moves the
-    // retur out of PENDING_WAREHOUSE_RECEIVING, so it is guaranteed non-null by the time the
-    // retur can reach PENDING_APPROVAL. The fallback only guards the nullable column type.
+    /*
+     * receivedAt is stamped by receiveFieldReturn in the same transaction that moves the
+     * retur out of PENDING_WAREHOUSE_RECEIVING, so it is guaranteed non-null by the time the
+     * retur can reach PENDING_APPROVAL. The fallback only guards the nullable column type.
+     */
     const receivedAt = ret.receivedAt ?? new Date();
 
     for (const line of ret.lines) {
@@ -68,9 +64,11 @@ export async function approveFieldReturn(input: {
       const rejectedQty = line.rejectedQty ?? 0;
 
       if (sellableQty > 0) {
-        // Variantless main rows use variantSku: null, not "" — a strict ""-keyed lookup
-        // misses the real row and forks a phantom one. Same OR-tolerant lookup as
-        // reconcile-writer.ts / loadVan.
+        /*
+         * Variantless main rows use variantSku: null, not "" — a strict ""-keyed lookup
+         * misses the real row and forks a phantom one. Same OR-tolerant lookup as
+         * reconcile-writer.ts / loadVan.
+         */
         const isVariantless = (line.variantSku ?? "") === "";
         const main = isVariantless
           ? await tx.inventoryValue.findFirst({

@@ -1,6 +1,6 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { FieldReturnError } from "./errors";
-import { lineVariance, isSettled } from "./variance";
+import { lineVariance, allDiscrepantLinesSettled } from "./variance";
 
 type ResolutionType = "SALESMAN_BEARS" | "INVESTIGATE" | "WRITE_OFF" | "ACCEPT_SURPLUS";
 
@@ -59,12 +59,7 @@ export async function resolveFieldReturnLine(input: {
       },
     });
 
-    const allDiscrepantLinesSettled = siblingLines.every((l) => {
-      if (lineVariance(l.qty, l.receivedQty) === 0) return true;
-      return isSettled(l.resolutions[0]?.type ?? null);
-    });
-
-    const returnStatus = allDiscrepantLinesSettled ? "PENDING_APPROVAL" : "MISMATCH_PENDING_RESOLUTION";
+    const returnStatus = allDiscrepantLinesSettled(siblingLines) ? "PENDING_APPROVAL" : "MISMATCH_PENDING_RESOLUTION";
     await tx.fieldReturn.update({
       where: { id: line.returnId },
       data: { status: returnStatus },

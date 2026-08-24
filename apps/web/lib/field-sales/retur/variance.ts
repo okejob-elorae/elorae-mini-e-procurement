@@ -25,3 +25,18 @@ export function lineVariance(claimedQty: number, receivedQty: number | null): nu
 export function isSettled(type: string | null): boolean {
   return type !== null && SETTLING.has(type);
 }
+
+/**
+ * "Every discrepant line is settled" in one place, shared by resolveFieldReturnLine (recomputes
+ * the retur's status after every append) and approveFieldReturn (refuses approval unless this
+ * already holds). Two copies of this rule agreeing today is exactly the shape that drifts
+ * later — one definition, used by both.
+ */
+export function allDiscrepantLinesSettled(
+  lines: { qty: number; receivedQty: number | null; resolutions: { type: string | null }[] }[]
+): boolean {
+  return lines.every((l) => {
+    if (lineVariance(l.qty, l.receivedQty) === 0) return true;
+    return isSettled(l.resolutions[0]?.type ?? null);
+  });
+}
