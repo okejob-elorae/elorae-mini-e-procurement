@@ -542,7 +542,17 @@ enum TaxInvoiceStatus {
 
 enum FieldReturnStatus {
   PENDING_WAREHOUSE_RECEIVING
+  MISMATCH_PENDING_RESOLUTION
+  PENDING_APPROVAL
+  APPROVED
   CANCELLED
+}
+
+enum FieldReturnResolutionType {
+  SALESMAN_BEARS
+  INVESTIGATE
+  WRITE_OFF
+  ACCEPT_SURPLUS
 }
 
 enum FieldReturnReason {
@@ -571,6 +581,10 @@ model FieldReturn {
   notaPhotoR2Key String
   note           String?              @db.Text
   createdAt      DateTime             @default(now())
+  receivedAt     DateTime?
+  receivedById   String?
+  approvedAt     DateTime?
+  approvedById   String?
   store          Store                @relation(fields: [storeId], references: [id])
   visit          StoreVisit?          @relation(fields: [visitId], references: [id])
   lines          FieldReturnLine[]
@@ -580,18 +594,35 @@ model FieldReturn {
 }
 
 model FieldReturnLine {
-  id         String            @id @default(cuid())
-  returnId   String
-  itemId     String
-  variantSku String            @default("")
-  qty        Int
-  reason     FieldReturnReason
-  reasonNote String?
-  returnDoc  FieldReturn       @relation(fields: [returnId], references: [id])
-  item       Item              @relation(fields: [itemId], references: [id])
+  id          String                  @id @default(cuid())
+  returnId    String
+  itemId      String
+  variantSku  String                  @default("")
+  qty         Int
+  reason      FieldReturnReason
+  reasonNote  String?
+  receivedQty Int?
+  sellableQty Int?
+  rejectedQty Int?
+  returnDoc   FieldReturn             @relation(fields: [returnId], references: [id])
+  item        Item                    @relation(fields: [itemId], references: [id])
+  resolutions FieldReturnResolution[]
 
   @@index([returnId])
   @@index([itemId])
+}
+
+model FieldReturnResolution {
+  id          String                    @id @default(cuid())
+  lineId      String
+  type        FieldReturnResolutionType
+  qty         Int
+  note        String?                   @db.Text
+  createdById String
+  createdAt   DateTime                  @default(now())
+  line        FieldReturnLine           @relation(fields: [lineId], references: [id])
+
+  @@index([lineId])
 }
 
 enum ReserveSource {
