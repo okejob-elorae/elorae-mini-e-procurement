@@ -51,7 +51,7 @@ jobs:
 
       - name: Run bugbit review + describe
         # JuicyBurger/bugbit v1.4.2
-        uses: JuicyBurger/bugbit@5ba1236d9138bf7517e989c183ea099638b06cdd
+        uses: JuicyBurger/bugbit@c26a85aa3c4ecf2d0b34356507ebeec14e5980d1
         with:
           cursor-api-key: ${{ secrets.CURSOR_API_KEY }}
           github-token: ${{ github.token }}
