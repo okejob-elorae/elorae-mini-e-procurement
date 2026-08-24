@@ -1,28 +1,8 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { FieldReturnError } from "./errors";
+import { lineVariance, isSettled } from "./variance";
 
 type ResolutionType = "SALESMAN_BEARS" | "INVESTIGATE" | "WRITE_OFF" | "ACCEPT_SURPLUS";
-
-const SETTLING = new Set(["SALESMAN_BEARS", "WRITE_OFF", "ACCEPT_SURPLUS"]);
-
-/**
- * Liability is recorded in units, never money — a resolution says who bears the piece count
- * discrepancy, not what it is worth.
- */
-export function lineVariance(claimedQty: number, receivedQty: number | null): number {
-  if (receivedQty === null) return 0;
-  return receivedQty - claimedQty;
-}
-
-/**
- * INVESTIGATE is deliberately NOT settling. The card lists it as one of three resolution
- * options, but its own wording is "hold for re-check with store" — it records that someone is
- * going to look, and settles nothing. A line on that path keeps the retur in
- * MISMATCH_PENDING_RESOLUTION indefinitely, by design.
- */
-export function isSettled(type: string | null): boolean {
-  return type !== null && SETTLING.has(type);
-}
 
 /**
  * Resolutions are append-only (decision D5): a resolution stays correctable by appending a new
