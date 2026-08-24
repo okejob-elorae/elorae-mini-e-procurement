@@ -29,6 +29,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   const [blobUrls, setBlobUrls] = useState<Record<string, string>>({});
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const openingCamRef = useRef(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
@@ -77,6 +78,11 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
 
   async function openCam() {
     if (atCap) return;
+    // getUserMedia is awaited with the trigger still enabled, so a double tap would start a
+    // SECOND stream and overwrite streamRef — teardown then stops only the second and the
+    // first keeps the camera indicator lit until the tab closes. Guard synchronously.
+    if (openingCamRef.current || streamRef.current) return;
+    openingCamRef.current = true;
     setCamError(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -85,6 +91,8 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
     } catch {
       setCamError(true);
       fileRef.current?.click(); // fallback to the native camera / file picker
+    } finally {
+      openingCamRef.current = false;
     }
   }
 
