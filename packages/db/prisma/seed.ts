@@ -207,6 +207,9 @@ async function main() {
     // Pack Ratio (global putus pack rules)
     { code: 'settings_pack_ratio:view', module: 'settings_pack_ratio', action: 'view', description: 'View global pack ratio' },
     { code: 'settings_pack_ratio:manage', module: 'settings_pack_ratio', action: 'manage', description: 'Manage global pack ratio' },
+    // Field Returns
+    { code: 'field_returns:manage', module: 'field_returns', action: 'manage', description: 'Receive field returns, resolve discrepancies and approve them' },
+    { code: 'field_returns:writeoff', module: 'field_returns', action: 'writeoff', description: 'Absorb a field retur shortage as a company loss' },
   ];
 
   // Upsert all permissions

@@ -292,4 +292,7 @@ export const PERMISSIONS = {
   // Lead Time
   LEAD_TIME_VIEW: "lead_time:view",
   LEAD_TIME_MANAGE: "lead_time:manage",
+  // Field Returns
+  FIELD_RETURNS_MANAGE: "field_returns:manage",
+  FIELD_RETURNS_WRITEOFF: "field_returns:writeoff",
 } as const;

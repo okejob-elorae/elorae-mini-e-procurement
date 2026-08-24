@@ -1,0 +1,61 @@
+import { runSerializable } from "@/lib/db/tx-retry";
+import { FieldReturnError } from "./errors";
+
+type ReceiveCount = { lineId: string; receivedQty: number; sellableQty: number; rejectedQty: number };
+
+/**
+ * Shape and split validation run before the transaction — they need no read, and running
+ * them inside the transaction would only hold a serializable lock for work that never
+ * touches the database.
+ */
+function assertCountShape(c: ReceiveCount): void {
+  for (const n of [c.receivedQty, c.sellableQty, c.rejectedQty]) {
+    /* Zero is a valid count on every field, including all-zero — the lost-sack case. */
+    if (!Number.isInteger(n) || n < 0) throw new FieldReturnError("BAD_QTY");
+  }
+  if (c.sellableQty + c.rejectedQty !== c.receivedQty) throw new FieldReturnError("SPLIT_MISMATCH");
+}
+
+export async function receiveFieldReturn(input: {
+  returnId: string;
+  receivedById: string;
+  counts: ReceiveCount[];
+}): Promise<{ ok: true; status: "PENDING_APPROVAL" | "MISMATCH_PENDING_RESOLUTION" }> {
+  for (const c of input.counts) assertCountShape(c);
+
+  return runSerializable(async (tx) => {
+    const ret = await tx.fieldReturn.findUnique({
+      where: { id: input.returnId },
+      select: { id: true, status: true, lines: { select: { id: true, qty: true } } },
+    });
+    if (!ret) throw new FieldReturnError("NOT_FOUND");
+    if (ret.status !== "PENDING_WAREHOUSE_RECEIVING") throw new FieldReturnError("INVALID_STATE");
+
+    const byLineId = new Map(input.counts.map((c) => [c.lineId, c]));
+    if (byLineId.size !== input.counts.length) throw new FieldReturnError("DUPLICATE_LINE");
+    for (const lineId of byLineId.keys()) {
+      if (!ret.lines.some((l) => l.id === lineId)) throw new FieldReturnError("UNKNOWN_LINE");
+    }
+    for (const l of ret.lines) {
+      if (!byLineId.has(l.id)) throw new FieldReturnError("MISSING_LINE");
+    }
+
+    let anyVariance = false;
+    for (const l of ret.lines) {
+      const c = byLineId.get(l.id)!;
+      if (c.receivedQty !== l.qty) anyVariance = true;
+      await tx.fieldReturnLine.update({
+        where: { id: l.id },
+        data: { receivedQty: c.receivedQty, sellableQty: c.sellableQty, rejectedQty: c.rejectedQty },
+      });
+    }
+
+    const status = anyVariance ? "MISMATCH_PENDING_RESOLUTION" : "PENDING_APPROVAL";
+    await tx.fieldReturn.update({
+      where: { id: ret.id },
+      data: { status, receivedAt: new Date(), receivedById: input.receivedById },
+    });
+
+    return { ok: true as const, status };
+  });
+}
