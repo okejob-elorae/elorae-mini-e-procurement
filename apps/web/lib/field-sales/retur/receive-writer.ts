@@ -6,10 +6,7 @@ type ReceiveCount = { lineId: string; receivedQty: number; sellableQty: number; 
 /**
  * Shape and split validation run before the transaction — they need no read, and running
  * them inside the transaction would only hold a serializable lock for work that never
- * touches the database. There is no dedicated NOT_FOUND code (this task only widens the
- * union by the four codes the interface names), so a missing return is reported as
- * INVALID_STATE below: a document that doesn't exist cannot be in
- * PENDING_WAREHOUSE_RECEIVING either.
+ * touches the database.
  */
 function assertCountShape(c: ReceiveCount): void {
   for (const n of [c.receivedQty, c.sellableQty, c.rejectedQty]) {
@@ -31,12 +28,11 @@ export async function receiveFieldReturn(input: {
       where: { id: input.returnId },
       select: { id: true, status: true, lines: { select: { id: true, qty: true } } },
     });
-    if (!ret || ret.status !== "PENDING_WAREHOUSE_RECEIVING") {
-      throw new FieldReturnError("INVALID_STATE");
-    }
+    if (!ret) throw new FieldReturnError("NOT_FOUND");
+    if (ret.status !== "PENDING_WAREHOUSE_RECEIVING") throw new FieldReturnError("INVALID_STATE");
 
     const byLineId = new Map(input.counts.map((c) => [c.lineId, c]));
-    if (byLineId.size !== input.counts.length) throw new FieldReturnError("UNKNOWN_LINE");
+    if (byLineId.size !== input.counts.length) throw new FieldReturnError("DUPLICATE_LINE");
     for (const lineId of byLineId.keys()) {
       if (!ret.lines.some((l) => l.id === lineId)) throw new FieldReturnError("UNKNOWN_LINE");
     }

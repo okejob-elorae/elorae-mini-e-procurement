@@ -187,6 +187,27 @@ d("receiveFieldReturn (test bed only)", () => {
     })).rejects.toMatchObject({ code: "UNKNOWN_LINE" });
   });
 
+  it("refuses a returnId that does not exist", async () => {
+    /* Syntactically cuid-shaped but never seeded — must not be created and then deleted. */
+    const unseededReturnId = "clnonexistentreturnid00000000";
+    await expect(receiveFieldReturn({
+      returnId: unseededReturnId,
+      receivedById: adminId,
+      counts: cleanCounts(),
+    })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("refuses a count with the same lineId twice", async () => {
+    await expect(receiveFieldReturn({
+      returnId,
+      receivedById: adminId,
+      counts: [
+        { lineId: lineAId, receivedQty: 3, sellableQty: 3, rejectedQty: 0 },
+        { lineId: lineAId, receivedQty: 3, sellableQty: 3, rejectedQty: 0 },
+      ],
+    })).rejects.toMatchObject({ code: "DUPLICATE_LINE" });
+  });
+
   it("refuses receiving twice", async () => {
     await receiveFieldReturn({ returnId, receivedById: adminId, counts: cleanCounts() });
     await expect(receiveFieldReturn({ returnId, receivedById: adminId, counts: cleanCounts() }))

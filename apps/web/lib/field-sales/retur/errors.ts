@@ -11,7 +11,9 @@ export type FieldReturnErrorCode =
   | "INVALID_STATE"
   | "SPLIT_MISMATCH"
   | "UNKNOWN_LINE"
-  | "MISSING_LINE";
+  | "MISSING_LINE"
+  | "NOT_FOUND"
+  | "DUPLICATE_LINE";
 
 export class FieldReturnError extends Error {
   constructor(public code: FieldReturnErrorCode) {
