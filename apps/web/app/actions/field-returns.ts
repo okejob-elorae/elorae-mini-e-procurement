@@ -22,6 +22,7 @@ export type FieldReturnActionResult =
         | "MISSING_LINE"
         | "DUPLICATE_LINE"
         | "NO_VARIANCE"
+        | "RESOLUTION_DIRECTION_MISMATCH"
         | "UNRESOLVED_LINES"
         | "INVALID_REQUEST"
         | "ERROR";
@@ -58,6 +59,7 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
   NOT_FOUND: "NOT_FOUND",
   DUPLICATE_LINE: "DUPLICATE_LINE",
   NO_VARIANCE: "NO_VARIANCE",
+  RESOLUTION_DIRECTION_MISMATCH: "RESOLUTION_DIRECTION_MISMATCH",
   UNRESOLVED_LINES: "UNRESOLVED_LINES",
 };
 
@@ -80,6 +82,11 @@ async function guard(): Promise<{ userId: string; permissions: string[] } | { ok
   return { userId: session.user.id, permissions };
 }
 
+/** Request-shape guard: a non-negative integer, matching the writer's own BAD_QTY backstop. */
+function isNonNegativeInt(n: unknown): n is number {
+  return typeof n === "number" && Number.isInteger(n) && n >= 0;
+}
+
 function isValidReceiveInput(
   input: unknown
 ): input is { returnId: string; counts: ReceiveCount[] } {
@@ -93,9 +100,9 @@ function isValidReceiveInput(
     return (
       typeof cc.lineId === "string" &&
       cc.lineId !== "" &&
-      typeof cc.receivedQty === "number" &&
-      typeof cc.sellableQty === "number" &&
-      typeof cc.rejectedQty === "number"
+      isNonNegativeInt(cc.receivedQty) &&
+      isNonNegativeInt(cc.sellableQty) &&
+      isNonNegativeInt(cc.rejectedQty)
     );
   });
 }

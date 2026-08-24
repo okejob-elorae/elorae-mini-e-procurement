@@ -50,6 +50,26 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(mockReceive).not.toHaveBeenCalled();
     });
 
+    /*
+     * The FORBIDDEN/allow cases above mock hasPermission to return false/true for ANY code, so
+     * they would stay green even if guard() checked a different permission entirely (e.g.
+     * accidentally "stores:view"). Pin the actual code being asked for.
+     */
+    it("checks specifically for field_returns:manage, not some other code", async () => {
+      mockHasPermission.mockImplementation((_permissions: unknown, code: string) => code === "field_returns:manage");
+      mockReceive.mockResolvedValue({ ok: true, status: "PENDING_APPROVAL" });
+      const res = await receiveAction({ returnId: "r1", counts: [] });
+      expect(res).toEqual({ ok: true });
+      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "field_returns:manage");
+    });
+
+    it("returns FORBIDDEN when auth() resolves to a session with no user id", async () => {
+      mockAuth.mockResolvedValue({ user: null });
+      const res = await receiveAction({ returnId: "r1", counts: [] });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockReceive).not.toHaveBeenCalled();
+    });
+
     it("returns INVALID_REQUEST for a non-string returnId without calling the writer", async () => {
       mockHasPermission.mockReturnValue(true);
       const res = await receiveAction({ returnId: 1 as unknown as string, counts: [] });
@@ -67,6 +87,32 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
           sellableQty: number;
           rejectedQty: number;
         }],
+      });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockReceive).not.toHaveBeenCalled();
+    });
+
+    /*
+     * isValidReceiveInput only checked `typeof === "number"`, so a negative or fractional
+     * count reached the writer and depended entirely on its own BAD_QTY backstop. Pin the
+     * action-layer guard directly so the request-shape error surfaces as INVALID_REQUEST from
+     * the layer that owns request shape, with the writer's own check as a second net.
+     */
+    it("returns INVALID_REQUEST for a negative receivedQty without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await receiveAction({
+        returnId: "r1",
+        counts: [{ lineId: "l1", receivedQty: -1, sellableQty: -1, rejectedQty: 0 }],
+      });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockReceive).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for a fractional sellableQty without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await receiveAction({
+        returnId: "r1",
+        counts: [{ lineId: "l1", receivedQty: 3, sellableQty: 2.5, rejectedQty: 0.5 }],
       });
       expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
       expect(mockReceive).not.toHaveBeenCalled();
@@ -176,6 +222,21 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(mockResolve).not.toHaveBeenCalled();
     });
 
+    it("checks specifically for field_returns:manage in the base guard, not some other code", async () => {
+      mockHasPermission.mockImplementation((_permissions: unknown, code: string) => code === "field_returns:manage");
+      mockResolve.mockResolvedValue({ ok: true, returnId: "r1", returnStatus: "PENDING_APPROVAL" });
+      const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: true });
+      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "field_returns:manage");
+    });
+
+    it("returns FORBIDDEN when auth() resolves to a session with no user id", async () => {
+      mockAuth.mockResolvedValue({ user: null });
+      const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
     it("refuses WRITE_OFF without field_returns:writeoff, naming that specifically", async () => {
       mockHasPermission.mockImplementation((_p, code) => code !== "field_returns:writeoff");
       const res = await resolveAction({ lineId: "l1", type: "WRITE_OFF" });
@@ -244,6 +305,13 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(res).toEqual({ ok: false, code: "NO_VARIANCE" });
     });
 
+    it("maps a writer RESOLUTION_DIRECTION_MISMATCH onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolve.mockRejectedValue(new FieldReturnError("RESOLUTION_DIRECTION_MISMATCH"));
+      const res = await resolveAction({ lineId: "l1", type: "ACCEPT_SURPLUS" });
+      expect(res).toEqual({ ok: false, code: "RESOLUTION_DIRECTION_MISMATCH" });
+    });
+
     it("maps a writer NOT_FOUND onto its own code", async () => {
       mockHasPermission.mockReturnValue(true);
       mockResolve.mockRejectedValue(new FieldReturnError("NOT_FOUND"));
@@ -291,6 +359,21 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
   describe("approveAction", () => {
     it("returns FORBIDDEN without field_returns:manage and never calls the writer", async () => {
       mockHasPermission.mockReturnValue(false);
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockApprove).not.toHaveBeenCalled();
+    });
+
+    it("checks specifically for field_returns:manage, not some other code", async () => {
+      mockHasPermission.mockImplementation((_permissions: unknown, code: string) => code === "field_returns:manage");
+      mockApprove.mockResolvedValue({ ok: true });
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: true });
+      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "field_returns:manage");
+    });
+
+    it("returns FORBIDDEN when auth() resolves to a session with no user id", async () => {
+      mockAuth.mockResolvedValue({ user: null });
       const res = await approveAction("r1");
       expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
       expect(mockApprove).not.toHaveBeenCalled();
