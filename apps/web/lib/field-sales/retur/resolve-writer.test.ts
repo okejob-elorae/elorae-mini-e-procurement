@@ -120,6 +120,12 @@ d("resolveFieldReturnLine (test bed only)", () => {
   it("SALESMAN_BEARS settles the line and moves the retur to PENDING_APPROVAL", async () => {
     const res = await resolveFieldReturnLine({ lineId: shortLineId, type: "SALESMAN_BEARS", createdById: adminId });
     expect(res.returnStatus).toBe("PENDING_APPROVAL");
+    /*
+     * The action layer revalidates the retur's own detail route off this returnId (it has no
+     * other way to reach it — the input is a bare lineId), so it must be the real parent, not
+     * an echo of the line or a derived value.
+     */
+    expect(res.returnId).toBe(returnId);
   });
 
   it("INVESTIGATE does NOT settle — the retur stays in mismatch", async () => {

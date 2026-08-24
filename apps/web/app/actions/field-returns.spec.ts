@@ -5,13 +5,16 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * dev database. Each writer already has its own DB-backed spec — this file exists to pin the
  * permission gate + error-code mapping the actions add on top of them.
  */
-const { mockAuth, mockHasPermission, mockReceive, mockResolve, mockApprove } = vi.hoisted(() => ({
-  mockAuth: vi.fn(),
-  mockHasPermission: vi.fn(),
-  mockReceive: vi.fn(),
-  mockResolve: vi.fn(),
-  mockApprove: vi.fn(),
-}));
+const { mockAuth, mockHasPermission, mockReceive, mockResolve, mockApprove, mockRevalidatePath } = vi.hoisted(
+  () => ({
+    mockAuth: vi.fn(),
+    mockHasPermission: vi.fn(),
+    mockReceive: vi.fn(),
+    mockResolve: vi.fn(),
+    mockApprove: vi.fn(),
+    mockRevalidatePath: vi.fn(),
+  })
+);
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@/lib/rbac", async (importActual) => {
@@ -21,7 +24,7 @@ vi.mock("@/lib/rbac", async (importActual) => {
 vi.mock("@/lib/field-sales/retur/receive-writer", () => ({ receiveFieldReturn: mockReceive }));
 vi.mock("@/lib/field-sales/retur/resolve-writer", () => ({ resolveFieldReturnLine: mockResolve }));
 vi.mock("@/lib/field-sales/retur/approve-writer", () => ({ approveFieldReturn: mockApprove }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
 
 import { FieldReturnError } from "@/lib/field-sales/retur/errors";
 import { receiveAction, resolveAction, approveAction } from "./field-returns";
@@ -33,6 +36,7 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     mockReceive.mockReset();
     mockResolve.mockReset();
     mockApprove.mockReset();
+    mockRevalidatePath.mockReset();
     mockAuth.mockResolvedValue({
       user: { id: "user-1", permissions: ["field_returns:manage", "field_returns:writeoff"] },
     });
@@ -139,13 +143,28 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(res).toEqual({ ok: false, code: "ERROR" });
     });
 
-    it("calls the writer with the current user id and succeeds", async () => {
+    /*
+     * guard() calls auth() unwrapped in the family of "unknown throw" cases above too, but
+     * every one of them rejects the WRITER mock — none of them exercise auth() itself throwing.
+     * This pins the other call site: a corrupted session cookie or a DB hiccup during the
+     * session lookup must not escape the action as an uncaught rejection.
+     */
+    it("maps auth() itself throwing onto ERROR rather than letting it escape uncaught", async () => {
+      mockAuth.mockRejectedValue(new Error("jwt decrypt failed"));
+      const res = await receiveAction({ returnId: "r1", counts: [] });
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+      expect(mockReceive).not.toHaveBeenCalled();
+    });
+
+    it("calls the writer with the current user id, succeeds, and revalidates the list and detail routes", async () => {
       mockHasPermission.mockReturnValue(true);
       mockReceive.mockResolvedValue({ ok: true, status: "PENDING_APPROVAL" });
       const counts = [{ lineId: "l1", receivedQty: 3, sellableQty: 3, rejectedQty: 0 }];
       const res = await receiveAction({ returnId: "r1", counts });
       expect(res).toEqual({ ok: true });
       expect(mockReceive).toHaveBeenCalledWith({ returnId: "r1", receivedById: "user-1", counts });
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/r1");
     });
   });
 
@@ -166,14 +185,34 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
 
     it("allows a non-writeoff resolution with only field_returns:manage", async () => {
       mockHasPermission.mockImplementation((_p, code) => code !== "field_returns:writeoff");
-      mockResolve.mockResolvedValue({ ok: true, returnStatus: "PENDING_APPROVAL" });
+      mockResolve.mockResolvedValue({ ok: true, returnId: "r1", returnStatus: "PENDING_APPROVAL" });
       const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: true });
+    });
+
+    /*
+     * The write-off gate is one data comparison (`type === "WRITE_OFF"`), not a per-type
+     * branch — SALESMAN_BEARS alone proved that comparison exists, but not that it stays a
+     * single comparison rather than drifting into a per-type allowlist that happens to miss
+     * one of these two.
+     */
+    it("allows INVESTIGATE without field_returns:writeoff", async () => {
+      mockHasPermission.mockImplementation((_p, code) => code !== "field_returns:writeoff");
+      mockResolve.mockResolvedValue({ ok: true, returnId: "r1", returnStatus: "MISMATCH_PENDING_RESOLUTION" });
+      const res = await resolveAction({ lineId: "l1", type: "INVESTIGATE" });
+      expect(res).toEqual({ ok: true });
+    });
+
+    it("allows ACCEPT_SURPLUS without field_returns:writeoff", async () => {
+      mockHasPermission.mockImplementation((_p, code) => code !== "field_returns:writeoff");
+      mockResolve.mockResolvedValue({ ok: true, returnId: "r1", returnStatus: "PENDING_APPROVAL" });
+      const res = await resolveAction({ lineId: "l1", type: "ACCEPT_SURPLUS" });
       expect(res).toEqual({ ok: true });
     });
 
     it("allows WRITE_OFF when the user holds field_returns:writeoff", async () => {
       mockHasPermission.mockReturnValue(true);
-      mockResolve.mockResolvedValue({ ok: true, returnStatus: "PENDING_APPROVAL" });
+      mockResolve.mockResolvedValue({ ok: true, returnId: "r1", returnStatus: "PENDING_APPROVAL" });
       const res = await resolveAction({ lineId: "l1", type: "WRITE_OFF", note: "unsellable" });
       expect(res).toEqual({ ok: true });
       expect(mockResolve).toHaveBeenCalledWith({
@@ -225,6 +264,28 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
       expect(res).toEqual({ ok: false, code: "ERROR" });
     });
+
+    it("maps auth() itself throwing onto ERROR rather than letting it escape uncaught", async () => {
+      mockAuth.mockRejectedValue(new Error("jwt decrypt failed"));
+      const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    /*
+     * The operator resolving a line is standing on that retur's DETAIL page — the writer's
+     * returnId (not anything derived from the lineId or guessed client-side) is what the
+     * detail route revalidation must use. A distinct id here proves the action reads it from
+     * the writer's result rather than the input.
+     */
+    it("revalidates the retur's own detail route using the writer's returned returnId, not the list alone", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolve.mockResolvedValue({ ok: true, returnId: "distinct-return-id", returnStatus: "PENDING_APPROVAL" });
+      const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: true });
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/distinct-return-id");
+    });
   });
 
   describe("approveAction", () => {
@@ -270,12 +331,21 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(res).toEqual({ ok: false, code: "ERROR" });
     });
 
-    it("calls the writer with the current user id and succeeds", async () => {
+    it("maps auth() itself throwing onto ERROR rather than letting it escape uncaught", async () => {
+      mockAuth.mockRejectedValue(new Error("jwt decrypt failed"));
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+      expect(mockApprove).not.toHaveBeenCalled();
+    });
+
+    it("calls the writer with the current user id, succeeds, and revalidates the list and detail routes", async () => {
       mockHasPermission.mockReturnValue(true);
       mockApprove.mockResolvedValue({ ok: true });
       const res = await approveAction("r1");
       expect(res).toEqual({ ok: true });
       expect(mockApprove).toHaveBeenCalledWith({ returnId: "r1", approvedById: "user-1" });
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/r1");
     });
   });
 });

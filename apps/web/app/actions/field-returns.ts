@@ -115,10 +115,17 @@ export async function receiveAction(input: {
   returnId: string;
   counts: ReceiveCount[];
 }): Promise<FieldReturnActionResult> {
-  const g = await guard();
-  if ("ok" in g) return g;
-  if (!isValidReceiveInput(input)) return { ok: false, code: "INVALID_REQUEST" };
+  /*
+   * guard() lives in this same try/catch as the writer call, not before it — auth() can throw
+   * (a corrupted session cookie's JWT decrypt, a DB hiccup during the session lookup), and an
+   * uncaught throw out of an action reaches the operator as an opaque production digest instead
+   * of a typed ERROR. Shape validation and the writer call throw nothing of their own that
+   * isn't a FieldReturnError, so folding them into the same guarded region is free.
+   */
   try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (!isValidReceiveInput(input)) return { ok: false, code: "INVALID_REQUEST" };
     await receiveFieldReturn({ returnId: input.returnId, receivedById: g.userId, counts: input.counts });
   } catch (e) {
     return toResult(e);
@@ -133,42 +140,45 @@ export async function resolveAction(input: {
   type: ResolutionType;
   note?: string | null;
 }): Promise<FieldReturnActionResult> {
-  const g = await guard();
-  if ("ok" in g) return g;
-  if (!isValidResolveInput(input)) return { ok: false, code: "INVALID_REQUEST" };
-  /*
-   * A separate check and a separate code — the operator learns it is the WRITE_OFF option
-   * that's blocked, not the whole screen. The other three resolution types need nothing
-   * beyond field_returns:manage.
-   */
-  if (input.type === "WRITE_OFF" && !hasPermission(g.permissions, PERMISSIONS.FIELD_RETURNS_WRITEOFF)) {
-    return { ok: false, code: "FORBIDDEN_WRITEOFF" };
-  }
+  let returnId = "";
   try {
-    await resolveFieldReturnLine({
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (!isValidResolveInput(input)) return { ok: false, code: "INVALID_REQUEST" };
+    /*
+     * A separate check and a separate code — the operator learns it is the WRITE_OFF option
+     * that's blocked, not the whole screen. The other three resolution types need nothing
+     * beyond field_returns:manage.
+     */
+    if (input.type === "WRITE_OFF" && !hasPermission(g.permissions, PERMISSIONS.FIELD_RETURNS_WRITEOFF)) {
+      return { ok: false, code: "FORBIDDEN_WRITEOFF" };
+    }
+    const result = await resolveFieldReturnLine({
       lineId: input.lineId,
       type: input.type,
       note: input.note ?? null,
       createdById: g.userId,
     });
+    returnId = result.returnId;
   } catch (e) {
     return toResult(e);
   }
   /*
-   * resolveFieldReturnLine takes a lineId, not a returnId, and its result carries no returnId
-   * to revalidate a specific detail route with — only the list is revalidated here. The
-   * detail page the operator is already on refreshes itself client-side after a successful
-   * call (Task 6's concern), not through this best-effort cache invalidation.
+   * The operator resolving a line is standing on the retur's detail page — that is the one
+   * screen that must repaint, not just the list. resolveFieldReturnLine now returns the
+   * returnId it already had in hand (it loads the line's parent inside the same transaction),
+   * so both routes are revalidated here rather than pushing this back onto a client refresh.
    */
   revalidatePath("/backoffice/field-returns");
+  revalidatePath(`/backoffice/field-returns/${returnId}`);
   return { ok: true };
 }
 
 export async function approveAction(returnId: string): Promise<FieldReturnActionResult> {
-  const g = await guard();
-  if ("ok" in g) return g;
-  if (typeof returnId !== "string" || returnId === "") return { ok: false, code: "INVALID_REQUEST" };
   try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (typeof returnId !== "string" || returnId === "") return { ok: false, code: "INVALID_REQUEST" };
     await approveFieldReturn({ returnId, approvedById: g.userId });
   } catch (e) {
     return toResult(e);

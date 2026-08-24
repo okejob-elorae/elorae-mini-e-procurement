@@ -16,7 +16,7 @@ export async function resolveFieldReturnLine(input: {
   type: ResolutionType;
   note?: string | null;
   createdById: string;
-}): Promise<{ ok: true; returnStatus: "MISMATCH_PENDING_RESOLUTION" | "PENDING_APPROVAL" }> {
+}): Promise<{ ok: true; returnId: string; returnStatus: "MISMATCH_PENDING_RESOLUTION" | "PENDING_APPROVAL" }> {
   return runSerializable(async (tx) => {
     const line = await tx.fieldReturnLine.findUnique({
       where: { id: input.lineId },
@@ -65,6 +65,6 @@ export async function resolveFieldReturnLine(input: {
       data: { status: returnStatus },
     });
 
-    return { ok: true as const, returnStatus };
+    return { ok: true as const, returnId: line.returnId, returnStatus };
   });
 }
