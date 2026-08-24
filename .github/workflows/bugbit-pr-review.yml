@@ -1,1 +1,65 @@
-bmFtZTogUFIgUmV2aWV3IChidWdiaXQpCgpvbjoKICBwdWxsX3JlcXVlc3Q6CiAgICB0eXBlczogW29wZW5lZCwgcmVvcGVuZWQsIHJlYWR5X2Zvcl9yZXZpZXcsIHN5bmNocm9uaXplXQogICAgYnJhbmNoZXM6CiAgICAgIC0gZGV2CiAgICAgIC0gc3RhZ2luZwogIHdvcmtmbG93X2Rpc3BhdGNoOgogICAgaW5wdXRzOgogICAgICBwcl9udW1iZXI6CiAgICAgICAgZGVzY3JpcHRpb246IFBSIG51bWJlciB0byByZXZpZXcKICAgICAgICByZXF1aXJlZDogdHJ1ZQogICAgICAgIHR5cGU6IG51bWJlcgoKY29uY3VycmVuY3k6CiAgZ3JvdXA6IGJ1Z2JpdC1yZXZpZXctJHsgZ2l0aHViLmV2ZW50LnB1bGxfcmVxdWVzdC5udW1iZXIgfHwgaW5wdXRzLnByX251bWJlciB9CiAgY2FuY2VsLWluLXByb2dyZXNzOiB0cnVlCgpwZXJtaXNzaW9uczoKICBjb250ZW50czogcmVhZAogIHB1bGwtcmVxdWVzdHM6IHdyaXRlCiAgaXNzdWVzOiB3cml0ZSAgICMgbmVlZGVkIHdoZW4gZGVzY3JpYmUtbGFiZWxzIGlzIHNldAoKam9iczoKICBidWdiaXRfcmV2aWV3OgogICAgIyBTa2lwIGJvdHMsIGRyYWZ0cywgYW5kIGZvcmsgUFJzIChmb3JrcyBjYW5ub3QgYWNjZXNzIENVUlNPUl9BUElfS0VZIHNlY3JldHMpCiAgICBpZjogPi0KICAgICAgJHsgZ2l0aHViLmV2ZW50X25hbWUgPT0gJ3dvcmtmbG93X2Rpc3BhdGNoJwogICAgICAgICAgfHwgKGdpdGh1Yi5ldmVudC5zZW5kZXIudHlwZSAhPSAnQm90JwogICAgICAgICAgICAgICYmIGdpdGh1Yi5ldmVudC5wdWxsX3JlcXVlc3QuZHJhZnQgPT0gZmFsc2UKICAgICAgICAgICAgICAmJiBnaXRodWIuZXZlbnQucHVsbF9yZXF1ZXN0LmhlYWQucmVwby5mdWxsX25hbWUgPT0gZ2l0aHViLnJlcG9zaXRvcnkpIH0KICAgIHJ1bnMtb246IHVidW50dS1sYXRlc3QKICAgIHRpbWVvdXQtbWludXRlczogNDUKICAgIHN0ZXBzOgogICAgICAtIG5hbWU6IFJlc29sdmUgUFIgbnVtYmVyCiAgICAgICAgaWQ6IHByCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBzZXQgLWV1byBwaXBlZmFpbAogICAgICAgICAgaWYgWyAiJHsgZ2l0aHViLmV2ZW50X25hbWUgfSIgPSAicHVsbF9yZXF1ZXN0IiBdOyB0aGVuCiAgICAgICAgICAgIGVjaG8gIm51bWJlcj0keyBnaXRodWIuZXZlbnQucHVsbF9yZXF1ZXN0Lm51bWJlciB9IiA+PiAiJEdJVEhVQl9PVVRQVVQiCiAgICAgICAgICBlbHNlCiAgICAgICAgICAgIGVjaG8gIm51bWJlcj0keyBpbnB1dHMucHJfbnVtYmVyIH0iID4+ICIkR0lUSFVCX09VVFBVVCIKICAgICAgICAgIGZpCgogICAgICAtIG5hbWU6IENoZWNrb3V0IFBSIGhlYWQKICAgICAgICAjIFBpbiB0byB2NC4yLjIgKG5vdCBtdXRhYmxlIEB2NCkKICAgICAgICB1c2VzOiBhY3Rpb25zL2NoZWNrb3V0QDExYmQ3MTkwMWJiZTViMTYzMGNlZWE3M2QyNzU5NzM2NGM5YWY2ODMKICAgICAgICB3aXRoOgogICAgICAgICAgZmV0Y2gtZGVwdGg6IDAKICAgICAgICAgIHJlZjogcmVmcy9wdWxsLyR7IHN0ZXBzLnByLm91dHB1dHMubnVtYmVyIH0vaGVhZAogICAgICAgICAgcGVyc2lzdC1jcmVkZW50aWFsczogZmFsc2UKCiAgICAgIC0gbmFtZTogUnVuIGJ1Z2JpdCByZXZpZXcgKyBkZXNjcmliZQogICAgICAgICMgSnVpY3lCdXJnZXIvYnVnYml0IHYxLjQuMCDigJQgYXV0by1kZXNjcmliZSArIHByb2dyZXNzaXZlIHNsaW0gZGlmZnMKICAgICAgICB1c2VzOiBKdWljeUJ1cmdlci9idWdiaXRANWQyNDNmNQogICAgICAgIHdpdGg6CiAgICAgICAgICBjdXJzb3ItYXBpLWtleTogJHsgc2VjcmV0cy5DVVJTT1JfQVBJX0tFWSB9CiAgICAgICAgICBnaXRodWItdG9rZW46ICR7IGdpdGh1Yi50b2tlbiB9CiAgICAgICAgICAjIEN1cnNvciBTREsgQXV0byAoc2VydmVyLXNlbGVjdGVkKS4gQXZvaWRzIHBpbm5pbmcgQ2xhdWRlL0dQVC9ldGMuCiAgICAgICAgICBtb2RlbDogYXV0bwogICAgICAgICAgcmV2aWV3LW1vZGVzOiBjb2RlLXJldmlldwogICAgICAgICAgYXV0by1kZXNjcmliZTogdHJ1ZQogICAgICAgICAgZGVzY3JpYmUtbGFiZWxzOiAiUmV2aWV3IGVmZm9ydCA0LzUiCiAgICAgICAgICBwb3N0LWNsZWFuLXN1bW1hcnk6IHRydWUKICAgICAgICAgIHByLW51bWJlcjogJHsgc3RlcHMucHIub3V0cHV0cy5udW1iZXIgfQo=
+name: PR Review (bugbit)
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+    branches:
+      - dev
+      - staging
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number to review
+        required: true
+        type: number
+
+concurrency:
+  group: bugbit-review-${ github.event.pull_request.number || inputs.pr_number }
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write   # needed for auto-describe label inference
+
+jobs:
+  bugbit_review:
+    # Skip bots, drafts, and fork PRs (forks cannot access CURSOR_API_KEY secrets)
+    if: >-
+      ${ github.event_name == 'workflow_dispatch'
+          || (github.event.sender.type != 'Bot'
+              && github.event.pull_request.draft == false
+              && github.event.pull_request.head.repo.full_name == github.repository) }
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Resolve PR number
+        id: pr
+        run: |
+          set -euo pipefail
+          if [ "${ github.event_name }" = "pull_request" ]; then
+            echo "number=${ github.event.pull_request.number }" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${ inputs.pr_number }" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout PR head
+        # Pin to v4.2.2 (not mutable @v4)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          ref: refs/pull/${ steps.pr.outputs.number }/head
+          persist-credentials: false
+
+      - name: Run bugbit review + describe
+        # JuicyBurger/bugbit v1.4.1 — auto-describe with inferred labels
+        uses: JuicyBurger/bugbit@655be5e
+        with:
+          cursor-api-key: ${ secrets.CURSOR_API_KEY }
+          github-token: ${ github.token }
+          # Cursor SDK Auto (server-selected). Avoids pinning Claude/GPT/etc.
+          model: auto
+          review-modes: code-review
+          auto-describe: true
+          post-clean-summary: true
+          pr-number: ${ steps.pr.outputs.number }
