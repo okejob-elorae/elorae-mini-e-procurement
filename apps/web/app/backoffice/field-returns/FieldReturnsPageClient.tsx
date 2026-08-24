@@ -30,9 +30,21 @@ type Props = {
   pageSize: number;
 };
 
-const STATUS_BADGE_VARIANT: Record<FieldReturnStatus, "secondary" | "destructive"> = {
+const STATUS_BADGE_VARIANT: Record<FieldReturnStatus, "secondary" | "destructive" | "default" | "outline"> = {
   PENDING_WAREHOUSE_RECEIVING: "secondary",
+  MISMATCH_PENDING_RESOLUTION: "outline",
+  PENDING_APPROVAL: "outline",
+  APPROVED: "default",
   CANCELLED: "destructive",
+};
+
+/* The two "someone needs to act on this" states get the same amber highlight as the detail page. */
+const STATUS_BADGE_CLASS: Record<FieldReturnStatus, string> = {
+  PENDING_WAREHOUSE_RECEIVING: "",
+  MISMATCH_PENDING_RESOLUTION: "border-amber-500/40 text-amber-700",
+  PENDING_APPROVAL: "border-amber-500/40 text-amber-700",
+  APPROVED: "",
+  CANCELLED: "",
 };
 
 export function FieldReturnsPageClient(props: Props) {
@@ -137,7 +149,12 @@ export function FieldReturnsPageClient(props: Props) {
                         <TableCell>{t(`transport.${r.transport}`)}</TableCell>
                         <TableCell className="text-right tabular-nums">{r.lineCount}</TableCell>
                         <TableCell>
-                          <Badge variant={STATUS_BADGE_VARIANT[r.status]}>{t(`status.${r.status}`)}</Badge>
+                          <Badge
+                            variant={STATUS_BADGE_VARIANT[r.status]}
+                            className={STATUS_BADGE_CLASS[r.status]}
+                          >
+                            {t(`status.${r.status}`)}
+                          </Badge>
                         </TableCell>
                       </TableRow>
                     ))}

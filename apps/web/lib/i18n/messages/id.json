@@ -2517,6 +2517,9 @@
     },
     "status": {
       "PENDING_WAREHOUSE_RECEIVING": "Menunggu Penerimaan Gudang",
+      "MISMATCH_PENDING_RESOLUTION": "Selisih Menunggu Penyelesaian",
+      "PENDING_APPROVAL": "Menunggu Persetujuan",
+      "APPROVED": "Disetujui",
       "CANCELLED": "Dibatalkan"
     },
     "detail": {
@@ -2536,6 +2539,79 @@
       "colQty": "Qty",
       "colReason": "Alasan",
       "colReasonNote": "Catatan Alasan"
+    }
+  },
+  "fieldReturnReceiving": {
+    "status": {
+      "PENDING_WAREHOUSE_RECEIVING": "Menunggu Penerimaan Gudang",
+      "MISMATCH_PENDING_RESOLUTION": "Selisih Menunggu Penyelesaian",
+      "PENDING_APPROVAL": "Menunggu Persetujuan",
+      "APPROVED": "Disetujui",
+      "CANCELLED": "Dibatalkan"
+    },
+    "resolutionType": {
+      "SALESMAN_BEARS": "Salesman Menanggung",
+      "INVESTIGATE": "Cek ke Toko",
+      "WRITE_OFF": "Write-off",
+      "ACCEPT_SURPLUS": "Terima Kelebihan"
+    },
+    "receiveTitle": "Penerimaan Gudang",
+    "receiveHint": "Catat jumlah yang benar-benar diterima gudang, terpisah dari klaim salesman di atas. Nol tetap harus diisi kalau memang tidak ada barang yang sampai.",
+    "colProduct": "Produk",
+    "colVariant": "Varian",
+    "colClaimed": "Klaim Salesman",
+    "colReceived": "Diterima",
+    "colRejected": "Ditolak",
+    "colSellable": "Bisa Dijual",
+    "colVariance": "Selisih",
+    "rejectedExceedsReceived": "Jumlah ditolak tidak boleh lebih besar dari jumlah diterima.",
+    "receiveSubmit": "Simpan Penerimaan",
+    "receiveConfirmTitle": "Konfirmasi Penerimaan Gudang",
+    "receiveConfirmDescription": "Jumlah yang dicatat akan mengunci retur ini untuk pemeriksaan selisih dan tidak bisa diubah lagi dari sini. Pastikan hitungan sudah benar sebelum menyimpan.",
+    "receiveConfirmAction": "Simpan",
+    "submitting": "Menyimpan...",
+    "successReceived": "Penerimaan gudang berhasil disimpan.",
+    "resolutionTitle": "Penyelesaian Selisih",
+    "varianceNone": "Sesuai",
+    "varianceSurplus": "Lebih {n}",
+    "varianceShort": "Kurang {n}",
+    "resolutionStatusLabel": "Status Penyelesaian",
+    "statusUnresolved": "Belum Diselesaikan",
+    "historyTitle": "Riwayat Penyelesaian",
+    "noteLabel": "Catatan",
+    "resolutionConfirmAction": "Catat Penyelesaian",
+    "successResolved": "Penyelesaian berhasil dicatat.",
+    "resolutionDialogTitle": {
+      "SALESMAN_BEARS": "Salesman Menanggung Selisih",
+      "INVESTIGATE": "Cek ke Toko",
+      "WRITE_OFF": "Write-off Selisih",
+      "ACCEPT_SURPLUS": "Terima Kelebihan Barang"
+    },
+    "resolutionDialogDescription": {
+      "SALESMAN_BEARS": "Selisih kekurangan ini akan dicatat sebagai tanggung jawab pribadi salesman yang mengirim retur — hanya jumlah unit yang dicatat, bukan nilai uang.",
+      "INVESTIGATE": "Retur ini akan menunggu pengecekan ulang bersama toko sebelum bisa disetujui. Status tetap menunggu penyelesaian sampai hasil pengecekan dicatat dengan penyelesaian lain.",
+      "WRITE_OFF": "Perusahaan menanggung selisih kekurangan ini sebagai kerugian, tanpa membebankan ke salesman atau toko. Gunakan hanya jika memang bukan tanggung jawab siapa pun.",
+      "ACCEPT_SURPLUS": "Kelebihan barang yang diterima gudang akan dicatat sebagai diterima dan ikut dikembalikan ke stok yang bisa dijual."
+    },
+    "approveButton": "Setujui Retur",
+    "approveConfirmTitle": "Konfirmasi Persetujuan Retur",
+    "approveConfirmDescription": "Menyetujui retur ini akan mengembalikan barang yang bisa dijual ke stok gudang dan mencatat barang yang ditolak ke ledger barang tolakan. Tindakan ini tidak bisa dibatalkan dari sini.",
+    "approveConfirmAction": "Setujui",
+    "successApproved": "Retur disetujui, stok telah dikembalikan.",
+    "approveErrUnresolvedLines": "Masih ada {count} baris dengan selisih yang belum diselesaikan.",
+    "err": {
+      "FORBIDDEN": "Anda tidak memiliki izin untuk mengelola retur lapangan.",
+      "FORBIDDEN_WRITEOFF": "Anda tidak memiliki izin untuk mencatat write-off.",
+      "NOT_FOUND": "Retur atau baris retur tidak ditemukan.",
+      "INVALID_STATE": "Retur ini sedang tidak dalam status yang tepat untuk tindakan ini.",
+      "SPLIT_MISMATCH": "Jumlah bisa dijual dan ditolak harus sama dengan jumlah diterima.",
+      "UNKNOWN_LINE": "Ada baris pada penerimaan yang tidak dikenali pada retur ini.",
+      "MISSING_LINE": "Ada baris pada retur ini yang belum diisi jumlah penerimaannya.",
+      "DUPLICATE_LINE": "Ada baris yang dikirim lebih dari satu kali.",
+      "NO_VARIANCE": "Baris ini tidak memiliki selisih untuk diselesaikan.",
+      "UNRESOLVED_LINES": "Masih ada baris dengan selisih yang belum diselesaikan.",
+      "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
+      "ERROR": "Terjadi kesalahan. Coba lagi."
     }
   },
   "promos": {

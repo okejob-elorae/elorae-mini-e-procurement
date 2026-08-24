@@ -2517,6 +2517,9 @@
     },
     "status": {
       "PENDING_WAREHOUSE_RECEIVING": "Pending Warehouse Receiving",
+      "MISMATCH_PENDING_RESOLUTION": "Discrepancy Pending Resolution",
+      "PENDING_APPROVAL": "Pending Approval",
+      "APPROVED": "Approved",
       "CANCELLED": "Cancelled"
     },
     "detail": {
@@ -2536,6 +2539,79 @@
       "colQty": "Qty",
       "colReason": "Reason",
       "colReasonNote": "Reason Note"
+    }
+  },
+  "fieldReturnReceiving": {
+    "status": {
+      "PENDING_WAREHOUSE_RECEIVING": "Pending Warehouse Receiving",
+      "MISMATCH_PENDING_RESOLUTION": "Discrepancy Pending Resolution",
+      "PENDING_APPROVAL": "Pending Approval",
+      "APPROVED": "Approved",
+      "CANCELLED": "Cancelled"
+    },
+    "resolutionType": {
+      "SALESMAN_BEARS": "Salesman Bears Cost",
+      "INVESTIGATE": "Investigate With Store",
+      "WRITE_OFF": "Write Off",
+      "ACCEPT_SURPLUS": "Accept Surplus"
+    },
+    "receiveTitle": "Warehouse Receiving",
+    "receiveHint": "Record what the warehouse actually received, separately from the salesman's claim above. Zero must still be entered if nothing arrived at all.",
+    "colProduct": "Product",
+    "colVariant": "Variant",
+    "colClaimed": "Claimed",
+    "colReceived": "Received",
+    "colRejected": "Rejected",
+    "colSellable": "Sellable",
+    "colVariance": "Variance",
+    "rejectedExceedsReceived": "Rejected quantity cannot exceed the received quantity.",
+    "receiveSubmit": "Save Receiving",
+    "receiveConfirmTitle": "Confirm Warehouse Receiving",
+    "receiveConfirmDescription": "Saving these counts locks this return in for discrepancy review and cannot be edited from here afterwards. Make sure the counts are correct before saving.",
+    "receiveConfirmAction": "Save",
+    "submitting": "Saving...",
+    "successReceived": "Warehouse receiving saved.",
+    "resolutionTitle": "Discrepancy Resolution",
+    "varianceNone": "Matches",
+    "varianceSurplus": "Over {n}",
+    "varianceShort": "Short {n}",
+    "resolutionStatusLabel": "Resolution Status",
+    "statusUnresolved": "Unresolved",
+    "historyTitle": "Resolution History",
+    "noteLabel": "Note",
+    "resolutionConfirmAction": "Record Resolution",
+    "successResolved": "Resolution recorded.",
+    "resolutionDialogTitle": {
+      "SALESMAN_BEARS": "Salesman Bears the Shortfall",
+      "INVESTIGATE": "Investigate With Store",
+      "WRITE_OFF": "Write Off the Shortfall",
+      "ACCEPT_SURPLUS": "Accept the Surplus"
+    },
+    "resolutionDialogDescription": {
+      "SALESMAN_BEARS": "This shortfall will be recorded as the personal responsibility of the salesman who sent the return — only the unit count is recorded, never a monetary value.",
+      "INVESTIGATE": "This return will wait for a re-check with the store before it can be approved. It stays pending resolution until the outcome is recorded with another resolution.",
+      "WRITE_OFF": "The company absorbs this shortfall as a loss, with no one held responsible for it. Use this only when the shortfall is genuinely no one's fault.",
+      "ACCEPT_SURPLUS": "The surplus the warehouse received will be recorded as accepted and returned to sellable stock."
+    },
+    "approveButton": "Approve Return",
+    "approveConfirmTitle": "Confirm Return Approval",
+    "approveConfirmDescription": "Approving this return restores its sellable goods to warehouse stock and records rejected goods to the rejected-goods ledger. This cannot be undone from here.",
+    "approveConfirmAction": "Approve",
+    "successApproved": "Return approved, stock has been restored.",
+    "approveErrUnresolvedLines": "{count} line(s) with a discrepancy are still unresolved.",
+    "err": {
+      "FORBIDDEN": "You do not have permission to manage field returns.",
+      "FORBIDDEN_WRITEOFF": "You do not have permission to record a write-off.",
+      "NOT_FOUND": "The return or return line was not found.",
+      "INVALID_STATE": "This return is not in the right status for this action.",
+      "SPLIT_MISMATCH": "Sellable plus rejected must equal received.",
+      "UNKNOWN_LINE": "A submitted line does not belong to this return.",
+      "MISSING_LINE": "A line on this return has not been given a received count.",
+      "DUPLICATE_LINE": "A line was submitted more than once.",
+      "NO_VARIANCE": "This line has no discrepancy to resolve.",
+      "UNRESOLVED_LINES": "There are still lines with an unresolved discrepancy.",
+      "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
+      "ERROR": "Something went wrong. Please try again."
     }
   },
   "promos": {
