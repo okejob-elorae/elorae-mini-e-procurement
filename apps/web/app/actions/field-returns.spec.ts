@@ -64,6 +64,7 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     });
 
     it("returns FORBIDDEN when auth() resolves to a session with no user id", async () => {
+      mockHasPermission.mockReturnValue(true);
       mockAuth.mockResolvedValue({ user: null });
       const res = await receiveAction({ returnId: "r1", counts: [] });
       expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
@@ -231,6 +232,7 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     });
 
     it("returns FORBIDDEN when auth() resolves to a session with no user id", async () => {
+      mockHasPermission.mockReturnValue(true);
       mockAuth.mockResolvedValue({ user: null });
       const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
       expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
@@ -373,6 +375,7 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     });
 
     it("returns FORBIDDEN when auth() resolves to a session with no user id", async () => {
+      mockHasPermission.mockReturnValue(true);
       mockAuth.mockResolvedValue({ user: null });
       const res = await approveAction("r1");
       expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
