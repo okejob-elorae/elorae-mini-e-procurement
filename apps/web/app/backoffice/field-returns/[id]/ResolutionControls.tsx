@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { formatDateTime } from "@/lib/sales-orders/format";
-import { lineVariance, isSettled } from "@/lib/field-sales/retur/variance";
+import { isSettled } from "@/lib/field-sales/retur/variance";
 import type { FieldReturnLineDetail, FieldReturnStatus } from "@/lib/field-sales/retur/queries";
 import { resolveAction } from "@/app/actions/field-returns";
 import { fieldReturnErrorKey } from "./ReceiveForm";
@@ -119,7 +119,7 @@ export function ResolutionControls({ status, lines, canManage, canWriteOff }: Pr
       </CardHeader>
       <CardContent className="divide-y">
         {lines.map((line) => {
-          const variance = lineVariance(line.qty, line.receivedQty);
+          const variance = line.variance;
           const latest = line.resolutions[0] ?? null;
           const availableTypes = variance === 0
             ? []
@@ -150,6 +150,14 @@ export function ResolutionControls({ status, lines, canManage, canWriteOff }: Pr
                 <span>
                   {t("colReceived")}:{" "}
                   <span className="tabular-nums text-foreground">{line.receivedQty ?? "—"}</span>
+                </span>
+                <span>
+                  {t("colSellable")}:{" "}
+                  <span className="tabular-nums text-foreground">{line.sellableQty ?? "—"}</span>
+                </span>
+                <span>
+                  {t("colRejected")}:{" "}
+                  <span className="tabular-nums text-foreground">{line.rejectedQty ?? "—"}</span>
                 </span>
               </div>
 

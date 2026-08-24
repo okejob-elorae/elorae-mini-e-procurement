@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import type { FieldReturnDetail, FieldReturnStatus } from "@/lib/field-sales/retur/queries";
-import { lineVariance, isSettled } from "@/lib/field-sales/retur/variance";
+import { isSettled } from "@/lib/field-sales/retur/variance";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -69,7 +69,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
 /** Every discrepant line with no SETTLING resolution as its latest — mirrors allDiscrepantLinesSettled. */
 function outstandingLineCount(lines: FieldReturnDetail["lines"]): number {
   return lines.filter((l) => {
-    if (lineVariance(l.qty, l.receivedQty) === 0) return false;
+    if (l.variance === 0) return false;
     return !isSettled(l.resolutions[0]?.type ?? null);
   }).length;
 }
@@ -85,12 +85,14 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
   const outstanding = outstandingLineCount(r.lines);
   const showReceiveForm = canManage && r.status === "PENDING_WAREHOUSE_RECEIVING";
   /*
-   * Without canManage, the receive form, the resolution controls and the approve button must
-   * not render at all — the entire card is gated here, not just the action buttons inside it.
-   * The internal `actionable` check in ResolutionControls still narrows further by status
-   * (APPROVED/CANCELLED stay read-only even for a manager).
+   * Without canManage, the receive form and the approve button must not render at all — but
+   * the resolution card itself stays visible to any authenticated viewer once the retur has
+   * been received: the counts, split, variance and resolution history are the record of what
+   * happened, not an action surface. ResolutionControls' own `actionable` check is what gates
+   * the resolution buttons on canManage + status (APPROVED/CANCELLED stay read-only even for a
+   * manager).
    */
-  const showResolutionControls = canManage && r.status !== "PENDING_WAREHOUSE_RECEIVING";
+  const showResolutionControls = r.status !== "PENDING_WAREHOUSE_RECEIVING";
   const showApprove = canManage && r.status === "PENDING_APPROVAL";
 
   function callApprove(): void {
