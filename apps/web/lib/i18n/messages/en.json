@@ -2609,6 +2609,7 @@
       "MISSING_LINE": "A line on this return has not been given a received count.",
       "DUPLICATE_LINE": "A line was submitted more than once.",
       "NO_VARIANCE": "This line has no discrepancy to resolve.",
+      "RESOLUTION_DIRECTION_MISMATCH": "The chosen settlement type does not match whether this line is short or over.",
       "UNRESOLVED_LINES": "There are still lines with an unresolved discrepancy.",
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "ERROR": "Something went wrong. Please try again."

@@ -2609,6 +2609,7 @@
       "MISSING_LINE": "Ada baris pada retur ini yang belum diisi jumlah penerimaannya.",
       "DUPLICATE_LINE": "Ada baris yang dikirim lebih dari satu kali.",
       "NO_VARIANCE": "Baris ini tidak memiliki selisih untuk diselesaikan.",
+      "RESOLUTION_DIRECTION_MISMATCH": "Jenis penyelesaian yang dipilih tidak sesuai dengan arah selisih baris ini (kurang atau lebih).",
       "UNRESOLVED_LINES": "Masih ada baris dengan selisih yang belum diselesaikan.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "ERROR": "Terjadi kesalahan. Coba lagi."

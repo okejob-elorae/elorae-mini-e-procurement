@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { lineVariance, isSettled, allDiscrepantLinesSettled } from "./variance";
+import { lineVariance, isSettled, allDiscrepantLinesSettled, isValidResolutionDirection } from "./variance";
 
 describe("lineVariance", () => {
   it("is negative when received is short of claimed", () => {
@@ -42,6 +42,49 @@ describe("isSettled", () => {
 
   it("is false for an unrecognised value", () => {
     expect(isSettled("SOMETHING_ELSE")).toBe(false);
+  });
+});
+
+describe("isValidResolutionDirection", () => {
+  it("accepts SALESMAN_BEARS on a shortage (variance < 0)", () => {
+    expect(isValidResolutionDirection("SALESMAN_BEARS", -2)).toBe(true);
+  });
+
+  it("accepts WRITE_OFF on a shortage", () => {
+    expect(isValidResolutionDirection("WRITE_OFF", -2)).toBe(true);
+  });
+
+  it("rejects ACCEPT_SURPLUS on a shortage", () => {
+    expect(isValidResolutionDirection("ACCEPT_SURPLUS", -2)).toBe(false);
+  });
+
+  it("accepts ACCEPT_SURPLUS on an over line (variance > 0)", () => {
+    expect(isValidResolutionDirection("ACCEPT_SURPLUS", 3)).toBe(true);
+  });
+
+  it("rejects SALESMAN_BEARS on an over line", () => {
+    expect(isValidResolutionDirection("SALESMAN_BEARS", 3)).toBe(false);
+  });
+
+  it("rejects WRITE_OFF on an over line", () => {
+    expect(isValidResolutionDirection("WRITE_OFF", 3)).toBe(false);
+  });
+
+  it("accepts INVESTIGATE on a shortage", () => {
+    expect(isValidResolutionDirection("INVESTIGATE", -2)).toBe(true);
+  });
+
+  it("accepts INVESTIGATE on an over line", () => {
+    expect(isValidResolutionDirection("INVESTIGATE", 3)).toBe(true);
+  });
+
+  it("rejects everything when variance is zero — a settled direction check has no direction", () => {
+    expect(isValidResolutionDirection("INVESTIGATE", 0)).toBe(false);
+  });
+
+  it("rejects an unrecognised type in either direction", () => {
+    expect(isValidResolutionDirection("SOMETHING_ELSE", -2)).toBe(false);
+    expect(isValidResolutionDirection("SOMETHING_ELSE", 3)).toBe(false);
   });
 });
 

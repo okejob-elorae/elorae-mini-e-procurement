@@ -7,6 +7,11 @@
 
 const SETTLING = new Set(["SALESMAN_BEARS", "WRITE_OFF", "ACCEPT_SURPLUS"]);
 
+/** Resolution types that settle a SHORTAGE line (variance < 0). INVESTIGATE settles neither direction, but is a valid pick on both. */
+const SHORTAGE_RESOLUTION_TYPES = new Set(["SALESMAN_BEARS", "WRITE_OFF", "INVESTIGATE"]);
+/** Resolution types that settle an OVER line (variance > 0). */
+const SURPLUS_RESOLUTION_TYPES = new Set(["ACCEPT_SURPLUS", "INVESTIGATE"]);
+
 /**
  * Liability is recorded in units, never money — a resolution says who bears the piece count
  * discrepancy, not what it is worth.
@@ -24,6 +29,18 @@ export function lineVariance(claimedQty: number, receivedQty: number | null): nu
  */
 export function isSettled(type: string | null): boolean {
   return type !== null && SETTLING.has(type);
+}
+
+/**
+ * Direction rule (decision D4): only SALESMAN_BEARS/WRITE_OFF settle a SHORTAGE line, and only
+ * ACCEPT_SURPLUS settles an OVER line. INVESTIGATE is valid in either direction — it settles
+ * nothing, so it never conflicts with the shortage/surplus split. `variance` must already be
+ * non-zero; a zero-variance line has no direction to check against.
+ */
+export function isValidResolutionDirection(type: string, variance: number): boolean {
+  if (variance < 0) return SHORTAGE_RESOLUTION_TYPES.has(type);
+  if (variance > 0) return SURPLUS_RESOLUTION_TYPES.has(type);
+  return false;
 }
 
 /**

@@ -15,6 +15,7 @@ export type FieldReturnErrorCode =
   | "NOT_FOUND"
   | "DUPLICATE_LINE"
   | "NO_VARIANCE"
+  | "RESOLUTION_DIRECTION_MISMATCH"
   | "UNRESOLVED_LINES";
 
 export class FieldReturnError extends Error {

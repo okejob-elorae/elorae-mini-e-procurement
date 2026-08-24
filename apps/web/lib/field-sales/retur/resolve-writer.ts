@@ -1,6 +1,6 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { FieldReturnError } from "./errors";
-import { lineVariance, allDiscrepantLinesSettled } from "./variance";
+import { lineVariance, allDiscrepantLinesSettled, isValidResolutionDirection } from "./variance";
 
 type ResolutionType = "SALESMAN_BEARS" | "INVESTIGATE" | "WRITE_OFF" | "ACCEPT_SURPLUS";
 
@@ -35,6 +35,17 @@ export async function resolveFieldReturnLine(input: {
 
     const variance = lineVariance(line.qty, line.receivedQty);
     if (variance === 0) throw new FieldReturnError("NO_VARIANCE");
+
+    /*
+     * Direction is enforced here, not just in the client's SHORTAGE_TYPES/SURPLUS_TYPES —
+     * every export of a "use server" module is an independently callable endpoint, so a caller
+     * that skips the UI (or a user without field_returns:writeoff reaching for ACCEPT_SURPLUS
+     * instead of the write-off option the UI withheld) must not be able to settle a shortage
+     * line as a surplus or vice versa.
+     */
+    if (!isValidResolutionDirection(input.type, variance)) {
+      throw new FieldReturnError("RESOLUTION_DIRECTION_MISMATCH");
+    }
 
     await tx.fieldReturnResolution.create({
       data: {

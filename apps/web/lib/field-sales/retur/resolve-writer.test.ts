@@ -3,6 +3,7 @@ import { prisma, seededId } from "@elorae/db";
 import { createFieldReturn } from "./writer";
 import { receiveFieldReturn } from "./receive-writer";
 import { resolveFieldReturnLine } from "./resolve-writer";
+import { getFieldReturnById } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -111,9 +112,9 @@ d("resolveFieldReturnLine (test bed only)", () => {
     await prisma.fieldReturn.deleteMany({
       where: { id: { in: [seededId(returnId), seededId(unreceivedReturnId)] } },
     });
-    await prisma.store.delete({ where: { id: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemAId), seededId(itemBId)] } } });
-    await prisma.uOM.delete({ where: { id: seededId(uomId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(raisedById), seededId(adminId)] } } });
   });
 
@@ -171,6 +172,27 @@ d("resolveFieldReturnLine (test bed only)", () => {
     expect(res.returnStatus).toBe("MISMATCH_PENDING_RESOLUTION");
     const row = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(returnId) } });
     expect(row.status).toBe("MISMATCH_PENDING_RESOLUTION");
+  });
+
+  /*
+   * Decision D4: only SALESMAN_BEARS/WRITE_OFF settle a SHORTAGE line — ACCEPT_SURPLUS is the
+   * over-line resolution. Direction was previously enforced only by the client's
+   * SHORTAGE_TYPES/SURPLUS_TYPES; a caller that skips the UI must be refused here.
+   */
+  it("refuses ACCEPT_SURPLUS on a shortage line with RESOLUTION_DIRECTION_MISMATCH", async () => {
+    await expect(resolveFieldReturnLine({ lineId: shortLineId, type: "ACCEPT_SURPLUS", createdById: adminId }))
+      .rejects.toMatchObject({ code: "RESOLUTION_DIRECTION_MISMATCH" });
+    const row = await prisma.fieldReturnResolution.findFirst({ where: { lineId: seededId(shortLineId) } });
+    expect(row).toBeNull();
+  });
+
+  it("getFieldReturnById reflects the LATEST resolution first, not the first-written one", async () => {
+    await resolveFieldReturnLine({ lineId: shortLineId, type: "INVESTIGATE", createdById: adminId });
+    await resolveFieldReturnLine({ lineId: shortLineId, type: "SALESMAN_BEARS", createdById: adminId });
+    const detail = await getFieldReturnById(returnId);
+    const line = detail!.lines.find((l) => l.id === shortLineId)!;
+    expect(line.resolutions).toHaveLength(2);
+    expect(line.resolutions[0]!.type).toBe("SALESMAN_BEARS");
   });
 });
 
@@ -254,10 +276,10 @@ d("resolveFieldReturnLine — multiple discrepant lines (test bed only)", () => 
       where: { lineId: { in: [seededId(lineXId), seededId(lineYId)] } },
     });
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
-    await prisma.fieldReturn.delete({ where: { id: seededId(returnId) } });
-    await prisma.store.delete({ where: { id: seededId(storeId) } });
+    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemXId), seededId(itemYId)] } } });
-    await prisma.uOM.delete({ where: { id: seededId(uomId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(raisedById), seededId(adminId)] } } });
   });
 
@@ -332,10 +354,10 @@ d("resolveFieldReturnLine — surplus (test bed only)", () => {
   afterEach(async () => {
     await prisma.fieldReturnResolution.deleteMany({ where: { lineId: seededId(lineId) } });
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
-    await prisma.fieldReturn.delete({ where: { id: seededId(returnId) } });
-    await prisma.store.delete({ where: { id: seededId(storeId) } });
-    await prisma.item.delete({ where: { id: seededId(itemId) } });
-    await prisma.uOM.delete({ where: { id: seededId(uomId) } });
+    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(raisedById), seededId(adminId)] } } });
   });
 
@@ -345,5 +367,22 @@ d("resolveFieldReturnLine — surplus (test bed only)", () => {
     const r = await prisma.fieldReturnResolution.findFirstOrThrow({ where: { lineId: seededId(lineId) } });
     expect(r.qty).toBe(3); /* claimed 2, received 5 */
     expect(r.type).toBe("ACCEPT_SURPLUS");
+  });
+
+  it("INVESTIGATE is accepted on a surplus line — it is valid in either direction", async () => {
+    const res = await resolveFieldReturnLine({ lineId, type: "INVESTIGATE", createdById: adminId });
+    expect(res.returnStatus).toBe("MISMATCH_PENDING_RESOLUTION");
+  });
+
+  it("refuses SALESMAN_BEARS on a surplus line with RESOLUTION_DIRECTION_MISMATCH", async () => {
+    await expect(resolveFieldReturnLine({ lineId, type: "SALESMAN_BEARS", createdById: adminId }))
+      .rejects.toMatchObject({ code: "RESOLUTION_DIRECTION_MISMATCH" });
+    const row = await prisma.fieldReturnResolution.findFirst({ where: { lineId: seededId(lineId) } });
+    expect(row).toBeNull();
+  });
+
+  it("refuses WRITE_OFF on a surplus line with RESOLUTION_DIRECTION_MISMATCH", async () => {
+    await expect(resolveFieldReturnLine({ lineId, type: "WRITE_OFF", createdById: adminId }))
+      .rejects.toMatchObject({ code: "RESOLUTION_DIRECTION_MISMATCH" });
   });
 });
