@@ -1,0 +1,281 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+/*
+ * Unit-only: auth, rbac and all three writers are mocked, so nothing here touches the shared
+ * dev database. Each writer already has its own DB-backed spec — this file exists to pin the
+ * permission gate + error-code mapping the actions add on top of them.
+ */
+const { mockAuth, mockHasPermission, mockReceive, mockResolve, mockApprove } = vi.hoisted(() => ({
+  mockAuth: vi.fn(),
+  mockHasPermission: vi.fn(),
+  mockReceive: vi.fn(),
+  mockResolve: vi.fn(),
+  mockApprove: vi.fn(),
+}));
+
+vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
+vi.mock("@/lib/rbac", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/rbac")>();
+  return { ...actual, hasPermission: mockHasPermission };
+});
+vi.mock("@/lib/field-sales/retur/receive-writer", () => ({ receiveFieldReturn: mockReceive }));
+vi.mock("@/lib/field-sales/retur/resolve-writer", () => ({ resolveFieldReturnLine: mockResolve }));
+vi.mock("@/lib/field-sales/retur/approve-writer", () => ({ approveFieldReturn: mockApprove }));
+vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+
+import { FieldReturnError } from "@/lib/field-sales/retur/errors";
+import { receiveAction, resolveAction, approveAction } from "./field-returns";
+
+describe("field retur receiving actions (unit — writers mocked)", () => {
+  beforeEach(() => {
+    mockAuth.mockReset();
+    mockHasPermission.mockReset();
+    mockReceive.mockReset();
+    mockResolve.mockReset();
+    mockApprove.mockReset();
+    mockAuth.mockResolvedValue({
+      user: { id: "user-1", permissions: ["field_returns:manage", "field_returns:writeoff"] },
+    });
+  });
+
+  describe("receiveAction", () => {
+    it("returns FORBIDDEN without field_returns:manage and never calls the writer", async () => {
+      mockHasPermission.mockReturnValue(false);
+      const res = await receiveAction({ returnId: "r1", counts: [] });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockReceive).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for a non-string returnId without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await receiveAction({ returnId: 1 as unknown as string, counts: [] });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockReceive).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for a malformed count line without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await receiveAction({
+        returnId: "r1",
+        counts: [{ lineId: "l1", receivedQty: "3", sellableQty: 3, rejectedQty: 0 } as unknown as {
+          lineId: string;
+          receivedQty: number;
+          sellableQty: number;
+          rejectedQty: number;
+        }],
+      });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockReceive).not.toHaveBeenCalled();
+    });
+
+    it("maps a writer SPLIT_MISMATCH onto its own code, not a neighbouring one", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockRejectedValue(new FieldReturnError("SPLIT_MISMATCH"));
+      const res = await receiveAction({
+        returnId: "r1",
+        counts: [{ lineId: "l1", receivedQty: 3, sellableQty: 1, rejectedQty: 1 }],
+      });
+      expect(res).toEqual({ ok: false, code: "SPLIT_MISMATCH" });
+    });
+
+    it("maps a writer DUPLICATE_LINE onto its own code rather than a generic ERROR", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockRejectedValue(new FieldReturnError("DUPLICATE_LINE"));
+      const res = await receiveAction({
+        returnId: "r1",
+        counts: [
+          { lineId: "l1", receivedQty: 1, sellableQty: 1, rejectedQty: 0 },
+          { lineId: "l1", receivedQty: 1, sellableQty: 1, rejectedQty: 0 },
+        ],
+      });
+      expect(res).toEqual({ ok: false, code: "DUPLICATE_LINE" });
+    });
+
+    it("maps a writer UNKNOWN_LINE onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockRejectedValue(new FieldReturnError("UNKNOWN_LINE"));
+      const res = await receiveAction({
+        returnId: "r1",
+        counts: [{ lineId: "not-a-real-line", receivedQty: 1, sellableQty: 1, rejectedQty: 0 }],
+      });
+      expect(res).toEqual({ ok: false, code: "UNKNOWN_LINE" });
+    });
+
+    it("maps a writer MISSING_LINE onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockRejectedValue(new FieldReturnError("MISSING_LINE"));
+      const res = await receiveAction({ returnId: "r1", counts: [] });
+      expect(res).toEqual({ ok: false, code: "MISSING_LINE" });
+    });
+
+    it("maps a writer BAD_QTY onto INVALID_REQUEST, not a state code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockRejectedValue(new FieldReturnError("BAD_QTY"));
+      const res = await receiveAction({
+        returnId: "r1",
+        counts: [{ lineId: "l1", receivedQty: -1, sellableQty: 0, rejectedQty: 0 }],
+      });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+    });
+
+    it("maps a writer NOT_FOUND onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockRejectedValue(new FieldReturnError("NOT_FOUND"));
+      const res = await receiveAction({ returnId: "no-such-return", counts: [] });
+      expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+
+    it("maps a writer INVALID_STATE onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockRejectedValue(new FieldReturnError("INVALID_STATE"));
+      const res = await receiveAction({ returnId: "r1", counts: [] });
+      expect(res).toEqual({ ok: false, code: "INVALID_STATE" });
+    });
+
+    it("maps an unknown throw onto ERROR rather than leaking it", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockRejectedValue(new Error("boom"));
+      const res = await receiveAction({ returnId: "r1", counts: [] });
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+    });
+
+    it("calls the writer with the current user id and succeeds", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockResolvedValue({ ok: true, status: "PENDING_APPROVAL" });
+      const counts = [{ lineId: "l1", receivedQty: 3, sellableQty: 3, rejectedQty: 0 }];
+      const res = await receiveAction({ returnId: "r1", counts });
+      expect(res).toEqual({ ok: true });
+      expect(mockReceive).toHaveBeenCalledWith({ returnId: "r1", receivedById: "user-1", counts });
+    });
+  });
+
+  describe("resolveAction", () => {
+    it("returns FORBIDDEN without field_returns:manage and never calls the writer", async () => {
+      mockHasPermission.mockReturnValue(false);
+      const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    it("refuses WRITE_OFF without field_returns:writeoff, naming that specifically", async () => {
+      mockHasPermission.mockImplementation((_p, code) => code !== "field_returns:writeoff");
+      const res = await resolveAction({ lineId: "l1", type: "WRITE_OFF" });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN_WRITEOFF" });
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    it("allows a non-writeoff resolution with only field_returns:manage", async () => {
+      mockHasPermission.mockImplementation((_p, code) => code !== "field_returns:writeoff");
+      mockResolve.mockResolvedValue({ ok: true, returnStatus: "PENDING_APPROVAL" });
+      const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: true });
+    });
+
+    it("allows WRITE_OFF when the user holds field_returns:writeoff", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolve.mockResolvedValue({ ok: true, returnStatus: "PENDING_APPROVAL" });
+      const res = await resolveAction({ lineId: "l1", type: "WRITE_OFF", note: "unsellable" });
+      expect(res).toEqual({ ok: true });
+      expect(mockResolve).toHaveBeenCalledWith({
+        lineId: "l1",
+        type: "WRITE_OFF",
+        note: "unsellable",
+        createdById: "user-1",
+      });
+    });
+
+    it("returns INVALID_REQUEST for an unrecognised resolution type without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await resolveAction({ lineId: "l1", type: "SOMETHING_ELSE" as unknown as "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for a missing lineId without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await resolveAction({ lineId: "", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockResolve).not.toHaveBeenCalled();
+    });
+
+    it("maps a writer NO_VARIANCE onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolve.mockRejectedValue(new FieldReturnError("NO_VARIANCE"));
+      const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: false, code: "NO_VARIANCE" });
+    });
+
+    it("maps a writer NOT_FOUND onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolve.mockRejectedValue(new FieldReturnError("NOT_FOUND"));
+      const res = await resolveAction({ lineId: "no-such-line", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+
+    it("maps a writer INVALID_STATE onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolve.mockRejectedValue(new FieldReturnError("INVALID_STATE"));
+      const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: false, code: "INVALID_STATE" });
+    });
+
+    it("maps an unknown throw onto ERROR rather than leaking it", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolve.mockRejectedValue(new Error("boom"));
+      const res = await resolveAction({ lineId: "l1", type: "SALESMAN_BEARS" });
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+    });
+  });
+
+  describe("approveAction", () => {
+    it("returns FORBIDDEN without field_returns:manage and never calls the writer", async () => {
+      mockHasPermission.mockReturnValue(false);
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockApprove).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for an empty returnId without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await approveAction("");
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockApprove).not.toHaveBeenCalled();
+    });
+
+    it("maps UNRESOLVED_LINES from the writer onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockApprove.mockRejectedValue(new FieldReturnError("UNRESOLVED_LINES"));
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: false, code: "UNRESOLVED_LINES" });
+    });
+
+    it("maps a writer NOT_FOUND onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockApprove.mockRejectedValue(new FieldReturnError("NOT_FOUND"));
+      const res = await approveAction("no-such-return");
+      expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+
+    it("maps a writer INVALID_STATE onto its own code", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockApprove.mockRejectedValue(new FieldReturnError("INVALID_STATE"));
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: false, code: "INVALID_STATE" });
+    });
+
+    it("maps an unknown throw onto ERROR without leaking it", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockApprove.mockRejectedValue(new Error("boom"));
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+    });
+
+    it("calls the writer with the current user id and succeeds", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockApprove.mockResolvedValue({ ok: true });
+      const res = await approveAction("r1");
+      expect(res).toEqual({ ok: true });
+      expect(mockApprove).toHaveBeenCalledWith({ returnId: "r1", approvedById: "user-1" });
+    });
+  });
+});

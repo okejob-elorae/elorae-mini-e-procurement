@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { lineVariance, isSettled } from "./variance";
+import { lineVariance, isSettled, allDiscrepantLinesSettled } from "./variance";
 
 describe("lineVariance", () => {
   it("is negative when received is short of claimed", () => {
@@ -42,5 +42,55 @@ describe("isSettled", () => {
 
   it("is false for an unrecognised value", () => {
     expect(isSettled("SOMETHING_ELSE")).toBe(false);
+  });
+});
+
+describe("allDiscrepantLinesSettled", () => {
+  it("counts a line with zero variance and no resolutions as settled", () => {
+    const settled = allDiscrepantLinesSettled([{ qty: 3, receivedQty: 3, resolutions: [] }]);
+    expect(settled).toBe(true);
+  });
+
+  it("does not settle a line whose latest resolution is INVESTIGATE", () => {
+    const settled = allDiscrepantLinesSettled([
+      { qty: 5, receivedQty: 2, resolutions: [{ type: "INVESTIGATE" }] },
+    ]);
+    expect(settled).toBe(false);
+  });
+
+  it("settles a line whose latest resolution is SALESMAN_BEARS", () => {
+    const settled = allDiscrepantLinesSettled([
+      { qty: 5, receivedQty: 2, resolutions: [{ type: "SALESMAN_BEARS" }] },
+    ]);
+    expect(settled).toBe(true);
+  });
+
+  it("does not settle a discrepant line with no resolutions at all", () => {
+    const settled = allDiscrepantLinesSettled([{ qty: 5, receivedQty: 2, resolutions: [] }]);
+    expect(settled).toBe(false);
+  });
+
+  it("only looks at the latest (first) resolution, not every past one", () => {
+    const settled = allDiscrepantLinesSettled([
+      { qty: 5, receivedQty: 2, resolutions: [{ type: "INVESTIGATE" }, { type: "WRITE_OFF" }] },
+    ]);
+    expect(settled).toBe(false);
+  });
+
+  it("requires every discrepant line to settle, not just one of several", () => {
+    const settled = allDiscrepantLinesSettled([
+      { qty: 5, receivedQty: 2, resolutions: [{ type: "SALESMAN_BEARS" }] },
+      { qty: 4, receivedQty: 1, resolutions: [{ type: "INVESTIGATE" }] },
+    ]);
+    expect(settled).toBe(false);
+  });
+
+  it("passes when every line is either non-discrepant or settled", () => {
+    const settled = allDiscrepantLinesSettled([
+      { qty: 3, receivedQty: 3, resolutions: [] },
+      { qty: 5, receivedQty: 2, resolutions: [{ type: "WRITE_OFF" }] },
+      { qty: 2, receivedQty: 4, resolutions: [{ type: "ACCEPT_SURPLUS" }] },
+    ]);
+    expect(settled).toBe(true);
   });
 });

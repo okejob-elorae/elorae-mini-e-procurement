@@ -1,6 +1,12 @@
 import { prisma, Prisma } from "@elorae/db";
+import { lineVariance } from "./variance";
 
-export type FieldReturnStatus = "PENDING_WAREHOUSE_RECEIVING" | "CANCELLED";
+export type FieldReturnStatus =
+  | "PENDING_WAREHOUSE_RECEIVING"
+  | "MISMATCH_PENDING_RESOLUTION"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "CANCELLED";
 export type FieldReturnReason = "DAMAGED" | "UNSOLD" | "EXPIRED" | "OTHER";
 export type FieldReturnTransport = "SELF_CARRY" | "EXPEDITION";
 
@@ -57,6 +63,15 @@ export async function listFieldReturns(params: {
   };
 }
 
+export type FieldReturnResolutionDetail = {
+  id: string;
+  type: string;
+  qty: number;
+  note: string | null;
+  createdAt: Date;
+  createdByLabel: string;
+};
+
 export type FieldReturnLineDetail = {
   id: string;
   itemSku: string;
@@ -65,6 +80,13 @@ export type FieldReturnLineDetail = {
   qty: number;
   reason: FieldReturnReason;
   reasonNote: string | null;
+  receivedQty: number | null;
+  sellableQty: number | null;
+  rejectedQty: number | null;
+  /** `lineVariance(qty, receivedQty)` — 0 until received, then received minus claimed. */
+  variance: number;
+  /** Ordered `createdAt desc, id desc` — index 0 is the effective (latest) resolution. */
+  resolutions: FieldReturnResolutionDetail[];
 };
 
 export type FieldReturnDetail = {
@@ -104,7 +126,14 @@ export async function getFieldReturnById(id: string): Promise<FieldReturnDetail 
           variantSku: true,
           reason: true,
           reasonNote: true,
+          receivedQty: true,
+          sellableQty: true,
+          rejectedQty: true,
           item: { select: { sku: true, nameId: true } },
+          resolutions: {
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            select: { id: true, type: true, qty: true, note: true, createdAt: true, createdById: true },
+          },
         },
       },
     },
@@ -112,20 +141,26 @@ export async function getFieldReturnById(id: string): Promise<FieldReturnDetail 
   if (!r) return null;
 
   /**
-   * `raisedById` is a bare scalar with no relation on `FieldReturn`, so the
-   * salesman's name is a separate lookup rather than an `include`.
+   * `raisedById` on `FieldReturn` and `createdById` on each `FieldReturnResolution` are bare
+   * scalars with no relation, so every label is a separate batch lookup rather than an
+   * `include`. One query covers the salesman plus every resolution's author.
    */
-  const raisedBy = await prisma.user.findUnique({
-    where: { id: r.raisedById },
-    select: { name: true, email: true },
+  const userIds = Array.from(
+    new Set([r.raisedById, ...r.lines.flatMap((l) => l.resolutions.map((res) => res.createdById))])
+  );
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, name: true, email: true },
   });
+  const labelById = new Map(users.map((u) => [u.id, u.name ?? u.email]));
+  const labelFor = (userId: string): string => labelById.get(userId) ?? "—";
 
   return {
     id: r.id,
     docNo: r.docNo,
     status: r.status,
     storeName: r.store.name,
-    raisedByLabel: raisedBy ? (raisedBy.name ?? raisedBy.email) : "—",
+    raisedByLabel: labelFor(r.raisedById),
     transport: r.transport,
     expeditionName: r.expeditionName,
     resiNo: r.resiNo,
@@ -140,6 +175,18 @@ export async function getFieldReturnById(id: string): Promise<FieldReturnDetail 
       qty: l.qty,
       reason: l.reason,
       reasonNote: l.reasonNote,
+      receivedQty: l.receivedQty,
+      sellableQty: l.sellableQty,
+      rejectedQty: l.rejectedQty,
+      variance: lineVariance(l.qty, l.receivedQty),
+      resolutions: l.resolutions.map((res) => ({
+        id: res.id,
+        type: res.type,
+        qty: res.qty,
+        note: res.note,
+        createdAt: res.createdAt,
+        createdByLabel: labelFor(res.createdById),
+      })),
     })),
   };
 }
