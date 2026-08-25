@@ -169,11 +169,17 @@ describe("store assortment actions (unit — prisma mocked)", () => {
       expect(mockLineCreate).not.toHaveBeenCalled();
     });
 
-    it("this feature gates nothing beyond the four guards — never refuses on stock levels or anything document-shaped", async () => {
-      // Sanity pin: a plain valid add always succeeds regardless of any store/stock state, since
-      // none of that is even queried by this action.
+    it("this feature gates nothing beyond the four guards — never refuses on stock levels or anything document-shaped, and never even queries for any", async () => {
+      // The mocked `prisma` above defines only `item` and `storeAssortmentLine` — a future gate
+      // reaching for prisma.store, prisma.storeStock, or prisma.inventoryValue would throw on the
+      // undefined property, caught by the wrapped try/catch as a generic ERROR rather than failing
+      // this test loudly. Pin the exact call counts too, so a gate bolted onto the two models this
+      // action already touches (e.g. an extra storeAssortmentLine query) is caught as well.
       const res = await addAssortmentLineAction({ storeId: "s1", itemId: "item-1", variantSku: "blue", targetQty: 10 });
-      expect(res.ok).toBe(true);
+      expect(res).toEqual({ ok: true, id: "line-1" });
+      expect(mockItemFindUnique).toHaveBeenCalledTimes(1);
+      expect(mockLineFindUnique).toHaveBeenCalledTimes(1);
+      expect(mockLineCreate).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -214,6 +220,19 @@ describe("store assortment actions (unit — prisma mocked)", () => {
       mockLineUpdateMany.mockResolvedValue({ count: 0 });
       const res = await updateAssortmentTargetAction({ id: "no-such", storeId: "s1", targetQty: 8 });
       expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+
+    it("returns NOT_FOUND for a real line under a DIFFERENT store, not just for a nonexistent id — the exact scenario (id, storeId) scoping was added for", async () => {
+      // Simulate real compound-where (AND) semantics: a row only counts when BOTH id and storeId
+      // match. "line-1" genuinely exists, just under "correct-store", not the caller's "s1" — if
+      // scoping were ever dropped (or silently OR'd) this would wrongly resolve to ok:true.
+      mockLineUpdateMany.mockImplementation(({ where }: { where: { id: string; storeId: string } }) =>
+        Promise.resolve({ count: where.id === "line-1" && where.storeId === "correct-store" ? 1 : 0 }),
+      );
+      const mismatched = await updateAssortmentTargetAction({ id: "line-1", storeId: "s1", targetQty: 8 });
+      expect(mismatched).toEqual({ ok: false, code: "NOT_FOUND" });
+      const matched = await updateAssortmentTargetAction({ id: "line-1", storeId: "correct-store", targetQty: 8 });
+      expect(matched).toEqual({ ok: true, id: "line-1" });
     });
 
     it("returns INVALID_REQUEST for a malformed payload", async () => {
@@ -272,6 +291,16 @@ describe("store assortment actions (unit — prisma mocked)", () => {
       mockLineDeleteMany.mockResolvedValue({ count: 0 });
       const res = await removeAssortmentLineAction({ id: "no-such", storeId: "s1" });
       expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+
+    it("returns NOT_FOUND for a real line under a DIFFERENT store, not just for a nonexistent id — the exact scenario (id, storeId) scoping was added for", async () => {
+      mockLineDeleteMany.mockImplementation(({ where }: { where: { id: string; storeId: string } }) =>
+        Promise.resolve({ count: where.id === "line-1" && where.storeId === "correct-store" ? 1 : 0 }),
+      );
+      const mismatched = await removeAssortmentLineAction({ id: "line-1", storeId: "s1" });
+      expect(mismatched).toEqual({ ok: false, code: "NOT_FOUND" });
+      const matched = await removeAssortmentLineAction({ id: "line-1", storeId: "correct-store" });
+      expect(matched).toEqual({ ok: true, id: "line-1" });
     });
 
     it("returns INVALID_REQUEST for a malformed payload", async () => {
