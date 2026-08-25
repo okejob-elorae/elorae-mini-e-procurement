@@ -107,6 +107,10 @@ export function StoreAssortmentCard({ storeId, termsType, lines }: Props) {
   const [addItemKey, setAddItemKey] = useState("");
   const [addTargetRaw, setAddTargetRaw] = useState("");
   const [catalog, setCatalog] = useState<CatalogState>({ status: "idle" });
+  /* Kept separate from `adding` (the submit's own pending flag) — the catalog fetch is a READ, and
+   * dismissal (Escape, overlay click, Cancel) must stay live while it is in flight. Only the write
+   * below should ever hold the dialog open against the operator's own dismiss action. */
+  const [, startCatalogTransition] = useTransition();
   const [adding, startAddTransition] = useTransition();
   const addInFlight = useRef(false);
 
@@ -129,7 +133,7 @@ export function StoreAssortmentCard({ storeId, termsType, lines }: Props) {
     setAddItemKey("");
     setAddTargetRaw("");
     setCatalog({ status: "loading" });
-    startAddTransition(async () => {
+    startCatalogTransition(async () => {
       try {
         const items = await getItems({ isActive: true, type: "FINISHED_GOOD" });
         const list = Array.isArray(items) ? items : [];
@@ -374,7 +378,12 @@ export function StoreAssortmentCard({ storeId, termsType, lines }: Props) {
                           <Button
                             size="icon"
                             variant="ghost"
-                            disabled={removing && removeTarget?.id === line.id}
+                            /* Gated on ANY remove in flight, not just this row's — a second row's
+                             * trash swapping `removeTarget` mid-flight would relabel the confirm
+                             * dialog's subject while the first row's request is still committing,
+                             * and its completion would then close a dialog the operator never
+                             * confirmed. */
+                            disabled={removing}
                             aria-label={`${t("remove")} — ${line.productName}`}
                             onClick={() => setRemoveTarget(line)}
                           >
