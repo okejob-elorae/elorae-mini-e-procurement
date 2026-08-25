@@ -306,6 +306,7 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
       {showResolutionControls && (
         <ResolutionControls
           status={r.status}
+          origin={r.origin}
           lines={r.lines}
           canManage={canManage}
           canWriteOff={canWriteOff}
