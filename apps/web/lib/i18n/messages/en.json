@@ -2544,10 +2544,10 @@
     "valuationIncomplete": "Not Fully Valued",
     "valuation": {
       "cardTitle": "Return Valuation",
-      "totalLabel": "Total Return Value",
       "notYetValuedBody": "The return's value will be computed automatically once this return is approved.",
       "incompleteTitle": "Valuation Incomplete",
       "incompleteBody": "{count} line(s) still need a price before this return can be fully valued.",
+      "incompleteBodyApproved": "{count} line(s) could not be priced and are permanently excluded from this return's total — values were locked at approval and cannot be changed from here.",
       "surplusNote": "This return has a line credited at the quantity the warehouse actually received, so its value may exceed the store's own paper nota.",
       "colCreditedQty": "Credited Qty",
       "colUnitPriceRef": "Unit Price (Reference)",
@@ -2633,7 +2633,8 @@
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "ERROR": "Something went wrong. Please try again.",
       "PRICE_NOT_AVAILABLE": "The selected delivery is no longer a valid price source for this line. Reload the page and try again.",
-      "ALREADY_APPROVED": "This return has already been approved, so its price can no longer be changed."
+      "ALREADY_APPROVED": "This return has already been approved, so its price can no longer be changed.",
+      "AUTO_PRICE_AVAILABLE": "This line has a valid automatic price from a delivery — a manual price is not allowed while that automatic price still applies."
     },
     "pricing": {
       "autoTitle": "Automatic Price",
@@ -2653,7 +2654,8 @@
       "provenanceManualTitle": "Manual price",
       "unpriceableBody": "This item has never been delivered to this store, so there is no automatic price to use — enter a manual price with a note.",
       "successSet": "Line price saved."
-    }
+    },
+    "approveConfirmValuationWarning": "{count} line(s) still have no price. They will still be approved and restored to stock, but their value will never be computed after this."
   },
   "promos": {
     "pageTitle": "Promos",

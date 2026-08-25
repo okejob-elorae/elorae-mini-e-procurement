@@ -84,13 +84,25 @@ const PRICEABLE_STATUSES: ReadonlySet<FieldReturnStatus> = new Set([
 ]);
 
 /**
- * A line "still needs a price" whenever `priceState` is AMBIGUOUS or UNPRICEABLE, whether the
- * retur is still open (an admin can fix it now via LinePriceControls) or already APPROVED (the
- * gap is permanent — `priceState` collapses to UNPRICEABLE post-approval since no candidates
- * are computed for a closed retur, which is still the correct signal: no price was ever set).
+ * A line still awaiting an admin's pricing decision on a retur that is STILL OPEN — `priceState`
+ * AMBIGUOUS or UNPRICEABLE is exactly the pair LinePriceControls itself renders a picker/manual
+ * form for. Deliberately NOT used once the retur is APPROVED: `priceState` reads "SET" for a
+ * preserved-but-never-resolved admin choice (a dangling `priceDeliveryLineId`, a MANUAL choice
+ * whose price was never actually recorded), so on an approved retur this count can read 0 while
+ * a line's `lineValue` is genuinely null — see `unvaluedLineCount` for the post-approval signal.
  */
 function unpricedLineCount(lines: FieldReturnDetail["lines"]): number {
   return lines.filter((l) => l.priceState === "AMBIGUOUS" || l.priceState === "UNPRICEABLE").length;
+}
+
+/**
+ * The header's post-approval signal, and the one that must agree with the register's own
+ * `status === "APPROVED" && valuationStatus === "PENDING"` badge condition. `lineValue` is
+ * stamped once, at approval, straight from what actually got priced — unlike `priceState`,
+ * it cannot read "resolved" for a line whose admin choice never actually resolved.
+ */
+function unvaluedLineCount(lines: FieldReturnDetail["lines"]): number {
+  return lines.filter((l) => l.lineValue === null).length;
 }
 
 /** Same 2dp Rupiah formatting LinePriceControls uses beside it — money always renders id-ID grouped. */
@@ -267,6 +279,25 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
             <p className="text-sm text-muted-foreground">{t("valuation.cancelledBody")}</p>
           ) : r.valuationStatus === "VALUED" && r.totalValue !== null ? (
             <p className="text-2xl font-bold tabular-nums">{formatMoney2(r.totalValue)}</p>
+          ) : r.status === "APPROVED" ? (
+            /*
+             * APPROVED but NOT valued — the same signal the register's own badge condition
+             * uses (status === APPROVED && valuationStatus === PENDING). Values are frozen at
+             * approval with no UI path back to re-enter them, so this is a STATEMENT of a
+             * permanent gap, never an instruction — there is nothing left for the operator to
+             * do about it here. unvaluedLineCount (lineValue === null), not the priceState-based
+             * unpricedCount, because a preserved dangling admin choice reads priceState "SET"
+             * despite never having resolved to an actual value.
+             */
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium">{t("valuation.incompleteTitle")}</p>
+                <p className="text-xs">
+                  {t("valuation.incompleteBodyApproved", { count: unvaluedLineCount(r.lines) })}
+                </p>
+              </div>
+            </div>
           ) : unpricedCount > 0 ? (
             <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -360,6 +391,18 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
             <AlertDialogTitle>{tReceiving("approveConfirmTitle")}</AlertDialogTitle>
             <AlertDialogDescription>{tReceiving("approveConfirmDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
+          {unpricedCount > 0 && (
+            /*
+             * Surfaced here, not just discovered afterwards on the card below — approving with
+             * an incomplete valuation must be a deliberate choice. There is no post-approval
+             * repricing path (values freeze at approval by design), so this is the only moment
+             * this warning can still change anyone's mind.
+             */
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <p className="text-xs">{tReceiving("approveConfirmValuationWarning", { count: unpricedCount })}</p>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
             <AlertDialogAction
