@@ -242,4 +242,4 @@ When EPIC-08 introduces `InventoryValue.reservedQty`:
 
 This file is the contract; if reality has drifted (a helper was renamed, a registry value disappeared, the recommended pattern stopped working), fix the guide in the same PR as the code change. Stale integration docs are worse than no docs — they tell readers the system works in a way it no longer does.
 
-The maintenance rule from `CLAUDE.md` applies: when an EPIC ships, refresh both the BOUNDARY decomposition table AND any guide section that referenced the EPIC's work as "upcoming."
+The maintenance rule from `docs/EPIC-STATUS.md` applies: when an EPIC ships, refresh both the BOUNDARY decomposition table AND any guide section that referenced the EPIC's work as "upcoming."
