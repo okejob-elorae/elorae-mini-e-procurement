@@ -419,7 +419,15 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
       <AlertDialog
         open={approveOpen}
         onOpenChange={(open) => {
-          if (isPending || previewPending) return;
+          /*
+           * Only isPending (the actual approve mutation) blocks closing — previewPending is a
+           * read-only stock-impact fetch with nothing to protect mid-flight, so gating Cancel on
+           * it as well left the button looking live while doing nothing for the 1-2s the preview
+           * takes. The fetch itself is safe to let finish in the background: this component stays
+           * mounted regardless of dialog visibility, and its result only ever feeds a warning
+           * inside a now-closed dialog.
+           */
+          if (isPending) return;
           setApproveOpen(open);
           if (!open) setStockImpact({ status: "idle" });
         }}
