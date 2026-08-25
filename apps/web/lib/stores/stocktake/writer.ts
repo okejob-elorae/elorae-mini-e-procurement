@@ -76,9 +76,11 @@ export async function createStoreStocktake(input: {
  * `StoreStock` row for. Each lands with `isAdded: true`, `expectedQty: 0` (nothing was expected —
  * there was no shelf row), and `productName` resolved from `Item` the same way
  * `buildStocktakeLines` fills it. Its variance is therefore just the count itself
- * (`countedQty − 0`), which is always zero or a surplus, never a shortfall — so an added line
- * needs a reason on any non-zero count but never a cause; `SHORTFALL_NEEDS_CAUSE` cannot fire on
- * this path by construction.
+ * (`countedQty − 0`), which is always zero or a surplus, never a shortfall — so `approveStoreStocktake`
+ * will require a reason on it but never a cause; `SHORTFALL_NEEDS_CAUSE` cannot fire on this path
+ * by construction. That reason check is NOT enforced here at save time — see the comment at the
+ * added-lines block below for why — only the structural guards (`ITEM_NOT_FOUND`,
+ * `DUPLICATE_LINE`) are.
  */
 export async function saveStocktakeCounts(input: {
   stocktakeId: string;
@@ -149,12 +151,16 @@ export async function saveStocktakeCounts(input: {
         if (!addedItemNameById.has(al.itemId)) throw new StoreStocktakeError("ITEM_NOT_FOUND");
       }
 
-      for (const al of normalizedAdded) {
-        const variance = al.countedQty === null ? null : al.countedQty - 0;
-        if (variance !== null && variance !== 0 && !(al.reason && al.reason.trim())) {
-          throw new StoreStocktakeError("VARIANCE_NEEDS_REASON");
-        }
-      }
+      /*
+       * The reason check is deliberately NOT here. A save is a batch of counts from one sitting
+       * (the PWA submits up to a whole store's worth of lines in one call) — aborting the entire
+       * transaction over one added line missing a reason would discard every other line's count
+       * with an error that names none of them. `approveStoreStocktake` already runs the identical
+       * VARIANCE_NEEDS_REASON check over every line uniformly (added or not, since an added line
+       * is just a StoreStocktakeLine with expectedQty: 0), so deferring it there keeps the rule
+       * in one place and makes losing a batch at save time impossible. ITEM_NOT_FOUND and
+       * DUPLICATE_LINE stay here because both are structural — either would write a bad row.
+       */
     }
 
     for (const line of input.lines) {

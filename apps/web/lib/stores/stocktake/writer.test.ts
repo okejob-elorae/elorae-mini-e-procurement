@@ -429,30 +429,46 @@ d("store stocktake writer (test bed only)", () => {
       ).rejects.toMatchObject({ code: "DUPLICATE_LINE" });
     });
 
-    it("an added line requires a reason on a non-zero count but never a cause", async () => {
+    it("accepts an added line with a non-zero count and no reason — the reason check is deferred to approval", async () => {
       const id = await mkStocktake({ lines: [] });
-
-      await expect(
-        saveStocktakeCounts({
-          stocktakeId: id,
-          lines: [],
-          addedLines: [{ itemId: itemAddedId, variantSku: "", countedQty: 5 }],
-          submit: false,
-          userId: adminId,
-        }),
-      ).rejects.toMatchObject({ code: "VARIANCE_NEEDS_REASON" });
-
-      // Same doc, same item — the failed attempt above wrote nothing, so this is not a duplicate.
       const res = await saveStocktakeCounts({
         stocktakeId: id,
         lines: [],
-        addedLines: [{ itemId: itemAddedId, variantSku: "", countedQty: 5, reason: "found on shelf" }],
+        addedLines: [{ itemId: itemAddedId, variantSku: "", countedQty: 5 }],
         submit: false,
         userId: adminId,
       });
       expect(res.ok).toBe(true);
-
       const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: id, itemId: itemAddedId } });
+      expect(line.isAdded).toBe(true);
+      expect(Number(line.varianceQty)).toBe(5);
+      expect(line.reason).toBeNull();
+    });
+
+    it("approval — not save — rejects an added line's non-zero count with no reason; a reason with no cause is accepted", async () => {
+      const id = await mkStocktake({ lines: [] });
+      await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: [],
+        addedLines: [{ itemId: itemAddedId, variantSku: "", countedQty: 5 }],
+        submit: false,
+        userId: adminId,
+      });
+
+      await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "VARIANCE_NEEDS_REASON" });
+
+      const added = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: id, itemId: itemAddedId } });
+      await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: [{ lineId: added.id, countedQty: 5, reason: "found on shelf" }],
+        submit: false,
+        userId: adminId,
+      });
+
+      const res = await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+      expect(res.ok).toBe(true);
+
+      const line = await prisma.storeStocktakeLine.findUniqueOrThrow({ where: { id: added.id } });
       expect(line.isAdded).toBe(true);
       expect(Number(line.varianceQty)).toBe(5);
       expect(line.cause).toBeNull();
