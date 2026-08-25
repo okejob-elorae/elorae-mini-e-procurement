@@ -2568,9 +2568,9 @@
     },
     "konsiSuggestions": {
       "title": "Saran Produk",
-      "toggleLabelCollapsed": "Sarankan produk baru",
+      "toggleLabelCollapsed": "Tampilkan saran produk",
       "toggleLabelExpanded": "Sembunyikan saran produk",
-      "shortLinesHeading": "{count} baris pesanan tidak bisa dipenuhi stoknya — sarankan produk pengganti yang belum pernah dikirim ke toko ini",
+      "shortLinesHeading": "{count} baris pesanan tidak bisa dipenuhi stoknya — lihat saran produk pengganti di bawah ini",
       "neverSentHeading": "Belum pernah dikirim ke toko ini",
       "neverSentReason": "Toko ini belum pernah menerima produk-produk ini — layak dicoba.",
       "gapHeading": "Gap Assortment",

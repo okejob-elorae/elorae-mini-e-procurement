@@ -2568,9 +2568,9 @@
     },
     "konsiSuggestions": {
       "title": "Product Suggestions",
-      "toggleLabelCollapsed": "Suggest new products",
+      "toggleLabelCollapsed": "Show product suggestions",
       "toggleLabelExpanded": "Hide product suggestions",
-      "shortLinesHeading": "{count} order line(s) can't be fully stocked — suggest replacement products never sent to this store",
+      "shortLinesHeading": "{count} order line(s) can't be fully stocked — check the suggestions below for replacement products",
       "neverSentHeading": "Never sent to this store",
       "neverSentReason": "This store has never carried these products — worth trying.",
       "gapHeading": "Assortment gap",
