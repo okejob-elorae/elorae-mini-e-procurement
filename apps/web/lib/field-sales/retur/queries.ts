@@ -20,6 +20,8 @@ export type FieldReturnRow = {
   status: FieldReturnStatus;
   lineCount: number;
   createdAt: Date;
+  totalValue: number | null;
+  valuationStatus: "PENDING" | "VALUED";
 };
 
 export async function listFieldReturns(params: {
@@ -44,6 +46,8 @@ export async function listFieldReturns(params: {
         status: true,
         transport: true,
         createdAt: true,
+        totalValue: true,
+        valuationStatus: true,
         store: { select: { name: true } },
         _count: { select: { lines: true } },
       },
@@ -60,6 +64,8 @@ export async function listFieldReturns(params: {
       status: r.status,
       lineCount: r._count.lines,
       createdAt: r.createdAt,
+      totalValue: r.totalValue === null ? null : r.totalValue.toNumber(),
+      valuationStatus: r.valuationStatus,
     })),
     total,
   };

@@ -47,6 +47,11 @@ const STATUS_BADGE_CLASS: Record<FieldReturnStatus, string> = {
   CANCELLED: "",
 };
 
+/** Same 2dp Rupiah formatting the detail page uses — money always renders id-ID grouped. */
+function formatMoney2(n: number): string {
+  return `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export function FieldReturnsPageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
@@ -133,31 +138,55 @@ export function FieldReturnsPageClient(props: Props) {
                       <TableHead>{t("colRaisedAt")}</TableHead>
                       <TableHead>{t("colTransport")}</TableHead>
                       <TableHead className="text-right">{t("colLineCount")}</TableHead>
+                      <TableHead className="text-right">{t("colValue")}</TableHead>
                       <TableHead>{t("colStatus")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {props.rows.map((r) => (
-                      <TableRow
-                        key={r.id}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => startTransition(() => router.push(`${ROUTE}/${r.id}`))}
-                      >
-                        <TableCell className="font-mono text-sm">{r.docNo}</TableCell>
-                        <TableCell className="max-w-[220px] truncate">{r.storeName}</TableCell>
-                        <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(r.createdAt)}</TableCell>
-                        <TableCell>{t(`transport.${r.transport}`)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{r.lineCount}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={STATUS_BADGE_VARIANT[r.status]}
-                            className={STATUS_BADGE_CLASS[r.status]}
-                          >
-                            {t(`status.${r.status}`)}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {props.rows.map((r) => {
+                      /*
+                       * Only APPROVED + PENDING is a genuine, permanent gap worth surfacing here —
+                       * every not-yet-approved retur reads PENDING by default (valuationStatus is
+                       * only stamped VALUED/PENDING at approval), so flagging it pre-approval would
+                       * mark every open retur "incomplete" even when nothing is actually wrong yet.
+                       */
+                      const valuationIncomplete = r.status === "APPROVED" && r.valuationStatus === "PENDING";
+                      return (
+                        <TableRow
+                          key={r.id}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => startTransition(() => router.push(`${ROUTE}/${r.id}`))}
+                        >
+                          <TableCell className="font-mono text-sm">{r.docNo}</TableCell>
+                          <TableCell className="max-w-[220px] truncate">{r.storeName}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(r.createdAt)}</TableCell>
+                          <TableCell>{t(`transport.${r.transport}`)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{r.lineCount}</TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">
+                            {r.totalValue !== null ? (
+                              formatMoney2(r.totalValue)
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                            {valuationIncomplete && (
+                              <div className="mt-1">
+                                <Badge variant="outline" className="border-amber-500/40 text-amber-700">
+                                  {t("valuationIncomplete")}
+                                </Badge>
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={STATUS_BADGE_VARIANT[r.status]}
+                              className={STATUS_BADGE_CLASS[r.status]}
+                            >
+                              {t(`status.${r.status}`)}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

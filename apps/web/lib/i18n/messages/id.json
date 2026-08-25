@@ -2539,6 +2539,24 @@
       "colQty": "Qty",
       "colReason": "Alasan",
       "colReasonNote": "Catatan Alasan"
+    },
+    "colValue": "Nilai",
+    "valuationIncomplete": "Belum Ternilai",
+    "valuation": {
+      "cardTitle": "Penilaian Retur",
+      "totalLabel": "Total Nilai Retur",
+      "notYetValuedBody": "Nilai retur akan dihitung otomatis saat retur ini disetujui.",
+      "incompleteTitle": "Penilaian Belum Lengkap",
+      "incompleteBody": "{count} baris masih memerlukan harga sebelum retur ini bisa ternilai penuh.",
+      "surplusNote": "Retur ini memiliki baris kelebihan yang dikreditkan pada jumlah yang diterima gudang, sehingga nilainya bisa lebih besar dari nota toko.",
+      "colCreditedQty": "Qty Dikreditkan",
+      "colUnitPriceRef": "Harga Satuan (Referensi)",
+      "colLineValue": "Nilai Baris",
+      "colProvenance": "Sumber Harga",
+      "provenanceManual": "Manual",
+      "provenanceNone": "Belum Ditentukan",
+      "surplusBadge": "Kelebihan Dikreditkan",
+      "surplusStats": "Klaim {claimed} · Diterima {received} · Dikreditkan {credited}"
     }
   },
   "fieldReturnReceiving": {
@@ -2612,7 +2630,28 @@
       "RESOLUTION_DIRECTION_MISMATCH": "Jenis penyelesaian yang dipilih tidak sesuai dengan arah selisih baris ini (kurang atau lebih).",
       "UNRESOLVED_LINES": "Masih ada baris dengan selisih yang belum diselesaikan.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
-      "ERROR": "Terjadi kesalahan. Coba lagi."
+      "ERROR": "Terjadi kesalahan. Coba lagi.",
+      "PRICE_NOT_AVAILABLE": "Pengiriman yang dipilih bukan lagi sumber harga yang valid untuk baris ini. Muat ulang halaman dan coba lagi.",
+      "ALREADY_APPROVED": "Retur ini sudah disetujui sehingga harganya tidak bisa diubah lagi."
+    },
+    "pricing": {
+      "autoTitle": "Harga Otomatis",
+      "autoBody": "Harga ini akan diambil otomatis dari pengiriman {docNo} ({price}).",
+      "pickerLabel": "Pilih pengiriman sumber harga",
+      "pickerPlaceholder": "Pilih pengiriman...",
+      "pickerHint": "Toko ini pernah menerima barang ini dari lebih dari satu pengiriman dengan harga berbeda — pilih salah satu sebagai acuan harga baris ini.",
+      "confirmPick": "Gunakan Harga Ini",
+      "manualLabel": "Harga Satuan Manual",
+      "manualPlaceholder": "cth. 15000",
+      "manualNotePlaceholder": "Jelaskan sumber harga ini, misalnya rujukan nota toko",
+      "confirmManual": "Simpan Harga Manual",
+      "changeButton": "Ubah Harga",
+      "switchToManual": "Gunakan harga manual",
+      "switchToPicker": "Pilih dari pengiriman",
+      "provenanceDeliveryTitle": "Harga dari pengiriman",
+      "provenanceManualTitle": "Harga manual",
+      "unpriceableBody": "Barang ini belum pernah dikirim ke toko ini sehingga tidak ada harga otomatis untuk dipakai — masukkan harga manual beserta catatannya.",
+      "successSet": "Harga baris berhasil disimpan."
     }
   },
   "promos": {
@@ -3247,7 +3286,6 @@
       "failed": "Ekspor gagal"
     }
   },
-
   "financeAccountMapping": {
     "title": "Pemetaan Akun",
     "cardTitle": "Pemetaan Akun Posting",
@@ -3310,7 +3348,6 @@
       "WRONG_ACCOUNT_TYPE": "Akun ini bertipe salah untuk peran tersebut — mis. peran Utang Usaha harus dipetakan ke akun bertipe LIABILITAS."
     }
   },
-
   "financeCashFlowSections": {
     "title": "Klasifikasi Arus Kas",
     "subtitle": "Tetapkan setiap akun neraca ke aktivitas operasional, investasi, atau pendanaan.",
@@ -3347,7 +3384,6 @@
       "KAS_REQUIRES_ASET": "Hanya akun bertipe ASET yang dapat ditetapkan sebagai Kas dan Setara Kas. Menetapkan akun liabilitas atau ekuitas sebagai kas akan membuat laporan arus kas salah."
     }
   },
-
   "leadTime": {
     "title": "Lead Time",
     "subtitle": "Daftar proses (pustaka) & papan untuk menarik proses ke tiap supplier",
