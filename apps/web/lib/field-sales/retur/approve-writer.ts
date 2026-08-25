@@ -182,22 +182,44 @@ export async function approveFieldReturn(input: {
         latestResolutionType: latest?.type ?? null,
       });
 
-      /* Resolve the per-unit price: an admin's existing choice wins, otherwise auto-resolve. */
+      /*
+       * Resolve the per-unit price: an admin's existing choice wins, otherwise auto-resolve.
+       * `preserveAdminChoice` marks a line where an admin already picked MANUAL or DELIVERY
+       * and that choice failed to resolve (a manual price that was never actually set, or a
+       * priceDeliveryLineId that is dangling / whose lineTotal has since gone null). That is
+       * a recorded admin decision, not an absence of one — wiping priceSource/
+       * priceDeliveryLineId/priceNote here would destroy the only trace it existed, on a
+       * terminal APPROVED retur with no UI path back to re-enter it. Only the auto-resolve
+       * path (no priceSource chosen at all) is allowed to null them, because there nothing
+       * was ever chosen.
+       */
       let unitPrice: number | null = null;
       let priceSource: "DELIVERY" | "MANUAL" | null = null;
       let priceDeliveryLineId: string | null = null;
+      let preserveAdminChoice = false;
 
       if (line.priceSource === "MANUAL") {
-        unitPrice = line.unitPrice ? line.unitPrice.toNumber() : null;
-        priceSource = unitPrice === null ? null : "MANUAL";
-      } else if (line.priceSource === "DELIVERY" && line.priceDeliveryLineId) {
-        const dl = await tx.fieldSalesDeliveryLine.findUnique({
-          where: { id: line.priceDeliveryLineId },
-          select: { qty: true, lineTotal: true },
-        });
-        unitPrice = dl && dl.lineTotal !== null ? effectiveUnitPrice(dl.lineTotal.toNumber(), dl.qty) : null;
-        priceSource = unitPrice === null ? null : "DELIVERY";
-        priceDeliveryLineId = unitPrice === null ? null : line.priceDeliveryLineId;
+        if (line.unitPrice) {
+          unitPrice = line.unitPrice.toNumber();
+          priceSource = "MANUAL";
+        } else {
+          preserveAdminChoice = true;
+        }
+      } else if (line.priceSource === "DELIVERY") {
+        const dl = line.priceDeliveryLineId
+          ? await tx.fieldSalesDeliveryLine.findUnique({
+              where: { id: line.priceDeliveryLineId },
+              select: { qty: true, lineTotal: true },
+            })
+          : null;
+        const resolved = dl && dl.lineTotal !== null ? effectiveUnitPrice(dl.lineTotal.toNumber(), dl.qty) : null;
+        if (resolved !== null) {
+          unitPrice = resolved;
+          priceSource = "DELIVERY";
+          priceDeliveryLineId = line.priceDeliveryLineId;
+        } else {
+          preserveAdminChoice = true;
+        }
       } else {
         const resolved = await resolveLinePrice(tx, {
           storeId: ret.storeId,
@@ -216,16 +238,18 @@ export async function approveFieldReturn(input: {
       if (lineValue === null) allPriced = false;
       else total += lineValue;
 
-      await tx.fieldReturnLine.update({
-        where: { id: line.id },
-        data: {
-          creditedQty,
-          unitPrice: unitPrice === null ? null : round2(unitPrice),
-          lineValue,
-          priceSource,
-          priceDeliveryLineId,
-        },
-      });
+      if (!preserveAdminChoice) {
+        await tx.fieldReturnLine.update({
+          where: { id: line.id },
+          data: {
+            creditedQty,
+            unitPrice: unitPrice === null ? null : round2(unitPrice),
+            lineValue,
+            priceSource,
+            priceDeliveryLineId,
+          },
+        });
+      }
 
       /*
        * SALESMAN_BEARS records what the salesman owes; WRITE_OFF records the company's

@@ -8,8 +8,11 @@ export function round2(n: number): number {
   /*
    * Scaling through a fixed-precision string before rounding matters: 1.005 * 100 evaluates to
    * 100.49999999999999 in IEEE-754, so Math.round on the raw product loses the .5 boundary and
-   * returns 1 instead of 1.01. toFixed(6) restores the boundary without reintroducing its own
-   * imprecision at this magnitude, and Math.round then rounds half away from zero as intended.
+   * returns 1 instead of 1.01. toFixed(6) rounds at 8 decimal places first, which recovers the
+   * true .5 boundary in every case this module's money math produces. It narrows the window
+   * for the underlying float-imprecision problem rather than eliminating it outright — a value
+   * within roughly 5e-9 below a .5 boundary would still round up here — but that is sub-rupiah
+   * and irrelevant at IDR's 2-decimal precision. Math.round then rounds half away from zero.
    */
   const scaled = Number((Math.abs(n) * 100).toFixed(6));
   return (Math.sign(n) * Math.round(scaled)) / 100;
