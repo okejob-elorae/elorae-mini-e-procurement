@@ -47,7 +47,7 @@ export function SpgStocktakeAddItemSheet({
         if (!alive) return;
         const list = Array.isArray(items) ? items : [];
         const flattened: AddableItem[] = [];
-        for (const item of list as Array<{ id: string; sku: string; nameId: string; variants: unknown }>) {
+        for (const item of list as unknown as Array<{ id: string; sku: string; nameId: string; variants: unknown }>) {
           if (itemHasSkuVariants(item.variants)) {
             for (const variant of variantSelectOptions(parseItemVariants(item.variants))) {
               flattened.push({

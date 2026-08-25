@@ -323,6 +323,14 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
       lines = resolvedLines;
       addedLines = [...(input.addedLines ?? []), ...fallbackAddedLines];
     } else {
+      /*
+       * `if (input.storeId)` above does NOT narrow this branch to the `{ stocktakeId }` member:
+       * `storeId: string` includes `""`, which is falsy, so that member survives here and
+       * `input.stocktakeId` stays `string | undefined`. `isValidSaveCountsInput` already rejects
+       * a payload without exactly one non-empty key, so this check is unreachable in practice —
+       * it is here to narrow the type honestly rather than assert the state away with a cast.
+       */
+      if (!input.stocktakeId) return { ok: false, code: "INVALID_REQUEST" };
       stocktakeId = input.stocktakeId;
       const doc = await prisma.storeStocktake.findUnique({ where: { id: stocktakeId }, select: { storeId: true } });
       if (!doc) return { ok: false, code: "NOT_FOUND" };

@@ -371,7 +371,7 @@ export function StocktakeDetailClient({
           string,
           { itemId: string; itemSku: string; variantSku: string; productName: string }
         >();
-        for (const item of list as Array<{ id: string; sku: string; nameId: string; variants: unknown }>) {
+        for (const item of list as unknown as Array<{ id: string; sku: string; nameId: string; variants: unknown }>) {
           const variantRows = parseItemVariants(item.variants);
           if (itemHasSkuVariants(item.variants)) {
             for (const variant of variantSelectOptions(variantRows)) {
