@@ -1,7 +1,11 @@
 /**
- * Deliberately import-free, same rule as variance.ts: these are consumed by a "use client"
- * component, and any import here would drag its whole module graph — including the
- * @elorae/db barrel (Prisma + the mariadb driver) — into the browser bundle.
+ * Deliberately import-free. Unlike variance.ts, no "use client" component imports this file
+ * directly today — only pricing.ts, queries.ts and the setLinePriceAction server action do,
+ * and the clients that need this module's arithmetic (LinePriceControls, FieldReturnDetailClient)
+ * either import variance.ts or take pre-computed values type-only from queries.ts. The rule is
+ * kept anyway as cheap insurance: it costs nothing today, and it means a future client import of
+ * this file can never accidentally drag @elorae/db (Prisma + the mariadb driver) into the browser
+ * bundle the way it would if this file pulled in even a transitive server-only import.
  */
 
 export function round2(n: number): number {
@@ -29,11 +33,19 @@ export function effectiveUnitPrice(lineTotal: number, qty: number): number | nul
   return lineTotal / qty;
 }
 
+/**
+ * De-dupes on a ROUNDED (2dp) key, not the raw float — two deliveries priced at the genuinely
+ * same rupiah amount can still disagree in their last IEEE-754 bits (the classic `0.1 + 0.2 !==
+ * 0.3`), and comparing raw floats would read that as two different prices and needlessly demand
+ * an admin pick one. The representative `price` returned for an AUTO verdict is always
+ * `prices[0]` (full precision, unrounded) — not the rounded key — so it stays the exact same
+ * value `resolveLinePrice` pairs it with via `candidates[0]`.
+ */
 export function classifyPriceCandidates(
   prices: number[],
 ): { kind: "AUTO"; price: number } | { kind: "AMBIGUOUS" } | { kind: "UNPRICEABLE" } {
   if (prices.length === 0) return { kind: "UNPRICEABLE" };
-  const distinct = Array.from(new Set(prices));
-  if (distinct.length === 1) return { kind: "AUTO", price: distinct[0] };
+  const distinctRounded = new Set(prices.map((p) => round2(p)));
+  if (distinctRounded.size === 1) return { kind: "AUTO", price: prices[0] };
   return { kind: "AMBIGUOUS" };
 }

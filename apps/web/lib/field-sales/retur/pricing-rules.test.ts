@@ -15,7 +15,7 @@ describe("effectiveUnitPrice", () => {
   });
 
   it("does NOT round — the caller needs the exact ratio to compute an exact line total", () => {
-    expect(effectiveUnitPrice(10, 3)).not.toBe(3.33);
+    expect(effectiveUnitPrice(10, 3)).toBe(10 / 3);
   });
 });
 
@@ -34,6 +34,17 @@ describe("classifyPriceCandidates", () => {
 
   it("is unpriceable when no delivery priced these goods", () => {
     expect(classifyPriceCandidates([])).toEqual({ kind: "UNPRICEABLE" });
+  });
+
+  it("de-dupes prices that are the genuinely same rupiah amount but differ in float noise", () => {
+    /* The classic 0.1 + 0.2 !== 0.3 IEEE-754 case, scaled to a realistic rupiah magnitude: both
+       amounts are "the same price, Rp 300.000,00" and must not read as two disagreeing
+       deliveries. A raw-float Set would treat these as distinct and force an unnecessary
+       AMBIGUOUS pick. */
+    const a = (0.1 + 0.2) * 1_000_000;
+    const b = 0.3 * 1_000_000;
+    expect(a).not.toBe(b);
+    expect(classifyPriceCandidates([a, b])).toEqual({ kind: "AUTO", price: a });
   });
 });
 

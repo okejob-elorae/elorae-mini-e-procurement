@@ -199,7 +199,16 @@ export async function approveFieldReturn(input: {
       let preserveAdminChoice = false;
 
       if (line.priceSource === "MANUAL") {
-        if (line.unitPrice) {
+        /*
+         * The `unitPrice !== null` check is explicit on purpose, not `if (line.unitPrice)` — a
+         * Prisma Decimal is an object and therefore truthy even at zero, so a truthy check
+         * would silently treat a genuine 0 price the same as "never set" and discard it via
+         * preserveAdminChoice below. setLinePriceAction already refuses to WRITE a manual price
+         * <= 0, so a null unitPrice on a MANUAL-sourced line is unreachable through that action
+         * today — this branch only defends against a row written by hand-run SQL against a
+         * priceSource of MANUAL with no unitPrice.
+         */
+        if (line.unitPrice !== null) {
           unitPrice = line.unitPrice.toNumber();
           priceSource = "MANUAL";
         } else {
@@ -238,18 +247,24 @@ export async function approveFieldReturn(input: {
       if (lineValue === null) allPriced = false;
       else total += lineValue;
 
-      if (!preserveAdminChoice) {
-        await tx.fieldReturnLine.update({
-          where: { id: line.id },
-          data: {
-            creditedQty,
-            unitPrice: unitPrice === null ? null : round2(unitPrice),
-            lineValue,
-            priceSource,
-            priceDeliveryLineId,
-          },
-        });
-      }
+      /*
+       * creditedQty (and lineValue) are units/money facts derived independently of whose price
+       * choice won, and must be stamped every time — including when preserveAdminChoice holds.
+       * Only priceSource/priceDeliveryLineId are conditional: those are the admin's recorded
+       * provenance choice, and wiping them here on a dangling/never-set choice would destroy
+       * the only trace it existed, on a terminal APPROVED retur with no UI path back to
+       * re-enter it. (priceNote is never part of this update at all, by any path — it is
+       * already implicitly preserved.)
+       */
+      await tx.fieldReturnLine.update({
+        where: { id: line.id },
+        data: {
+          creditedQty,
+          unitPrice: unitPrice === null ? null : round2(unitPrice),
+          lineValue,
+          ...(preserveAdminChoice ? {} : { priceSource, priceDeliveryLineId }),
+        },
+      });
 
       /*
        * SALESMAN_BEARS records what the salesman owes; WRITE_OFF records the company's
@@ -272,7 +287,10 @@ export async function approveFieldReturn(input: {
         status: "APPROVED",
         approvedAt: new Date(),
         approvedById: input.approvedById,
-        totalValue: allPriced ? total : null,
+        /* Every addend is already round2'd, but summing several 2dp values can still leave
+           sub-cent float residue (the header total is the one authoritative figure here, unlike
+           each line's own already-rounded lineValue) — round once more at the end. */
+        totalValue: allPriced ? round2(total) : null,
         valuationStatus: allPriced ? "VALUED" : "PENDING",
       },
     });

@@ -4,6 +4,7 @@ import { createFieldReturn } from "./writer";
 import { receiveFieldReturn } from "./receive-writer";
 import { resolveFieldReturnLine } from "./resolve-writer";
 import { approveFieldReturn } from "./approve-writer";
+import { getFieldReturnById } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -726,6 +727,14 @@ d("approveFieldReturn (test bed only)", () => {
     expect(line.priceDeliveryLineId).toBe(danglingDeliveryLineId);
     expect(line.priceNote).toBe("dari nota lama");
     expect(line.lineValue).toBeNull();
+    /*
+     * creditedQty is a units fact independent of whose price choice won — it must still be
+     * stamped even though the price provenance is preserved untouched. Retur I is claimed 3 ==
+     * received 3 (no variance), so the credited qty is the received qty, 3. Before this fix the
+     * whole update was skipped whenever preserveAdminChoice held, so this would have stayed
+     * null forever on a terminal APPROVED retur with no way back in to fix it.
+     */
+    expect(line.creditedQty).toBe(3);
   });
 
   it("honours a manual price and keeps its note", async () => {
@@ -738,6 +747,27 @@ d("approveFieldReturn (test bed only)", () => {
     expect(Number(line.lineValue)).toBe(1_500_000);
     expect(line.priceSource).toBe("MANUAL");
     expect(line.priceNote).toBe("harga nota lama");
+  });
+
+  it("honours a genuine manual price of exactly 0 rather than discarding it as unset", async () => {
+    /*
+     * setLinePriceAction refuses to WRITE a manual price <= 0, so this row only exists via
+     * hand-run SQL against a MANUAL-sourced line — exactly the scenario the writer's own
+     * `unitPrice !== null` comment defends against. Before that fix, `if (line.unitPrice)` was
+     * falsy for a Prisma Decimal of 0 (an object, but its own truthiness check on a Decimal
+     * instance is unrelated to the numeric value it wraps in a way that made 0 look "unset"),
+     * so this would have wrongly hit preserveAdminChoice and left the line unpriced instead of
+     * honouring the recorded (if unusual) zero price.
+     */
+    await prisma.fieldReturnLine.update({
+      where: { id: seededId(unpricedLineId) },
+      data: { priceSource: "MANUAL", unitPrice: 0, priceNote: "harga nol dari hand-run SQL" },
+    });
+    await approveFieldReturn({ returnId: unpricedReturnId, approvedById: adminId });
+    const line = await prisma.fieldReturnLine.findUniqueOrThrow({ where: { id: seededId(unpricedLineId) } });
+    expect(line.priceSource).toBe("MANUAL");
+    expect(Number(line.unitPrice)).toBe(0);
+    expect(Number(line.lineValue)).toBe(0);
   });
 
   it("never values a retur held under investigation — it cannot reach approval at all", async () => {
@@ -761,7 +791,18 @@ d("approveFieldReturn (test bed only)", () => {
       where: { id: seededId(deliveryLineId) },
       data: { lineTotal: 1 },
     });
-    const line = await prisma.fieldReturnLine.findUniqueOrThrow({ where: { id: seededId(lineId) } });
-    expect(Number(line.lineValue)).toBe(10_000_000);
+    /*
+     * A raw findUniqueOrThrow on FieldReturnLine only proves the stored column never changed —
+     * that passes under ANY implementation, since nothing re-runs approveFieldReturn between
+     * the mutation and the read and lineValue is a stored column, not a computed one. Re-read
+     * through getFieldReturnById instead: it is the one path that recomputes a still-open
+     * line's price from live candidates (isOpenForPricing), so this is only genuinely
+     * falsifiable if getFieldReturnById itself ever started re-deriving an APPROVED line's
+     * value from the (now-mutated) delivery instead of returning the frozen stored one.
+     */
+    const detail = await getFieldReturnById(seededId(returnId));
+    const line = detail?.lines.find((l) => l.id === seededId(lineId));
+    expect(line?.unitPrice).toBe(833_333.33);
+    expect(line?.lineValue).toBe(10_000_000);
   });
 });
