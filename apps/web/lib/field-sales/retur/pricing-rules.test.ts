@@ -45,4 +45,9 @@ describe("round2", () => {
   it("rounds half away from zero rather than to even", () => {
     expect(round2(0.005)).toBe(0.01);
   });
+
+  it("does not lose the .5 boundary to floating-point imprecision", () => {
+    /* 1.005 * 100 is 100.49999999999999 in IEEE-754 — a naive Math.round on that returns 1. */
+    expect(round2(1.005)).toBe(1.01);
+  });
 });

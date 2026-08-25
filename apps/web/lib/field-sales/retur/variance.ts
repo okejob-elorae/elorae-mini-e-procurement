@@ -79,7 +79,7 @@ export function allDiscrepantLinesSettled(
 export function creditedQtyForLine(line: {
   qty: number;
   receivedQty: number | null;
-  latestResolutionType: string | null;
+  latestResolutionType: "SALESMAN_BEARS" | "INVESTIGATE" | "WRITE_OFF" | "ACCEPT_SURPLUS" | null;
 }): number | null {
   if (line.receivedQty === null) return null;
 

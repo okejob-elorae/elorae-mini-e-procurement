@@ -1,7 +1,9 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { FieldReturnError } from "./errors";
-import { allDiscrepantLinesSettled } from "./variance";
+import { allDiscrepantLinesSettled, creditedQtyForLine } from "./variance";
+import { effectiveUnitPrice, round2 } from "./pricing-rules";
+import { resolveLinePrice } from "./pricing";
 
 /**
  * The point where goods a store sent back physically re-enter sellable stock. Runs inside
@@ -21,6 +23,7 @@ export async function approveFieldReturn(input: {
         docNo: true,
         status: true,
         receivedAt: true,
+        storeId: true,
         lines: {
           select: {
             id: true,
@@ -30,10 +33,13 @@ export async function approveFieldReturn(input: {
             receivedQty: true,
             sellableQty: true,
             rejectedQty: true,
+            priceSource: true,
+            priceDeliveryLineId: true,
+            unitPrice: true,
             resolutions: {
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               take: 1,
-              select: { type: true },
+              select: { id: true, type: true },
             },
           },
         },
@@ -158,9 +164,93 @@ export async function approveFieldReturn(input: {
       }
     }
 
+    /*
+     * Value each line at the price the store was actually billed. This never blocks the
+     * physical approval above: an ambiguous or unpriceable line simply carries no lineValue,
+     * and the header's totalValue is null rather than a partial sum whenever any line is
+     * unpriced — a partial total is a number that looks complete and would be mistaken for
+     * the retur's real value downstream.
+     */
+    let total = 0;
+    let allPriced = true;
+
+    for (const line of ret.lines) {
+      const latest = line.resolutions[0] ?? null;
+      const creditedQty = creditedQtyForLine({
+        qty: line.qty,
+        receivedQty: line.receivedQty,
+        latestResolutionType: latest?.type ?? null,
+      });
+
+      /* Resolve the per-unit price: an admin's existing choice wins, otherwise auto-resolve. */
+      let unitPrice: number | null = null;
+      let priceSource: "DELIVERY" | "MANUAL" | null = null;
+      let priceDeliveryLineId: string | null = null;
+
+      if (line.priceSource === "MANUAL") {
+        unitPrice = line.unitPrice ? line.unitPrice.toNumber() : null;
+        priceSource = unitPrice === null ? null : "MANUAL";
+      } else if (line.priceSource === "DELIVERY" && line.priceDeliveryLineId) {
+        const dl = await tx.fieldSalesDeliveryLine.findUnique({
+          where: { id: line.priceDeliveryLineId },
+          select: { qty: true, lineTotal: true },
+        });
+        unitPrice = dl && dl.lineTotal !== null ? effectiveUnitPrice(dl.lineTotal.toNumber(), dl.qty) : null;
+        priceSource = unitPrice === null ? null : "DELIVERY";
+        priceDeliveryLineId = unitPrice === null ? null : line.priceDeliveryLineId;
+      } else {
+        const resolved = await resolveLinePrice(tx, {
+          storeId: ret.storeId,
+          itemId: line.itemId,
+          variantSku: line.variantSku,
+        });
+        if (resolved.kind === "AUTO") {
+          unitPrice = resolved.price;
+          priceSource = "DELIVERY";
+          priceDeliveryLineId = resolved.candidate.deliveryLineId;
+        }
+        /* AMBIGUOUS and UNPRICEABLE both leave the line unpriced — an admin decides later. */
+      }
+
+      const lineValue = creditedQty !== null && unitPrice !== null ? round2(creditedQty * unitPrice) : null;
+      if (lineValue === null) allPriced = false;
+      else total += lineValue;
+
+      await tx.fieldReturnLine.update({
+        where: { id: line.id },
+        data: {
+          creditedQty,
+          unitPrice: unitPrice === null ? null : round2(unitPrice),
+          lineValue,
+          priceSource,
+          priceDeliveryLineId,
+        },
+      });
+
+      /*
+       * SALESMAN_BEARS records what the salesman owes; WRITE_OFF records the company's
+       * expense. Both are the missing units at the same per-unit price. ACCEPT_SURPLUS and
+       * INVESTIGATE get no amount — nobody owes anything for a surplus, and an investigation
+       * settles nothing.
+       */
+      if (latest && (latest.type === "SALESMAN_BEARS" || latest.type === "WRITE_OFF") && unitPrice !== null) {
+        const missing = line.qty - (line.receivedQty ?? 0);
+        await tx.fieldReturnResolution.update({
+          where: { id: latest.id },
+          data: { amount: round2(missing * unitPrice) },
+        });
+      }
+    }
+
     await tx.fieldReturn.update({
       where: { id: ret.id },
-      data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById },
+      data: {
+        status: "APPROVED",
+        approvedAt: new Date(),
+        approvedById: input.approvedById,
+        totalValue: allPriced ? total : null,
+        valuationStatus: allPriced ? "VALUED" : "PENDING",
+      },
     });
 
     return { ok: true as const };

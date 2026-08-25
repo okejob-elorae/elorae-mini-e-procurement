@@ -5,7 +5,14 @@
  */
 
 export function round2(n: number): number {
-  return (Math.sign(n) * Math.round(Math.abs(n) * 100)) / 100;
+  /*
+   * Scaling through a fixed-precision string before rounding matters: 1.005 * 100 evaluates to
+   * 100.49999999999999 in IEEE-754, so Math.round on the raw product loses the .5 boundary and
+   * returns 1 instead of 1.01. toFixed(6) restores the boundary without reintroducing its own
+   * imprecision at this magnitude, and Math.round then rounds half away from zero as intended.
+   */
+  const scaled = Number((Math.abs(n) * 100).toFixed(6));
+  return (Math.sign(n) * Math.round(scaled)) / 100;
 }
 
 /**
