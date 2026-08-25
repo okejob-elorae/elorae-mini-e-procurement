@@ -24,15 +24,22 @@ function formatMoney2(n: number): string {
 }
 
 /**
- * A non-negative number with at most 2 decimals — mirrors the writer's own money precision.
- * Accepts both the dot and the Indonesian comma decimal separator; the writer only ever sees
- * the parsed number, never the raw string, so this is purely an input-friendliness normalisation.
+ * A POSITIVE number with at most 2 decimals — mirrors the writer's own money precision. Accepts
+ * both the dot and the Indonesian comma decimal separator; the writer only ever sees the parsed
+ * number, never the raw string, so this is purely an input-friendliness normalisation.
+ *
+ * The leading negative lookahead rejects a bare zero (in any decimal spelling — "0", "0.0",
+ * "0.00") without rejecting a genuinely small positive amount like "0.5": it only fails the
+ * match when EVERY digit in the string, integer and decimal part alike, is zero. A manual price
+ * of exactly 0 must never reach the server — it would still round-trip through a Prisma
+ * Decimal (always truthy, even at zero) and read as a complete, deliberate valuation of zero
+ * rather than "no price was ever entered".
  */
 function parseMoneyInput(raw: string): number | null {
   const trimmed = raw.trim().replace(",", ".");
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
+  if (!/^(?!0*(\.0*)?$)\d+(\.\d{1,2})?$/.test(trimmed)) return null;
   const n = Number(trimmed);
-  return Number.isFinite(n) && n >= 0 ? n : null;
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 /**

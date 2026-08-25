@@ -7,9 +7,10 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
 import { resolveFieldReturnLine } from "@/lib/field-sales/retur/resolve-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
-import { listPriceCandidates } from "@/lib/field-sales/retur/pricing";
+import { listPriceCandidates, resolveLinePrice } from "@/lib/field-sales/retur/pricing";
 import { round2 } from "@/lib/field-sales/retur/pricing-rules";
 import { FieldReturnError, type FieldReturnErrorCode } from "@/lib/field-sales/retur/errors";
+import { PRICEABLE_STATUSES, PRICEABLE_STATUS_SET } from "@/lib/field-sales/retur/queries";
 
 export type FieldReturnActionResult =
   | { ok: true }
@@ -29,6 +30,7 @@ export type FieldReturnActionResult =
         | "UNRESOLVED_LINES"
         | "PRICE_NOT_AVAILABLE"
         | "ALREADY_APPROVED"
+        | "AUTO_PRICE_AVAILABLE"
         | "INVALID_REQUEST"
         | "ERROR";
     };
@@ -130,9 +132,12 @@ type SetLinePriceInput =
 /**
  * The two shapes share `lineId`; whichever of `deliveryLineId` (a real string) or
  * `manualUnitPrice` discriminates which branch the action takes. A manual price must be a
- * non-negative finite number (matching `isNonNegativeInt`'s spirit, but money is not
- * integer-only) and its note must be non-blank after trimming — provenance is the entire point
- * of the manual path, so an empty note is as invalid as a missing price.
+ * POSITIVE finite number — `<= 0`, not just `< 0`, is rejected: a manual price of exactly 0
+ * would still pass a Prisma `Decimal` truthiness check downstream and reads as a genuine,
+ * complete valuation of zero rather than "no price was ever recorded" (the same GL-incident
+ * class as a `cogs = 0` line that looked like real data). Its note must also be non-blank after
+ * trimming — provenance is the entire point of the manual path, so an empty note is as invalid
+ * as a missing price.
  */
 function isValidSetLinePriceInput(input: unknown): input is SetLinePriceInput {
   if (typeof input !== "object" || input === null) return false;
@@ -140,20 +145,11 @@ function isValidSetLinePriceInput(input: unknown): input is SetLinePriceInput {
   if (typeof i.lineId !== "string" || i.lineId === "") return false;
   if (typeof i.deliveryLineId === "string") return i.deliveryLineId !== "";
   if (typeof i.manualUnitPrice === "number") {
-    if (!Number.isFinite(i.manualUnitPrice) || i.manualUnitPrice < 0) return false;
+    if (!Number.isFinite(i.manualUnitPrice) || i.manualUnitPrice <= 0) return false;
     return typeof i.note === "string" && i.note.trim() !== "";
   }
   return false;
 }
-
-/**
- * Returns are priceable only while they are still open — once APPROVED their values are frozen
- * and a reprice must be refused rather than silently rewriting history. Kept as an array (not
- * just a Set) because the compare-and-swap below needs it as a Prisma `in` filter, not only a
- * `.has()` lookup.
- */
-const PRICEABLE_STATUSES = ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] as const;
-const PRICEABLE_STATUS_SET: ReadonlySet<string> = new Set(PRICEABLE_STATUSES);
 
 export async function receiveAction(input: {
   returnId: string;
@@ -246,6 +242,15 @@ export async function approveAction(returnId: string): Promise<FieldReturnAction
  * delivery from a different store entirely and inflate the retur's value — the one thing the
  * epic's acceptance criteria forbid.
  *
+ * The MANUAL branch is EQUALLY security-relevant, for the same acceptance criterion, even
+ * though the UI never renders a manual-price control on a line whose `priceState` is AUTO —
+ * every export of a `"use server"` module is an independently callable endpoint regardless of
+ * what the UI withholds. So this re-resolves the line's price server-side via
+ * `resolveLinePrice` and refuses `AUTO_PRICE_AVAILABLE` unless the verdict is AMBIGUOUS or
+ * UNPRICEABLE — a manual override is only for a line auto-resolve genuinely could not price
+ * without help, never a lever to override a price that already resolves cleanly on its own.
+ *
+
  * The initial `findUnique` status check is a friendly early exit, not the real guard — it reads
  * and the actual write are two separate round trips, so a concurrent `approveFieldReturn` (which
  * runs inside its own serializable transaction) can freeze the line in between. The `updateMany`
@@ -293,6 +298,12 @@ export async function setLinePriceAction(input: SetLinePriceInput): Promise<Fiel
       });
       if (swapped.count === 0) return { ok: false, code: "ALREADY_APPROVED" };
     } else {
+      const resolved = await resolveLinePrice(prisma, {
+        storeId: line.returnDoc.storeId,
+        itemId: line.itemId,
+        variantSku: line.variantSku,
+      });
+      if (resolved.kind === "AUTO") return { ok: false, code: "AUTO_PRICE_AVAILABLE" };
       const swapped = await prisma.fieldReturnLine.updateMany({
         where: { id: input.lineId, returnDoc: { status: { in: PRICEABLE_STATUSES } } },
         data: {

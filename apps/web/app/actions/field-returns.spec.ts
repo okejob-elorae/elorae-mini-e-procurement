@@ -15,6 +15,7 @@ const {
   mockFindLine,
   mockUpdateMany,
   mockListPriceCandidates,
+  mockResolveLinePrice,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
@@ -25,6 +26,7 @@ const {
   mockFindLine: vi.fn(),
   mockUpdateMany: vi.fn(),
   mockListPriceCandidates: vi.fn(),
+  mockResolveLinePrice: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -35,7 +37,10 @@ vi.mock("@/lib/rbac", async (importActual) => {
 vi.mock("@/lib/field-sales/retur/receive-writer", () => ({ receiveFieldReturn: mockReceive }));
 vi.mock("@/lib/field-sales/retur/resolve-writer", () => ({ resolveFieldReturnLine: mockResolve }));
 vi.mock("@/lib/field-sales/retur/approve-writer", () => ({ approveFieldReturn: mockApprove }));
-vi.mock("@/lib/field-sales/retur/pricing", () => ({ listPriceCandidates: mockListPriceCandidates }));
+vi.mock("@/lib/field-sales/retur/pricing", () => ({
+  listPriceCandidates: mockListPriceCandidates,
+  resolveLinePrice: mockResolveLinePrice,
+}));
 vi.mock("@elorae/db", () => ({
   prisma: { fieldReturnLine: { findUnique: mockFindLine, updateMany: mockUpdateMany } },
 }));
@@ -55,6 +60,7 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     mockFindLine.mockReset();
     mockUpdateMany.mockReset();
     mockListPriceCandidates.mockReset();
+    mockResolveLinePrice.mockReset();
     mockAuth.mockResolvedValue({
       user: { id: "user-1", permissions: ["field_returns:manage", "field_returns:writeoff"] },
     });
@@ -468,6 +474,10 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       });
       mockListPriceCandidates.mockResolvedValue([{ deliveryLineId: "d1" }]);
       mockUpdateMany.mockResolvedValue({ count: 1 });
+      /* Manual-path tests need a resolveLinePrice verdict that is NOT "AUTO" or the guard added
+         for the auto-priceable-line refusal would refuse them all by default; UNPRICEABLE is
+         the neutral "nothing to auto-resolve" case most of these fixtures represent. */
+      mockResolveLinePrice.mockResolvedValue({ kind: "UNPRICEABLE" });
     });
 
     it("refuses without field_returns:manage", async () => {
@@ -491,9 +501,22 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(res).toEqual({ ok: false, code: "ERROR" });
     });
 
-    it("refuses a manual price that is not a non-negative number", async () => {
+    it("refuses a manual price that is not a positive number", async () => {
       mockHasPermission.mockReturnValue(true);
       const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: -5, note: "x" });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    /*
+     * A manual price of exactly 0 must be refused, not just a negative one — a Prisma Decimal
+     * of 0 is still truthy, so a zero price would round-trip as a "complete" valuation of zero
+     * rather than reading as "no price was ever recorded" (the same shape as the GL incident
+     * where a cogs of 0 read as real data).
+     */
+    it("refuses a manual price of exactly 0", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 0, note: "x" });
       expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
       expect(mockUpdateMany).not.toHaveBeenCalled();
     });
@@ -549,6 +572,29 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d1" });
       expect(res).toEqual({ ok: false, code: "PRICE_NOT_AVAILABLE" });
       expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    /*
+     * The UI never renders a manual-price control on a line whose priceState is AUTO — but
+     * every "use server" export is an independently callable endpoint regardless of what the
+     * UI withholds. This pins the server-side guard directly: a caller who calls the action
+     * anyway, on a line that would resolve cleanly on its own, must be refused rather than
+     * allowed to override a price that already resolves.
+     */
+    it("refuses a manual price when the line would auto-resolve on its own", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolveLinePrice.mockResolvedValue({ kind: "AUTO", price: 833_333.3333, candidate: { deliveryLineId: "d1" } });
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 500_000, note: "trying to undercut it" });
+      expect(res).toEqual({ ok: false, code: "AUTO_PRICE_AVAILABLE" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it("allows a manual price when the line is only AMBIGUOUS, not cleanly AUTO", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolveLinePrice.mockResolvedValue({ kind: "AMBIGUOUS", candidates: [] });
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 500_000, note: "picking one myself" });
+      expect(res).toEqual({ ok: true });
+      expect(mockUpdateMany).toHaveBeenCalledTimes(1);
     });
 
     it("writes a manual price with its note and clears any prior delivery choice", async () => {

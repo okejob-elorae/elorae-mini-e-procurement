@@ -90,6 +90,15 @@ export type FieldReturnPriceSource = "DELIVERY" | "MANUAL";
  */
 export type FieldReturnPriceState = "AUTO" | "AMBIGUOUS" | "UNPRICEABLE" | "SET";
 
+/**
+ * Shared with setLinePriceAction (app/actions/field-returns.ts), which imports this rather than
+ * keeping its own copy — a retur is priceable only while still open; once APPROVED its values
+ * are frozen. Kept as an array (not just a Set) because setLinePriceAction's compare-and-swap
+ * needs it as a Prisma `in` filter, not only a `.has()` lookup.
+ */
+export const PRICEABLE_STATUSES = ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] as const;
+export const PRICEABLE_STATUS_SET: ReadonlySet<string> = new Set(PRICEABLE_STATUSES);
+
 export type FieldReturnLineDetail = {
   id: string;
   itemSku: string;
@@ -139,7 +148,10 @@ export type FieldReturnDetail = {
   lines: FieldReturnLineDetail[];
 };
 
-export async function getFieldReturnById(id: string): Promise<FieldReturnDetail | null> {
+export async function getFieldReturnById(
+  id: string,
+  opts?: { canManage?: boolean },
+): Promise<FieldReturnDetail | null> {
   const r = await prisma.fieldReturn.findUnique({
     where: { id },
     select: {
@@ -203,11 +215,13 @@ export async function getFieldReturnById(id: string): Promise<FieldReturnDetail 
   const docNoByDeliveryLineId = new Map(deliveryLines.map((dl) => [dl.id, dl.delivery.docNo]));
 
   /*
-   * Candidates are only meaningful while the retur can still be repriced — once APPROVED the
-   * line's price is frozen, so there is nothing left for the admin to pick from and no need to
-   * pay for the extra query per line.
+   * Candidates are only meaningful while the retur can still be repriced by a viewer who is
+   * actually allowed to reprice it. Gated on BOTH conditions LinePriceControls itself requires
+   * (canManage + PRICEABLE_STATUS_SET), not just "not yet APPROVED" — a CANCELLED retur and a
+   * viewer with no field_returns:manage can never see the controls either, and firing one
+   * listPriceCandidates query per line for them was pure waste.
    */
-  const isOpenForPricing = r.status !== "APPROVED";
+  const isOpenForPricing = (opts?.canManage ?? false) && PRICEABLE_STATUS_SET.has(r.status);
   const candidatesByLineId = new Map<string, PriceCandidate[]>();
   if (isOpenForPricing) {
     await Promise.all(

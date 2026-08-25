@@ -129,8 +129,8 @@ d("getFieldReturnById — pricing fields (test bed only)", () => {
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
   });
 
-  it("resolves priceState AUTO and attaches priceCandidates for a not-yet-approved line", async () => {
-    const detail = await getFieldReturnById(returnId);
+  it("resolves priceState AUTO and attaches priceCandidates for a not-yet-approved line, for a canManage viewer", async () => {
+    const detail = await getFieldReturnById(returnId, { canManage: true });
     expect(detail).not.toBeNull();
     const line = detail!.lines.find((l) => l.id === lineId)!;
     expect(line.priceState).toBe("AUTO");
@@ -138,12 +138,27 @@ d("getFieldReturnById — pricing fields (test bed only)", () => {
     expect(line.priceCandidates![0].deliveryLineId).toBe(deliveryLineId);
   });
 
+  /*
+   * A viewer without field_returns:manage can never see LinePriceControls, so resolving
+   * candidates for them is pure waste — and, since priceState falls back to computing itself
+   * from those candidates, it also means priceState is NOT a reliable read of "would this
+   * auto-resolve" for such a viewer. This pins the gate itself: same open, genuinely AUTO line
+   * as the test above, but with no canManage (and with `opts` omitted entirely, the real
+   * default every existing non-manage caller gets).
+   */
+  it("omits priceCandidates for a viewer without canManage, even on an open, priceable line", async () => {
+    const detail = await getFieldReturnById(returnId);
+    expect(detail).not.toBeNull();
+    const line = detail!.lines.find((l) => l.id === lineId)!;
+    expect(line.priceCandidates).toBeUndefined();
+  });
+
   it("reports priceState SET once an admin has chosen a price, not re-derived from candidates", async () => {
     await prisma.fieldReturnLine.update({
       where: { id: lineId },
       data: { priceSource: "MANUAL", unitPrice: 5000, priceNote: "manual price" },
     });
-    const detail = await getFieldReturnById(returnId);
+    const detail = await getFieldReturnById(returnId, { canManage: true });
     const line = detail!.lines.find((l) => l.id === lineId)!;
     expect(line.priceState).toBe("SET");
     expect(line.priceSource).toBe("MANUAL");
@@ -156,7 +171,7 @@ d("getFieldReturnById — pricing fields (test bed only)", () => {
       where: { id: lineId },
       data: { priceSource: "DELIVERY", priceDeliveryLineId: deliveryLineId },
     });
-    const detail = await getFieldReturnById(returnId);
+    const detail = await getFieldReturnById(returnId, { canManage: true });
     const line = detail!.lines.find((l) => l.id === lineId)!;
     expect(line.priceDeliveryDocNo).toBe(`TEST-FRQ-DLV-${token}`);
   });
@@ -172,7 +187,7 @@ d("getFieldReturnById — pricing fields (test bed only)", () => {
       where: { id: lineId },
       data: { priceSource: "DELIVERY", priceDeliveryLineId: "does-not-exist-anywhere" },
     });
-    const detail = await getFieldReturnById(returnId);
+    const detail = await getFieldReturnById(returnId, { canManage: true });
     expect(detail).not.toBeNull();
     expect(detail?.lines[0].priceDeliveryDocNo).toBeNull();
   });
@@ -198,14 +213,15 @@ d("getFieldReturnById — pricing fields (test bed only)", () => {
     expect(line.creditedQty).toBe(2);
   });
 
-  it("omits priceCandidates once the retur is APPROVED, even though real candidates exist", async () => {
+  it("omits priceCandidates once the retur is APPROVED, even for a canManage viewer where real candidates exist", async () => {
     /*
      * The item/variant on this line genuinely has a delivery candidate (deliveryLineId) — an
      * implementation that forgot to gate on approval status would attach it here too, so this
-     * assertion is falsifiable rather than vacuously true.
+     * assertion is falsifiable rather than vacuously true. canManage: true here proves this is
+     * the STATUS gate at work, not just the canManage gate the test above already pins.
      */
     await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED" } });
-    const detail = await getFieldReturnById(returnId);
+    const detail = await getFieldReturnById(returnId, { canManage: true });
     const line = detail!.lines.find((l) => l.id === lineId)!;
     expect(line.priceCandidates).toBeUndefined();
   });
