@@ -54,7 +54,8 @@ export async function receiveFieldReturn(input: {
       });
     }
 
-    const status = mismatchedLineCount > 0 ? "MISMATCH_PENDING_RESOLUTION" : "PENDING_APPROVAL";
+    const status: "MISMATCH_PENDING_RESOLUTION" | "PENDING_APPROVAL" =
+      mismatchedLineCount > 0 ? "MISMATCH_PENDING_RESOLUTION" : "PENDING_APPROVAL";
     await tx.fieldReturn.update({
       where: { id: ret.id },
       data: { status, receivedAt: new Date(), receivedById: input.receivedById },
