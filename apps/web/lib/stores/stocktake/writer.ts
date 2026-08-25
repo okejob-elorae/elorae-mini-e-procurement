@@ -18,7 +18,10 @@ type AddedLineInput = {
  * Opens a new count for a store. Refused with `ALREADY_OPEN` when the store already has a
  * document whose `openKey` is non-null — the explicit check exists only to return a readable
  * code; the real guard is the `@unique` constraint on `openKey` itself, which is what actually
- * enforces one open stocktake per store under concurrent creation.
+ * enforces one open stocktake per store under concurrent creation. Two concurrent callers can
+ * both pass the `findFirst` above before either commits — the loser's `create` then violates the
+ * `openKey` unique constraint, so that P2002 is caught and mapped to the same `ALREADY_OPEN`
+ * rather than escaping as an opaque digest.
  *
  * `periodFrom` falls out of the store's previous APPROVED count rather than being supplied by
  * the caller, so the sold-in-window figures on the lines below are never a caller-chosen range.
@@ -39,29 +42,36 @@ export async function createStoreStocktake(input: {
     const draftLines = await buildStocktakeLines(tx, input.storeId, periodFrom, input.countedAt);
     const docNo = await generateDocNumber("STOCKTAKE", tx);
 
-    const created = await tx.storeStocktake.create({
-      data: {
-        docNo,
-        storeId: input.storeId,
-        openKey: input.storeId,
-        countedAt: input.countedAt,
-        periodFrom,
-        createdById: input.createdById,
-        lines: {
-          create: draftLines.map((l) => ({
-            itemId: l.itemId,
-            variantSku: l.variantSku,
-            productName: l.productName,
-            expectedQty: l.expectedQty,
-            soldInPeriodQty: l.soldInPeriodQty,
-            countedQty: null,
-          })),
+    try {
+      const created = await tx.storeStocktake.create({
+        data: {
+          docNo,
+          storeId: input.storeId,
+          openKey: input.storeId,
+          countedAt: input.countedAt,
+          periodFrom,
+          createdById: input.createdById,
+          lines: {
+            create: draftLines.map((l) => ({
+              itemId: l.itemId,
+              variantSku: l.variantSku,
+              productName: l.productName,
+              expectedQty: l.expectedQty,
+              soldInPeriodQty: l.soldInPeriodQty,
+              countedQty: null,
+            })),
+          },
         },
-      },
-      select: { id: true, docNo: true },
-    });
+        select: { id: true, docNo: true },
+      });
 
-    return created;
+      return created;
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        throw new StoreStocktakeError("ALREADY_OPEN");
+      }
+      throw e;
+    }
   });
 }
 
