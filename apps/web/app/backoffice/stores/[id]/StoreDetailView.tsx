@@ -112,7 +112,7 @@ type Visit = {
 type StockCardProps = {
   rows: StoreStockCardData["rows"];
   negativeCount: number;
-  inTransitAdminReturnQty: number;
+  inTransitAdminReturn: { raisedQty: number; receivedQty: number };
   movements: SerializedStockMovement[];
 };
 
@@ -790,7 +790,7 @@ export function StoreDetailView({
         <StoreStockCard
           rows={stockCard.rows}
           negativeCount={stockCard.negativeCount}
-          inTransitAdminReturnQty={stockCard.inTransitAdminReturnQty}
+          inTransitAdminReturn={stockCard.inTransitAdminReturn}
           movements={stockCard.movements}
         />
       )}
@@ -1023,6 +1023,15 @@ export function StoreDetailView({
               onChange={(e) => setRaiseNote(e.target.value)}
             />
           </div>
+
+          {/*
+            All rows entered but every one is zero (or the map has entries with no positive
+            qty) — Submit is disabled with no other visible explanation, since qtyInvalid only
+            fires on unparseable input, not on a valid all-zero set.
+          */}
+          {raiseLineArr.length > 0 && !hasInvalidRaiseQty && includedRaiseLines.length === 0 && (
+            <p className="text-xs text-destructive">{tAdminReturn("noQtyEntered")}</p>
+          )}
 
           <DialogFooter>
             <Button variant="outline" disabled={raising} onClick={() => closeRaiseDialog(false)}>

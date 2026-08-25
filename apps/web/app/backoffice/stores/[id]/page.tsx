@@ -30,7 +30,8 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
   const orders = await getStoreOrderSummary(store.id);
   const sentItems = await getStoreSentItems(store.id);
   const stockCard = store.termsType === "KONSI" ? await getStoreStockCard(store.id) : null;
-  const inTransitAdminReturnQty = store.termsType === "KONSI" ? await getInTransitAdminReturnQty(store.id) : 0;
+  const inTransitAdminReturn =
+    store.termsType === "KONSI" ? await getInTransitAdminReturnQty(store.id) : { raisedQty: 0, receivedQty: 0 };
   const stocktakes =
     store.termsType === "KONSI"
       ? await listStoreStocktakes({ storeId: store.id, page: 1, perPage: STOCKTAKE_HISTORY_PAGE_SIZE })
@@ -59,7 +60,7 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
           ? {
               rows: stockCard.rows,
               negativeCount: stockCard.negativeCount,
-              inTransitAdminReturnQty,
+              inTransitAdminReturn,
               movements: stockCard.movements.map(({ occurredAt, ...m }) => ({ ...m, occurredAtIso: occurredAt.toISOString() })),
             }
           : null

@@ -430,22 +430,52 @@ export async function previewKonsiReturStockImpact(returnId: string): Promise<Ko
 }
 
 /**
- * The total units an ADMIN-origin return has claimed against this store but the warehouse has
- * not yet counted in — the ledger's temporary overstatement `receive-writer.ts` documents:
- * `StoreStock` for an ADMIN return only decrements at receipt, so between raise and receipt the
- * store's own ledger still counts units that are physically on a truck. Scoped to
- * `PENDING_WAREHOUSE_RECEIVING` only (equivalently `receivedAt IS NULL`) — the instant a return
- * is received, `receive-writer.ts` has already applied its decrement, so it is no longer
- * "in transit" by this definition even while still open for resolution/approval.
+ * Two figures describing an ADMIN-origin return that has left this store's `StoreStock` ledger
+ * (or is about to) but has not yet reached APPROVED — split by WHERE the return currently sits,
+ * so the store card can tell "still on a truck" from "already off the shelf" instead of the two
+ * reading identically:
  *
- * Deliberately NOT folded into `getStoreStockCard` or netted out of the stocktake's
- * `expectedQty` — both read the ledger as-is, by design; this is a separate, purely
- * informational figure for the store card to display alongside it.
+ * - `raisedQty`: claimed by a return still `PENDING_WAREHOUSE_RECEIVING` — the ledger's
+ *   temporary OVERSTATEMENT `receive-writer.ts` documents. `StoreStock` for an ADMIN return only
+ *   decrements at receipt, so between raise and receipt the store's own ledger still counts
+ *   units that are physically on a truck.
+ * - `receivedQty`: what the warehouse actually counted in on a return sitting in
+ *   `MISMATCH_PENDING_RESOLUTION` or `PENDING_APPROVAL` — `receive-writer.ts` has already
+ *   applied this decrement, so it is the ledger's temporary UNDERSTATEMENT: the units are gone
+ *   from `StoreStock` but there is no `RETUR_OUT` movement row to explain the drop until the
+ *   return reaches APPROVED (`getStoreStockCard` only lists movements for an APPROVED return).
+ *   An `INVESTIGATE` resolution can hold a return here indefinitely.
+ *
+ * Together these cover every ADMIN-origin status except `APPROVED` (by then the movement row
+ * exists) and `CANCELLED` (nothing left the ledger). Deliberately NOT folded into
+ * `getStoreStockCard` or netted out of the stocktake's `expectedQty` — both read the ledger
+ * as-is, by design; this is a separate, purely informational pair for the store card to display
+ * alongside it.
  */
-export async function getInTransitAdminReturnQty(storeId: string): Promise<number> {
-  const result = await prisma.fieldReturnLine.aggregate({
-    where: { returnDoc: { storeId, origin: "ADMIN", status: "PENDING_WAREHOUSE_RECEIVING" } },
-    _sum: { qty: true },
-  });
-  return result._sum.qty ?? 0;
+export type InTransitAdminReturnQty = {
+  raisedQty: number;
+  receivedQty: number;
+};
+
+export async function getInTransitAdminReturnQty(storeId: string): Promise<InTransitAdminReturnQty> {
+  const [raised, received] = await Promise.all([
+    prisma.fieldReturnLine.aggregate({
+      where: { returnDoc: { storeId, origin: "ADMIN", status: "PENDING_WAREHOUSE_RECEIVING" } },
+      _sum: { qty: true },
+    }),
+    prisma.fieldReturnLine.aggregate({
+      where: {
+        returnDoc: {
+          storeId,
+          origin: "ADMIN",
+          status: { in: ["MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] },
+        },
+      },
+      _sum: { receivedQty: true },
+    }),
+  ]);
+  return {
+    raisedQty: raised._sum.qty ?? 0,
+    receivedQty: received._sum.receivedQty ?? 0,
+  };
 }

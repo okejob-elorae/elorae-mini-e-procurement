@@ -13,6 +13,23 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
+/**
+ * Reads `FIELD_RETURN_MISMATCH` rows scoped to a set of returns, matched in JS on
+ * `metadata.returnId` — this MariaDB adapter's JSON-path filtering is unreliable, and this spec
+ * shares the dev DB with real notification rows, so a global count would prove nothing. Same
+ * approach as `receive-writer.test.ts`'s `mismatchNotificationsFor`, generalised to a list of
+ * return ids. Used by the `getInTransitAdminReturnQty` block below, whose mismatch fixture
+ * writes one of these on every run.
+ */
+async function mismatchNotificationsFor(returnIds: string[]) {
+  const recent = await prisma.adminNotification.findMany({
+    where: { category: "FIELD_RETURN_MISMATCH" },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+  return recent.filter((n) => returnIds.includes((n.metadata as { returnId?: string } | null)?.returnId ?? ""));
+}
+
 d("getFieldReturnById — pricing fields (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
   let uomId = "";
@@ -439,11 +456,13 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
   let userId = "";
   let storeUnreceivedId = "";
   let storeReceivedId = "";
+  let storeMismatchId = "";
   let storeFieldOnlyId = "";
   let storeScopeAId = "";
   let storeScopeBId = "";
   let unreceivedReturnId = "";
   let receivedReturnId = "";
+  let mismatchReturnId = "";
   let fieldReturnId = "";
   let scopeAReturnId = "";
   let scopeBReturnId = "";
@@ -454,11 +473,13 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
     userId = "";
     storeUnreceivedId = "";
     storeReceivedId = "";
+    storeMismatchId = "";
     storeFieldOnlyId = "";
     storeScopeAId = "";
     storeScopeBId = "";
     unreceivedReturnId = "";
     receivedReturnId = "";
+    mismatchReturnId = "";
     fieldReturnId = "";
     scopeAReturnId = "";
     scopeBReturnId = "";
@@ -495,6 +516,7 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
 
     storeUnreceivedId = (await mkStore("UNRECEIVED")).id;
     storeReceivedId = (await mkStore("RECEIVED")).id;
+    storeMismatchId = (await mkStore("MISMATCH")).id;
     storeFieldOnlyId = (await mkStore("FIELDONLY")).id;
     storeScopeAId = (await mkStore("SCOPE-A")).id;
     storeScopeBId = (await mkStore("SCOPE-B")).id;
@@ -509,10 +531,11 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
     unreceivedReturnId = createdUnreceived.returnId;
 
     /*
-     * Raised the same way, then actually received — this is the case that pins the claimed
-     * equivalence (PENDING_WAREHOUSE_RECEIVING === receivedAt IS NULL) rather than trusting a
-     * doc comment: if the query ever drifted to matching on something other than status, or the
-     * status transition on receipt broke, this is what would catch it.
+     * Raised the same way, then received CLEAN (claimed == received) — lands PENDING_APPROVAL.
+     * The receipt-time decrement (`receive-writer.ts`) has already applied, and the return has
+     * not reached APPROVED yet, so this must now move from `raisedQty` to `receivedQty` rather
+     * than being excluded outright: the units are off the shelf but there is still no
+     * `RETUR_OUT` movement row to explain the drop until approval.
      */
     const createdReceived = await createFieldReturn({
       storeId: storeReceivedId,
@@ -526,6 +549,26 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
       returnId: receivedReturnId,
       receivedById: userId,
       counts: [{ lineId: receivedLine.id, receivedQty: 6, sellableQty: 6, rejectedQty: 0 }],
+    });
+
+    /*
+     * Raised 6, received 4 (shortage), left UNRESOLVED — lands MISMATCH_PENDING_RESOLUTION,
+     * which an INVESTIGATE resolution can hold indefinitely. `receivedQty` must count what was
+     * actually counted in (4), never the claimed qty (6) — that's the whole point of splitting
+     * this from `raisedQty`, which is claimed-qty based.
+     */
+    const createdMismatch = await createFieldReturn({
+      storeId: storeMismatchId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 6, reason: "UNSOLD" }],
+    });
+    mismatchReturnId = createdMismatch.returnId;
+    const mismatchLine = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(mismatchReturnId) } });
+    await receiveFieldReturn({
+      returnId: mismatchReturnId,
+      receivedById: userId,
+      counts: [{ lineId: mismatchLine.id, receivedQty: 4, sellableQty: 4, rejectedQty: 0 }],
     });
 
     /*
@@ -563,6 +606,7 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
     const returnIds = [
       seededId(unreceivedReturnId),
       seededId(receivedReturnId),
+      seededId(mismatchReturnId),
       seededId(fieldReturnId),
       seededId(scopeAReturnId),
       seededId(scopeBReturnId),
@@ -570,10 +614,15 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
     const storeIds = [
       seededId(storeUnreceivedId),
       seededId(storeReceivedId),
+      seededId(storeMismatchId),
       seededId(storeFieldOnlyId),
       seededId(storeScopeAId),
       seededId(storeScopeBId),
     ];
+    const notifications = await mismatchNotificationsFor(returnIds);
+    if (notifications.length) {
+      await prisma.adminNotification.deleteMany({ where: { id: { in: notifications.map((n) => n.id) } } });
+    }
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
     await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
@@ -583,21 +632,25 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
   });
 
-  it("counts an ADMIN return raised but not yet received", async () => {
-    expect(await getInTransitAdminReturnQty(storeUnreceivedId)).toBe(4);
+  it("counts an ADMIN return raised but not yet received, under raisedQty", async () => {
+    expect(await getInTransitAdminReturnQty(storeUnreceivedId)).toEqual({ raisedQty: 4, receivedQty: 0 });
   });
 
-  it("excludes an ADMIN return once the warehouse has received it", async () => {
-    expect(await getInTransitAdminReturnQty(storeReceivedId)).toBe(0);
+  it("moves an ADMIN return from raisedQty to receivedQty once the warehouse has received it clean, rather than excluding it — it is not APPROVED yet", async () => {
+    expect(await getInTransitAdminReturnQty(storeReceivedId)).toEqual({ raisedQty: 0, receivedQty: 6 });
+  });
+
+  it("counts receivedQty by what was actually counted in, not the claimed qty, for a received-but-unresolved mismatch", async () => {
+    expect(await getInTransitAdminReturnQty(storeMismatchId)).toEqual({ raisedQty: 0, receivedQty: 4 });
   });
 
   it("never counts a FIELD-origin return, even sitting in the same PENDING_WAREHOUSE_RECEIVING status an ADMIN return would count in", async () => {
-    expect(await getInTransitAdminReturnQty(storeFieldOnlyId)).toBe(0);
+    expect(await getInTransitAdminReturnQty(storeFieldOnlyId)).toEqual({ raisedQty: 0, receivedQty: 0 });
   });
 
   it("scopes to the one store, not picking up another store's ADMIN returns", async () => {
-    expect(await getInTransitAdminReturnQty(storeScopeAId)).toBe(3);
-    expect(await getInTransitAdminReturnQty(storeScopeBId)).toBe(8);
+    expect(await getInTransitAdminReturnQty(storeScopeAId)).toEqual({ raisedQty: 3, receivedQty: 0 });
+    expect(await getInTransitAdminReturnQty(storeScopeBId)).toEqual({ raisedQty: 8, receivedQty: 0 });
   });
 });
 

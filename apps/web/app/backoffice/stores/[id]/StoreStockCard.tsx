@@ -26,13 +26,16 @@ type Props = {
   rows: StoreStockCardData["rows"];
   negativeCount: number;
   /**
-   * Units claimed by an ADMIN-origin return that the warehouse has not yet received —
-   * `StoreStock` only decrements for that origin at receipt, so this ledger still counts them
-   * as on-hand while they are physically on a truck. Display only — never netted out of this
-   * card's own rows or of the stocktake's `expectedQty`, both of which read the ledger as-is
-   * by design.
+   * Two figures for an ADMIN-origin return that has left this ledger, or is about to, but has
+   * not yet reached APPROVED. `raisedQty` — still `PENDING_WAREHOUSE_RECEIVING` — is claimed but
+   * not yet decremented, so this ledger OVERSTATES on-hand stock by that amount while the goods
+   * are physically on a truck. `receivedQty` — `MISMATCH_PENDING_RESOLUTION` or
+   * `PENDING_APPROVAL` — has already been decremented at receipt, so this ledger UNDERSTATES
+   * on-hand stock by that amount, with no movement row below to explain the drop until the
+   * return is approved. Display only — never netted out of this card's own rows or of the
+   * stocktake's `expectedQty`, both of which read the ledger as-is by design.
    */
-  inTransitAdminReturnQty: number;
+  inTransitAdminReturn: { raisedQty: number; receivedQty: number };
   movements: SerializedStockMovement[];
 };
 
@@ -51,7 +54,7 @@ const MOVEMENT_BADGE_VARIANT: Record<StoreStockMovementKind, "default" | "second
   RETUR_OUT: "secondary",
 };
 
-export function StoreStockCard({ rows, negativeCount, inTransitAdminReturnQty, movements }: Props) {
+export function StoreStockCard({ rows, negativeCount, inTransitAdminReturn, movements }: Props) {
   const t = useTranslations("stores.stockCard");
 
   return (
@@ -70,10 +73,20 @@ export function StoreStockCard({ rows, negativeCount, inTransitAdminReturnQty, m
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {inTransitAdminReturnQty > 0 && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
-              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-              <p className="text-xs">{t("inTransitNote", { qty: inTransitAdminReturnQty })}</p>
+          {(inTransitAdminReturn.raisedQty > 0 || inTransitAdminReturn.receivedQty > 0) && (
+            <div className="space-y-2">
+              {inTransitAdminReturn.raisedQty > 0 && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <p className="text-xs">{t("inTransitNote", { qty: inTransitAdminReturn.raisedQty })}</p>
+                </div>
+              )}
+              {inTransitAdminReturn.receivedQty > 0 && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <p className="text-xs">{t("receivedAwaitingApprovalNote", { qty: inTransitAdminReturn.receivedQty })}</p>
+                </div>
+              )}
             </div>
           )}
           {rows.length === 0 ? (
