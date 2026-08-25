@@ -20,7 +20,7 @@ Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostin
 
 - `docs/BOUNDARY.md` — service responsibilities, data ownership (per-table write owners), communication patterns (sync HTTP vs outbox vs webhooks), auth model, failure modes, anti-patterns, decisions log.
 - `docs/INTEGRATION-GUIDE.md` — how to use the Jubelio-touching surface (outbox enqueue, stock adjustments, signed channel).
-- `docs/ARCHITECTURE-NOTES.md` — the detail behind every line of the landmine index below. Read the entry for whatever surface you are about to touch, before writing code.
+- `docs/ARCHITECTURE-NOTES.md` — the detail behind the landmine index below. Read the entry for whatever surface you are about to touch, before writing code. A few triggers also have detail in `docs/EPIC-STATUS.md` (what a slice shipped) or `docs/FOLLOWUPS.md` (the instance still unfixed); the entry says so where that is true.
 - `docs/FOLLOWUPS.md` — follow-ups + known tech debt, grouped by area. Read the relevant section before starting work on that area; log every new follow-up there.
 - `docs/EPIC-STATUS.md` — EPIC decomposition + status tables. Read it before building anything that might already exist, and tick the row when a slice merges.
 - `docs/superpowers/specs/` + `docs/superpowers/plans/` — per-feature design specs + implementation plans (local-only, gitignored). Each feature follows brainstorm → spec → plan → implement → PR.
@@ -40,7 +40,7 @@ Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostin
 
 - **Match existing UI patterns before inventing new ones.** Before writing any new page/form/list, open a sibling module and copy the shape. Backoffice CRUD list reference = `apps/web/app/backoffice/purchase-orders/PurchaseOrdersPageClient.tsx` (header row + inline filter row + Card-wrapped table with CardHeader icon+title, empty state inside CardContent, no `p-6` on the server page — layout handles padding). Backoffice form reference = `apps/web/app/backoffice/suppliers/`. PWA reference = `apps/web/app/pwa/HomeShell.tsx` + `apps/web/app/pwa/stores/StoreList.tsx` (icon-prefixed rows, `bg-primary text-primary-foreground` icon circles for contrast on dark theme, `Card`/`Badge`/`Button` from `@/components/ui/*` — never native `<button>`/`<input>`/`<table>`). Grep + read one existing example before drafting.
 - **Plan before implementing** any non-trivial feature. Brainstorming → spec doc (`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`) → plan doc (`docs/superpowers/plans/YYYY-MM-DD-<topic>-plan.md`) → implement → PR. The `superpowers:*` skills enforce this when invoked. `docs/superpowers/` is local-only (gitignored) — specs/plans never ship in PRs.
-- **On merge, update the docs the change invalidates** — in the same session, not later. Tick the slice's row in `docs/EPIC-STATUS.md` (status → ✅, append PR # + merge date); flip any shipped item in `docs/FOLLOWUPS.md` to `- [x]` and move every new follow-up there (never leave one in a PR body — they die on merge); and if the change created a new trap, add its entry to `docs/ARCHITECTURE-NOTES.md` plus a one-liner in the landmine index below. Also tick the matching story on the GitHub board.
+- **On merge, update the docs the change invalidates** — in the same session, not later. Tick the slice's row in `docs/EPIC-STATUS.md` (status → ✅, append PR # + merge date); flip any shipped item in `docs/FOLLOWUPS.md` to `- [x]` **and append the PR #** (that number is what makes a ticked item traceable later), and move every new follow-up there (never leave one in a PR body — they die on merge); and if the change created a new trap, add its entry to `docs/ARCHITECTURE-NOTES.md` plus a one-liner in the landmine index below. Also tick the matching story on the GitHub board.
 - **TDD for non-trivial logic.** Pure functions, handlers, routers, processors get failing tests first. Module-wiring and infra-glue files are exempt.
 - **Never force-push master.** Past divergence with a teammate's monolith branch was resolved by *recreating* their content in the monorepo, not by force-merging. See `project_master_divergence` memory.
 - **`git check-ignore -v` before staging any dotfile** to confirm it's actually ignored.
@@ -77,11 +77,11 @@ ngrok stays available as a fallback for local-only demo work (laptop apps/api + 
 
 ## Landmine index
 
-One line per known trap: **the situation you are in — what bites — where the detail lives.** Every one of them was written after someone paid for it. If a line matches what you are about to do, open the note in `docs/ARCHITECTURE-NOTES.md` BEFORE writing code.
+One line per known trap: **the situation you are in — what bites — where the detail lives.** Every one of them was written after someone paid for it. If a line matches what you are about to do, open the matching entry in `docs/ARCHITECTURE-NOTES.md` BEFORE writing code — and follow its onward pointers into `docs/EPIC-STATUS.md` / `docs/FOLLOWUPS.md` where it names them.
 
 **Stock, inventory, reservations**
 
-- Looking up an `InventoryValue` row? Variantless rows key on `null`, NOT `""` — a strict `""`-keyed lookup misses them and forks a phantom row. Use the OR-tolerant (`null` or `""`) lookup.
+- Looking up an `InventoryValue` row? The variant key may legitimately be `null` OR `""` — variantless rows key on `null`, while simple-item carts and `VanStock` deliberately key `""`. Always use the OR-tolerant lookup (`OR: [{ variantSku: null }, { variantSku: "" }]`); a lookup strict on either spelling misses rows and forks a phantom row. Never "fix" one spelling into the other.
 - Writing to `InventoryValue` / `reservedQty`? Atomic Prisma `increment`/`decrement` only, never read-modify-write — the webhook worker is concurrent and races the ERP ship path across processes.
 - Reading `qtyOnHand` as "what we can sell"? `available = qtyOnHand − reservedQty`, derived at read time and never stored; Jubelio stock push sends `available`, not raw `qtyOnHand`.
 - Touching field-sales order lines, van stock or the PWA catalog? All of it is PER-VARIANT (real `variantSku`); simple items stay item-level, min-qty aggregates per item, promos aggregate per item then pro-rate.
@@ -93,13 +93,15 @@ One line per known trap: **the situation you are in — what bites — where the
 - Validating a retur receive count? ZERO is valid on every line, including all-zero (the lost-sack case) — never add a positive-quantity check anywhere in that flow.
 - Resolving a retur mismatch? Variance direction is enforced in the WRITER, not the UI — every `"use server"` export is an independently callable endpoint, so the UI withholding a control is not a guarantee.
 - Rendering a retur value? `unitPrice` is a rounded 2dp REFERENCE figure and does not multiply back — `lineValue`/`totalValue` are the only authoritative figures; a partial `totalValue` is `null`, never a partial sum.
-- Editing `lib/field-sales/retur/variance.ts` or `pricing-rules.ts`? Both are deliberately import-free — one import drags the `@elorae/db` barrel (Prisma + the mariadb driver) into the browser bundle.
+- Editing `lib/field-sales/retur/variance.ts`? Deliberately import-free because a `"use client"` component imports it — one import drags the `@elorae/db` barrel (Prisma + the mariadb driver) into the browser bundle. `pricing-rules.ts` beside it is import-free for a DIFFERENT reason: no client component imports it today, and the rule is kept as cheap insurance against one ever doing so.
 - Adding a doc-number sequence for a new register? Take your own `DocType` — field retur takes `FIELDRET`, NOT the vendor-return `RET`; sharing a counter interleaves two registers and lets a Settings prefix edit renumber the other one.
-- Touching the delivery writer or the konsi approve path? Each carries a satellite behaviour inside the same transaction (one `TaxInvoice` per nota tagihan; admin-added never-sent konsi lines) — read the entry before changing either.
+- Touching `recordFieldSalesDelivery`? It creates exactly one `TaxInvoice` per nota tagihan inside its own serializable transaction — the finance queue is keyed on the nota being ISSUED, not printed, so a delivery written without that row is invisible to finance and fails closed and silent.
+- Changing the konsi approve path? An already-APPROVED order must REFUSE a payload carrying admin-added lines rather than returning its idempotent `ok` — returning `ok` reports a success that created nothing.
 
 **Data ownership + auth**
 
 - Writing `Item` or `StockAdjustment` from apps/api? Both are dual-owner — go through the `@elorae/db` writer helpers, never a direct Prisma write. See also `docs/BOUNDARY.md §3`.
+- Adding a relation under `relationMode = "prisma"`? There is NO database FK. If the Prisma relation is REQUIRED, verify the id exists inside the writer's transaction — a dangling id throws `Inconsistent query result` forever with no UI repair path — and make every `delete<Parent>` count the new child.
 - Adding a permission and assuming ADMIN is gated by it? The admin wildcard is granted in CODE (`isSystem` → `['*']`), not by a DB row — a seed does not unblock admin, it makes the permission grantable to NON-admin roles.
 
 **Database, migrations, prod ops**

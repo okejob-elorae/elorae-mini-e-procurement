@@ -300,4 +300,4 @@ Colleague concern: client pain is **Shopee + TikTok Shop**, but Elorae shows a l
 | Decision writer | `packages/db/src/sales-return-writer.ts` |
 | UI list / detail | `apps/web/app/backoffice/returns/` |
 | OpenAPI | `docs/jubelio_api_docs.yaml` — `/sales/returns/items*`, `/inventory/items/*-return*` |
-| Known debt | `evidenceUrls` never mirrored; `salesreturn_decision_push` unwired; sweeper not paginated (see `CLAUDE.md` follow-ups) |
+| Known debt | `evidenceUrls` never mirrored; `salesreturn_decision_push` unwired; sweeper not paginated (see `docs/FOLLOWUPS.md`) |

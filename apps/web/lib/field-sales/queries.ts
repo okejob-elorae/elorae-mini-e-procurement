@@ -418,7 +418,7 @@ export async function listKonsiSuggestions(orderId: string): Promise<KonsiSugges
   /*
    * `InventoryValue` is unique on (itemId, variantSku), but MariaDB permits multiple NULLs, so an
    * item can carry both a `null` and an `""` row (e.g. a variant item restocked via ERP GRN/production
-   * writes a `null` pooled row the per-variant sale won't see — see CLAUDE.md). Both normalize to the
+   * writes a `null` pooled row the per-variant sale won't see — see docs/ARCHITECTURE-NOTES.md). Both normalize to the
    * same suggestion key. Dedupe by (itemId, normalized variantSku) rather than emitting one row per
    * raw InventoryValue row, so a collision can't render two indistinguishable suggestions.
    */
