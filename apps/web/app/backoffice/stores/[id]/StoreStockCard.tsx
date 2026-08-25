@@ -17,6 +17,7 @@ import type {
   StoreStockCardData,
   StoreStockMovementKind,
 } from "@/lib/inventory/store-stock-card";
+import type { AssortmentGapRow } from "@/lib/stores/assortment/queries";
 
 export type SerializedStockMovement = Omit<StoreStockCardData["movements"][number], "occurredAt"> & {
   occurredAtIso: string;
@@ -37,6 +38,13 @@ type Props = {
    */
   inTransitAdminReturn: { raisedQty: number; receivedQty: number };
   movements: SerializedStockMovement[];
+  /**
+   * The store's assortment lines the ledger falls short on. A row missing from `rows` entirely
+   * is the never-received case; a row present in `rows` at or under target is depleted — the two
+   * read identically as an `onHandQty` of 0 from the gap query alone, so this component tells
+   * them apart itself by checking membership in `rows`, never by trusting a flag from the query.
+   */
+  gaps: AssortmentGapRow[];
 };
 
 function formatDateTime(iso: string): string {
@@ -54,8 +62,9 @@ const MOVEMENT_BADGE_VARIANT: Record<StoreStockMovementKind, "default" | "second
   RETUR_OUT: "secondary",
 };
 
-export function StoreStockCard({ rows, negativeCount, inTransitAdminReturn, movements }: Props) {
+export function StoreStockCard({ rows, negativeCount, inTransitAdminReturn, movements, gaps }: Props) {
   const t = useTranslations("stores.stockCard");
+  const stockedKeys = new Set(rows.map((row) => `${row.itemId}::${row.variantSku}`));
 
   return (
     <>
@@ -142,6 +151,62 @@ export function StoreStockCard({ rows, negativeCount, inTransitAdminReturn, move
           )}
         </CardContent>
       </Card>
+
+      {gaps.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4" />
+              {t("gapCardTitle")}
+              <Badge variant="destructive" className="ml-2">
+                {gaps.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">{t("gapNote")}</p>
+            <div className="overflow-auto max-h-96 rounded-md border">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-background">
+                  <TableRow>
+                    <TableHead>{t("gapColArticle")}</TableHead>
+                    <TableHead>{t("gapColSize")}</TableHead>
+                    <TableHead className="text-right">{t("gapColOnHand")}</TableHead>
+                    <TableHead>{t("gapColTarget")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {gaps.map((gap) => {
+                    const key = `${gap.itemId}::${gap.variantSku}`;
+                    const isMissing = !stockedKeys.has(key);
+                    return (
+                      <TableRow key={key}>
+                        <TableCell className="text-sm">{gap.productName}</TableCell>
+                        <TableCell className="font-mono text-xs">{gap.variantSku || "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          <span className={isMissing ? "text-muted-foreground" : "font-semibold text-destructive"}>
+                            {gap.onHandQty}
+                          </span>
+                          <Badge variant={isMissing ? "outline" : "destructive"} className="ml-2">
+                            {isMissing ? t("gapStatusMissing") : t("gapStatusDepleted")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {gap.targetQty === null ? (
+                            <Badge variant="outline">{t("gapTargetMustBePresent")}</Badge>
+                          ) : (
+                            <span className="tabular-nums">{t("gapTargetMin", { qty: gap.targetQty })}</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
