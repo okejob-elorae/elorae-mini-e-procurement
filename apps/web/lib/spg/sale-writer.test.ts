@@ -154,8 +154,9 @@ d("recordSpgSale (test bed only)", () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: vItem.id } });
     await prisma.spgSaleLine.deleteMany({ where: { itemId: vItem.id } });
     await prisma.spgSale.deleteMany({ where: { id: res.spgSaleId } });
-    await prisma.item.deleteMany({ where: { id: vItem.id } });
-    await prisma.uOM.deleteMany({ where: { id: vUom.id } });
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId), itemId: seededId(vItem.id) } });
+    await prisma.item.deleteMany({ where: { id: seededId(vItem.id) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(vUom.id) } });
   });
 
   it("decrements the store's stock at a KONSI store", async () => {
