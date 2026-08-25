@@ -567,46 +567,64 @@ enum FieldReturnTransport {
   EXPEDITION
 }
 
+enum FieldReturnPriceSource {
+  DELIVERY
+  MANUAL
+}
+
+enum FieldReturnValuationStatus {
+  PENDING
+  VALUED
+}
+
 model FieldReturn {
-  id             String               @id @default(cuid())
-  docNo          String               @unique
-  storeId        String
-  visitId        String?
-  raisedById     String
-  status         FieldReturnStatus    @default(PENDING_WAREHOUSE_RECEIVING)
-  transport      FieldReturnTransport
-  expeditionName String?
-  resiNo         String?
-  notaPhotoUrl   String
-  notaPhotoR2Key String
-  note           String?              @db.Text
-  createdAt      DateTime             @default(now())
-  receivedAt     DateTime?
-  receivedById   String?
-  approvedAt     DateTime?
-  approvedById   String?
-  store          Store                @relation(fields: [storeId], references: [id])
-  visit          StoreVisit?          @relation(fields: [visitId], references: [id])
-  lines          FieldReturnLine[]
+  id              String                     @id @default(cuid())
+  docNo           String                     @unique
+  storeId         String
+  visitId         String?
+  raisedById      String
+  status          FieldReturnStatus          @default(PENDING_WAREHOUSE_RECEIVING)
+  transport       FieldReturnTransport
+  expeditionName  String?
+  resiNo          String?
+  notaPhotoUrl    String
+  notaPhotoR2Key  String
+  note            String?                    @db.Text
+  createdAt       DateTime                   @default(now())
+  receivedAt      DateTime?
+  receivedById    String?
+  approvedAt      DateTime?
+  approvedById    String?
+  totalValue      Decimal?                   @db.Decimal(15, 2)
+  valuationStatus FieldReturnValuationStatus @default(PENDING)
+  store           Store                      @relation(fields: [storeId], references: [id])
+  visit           StoreVisit?                @relation(fields: [visitId], references: [id])
+  lines           FieldReturnLine[]
 
   @@index([storeId])
   @@index([status])
 }
 
 model FieldReturnLine {
-  id          String                  @id @default(cuid())
-  returnId    String
-  itemId      String
-  variantSku  String                  @default("")
-  qty         Int
-  reason      FieldReturnReason
-  reasonNote  String?
-  receivedQty Int?
-  sellableQty Int?
-  rejectedQty Int?
-  returnDoc   FieldReturn             @relation(fields: [returnId], references: [id])
-  item        Item                    @relation(fields: [itemId], references: [id])
-  resolutions FieldReturnResolution[]
+  id                  String                  @id @default(cuid())
+  returnId            String
+  itemId              String
+  variantSku          String                  @default("")
+  qty                 Int
+  reason              FieldReturnReason
+  reasonNote          String?
+  receivedQty         Int?
+  sellableQty         Int?
+  rejectedQty         Int?
+  creditedQty         Int?
+  unitPrice           Decimal?                @db.Decimal(15, 2)
+  lineValue           Decimal?                @db.Decimal(15, 2)
+  priceSource         FieldReturnPriceSource?
+  priceDeliveryLineId String?
+  priceNote           String?                 @db.Text
+  returnDoc           FieldReturn             @relation(fields: [returnId], references: [id])
+  item                Item                    @relation(fields: [itemId], references: [id])
+  resolutions         FieldReturnResolution[]
 
   @@index([returnId])
   @@index([itemId])
@@ -617,6 +635,7 @@ model FieldReturnResolution {
   lineId      String
   type        FieldReturnResolutionType
   qty         Int
+  amount      Decimal?                  @db.Decimal(15, 2)
   note        String?                   @db.Text
   createdById String
   createdAt   DateTime                  @default(now())
