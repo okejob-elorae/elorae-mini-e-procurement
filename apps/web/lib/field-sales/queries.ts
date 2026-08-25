@@ -68,7 +68,7 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   konsiTransfer: {
     docNo: string;
     createdAt: Date;
-    lines: Array<{ productName: string; variantSku: string; qty: number }>;
+    lines: Array<{ productName: string; variantSku: string; variantLabel: string | null; qty: number }>;
   } | null;
   lines: Array<{
     id: string;
@@ -181,7 +181,12 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         select: {
           docNo: true,
           createdAt: true,
-          lines: { select: { productName: true, variantSku: true, qty: true } },
+          lines: {
+            select: {
+              productName: true, variantSku: true, qty: true,
+              item: { select: { variants: true } },
+            },
+          },
         },
       },
     },
@@ -241,6 +246,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
           lines: row.konsiTransfers[0].lines.map((l) => ({
             productName: l.productName,
             variantSku: l.variantSku,
+            variantLabel: variantDetailForSku(l.item.variants, l.variantSku),
             qty: toNum(l.qty),
           })),
         }

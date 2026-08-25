@@ -140,7 +140,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
       lines: konsiTransfer.lines.map((line) => ({
         productName: line.productName,
         variantSku: line.variantSku,
-        variantLabel: null,
+        variantLabel: line.variantLabel,
         qty: line.qty,
       })),
       labels: {
