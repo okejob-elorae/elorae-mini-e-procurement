@@ -97,6 +97,22 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
     }),
   ]);
 
+  /*
+   * The StoreStock decrement on an approved konsi retur only exists from this branch onward — a
+   * retur approved before the store's FIRST konsi transfer ever happened cannot have touched a
+   * ledger that did not yet exist, no matter what FieldReturnLine.creditedQty says. Without this
+   * floor, a KONSI store with pre-branch retur history would list RETUR_OUT rows against a
+   * balance those rows never actually moved — a card that visibly does not add up, with no
+   * explanation. Filtering to "on or after the first transfer" (rather than a disclosure line) is
+   * the same idiom the surat keluar button already uses for a pre-branch order: degrade the data
+   * itself so it stays honest, not bolt a caveat onto numbers that are simply wrong. A store with
+   * no transfer yet has no ledger at all, so its retur history is excluded outright.
+   */
+  const firstTransferAt = transferLines.reduce<Date | null>(
+    (min, l) => (min === null || l.transfer.createdAt < min ? l.transfer.createdAt : min),
+    null,
+  );
+
   const movements: StoreStockMovement[] = [
     ...transferLines.map((l): StoreStockMovement => ({
       id: `ktrf-${l.id}`,
@@ -110,6 +126,7 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
     })),
     ...returnLines
       .filter((l) => l.creditedQty !== null && l.creditedQty > 0)
+      .filter((l) => firstTransferAt !== null && (l.returnDoc.approvedAt ?? l.returnDoc.createdAt) >= firstTransferAt)
       .map((l): StoreStockMovement => ({
         id: `fret-${l.id}`,
         kind: "RETUR_OUT",
