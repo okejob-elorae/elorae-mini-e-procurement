@@ -25,6 +25,20 @@ function toDecimalOrNull(v: number | null): Prisma.Decimal | null {
   return v === null ? null : new Prisma.Decimal(v);
 }
 
+/**
+ * Thrown by updateStore when a KONSI → PUTUS edit would strand consignment stock: the store
+ * still holds a non-zero StoreStock row, so its goods are physically sitting on the store's
+ * floor with no correction path once the store stops being read as KONSI (the stock card, and
+ * the konsi retur decrement, are both gated on termsType === "KONSI"). The store must return or
+ * transfer that stock first.
+ */
+export class StoreHasConsignmentStockError extends Error {
+  constructor(readonly storeId: string) {
+    super(`Store ${storeId} still holds consignment stock and cannot switch off KONSI`);
+    this.name = "StoreHasConsignmentStockError";
+  }
+}
+
 function serializeStore(s: {
   id: string;
   code: string;
@@ -120,6 +134,17 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
 }
 
 export async function updateStore(id: string, input: StoreFields): Promise<StoreListItem> {
+  if (input.termsType === "PUTUS") {
+    const current = await prisma.store.findUnique({ where: { id }, select: { termsType: true } });
+    if (current?.termsType === "KONSI") {
+      const strandedStock = await prisma.storeStock.findFirst({
+        where: { storeId: id, qty: { not: 0 } },
+        select: { id: true },
+      });
+      if (strandedStock) throw new StoreHasConsignmentStockError(id);
+    }
+  }
+
   const updated = await prisma.store.update({
     where: { id },
     data: {

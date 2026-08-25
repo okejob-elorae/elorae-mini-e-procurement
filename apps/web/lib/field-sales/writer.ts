@@ -2,6 +2,7 @@ import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesO
 import { effectiveMinQty, validateMinQtyLines } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { applyItemAggregatedPromos } from "./promo-apply";
+import { issueKonsiTransfer } from "./konsi-transfer/writer";
 import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
@@ -300,6 +301,22 @@ export async function approveFieldSalesOrder(input: {
         total += lineTotal;
         await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { unitPrice: unit, lineTotal } });
       }
+
+      /**
+       * Konsi is a transfer, not a sale: stock leaves main and lands in the store's virtual
+       * warehouse right here, in the same transaction that just reserved it — never through
+       * consumeFieldSalesOrder (packages/db/src/reservation-writer.ts), which is an orphaned
+       * FIELD_SALES_CONSUME trap with no production caller. No SalesHistory is written for konsi.
+       */
+      await issueKonsiTransfer(tx, {
+        order: {
+          id: order.id,
+          storeId: order.storeId,
+          lines: lines.map((l) => ({ id: l.id, itemId: l.itemId, variantSku: l.variantSku, productName: l.productName, qty: l.qty })),
+        },
+        transferredById: input.approvedById,
+      });
+
       await tx.fieldSalesOrder.update({
         where: { id: order.id },
         data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal: total, total },

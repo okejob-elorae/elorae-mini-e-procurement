@@ -24,7 +24,9 @@ export async function approveFieldReturn(input: {
         status: true,
         receivedAt: true,
         storeId: true,
+        store: { select: { termsType: true } },
         lines: {
+          orderBy: { id: "asc" },
           select: {
             id: true,
             itemId: true,
@@ -174,6 +176,13 @@ export async function approveFieldReturn(input: {
     let total = 0;
     let allPriced = true;
 
+    /*
+     * Captured here, at the exact point each line's creditedQty is computed for the DB write
+     * below — not re-derived later — so the KONSI decrement after this loop reuses the very
+     * same value that gets stamped onto FieldReturnLine.creditedQty, never a second formula.
+     */
+    const creditedQtyByLineId = new Map<string, number>();
+
     for (const line of ret.lines) {
       const latest = line.resolutions[0] ?? null;
       const creditedQty = creditedQtyForLine({
@@ -181,6 +190,7 @@ export async function approveFieldReturn(input: {
         receivedQty: line.receivedQty,
         latestResolutionType: latest?.type ?? null,
       });
+      creditedQtyByLineId.set(line.id, creditedQty ?? 0);
 
       /*
        * Resolve the per-unit price: an admin's existing choice wins, otherwise auto-resolve.
@@ -277,6 +287,46 @@ export async function approveFieldReturn(input: {
         await tx.fieldReturnResolution.update({
           where: { id: latest.id },
           data: { amount: round2(missing * unitPrice) },
+        });
+      }
+    }
+
+    /*
+     * Konsi stock physically sits at the store, so goods coming back must leave the store's
+     * ledger as well as re-enter main above — otherwise the same units are counted in both
+     * places. Task 3 is what made konsi stock leave main in the first place; this is what stops
+     * it from being double-counted the moment a store sends some of it back.
+     *
+     * The quantity is creditedQty, REUSED from creditedQtyByLineId above and never recomputed a
+     * second way: it already encodes "what the store handed over" per resolution type (claimed
+     * when a shortage is borne or written off, received on ACCEPT_SURPLUS). creditedQtyForLine's
+     * own doc comment warns against collapsing that to Math.max(claimed, received); that warning
+     * applies here too — deriving the number a second way is how the two spellings drift apart.
+     * It is never null at approve time, because approval refuses unless every discrepant line is
+     * settled (allDiscrepantLinesSettled, checked above).
+     *
+     * A line for stock the store does not hold goes NEGATIVE and is flagged, never refused. The
+     * goods have physically arrived at the warehouse and been counted, and this feature's sibling
+     * slice already settled that bookkeeping must not block recording physical reality — refusing
+     * here would mean the warehouse cannot record goods sitting on its floor. avgCost is NOT
+     * recomputed on the way out: removing units at the current average leaves the average
+     * unchanged, which is standard moving-average behaviour.
+     */
+    if (ret.store.termsType === "KONSI") {
+      for (const line of ret.lines) {
+        const creditedQty = creditedQtyByLineId.get(line.id) ?? 0;
+        if (creditedQty === 0) continue;
+
+        const storeKey = {
+          storeId_itemId_variantSku: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku },
+        };
+        const existingStock = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true } });
+        const prevStoreQty = existingStock ? existingStock.qty.toNumber() : 0;
+
+        await tx.storeStock.upsert({
+          where: storeKey,
+          create: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku, qty: -creditedQty, avgCost: 0 },
+          update: { qty: prevStoreQty - creditedQty },
         });
       }
     }

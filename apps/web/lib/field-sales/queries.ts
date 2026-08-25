@@ -59,6 +59,17 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   appliedOrderPromoName: string | null;
   deliveryStatus: FieldSalesDeliveryStatus;
   deliveries: FieldSalesDeliverySummary[];
+  /**
+   * The one konsi transfer this order's approval issued (KONSI orders only — always null for
+   * PUTUS). `null` for an APPROVED konsi order means this order predates the transfer document
+   * (approved before this branch shipped, and the migration carries no backfill) — the print
+   * button must degrade to disabled-with-reason, never throw, for that case.
+   */
+  konsiTransfer: {
+    docNo: string;
+    createdAt: Date;
+    lines: Array<{ productName: string; variantSku: string; variantLabel: string | null; qty: number }>;
+  } | null;
   lines: Array<{
     id: string;
     itemId: string;
@@ -165,6 +176,19 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
           },
         },
       },
+      konsiTransfers: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          docNo: true,
+          createdAt: true,
+          lines: {
+            select: {
+              productName: true, variantSku: true, qty: true,
+              item: { select: { variants: true } },
+            },
+          },
+        },
+      },
     },
   });
   if (!row) return null;
@@ -212,6 +236,21 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     orderDiscountAmount: toNum(row.orderDiscountAmount),
     appliedOrderPromoName: row.appliedOrderPromoId ? promoNameById.get(row.appliedOrderPromoId) ?? null : null,
     deliveryStatus: row.deliveryStatus,
+    /* An approved konsi order always has exactly one — [0] rather than a find, since ordering
+       by createdAt asc already puts the real one first for any pre-existing order that somehow
+       carries more than the expected single row. */
+    konsiTransfer: row.konsiTransfers[0]
+      ? {
+          docNo: row.konsiTransfers[0].docNo,
+          createdAt: row.konsiTransfers[0].createdAt,
+          lines: row.konsiTransfers[0].lines.map((l) => ({
+            productName: l.productName,
+            variantSku: l.variantSku,
+            variantLabel: variantDetailForSku(l.item.variants, l.variantSku),
+            qty: toNum(l.qty),
+          })),
+        }
+      : null,
     deliveries: row.deliveries.map((d) => ({
       id: d.id,
       docNo: d.docNo,

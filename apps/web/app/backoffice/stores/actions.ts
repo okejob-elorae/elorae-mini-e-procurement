@@ -11,6 +11,7 @@ import {
   createStore,
   updateStore,
   deactivateStore,
+  StoreHasConsignmentStockError,
   type StoreFields,
 } from "@/lib/stores/queries";
 
@@ -91,6 +92,13 @@ export async function updateStoreAction(id: string, input: StoreFields): Promise
     revalidatePath(`/backoffice/stores/${id}`);
     return { ok: true };
   } catch (e) {
+    if (e instanceof StoreHasConsignmentStockError) {
+      return {
+        ok: false,
+        code: "has_consignment_stock",
+        message: "This store still holds consignment stock and must return or transfer it before switching off Konsi.",
+      };
+    }
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return { ok: false, code: "code_unique", message: "Store code already exists." };
     }

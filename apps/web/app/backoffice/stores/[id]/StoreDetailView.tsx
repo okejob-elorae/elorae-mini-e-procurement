@@ -38,6 +38,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StoreChangeReviewCard } from "./StoreChangeReviewCard";
+import { StoreStockCard, type SerializedStockMovement } from "./StoreStockCard";
+import type { StoreStockCardData } from "@/lib/inventory/store-stock-card";
 
 let lastMapsOpenAt = 0;
 
@@ -83,12 +85,20 @@ type Visit = {
   photos: Array<{ id: string; url: string; caption: string | null; capturedAtIso: string }>;
 };
 
+type StockCardProps = {
+  rows: StoreStockCardData["rows"];
+  negativeCount: number;
+  movements: SerializedStockMovement[];
+};
+
 type Props = {
   store: StoreListItem;
   canEdit: boolean;
   visits: Visit[];
   orders: OrderRow[];
   sentItems: StoreSentItemRow[];
+  /** Only ever populated for a KONSI store — a PUTUS store never has a stock ledger to show. */
+  stockCard: StockCardProps | null;
   pendingChange: {
     requestId: string;
     requestedByLabel: string;
@@ -160,7 +170,7 @@ function DetailField({ label, children }: { label: string; children: React.React
   );
 }
 
-export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pendingChange }: Props) {
+export function StoreDetailView({ store, canEdit, visits, orders, sentItems, stockCard, pendingChange }: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
   const tDetail = useTranslations("stores.detail");
@@ -537,6 +547,14 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, pen
           )}
         </CardContent>
       </Card>
+
+      {store.termsType === "KONSI" && stockCard && (
+        <StoreStockCard
+          rows={stockCard.rows}
+          negativeCount={stockCard.negativeCount}
+          movements={stockCard.movements}
+        />
+      )}
 
       <Dialog open={!!gallery} onOpenChange={(o) => !o && setGallery(null)}>
         <DialogContent className="max-w-2xl">

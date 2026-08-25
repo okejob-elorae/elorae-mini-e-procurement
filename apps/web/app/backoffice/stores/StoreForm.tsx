@@ -167,6 +167,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
         if (result.code === "code_unique") setError(tErr("codeUnique"));
         else if (result.code === "forbidden") setError(tErr("forbidden"));
         else if (result.code === "not_found") setError(tErr("notFound"));
+        else if (result.code === "has_consignment_stock") setError(tErr("hasConsignmentStock"));
         else setError(result.message);
         return;
       }

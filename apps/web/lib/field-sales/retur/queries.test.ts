@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { getFieldReturnById } from "./queries";
+import { getFieldReturnById, previewKonsiReturStockImpact } from "./queries";
+import { createFieldReturn } from "./writer";
+import { receiveFieldReturn } from "./receive-writer";
 
 /**
  * DB-touching: the fixture writes real Item/Store/FieldSalesOrder/FieldSalesDelivery(Line)/
@@ -224,5 +226,208 @@ d("getFieldReturnById — pricing fields (test bed only)", () => {
     const detail = await getFieldReturnById(returnId, { canManage: true });
     const line = detail!.lines.find((l) => l.id === lineId)!;
     expect(line.priceCandidates).toBeUndefined();
+  });
+});
+
+d("previewKonsiReturStockImpact (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let konsiStoreId = "";
+  let putusStoreId = "";
+  let userId = "";
+
+  /* Single StoreStock row (qty 5) shared by every return below — previewKonsiReturStockImpact is
+     read-only, so seeding it once in beforeEach and reading it from several independent returns
+     within the same test run is safe; nothing here ever mutates it. */
+  let sufficientReturnId = "";
+  let shortReturnId = "";
+  let shortLineId = "";
+  let putusReturnId = "";
+  let dualLineReturnId = "";
+  let dualLineFirstId = "";
+  let dualLineSecondId = "";
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    konsiStoreId = "";
+    putusStoreId = "";
+    userId = "";
+    sufficientReturnId = "";
+    shortReturnId = "";
+    shortLineId = "";
+    putusReturnId = "";
+    dualLineReturnId = "";
+    dualLineFirstId = "";
+    dualLineSecondId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-KRP-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: { sku: `TEST-KRP-${token}`, nameId: "Konsi retur preview item", nameEn: "Konsi retur preview item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 },
+    });
+    itemId = item.id;
+
+    const konsiStore = await prisma.store.create({
+      data: { code: `TEST-KRP-KONSI-${token}`, name: "Test Konsi Preview Store", address: "Test address", termsType: "KONSI", isActive: true },
+    });
+    konsiStoreId = konsiStore.id;
+
+    const putusStore = await prisma.store.create({
+      data: { code: `TEST-KRP-PUTUS-${token}`, name: "Test Putus Preview Store", address: "Test address", termsType: "PUTUS", isActive: true },
+    });
+    putusStoreId = putusStore.id;
+
+    await prisma.storeStock.create({ data: { storeId: konsiStoreId, itemId, variantSku: "", qty: 5, avgCost: 10000 } });
+
+    const user = await prisma.user.create({ data: { email: `test-krp-${token}@example.com`, name: "Test Konsi Preview User" } });
+    userId = user.id;
+
+    const mkReturn = async (opts: { storeId: string; qty: number }) =>
+      createFieldReturn({
+        storeId: opts.storeId,
+        raisedById: userId,
+        transport: "SELF_CARRY",
+        notaPhotoUrl: "https://cdn.example/nota.jpg",
+        notaPhotoR2Key: "field-returns/x/nota.jpg",
+        lines: [{ itemId, variantSku: "", qty: opts.qty, reason: "UNSOLD" }],
+      });
+
+    /* Sufficient: claimed == received == 2, store holds 5 -> no impact. */
+    const createdSufficient = await mkReturn({ storeId: konsiStoreId, qty: 2 });
+    sufficientReturnId = createdSufficient.returnId;
+    const lineSufficient = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(sufficientReturnId) } });
+    await receiveFieldReturn({
+      returnId: sufficientReturnId,
+      receivedById: userId,
+      counts: [{ lineId: lineSufficient.id, receivedQty: 2, sellableQty: 2, rejectedQty: 0 }],
+    });
+
+    /* Short: claimed == received == 8, store holds only 5 -> shortfall 3. */
+    const createdShort = await mkReturn({ storeId: konsiStoreId, qty: 8 });
+    shortReturnId = createdShort.returnId;
+    const lineShort = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(shortReturnId) } });
+    shortLineId = lineShort.id;
+    await receiveFieldReturn({
+      returnId: shortReturnId,
+      receivedById: userId,
+      counts: [{ lineId: shortLineId, receivedQty: 8, sellableQty: 8, rejectedQty: 0 }],
+    });
+
+    /* PUTUS store, same shape as the short KONSI return above — must still report [] regardless
+       of the numbers, since approveFieldReturn never touches StoreStock for a PUTUS store. */
+    const createdPutus = await mkReturn({ storeId: putusStoreId, qty: 8 });
+    putusReturnId = createdPutus.returnId;
+    const linePutus = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(putusReturnId) } });
+    await receiveFieldReturn({
+      returnId: putusReturnId,
+      receivedById: userId,
+      counts: [{ lineId: linePutus.id, receivedQty: 8, sellableQty: 8, rejectedQty: 0 }],
+    });
+
+    /*
+     * Two lines on the SAME (itemId, variantSku): createFieldReturn only dedupes itemId for its
+     * existence check, never forbids a duplicate (itemId, variantSku) pair across lines. Store
+     * holds 5; each line claims == receives 3. The FIRST line alone would not go negative
+     * (3 <= 5), but approveFieldReturn's writer reads/writes StoreStock SEQUENTIALLY, so the
+     * SECOND line is actually evaluated against what the first already left behind (5 - 3 = 2),
+     * not the row's original value — 3 > 2, so only the second line goes negative.
+     */
+    const createdDualLine = await createFieldReturn({
+      storeId: konsiStoreId,
+      raisedById: userId,
+      transport: "SELF_CARRY",
+      notaPhotoUrl: "https://cdn.example/nota.jpg",
+      notaPhotoR2Key: "field-returns/x/nota.jpg",
+      lines: [
+        { itemId, variantSku: "", qty: 3, reason: "UNSOLD" },
+        { itemId, variantSku: "", qty: 3, reason: "UNSOLD" },
+      ],
+    });
+    dualLineReturnId = createdDualLine.returnId;
+    const dualLines = await prisma.fieldReturnLine.findMany({
+      where: { returnId: seededId(dualLineReturnId) },
+      orderBy: { id: "asc" },
+    });
+    dualLineFirstId = dualLines[0].id;
+    dualLineSecondId = dualLines[1].id;
+    await receiveFieldReturn({
+      returnId: dualLineReturnId,
+      receivedById: userId,
+      counts: [
+        { lineId: dualLineFirstId, receivedQty: 3, sellableQty: 3, rejectedQty: 0 },
+        { lineId: dualLineSecondId, receivedQty: 3, sellableQty: 3, rejectedQty: 0 },
+      ],
+    });
+  });
+
+  afterEach(async () => {
+    const returnIds = [
+      seededId(sufficientReturnId),
+      seededId(shortReturnId),
+      seededId(putusReturnId),
+      seededId(dualLineReturnId),
+    ];
+    const storeIds = [seededId(konsiStoreId), seededId(putusStoreId)];
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
+    await prisma.store.deleteMany({ where: { id: { in: storeIds } } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+  });
+
+  it("returns null for a nonexistent returnId, distinguishable from a real no-impact result", async () => {
+    const unseededReturnId = "clnonexistentreturnid00000001";
+    const result = await previewKonsiReturStockImpact(unseededReturnId);
+    expect(result).toBeNull();
+  });
+
+  it("returns [] for a non-KONSI store regardless of the numbers", async () => {
+    const result = await previewKonsiReturStockImpact(putusReturnId);
+    expect(result).toEqual([]);
+  });
+
+  it("returns [] for a KONSI store when the store holds enough stock", async () => {
+    const result = await previewKonsiReturStockImpact(sufficientReturnId);
+    expect(result).toEqual([]);
+  });
+
+  it("reports a line that would drive the row negative, with the correct creditedQty/storeQty/shortfall", async () => {
+    const result = await previewKonsiReturStockImpact(shortReturnId);
+    expect(result).toHaveLength(1);
+    expect(result![0]).toMatchObject({
+      lineId: shortLineId,
+      variantSku: "",
+      creditedQty: 8,
+      storeQty: 5,
+      shortfall: 3,
+    });
+  });
+
+  it("evaluates a second line on the same (itemId, variantSku) against what the first line already left behind, not the row's original value", async () => {
+    /*
+     * Store holds 5; two lines of 3 each, same (itemId, variantSku). Fetching ret.lines does not
+     * specify an ORDER BY (neither does the real writer's own select), so which physical row
+     * counts as "first" vs "second" is not something this test can assert from the outside — the
+     * lineId is deliberately checked only for membership, not identity. What actually
+     * distinguishes accumulation from the bug: a naive implementation that evaluates every line
+     * against the ORIGINAL row value would find shortfall = 3 - 5 = -2 for BOTH lines and report
+     * NOTHING (result === []). Accumulating one running value per key instead means exactly ONE
+     * line is evaluated against what the other already left behind (5 - 3 = 2), so 3 > 2 and
+     * exactly one line is reported at storeQty 2 / shortfall 1 — impossible to produce without a
+     * running per-key quantity.
+     */
+    const result = await previewKonsiReturStockImpact(dualLineReturnId);
+    expect(result).toHaveLength(1);
+    expect([dualLineFirstId, dualLineSecondId]).toContain(result![0].lineId);
+    expect(result![0]).toMatchObject({
+      creditedQty: 3,
+      storeQty: 2,
+      shortfall: 1,
+    });
   });
 });

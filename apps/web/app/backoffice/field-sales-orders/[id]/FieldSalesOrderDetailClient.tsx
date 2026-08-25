@@ -123,15 +123,21 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
       minute: "2-digit",
     }).format(date);
 
+  const konsiTransfer = order.konsiTransfer;
+
   const handlePrintSuratKeluar = async () => {
+    /* The button is disabled when there is no transfer, but that's a UI affordance, not the real
+       guard — this handler must never itself try to build a document out of an order that has
+       none (an order approved before this branch shipped; the migration carries no backfill). */
+    if (!konsiTransfer) return;
     await logPrint("KonsiSuratKeluar", order.id);
     const html = buildSuratKeluarPrintHtml({
-      orderNo: order.orderNo,
+      orderNo: konsiTransfer.docNo,
       storeName: order.storeName,
       salesmanName: order.salesmanName,
-      approvedAt: order.approvedAt,
+      approvedAt: konsiTransfer.createdAt,
       status: order.status,
-      lines: order.lines.map((line) => ({
+      lines: konsiTransfer.lines.map((line) => ({
         productName: line.productName,
         variantSku: line.variantSku,
         variantLabel: line.variantLabel,
@@ -173,10 +179,13 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
         {/* Putus notas now print per-delivery from DeliveriesCard; konsi has no deliveries in this slice. */}
         {isKonsi && order.status === "APPROVED" && (
           <div className="flex items-center gap-2 ml-auto">
-            <Button variant="outline" size="sm" onClick={handlePrintSuratKeluar}>
+            <Button variant="outline" size="sm" onClick={handlePrintSuratKeluar} disabled={!konsiTransfer}>
               <Printer className="h-4 w-4 mr-2" />
               {t("print.suratKeluar")}
             </Button>
+            {!konsiTransfer && (
+              <span className="text-xs text-muted-foreground">{t("print.suratKeluarNoTransfer")}</span>
+            )}
           </div>
         )}
       </div>

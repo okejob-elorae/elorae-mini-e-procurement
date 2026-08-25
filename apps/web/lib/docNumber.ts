@@ -21,6 +21,7 @@ const DEFAULT_CONFIGS: Record<
   SPGSALE: { prefix: 'SPG/', resetPeriod: 'YEARLY', padding: 4 },
   DELIVERY: { prefix: 'DLV/', resetPeriod: 'MONTHLY', padding: 4 },
   FIELDRET: { prefix: 'FRET/', resetPeriod: 'MONTHLY', padding: 4 },
+  KONSITRF: { prefix: 'KTRF/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
 type ConfigRow = {

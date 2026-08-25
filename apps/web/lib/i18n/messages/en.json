@@ -2070,7 +2070,8 @@
     "errors": {
       "codeUnique": "Store code already exists.",
       "forbidden": "Permission denied.",
-      "notFound": "Store not found."
+      "notFound": "Store not found.",
+      "hasConsignmentStock": "This store still holds consignment stock and must return or transfer it before switching off Konsi."
     },
     "detail": {
       "infoTitle": "Store details",
@@ -2140,6 +2141,25 @@
       "colArticle": "Article",
       "colSize": "Size",
       "colQtySent": "Qty Sent"
+    },
+    "stockCard": {
+      "cardTitle": "Consignment Stock",
+      "negativeCount": "{count} negative",
+      "empty": "No consignment stock at this store yet",
+      "colArticle": "Article",
+      "colSize": "Size",
+      "colQty": "Qty",
+      "colElsewhere": "Elsewhere",
+      "elsewhere": "Main: {main} · Van: {van}",
+      "negativeBadge": "Negative stock",
+      "negativeNote": "A negative row is absorbed automatically by the next konsi transfer to this store. There is no manual correction path in this slice.",
+      "movementsTitle": "Stock Movements",
+      "movementsEmpty": "No stock movements yet",
+      "colDate": "Date",
+      "colDoc": "Document",
+      "colType": "Type",
+      "movementIn": "In (Transfer)",
+      "movementOut": "Out (Return)"
     }
   },
   "pwa": {
@@ -2342,9 +2362,9 @@
     "colType": "Type",
     "colAvailable": "Available",
     "colOnHand": "On Hand",
-    "konsiTransferNote": "Consignment transfer — not a sale; stock is reserved on approval.",
+    "konsiTransferNote": "Consignment transfer — not a sale; goods move from the main warehouse into the store's stock on approval.",
     "konsiMarginUnset": "Store margin invalid or not set — gross-up uses the raw selling price.",
-    "approveConfirmKonsi": "Approve this consignment transfer? Stock will be reserved (not sold).",
+    "approveConfirmKonsi": "Approve this consignment transfer? Goods will move from the main warehouse into the store's stock (not sold).",
     "rejectConfirmKonsi": "Reject this consignment transfer?",
     "promoBelowCost": "Warning: net price below cost",
     "appealBadge": "Requested",
@@ -2436,6 +2456,7 @@
       "gudangTitle": "WAREHOUSE NOTE",
       "tagihanTitle": "INVOICE",
       "suratKeluarTitle": "GOODS ISSUE NOTE",
+      "suratKeluarNoTransfer": "No transfer document exists for this order yet (approved before this feature shipped).",
       "consignmentNote": "Consignment — handover of consigned goods, not a sale. No price, no invoice.",
       "preparedBy": "Prepared by",
       "receivedBy": "Received by",
@@ -2655,7 +2676,14 @@
       "unpriceableBody": "This item has never been delivered to this store, so there is no automatic price to use — enter a manual price with a note.",
       "successSet": "Line price saved."
     },
-    "approveConfirmValuationWarning": "{count} line(s) still have no price. They will still be approved and restored to stock, but their value will never be computed after this."
+    "approveConfirmValuationWarning": "{count} line(s) still have no price. They will still be approved and restored to stock, but their value will never be computed after this.",
+    "konsiStockWarning": {
+      "loading": "Checking the impact on store stock…",
+      "error": "Could not check the impact on store stock. You can still proceed with approval.",
+      "title": "Store stock will go negative",
+      "line": "{itemName} ({variantSku}): store stock is currently {storeQty}, will decrease by {creditedQty} — short by {shortfall}",
+      "noManualFix": "A negative row is absorbed automatically by the next konsi transfer to this store. There is no manual correction path in this slice."
+    }
   },
   "promos": {
     "pageTitle": "Promos",

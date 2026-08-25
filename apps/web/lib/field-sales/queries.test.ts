@@ -148,6 +148,45 @@ d("konsi queries (test bed only)", () => {
     expect(detail!.lines[0].available).toBe(15); // qtyOnHand 20 - reservedQty 5
   });
 
+  it("getFieldSalesOrderById resolves a konsiTransfer line's human variant label from Item.variants, not the raw SKU", async () => {
+    const item2 = await prisma.item.create({
+      data: {
+        sku: `${sku}-VAR`,
+        nameId: "Kaos Polos",
+        nameEn: "Plain Shirt",
+        type: "FINISHED_GOOD",
+        uomId,
+        isActive: true,
+        sellingPrice: 35000,
+        variants: [{ sku: "27000101P-BLK-XL", color: "Hitam", size: "XL" }],
+      },
+    });
+    itemId2 = item2.id;
+    await prisma.inventoryValue.create({ data: { itemId: itemId2, variantSku: "27000101P-BLK-XL", qtyOnHand: 20, reservedQty: 0, avgCost: 1000, totalValue: 20000 } });
+
+    const order = await seedOrder({ orderType: "KONSI", forItemId: itemId2 });
+    const transfer = await prisma.konsiTransfer.create({
+      data: {
+        docNo: `KONSITRF/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        orderId: order.id,
+        storeId,
+        transferredById: salesmanId,
+        lines: {
+          create: [{ itemId: itemId2, variantSku: "27000101P-BLK-XL", productName: "Kaos Polos", qty: 1, unitCost: 1000 }],
+        },
+      },
+    });
+
+    const detail = await getFieldSalesOrderById(order.id);
+    expect(detail!.konsiTransfer).not.toBeNull();
+    expect(detail!.konsiTransfer!.lines).toHaveLength(1);
+    expect(detail!.konsiTransfer!.lines[0].variantSku).toBe("27000101P-BLK-XL");
+    expect(detail!.konsiTransfer!.lines[0].variantLabel).toBe("color: Hitam · size: XL");
+
+    await prisma.konsiTransferLine.deleteMany({ where: { transferId: transfer.id } });
+    await prisma.konsiTransfer.deleteMany({ where: { id: transfer.id } });
+  });
+
   it("getFieldSalesOrderById exposes addedById per line so the admin-added badge has something to read", async () => {
     /*
      * The writer specs assert addedById straight off the row via Prisma, which stays green even if
