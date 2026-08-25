@@ -64,11 +64,12 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
         salesmanId: userId,
         status: "APPROVED",
         orderType: "PUTUS",
-        subtotal: 16_300_000,
-        total: 14_100_000,
+        subtotal: 17_300_000,
+        total: 15_100_000,
         lines: {
           create: [
             { itemId, variantSku: "XL", productName: "Test Item XL", qty: 12, unitPrice: 1_000_000, lineTotal: 10_000_000 },
+            { itemId, variantSku: "M", productName: "Test Item M", qty: 5, unitPrice: 200_000, lineTotal: 1_000_000 },
             { itemId, variantSku: "NULLTOTAL", productName: "Test Item NullTotal", qty: 3, unitPrice: 100_000, lineTotal: 300_000 },
             { itemId, variantSku: "AMBIG", productName: "Test Item Ambig", qty: 4, unitPrice: 1_000_000, lineTotal: 3_800_000 },
           ],
@@ -78,6 +79,7 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
     });
     orderId = order.id;
     const lineXL = order.lines.find((l) => l.variantSku === "XL")!;
+    const lineM = order.lines.find((l) => l.variantSku === "M")!;
     const lineNullTotal = order.lines.find((l) => l.variantSku === "NULLTOTAL")!;
     const lineAmbig = order.lines.find((l) => l.variantSku === "AMBIG")!;
 
@@ -99,10 +101,11 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
     otherOrderId = otherOrder.id;
     const otherLineXL = otherOrder.lines[0];
 
-    /* Delivery A: carries XL (the priced happy-path line — "M" is deliberately never delivered
-       at all, so a query for "M" proves the variant filter, not just the item filter, is
-       applied) and NULLTOTAL (a line whose lineTotal was never set, which must be skipped
-       rather than priced at zero). */
+    /* Delivery A: carries XL (the priced happy-path line), M (a real delivery of a DIFFERENT
+       variant of the SAME item, priced differently from XL — so a query for "XL" proves the
+       variant filter, not just the item filter, is applied: it must return exactly the XL
+       price, never the M one) and NULLTOTAL (a line whose lineTotal was never set, which must
+       be skipped rather than priced at zero). */
     const deliveryA = await prisma.fieldSalesDelivery.create({
       data: {
         docNo: `TEST-FSP-DLV-A-${token}`,
@@ -111,11 +114,12 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
         deliveredById: userId,
         invoiceDate: new Date("2026-08-01T00:00:00.000Z"),
         dueDate: new Date("2026-08-08T00:00:00.000Z"),
-        subtotal: 12_300_000,
-        total: 12_000_000,
+        subtotal: 13_300_000,
+        total: 13_000_000,
         lines: {
           create: [
             { orderLineId: lineXL.id, itemId, variantSku: "XL", productName: "Test Item XL", qty: 12, unitPrice: 1_000_000, lineTotal: 10_000_000 },
+            { orderLineId: lineM.id, itemId, variantSku: "M", productName: "Test Item M", qty: 5, unitPrice: 200_000, lineTotal: 1_000_000 },
             { orderLineId: lineNullTotal.id, itemId, variantSku: "NULLTOTAL", productName: "Test Item NullTotal", qty: 3, unitPrice: 100_000, lineTotal: null },
             { orderLineId: lineAmbig.id, itemId, variantSku: "AMBIG", productName: "Test Item Ambig", qty: 2, unitPrice: 1_000_000, lineTotal: 2_000_000 },
           ],
@@ -192,14 +196,31 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
     expect(found[0].unitPrice).toBeCloseTo(833_333.3333, 4);
   });
 
-  it("ignores deliveries to a DIFFERENT store", async () => {
+  it("scopes to the queried store, not just item and variant", async () => {
+    /*
+     * otherStoreId has its OWN real XL delivery (4.000.000 over 4 = 1.000.000/unit) — an
+     * assertion of zero rows here would be satisfied by nothing, including a correct
+     * implementation, since that store genuinely has one XL candidate. Assert the count AND
+     * the price/docNo so this fails loudly against both an unfiltered query (would return 2)
+     * and a wrong-store filter (would return storeId's 833.333,33 XL price instead).
+     */
     const found = await listPriceCandidates(prisma, { storeId: otherStoreId, itemId, variantSku: "XL" });
-    expect(found).toHaveLength(0);
+    expect(found).toHaveLength(1);
+    expect(found[0].docNo).toBe(`TEST-FSP-DLV-OTHER-${token}`);
+    expect(found[0].unitPrice).toBeCloseTo(1_000_000, 4);
   });
 
   it("ignores a different variant of the same item", async () => {
-    const found = await listPriceCandidates(prisma, { storeId, itemId, variantSku: "M" });
-    expect(found).toHaveLength(0);
+    /*
+     * M is a real delivery of the SAME item at storeId, priced at 200.000/unit — an
+     * assertion of zero XL rows would prove nothing if the query ignored variantSku
+     * entirely (it would then return both XL and M). Assert the XL price specifically so a
+     * variant-blind query is caught by the wrong number, not just a wrong count.
+     */
+    const found = await listPriceCandidates(prisma, { storeId, itemId, variantSku: "XL" });
+    expect(found).toHaveLength(1);
+    expect(found[0].unitPrice).toBeCloseTo(833_333.3333, 4);
+    expect(found[0].unitPrice).not.toBeCloseTo(200_000, 4);
   });
 
   it("skips a delivery line with a null lineTotal rather than pricing it at zero", async () => {
