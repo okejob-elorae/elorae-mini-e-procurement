@@ -2165,7 +2165,7 @@
       "targetLabel": "Minimum target (optional)",
       "targetPlaceholder": "Leave blank if it only needs to be present",
       "targetHint": "Leave blank to mean \"must be present\", in any quantity. Enter a number to set a minimum.",
-      "targetInvalid": "Target must be a positive number, or left blank.",
+      "targetInvalid": "Target must be at least 0.01, or left blank.",
       "add": "Add",
       "adding": "Adding…",
       "saveTarget": "Save",

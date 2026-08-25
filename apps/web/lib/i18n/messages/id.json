@@ -2165,7 +2165,7 @@
       "targetLabel": "Target minimum (opsional)",
       "targetPlaceholder": "Kosongkan jika hanya perlu tersedia",
       "targetHint": "Kosongkan agar berarti \"harus tersedia\", berapa pun jumlahnya. Isi angka untuk menetapkan jumlah minimum.",
-      "targetInvalid": "Target harus angka positif, atau kosongkan.",
+      "targetInvalid": "Target minimal 0.01, atau kosongkan.",
       "add": "Tambahkan",
       "adding": "Menambahkan…",
       "saveTarget": "Simpan",

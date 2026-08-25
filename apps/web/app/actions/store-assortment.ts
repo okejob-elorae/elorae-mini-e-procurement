@@ -37,12 +37,16 @@ export type RemoveAssortmentLineInput = {
 
 /**
  * `null` is a meaningful, storable value here — "must merely be present at all" — never coerced
- * to 0. A supplied number must be positive: zero and negative are both meaningless as a target,
- * so both are refused as a shape error (`INVALID_REQUEST`), not a domain refusal.
+ * to 0. A supplied number must be at least 0.01: zero and negative are both meaningless as a
+ * target, so both are refused as a shape error (`INVALID_REQUEST`), not a domain refusal. The
+ * floor is 0.01, not >0 — `targetQty` is stored as `Decimal(10,2)`, so anything below that rounds
+ * to `0.00` in MariaDB and silently becomes a permanent blind spot: the gap test then reduces to
+ * `onHandQty < 0`, false for every non-negative row, so the line never gaps on any of the three
+ * surfaces while the UI still reads "min 0".
  */
 function isValidTargetQty(v: unknown): v is number | null {
   if (v === null) return true;
-  return typeof v === "number" && Number.isFinite(v) && v > 0;
+  return typeof v === "number" && Number.isFinite(v) && v >= 0.01;
 }
 
 function isValidAddInput(input: unknown): input is AddAssortmentLineInput {

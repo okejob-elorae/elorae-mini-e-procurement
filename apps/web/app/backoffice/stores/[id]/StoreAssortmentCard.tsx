@@ -79,16 +79,18 @@ const ASSORTMENT_ERR_KEY: Record<AssortmentErrCode, string> = {
 };
 
 /**
- * Mirrors the action's own rule: blank means `null` ("must be present"), a positive number is a
- * minimum, zero and negative are refused. Validated here too so the operator sees why before a
- * round trip, not only after a failed submit. `Number("")` is `0`, so the blank case is checked
- * first and short-circuits before any coercion happens.
+ * Mirrors the action's own rule: blank means `null` ("must be present"), a number of at least
+ * 0.01 is a minimum, anything below that (including zero and negative) is refused. Validated here
+ * too so the operator sees why before a round trip, not only after a failed submit. `Number("")`
+ * is `0`, so the blank case is checked first and short-circuits before any coercion happens. The
+ * 0.01 floor matches the action: `targetQty` is `Decimal(10,2)`, so anything smaller rounds to
+ * `0.00` server-side and the line would never gap on any surface again.
  */
 function parseTargetInput(raw: string): { ok: true; value: number | null } | { ok: false } {
   const trimmed = raw.trim();
   if (trimmed === "") return { ok: true, value: null };
   const n = Number(trimmed);
-  if (!Number.isFinite(n) || n <= 0) return { ok: false };
+  if (!Number.isFinite(n) || n < 0.01) return { ok: false };
   return { ok: true, value: n };
 }
 
