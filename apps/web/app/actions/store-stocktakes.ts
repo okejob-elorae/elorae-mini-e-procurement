@@ -61,8 +61,8 @@ type SaveCountsItemKeyedLineInput = SaveCountsAddedLineInput;
  * exist client-side before the document does.
  */
 export type SaveCountsActionInput =
-  | { stocktakeId: string; lines: SaveCountsLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean }
-  | { storeId: string; lines: SaveCountsItemKeyedLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean };
+  | { stocktakeId: string; storeId?: undefined; lines: SaveCountsLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean }
+  | { storeId: string; stocktakeId?: undefined; lines: SaveCountsItemKeyedLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean };
 
 /**
  * Every `StoreStocktakeErrorCode` maps onto its own result code, one to one — a `Record` over
@@ -323,7 +323,7 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
       lines = resolvedLines;
       addedLines = [...(input.addedLines ?? []), ...fallbackAddedLines];
     } else {
-      stocktakeId = input.stocktakeId as string;
+      stocktakeId = input.stocktakeId;
       const doc = await prisma.storeStocktake.findUnique({ where: { id: stocktakeId }, select: { storeId: true } });
       if (!doc) return { ok: false, code: "NOT_FOUND" };
       storeIdForRevalidate = doc.storeId;
