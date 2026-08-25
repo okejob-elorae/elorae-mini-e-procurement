@@ -16,6 +16,7 @@ d("getSellableCatalogForSpg (test bed only)", () => {
   let storeBId = "";
 
   beforeEach(async () => {
+    uomId = ""; itemId = ""; shortItemId = ""; neverHeldItemId = ""; storeAId = ""; storeBId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
 
@@ -61,9 +62,13 @@ d("getSellableCatalogForSpg (test bed only)", () => {
   });
 
   it("reports the on-counter quantity for the queried store only", async () => {
-    const rows = await getSellableCatalogForSpg(seededId(storeAId));
-    const row = rows.find((r) => r.itemId === itemId && r.variantSku === null)!;
-    expect(row.onCounterQty).toBe(7);
+    const rowsA = await getSellableCatalogForSpg(seededId(storeAId));
+    const rowA = rowsA.find((r) => r.itemId === itemId && r.variantSku === null)!;
+    expect(rowA.onCounterQty).toBe(7);
+
+    const rowsB = await getSellableCatalogForSpg(seededId(storeBId));
+    const rowB = rowsB.find((r) => r.itemId === itemId && r.variantSku === null)!;
+    expect(rowB.onCounterQty).toBe(3);
   });
 
   it("returns a negative on-counter quantity as negative", async () => {

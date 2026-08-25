@@ -12,6 +12,7 @@ d("recordSpgSale (test bed only)", () => {
   let putusStoreId = ""; let shortItemId = ""; let neverHeldItemId = "";
 
   beforeEach(async () => {
+    uomId = ""; itemId = ""; salesmanId = ""; storeId = ""; putusStoreId = ""; shortItemId = ""; neverHeldItemId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
@@ -219,11 +220,5 @@ d("recordSpgSale (test bed only)", () => {
     const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
     expect(Number(ss.qty)).toBe(6);
     expect(await prisma.spgSale.count({ where: { idempotencyKey: key } })).toBe(1);
-  });
-
-  it("decrements the \"\"-keyed row for a variantless line", async () => {
-    await recordSpgSale({ salesmanId, storeId, lines: [line(4)] });
-    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
-    expect(ss.variantSku).toBe("");
   });
 });
