@@ -138,6 +138,14 @@ d("approveFieldReturn (test bed only)", () => {
   let konsiSurplusReturnId = "";
   let konsiSurplusLineId = "";
 
+  /* Retur R: KONSI store, item konsiBearsItemId, claimed 6, received 4, sellable 4, settled
+     SALESMAN_BEARS -> creditedQty is the CLAIMED qty (6), NOT sellableQty (4) or receivedQty
+     (4) — the two coincide here on purpose, to catch a decrement that reads either of those
+     instead of creditedQty. StoreStock seeded 10. */
+  let konsiBearsItemId = "";
+  let konsiBearsReturnId = "";
+  let konsiBearsLineId = "";
+
   beforeEach(async () => {
     uomId = "";
     itemId = "";
@@ -184,6 +192,9 @@ d("approveFieldReturn (test bed only)", () => {
     neverHeldReturnId = "";
     konsiSurplusReturnId = "";
     konsiSurplusLineId = "";
+    konsiBearsItemId = "";
+    konsiBearsReturnId = "";
+    konsiBearsLineId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-FRA-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -226,6 +237,11 @@ d("approveFieldReturn (test bed only)", () => {
     });
     konsiSurplusItemId = konsiSurplusItem.id;
 
+    const konsiBearsItem = await prisma.item.create({
+      data: { sku: `TEST-FRA-KONSI-BEARS-${token}`, nameId: "Retur approve item konsi bears", nameEn: "Retur approve item konsi bears", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 },
+    });
+    konsiBearsItemId = konsiBearsItem.id;
+
     /*
      * Seed the main inventory row with variantSku: null — the real shape a Jubelio-ingested
      * variantless row takes — so the writer's OR-tolerant lookup is genuinely exercised, not
@@ -261,6 +277,7 @@ d("approveFieldReturn (test bed only)", () => {
     await prisma.storeStock.create({ data: { storeId: putusStoreId, itemId, variantSku: "", qty: 7, avgCost: 10000 } });
     await prisma.storeStock.create({ data: { storeId: konsiStoreId, itemId: shortItemId, variantSku: "", qty: 2, avgCost: 5000 } });
     await prisma.storeStock.create({ data: { storeId: konsiStoreId, itemId: konsiSurplusItemId, variantSku: "", qty: 10, avgCost: 10000 } });
+    await prisma.storeStock.create({ data: { storeId: konsiStoreId, itemId: konsiBearsItemId, variantSku: "", qty: 10, avgCost: 10000 } });
     /* Deliberately no StoreStock row for (konsiStoreId, neverHeldItemId) — the store never held it. */
 
     const raisedBy = await prisma.user.create({ data: { email: `test-fra-${token}@example.com`, name: "Test Retur Salesman" } });
@@ -551,6 +568,20 @@ d("approveFieldReturn (test bed only)", () => {
       counts: [{ lineId: konsiSurplusLineId, receivedQty: 6, sellableQty: 6, rejectedQty: 0 }],
     });
     await resolveFieldReturnLine({ lineId: konsiSurplusLineId, type: "ACCEPT_SURPLUS", createdById: adminId });
+
+    /* Retur R — KONSI store, item konsiBearsItemId, claimed 6, received 4, sellable 4, settled
+       SALESMAN_BEARS -> creditedQty is the CLAIMED qty (6), not sellableQty/receivedQty (4).
+       StoreStock seeded 10. */
+    const createdKonsiBears = await mkReturn({ itemId: konsiBearsItemId, qty: 6, reason: "DAMAGED", storeId: konsiStoreId });
+    konsiBearsReturnId = createdKonsiBears.returnId;
+    const lineKonsiBears = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(konsiBearsReturnId) } });
+    konsiBearsLineId = lineKonsiBears.id;
+    await receiveFieldReturn({
+      returnId: konsiBearsReturnId,
+      receivedById: adminId,
+      counts: [{ lineId: konsiBearsLineId, receivedQty: 4, sellableQty: 4, rejectedQty: 0 }],
+    });
+    await resolveFieldReturnLine({ lineId: konsiBearsLineId, type: "SALESMAN_BEARS", createdById: adminId });
   });
 
   afterEach(async () => {
@@ -562,6 +593,7 @@ d("approveFieldReturn (test bed only)", () => {
       seededId(ambiguousItemId),
       seededId(neverHeldItemId),
       seededId(konsiSurplusItemId),
+      seededId(konsiBearsItemId),
     ];
     const returnIds = [
       seededId(returnId),
@@ -581,6 +613,7 @@ d("approveFieldReturn (test bed only)", () => {
       seededId(shortStoreReturnId),
       seededId(neverHeldReturnId),
       seededId(konsiSurplusReturnId),
+      seededId(konsiBearsReturnId),
     ];
     const storeIds = [seededId(storeId), seededId(konsiStoreId)];
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
@@ -980,5 +1013,21 @@ d("approveFieldReturn (test bed only)", () => {
       where: { storeId: seededId(konsiStoreId), itemId: seededId(konsiSurplusItemId) },
     });
     expect(Number(ss.qty)).toBe(4); /* seeded 10, credited 6 */
+  });
+
+  it("decrements by the CLAIMED qty under SALESMAN_BEARS, not sellableQty or receivedQty", async () => {
+    /*
+     * claimed 6, received 4, sellable 4, settled SALESMAN_BEARS -> creditedQty is the CLAIMED
+     * qty (6), the store's paper says it sent 6. sellableQty and receivedQty both read 4 here on
+     * purpose, so a decrement that reads either of THOSE instead of creditedQty would leave the
+     * row at 6 (10 - 4), not the correct 4 (10 - 6) — silently passing every other case in this
+     * file, since Retur M/O/P all have qty == receivedQty == sellableQty with no divergence to
+     * catch a wrong field.
+     */
+    await approveFieldReturn({ returnId: konsiBearsReturnId, approvedById: adminId });
+    const ss = await prisma.storeStock.findFirstOrThrow({
+      where: { storeId: seededId(konsiStoreId), itemId: seededId(konsiBearsItemId) },
+    });
+    expect(Number(ss.qty)).toBe(4); /* seeded 10, credited 6 (claimed) */
   });
 });

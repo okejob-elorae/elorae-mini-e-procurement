@@ -320,14 +320,25 @@ export type KonsiReturStockImpactLine = {
  * Read-only preview of what approveFieldReturn's KONSI decrement would do to a store's stock
  * ledger, so an approver can be warned before committing rather than discovering a negative row
  * afterwards. Returns ONLY the lines that would drive a StoreStock row negative, each with its
- * shortfall. Always [] for a non-KONSI store — approveFieldReturn never touches StoreStock for
- * one, so there is nothing to preview.
+ * shortfall. Returns `null` for a nonexistent returnId (distinguishable from "no impact"); `[]`
+ * for a non-KONSI store or a KONSI store with no impacted lines — approveFieldReturn never
+ * touches StoreStock for a non-KONSI store, so there is genuinely nothing to preview there.
  *
  * creditedQty is computed with the SAME creditedQtyForLine helper approveFieldReturn stamps onto
  * FieldReturnLine at commit — never a second formula — because this can run while the retur is
  * still PENDING_APPROVAL, before that column has ever been written.
+ *
+ * Two or more lines can share the same (itemId, variantSku) — createFieldReturn only forbids a
+ * duplicate itemId within one call site, never a duplicate (itemId, variantSku) pair across
+ * lines, and nothing else in this feature forbids it either. approveFieldReturn's own decrement
+ * loop reads/writes StoreStock SEQUENTIALLY, so a second line on the same key is evaluated
+ * against what the FIRST line already left behind, not the row's original value. This preview
+ * mirrors that with a running per-key quantity (seeded from one batched findMany, not one
+ * findUnique per line) — evaluating every line against the ORIGINAL row would silently miss the
+ * exact case where the warning matters most: a second line that only goes negative because an
+ * earlier line in the same retur already spent the store's stock.
  */
-export async function previewKonsiReturStockImpact(returnId: string): Promise<KonsiReturStockImpactLine[]> {
+export async function previewKonsiReturStockImpact(returnId: string): Promise<KonsiReturStockImpactLine[] | null> {
   const ret = await prisma.fieldReturn.findUnique({
     where: { id: returnId },
     select: {
@@ -350,7 +361,24 @@ export async function previewKonsiReturStockImpact(returnId: string): Promise<Ko
       },
     },
   });
-  if (!ret || ret.store.termsType !== "KONSI") return [];
+  if (!ret) return null;
+  if (ret.store.termsType !== "KONSI") return [];
+
+  const itemIds = Array.from(new Set(ret.lines.map((l) => l.itemId)));
+  const stockRows =
+    itemIds.length > 0
+      ? await prisma.storeStock.findMany({
+          where: { storeId: ret.storeId, itemId: { in: itemIds } },
+          select: { itemId: true, variantSku: true, qty: true },
+        })
+      : [];
+
+  /* Running per-key quantity, seeded from the DB and then walked down line-by-line in the same
+     order approveFieldReturn's own loop processes ret.lines — see the doc comment above. */
+  const runningQtyByKey = new Map<string, number>();
+  for (const row of stockRows) {
+    runningQtyByKey.set(`${row.itemId}::${row.variantSku}`, row.qty.toNumber());
+  }
 
   const impacted: KonsiReturStockImpactLine[] = [];
 
@@ -363,12 +391,11 @@ export async function previewKonsiReturStockImpact(returnId: string): Promise<Ko
     });
     if (!creditedQty) continue;
 
-    const stock = await prisma.storeStock.findUnique({
-      where: { storeId_itemId_variantSku: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku } },
-      select: { qty: true },
-    });
-    const storeQty = stock ? stock.qty.toNumber() : 0;
-    const shortfall = creditedQty - storeQty;
+    const key = `${line.itemId}::${line.variantSku}`;
+    const storeQtyBeforeThisLine = runningQtyByKey.get(key) ?? 0;
+    runningQtyByKey.set(key, storeQtyBeforeThisLine - creditedQty);
+
+    const shortfall = creditedQty - storeQtyBeforeThisLine;
     if (shortfall <= 0) continue;
 
     impacted.push({
@@ -376,7 +403,7 @@ export async function previewKonsiReturStockImpact(returnId: string): Promise<Ko
       itemName: line.item.nameId,
       variantSku: line.variantSku,
       creditedQty,
-      storeQty,
+      storeQty: storeQtyBeforeThisLine,
       shortfall,
     });
   }

@@ -37,6 +37,12 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
      this before any transfer runs. */
   let shortOrderId = "";
 
+  /* An item transferred at qty 10 @ avgCost 10.000 into a store whose StoreStock row is seeded
+     NEGATIVE (-6, avgCost 0) before the transfer — exercises the blend guard against a negative
+     prevStoreQty (see the konsi retur decrement, which is what drives a row negative). */
+  let negativeItemId = "";
+  let negativeOrderId = "";
+
   beforeEach(async () => {
     uomId = "";
     itemId = "";
@@ -50,6 +56,8 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     secondOrderId = "";
     variantlessOrderId = "";
     shortOrderId = "";
+    negativeItemId = "";
+    negativeOrderId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-KTW-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -72,6 +80,12 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     });
     shortItemId = shortItem.id;
     await prisma.inventoryValue.create({ data: { itemId: shortItemId, variantSku: "", qtyOnHand: 2, reservedQty: 0, avgCost: 5000, totalValue: 10000 } });
+
+    const negativeItem = await prisma.item.create({
+      data: { sku: `TEST-KTW-NEG-${token}`, nameId: "Negative store stock konsi item", nameEn: "Negative store stock konsi item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 },
+    });
+    negativeItemId = negativeItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: negativeItemId, variantSku: "", qtyOnHand: 100, reservedQty: 0, avgCost: 10000, totalValue: 1000000 } });
 
     const store = await prisma.store.create({
       data: { code: `TEST-KTW-STORE-${token}`, name: "Test Konsi Transfer Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
@@ -101,11 +115,12 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     secondOrderId = await mkOrder({ itemId, variantSku: "", qty: 6 });
     variantlessOrderId = await mkOrder({ itemId: variantlessItemId, variantSku: "", qty: 5 });
     shortOrderId = await mkOrder({ itemId: shortItemId, variantSku: "", qty: 6 });
+    negativeOrderId = await mkOrder({ itemId: negativeItemId, variantSku: "", qty: 10 });
   });
 
   afterEach(async () => {
-    const itemIds = [seededId(itemId), seededId(variantlessItemId), seededId(shortItemId)];
-    const orderIds = [seededId(orderId), seededId(secondOrderId), seededId(variantlessOrderId), seededId(shortOrderId)];
+    const itemIds = [seededId(itemId), seededId(variantlessItemId), seededId(shortItemId), seededId(negativeItemId)];
+    const orderIds = [seededId(orderId), seededId(secondOrderId), seededId(variantlessOrderId), seededId(shortOrderId), seededId(negativeOrderId)];
 
     /*
      * createFieldSalesOrder writes one AdminNotification per order with no orderId column to
@@ -224,5 +239,23 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
     expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(orderId) } })).toBe(1);
+  });
+
+  it("clamps a negative StoreStock qty to 0 for the avgCost blend rather than inflating it", async () => {
+    /*
+     * A konsi retur can drive a StoreStock row negative by design (approve-writer.ts) — here the
+     * store's row already reads -6 @ avgCost 0 before this transfer lands 10 units @ 10.000.
+     * Unguarded, weightedAvgCost(-6, 0, 10, 10000) = (-6*0 + 10*10000) / (-6+10) = 100000/4 =
+     * 25.000, 2.5x the true incoming cost. Clamping the negative qty to 0 for the blend makes the
+     * incoming cost become the new average outright (100000/10 = 10.000), while the actual qty
+     * written still uses the real -6 (-6 + 10 = 4), not the clamped one.
+     */
+    await prisma.storeStock.create({
+      data: { storeId: seededId(storeId), itemId: seededId(negativeItemId), variantSku: "", qty: -6, avgCost: 0 },
+    });
+    await approveFieldSalesOrder({ orderId: negativeOrderId, approvedById: salesmanId });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(negativeItemId) } });
+    expect(Number(ss.qty)).toBe(4);
+    expect(Number(ss.avgCost)).toBe(10_000);
   });
 });

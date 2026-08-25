@@ -82,10 +82,21 @@ export async function issueKonsiTransfer(
     const existing = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true, avgCost: true } });
     const prevStoreQty = existing ? existing.qty.toNumber() : 0;
     const prevStoreAvg = existing ? existing.avgCost.toNumber() : 0;
+    /*
+     * A negative StoreStock qty (e.g. a konsi retur that credited back more than the store's
+     * ledger held — see approve-writer.ts) represents units that are not physically there.
+     * Blending this transfer's incoming cost against those units with weightedAvgCost would use
+     * a negative weight on the existing side and inflate the blended average well past the true
+     * cost. Clamped to 0 for the BLEND only: you cannot meaningfully average a cost against units
+     * that are not there, so the incoming cost simply becomes the new average. The actual qty
+     * written below still uses the real (possibly negative) prevStoreQty — this guard is about
+     * the cost blend, not the quantity.
+     */
+    const blendQty = Math.max(prevStoreQty, 0);
     await tx.storeStock.upsert({
       where: storeKey,
       create: { storeId: input.order.storeId, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty, avgCost },
-      update: { qty: prevStoreQty + l.qty, avgCost: weightedAvgCost(prevStoreQty, prevStoreAvg, l.qty, avgCost) },
+      update: { qty: prevStoreQty + l.qty, avgCost: weightedAvgCost(blendQty, prevStoreAvg, l.qty, avgCost) },
     });
 
     /*
