@@ -388,6 +388,17 @@ export async function deleteItem(id: string) {
     planAccessoryCount,
     salesReturnItemCount,
     fieldReturnLineCount,
+    fieldSalesOrderLineCount,
+    fieldSalesDeliveryLineCount,
+    promoItemCount,
+    storeStockCount,
+    konsiTransferLineCount,
+    storeStocktakeLineCount,
+    vanStockCount,
+    vanLoadLineCount,
+    vanSaleLineCount,
+    vanReconcileLineCount,
+    spgSaleLineCount,
   ] = await Promise.all([
     prisma.stockMovement.count({ where: { itemId: id } }),
     prisma.pOItem.count({ where: { itemId: id } }),
@@ -399,6 +410,24 @@ export async function deleteItem(id: string) {
     prisma.planAccessory.count({ where: { itemId: id } }),
     prisma.salesReturnItem.count({ where: { itemId: id } }),
     prisma.fieldReturnLine.count({ where: { itemId: id } }),
+    /*
+     * relationMode = "prisma" means none of these required `item` relations is backed by a real
+     * database FK, so nothing stops `tx.item.delete()` below from succeeding while one of these
+     * rows still points at it — every one below has a REQUIRED Prisma relation to Item, so the
+     * first read that joins it (`select: { item: ... }`, as every one of these documents' detail
+     * pages does) throws "Inconsistent query result" forever, with no UI repair path.
+     */
+    prisma.fieldSalesOrderLine.count({ where: { itemId: id } }),
+    prisma.fieldSalesDeliveryLine.count({ where: { itemId: id } }),
+    prisma.promoItem.count({ where: { itemId: id } }),
+    prisma.storeStock.count({ where: { itemId: id } }),
+    prisma.konsiTransferLine.count({ where: { itemId: id } }),
+    prisma.storeStocktakeLine.count({ where: { itemId: id } }),
+    prisma.vanStock.count({ where: { itemId: id } }),
+    prisma.vanLoadLine.count({ where: { itemId: id } }),
+    prisma.vanSaleLine.count({ where: { itemId: id } }),
+    prisma.vanReconcileLine.count({ where: { itemId: id } }),
+    prisma.spgSaleLine.count({ where: { itemId: id } }),
   ]);
 
   const hasLinkedRecords =
@@ -411,7 +440,18 @@ export async function deleteItem(id: string) {
     rejectedGoodsCount > 0 ||
     planAccessoryCount > 0 ||
     salesReturnItemCount > 0 ||
-    fieldReturnLineCount > 0;
+    fieldReturnLineCount > 0 ||
+    fieldSalesOrderLineCount > 0 ||
+    fieldSalesDeliveryLineCount > 0 ||
+    promoItemCount > 0 ||
+    storeStockCount > 0 ||
+    konsiTransferLineCount > 0 ||
+    storeStocktakeLineCount > 0 ||
+    vanStockCount > 0 ||
+    vanLoadLineCount > 0 ||
+    vanSaleLineCount > 0 ||
+    vanReconcileLineCount > 0 ||
+    spgSaleLineCount > 0;
 
   if (hasLinkedRecords) {
     throw new Error(ITEM_DELETE_BLOCKED);
