@@ -2070,7 +2070,8 @@
     "errors": {
       "codeUnique": "Kode toko sudah dipakai.",
       "forbidden": "Akses ditolak.",
-      "notFound": "Toko tidak ditemukan."
+      "notFound": "Toko tidak ditemukan.",
+      "hasConsignmentStock": "Toko ini masih memiliki stok konsinyasi dan harus meretur atau mentransfernya sebelum beralih dari Konsi."
     },
     "detail": {
       "infoTitle": "Detail toko",

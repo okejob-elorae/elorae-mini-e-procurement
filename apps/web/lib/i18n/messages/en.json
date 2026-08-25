@@ -2070,7 +2070,8 @@
     "errors": {
       "codeUnique": "Store code already exists.",
       "forbidden": "Permission denied.",
-      "notFound": "Store not found."
+      "notFound": "Store not found.",
+      "hasConsignmentStock": "This store still holds consignment stock and must return or transfer it before switching off Konsi."
     },
     "detail": {
       "infoTitle": "Store details",
