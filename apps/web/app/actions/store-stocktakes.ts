@@ -45,13 +45,24 @@ type SaveCountsAddedLineInput = {
 };
 
 /**
+ * Same shape as `SaveCountsAddedLineInput` — an item-keyed count (`{ itemId, variantSku }`
+ * rather than a `lineId`) — but a distinct alias so `SaveCountsActionInput` reads correctly:
+ * this is the `{ storeId }` branch's own `lines`, not the add-item picker's `addedLines`. The
+ * caller has no `StoreStocktakeLine.id` to key by (the document may not even exist yet), so
+ * `saveCountsAction` resolves each pair to a real line id itself — see its own comment below.
+ */
+type SaveCountsItemKeyedLineInput = SaveCountsAddedLineInput;
+
+/**
  * Exactly one of `stocktakeId` / `storeId` — never both, never neither. `stocktakeId` covers the
- * admin path AND an SPG filling a document the admin already opened; `storeId` is the SPG-only
- * create-if-absent path (see `saveCountsAction` below for why it must stay SPG-only).
+ * admin path AND an SPG filling a document the admin already opened, and its `lines` are
+ * `lineId`-keyed. `storeId` is the SPG-only create-if-absent path (see `saveCountsAction` below
+ * for why it must stay SPG-only) and its `lines` are item-keyed instead, since no line id can
+ * exist client-side before the document does.
  */
 export type SaveCountsActionInput =
   | { stocktakeId: string; lines: SaveCountsLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean }
-  | { storeId: string; lines: SaveCountsLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean };
+  | { storeId: string; lines: SaveCountsItemKeyedLineInput[]; addedLines?: SaveCountsAddedLineInput[]; submit?: boolean };
 
 /**
  * Every `StoreStocktakeErrorCode` maps onto its own result code, one to one — a `Record` over
@@ -115,11 +126,16 @@ function isValidAddedLine(l: unknown): l is SaveCountsAddedLineInput {
  * Shape guard for the whole request, ahead of anything domain-specific. `stocktakeId` XOR
  * `storeId` is enforced here — supplying both or neither is `INVALID_REQUEST`, never a domain
  * code, exactly like a malformed line or a non-array `lines`.
+ *
+ * `lines` is validated against the shape the branch actually uses — `lineId`-keyed for
+ * `stocktakeId`, item-keyed for `storeId` (the same shape as an added line, hence reusing
+ * `isValidAddedLine`) — so the predicate type leaves `lines` as `unknown[]` and each branch of
+ * `saveCountsAction` casts to the shape it already proved out at this point.
  */
 function isValidSaveCountsInput(input: unknown): input is {
   stocktakeId?: string;
   storeId?: string;
-  lines: SaveCountsLineInput[];
+  lines: unknown[];
   addedLines?: SaveCountsAddedLineInput[];
   submit?: boolean;
 } {
@@ -128,7 +144,9 @@ function isValidSaveCountsInput(input: unknown): input is {
   const hasStocktakeId = typeof i.stocktakeId === "string" && i.stocktakeId !== "";
   const hasStoreId = typeof i.storeId === "string" && i.storeId !== "";
   if (hasStocktakeId === hasStoreId) return false;
-  if (!Array.isArray(i.lines) || !i.lines.every(isValidCountsLine)) return false;
+  if (!Array.isArray(i.lines)) return false;
+  if (hasStocktakeId && !i.lines.every(isValidCountsLine)) return false;
+  if (hasStoreId && !i.lines.every(isValidAddedLine)) return false;
   if (i.addedLines !== undefined && (!Array.isArray(i.addedLines) || !i.addedLines.every(isValidAddedLine))) return false;
   if (i.submit !== undefined && typeof i.submit !== "boolean") return false;
   return true;
@@ -219,6 +237,13 @@ export async function createAction(input: { storeId: string; countedAt: string }
  * true on that path) — an SPG count is, by definition, a submission for an admin to verify, never
  * a draft save. The admin path defaults `submit` to `false` (a draft save) unless the caller asks
  * for `true`.
+ *
+ * The `{ storeId }` branch's `lines` are item-keyed (`{ itemId, variantSku, countedQty }`), not
+ * `lineId`-keyed — the caller may be submitting before any document (and so any line id) exists
+ * at all. This action resolves each pair against the document's own lines (creating or reusing
+ * it first) and rewrites them into the `lineId`-keyed shape `saveStocktakeCounts` requires, which
+ * is untouched by this — a pair matching no line on the document falls back into `addedLines`
+ * rather than being dropped, so a count the SPG typed never vanishes silently.
  */
 export async function saveCountsAction(input: SaveCountsActionInput): Promise<StoreStocktakeActionResult> {
   let stocktakeId = "";
@@ -233,6 +258,8 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
     if (!isValidSaveCountsInput(input)) return { ok: false, code: "INVALID_REQUEST" };
 
     let submit = input.submit ?? false;
+    let lines: SaveCountsLineInput[];
+    let addedLines: SaveCountsAddedLineInput[] | undefined;
 
     if (input.storeId) {
       if (!isSpg) return { ok: false, code: "FORBIDDEN" };
@@ -259,6 +286,42 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
         : (await createStoreStocktake({ storeId: input.storeId, createdById: session.user.id, countedAt: new Date() })).id;
       storeIdForRevalidate = input.storeId;
       submit = true;
+
+      /**
+       * Resolve the item-keyed `lines` against the document's own lines, normalising
+       * `variantSku ?? ""` on both sides since the column is non-nullable. A freshly created
+       * document already has a line for every current `StoreStock` row (`createStoreStocktake`
+       * populates them via `buildStocktakeLines`), so the common case resolves cleanly; a pair
+       * that still matches nothing — the ledger moved between the SPG's page load and this
+       * submit, or a genuinely new item slipped into `lines` instead of `addedLines` — is folded
+       * into `addedLines` rather than dropped.
+       */
+      const itemKeyedLines = input.lines as SaveCountsItemKeyedLineInput[];
+      const docLines = await prisma.storeStocktakeLine.findMany({
+        where: { stocktakeId },
+        select: { id: true, itemId: true, variantSku: true },
+      });
+      const lineIdByKey = new Map(docLines.map((l) => [`${l.itemId}::${l.variantSku}`, l.id]));
+
+      const resolvedLines: SaveCountsLineInput[] = [];
+      const fallbackAddedLines: SaveCountsAddedLineInput[] = [];
+      for (const line of itemKeyedLines) {
+        const key = `${line.itemId}::${line.variantSku ?? ""}`;
+        const lineId = lineIdByKey.get(key);
+        if (lineId) {
+          resolvedLines.push({ lineId, countedQty: line.countedQty, cause: line.cause, reason: line.reason });
+        } else {
+          fallbackAddedLines.push({
+            itemId: line.itemId,
+            variantSku: line.variantSku ?? "",
+            countedQty: line.countedQty,
+            cause: line.cause,
+            reason: line.reason,
+          });
+        }
+      }
+      lines = resolvedLines;
+      addedLines = [...(input.addedLines ?? []), ...fallbackAddedLines];
     } else {
       stocktakeId = input.stocktakeId as string;
       const doc = await prisma.storeStocktake.findUnique({ where: { id: stocktakeId }, select: { storeId: true } });
@@ -271,12 +334,15 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
         if (gate.storeId !== doc.storeId) return { ok: false, code: "FORBIDDEN" };
         submit = true;
       }
+
+      lines = input.lines as SaveCountsLineInput[];
+      addedLines = input.addedLines;
     }
 
     await saveStocktakeCounts({
       stocktakeId,
-      lines: input.lines,
-      addedLines: input.addedLines,
+      lines,
+      addedLines,
       submit,
       userId: session.user.id,
     });

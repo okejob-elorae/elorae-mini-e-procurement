@@ -13,7 +13,6 @@ import { saveCountsAction } from "@/app/actions/store-stocktakes";
 import { SpgStocktakeAddItemSheet, type AddableItem } from "./SpgStocktakeAddItemSheet";
 
 export type SpgStocktakeLine = {
-  lineId: string;
   itemId: string;
   itemSku: string;
   variantSku: string;
@@ -32,6 +31,15 @@ function parseCountedInput(raw: string): { value: number | null; valid: boolean 
   const n = Number(trimmed);
   if (!Number.isFinite(n) || n < 0) return { value: null, valid: false };
   return { value: n, valid: true };
+}
+
+/**
+ * Every row is keyed `itemId::variantSku`, never a `StoreStocktakeLine.id` — this screen has no
+ * such id to work with (the document may not exist at all until submit), and `saveCountsAction`'s
+ * `{ storeId }` form takes item-keyed lines for exactly that reason.
+ */
+function keyOf(itemId: string, variantSku: string): string {
+  return `${itemId}::${variantSku}`;
 }
 
 export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: string; storeName: string; lines: SpgStocktakeLine[] }) {
@@ -57,13 +65,13 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
   }, []);
 
   const existingKeys = useMemo(() => {
-    const keys = new Set(lines.map((l) => `${l.itemId}::${l.variantSku}`));
-    for (const p of pendingLines) keys.add(`${p.itemId}::${p.variantSku}`);
+    const keys = new Set(lines.map((l) => keyOf(l.itemId, l.variantSku)));
+    for (const p of pendingLines) keys.add(keyOf(p.itemId, p.variantSku));
     return keys;
   }, [lines, pendingLines]);
 
-  function rawFor(lineId: string, storedCountedQty: number | null): string {
-    return counts[lineId] ?? (storedCountedQty === null ? "" : String(storedCountedQty));
+  function rawFor(key: string, storedCountedQty: number | null): string {
+    return counts[key] ?? (storedCountedQty === null ? "" : String(storedCountedQty));
   }
 
   function updateCount(key: string, value: string): void {
@@ -71,7 +79,7 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
   }
 
   function addPendingLine(item: AddableItem): void {
-    setPendingLines((prev) => [...prev, { key: `new:${item.itemId}::${item.variantSku}`, ...item }]);
+    setPendingLines((prev) => [...prev, { key: `new:${keyOf(item.itemId, item.variantSku)}`, ...item }]);
   }
 
   function removePendingLine(key: string): void {
@@ -84,9 +92,10 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
   }
 
   const computedExisting = lines.map((l) => {
-    const raw = rawFor(l.lineId, l.countedQty);
+    const key = keyOf(l.itemId, l.variantSku);
+    const raw = rawFor(key, l.countedQty);
     const { value, valid } = parseCountedInput(raw);
-    return { line: l, raw, counted: value, valid };
+    return { line: l, key, raw, counted: value, valid };
   });
   const computedPending = pendingLines.map((p) => {
     const raw = rawFor(p.key, null);
@@ -118,7 +127,11 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
     setSubmitError(null);
     (async () => {
       try {
-        const payloadLines = computedExisting.map((c) => ({ lineId: c.line.lineId, countedQty: c.counted }));
+        const payloadLines = computedExisting.map((c) => ({
+          itemId: c.line.itemId,
+          variantSku: c.line.variantSku,
+          countedQty: c.counted,
+        }));
         const addedLines = computedPending.map((c) => ({
           itemId: c.line.itemId,
           variantSku: c.line.variantSku,
@@ -202,7 +215,7 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
 
       <div className="flex flex-col gap-2">
         {filteredExisting.map((c) => (
-          <Card key={c.line.lineId} className="flex flex-row items-center gap-3 p-3">
+          <Card key={c.key} className="flex flex-row items-center gap-3 p-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <p className="truncate text-sm font-medium">{c.line.productName}</p>
@@ -226,7 +239,7 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
                 className="h-10 w-24 text-right tabular-nums"
                 disabled={submitting}
                 value={c.raw}
-                onChange={(e) => updateCount(c.line.lineId, e.target.value)}
+                onChange={(e) => updateCount(c.key, e.target.value)}
               />
               {!c.valid && <p className="text-right text-xs text-destructive">{t("countInvalid")}</p>}
             </div>

@@ -18,6 +18,7 @@ const {
   mockFindUser,
   mockFindStocktakeFirst,
   mockFindStocktakeUnique,
+  mockFindStocktakeLineMany,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
@@ -30,6 +31,7 @@ const {
   mockFindUser: vi.fn(),
   mockFindStocktakeFirst: vi.fn(),
   mockFindStocktakeUnique: vi.fn(),
+  mockFindStocktakeLineMany: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -48,6 +50,7 @@ vi.mock("@elorae/db", () => ({
   prisma: {
     user: { findUnique: mockFindUser },
     storeStocktake: { findFirst: mockFindStocktakeFirst, findUnique: mockFindStocktakeUnique },
+    storeStocktakeLine: { findMany: mockFindStocktakeLineMany },
   },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
@@ -68,6 +71,7 @@ describe("store stocktake actions (unit — writers mocked)", () => {
     mockFindUser.mockReset();
     mockFindStocktakeFirst.mockReset();
     mockFindStocktakeUnique.mockReset();
+    mockFindStocktakeLineMany.mockReset();
 
     mockAuth.mockResolvedValue({ user: { id: "user-1", permissions: [] } });
     mockHasPermission.mockReturnValue(true);
@@ -79,6 +83,7 @@ describe("store stocktake actions (unit — writers mocked)", () => {
     mockFindUser.mockResolvedValue({ assignedStoreId: "s1" });
     mockFindStocktakeFirst.mockResolvedValue(null);
     mockFindStocktakeUnique.mockResolvedValue({ storeId: "s1" });
+    mockFindStocktakeLineMany.mockResolvedValue([]);
   });
 
   describe("createAction", () => {
@@ -314,7 +319,7 @@ describe("store stocktake actions (unit — writers mocked)", () => {
         const res = await saveCountsAction({ storeId: "s1", lines: [] });
         expect(res).toEqual({ ok: true, id: "new-st" });
         expect(mockCreate).toHaveBeenCalledWith({ storeId: "s1", createdById: "user-1", countedAt: expect.any(Date) });
-        expect(mockSave).toHaveBeenCalledWith({ stocktakeId: "new-st", lines: [], addedLines: undefined, submit: true, userId: "user-1" });
+        expect(mockSave).toHaveBeenCalledWith({ stocktakeId: "new-st", lines: [], addedLines: [], submit: true, userId: "user-1" });
       });
 
       it("reuses the already-open DRAFT the admin opened instead of creating a second one", async () => {
@@ -322,7 +327,7 @@ describe("store stocktake actions (unit — writers mocked)", () => {
         const res = await saveCountsAction({ storeId: "s1", lines: [] });
         expect(res).toEqual({ ok: true, id: "existing-st" });
         expect(mockCreate).not.toHaveBeenCalled();
-        expect(mockSave).toHaveBeenCalledWith({ stocktakeId: "existing-st", lines: [], addedLines: undefined, submit: true, userId: "user-1" });
+        expect(mockSave).toHaveBeenCalledWith({ stocktakeId: "existing-st", lines: [], addedLines: [], submit: true, userId: "user-1" });
       });
 
       it("refuses without an active check-in at the store", async () => {
@@ -356,6 +361,66 @@ describe("store stocktake actions (unit — writers mocked)", () => {
         expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes");
         expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes/new-st");
         expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/stores/s1");
+      });
+
+      /**
+       * The whole point of the item-keyed shape: the caller (the PWA, which has no
+       * StoreStocktakeLine id to work with) sends { itemId, variantSku, countedQty }, and this
+       * action must resolve it against the document's own lines before ever calling the
+       * lineId-keyed writer.
+       */
+      it("resolves an item-keyed line to its real lineId before calling the writer", async () => {
+        mockFindStocktakeFirst.mockResolvedValue({ id: "existing-st" });
+        mockFindStocktakeLineMany.mockResolvedValue([{ id: "line-1", itemId: "item-1", variantSku: "" }]);
+        const res = await saveCountsAction({ storeId: "s1", lines: [{ itemId: "item-1", variantSku: "", countedQty: 5 }] });
+        expect(res).toEqual({ ok: true, id: "existing-st" });
+        expect(mockSave).toHaveBeenCalledWith({
+          stocktakeId: "existing-st",
+          lines: [{ lineId: "line-1", countedQty: 5, cause: undefined, reason: undefined }],
+          addedLines: [],
+          submit: true,
+          userId: "user-1",
+        });
+      });
+
+      /* A blank count must resolve to null, never 0 — the distinction the whole feature rests on. */
+      it("keeps a blank count as null through the item-keyed resolution", async () => {
+        mockFindStocktakeFirst.mockResolvedValue({ id: "existing-st" });
+        mockFindStocktakeLineMany.mockResolvedValue([{ id: "line-1", itemId: "item-1", variantSku: "" }]);
+        await saveCountsAction({ storeId: "s1", lines: [{ itemId: "item-1", variantSku: "", countedQty: null }] });
+        expect(mockSave).toHaveBeenCalledWith({
+          stocktakeId: "existing-st",
+          lines: [{ lineId: "line-1", countedQty: null, cause: undefined, reason: undefined }],
+          addedLines: [],
+          submit: true,
+          userId: "user-1",
+        });
+      });
+
+      /**
+       * An item-keyed line matching no line on the document (the ledger moved between the SPG's
+       * page load and this submit) must still reach the writer — folded into addedLines,
+       * alongside whatever the caller already put there — rather than being silently dropped.
+       */
+      it("folds an unmatched item-keyed line into addedLines instead of dropping it", async () => {
+        mockFindStocktakeFirst.mockResolvedValue({ id: "existing-st" });
+        mockFindStocktakeLineMany.mockResolvedValue([]);
+        const res = await saveCountsAction({
+          storeId: "s1",
+          lines: [{ itemId: "item-2", variantSku: "red", countedQty: 3 }],
+          addedLines: [{ itemId: "item-3", variantSku: "", countedQty: 1 }],
+        });
+        expect(res).toEqual({ ok: true, id: "existing-st" });
+        expect(mockSave).toHaveBeenCalledWith({
+          stocktakeId: "existing-st",
+          lines: [],
+          addedLines: [
+            { itemId: "item-3", variantSku: "", countedQty: 1 },
+            { itemId: "item-2", variantSku: "red", countedQty: 3, cause: undefined, reason: undefined },
+          ],
+          submit: true,
+          userId: "user-1",
+        });
       });
     });
 
