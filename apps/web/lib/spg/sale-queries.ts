@@ -17,9 +17,11 @@ export type SpgCatalogRow = {
  * mirroring the pricing recordSpgSale itself applies (store-independent:
  * PUTUS ignores marginPercent, so this never needs the store's own
  * consignment terms). The set stays UNRESTRICTED — every active finished good
- * is offered, including one with no StoreStock row at all (reports 0) — so
- * nothing here should imply a stock gate, and SpgSale itself remains
- * record-only (see recordSpgSale doc comment).
+ * is offered, including one with no StoreStock row at all (reports 0).
+ * recordSpgSale is no longer fully record-only — it decrements StoreStock at
+ * a KONSI store (see its doc comment) — but this query still enforces NO
+ * stock gate: the set below is never filtered, capped, or ordered by
+ * onCounterQty.
  *
  * onCounterQty is an ON-COUNTER LOCATION figure read from StoreStock only. It
  * is NOT available-for-sale (that stays InventoryValue.qtyOnHand - reservedQty,
