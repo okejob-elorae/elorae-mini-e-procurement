@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { weightedAvgCost } from "./cost";
+import { weightedAvgCost } from "./weighted-avg-cost";
 
 describe("weightedAvgCost", () => {
   it("returns the add cost when there is no prior stock", () => {
