@@ -339,7 +339,11 @@ export function StoreDetailView({
         variantSku: row.variantSku,
         itemName: row.itemName,
         qtyRaw,
-        reason: existing?.reason ?? "DAMAGED",
+        /*
+         * UNSOLD, not DAMAGED (the PWA's default) — an admin at the office has inspected
+         * nothing physically, so defaulting to a claim about condition would be unverified.
+         */
+        reason: existing?.reason ?? "UNSOLD",
         reasonNote: existing?.reasonNote ?? "",
       });
       return next;
