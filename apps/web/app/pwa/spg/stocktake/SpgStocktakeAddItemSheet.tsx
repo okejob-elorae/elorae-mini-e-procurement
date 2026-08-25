@@ -135,7 +135,7 @@ export function SpgStocktakeAddItemSheet({
         </div>
 
         <SheetFooter className="border-t pt-3">
-          <Button type="button" className="w-full" onClick={() => onOpenChange(false)}>
+          <Button type="button" size="lg" className="w-full" onClick={() => onOpenChange(false)}>
             <Check className="h-4 w-4" />
             {t("done")}
           </Button>

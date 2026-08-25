@@ -24,7 +24,7 @@ export type SpgStocktakeLine = {
 
 type PendingLine = { key: string; itemId: string; itemSku: string; variantSku: string; productName: string };
 
-/** Blank means "not counted" — never coerced to 0, never treated as invalid. */
+/* Blank means "not counted" — never coerced to 0, never treated as invalid. */
 function parseCountedInput(raw: string): { value: number | null; valid: boolean } {
   const trimmed = raw.trim();
   if (trimmed === "") return { value: null, valid: true };
@@ -175,7 +175,7 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
   return (
     <div className="flex flex-col gap-3 p-4">
       <header className="-ml-2">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="h-10">
           <Link href="/pwa">
             <ArrowLeft className="h-4 w-4" />
             {t("back")}
@@ -195,8 +195,21 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
       )}
 
       <div className="flex items-center gap-2">
-        <Input placeholder={t("searchPlaceholder")} value={q} onChange={(e) => setQ(e.target.value)} className="h-10" />
-        <Button type="button" variant="outline" size="icon-lg" onClick={() => setAddItemOpen(true)} aria-label={t("addItem.button")}>
+        <Input
+          placeholder={t("searchPlaceholder")}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="h-10"
+          disabled={submitting}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-lg"
+          disabled={submitting}
+          onClick={() => setAddItemOpen(true)}
+          aria-label={t("addItem.button")}
+        >
           <Plus className="h-4 w-4" />
         </Button>
       </div>
