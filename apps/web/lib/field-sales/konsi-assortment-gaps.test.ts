@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { listKonsiAssortmentGaps, listKonsiSuggestions } from "./queries";
+import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
 
 /* Read-only against a shared dev DB, but the fixture still writes rows — keep the same guard as sibling specs. */
 const url = process.env.DATABASE_URL ?? "";
@@ -17,6 +18,8 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
   let variantItemId = "";
   let targetItemId = "";
   let overlapItemId = "";
+  let zeroAvailItemId = "";
+  let dualRowItemId = "";
   let orderId = "";
   let priorOrderId = "";
   let putusOrderId = "";
@@ -32,6 +35,8 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     variantItemId = "";
     targetItemId = "";
     overlapItemId = "";
+    zeroAvailItemId = "";
+    dualRowItemId = "";
     orderId = "";
     priorOrderId = "";
     putusOrderId = "";
@@ -44,13 +49,19 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     const user = await prisma.user.create({ data: { email: `test-kag-${token}@example.com`, name: "Test KAG Admin" } });
     userId = user.id;
 
+    /*
+     * Deliberately NOT "TEST-"-prefixed: apps/web/app/pwa/stores/actions.spec.ts runs a
+     * pre-existing `store.deleteMany({ code: { startsWith: "TEST-" } })` teardown that sweeps the
+     * WHOLE shared dev DB, not just its own fixtures. A "TEST-"-prefixed code here would sit in
+     * that blast radius.
+     */
     const store = await prisma.store.create({
-      data: { code: `TEST-KAG-STORE-${token}`, name: "Test Assortment Gap Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `KAG-STORE-${token}`, name: "Test Assortment Gap Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
     });
     storeId = store.id;
 
     const putusStore = await prisma.store.create({
-      data: { code: `TEST-KAG-PSTORE-${token}`, name: "Test Putus Store", address: "Test address", termsType: "PUTUS", isActive: true },
+      data: { code: `KAG-PSTORE-${token}`, name: "Test Putus Store", address: "Test address", termsType: "PUTUS", isActive: true },
     });
     putusStoreId = putusStore.id;
 
@@ -122,6 +133,41 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     });
     assortmentLineIds.push(lineOverlap.id);
 
+    /**
+     * A genuine gap (never received, target "must be present") whose main-warehouse row has
+     * `qtyOnHand === reservedQty`, so `available` is exactly 0 — the availability filter's
+     * boundary. `listKonsiAssortmentGaps` drops it (nothing stageable from this panel); the
+     * store-card surface via `listAssortmentGaps` must still show it regardless of main-warehouse
+     * stock.
+     */
+    const zeroAvailItem = await prisma.item.create({
+      data: { sku: `TEST-KAG-ZERO-${token}`, nameId: "Genuine gap, zero available", nameEn: "Genuine gap, zero available", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 18000 },
+    });
+    zeroAvailItemId = zeroAvailItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: zeroAvailItemId, variantSku: "", qtyOnHand: 4, reservedQty: 4, avgCost: 400, totalValue: 1600 } });
+    const lineZero = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: zeroAvailItemId, variantSku: "", targetQty: null, createdById: userId },
+    });
+    assortmentLineIds.push(lineZero.id);
+
+    /**
+     * MariaDB permits multiple NULLs on the (itemId, variantSku) unique index, so an item can
+     * carry both a `null` and an `""` InventoryValue row for the same logical (variantless) SKU.
+     * Both normalize to the gap's own `""` key, and the fold must keep the MINIMUM available
+     * across the collision (10 vs 3 -> 3), never the sum (13) and never just one row picked
+     * arbitrarily.
+     */
+    const dualRowItem = await prisma.item.create({
+      data: { sku: `TEST-KAG-DUAL-${token}`, nameId: "Dual null/empty variant row item", nameEn: "Dual null/empty variant row item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 25000 },
+    });
+    dualRowItemId = dualRowItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: dualRowItemId, variantSku: null, qtyOnHand: 10, reservedQty: 0, avgCost: 700, totalValue: 7000 } });
+    await prisma.inventoryValue.create({ data: { itemId: dualRowItemId, variantSku: "", qtyOnHand: 3, reservedQty: 0, avgCost: 700, totalValue: 2100 } });
+    const lineDual = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: dualRowItemId, variantSku: "", targetQty: null, createdById: userId },
+    });
+    assortmentLineIds.push(lineDual.id);
+
     const order = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `KONSI/TEST-KAG-${token}`,
@@ -182,7 +228,14 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const allItemIds = [seededId(prevSentItemId), seededId(variantItemId), seededId(targetItemId), seededId(overlapItemId)];
+    const allItemIds = [
+      seededId(prevSentItemId),
+      seededId(variantItemId),
+      seededId(targetItemId),
+      seededId(overlapItemId),
+      seededId(zeroAvailItemId),
+      seededId(dualRowItemId),
+    ];
     const allOrderIds = [seededId(orderId), seededId(priorOrderId), seededId(putusOrderId)];
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: allOrderIds } } });
@@ -245,5 +298,21 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
 
     const neverSentKeys = new Set(neverSent.map((r) => `${r.itemId}::${r.variantSku}`));
     expect(neverSentKeys.has(key)).toBe(false);
+  });
+
+  it("drops a genuine gap with available === 0 from the stageable panel, but keeps it on the read-only store-card gap list", async () => {
+    const stageable = await listKonsiAssortmentGaps(orderId);
+    expect(stageable.some((r) => r.itemId === zeroAvailItemId)).toBe(false);
+
+    const readOnly = await listAssortmentGaps(storeId);
+    expect(readOnly.some((r) => r.itemId === zeroAvailItemId && r.variantSku === "")).toBe(true);
+  });
+
+  it("folds a dual null/\"\" InventoryValue row via Math.min, not sum", async () => {
+    const rows = await listKonsiAssortmentGaps(orderId);
+    const row = rows.find((r) => r.itemId === dualRowItemId);
+    expect(row).toBeDefined();
+    expect(row!.available).toBe(3);
+    expect(row!.available).not.toBe(13);
   });
 });

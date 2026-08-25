@@ -565,8 +565,11 @@ export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAss
   if (remaining.length === 0) return [];
 
   const itemIds = Array.from(new Set(remaining.map((g) => g.itemId)));
+  /* Same isActive/type filter listKonsiSuggestions applies — a deactivated or raw-material item
+   * dropped from the assortment lines table would otherwise still render here as a stageable gap
+   * and abort the approval with UNKNOWN_ITEM (that writer check filters on the same two fields). */
   const items = await prisma.item.findMany({
-    where: { id: { in: itemIds } },
+    where: { id: { in: itemIds }, isActive: true, type: "FINISHED_GOOD" },
     select: {
       id: true,
       variants: true,

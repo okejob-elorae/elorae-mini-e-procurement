@@ -129,7 +129,7 @@ export function StoreAssortmentCard({ storeId, termsType, lines }: Props) {
     setCatalog({ status: "loading" });
     startAddTransition(async () => {
       try {
-        const items = await getItems({ isActive: true });
+        const items = await getItems({ isActive: true, type: "FINISHED_GOOD" });
         const list = Array.isArray(items) ? items : [];
         const options: SearchableComboboxOption[] = [];
         const metaByKey = new Map<string, CatalogMeta>();
