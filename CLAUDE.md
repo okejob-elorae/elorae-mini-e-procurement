@@ -20,6 +20,9 @@ Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostin
 
 - `docs/BOUNDARY.md` — service responsibilities, data ownership (per-table write owners), communication patterns (sync HTTP vs outbox vs webhooks), auth model, failure modes, anti-patterns, decisions log.
 - `docs/INTEGRATION-GUIDE.md` — how to use the Jubelio-touching surface (outbox enqueue, stock adjustments, signed channel).
+- `docs/ARCHITECTURE-NOTES.md` — the detail behind every line of the landmine index below. Read the entry for whatever surface you are about to touch, before writing code.
+- `docs/FOLLOWUPS.md` — follow-ups + known tech debt, grouped by area. Read the relevant section before starting work on that area; log every new follow-up there.
+- `docs/EPIC-STATUS.md` — EPIC decomposition + status tables. Read it before building anything that might already exist, and tick the row when a slice merges.
 - `docs/superpowers/specs/` + `docs/superpowers/plans/` — per-feature design specs + implementation plans (local-only, gitignored). Each feature follows brainstorm → spec → plan → implement → PR.
 - `apps/web/README.md` — ERP feature list.
 - `README.md` (root) — local setup, env layout, dev/prod commands, ngrok demo.
@@ -37,6 +40,7 @@ Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostin
 
 - **Match existing UI patterns before inventing new ones.** Before writing any new page/form/list, open a sibling module and copy the shape. Backoffice CRUD list reference = `apps/web/app/backoffice/purchase-orders/PurchaseOrdersPageClient.tsx` (header row + inline filter row + Card-wrapped table with CardHeader icon+title, empty state inside CardContent, no `p-6` on the server page — layout handles padding). Backoffice form reference = `apps/web/app/backoffice/suppliers/`. PWA reference = `apps/web/app/pwa/HomeShell.tsx` + `apps/web/app/pwa/stores/StoreList.tsx` (icon-prefixed rows, `bg-primary text-primary-foreground` icon circles for contrast on dark theme, `Card`/`Badge`/`Button` from `@/components/ui/*` — never native `<button>`/`<input>`/`<table>`). Grep + read one existing example before drafting.
 - **Plan before implementing** any non-trivial feature. Brainstorming → spec doc (`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`) → plan doc (`docs/superpowers/plans/YYYY-MM-DD-<topic>-plan.md`) → implement → PR. The `superpowers:*` skills enforce this when invoked. `docs/superpowers/` is local-only (gitignored) — specs/plans never ship in PRs.
+- **On merge, update the docs the change invalidates** — in the same session, not later. Tick the slice's row in `docs/EPIC-STATUS.md` (status → ✅, append PR # + merge date); flip any shipped item in `docs/FOLLOWUPS.md` to `- [x]` and move every new follow-up there (never leave one in a PR body — they die on merge); and if the change created a new trap, add its entry to `docs/ARCHITECTURE-NOTES.md` plus a one-liner in the landmine index below. Also tick the matching story on the GitHub board.
 - **TDD for non-trivial logic.** Pure functions, handlers, routers, processors get failing tests first. Module-wiring and infra-glue files are exempt.
 - **Never force-push master.** Past divergence with a teammate's monolith branch was resolved by *recreating* their content in the monorepo, not by force-merging. See `project_master_divergence` memory.
 - **`git check-ignore -v` before staging any dotfile** to confirm it's actually ignored.
@@ -71,6 +75,52 @@ ngrok stays available as a fallback for local-only demo work (laptop apps/api + 
 - In prod (VPS + local-with-ngrok): each platform injects env from its own store; cascade is irrelevant.
 - **Secrets that have appeared in any chat transcript are compromised.** Rotate `DATABASE_URL` password, `JUBELIO_WEBHOOK_SECRET`, `SWAGGER_PASS` if you accidentally paste them.
 
+## Landmine index
+
+One line per known trap: **the situation you are in — what bites — where the detail lives.** Every one of them was written after someone paid for it. If a line matches what you are about to do, open the note in `docs/ARCHITECTURE-NOTES.md` BEFORE writing code.
+
+**Stock, inventory, reservations**
+
+- Looking up an `InventoryValue` row? Variantless rows key on `null`, NOT `""` — a strict `""`-keyed lookup misses them and forks a phantom row. Use the OR-tolerant (`null` or `""`) lookup.
+- Writing to `InventoryValue` / `reservedQty`? Atomic Prisma `increment`/`decrement` only, never read-modify-write — the webhook worker is concurrent and races the ERP ship path across processes.
+- Reading `qtyOnHand` as "what we can sell"? `available = qtyOnHand − reservedQty`, derived at read time and never stored; Jubelio stock push sends `available`, not raw `qtyOnHand`.
+- Touching field-sales order lines, van stock or the PWA catalog? All of it is PER-VARIANT (real `variantSku`); simple items stay item-level, min-qty aggregates per item, promos aggregate per item then pro-rate.
+- Working on putus stock movement? Stock leaves at DELIVERY, not at approve — and `FieldSalesDelivery.docNo` is NOT always `DLV/`-prefixed, so never pattern-match the prefix.
+
+**Field sales — retur, konsi, nota, faktur**
+
+- Adding a `FieldReturnStatus` member? FOUR separate `Record<FieldReturnStatus, …>` maps exist across the backoffice clients, and a missing one only breaks in the Docker build — after the migration has already applied to prod. (Same shape as the two `DocType` maps in § Code conventions.)
+- Validating a retur receive count? ZERO is valid on every line, including all-zero (the lost-sack case) — never add a positive-quantity check anywhere in that flow.
+- Resolving a retur mismatch? Variance direction is enforced in the WRITER, not the UI — every `"use server"` export is an independently callable endpoint, so the UI withholding a control is not a guarantee.
+- Rendering a retur value? `unitPrice` is a rounded 2dp REFERENCE figure and does not multiply back — `lineValue`/`totalValue` are the only authoritative figures; a partial `totalValue` is `null`, never a partial sum.
+- Editing `lib/field-sales/retur/variance.ts` or `pricing-rules.ts`? Both are deliberately import-free — one import drags the `@elorae/db` barrel (Prisma + the mariadb driver) into the browser bundle.
+- Adding a doc-number sequence for a new register? Take your own `DocType` — field retur takes `FIELDRET`, NOT the vendor-return `RET`; sharing a counter interleaves two registers and lets a Settings prefix edit renumber the other one.
+- Touching the delivery writer or the konsi approve path? Each carries a satellite behaviour inside the same transaction (one `TaxInvoice` per nota tagihan; admin-added never-sent konsi lines) — read the entry before changing either.
+
+**Data ownership + auth**
+
+- Writing `Item` or `StockAdjustment` from apps/api? Both are dual-owner — go through the `@elorae/db` writer helpers, never a direct Prisma write. See also `docs/BOUNDARY.md §3`.
+- Adding a permission and assuming ADMIN is gated by it? The admin wildcard is granted in CODE (`isSystem` → `['*']`), not by a DB row — a seed does not unblock admin, it makes the permission grantable to NON-admin roles.
+
+**Database, migrations, prod ops**
+
+- Running a migration or any destructive query locally? The tunnel points at the SAME MariaDB the client demo uses. `pnpm -F @elorae/db migrate:deploy` only — never `migrate dev`.
+- Shipping a migration alongside app code? The deploy `migrate` job is gated on both image builds, and its `always()` is load-bearing — a legitimately SKIPPED build must not cascade-skip the migration.
+- Expecting the deploy to seed RBAC rows? It migrates but NEVER seeds — permission rows are hand-run surgical SQL, post-merge.
+- Running `mariadb` / `mariadb-dump` against prod? Needs `--skip-ssl`, and the failure is SILENT inside a `| gzip` pipe (a valid 123-byte empty archive) — verify size plus the `Dump completed on` trailer. Aggregates over `SalesOrder` need `SET SESSION max_statement_time`.
+
+**Jubelio integration**
+
+- Verifying a Jubelio webhook signature? HMAC-SHA256 in header `Sign` — their docs *text* is wrong, their code example is right.
+- Reaching for any Jubelio endpoint? Grep `reference/jubelio-openAPI.yaml` FIRST, then confirm the shape LIVE — the spec both lags and misdescribes (the purpose-built order-by-no lookup returns 200-with-empty-body for settled orders).
+- Adding an outbound push to Jubelio? It goes through the `JubelioOutbox` table, not a direct call — handler file + payload builder + spec + router case.
+- Debugging a stuck inbound event? `JubelioWebhookEvent.status` is authoritative (`RECEIVED → PROCESSING → PROCESSED / SKIPPED / DEAD`); a sweeper rescues stuck rows every 10 min.
+
+**PWA**
+
+- Editing `apps/web/proxy.ts`? It IS the Next 16 middleware (renamed from `middleware.ts`), runs on every request, and gates `/pwa/*` — it is NOT dead code.
+- Testing PWA offline behaviour, or chasing a 404 from the service worker? The Serwist SW only exists in a production build, and a committed `public/**/sw.js` / `workbox-*.js` poisons the precache manifest and kills SW install — never commit generated SW files.
+
 ## What NOT to do
 
 - Don't put EPIC-XX refs in commits, PRs, branch names, or shared specs.
@@ -87,6 +137,9 @@ ngrok stays available as a fallback for local-only demo work (laptop apps/api + 
 ## When you need more context
 
 - **Architecture/data ownership:** `docs/BOUNDARY.md`.
+- **Why the code looks like that / what already bit us:** `docs/ARCHITECTURE-NOTES.md` (start from the landmine index above).
+- **Known debt, deferred work, open decisions:** `docs/FOLLOWUPS.md`.
+- **What shipped in which slice, and which PR:** `docs/EPIC-STATUS.md`.
 - **EPIC story details + status:** the GitHub project board — each EPIC has a tracking issue (`EPIC-NN` → issue #`NN+4`, e.g. EPIC-13 → #17, EPIC-15 → #19). `gh issue view <n>`. Update the issue's progress checklist on merge (the maintenance rule now applies to the board, not a local file).
 - **Past designs/plans:** `docs/superpowers/specs/` and `docs/superpowers/plans/` (local-only, gitignored).
 - **What changed and why:** `git log --oneline` (commit messages are descriptive; bodies are rare by convention).
