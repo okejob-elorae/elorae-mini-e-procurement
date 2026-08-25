@@ -188,11 +188,15 @@ export function StoreStocktakesPageClient(props: Props) {
                           <TableCell
                             className={cn(
                               "text-right tabular-nums",
-                              r.netVarianceQty < 0 && "text-destructive",
-                              r.netVarianceQty === 0 && "text-muted-foreground",
+                              r.netVarianceQty !== null && r.netVarianceQty < 0 && "text-destructive",
+                              (r.netVarianceQty === null || r.netVarianceQty === 0) && "text-muted-foreground",
                             )}
                           >
-                            {r.netVarianceQty > 0 ? `+${r.netVarianceQty}` : r.netVarianceQty}
+                            {r.netVarianceQty === null
+                              ? "—"
+                              : r.netVarianceQty > 0
+                                ? `+${r.netVarianceQty}`
+                                : r.netVarianceQty}
                           </TableCell>
                           <TableCell>
                             <Badge variant={isFull ? "default" : "outline"}>

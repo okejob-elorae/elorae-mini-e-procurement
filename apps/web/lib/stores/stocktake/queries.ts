@@ -90,15 +90,22 @@ export type StoreStocktakeListRow = {
   isFullCount: boolean;
   lineCount: number;
   countedLineCount: number;
-  netVarianceQty: number;
+  /**
+   * `null` when NO line on the document has been counted yet — distinct from an actual net
+   * variance of 0 once at least one line has been.
+   */
+  netVarianceQty: number | null;
   createdAt: Date;
 };
 
 /**
- * `lines` is selected here (not `_count`) because the register needs `countedLineCount` and
- * `netVarianceQty` per row — both derived in JS from the same minimal projection, since Prisma
- * has no aggregate-sum-over-a-relation in a `findMany` select. A store's line count is small
- * (one row per consignment SKU), so this stays one query per page rather than N.
+ * `lineCount` comes from `_count` on the relation (no line rows fetched). `countedLineCount` and
+ * `netVarianceQty` come from a second query, a `storeStocktakeLine.groupBy` scoped to just the
+ * ids on this page — `_count: { countedQty: true }` counts only non-null `countedQty` values,
+ * and `_sum: { varianceQty: true }` sums only non-null `varianceQty` values, so both aggregates
+ * are exactly "over counted lines" with no per-line rows ever leaving the database. Fetching
+ * every line to compute two numbers in JS (the previous shape) pulled thousands of line rows at
+ * the register's max page size — this is the fix.
  */
 export async function listStoreStocktakes(params: {
   storeId?: string;
@@ -128,25 +135,41 @@ export async function listStoreStocktakes(params: {
         isFullCount: true,
         createdAt: true,
         store: { select: { name: true } },
-        lines: { select: { countedQty: true, varianceQty: true } },
+        _count: { select: { lines: true } },
       },
     }),
     prisma.storeStocktake.count({ where }),
   ]);
 
+  const ids = rows.map((r) => r.id);
+  const lineAgg =
+    ids.length > 0
+      ? await prisma.storeStocktakeLine.groupBy({
+          by: ["stocktakeId"],
+          where: { stocktakeId: { in: ids } },
+          _count: { countedQty: true },
+          _sum: { varianceQty: true },
+        })
+      : [];
+  const aggByStocktakeId = new Map(lineAgg.map((a) => [a.stocktakeId, a]));
+
   return {
-    rows: rows.map((r) => ({
-      id: r.id,
-      docNo: r.docNo,
-      storeName: r.store.name,
-      status: r.status,
-      countedAt: r.countedAt,
-      isFullCount: r.isFullCount,
-      lineCount: r.lines.length,
-      countedLineCount: r.lines.filter((l) => l.countedQty !== null).length,
-      netVarianceQty: r.lines.reduce((sum, l) => sum + (l.varianceQty === null ? 0 : l.varianceQty.toNumber()), 0),
-      createdAt: r.createdAt,
-    })),
+    rows: rows.map((r) => {
+      const agg = aggByStocktakeId.get(r.id);
+      const countedLineCount = agg?._count.countedQty ?? 0;
+      return {
+        id: r.id,
+        docNo: r.docNo,
+        storeName: r.store.name,
+        status: r.status,
+        countedAt: r.countedAt,
+        isFullCount: r.isFullCount,
+        lineCount: r._count.lines,
+        countedLineCount,
+        netVarianceQty: countedLineCount > 0 ? agg!._sum.varianceQty?.toNumber() ?? 0 : null,
+        createdAt: r.createdAt,
+      };
+    }),
     total,
   };
 }
@@ -253,7 +276,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
   const labelById = new Map(users.map((u) => [u.id, u.name ?? u.email]));
   const labelFor = (userId: string | null): string | null => (userId ? labelById.get(userId) ?? "—" : null);
 
-  /*
+  /**
    * One batched read of the store's CURRENT StoreStock, keyed the same way the writer keys its
    * own upsert (itemId + variantSku, defaulting a null variantSku to ""). Never trusted as a
    * substitute for `expectedQty` — this is purely the live figure the approve dialog shows
