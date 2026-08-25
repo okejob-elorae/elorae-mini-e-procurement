@@ -8,6 +8,8 @@ export type FieldReturnErrorCode =
   | "MISSING_RESI"
   | "MISSING_EXPEDITION_NAME"
   | "MISSING_REASON_NOTE"
+  | "MISSING_NOTA_PHOTO"
+  | "MISSING_TRANSPORT"
   | "INVALID_STATE"
   | "SPLIT_MISMATCH"
   | "UNKNOWN_LINE"
@@ -16,6 +18,7 @@ export type FieldReturnErrorCode =
   | "DUPLICATE_LINE"
   | "NO_VARIANCE"
   | "RESOLUTION_DIRECTION_MISMATCH"
+  | "SALESMAN_BEARS_NOT_ALLOWED"
   | "UNRESOLVED_LINES";
 
 export class FieldReturnError extends Error {
