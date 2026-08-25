@@ -2823,6 +2823,53 @@
       "NO_ASSIGNED_STORE": "Anda tidak ditugaskan ke toko manapun.",
       "NO_ACTIVE_VISIT": "Anda harus check-in di toko Anda terlebih dahulu.",
       "ERROR": "Terjadi kesalahan. Coba lagi."
+    },
+    "spg": {
+      "entryCta": "Laporan Stok",
+      "entryCtaDisabled": "Laporan Stok (check-in dulu)",
+      "back": "Kembali",
+      "title": "Laporan Stok Toko",
+      "subtitle": "Hitung stok fisik yang ada di rak toko ini.",
+      "searchPlaceholder": "Cari barang",
+      "empty": "Toko ini belum punya catatan stok. Anda tetap bisa menambahkan barang yang ditemukan di rak.",
+      "noResults": "Barang tidak ditemukan.",
+      "expectedLabel": "Seharusnya {qty}",
+      "countInputLabel": "Hasil hitung",
+      "countPlaceholder": "Belum dihitung",
+      "countInvalid": "Masukkan angka yang valid dan tidak negatif.",
+      "addedBadge": "Ditambahkan",
+      "removeAdded": "Hapus barang ini",
+      "addItem": {
+        "button": "Tambah Barang",
+        "title": "Tambahkan Barang",
+        "searchPlaceholder": "Cari barang atau varian",
+        "empty": "Tidak ada barang aktif yang cocok.",
+        "loading": "Memuat daftar barang…",
+        "loadError": "Gagal memuat daftar barang. Coba lagi.",
+        "done": "Selesai"
+      },
+      "footer": {
+        "tally": "{counted}/{total} terhitung",
+        "submit": "Kirim Hitungan",
+        "submitting": "Mengirim…"
+      },
+      "offlineNotice": "Anda sedang offline. Sambungkan ke internet untuk mengirim hitungan.",
+      "success": {
+        "title": "Hitungan Terkirim",
+        "body": "Hitungan Anda sudah dikirim ke admin untuk diverifikasi. Stok toko BELUM berubah — stok baru diperbarui setelah admin memverifikasi dan menyetujui hitungan ini.",
+        "backHome": "Kembali ke Beranda"
+      },
+      "err": {
+        "FORBIDDEN": "Anda tidak memiliki akses untuk mengirim laporan stok.",
+        "NO_ASSIGNED_STORE": "Anda belum ditugaskan ke toko manapun. Hubungi admin untuk mengatur penugasan toko Anda.",
+        "NO_ACTIVE_VISIT": "Anda harus check-in di toko ini sebelum mengirim hitungan.",
+        "ITEM_NOT_FOUND": "Ada barang yang sudah tidak dikenali sistem. Muat ulang halaman lalu coba lagi.",
+        "DUPLICATE_LINE": "Barang ini sudah ada di daftar hitungan.",
+        "ALREADY_OPEN": "Ada orang lain yang baru saja mengirim hitungan untuk toko ini. Muat ulang halaman lalu coba lagi.",
+        "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman lalu coba lagi.",
+        "INVALID_STATE": "Laporan ini sudah tidak bisa diubah dari sini. Muat ulang halaman.",
+        "ERROR": "Terjadi kesalahan. Coba lagi."
+      }
     }
   },
   "promos": {

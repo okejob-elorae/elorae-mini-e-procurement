@@ -2823,6 +2823,53 @@
       "NO_ASSIGNED_STORE": "You are not assigned to a store.",
       "NO_ACTIVE_VISIT": "You must be checked in at your store first.",
       "ERROR": "Something went wrong. Please try again."
+    },
+    "spg": {
+      "entryCta": "Stock Count",
+      "entryCtaDisabled": "Stock Count (check in first)",
+      "back": "Back",
+      "title": "Store Stock Count",
+      "subtitle": "Count the physical stock on this store's shelf.",
+      "searchPlaceholder": "Search item",
+      "empty": "This store has no stock rows yet. You can still add an item found on the shelf.",
+      "noResults": "No matching item.",
+      "expectedLabel": "Expected {qty}",
+      "countInputLabel": "Count",
+      "countPlaceholder": "Not counted",
+      "countInvalid": "Enter a valid, non-negative number.",
+      "addedBadge": "Added",
+      "removeAdded": "Remove this item",
+      "addItem": {
+        "button": "Add Item",
+        "title": "Add an Item",
+        "searchPlaceholder": "Search item or variant",
+        "empty": "No matching active item.",
+        "loading": "Loading items…",
+        "loadError": "Failed to load items. Try again.",
+        "done": "Done"
+      },
+      "footer": {
+        "tally": "{counted}/{total} counted",
+        "submit": "Submit Count",
+        "submitting": "Submitting…"
+      },
+      "offlineNotice": "You are offline. Reconnect to the internet to submit the count.",
+      "success": {
+        "title": "Count Submitted",
+        "body": "Your count has been sent to the admin for verification. Store stock has NOT changed yet — it only updates once the admin verifies and approves this count.",
+        "backHome": "Back to Home"
+      },
+      "err": {
+        "FORBIDDEN": "You do not have access to submit a stock count.",
+        "NO_ASSIGNED_STORE": "You are not assigned to any store. Contact an admin to set your store assignment.",
+        "NO_ACTIVE_VISIT": "You must check in at this store before submitting a count.",
+        "ITEM_NOT_FOUND": "One of the items is no longer recognized by the system. Reload the page and try again.",
+        "DUPLICATE_LINE": "This item is already on the count.",
+        "ALREADY_OPEN": "Someone else just submitted a count for this store. Reload the page and try again.",
+        "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
+        "INVALID_STATE": "This count can no longer be edited from here. Reload the page.",
+        "ERROR": "Something went wrong. Please try again."
+      }
     }
   },
   "promos": {
