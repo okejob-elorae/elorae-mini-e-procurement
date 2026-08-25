@@ -99,6 +99,13 @@ export function getNotificationHref(
     case 'TAX_INVOICE_PENDING': {
       return '/backoffice/finance/faktur-pajak';
     }
+    case 'FIELD_RETURN_MISMATCH': {
+      const returnId = data.returnId;
+      if (typeof returnId === 'string') {
+        return `/backoffice/field-returns/${returnId}`;
+      }
+      return '/backoffice/field-returns';
+    }
     default:
       return null;
   }
