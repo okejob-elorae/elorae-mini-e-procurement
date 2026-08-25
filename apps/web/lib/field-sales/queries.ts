@@ -1,6 +1,7 @@
 import { prisma, Prisma } from "@elorae/db";
 import { aggregateInventoryValues } from "@/lib/items/queries";
 import { variantDetailForSku } from "@/lib/items/variants";
+import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
 import { outstandingQty } from "./delivery/plan";
 import type { PlanHistory } from "./smart-request/plan";
 
@@ -499,5 +500,94 @@ export async function listKonsiSuggestions(orderId: string): Promise<KonsiSugges
       variantLabel: variantDetailForSku(item.variants, variantSku),
       available,
     }));
+  return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
+}
+
+export type KonsiAssortmentGapSuggestion = {
+  itemId: string;
+  variantSku: string;
+  sku: string;
+  name: string;
+  variantLabel: string | null;
+  available: number;
+  targetQty: number | null;
+  onHandQty: number;
+};
+
+/**
+ * The store's assortment gaps, restyled as stageable rows for the SAME konsi approval panel that
+ * shows `listKonsiSuggestions` — a deliberately DIFFERENT signal, not a variant of it.
+ * `sentItemIds` drops an item the moment any unit of it was ever sent, even if the store now
+ * holds zero, so "never sent" can never re-flag a depleted item. An assortment gap catches
+ * exactly that case, so this reads `listAssortmentGaps` directly and never filters through
+ * `sentItemIds` — the two lists are asserted disjoint in this module's own test suite, not
+ * merged or deduped here.
+ *
+ * Same two guards as `listKonsiSuggestions`, kept in sync on purpose:
+ * - A missing order, or a non-KONSI order, returns `[]`.
+ * - Items already staged on the order under approval are excluded — but at VARIANT grain
+ *   (`itemId::variantSku`), not item grain: `FieldSalesOrderLine` is per-variant, so a gap on a
+ *   different variant of an item already on the order is still a genuine gap and must still show.
+ *
+ * Zero/negative main-warehouse availability is dropped for the same reason `listKonsiSuggestions`
+ * drops it: nothing here is stageable from THIS panel, so a dead qty stepper is wasted screen
+ * space, not information the admin needs here — the store detail page's read-only gap card still
+ * shows every gap regardless of main-warehouse stock.
+ */
+export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAssortmentGapSuggestion[]> {
+  const order = await prisma.fieldSalesOrder.findUnique({
+    where: { id: orderId },
+    select: { storeId: true, orderType: true, lines: { select: { itemId: true, variantSku: true } } },
+  });
+  if (!order || order.orderType !== "KONSI") return [];
+
+  const gaps = await listAssortmentGaps(order.storeId);
+  if (gaps.length === 0) return [];
+
+  const onOrder = new Set(order.lines.map((l) => `${l.itemId}::${l.variantSku}`));
+  const remaining = gaps.filter((g) => !onOrder.has(`${g.itemId}::${g.variantSku}`));
+  if (remaining.length === 0) return [];
+
+  const itemIds = Array.from(new Set(remaining.map((g) => g.itemId)));
+  const items = await prisma.item.findMany({
+    where: { id: { in: itemIds } },
+    select: {
+      id: true,
+      variants: true,
+      inventoryValues: { select: { variantSku: true, qtyOnHand: true, reservedQty: true, totalValue: true } },
+    },
+  });
+  const itemsById = new Map(items.map((i) => [i.id, i]));
+
+  const rows: KonsiAssortmentGapSuggestion[] = [];
+  for (const gap of remaining) {
+    const item = itemsById.get(gap.itemId);
+    if (!item) continue;
+
+    /*
+     * Same null/"" collision `listKonsiSuggestions` guards against: MariaDB permits multiple
+     * NULLs on the (itemId, variantSku) unique index, so an item can carry both a `null` and an
+     * `""` InventoryValue row for the same logical variant. Keep the MINIMUM available across a
+     * collision — same fail-safe direction as the writer's own reservation lookup.
+     */
+    let available: number | null = null;
+    for (const iv of item.inventoryValues) {
+      if ((iv.variantSku ?? "") !== gap.variantSku) continue;
+      const a = aggregateInventoryValues([iv])!.available;
+      available = available === null ? a : Math.min(available, a);
+    }
+    if (available === null || available <= 0) continue;
+
+    rows.push({
+      itemId: gap.itemId,
+      variantSku: gap.variantSku,
+      sku: gap.itemSku,
+      name: gap.productName,
+      variantLabel: variantDetailForSku(item.variants, gap.variantSku),
+      available,
+      targetQty: gap.targetQty,
+      onHandQty: gap.onHandQty,
+    });
+  }
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
 }

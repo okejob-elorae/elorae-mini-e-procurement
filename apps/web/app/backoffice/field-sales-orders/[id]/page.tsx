@@ -1,6 +1,12 @@
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getFieldSalesOrderById, listKonsiSuggestions, type KonsiSuggestion } from "@/lib/field-sales/queries";
+import {
+  getFieldSalesOrderById,
+  listKonsiSuggestions,
+  listKonsiAssortmentGaps,
+  type KonsiSuggestion,
+  type KonsiAssortmentGapSuggestion,
+} from "@/lib/field-sales/queries";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
 
@@ -36,11 +42,17 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
    * whole detail page — Approve and Reject included — with the framework error screen.
    */
   let konsiSuggestions: KonsiSuggestion[] = [];
+  let konsiAssortmentGaps: KonsiAssortmentGapSuggestion[] = [];
   if (wantsKonsiSuggestions) {
     try {
       konsiSuggestions = await listKonsiSuggestions(id);
     } catch (e) {
       console.error("[field-sales-orders] listKonsiSuggestions failed", { orderId: id, error: e });
+    }
+    try {
+      konsiAssortmentGaps = await listKonsiAssortmentGaps(id);
+    } catch (e) {
+      console.error("[field-sales-orders] listKonsiAssortmentGaps failed", { orderId: id, error: e });
     }
   }
 
@@ -50,6 +62,7 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
       canApprove={canApprove}
       canDeliver={canDeliver}
       konsiSuggestions={konsiSuggestions}
+      konsiAssortmentGaps={konsiAssortmentGaps}
     />
   );
 }
