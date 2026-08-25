@@ -18,14 +18,14 @@ import type {
   StoreStockMovementKind,
 } from "@/lib/inventory/store-stock-card";
 
-type SerializedMovement = Omit<StoreStockCardData["movements"][number], "occurredAt"> & {
+export type SerializedStockMovement = Omit<StoreStockCardData["movements"][number], "occurredAt"> & {
   occurredAtIso: string;
 };
 
 type Props = {
   rows: StoreStockCardData["rows"];
   negativeCount: number;
-  movements: SerializedMovement[];
+  movements: SerializedStockMovement[];
 };
 
 function formatDateTime(iso: string): string {

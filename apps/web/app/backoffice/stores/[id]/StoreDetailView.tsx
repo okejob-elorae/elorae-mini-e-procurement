@@ -38,7 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StoreChangeReviewCard } from "./StoreChangeReviewCard";
-import { StoreStockCard } from "./StoreStockCard";
+import { StoreStockCard, type SerializedStockMovement } from "./StoreStockCard";
 import type { StoreStockCardData } from "@/lib/inventory/store-stock-card";
 
 let lastMapsOpenAt = 0;
@@ -83,10 +83,6 @@ type Visit = {
   checkinOutOfRadius: boolean;
   checkinDistanceMeters: number | null;
   photos: Array<{ id: string; url: string; caption: string | null; capturedAtIso: string }>;
-};
-
-type SerializedStockMovement = Omit<StoreStockCardData["movements"][number], "occurredAt"> & {
-  occurredAtIso: string;
 };
 
 type StockCardProps = {

@@ -345,6 +345,7 @@ export async function previewKonsiReturStockImpact(returnId: string): Promise<Ko
       storeId: true,
       store: { select: { termsType: true } },
       lines: {
+        orderBy: { id: "asc" },
         select: {
           id: true,
           itemId: true,

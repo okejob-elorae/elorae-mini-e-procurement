@@ -26,6 +26,7 @@ export async function approveFieldReturn(input: {
         storeId: true,
         store: { select: { termsType: true } },
         lines: {
+          orderBy: { id: "asc" },
           select: {
             id: true,
             itemId: true,

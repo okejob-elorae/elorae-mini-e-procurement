@@ -103,14 +103,18 @@ export async function issueKonsiTransfer(
      * The reservation reserveKonsiFieldSalesOrder created earlier in this same transaction is
      * now resolved — flip it to CONSUMED rather than leaving it RESERVED against nothing.
      *
-     * Guarded, not fire-and-forget: reserveKonsiFieldSalesOrder has a silent skip branch (an
-     * existing reservation on the same fieldSalesLineId short-circuits without incrementing
-     * reservedQty), and the current approve() guards (status !== PENDING_APPROVAL rejects
-     * re-entry) mean nothing observed reaches this skip today. But if it ever did, this
-     * updateMany would silently match 0 rows while qtyOnHand and reservedQty above had already
-     * been decremented unconditionally — reservedQty would drift permanently negative with no
-     * reservation ever released against it, exactly the invariant this module exists to protect.
-     * So the match count is checked rather than discarded.
+     * Guarded, not fire-and-forget: this only catches a reservation that is NOT sitting in
+     * RESERVED state on this fieldSalesLineId — i.e. already CONSUMED or RELEASED, or missing
+     * outright — where this updateMany would silently match 0 rows while qtyOnHand and
+     * reservedQty above had already been decremented unconditionally. It does NOT catch
+     * reserveKonsiFieldSalesOrder's silent-skip branch (an existing reservation on the same
+     * fieldSalesLineId short-circuits without incrementing reservedQty): that branch leaves the
+     * existing row RESERVED, so this updateMany still matches exactly 1 and the guard passes,
+     * even though reservedQty was never incremented for it and this transfer decrements it
+     * unconditionally regardless. The current approve() guards (status !== PENDING_APPROVAL
+     * rejects re-entry) mean neither case is observed today, but the match count is checked
+     * rather than discarded so the reachable half of this drift is caught the moment it stops
+     * being theoretical.
      */
     const resolved = await tx.stockReservation.updateMany({
       where: { fieldSalesLineId: l.id, state: "RESERVED" },

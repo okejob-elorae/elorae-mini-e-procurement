@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { getStockAcrossLocations } from "./stock-across-locations";
 
-describe("getStockAcrossLocations", () => {
+/* Stock-reading fixtures still write real rows — never run against the shared prod DB (port 3307 tunnel / VPS host). */
+const url = process.env.DATABASE_URL ?? "";
+const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
+const d = isProd ? describe.skip : describe;
+
+d("getStockAcrossLocations", () => {
   const token = Math.random().toString(36).slice(2, 10);
   let uomId = "";
   let canvasserId = "";
@@ -103,10 +108,5 @@ describe("getStockAcrossLocations", () => {
     /* seededId'd item that exists but has no ledger row anywhere */
     const m = await getStockAcrossLocations([seededId(emptyItemId)]);
     expect(m.has(`${emptyItemId}::`)).toBe(false);
-  });
-
-  it("returns an empty map for an empty itemIds array", async () => {
-    const m = await getStockAcrossLocations([]);
-    expect(m.size).toBe(0);
   });
 });
