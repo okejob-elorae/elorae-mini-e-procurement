@@ -95,6 +95,11 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.STORES_VIEW,
       },
       {
+        labelKey: "storeStocktakes",
+        href: "/backoffice/store-stocktakes",
+        permission: PERMISSIONS.STORES_MANAGE,
+      },
+      {
         labelKey: 'leadTime',
         href: '/backoffice/lead-time',
         permission: PERMISSIONS.LEAD_TIME_VIEW,
@@ -351,7 +356,8 @@ function Sidebar({
     if (
       path.startsWith('/backoffice/suppliers') ||
       path.startsWith('/backoffice/lead-time') ||
-      path.startsWith('/backoffice/stores')
+      path.startsWith('/backoffice/stores') ||
+      path.startsWith('/backoffice/store-stocktakes')
     ) {
       return '/backoffice/suppliers';
     }

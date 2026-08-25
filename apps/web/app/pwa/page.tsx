@@ -73,6 +73,7 @@ export default async function PwaHome() {
           name: store.name,
           code: store.code,
           address: store.address,
+          termsType: store.termsType,
           lat: store.lat,
           lng: store.lng,
         }}

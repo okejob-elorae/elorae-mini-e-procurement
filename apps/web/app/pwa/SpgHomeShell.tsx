@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Clock, ExternalLink, LogOut, MapPin, ShoppingCart, Store as StoreIcon } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { ClipboardList, Clock, ExternalLink, LogOut, MapPin, ShoppingCart, Store as StoreIcon } from "lucide-react";
 import { CheckInButton } from "./stores/[id]/CheckInButton";
 import { CheckOutButton } from "./stores/[id]/CheckOutButton";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ type SpgStore = {
   name: string;
   code: string;
   address: string;
+  termsType: "PUTUS" | "KONSI";
   lat: number | null;
   lng: number | null;
 };
@@ -44,6 +46,8 @@ type Props = {
  * "Catat Penjualan" CTA gated on being checked in there.
  */
 export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName, onLogout }: Props) {
+  const t = useTranslations("storeStocktakes.spg");
+  const isKonsi = store.termsType === "KONSI";
   const mapsUrl =
     store.lat !== null && store.lng !== null ? `https://www.google.com/maps?q=${store.lat},${store.lng}` : null;
 
@@ -122,6 +126,14 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
               Catat Penjualan
             </Link>
           </Button>
+          {isKonsi && (
+            <Button asChild variant="outline" size="lg" className="w-full py-3 text-lg font-medium">
+              <Link href="/pwa/spg/stocktake">
+                <ClipboardList className="h-5 w-5" />
+                {t("entryCta")}
+              </Link>
+            </Button>
+          )}
           <CheckOutButton visitId={activeVisit.id} />
         </>
       ) : (
@@ -130,6 +142,12 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
             <ShoppingCart className="h-5 w-5" />
             Catat Penjualan (check-in dulu)
           </Button>
+          {isKonsi && (
+            <Button disabled variant="secondary" size="lg" className="w-full py-3 text-lg font-medium">
+              <ClipboardList className="h-5 w-5" />
+              {t("entryCtaDisabled")}
+            </Button>
+          )}
           <CheckInButton storeId={store.id} autoCloseStoreName={autoCloseStoreName} />
         </>
       )}

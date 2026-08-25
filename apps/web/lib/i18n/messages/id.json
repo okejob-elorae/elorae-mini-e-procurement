@@ -65,6 +65,7 @@
     "navItemsFinished": "Barang Jadi",
     "stores": "Toko",
     "masterStores": "Master Toko",
+    "storeStocktakes": "Perhitungan Stok Toko",
     "purchaseOrders": "Pesanan Pembelian",
     "supplierPayment": "Pembayaran Pemasok",
     "inventory": "Inventori",
@@ -2160,6 +2161,18 @@
       "colType": "Jenis",
       "movementIn": "Masuk (Transfer)",
       "movementOut": "Keluar (Retur)"
+    },
+    "stocktake": {
+      "cardTitle": "Perhitungan Stok Toko",
+      "startButton": "Mulai perhitungan",
+      "creating": "Memulai…",
+      "openBanner": "Sudah ada perhitungan yang sedang berjalan di toko ini — lanjutkan di bawah, jangan mulai yang baru.",
+      "continueButton": "Lanjutkan perhitungan",
+      "empty": "Belum ada perhitungan stok di toko ini.",
+      "colDocNo": "No. Dokumen",
+      "colCountedAt": "Tanggal Hitung",
+      "colStatus": "Status",
+      "colLines": "Baris"
     }
   },
   "pwa": {
@@ -2683,6 +2696,180 @@
       "title": "Stok toko akan menjadi negatif",
       "line": "{itemName} ({variantSku}): stok toko saat ini {storeQty}, akan berkurang {creditedQty} — kurang {shortfall}",
       "noManualFix": "Stok negatif akan diserap otomatis oleh pengiriman konsi berikutnya ke toko ini. Tidak ada cara mengoreksinya secara manual pada tahap ini."
+    }
+  },
+  "storeStocktakes": {
+    "pageTitle": "Perhitungan Stok Toko",
+    "subtitle": "Perhitungan fisik stok konsinyasi yang ada di toko",
+    "search": "Cari",
+    "searchPlaceholder": "Cari berdasarkan nomor dokumen atau nama toko",
+    "statusPlaceholder": "Semua status",
+    "reset": "Reset",
+    "cardTitle": "Daftar Perhitungan",
+    "colDocNo": "No. Dokumen",
+    "colStore": "Toko",
+    "colCountedAt": "Tanggal Hitung",
+    "colStatus": "Status",
+    "colLines": "Baris Terhitung",
+    "colVariance": "Selisih Bersih",
+    "colCoverage": "Cakupan",
+    "empty": "Belum ada perhitungan stok.",
+    "emptyFiltered": "Tidak ada perhitungan yang cocok dengan pencarian ini.",
+    "coverageFull": "Penuh",
+    "coveragePartial": "Sebagian",
+    "status": {
+      "DRAFT": "Draf",
+      "PENDING_VERIFICATION": "Menunggu Verifikasi",
+      "APPROVED": "Disetujui",
+      "CANCELLED": "Dibatalkan"
+    },
+    "cause": {
+      "SHRINKAGE": "Susut",
+      "UNRECORDED_SALE": "Penjualan Tidak Tercatat"
+    },
+    "detail": {
+      "back": "Kembali",
+      "summaryTitle": "Ringkasan",
+      "store": "Toko",
+      "countedAt": "Tanggal Hitung",
+      "period": "Periode",
+      "periodSinceInception": "Sejak awal",
+      "periodRange": "{from} – {to}",
+      "createdBy": "Dibuka Oleh",
+      "submittedBy": "Diajukan Oleh",
+      "approvedBy": "Disetujui Oleh",
+      "cancelledBy": "Dibatalkan Oleh",
+      "cancelReason": "Alasan Pembatalan",
+      "note": "Catatan",
+      "linesTitle": "Rincian Barang",
+      "colProduct": "Produk",
+      "colVariant": "Varian",
+      "colExpected": "Seharusnya",
+      "colCounted": "Hasil Hitung",
+      "colVariance": "Selisih",
+      "colCause": "Sebab",
+      "colReason": "Alasan",
+      "countPlaceholder": "Belum dihitung",
+      "countInvalid": "Masukkan angka yang valid dan tidak negatif.",
+      "causePlaceholder": "Pilih sebab",
+      "reasonPlaceholder": "Jelaskan selisihnya",
+      "addedBadge": "Ditambahkan",
+      "removeAdded": "Hapus baris",
+      "varianceUncounted": "Belum dihitung",
+      "varianceMatch": "Sesuai",
+      "varianceSurplus": "Lebih {n}",
+      "varianceShort": "Kurang {n}",
+      "readOnlyNote": "Perhitungan ini sudah tidak berjalan lagi — hasil hitung tidak bisa diubah dari sini."
+    },
+    "footer": {
+      "tally": "{counted}/{total} terhitung",
+      "netVariance": "Selisih bersih",
+      "save": "Simpan Hitungan",
+      "saving": "Menyimpan…",
+      "saved": "Hitungan berhasil disimpan."
+    },
+    "addItem": {
+      "button": "Tambah barang",
+      "dialogTitle": "Tambahkan barang ke perhitungan ini",
+      "searchPlaceholder": "Cari barang atau varian",
+      "emptyMessage": "Tidak ada barang aktif yang cocok.",
+      "cancel": "Batal",
+      "confirm": "Tambahkan",
+      "loading": "Memuat daftar barang…",
+      "loadError": "Gagal memuat daftar barang. Coba lagi."
+    },
+    "approve": {
+      "button": "Setujui",
+      "confirmTitle": "Konfirmasi Persetujuan Perhitungan",
+      "confirmDescription": "Menyetujui akan menulis stok toko menjadi tepat sesuai hasil hitung pada dokumen ini. Baris yang dibiarkan kosong tidak akan disentuh — stok yang ada tetap seperti sekarang.",
+      "confirmAction": "Setujui",
+      "submitting": "Menyetujui…",
+      "success": "Perhitungan disetujui, stok toko telah diperbarui.",
+      "driftTitle": "Stok berubah sejak perhitungan ini dibuka",
+      "driftLine": "{product}{variant}: seharusnya {expected}, sekarang {live}",
+      "driftNote": "Ini hanya informasi — persetujuan tetap berjalan dan selalu menulis hasil hitung yang tercatat."
+    },
+    "cancel": {
+      "button": "Batalkan Perhitungan",
+      "confirmTitle": "Batalkan perhitungan ini?",
+      "confirmDescription": "Ini akan menggugurkan dokumen ini tanpa menyentuh stok toko. Toko ini kemudian bisa membuka perhitungan baru.",
+      "reasonLabel": "Alasan",
+      "reasonPlaceholder": "Mengapa perhitungan ini dibatalkan?",
+      "confirmAction": "Batalkan Perhitungan",
+      "submitting": "Membatalkan…",
+      "success": "Perhitungan dibatalkan."
+    },
+    "soldWindow": {
+      "title": "Penjualan dalam Periode",
+      "since": "Sejak {date}",
+      "sinceInception": "Sejak awal",
+      "until": "sampai {date}",
+      "total": "{count} pcs terjual dalam periode ini",
+      "empty": "Tidak ada penjualan tercatat di toko ini selama periode ini. Kalau alur penjualan per-transaksi (SPG) seharusnya dipakai di toko ini, kemungkinan alur itu tidak digunakan.",
+      "colProduct": "Produk",
+      "colVariant": "Varian",
+      "colQty": "Qty Terjual"
+    },
+    "err": {
+      "FORBIDDEN": "Anda tidak memiliki izin untuk mengelola perhitungan stok toko.",
+      "NOT_FOUND": "Perhitungan tidak ditemukan.",
+      "INVALID_STATE": "Perhitungan ini sedang tidak dalam status yang tepat untuk tindakan ini.",
+      "ALREADY_OPEN": "Toko ini sudah memiliki perhitungan yang sedang berjalan.",
+      "VARIANCE_NEEDS_REASON": "Setiap baris dengan selisih perlu diisi alasan sebelum bisa disetujui.",
+      "SHORTFALL_NEEDS_CAUSE": "Setiap baris yang kurang perlu diisi sebab sebelum bisa disetujui.",
+      "ITEM_NOT_FOUND": "Salah satu barang pada dokumen ini sudah tidak ada.",
+      "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
+      "DUPLICATE_LINE": "Barang dan varian ini sudah ada pada dokumen ini.",
+      "NO_ASSIGNED_STORE": "Anda tidak ditugaskan ke toko manapun.",
+      "NO_ACTIVE_VISIT": "Anda harus check-in di toko Anda terlebih dahulu.",
+      "ERROR": "Terjadi kesalahan. Coba lagi."
+    },
+    "spg": {
+      "entryCta": "Laporan Stok",
+      "entryCtaDisabled": "Laporan Stok (check-in dulu)",
+      "back": "Kembali",
+      "title": "Laporan Stok Toko",
+      "subtitle": "Hitung stok fisik yang ada di rak toko ini.",
+      "searchPlaceholder": "Cari barang",
+      "empty": "Toko ini belum punya catatan stok. Anda tetap bisa menambahkan barang yang ditemukan di rak.",
+      "noResults": "Barang tidak ditemukan.",
+      "expectedLabel": "Seharusnya {qty}",
+      "countInputLabel": "Hasil hitung",
+      "countPlaceholder": "Belum dihitung",
+      "countInvalid": "Masukkan angka yang valid dan tidak negatif.",
+      "addedBadge": "Ditambahkan",
+      "removeAdded": "Hapus barang ini",
+      "addItem": {
+        "button": "Tambah Barang",
+        "title": "Tambahkan Barang",
+        "searchPlaceholder": "Cari barang atau varian",
+        "empty": "Tidak ada barang aktif yang cocok.",
+        "loading": "Memuat daftar barang…",
+        "loadError": "Gagal memuat daftar barang. Coba lagi.",
+        "done": "Selesai"
+      },
+      "footer": {
+        "tally": "{counted}/{total} terhitung",
+        "submit": "Kirim Hitungan",
+        "submitting": "Mengirim…"
+      },
+      "offlineNotice": "Anda sedang offline. Sambungkan ke internet untuk mengirim hitungan.",
+      "success": {
+        "title": "Hitungan Terkirim",
+        "body": "Hitungan Anda sudah dikirim ke admin untuk diverifikasi. Stok toko BELUM berubah — stok baru diperbarui setelah admin memverifikasi dan menyetujui hitungan ini.",
+        "backHome": "Kembali ke Beranda"
+      },
+      "err": {
+        "FORBIDDEN": "Anda tidak memiliki akses untuk mengirim laporan stok.",
+        "NO_ASSIGNED_STORE": "Anda belum ditugaskan ke toko manapun. Hubungi admin untuk mengatur penugasan toko Anda.",
+        "NO_ACTIVE_VISIT": "Anda harus check-in di toko ini sebelum mengirim hitungan.",
+        "ITEM_NOT_FOUND": "Ada barang yang sudah tidak dikenali sistem. Muat ulang halaman lalu coba lagi.",
+        "DUPLICATE_LINE": "Barang ini sudah ada di daftar hitungan.",
+        "ALREADY_OPEN": "Ada orang lain yang baru saja mengirim hitungan untuk toko ini. Muat ulang halaman lalu coba lagi.",
+        "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman lalu coba lagi.",
+        "INVALID_STATE": "Laporan ini sudah tidak bisa diubah dari sini. Muat ulang halaman.",
+        "ERROR": "Terjadi kesalahan. Coba lagi."
+      }
     }
   },
   "promos": {

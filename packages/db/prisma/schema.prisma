@@ -320,6 +320,7 @@ model Store {
   spgSales       SpgSale[]
   storeStock     StoreStock[]
   konsiTransfers KonsiTransfer[]
+  stocktakes     StoreStocktake[]
 
   @@index([isActive, name])
 }
@@ -697,6 +698,67 @@ model KonsiTransferLine {
   @@index([itemId])
 }
 
+enum StoreStocktakeStatus {
+  DRAFT
+  PENDING_VERIFICATION
+  APPROVED
+  CANCELLED
+}
+
+enum StoreStocktakeCause {
+  SHRINKAGE
+  UNRECORDED_SALE
+}
+
+model StoreStocktake {
+  id            String               @id @default(cuid())
+  docNo         String               @unique
+  storeId       String
+  status        StoreStocktakeStatus @default(DRAFT)
+  openKey       String?              @unique
+  countedAt     DateTime
+  periodFrom    DateTime?
+  isFullCount   Boolean              @default(false)
+  note          String?              @db.Text
+  createdById   String
+  createdAt     DateTime             @default(now())
+  submittedById String?
+  submittedAt   DateTime?
+  approvedById  String?
+  approvedAt    DateTime?
+  cancelledById String?
+  cancelledAt   DateTime?
+  cancelReason  String?              @db.Text
+  store         Store                @relation(fields: [storeId], references: [id])
+  lines         StoreStocktakeLine[]
+
+  @@index([storeId, createdAt])
+  @@index([status])
+}
+
+model StoreStocktakeLine {
+  id              String               @id @default(cuid())
+  stocktakeId     String
+  itemId          String
+  variantSku      String               @default("")
+  productName     String
+  expectedQty     Decimal              @db.Decimal(10, 2)
+  countedQty      Decimal?             @db.Decimal(10, 2)
+  varianceQty     Decimal?             @db.Decimal(10, 2)
+  soldInPeriodQty Decimal              @default(0) @db.Decimal(10, 2)
+  cause           StoreStocktakeCause?
+  reason          String?              @db.Text
+  qtyAtApproval   Decimal?             @db.Decimal(10, 2)
+  appliedQty      Decimal?             @db.Decimal(10, 2)
+  isAdded         Boolean              @default(false)
+  stocktake       StoreStocktake       @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  item            Item                 @relation(fields: [itemId], references: [id])
+
+  @@unique([stocktakeId, itemId, variantSku])
+  @@index([stocktakeId])
+  @@index([itemId])
+}
+
 enum ReserveSource {
   JUBELIO
   FIELD_SALES
@@ -818,6 +880,7 @@ model Item {
   spgSaleLines     SpgSaleLine[]
   storeStock       StoreStock[]
   konsiTransferLines KonsiTransferLine[]
+  stocktakeLines   StoreStocktakeLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -2039,6 +2102,7 @@ enum DocType {
   DELIVERY
   FIELDRET
   KONSITRF
+  STOCKTAKE
 }
 
 enum OpnameScope {

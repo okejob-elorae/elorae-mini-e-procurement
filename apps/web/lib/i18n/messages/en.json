@@ -65,6 +65,7 @@
     "navItemsFinished": "Finished Goods",
     "stores": "Stores",
     "masterStores": "Master Stores",
+    "storeStocktakes": "Store Stocktakes",
     "purchaseOrders": "Purchase Orders",
     "supplierPayment": "Supplier Payment",
     "inventory": "Inventory",
@@ -2160,6 +2161,18 @@
       "colType": "Type",
       "movementIn": "In (Transfer)",
       "movementOut": "Out (Return)"
+    },
+    "stocktake": {
+      "cardTitle": "Store Stocktakes",
+      "startButton": "Start count",
+      "creating": "Starting…",
+      "openBanner": "A count is already open for this store — continue it below instead of starting a new one.",
+      "continueButton": "Continue open count",
+      "empty": "No stocktakes yet for this store.",
+      "colDocNo": "Doc No.",
+      "colCountedAt": "Count Date",
+      "colStatus": "Status",
+      "colLines": "Lines"
     }
   },
   "pwa": {
@@ -2683,6 +2696,180 @@
       "title": "Store stock will go negative",
       "line": "{itemName} ({variantSku}): store stock is currently {storeQty}, will decrease by {creditedQty} — short by {shortfall}",
       "noManualFix": "A negative row is absorbed automatically by the next konsi transfer to this store. There is no manual correction path in this slice."
+    }
+  },
+  "storeStocktakes": {
+    "pageTitle": "Store Stocktakes",
+    "subtitle": "Physical counts of consignment stock held at stores",
+    "search": "Search",
+    "searchPlaceholder": "Search by doc number or store name",
+    "statusPlaceholder": "All statuses",
+    "reset": "Reset",
+    "cardTitle": "Stocktake List",
+    "colDocNo": "Doc No.",
+    "colStore": "Store",
+    "colCountedAt": "Count Date",
+    "colStatus": "Status",
+    "colLines": "Lines Counted",
+    "colVariance": "Net Variance",
+    "colCoverage": "Coverage",
+    "empty": "No stocktakes yet.",
+    "emptyFiltered": "No stocktakes match this search.",
+    "coverageFull": "Full",
+    "coveragePartial": "Partial",
+    "status": {
+      "DRAFT": "Draft",
+      "PENDING_VERIFICATION": "Pending Verification",
+      "APPROVED": "Approved",
+      "CANCELLED": "Cancelled"
+    },
+    "cause": {
+      "SHRINKAGE": "Shrinkage",
+      "UNRECORDED_SALE": "Unrecorded Sale"
+    },
+    "detail": {
+      "back": "Back",
+      "summaryTitle": "Summary",
+      "store": "Store",
+      "countedAt": "Count Date",
+      "period": "Window",
+      "periodSinceInception": "Since inception",
+      "periodRange": "{from} – {to}",
+      "createdBy": "Opened By",
+      "submittedBy": "Submitted By",
+      "approvedBy": "Approved By",
+      "cancelledBy": "Cancelled By",
+      "cancelReason": "Cancel Reason",
+      "note": "Note",
+      "linesTitle": "Lines",
+      "colProduct": "Product",
+      "colVariant": "Variant",
+      "colExpected": "Expected",
+      "colCounted": "Counted",
+      "colVariance": "Variance",
+      "colCause": "Cause",
+      "colReason": "Reason",
+      "countPlaceholder": "Not counted",
+      "countInvalid": "Enter a valid non-negative number.",
+      "causePlaceholder": "Choose a cause",
+      "reasonPlaceholder": "Explain the variance",
+      "addedBadge": "Added",
+      "removeAdded": "Remove line",
+      "varianceUncounted": "Not counted",
+      "varianceMatch": "Matches",
+      "varianceSurplus": "Over {n}",
+      "varianceShort": "Short {n}",
+      "readOnlyNote": "This stocktake is no longer open — counts can no longer be edited."
+    },
+    "footer": {
+      "tally": "{counted}/{total} counted",
+      "netVariance": "Net variance",
+      "save": "Save Count",
+      "saving": "Saving…",
+      "saved": "Count saved."
+    },
+    "addItem": {
+      "button": "Add item",
+      "dialogTitle": "Add an item to this count",
+      "searchPlaceholder": "Search item or variant",
+      "emptyMessage": "No matching active item.",
+      "cancel": "Cancel",
+      "confirm": "Add",
+      "loading": "Loading items…",
+      "loadError": "Could not load items. Try again."
+    },
+    "approve": {
+      "button": "Approve",
+      "confirmTitle": "Confirm Stocktake Approval",
+      "confirmDescription": "Approving writes the store's stock to exactly the counted figures on this document. Any line left blank is not touched — its existing stock stands as-is.",
+      "confirmAction": "Approve",
+      "submitting": "Approving…",
+      "success": "Stocktake approved, store stock updated.",
+      "driftTitle": "Stock has moved since this count was opened",
+      "driftLine": "{product}{variant}: snapshot {expected}, now {live}",
+      "driftNote": "This is informational only — approval proceeds regardless and always writes the counted figure."
+    },
+    "cancel": {
+      "button": "Cancel Stocktake",
+      "confirmTitle": "Cancel this stocktake?",
+      "confirmDescription": "This abandons the document without touching store stock. The store can then open a new count.",
+      "reasonLabel": "Reason",
+      "reasonPlaceholder": "Why is this stocktake being cancelled?",
+      "confirmAction": "Cancel Stocktake",
+      "submitting": "Cancelling…",
+      "success": "Stocktake cancelled."
+    },
+    "soldWindow": {
+      "title": "Sales in Window",
+      "since": "Since {date}",
+      "sinceInception": "Since inception",
+      "until": "until {date}",
+      "total": "{count} pcs sold in this window",
+      "empty": "No sales were recorded at this store during this window. If this store's per-sale (SPG) flow is expected to be in use, this may mean it isn't being used here.",
+      "colProduct": "Product",
+      "colVariant": "Variant",
+      "colQty": "Qty Sold"
+    },
+    "err": {
+      "FORBIDDEN": "You do not have permission to manage store stocktakes.",
+      "NOT_FOUND": "The stocktake was not found.",
+      "INVALID_STATE": "This stocktake is not in the right status for this action.",
+      "ALREADY_OPEN": "This store already has an open stocktake.",
+      "VARIANCE_NEEDS_REASON": "Every line with a variance needs a reason before this can be approved.",
+      "SHORTFALL_NEEDS_CAUSE": "Every shortfall line needs a cause before this can be approved.",
+      "ITEM_NOT_FOUND": "One of the items on this document no longer exists.",
+      "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
+      "DUPLICATE_LINE": "That item and variant is already on this document.",
+      "NO_ASSIGNED_STORE": "You are not assigned to a store.",
+      "NO_ACTIVE_VISIT": "You must be checked in at your store first.",
+      "ERROR": "Something went wrong. Please try again."
+    },
+    "spg": {
+      "entryCta": "Stock Count",
+      "entryCtaDisabled": "Stock Count (check in first)",
+      "back": "Back",
+      "title": "Store Stock Count",
+      "subtitle": "Count the physical stock on this store's shelf.",
+      "searchPlaceholder": "Search item",
+      "empty": "This store has no stock rows yet. You can still add an item found on the shelf.",
+      "noResults": "No matching item.",
+      "expectedLabel": "Expected {qty}",
+      "countInputLabel": "Count",
+      "countPlaceholder": "Not counted",
+      "countInvalid": "Enter a valid, non-negative number.",
+      "addedBadge": "Added",
+      "removeAdded": "Remove this item",
+      "addItem": {
+        "button": "Add Item",
+        "title": "Add an Item",
+        "searchPlaceholder": "Search item or variant",
+        "empty": "No matching active item.",
+        "loading": "Loading items…",
+        "loadError": "Failed to load items. Try again.",
+        "done": "Done"
+      },
+      "footer": {
+        "tally": "{counted}/{total} counted",
+        "submit": "Submit Count",
+        "submitting": "Submitting…"
+      },
+      "offlineNotice": "You are offline. Reconnect to the internet to submit the count.",
+      "success": {
+        "title": "Count Submitted",
+        "body": "Your count has been sent to the admin for verification. Store stock has NOT changed yet — it only updates once the admin verifies and approves this count.",
+        "backHome": "Back to Home"
+      },
+      "err": {
+        "FORBIDDEN": "You do not have access to submit a stock count.",
+        "NO_ASSIGNED_STORE": "You are not assigned to any store. Contact an admin to set your store assignment.",
+        "NO_ACTIVE_VISIT": "You must check in at this store before submitting a count.",
+        "ITEM_NOT_FOUND": "One of the items is no longer recognized by the system. Reload the page and try again.",
+        "DUPLICATE_LINE": "This item is already on the count.",
+        "ALREADY_OPEN": "Someone else just submitted a count for this store. Reload the page and try again.",
+        "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
+        "INVALID_STATE": "This count can no longer be edited from here. Reload the page.",
+        "ERROR": "Something went wrong. Please try again."
+      }
     }
   },
   "promos": {

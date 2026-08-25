@@ -39,6 +39,7 @@ const DEFAULT_CONFIGS: Record<
   DELIVERY: { prefix: 'DLV/', resetPeriod: 'MONTHLY', padding: 4 },
   FIELDRET: { prefix: 'FRET/', resetPeriod: 'MONTHLY', padding: 4 },
   KONSITRF: { prefix: 'KTRF/', resetPeriod: 'YEARLY', padding: 4 },
+  STOCKTAKE: { prefix: 'STK/', resetPeriod: 'MONTHLY', padding: 4 },
 };
 
 export async function getDocNumberConfigs(): Promise<DocNumberConfigRow[]> {
