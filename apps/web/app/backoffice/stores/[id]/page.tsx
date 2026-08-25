@@ -4,6 +4,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getStore, listVisitsForStore, listVisitPhotosForVisits } from "@/lib/stores/queries";
 import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
 import { getStoreOrderSummary, getStoreSentItems } from "@/lib/field-sales/queries";
+import { getStoreStockCard } from "@/lib/inventory/store-stock-card";
 import { StoreDetailView } from "./StoreDetailView";
 
 export default async function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -22,6 +23,7 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
   const pending = await getPendingStoreChangeRequest(store.id);
   const orders = await getStoreOrderSummary(store.id);
   const sentItems = await getStoreSentItems(store.id);
+  const stockCard = store.termsType === "KONSI" ? await getStoreStockCard(store.id) : null;
 
   return (
     <StoreDetailView
@@ -30,6 +32,15 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
       pendingChange={pending ? { requestId: pending.id, requestedByLabel: pending.requestedByLabel, proposed: pending.proposed, old: pending.old } : null}
       orders={orders}
       sentItems={sentItems}
+      stockCard={
+        stockCard
+          ? {
+              rows: stockCard.rows,
+              negativeCount: stockCard.negativeCount,
+              movements: stockCard.movements.map(({ occurredAt, ...m }) => ({ ...m, occurredAtIso: occurredAt.toISOString() })),
+            }
+          : null
+      }
       visits={visits.map(v => ({
         id: v.id,
         checkinAtIso: v.checkinAt.toISOString(),

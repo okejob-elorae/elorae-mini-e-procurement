@@ -2140,6 +2140,25 @@
       "colArticle": "Artikel",
       "colSize": "Ukuran",
       "colQtySent": "Qty Terkirim"
+    },
+    "stockCard": {
+      "cardTitle": "Stok Konsi",
+      "negativeCount": "{count} negatif",
+      "empty": "Belum ada stok konsi di toko ini",
+      "colArticle": "Artikel",
+      "colSize": "Ukuran",
+      "colQty": "Qty",
+      "colElsewhere": "Lokasi lain",
+      "elsewhere": "Gudang: {main} · Van: {van}",
+      "negativeBadge": "Stok negatif",
+      "negativeNote": "Stok negatif akan diserap otomatis oleh pengiriman konsi berikutnya ke toko ini. Tidak ada cara mengoreksinya secara manual pada tahap ini.",
+      "movementsTitle": "Pergerakan Stok",
+      "movementsEmpty": "Belum ada pergerakan stok",
+      "colDate": "Tanggal",
+      "colDoc": "Dokumen",
+      "colType": "Jenis",
+      "movementIn": "Masuk (Transfer)",
+      "movementOut": "Keluar (Retur)"
     }
   },
   "pwa": {
@@ -2436,6 +2455,7 @@
       "gudangTitle": "NOTA GUDANG",
       "tagihanTitle": "NOTA TAGIHAN",
       "suratKeluarTitle": "SURAT KELUAR BARANG",
+      "suratKeluarNoTransfer": "Dokumen transfer belum ada untuk order ini (disetujui sebelum fitur ini ada).",
       "consignmentNote": "Konsinyasi — penyerahan barang titipan, bukan penjualan. Tanpa harga dan tanpa tagihan.",
       "preparedBy": "Disiapkan",
       "receivedBy": "Diterima",
@@ -2655,7 +2675,14 @@
       "unpriceableBody": "Barang ini belum pernah dikirim ke toko ini sehingga tidak ada harga otomatis untuk dipakai — masukkan harga manual beserta catatannya.",
       "successSet": "Harga baris berhasil disimpan."
     },
-    "approveConfirmValuationWarning": "{count} baris belum memiliki harga. Baris ini akan tetap disetujui dan dikembalikan ke stok, tetapi nilainya tidak akan pernah dihitung setelah ini."
+    "approveConfirmValuationWarning": "{count} baris belum memiliki harga. Baris ini akan tetap disetujui dan dikembalikan ke stok, tetapi nilainya tidak akan pernah dihitung setelah ini.",
+    "konsiStockWarning": {
+      "loading": "Memeriksa dampak ke stok toko…",
+      "error": "Gagal memeriksa dampak ke stok toko. Anda tetap bisa melanjutkan persetujuan.",
+      "title": "Stok toko akan menjadi negatif",
+      "line": "{itemName} ({variantSku}): stok toko saat ini {storeQty}, akan berkurang {creditedQty} — kurang {shortfall}",
+      "noManualFix": "Stok negatif akan diserap otomatis oleh pengiriman konsi berikutnya ke toko ini. Tidak ada cara mengoreksinya secara manual pada tahap ini."
+    }
   },
   "promos": {
     "pageTitle": "Promo",

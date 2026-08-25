@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, AlertTriangle, CheckCircle2, Info, Wallet } from "lucide-react";
-import type { FieldReturnDetail, FieldReturnStatus } from "@/lib/field-sales/retur/queries";
+import type {
+  FieldReturnDetail,
+  FieldReturnStatus,
+  KonsiReturStockImpactLine,
+} from "@/lib/field-sales/retur/queries";
 import { isSettled } from "@/lib/field-sales/retur/variance";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { approveAction } from "@/app/actions/field-returns";
+import { approveAction, previewKonsiReturStockImpactAction } from "@/app/actions/field-returns";
 import { ReceiveForm, fieldReturnErrorKey } from "./ReceiveForm";
 import { ResolutionControls } from "./ResolutionControls";
 import { LinePriceControls } from "./LinePriceControls";
@@ -116,7 +120,14 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
   const tCommon = useTranslations("common");
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [previewPending, startPreviewTransition] = useTransition();
   const [approveOpen, setApproveOpen] = useState(false);
+  const [stockImpact, setStockImpact] = useState<
+    | { status: "idle" }
+    | { status: "loading" }
+    | { status: "loaded"; rows: KonsiReturStockImpactLine[] }
+    | { status: "error" }
+  >({ status: "idle" });
 
   const outstanding = outstandingLineCount(r.lines);
   const showReceiveForm = canManage && r.status === "PENDING_WAREHOUSE_RECEIVING";
@@ -136,6 +147,26 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
      paper claimed — surfaced once at the card header rather than only per-line, per the spec's
      surplus rule. */
   const hasSurplusCredit = r.lines.some((l) => l.resolutions[0]?.type === "ACCEPT_SURPLUS");
+
+  /*
+   * Fetched fresh every time the dialog opens, not once at page load — the approver should see
+   * the consequence of the stock ledger as it stands right before they commit, not as it stood
+   * when the page first rendered. Runs in its own transition so the fetch's pending state never
+   * gets confused with callApprove's own (the confirm button would otherwise flash a
+   * "submitting" label before anyone has clicked it).
+   */
+  function openApproveDialog(): void {
+    setApproveOpen(true);
+    setStockImpact({ status: "loading" });
+    startPreviewTransition(async () => {
+      try {
+        const result = await previewKonsiReturStockImpactAction(r.id);
+        setStockImpact(result.ok ? { status: "loaded", rows: result.rows } : { status: "error" });
+      } catch {
+        setStockImpact({ status: "error" });
+      }
+    });
+  }
 
   function callApprove(): void {
     startTransition(async () => {
@@ -177,7 +208,7 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
             {t(`status.${r.status}`)}
           </Badge>
           {showApprove && (
-            <Button className="h-10" disabled={isPending} onClick={() => setApproveOpen(true)}>
+            <Button className="h-10" disabled={isPending} onClick={openApproveDialog}>
               <CheckCircle2 className="h-4 w-4" />
               {tReceiving("approveButton")}
             </Button>
@@ -385,7 +416,14 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
         </CardContent>
       </Card>
 
-      <AlertDialog open={approveOpen} onOpenChange={(open) => !isPending && setApproveOpen(open)}>
+      <AlertDialog
+        open={approveOpen}
+        onOpenChange={(open) => {
+          if (isPending || previewPending) return;
+          setApproveOpen(open);
+          if (!open) setStockImpact({ status: "idle" });
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{tReceiving("approveConfirmTitle")}</AlertDialogTitle>
@@ -403,10 +441,46 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
               <p className="text-xs">{tReceiving("approveConfirmValuationWarning", { count: unpricedCount })}</p>
             </div>
           )}
+          {stockImpact.status === "loading" && (
+            <p className="text-xs text-muted-foreground">{tReceiving("konsiStockWarning.loading")}</p>
+          )}
+          {stockImpact.status === "error" && (
+            <p className="text-xs text-destructive">{tReceiving("konsiStockWarning.error")}</p>
+          )}
+          {stockImpact.status === "loaded" && stockImpact.rows.length > 0 && (
+            /*
+             * This is a WARNING, not a gate — approve still proceeds on confirm. A konsi retur
+             * can legitimately drive a store's stock negative (the goods physically arrived and
+             * were counted; bookkeeping must never block that), so this only makes the
+             * consequence visible before it commits rather than discovering it afterwards on the
+             * store's stock card. There is no manual correction path in this slice — say so
+             * plainly rather than implying one exists.
+             */
+            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-destructive">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="text-xs space-y-1.5">
+                <p className="font-medium">{tReceiving("konsiStockWarning.title")}</p>
+                <ul className="list-disc space-y-0.5 pl-4">
+                  {stockImpact.rows.map((row) => (
+                    <li key={row.lineId}>
+                      {tReceiving("konsiStockWarning.line", {
+                        itemName: row.itemName,
+                        variantSku: row.variantSku || "—",
+                        storeQty: row.storeQty,
+                        creditedQty: row.creditedQty,
+                        shortfall: row.shortfall,
+                      })}
+                    </li>
+                  ))}
+                </ul>
+                <p>{tReceiving("konsiStockWarning.noManualFix")}</p>
+              </div>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              disabled={isPending}
+              disabled={isPending || previewPending}
               onClick={(e) => {
                 /* Keep the dialog open so the pending label is visible; callApprove() closes it. */
                 e.preventDefault();

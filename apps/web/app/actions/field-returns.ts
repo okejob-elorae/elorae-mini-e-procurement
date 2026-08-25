@@ -10,7 +10,12 @@ import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
 import { listPriceCandidates, resolveLinePrice } from "@/lib/field-sales/retur/pricing";
 import { round2 } from "@/lib/field-sales/retur/pricing-rules";
 import { FieldReturnError, type FieldReturnErrorCode } from "@/lib/field-sales/retur/errors";
-import { PRICEABLE_STATUSES, PRICEABLE_STATUS_SET } from "@/lib/field-sales/retur/queries";
+import {
+  PRICEABLE_STATUSES,
+  PRICEABLE_STATUS_SET,
+  previewKonsiReturStockImpact,
+  type KonsiReturStockImpactLine,
+} from "@/lib/field-sales/retur/queries";
 
 export type FieldReturnActionResult =
   | { ok: true }
@@ -321,5 +326,37 @@ export async function setLinePriceAction(input: SetLinePriceInput): Promise<Fiel
     return { ok: true };
   } catch (e) {
     return toResult(e);
+  }
+}
+
+export type PreviewKonsiReturStockImpactResult =
+  | { ok: true; rows: KonsiReturStockImpactLine[] }
+  | { ok: false; code: "FORBIDDEN" | "NOT_FOUND" | "ERROR" };
+
+/**
+ * Read-only — no write, no revalidation. Lets the approve confirm dialog show the approver what
+ * a KONSI retur's decrement would do to the store's stock BEFORE they commit, rather than only
+ * discovering a negative row afterwards on the store page. Gated the same as every other action
+ * in this file (field_returns:manage) since it exposes a store's stock figures; the dialog that
+ * calls this only renders for a manager anyway, but every export here is an independently
+ * callable endpoint regardless of what the UI withholds.
+ *
+ * `previewKonsiReturStockImpact` returns `null` for a nonexistent returnId and `[]` for "no
+ * impact" (non-KONSI store, or a KONSI store with nothing that would go negative) — those two
+ * must not be conflated, so `null` maps to NOT_FOUND and `[]` passes through as `{ ok: true, rows:
+ * [] }`.
+ */
+export async function previewKonsiReturStockImpactAction(
+  returnId: string,
+): Promise<PreviewKonsiReturStockImpactResult> {
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (typeof returnId !== "string" || returnId === "") return { ok: false, code: "NOT_FOUND" };
+    const rows = await previewKonsiReturStockImpact(returnId);
+    if (rows === null) return { ok: false, code: "NOT_FOUND" };
+    return { ok: true, rows };
+  } catch {
+    return { ok: false, code: "ERROR" };
   }
 }
