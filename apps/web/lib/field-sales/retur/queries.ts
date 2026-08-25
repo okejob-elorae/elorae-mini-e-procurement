@@ -1,5 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
-import { lineVariance } from "./variance";
+import { lineVariance, creditedQtyForLine } from "./variance";
 import { listPriceCandidates, type PriceCandidate } from "./pricing";
 import { classifyPriceCandidates } from "./pricing-rules";
 
@@ -305,4 +305,81 @@ export async function getFieldReturnById(
       };
     }),
   };
+}
+
+export type KonsiReturStockImpactLine = {
+  lineId: string;
+  itemName: string;
+  variantSku: string;
+  creditedQty: number;
+  storeQty: number;
+  shortfall: number;
+};
+
+/**
+ * Read-only preview of what approveFieldReturn's KONSI decrement would do to a store's stock
+ * ledger, so an approver can be warned before committing rather than discovering a negative row
+ * afterwards. Returns ONLY the lines that would drive a StoreStock row negative, each with its
+ * shortfall. Always [] for a non-KONSI store — approveFieldReturn never touches StoreStock for
+ * one, so there is nothing to preview.
+ *
+ * creditedQty is computed with the SAME creditedQtyForLine helper approveFieldReturn stamps onto
+ * FieldReturnLine at commit — never a second formula — because this can run while the retur is
+ * still PENDING_APPROVAL, before that column has ever been written.
+ */
+export async function previewKonsiReturStockImpact(returnId: string): Promise<KonsiReturStockImpactLine[]> {
+  const ret = await prisma.fieldReturn.findUnique({
+    where: { id: returnId },
+    select: {
+      storeId: true,
+      store: { select: { termsType: true } },
+      lines: {
+        select: {
+          id: true,
+          itemId: true,
+          variantSku: true,
+          qty: true,
+          receivedQty: true,
+          item: { select: { nameId: true } },
+          resolutions: {
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 1,
+            select: { type: true },
+          },
+        },
+      },
+    },
+  });
+  if (!ret || ret.store.termsType !== "KONSI") return [];
+
+  const impacted: KonsiReturStockImpactLine[] = [];
+
+  for (const line of ret.lines) {
+    const latestType = line.resolutions[0]?.type ?? null;
+    const creditedQty = creditedQtyForLine({
+      qty: line.qty,
+      receivedQty: line.receivedQty,
+      latestResolutionType: latestType,
+    });
+    if (!creditedQty) continue;
+
+    const stock = await prisma.storeStock.findUnique({
+      where: { storeId_itemId_variantSku: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku } },
+      select: { qty: true },
+    });
+    const storeQty = stock ? stock.qty.toNumber() : 0;
+    const shortfall = creditedQty - storeQty;
+    if (shortfall <= 0) continue;
+
+    impacted.push({
+      lineId: line.id,
+      itemName: line.item.nameId,
+      variantSku: line.variantSku,
+      creditedQty,
+      storeQty,
+      shortfall,
+    });
+  }
+
+  return impacted;
 }
