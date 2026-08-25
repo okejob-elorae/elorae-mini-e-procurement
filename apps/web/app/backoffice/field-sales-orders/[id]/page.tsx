@@ -44,15 +44,24 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
   let konsiSuggestions: KonsiSuggestion[] = [];
   let konsiAssortmentGaps: KonsiAssortmentGapSuggestion[] = [];
   if (wantsKonsiSuggestions) {
-    try {
-      konsiSuggestions = await listKonsiSuggestions(id);
-    } catch (e) {
-      console.error("[field-sales-orders] listKonsiSuggestions failed", { orderId: id, error: e });
+    /**
+     * Independent queries — run them concurrently so one slow query doesn't serialise behind the
+     * other. `allSettled`, not `all`, keeps each query's failure isolated: one rejecting must not
+     * take the other's already-successful result down with it.
+     */
+    const [suggestionsResult, gapsResult] = await Promise.allSettled([
+      listKonsiSuggestions(id),
+      listKonsiAssortmentGaps(id),
+    ]);
+    if (suggestionsResult.status === "fulfilled") {
+      konsiSuggestions = suggestionsResult.value;
+    } else {
+      console.error("[field-sales-orders] listKonsiSuggestions failed", { orderId: id, error: suggestionsResult.reason });
     }
-    try {
-      konsiAssortmentGaps = await listKonsiAssortmentGaps(id);
-    } catch (e) {
-      console.error("[field-sales-orders] listKonsiAssortmentGaps failed", { orderId: id, error: e });
+    if (gapsResult.status === "fulfilled") {
+      konsiAssortmentGaps = gapsResult.value;
+    } else {
+      console.error("[field-sales-orders] listKonsiAssortmentGaps failed", { orderId: id, error: gapsResult.reason });
     }
   }
 

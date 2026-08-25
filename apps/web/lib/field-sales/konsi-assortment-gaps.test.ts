@@ -16,6 +16,7 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
   let prevSentItemId = "";
   let variantItemId = "";
   let targetItemId = "";
+  let overlapItemId = "";
   let orderId = "";
   let priorOrderId = "";
   let putusOrderId = "";
@@ -30,6 +31,7 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     prevSentItemId = "";
     variantItemId = "";
     targetItemId = "";
+    overlapItemId = "";
     orderId = "";
     priorOrderId = "";
     putusOrderId = "";
@@ -52,9 +54,11 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     });
     putusStoreId = putusStore.id;
 
-    /* On the assortment, sent to this store before, and currently holds nothing — the exact case
+    /**
+     * On the assortment, sent to this store before, and currently holds nothing — the exact case
      * the gap signal exists to catch, and the case `listKonsiSuggestions` MUST have already
-     * dropped via `sentItemIds`. */
+     * dropped via `sentItemIds`.
+     */
     const prevSentItem = await prisma.item.create({
       data: { sku: `TEST-KAG-PS-${token}`, nameId: "Previously sent, now gapped", nameEn: "Previously sent, now gapped", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 30000 },
     });
@@ -65,10 +69,12 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     });
     assortmentLineIds.push(line.id);
 
-    /* Two-variant item, both on the assortment. V1 will be on the order under approval (so its
+    /**
+     * Two-variant item, both on the assortment. V1 will be on the order under approval (so its
      * gap must be excluded); V2 is not on the order (so its gap must still show). Neither variant
      * was ever sent, so `listKonsiSuggestions` drops the WHOLE item (item-grain onOrder exclusion)
-     * — leaving no overlap to worry about for this pair. */
+     * — leaving no overlap to worry about for this pair.
+     */
     const variantItem = await prisma.item.create({
       data: { sku: `TEST-KAG-VAR-${token}`, nameId: "Variant gap item", nameEn: "Variant gap item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 20000 },
     });
@@ -98,6 +104,24 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     });
     storeStockIds.push(stockTarget.id);
 
+    /**
+     * On the assortment, NEVER sent, not on any order, with real main-warehouse stock — the case
+     * that used to render under BOTH headings before `listKonsiSuggestions` learned to suppress a
+     * row already claimed by a gap. Deliberately kept separate from `prevSentItemId`/`targetItemId`
+     * above, which are excluded from never-sent via `sentItemIds` regardless of that fix — this
+     * item is excluded ONLY by the gap-suppression filter, so it is the one that actually proves
+     * the fix does something.
+     */
+    const overlapItem = await prisma.item.create({
+      data: { sku: `TEST-KAG-OVL-${token}`, nameId: "Never sent, also a gap", nameEn: "Never sent, also a gap", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 12000 },
+    });
+    overlapItemId = overlapItem.id;
+    await prisma.inventoryValue.create({ data: { itemId: overlapItemId, variantSku: "", qtyOnHand: 6, reservedQty: 0, avgCost: 600, totalValue: 3600 } });
+    const lineOverlap = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: overlapItemId, variantSku: "", targetQty: null, createdById: userId },
+    });
+    assortmentLineIds.push(lineOverlap.id);
+
     const order = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `KONSI/TEST-KAG-${token}`,
@@ -114,13 +138,12 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     });
     orderId = order.id;
 
-    /*
+    /**
      * A separate, already-APPROVED konsi order that sent BOTH `prevSentItemId` and `targetItemId`
      * to this store. `targetItemId` must be sent-before too, not just `prevSentItemId`: otherwise
      * it would be a genuinely never-sent item that ALSO happens to be an assortment gap — a case
-     * where both lists legitimately claim it (harmless in the UI, since both rows share the same
-     * staging key), which would make the blanket "never intersect" assertion below false for a
-     * reason that has nothing to do with the invariant under test.
+     * `overlapItemId` above now exists to cover on its own, so it must not sneak into THIS fixture
+     * and re-cover the same ground for the wrong reason.
      */
     const priorOrder = await prisma.fieldSalesOrder.create({
       data: {
@@ -159,7 +182,7 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const allItemIds = [seededId(prevSentItemId), seededId(variantItemId), seededId(targetItemId)];
+    const allItemIds = [seededId(prevSentItemId), seededId(variantItemId), seededId(targetItemId), seededId(overlapItemId)];
     const allOrderIds = [seededId(orderId), seededId(priorOrderId), seededId(putusOrderId)];
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: allOrderIds } } });
@@ -210,5 +233,17 @@ d("listKonsiAssortmentGaps (test bed only)", () => {
     for (const key of gapKeys) {
       expect(neverSentKeys.has(key)).toBe(false);
     }
+  });
+
+  it("an item that is both a never-sent candidate and an assortment gap is returned under the gap set only", async () => {
+    const gaps = await listKonsiAssortmentGaps(orderId);
+    const neverSent = await listKonsiSuggestions(orderId);
+
+    const key = `${overlapItemId}::`;
+    expect(gaps.some((r) => r.itemId === overlapItemId && r.variantSku === "")).toBe(true);
+    expect(neverSent.some((r) => r.itemId === overlapItemId)).toBe(false);
+
+    const neverSentKeys = new Set(neverSent.map((r) => `${r.itemId}::${r.variantSku}`));
+    expect(neverSentKeys.has(key)).toBe(false);
   });
 });

@@ -427,6 +427,12 @@ export type KonsiSuggestion = {
  * variant of an item was ever sent to this store, the whole item is excluded. Each surviving item
  * is then expanded into one row per variant (real InventoryValue row), because availability and
  * the writer's `addedLines` are both per-variant.
+ *
+ * A row is ALSO dropped when the same (itemId, variantSku) is a current assortment gap for this
+ * store — see `listKonsiAssortmentGaps`. Both are genuinely true for an item that was never sent
+ * AND is missing from the assortment, but "this store is supposed to carry this and does not" is
+ * the strictly stronger, more actionable claim, so the gap heading wins and this list suppresses
+ * the row rather than rendering the same SKU twice under two different urgency framings.
  */
 export async function listKonsiSuggestions(orderId: string): Promise<KonsiSuggestion[]> {
   const order = await prisma.fieldSalesOrder.findUnique({
@@ -438,6 +444,14 @@ export async function listKonsiSuggestions(orderId: string): Promise<KonsiSugges
   const sent = await sentItemIds(order.storeId);
   const onOrder = new Set(order.lines.map((l) => l.itemId));
   const exclude = new Set<string>([...sent, ...onOrder]);
+
+  /**
+   * Raw store gaps, not the order-scoped `listKonsiAssortmentGaps` output: an item already on
+   * this order is excluded from THIS list anyway via the item-grain `onOrder` set above, and
+   * availability is filtered identically (and from the same InventoryValue rows) by both lists,
+   * so the two sources agree on every row that could actually collide here.
+   */
+  const gapKeys = new Set((await listAssortmentGaps(order.storeId)).map((g) => `${g.itemId}::${g.variantSku}`));
 
   const where: Prisma.ItemWhereInput = { isActive: true, type: "FINISHED_GOOD" };
   /* Prisma's notIn with an empty array is untrustworthy to lean on — skip the filter entirely. */
@@ -492,6 +506,7 @@ export async function listKonsiSuggestions(orderId: string): Promise<KonsiSugges
    */
   const rows: KonsiSuggestion[] = Array.from(byKey.values())
     .filter(({ available }) => available > 0)
+    .filter(({ item, variantSku }) => !gapKeys.has(`${item.id}::${variantSku}`))
     .map(({ item, variantSku, available }) => ({
       itemId: item.id,
       variantSku,
@@ -520,8 +535,9 @@ export type KonsiAssortmentGapSuggestion = {
  * `sentItemIds` drops an item the moment any unit of it was ever sent, even if the store now
  * holds zero, so "never sent" can never re-flag a depleted item. An assortment gap catches
  * exactly that case, so this reads `listAssortmentGaps` directly and never filters through
- * `sentItemIds` — the two lists are asserted disjoint in this module's own test suite, not
- * merged or deduped here.
+ * `sentItemIds`. This function is the authoritative source for a gap row: `listKonsiSuggestions`
+ * is the one that defers to IT, suppressing its own row for any (itemId, variantSku) this
+ * function would also claim, so the two lists never render the same SKU twice.
  *
  * Same two guards as `listKonsiSuggestions`, kept in sync on purpose:
  * - A missing order, or a non-KONSI order, returns `[]`.
@@ -564,7 +580,7 @@ export async function listKonsiAssortmentGaps(orderId: string): Promise<KonsiAss
     const item = itemsById.get(gap.itemId);
     if (!item) continue;
 
-    /*
+    /**
      * Same null/"" collision `listKonsiSuggestions` guards against: MariaDB permits multiple
      * NULLs on the (itemId, variantSku) unique index, so an item can carry both a `null` and an
      * `""` InventoryValue row for the same logical variant. Keep the MINIMUM available across a
