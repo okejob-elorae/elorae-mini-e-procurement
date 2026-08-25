@@ -394,6 +394,7 @@ export async function deleteItem(id: string) {
     storeStockCount,
     konsiTransferLineCount,
     storeStocktakeLineCount,
+    storeAssortmentLineCount,
     vanStockCount,
     vanLoadLineCount,
     vanSaleLineCount,
@@ -423,6 +424,7 @@ export async function deleteItem(id: string) {
     prisma.storeStock.count({ where: { itemId: id } }),
     prisma.konsiTransferLine.count({ where: { itemId: id } }),
     prisma.storeStocktakeLine.count({ where: { itemId: id } }),
+    prisma.storeAssortmentLine.count({ where: { itemId: id } }),
     prisma.vanStock.count({ where: { itemId: id } }),
     prisma.vanLoadLine.count({ where: { itemId: id } }),
     prisma.vanSaleLine.count({ where: { itemId: id } }),
@@ -447,6 +449,7 @@ export async function deleteItem(id: string) {
     storeStockCount > 0 ||
     konsiTransferLineCount > 0 ||
     storeStocktakeLineCount > 0 ||
+    storeAssortmentLineCount > 0 ||
     vanStockCount > 0 ||
     vanLoadLineCount > 0 ||
     vanSaleLineCount > 0 ||
