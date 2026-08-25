@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { lineVariance, isSettled, allDiscrepantLinesSettled, isValidResolutionDirection } from "./variance";
+import {
+  lineVariance,
+  isSettled,
+  allDiscrepantLinesSettled,
+  isValidResolutionDirection,
+  creditedQtyForLine,
+} from "./variance";
 
 describe("lineVariance", () => {
   it("is negative when received is short of claimed", () => {
@@ -135,5 +141,46 @@ describe("allDiscrepantLinesSettled", () => {
       { qty: 2, receivedQty: 4, resolutions: [{ type: "ACCEPT_SURPLUS" }] },
     ]);
     expect(settled).toBe(true);
+  });
+});
+
+describe("creditedQtyForLine", () => {
+  it("credits the received qty when the count matches the claim", () => {
+    expect(creditedQtyForLine({ qty: 12, receivedQty: 12, latestResolutionType: null })).toBe(12);
+  });
+
+  it("credits the CLAIMED qty on a shortage the salesman bears — the store sent what its paper says", () => {
+    expect(creditedQtyForLine({ qty: 12, receivedQty: 10, latestResolutionType: "SALESMAN_BEARS" })).toBe(12);
+  });
+
+  it("credits the CLAIMED qty on a written-off shortage — a company loss only exists if we credited goods we never received", () => {
+    expect(creditedQtyForLine({ qty: 12, receivedQty: 10, latestResolutionType: "WRITE_OFF" })).toBe(12);
+  });
+
+  it("credits the RECEIVED qty on an accepted surplus — we hold the goods and they go back into sellable stock", () => {
+    expect(creditedQtyForLine({ qty: 10, receivedQty: 12, latestResolutionType: "ACCEPT_SURPLUS" })).toBe(12);
+  });
+
+  it("returns null while a line is under investigation — it never settles, so it never reaches approval", () => {
+    expect(creditedQtyForLine({ qty: 12, receivedQty: 10, latestResolutionType: "INVESTIGATE" })).toBeNull();
+  });
+
+  it("returns null on a discrepant line with no resolution at all", () => {
+    expect(creditedQtyForLine({ qty: 12, receivedQty: 10, latestResolutionType: null })).toBeNull();
+  });
+
+  it("returns null before the line has been received", () => {
+    expect(creditedQtyForLine({ qty: 12, receivedQty: null, latestResolutionType: null })).toBeNull();
+  });
+
+  /*
+   * The anti-simplification test. Every row above happens to be Math.max(claimed, received),
+   * which is a coincidence of four independent business decisions rather than a rule anyone
+   * chose. This case pins the mapping to the RESOLUTION TYPE: a surplus settled by the wrong
+   * type must not silently credit the larger number.
+   */
+  it("is driven by the resolution type, not by which number is larger", () => {
+    expect(creditedQtyForLine({ qty: 10, receivedQty: 12, latestResolutionType: "SALESMAN_BEARS" })).toBeNull();
+    expect(creditedQtyForLine({ qty: 12, receivedQty: 10, latestResolutionType: "ACCEPT_SURPLUS" })).toBeNull();
   });
 });
