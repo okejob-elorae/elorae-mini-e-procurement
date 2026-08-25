@@ -89,9 +89,17 @@ export type StoreStocktakeListRow = {
   countedAt: Date;
   isFullCount: boolean;
   lineCount: number;
+  countedLineCount: number;
+  netVarianceQty: number;
   createdAt: Date;
 };
 
+/**
+ * `lines` is selected here (not `_count`) because the register needs `countedLineCount` and
+ * `netVarianceQty` per row — both derived in JS from the same minimal projection, since Prisma
+ * has no aggregate-sum-over-a-relation in a `findMany` select. A store's line count is small
+ * (one row per consignment SKU), so this stays one query per page rather than N.
+ */
 export async function listStoreStocktakes(params: {
   storeId?: string;
   status?: StoreStocktakeStatusValue;
@@ -120,7 +128,7 @@ export async function listStoreStocktakes(params: {
         isFullCount: true,
         createdAt: true,
         store: { select: { name: true } },
-        _count: { select: { lines: true } },
+        lines: { select: { countedQty: true, varianceQty: true } },
       },
     }),
     prisma.storeStocktake.count({ where }),
@@ -134,7 +142,9 @@ export async function listStoreStocktakes(params: {
       status: r.status,
       countedAt: r.countedAt,
       isFullCount: r.isFullCount,
-      lineCount: r._count.lines,
+      lineCount: r.lines.length,
+      countedLineCount: r.lines.filter((l) => l.countedQty !== null).length,
+      netVarianceQty: r.lines.reduce((sum, l) => sum + (l.varianceQty === null ? 0 : l.varianceQty.toNumber()), 0),
       createdAt: r.createdAt,
     })),
     total,
@@ -156,6 +166,13 @@ export type StoreStocktakeLineDetail = {
   qtyAtApproval: number | null;
   appliedQty: number | null;
   isAdded: boolean;
+  /**
+   * `StoreStock.qty` as it stands right now, read fresh on every detail fetch — never the
+   * `expectedQty` snapshot frozen at creation. This is the field the approve dialog's drift list
+   * compares `expectedQty` against; 0 when the store has no `StoreStock` row for this item/variant
+   * at all (an added line, or one the ledger genuinely never held).
+   */
+  liveQty: number;
 };
 
 export type StoreStocktakeDetail = {
@@ -236,6 +253,21 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
   const labelById = new Map(users.map((u) => [u.id, u.name ?? u.email]));
   const labelFor = (userId: string | null): string | null => (userId ? labelById.get(userId) ?? "—" : null);
 
+  /*
+   * One batched read of the store's CURRENT StoreStock, keyed the same way the writer keys its
+   * own upsert (itemId + variantSku, defaulting a null variantSku to ""). Never trusted as a
+   * substitute for `expectedQty` — this is purely the live figure the approve dialog shows
+   * alongside the frozen snapshot.
+   */
+  const itemIds = Array.from(new Set(r.lines.map((l) => l.itemId)));
+  const liveStock = itemIds.length > 0
+    ? await prisma.storeStock.findMany({
+        where: { storeId: r.storeId, itemId: { in: itemIds } },
+        select: { itemId: true, variantSku: true, qty: true },
+      })
+    : [];
+  const liveQtyByKey = new Map(liveStock.map((s) => [`${s.itemId}::${s.variantSku}`, s.qty.toNumber()]));
+
   return {
     id: r.id,
     docNo: r.docNo,
@@ -270,6 +302,7 @@ export async function getStoreStocktakeById(id: string): Promise<StoreStocktakeD
       qtyAtApproval: l.qtyAtApproval === null ? null : l.qtyAtApproval.toNumber(),
       appliedQty: l.appliedQty === null ? null : l.appliedQty.toNumber(),
       isAdded: l.isAdded,
+      liveQty: liveQtyByKey.get(`${l.itemId}::${l.variantSku}`) ?? 0,
     })),
   };
 }

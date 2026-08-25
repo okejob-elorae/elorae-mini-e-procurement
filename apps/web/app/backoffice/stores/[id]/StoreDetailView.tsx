@@ -4,8 +4,10 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import {
   ArrowLeft,
+  ClipboardList,
   Clock,
   ExternalLink,
   Images,
@@ -19,6 +21,9 @@ import {
 } from "lucide-react";
 import type { StoreListItem } from "@/lib/stores/queries";
 import type { StoreSentItemRow } from "@/lib/field-sales/queries";
+import type { StoreStocktakeStatusValue } from "@/lib/stores/stocktake/queries";
+import { createAction as createStocktakeAction } from "@/app/actions/store-stocktakes";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -91,6 +96,22 @@ type StockCardProps = {
   movements: SerializedStockMovement[];
 };
 
+type StocktakeHistoryRow = {
+  id: string;
+  docNo: string;
+  status: StoreStocktakeStatusValue;
+  countedAtIso: string;
+  lineCount: number;
+  countedLineCount: number;
+};
+
+type StocktakesCardProps = {
+  rows: StocktakeHistoryRow[];
+  total: number;
+  /** The store's currently open (DRAFT / PENDING_VERIFICATION) document, if any. */
+  openId: string | null;
+};
+
 type Props = {
   store: StoreListItem;
   canEdit: boolean;
@@ -99,12 +120,28 @@ type Props = {
   sentItems: StoreSentItemRow[];
   /** Only ever populated for a KONSI store — a PUTUS store never has a stock ledger to show. */
   stockCard: StockCardProps | null;
+  /** Only ever populated for a KONSI store — same gate as `stockCard`. */
+  stocktakes: StocktakesCardProps | null;
   pendingChange: {
     requestId: string;
     requestedByLabel: string;
     proposed: PendingChangeFields;
     old: PendingChangeFields;
   } | null;
+};
+
+const STOCKTAKE_STATUS_BADGE_VARIANT: Record<StoreStocktakeStatusValue, "secondary" | "destructive" | "default" | "outline"> = {
+  DRAFT: "secondary",
+  PENDING_VERIFICATION: "outline",
+  APPROVED: "default",
+  CANCELLED: "destructive",
+};
+
+const STOCKTAKE_STATUS_BADGE_CLASS: Record<StoreStocktakeStatusValue, string> = {
+  DRAFT: "",
+  PENDING_VERIFICATION: "border-amber-500/40 text-amber-700",
+  APPROVED: "",
+  CANCELLED: "",
 };
 
 function formatDateTime(iso: string): string {
@@ -170,7 +207,7 @@ function DetailField({ label, children }: { label: string; children: React.React
   );
 }
 
-export function StoreDetailView({ store, canEdit, visits, orders, sentItems, stockCard, pendingChange }: Props) {
+export function StoreDetailView({ store, canEdit, visits, orders, sentItems, stockCard, stocktakes, pendingChange }: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
   const tDetail = useTranslations("stores.detail");
@@ -178,9 +215,12 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, sto
   const tTable = useTranslations("stores.list.table");
   const tOrders = useTranslations("stores.orders");
   const tSentItems = useTranslations("stores.sentItems");
+  const tStocktake = useTranslations("stores.stocktake");
+  const tST = useTranslations("storeStocktakes");
   const tFso = useTranslations("fieldSalesOrders");
   const router = useRouter();
   const [, startTransition] = useTransition();
+  const [creatingStocktake, startCreateStocktakeTransition] = useTransition();
   const [lightbox, setLightbox] = useState<{ url: string; caption: string | null } | null>(null);
   const [gallery, setGallery] = useState<{
     label: string;
@@ -190,6 +230,21 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, sto
   const totalVisits = visits.length;
   const lastVisit = visits[0];
   const sentItemGroups = groupSentItemsByArticle(sentItems);
+
+  function handleStartStocktake(): void {
+    startCreateStocktakeTransition(async () => {
+      try {
+        const result = await createStocktakeAction({ storeId: store.id, countedAt: new Date().toISOString() });
+        if (result.ok && result.id) {
+          router.push(`/backoffice/store-stocktakes/${result.id}`);
+          return;
+        }
+        if (!result.ok) toast.error(tST(`err.${result.code}`));
+      } catch {
+        toast.error(tST("err.ERROR"));
+      }
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -554,6 +609,74 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, sto
           negativeCount={stockCard.negativeCount}
           movements={stockCard.movements}
         />
+      )}
+
+      {store.termsType === "KONSI" && stocktakes && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ClipboardList className="h-4 w-4" />
+              {tStocktake("cardTitle")}
+              <span className="text-sm font-normal text-muted-foreground ml-2">({stocktakes.total})</span>
+            </CardTitle>
+            {canEdit &&
+              (stocktakes.openId ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/backoffice/store-stocktakes/${stocktakes.openId}`}>
+                    {tStocktake("continueButton")}
+                  </Link>
+                </Button>
+              ) : (
+                <Button size="sm" disabled={creatingStocktake} onClick={handleStartStocktake}>
+                  {creatingStocktake ? tStocktake("creating") : tStocktake("startButton")}
+                </Button>
+              ))}
+          </CardHeader>
+          <CardContent>
+            {canEdit && stocktakes.openId && (
+              <p className="mb-3 text-sm text-muted-foreground">{tStocktake("openBanner")}</p>
+            )}
+            {stocktakes.rows.length === 0 ? (
+              <div className="text-center py-8">
+                <ClipboardList className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">{tStocktake("empty")}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{tStocktake("colDocNo")}</TableHead>
+                      <TableHead>{tStocktake("colCountedAt")}</TableHead>
+                      <TableHead>{tStocktake("colStatus")}</TableHead>
+                      <TableHead className="text-right">{tStocktake("colLines")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stocktakes.rows.map((s) => (
+                      <TableRow
+                        key={s.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => startTransition(() => router.push(`/backoffice/store-stocktakes/${s.id}`))}
+                      >
+                        <TableCell className="font-mono text-sm">{s.docNo}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(new Date(s.countedAtIso))}</TableCell>
+                        <TableCell>
+                          <Badge variant={STOCKTAKE_STATUS_BADGE_VARIANT[s.status]} className={STOCKTAKE_STATUS_BADGE_CLASS[s.status]}>
+                            {tST(`status.${s.status}`)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {s.countedLineCount} / {s.lineCount}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       <Dialog open={!!gallery} onOpenChange={(o) => !o && setGallery(null)}>

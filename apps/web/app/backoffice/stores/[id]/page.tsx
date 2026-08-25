@@ -5,7 +5,11 @@ import { getStore, listVisitsForStore, listVisitPhotosForVisits } from "@/lib/st
 import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
 import { getStoreOrderSummary, getStoreSentItems } from "@/lib/field-sales/queries";
 import { getStoreStockCard } from "@/lib/inventory/store-stock-card";
+import { listStoreStocktakes } from "@/lib/stores/stocktake/queries";
 import { StoreDetailView } from "./StoreDetailView";
+
+const STOCKTAKE_HISTORY_PAGE_SIZE = 10;
+const OPEN_STOCKTAKE_STATUSES = new Set(["DRAFT", "PENDING_VERIFICATION"]);
 
 export default async function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -24,6 +28,20 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
   const orders = await getStoreOrderSummary(store.id);
   const sentItems = await getStoreSentItems(store.id);
   const stockCard = store.termsType === "KONSI" ? await getStoreStockCard(store.id) : null;
+  const stocktakes =
+    store.termsType === "KONSI"
+      ? await listStoreStocktakes({ storeId: store.id, page: 1, perPage: STOCKTAKE_HISTORY_PAGE_SIZE })
+      : null;
+  /*
+   * A store can only ever have ONE open (DRAFT / PENDING_VERIFICATION) document at a time —
+   * `openKey`'s unique constraint enforces that, and creating a new one is refused while one is
+   * already open. That means the open document, if any, is always the most recently created row
+   * — the first one in this desc-by-createdAt page — so no second query is needed to find it.
+   */
+  const openStocktakeId =
+    stocktakes && stocktakes.rows[0] && OPEN_STOCKTAKE_STATUSES.has(stocktakes.rows[0].status)
+      ? stocktakes.rows[0].id
+      : null;
 
   return (
     <StoreDetailView
@@ -38,6 +56,22 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
               rows: stockCard.rows,
               negativeCount: stockCard.negativeCount,
               movements: stockCard.movements.map(({ occurredAt, ...m }) => ({ ...m, occurredAtIso: occurredAt.toISOString() })),
+            }
+          : null
+      }
+      stocktakes={
+        stocktakes
+          ? {
+              rows: stocktakes.rows.map((s) => ({
+                id: s.id,
+                docNo: s.docNo,
+                status: s.status,
+                countedAtIso: s.countedAt.toISOString(),
+                lineCount: s.lineCount,
+                countedLineCount: s.countedLineCount,
+              })),
+              total: stocktakes.total,
+              openId: openStocktakeId,
             }
           : null
       }
