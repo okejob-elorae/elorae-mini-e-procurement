@@ -65,6 +65,7 @@
     "navItemsFinished": "Finished Goods",
     "stores": "Stores",
     "masterStores": "Master Stores",
+    "storeStocktakes": "Store Stocktakes",
     "purchaseOrders": "Purchase Orders",
     "supplierPayment": "Supplier Payment",
     "inventory": "Inventory",
