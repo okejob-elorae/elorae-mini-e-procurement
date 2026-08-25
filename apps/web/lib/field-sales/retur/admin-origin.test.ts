@@ -10,6 +10,23 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 /**
+ * Reads `FIELD_RETURN_MISMATCH` rows scoped to this fixture's own returns, matched in JS on
+ * `metadata.returnId` — this MariaDB adapter's JSON-path filtering is unreliable, and this spec
+ * shares the dev DB with real notification rows, so a global count would prove nothing. Same
+ * approach as `receive-writer.test.ts`'s `mismatchNotificationsFor`, generalised to a list of
+ * return ids since two of this fixture's returns (claimed 6, received 4) land with a mismatch
+ * on every run.
+ */
+async function mismatchNotificationsFor(returnIds: string[]) {
+  const recent = await prisma.adminNotification.findMany({
+    where: { category: "FIELD_RETURN_MISMATCH" },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+  return recent.filter((n) => returnIds.includes((n.metadata as { returnId?: string } | null)?.returnId ?? ""));
+}
+
+/**
  * Task 2 of the admin-initiated store return feature: an ADMIN-origin retur splits its
  * StoreStock decrement across RECEIPT (receivedQty — what the warehouse physically has) and
  * APPROVE (the delta, creditedQty - receivedQty), while FIELD keeps the pre-existing single
@@ -280,6 +297,10 @@ d("admin-origin field returns (test bed only)", () => {
       seededId(adminNoPhotoReturnId),
     ];
     const storeIds = [seededId(konsiStoreId)];
+    const notifications = await mismatchNotificationsFor(returnIds);
+    if (notifications.length) {
+      await prisma.adminNotification.deleteMany({ where: { id: { in: notifications.map((n) => n.id) } } });
+    }
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.rejectedGoodsLedger.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
