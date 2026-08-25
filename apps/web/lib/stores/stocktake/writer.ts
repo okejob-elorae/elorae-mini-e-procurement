@@ -1,9 +1,18 @@
+import { Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { buildStocktakeLines, previousApprovedCountedAt } from "./queries";
 import { StoreStocktakeError } from "./errors";
 
 type CauseValue = "SHRINKAGE" | "UNRECORDED_SALE";
+
+type AddedLineInput = {
+  itemId: string;
+  variantSku: string;
+  countedQty: number | null;
+  cause?: CauseValue | null;
+  reason?: string | null;
+};
 
 /**
  * Opens a new count for a store. Refused with `ALREADY_OPEN` when the store already has a
@@ -62,17 +71,26 @@ export async function createStoreStocktake(input: {
  * recomputed here too (same `counted − expected` formula `approveStoreStocktake` uses) purely so
  * the detail page can show a live variance before approval — approval does not trust this value
  * and recomputes it independently from whatever is on the line at that moment.
+ *
+ * `addedLines` is the add-item picker's path: a line for an item the store's ledger has no
+ * `StoreStock` row for. Each lands with `isAdded: true`, `expectedQty: 0` (nothing was expected —
+ * there was no shelf row), and `productName` resolved from `Item` the same way
+ * `buildStocktakeLines` fills it. Its variance is therefore just the count itself
+ * (`countedQty − 0`), which is always zero or a surplus, never a shortfall — so an added line
+ * needs a reason on any non-zero count but never a cause; `SHORTFALL_NEEDS_CAUSE` cannot fire on
+ * this path by construction.
  */
 export async function saveStocktakeCounts(input: {
   stocktakeId: string;
   lines: Array<{ lineId: string; countedQty: number | null; cause?: CauseValue | null; reason?: string | null }>;
+  addedLines?: AddedLineInput[];
   submit: boolean;
   userId: string;
 }): Promise<{ ok: true; status: string }> {
   return runSerializable(async (tx) => {
     const st = await tx.storeStocktake.findUnique({
       where: { id: input.stocktakeId },
-      select: { id: true, status: true, lines: { select: { id: true, expectedQty: true } } },
+      select: { id: true, status: true, lines: { select: { id: true, itemId: true, variantSku: true, expectedQty: true } } },
     });
     if (!st) throw new StoreStocktakeError("NOT_FOUND");
     if (st.status !== "DRAFT" && st.status !== "PENDING_VERIFICATION") throw new StoreStocktakeError("INVALID_STATE");
@@ -92,6 +110,53 @@ export async function saveStocktakeCounts(input: {
       }
     }
 
+    const addedLines = input.addedLines ?? [];
+    const normalizedAdded = addedLines.map((al) => ({ ...al, variantSku: al.variantSku ?? "" }));
+    const addedItemNameById = new Map<string, string>();
+
+    if (normalizedAdded.length > 0) {
+      /*
+       * Every added itemId is user-supplied via the picker — unlike every other itemId reaching
+       * this writer, which came from an existing StoreStock row — so it is checked against real
+       * Item rows here, inside the transaction. relationMode = "prisma" means there is no
+       * database FK to catch a dangling one, and the required Prisma relation would otherwise
+       * write a line whose detail page throws "Inconsistent query result" forever.
+       */
+      for (const al of normalizedAdded) {
+        if (al.countedQty !== null && (typeof al.countedQty !== "number" || !Number.isFinite(al.countedQty) || al.countedQty < 0)) {
+          throw new StoreStocktakeError("INVALID_REQUEST");
+        }
+      }
+
+      /*
+       * DUPLICATE_LINE is caught here, ahead of the write, rather than relying solely on the
+       * @@unique([stocktakeId, itemId, variantSku]) constraint — checking first keeps the P2002
+       * catch below a fallback rather than the primary path, and catches a duplicate within the
+       * same addedLines batch, which the constraint alone would only catch on the second insert.
+       */
+      const existingKeys = new Set(st.lines.map((l) => `${l.itemId}::${l.variantSku}`));
+      const seenAddedKeys = new Set<string>();
+      for (const al of normalizedAdded) {
+        const key = `${al.itemId}::${al.variantSku}`;
+        if (existingKeys.has(key) || seenAddedKeys.has(key)) throw new StoreStocktakeError("DUPLICATE_LINE");
+        seenAddedKeys.add(key);
+      }
+
+      const addedItemIds = Array.from(new Set(normalizedAdded.map((al) => al.itemId)));
+      const items = await tx.item.findMany({ where: { id: { in: addedItemIds } }, select: { id: true, nameId: true } });
+      for (const item of items) addedItemNameById.set(item.id, item.nameId);
+      for (const al of normalizedAdded) {
+        if (!addedItemNameById.has(al.itemId)) throw new StoreStocktakeError("ITEM_NOT_FOUND");
+      }
+
+      for (const al of normalizedAdded) {
+        const variance = al.countedQty === null ? null : al.countedQty - 0;
+        if (variance !== null && variance !== 0 && !(al.reason && al.reason.trim())) {
+          throw new StoreStocktakeError("VARIANCE_NEEDS_REASON");
+        }
+      }
+    }
+
     for (const line of input.lines) {
       const expected = expectedByLineId.get(line.lineId)!;
       const variance = line.countedQty === null ? null : line.countedQty - expected;
@@ -104,6 +169,32 @@ export async function saveStocktakeCounts(input: {
           reason: line.reason ?? null,
         },
       });
+    }
+
+    for (const al of normalizedAdded) {
+      const variance = al.countedQty === null ? null : al.countedQty - 0;
+      try {
+        await tx.storeStocktakeLine.create({
+          data: {
+            stocktakeId: st.id,
+            itemId: al.itemId,
+            variantSku: al.variantSku,
+            productName: addedItemNameById.get(al.itemId)!,
+            expectedQty: 0,
+            countedQty: al.countedQty,
+            varianceQty: variance,
+            soldInPeriodQty: 0,
+            cause: al.cause ?? null,
+            reason: al.reason ?? null,
+            isAdded: true,
+          },
+        });
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+          throw new StoreStocktakeError("DUPLICATE_LINE");
+        }
+        throw e;
+      }
     }
 
     let status = st.status;

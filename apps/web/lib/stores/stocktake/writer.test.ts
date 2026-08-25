@@ -378,6 +378,85 @@ d("store stocktake writer (test bed only)", () => {
         code: "INVALID_REQUEST",
       });
     });
+
+    it("an added line creates a StoreStock row on approval that did not exist before", async () => {
+      const id = await mkStocktake({ lines: [] });
+      await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: [],
+        addedLines: [{ itemId: itemAddedId, variantSku: "", countedQty: 5, reason: "found on shelf" }],
+        submit: false,
+        userId: adminId,
+      });
+      const before = await prisma.storeStock.findFirst({ where: { storeId: seededId(storeId), itemId: seededId(itemAddedId) } });
+      expect(before).toBeNull();
+
+      await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+      const after = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemAddedId) } });
+      expect(Number(after.qty)).toBe(5);
+      expect(Number(after.avgCost)).toBe(0);
+    });
+
+    it("returns ITEM_NOT_FOUND for an added line with a dangling itemId, and writes nothing", async () => {
+      const id = await mkStocktake({ lines: [] });
+      await expect(
+        saveStocktakeCounts({
+          stocktakeId: id,
+          lines: [],
+          addedLines: [{ itemId: bogusItemId, variantSku: "", countedQty: 3, reason: "test" }],
+          submit: false,
+          userId: adminId,
+        }),
+      ).rejects.toMatchObject({ code: "ITEM_NOT_FOUND" });
+
+      const lines = await prisma.storeStocktakeLine.findMany({ where: { stocktakeId: id } });
+      expect(lines).toHaveLength(0);
+    });
+
+    it("returns DUPLICATE_LINE when adding an item already on the document", async () => {
+      const id = await mkStocktake({
+        lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: null }],
+      });
+      await expect(
+        saveStocktakeCounts({
+          stocktakeId: id,
+          lines: [],
+          addedLines: [{ itemId: itemMainId, variantSku: "", countedQty: 5, reason: "duplicate attempt" }],
+          submit: false,
+          userId: adminId,
+        }),
+      ).rejects.toMatchObject({ code: "DUPLICATE_LINE" });
+    });
+
+    it("an added line requires a reason on a non-zero count but never a cause", async () => {
+      const id = await mkStocktake({ lines: [] });
+
+      await expect(
+        saveStocktakeCounts({
+          stocktakeId: id,
+          lines: [],
+          addedLines: [{ itemId: itemAddedId, variantSku: "", countedQty: 5 }],
+          submit: false,
+          userId: adminId,
+        }),
+      ).rejects.toMatchObject({ code: "VARIANCE_NEEDS_REASON" });
+
+      // Same doc, same item — the failed attempt above wrote nothing, so this is not a duplicate.
+      const res = await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: [],
+        addedLines: [{ itemId: itemAddedId, variantSku: "", countedQty: 5, reason: "found on shelf" }],
+        submit: false,
+        userId: adminId,
+      });
+      expect(res.ok).toBe(true);
+
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: id, itemId: itemAddedId } });
+      expect(line.isAdded).toBe(true);
+      expect(Number(line.varianceQty)).toBe(5);
+      expect(line.cause).toBeNull();
+    });
   });
 
   describe("cancelStoreStocktake", () => {
