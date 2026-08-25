@@ -92,6 +92,7 @@ model User {
   assignedStoreId String?
   spgSales      SpgSale[] @relation("SpgSaleSalesman")
   spgSalesCreated SpgSale[] @relation("SpgSaleCreatedBy")
+  konsiTransfers KonsiTransfer[] @relation("KonsiTransferUser")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -317,6 +318,8 @@ model Store {
   storeChangeRequests StoreChangeRequest[]
   vanSales       VanSale[]
   spgSales       SpgSale[]
+  storeStock     StoreStock[]
+  konsiTransfers KonsiTransfer[]
 
   @@index([isActive, name])
 }
@@ -429,6 +432,7 @@ model FieldSalesOrder {
   visit         StoreVisit?           @relation(fields: [visitId], references: [id])
   lines         FieldSalesOrderLine[]
   deliveries    FieldSalesDelivery[]
+  konsiTransfers KonsiTransfer[]
   @@index([status, createdAt])
   @@index([storeId, createdAt])
   @@index([salesmanId, createdAt])
@@ -644,6 +648,55 @@ model FieldReturnResolution {
   @@index([lineId])
 }
 
+model StoreStock {
+  id         String   @id @default(cuid())
+  storeId    String
+  itemId     String
+  variantSku String   @default("")
+  qty        Decimal  @default(0) @db.Decimal(10, 2)
+  avgCost    Decimal  @default(0) @db.Decimal(15, 2)
+  updatedAt  DateTime @updatedAt
+  store      Store    @relation(fields: [storeId], references: [id])
+  item       Item     @relation(fields: [itemId], references: [id])
+
+  @@unique([storeId, itemId, variantSku])
+  @@index([storeId])
+  @@index([itemId])
+}
+
+model KonsiTransfer {
+  id              String              @id @default(cuid())
+  docNo           String              @unique
+  orderId         String
+  storeId         String
+  transferredById String
+  note            String?             @db.Text
+  createdAt       DateTime            @default(now())
+  order           FieldSalesOrder     @relation(fields: [orderId], references: [id])
+  store           Store               @relation(fields: [storeId], references: [id])
+  transferredBy   User                @relation("KonsiTransferUser", fields: [transferredById], references: [id])
+  lines           KonsiTransferLine[]
+
+  @@index([storeId, createdAt])
+  @@index([orderId])
+}
+
+model KonsiTransferLine {
+  id          String        @id @default(cuid())
+  transferId  String
+  orderLineId String?
+  itemId      String
+  variantSku  String        @default("")
+  productName String
+  qty         Decimal       @db.Decimal(10, 2)
+  unitCost    Decimal       @db.Decimal(15, 2)
+  transfer    KonsiTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item        Item          @relation(fields: [itemId], references: [id])
+
+  @@index([transferId])
+  @@index([itemId])
+}
+
 enum ReserveSource {
   JUBELIO
   FIELD_SALES
@@ -763,6 +816,8 @@ model Item {
   vanSaleLines     VanSaleLine[]
   vanReconcileLines VanReconcileLine[]
   spgSaleLines     SpgSaleLine[]
+  storeStock       StoreStock[]
+  konsiTransferLines KonsiTransferLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -1983,6 +2038,7 @@ enum DocType {
   SPGSALE
   DELIVERY
   FIELDRET
+  KONSITRF
 }
 
 enum OpnameScope {
