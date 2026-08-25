@@ -32,6 +32,7 @@ export type FieldReturnActionResult =
         | "DUPLICATE_LINE"
         | "NO_VARIANCE"
         | "RESOLUTION_DIRECTION_MISMATCH"
+        | "SALESMAN_BEARS_NOT_ALLOWED"
         | "UNRESOLVED_LINES"
         | "PRICE_NOT_AVAILABLE"
         | "ALREADY_APPROVED"
@@ -64,6 +65,8 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
   MISSING_RESI: "INVALID_REQUEST",
   MISSING_EXPEDITION_NAME: "INVALID_REQUEST",
   MISSING_REASON_NOTE: "INVALID_REQUEST",
+  MISSING_NOTA_PHOTO: "INVALID_REQUEST",
+  MISSING_TRANSPORT: "INVALID_REQUEST",
   INVALID_STATE: "INVALID_STATE",
   SPLIT_MISMATCH: "SPLIT_MISMATCH",
   UNKNOWN_LINE: "UNKNOWN_LINE",
@@ -72,6 +75,14 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
   DUPLICATE_LINE: "DUPLICATE_LINE",
   NO_VARIANCE: "NO_VARIANCE",
   RESOLUTION_DIRECTION_MISMATCH: "RESOLUTION_DIRECTION_MISMATCH",
+  /*
+   * NOT the same bucket as RESOLUTION_DIRECTION_MISMATCH or INVALID_REQUEST: this is a rule
+   * refusal specific to who raised the return (no salesman exists to bear the shortfall on an
+   * ADMIN-origin retur), not a malformed payload or a shortage/surplus direction error. Kept as
+   * its own result code so the resolution card can tell an admin "that resolution does not
+   * apply here" instead of "your request was invalid."
+   */
+  SALESMAN_BEARS_NOT_ALLOWED: "SALESMAN_BEARS_NOT_ALLOWED",
   UNRESOLVED_LINES: "UNRESOLVED_LINES",
 };
 
