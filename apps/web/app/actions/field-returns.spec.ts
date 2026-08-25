@@ -11,6 +11,7 @@ const {
   mockReceive,
   mockResolve,
   mockApprove,
+  mockCreateFieldReturn,
   mockRevalidatePath,
   mockFindLine,
   mockUpdateMany,
@@ -22,6 +23,7 @@ const {
   mockReceive: vi.fn(),
   mockResolve: vi.fn(),
   mockApprove: vi.fn(),
+  mockCreateFieldReturn: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockFindLine: vi.fn(),
   mockUpdateMany: vi.fn(),
@@ -37,6 +39,7 @@ vi.mock("@/lib/rbac", async (importActual) => {
 vi.mock("@/lib/field-sales/retur/receive-writer", () => ({ receiveFieldReturn: mockReceive }));
 vi.mock("@/lib/field-sales/retur/resolve-writer", () => ({ resolveFieldReturnLine: mockResolve }));
 vi.mock("@/lib/field-sales/retur/approve-writer", () => ({ approveFieldReturn: mockApprove }));
+vi.mock("@/lib/field-sales/retur/writer", () => ({ createFieldReturn: mockCreateFieldReturn }));
 vi.mock("@/lib/field-sales/retur/pricing", () => ({
   listPriceCandidates: mockListPriceCandidates,
   resolveLinePrice: mockResolveLinePrice,
@@ -47,7 +50,13 @@ vi.mock("@elorae/db", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
 
 import { FieldReturnError } from "@/lib/field-sales/retur/errors";
-import { receiveAction, resolveAction, approveAction, setLinePriceAction } from "./field-returns";
+import {
+  receiveAction,
+  resolveAction,
+  approveAction,
+  setLinePriceAction,
+  raiseAdminReturnAction,
+} from "./field-returns";
 
 describe("field retur receiving actions (unit — writers mocked)", () => {
   beforeEach(() => {
@@ -56,6 +65,7 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     mockReceive.mockReset();
     mockResolve.mockReset();
     mockApprove.mockReset();
+    mockCreateFieldReturn.mockReset();
     mockRevalidatePath.mockReset();
     mockFindLine.mockReset();
     mockUpdateMany.mockReset();
@@ -456,6 +466,162 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(mockApprove).toHaveBeenCalledWith({ returnId: "r1", approvedById: "user-1" });
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/r1");
+    });
+  });
+
+  describe("raiseAdminReturnAction", () => {
+    const oneLine = [{ itemId: "item-1", variantSku: "", qty: 3, reason: "UNSOLD" as const }];
+
+    it("returns FORBIDDEN without field_returns:manage and never calls the writer", async () => {
+      mockHasPermission.mockReturnValue(false);
+      const res = await raiseAdminReturnAction({ storeId: "store-1", lines: oneLine });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockCreateFieldReturn).not.toHaveBeenCalled();
+    });
+
+    /*
+     * A test that only mocks hasPermission to return true for one code does not reproduce a
+     * real admin session — a real ADMIN role is granted the '*' wildcard in code, which
+     * satisfies hasPermission for ANY code. Pinning the exact code asked for is what actually
+     * proves the gate checks field_returns:manage and not something else that a wildcard would
+     * paper over.
+     */
+    it("checks specifically for field_returns:manage, not some other code", async () => {
+      mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "field_returns:manage");
+      mockCreateFieldReturn.mockResolvedValue({ returnId: "ret-1", docNo: "FIELDRET/2026/08/0001" });
+      const res = await raiseAdminReturnAction({ storeId: "store-1", lines: oneLine });
+      expect(res.ok).toBe(true);
+      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "field_returns:manage");
+    });
+
+    it("returns FORBIDDEN when auth() resolves to a session with no user id", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockAuth.mockResolvedValue({ user: null });
+      const res = await raiseAdminReturnAction({ storeId: "store-1", lines: oneLine });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockCreateFieldReturn).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for an empty storeId without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await raiseAdminReturnAction({ storeId: "", lines: oneLine });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockCreateFieldReturn).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for an empty lines array without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await raiseAdminReturnAction({ storeId: "store-1", lines: [] });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockCreateFieldReturn).not.toHaveBeenCalled();
+    });
+
+    /*
+     * A malformed line (negative qty here) must come back as INVALID_REQUEST — a shape error —
+     * never a domain/state code, and never even reach the writer. Mapping a shape problem onto
+     * a state refusal would misdescribe what actually went wrong to whoever debugs it.
+     */
+    it("returns INVALID_REQUEST for a line with a non-positive qty without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await raiseAdminReturnAction({
+        storeId: "store-1",
+        lines: [{ itemId: "item-1", variantSku: "", qty: -1, reason: "UNSOLD" }],
+      });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockCreateFieldReturn).not.toHaveBeenCalled();
+    });
+
+    it("returns INVALID_REQUEST for a line with an unrecognised reason without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await raiseAdminReturnAction({
+        storeId: "store-1",
+        lines: [{ itemId: "item-1", variantSku: "", qty: 1, reason: "NOT_A_REAL_REASON" as unknown as "UNSOLD" }],
+      });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockCreateFieldReturn).not.toHaveBeenCalled();
+    });
+
+    it("maps a writer STORE_NOT_FOUND onto NOT_FOUND", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockCreateFieldReturn.mockRejectedValue(new FieldReturnError("STORE_NOT_FOUND"));
+      const res = await raiseAdminReturnAction({ storeId: "no-such-store", lines: oneLine });
+      expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+
+    it("maps a writer ITEM_NOT_FOUND onto NOT_FOUND", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockCreateFieldReturn.mockRejectedValue(new FieldReturnError("ITEM_NOT_FOUND"));
+      const res = await raiseAdminReturnAction({ storeId: "store-1", lines: oneLine });
+      expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+
+    it("maps an unknown throw from the writer onto ERROR rather than leaking it", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockCreateFieldReturn.mockRejectedValue(new Error("boom"));
+      const res = await raiseAdminReturnAction({ storeId: "store-1", lines: oneLine });
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+    });
+
+    /*
+     * The same bug this file shipped once: guard()'s auth() call sits inside the same
+     * try/catch as the writer, and every "unknown throw" case above rejects the WRITER mock,
+     * not auth() itself. This is the test that actually exercises the unwrapped call site —
+     * a corrupted session cookie or a DB hiccup during the session lookup must not escape as
+     * an uncaught rejection.
+     */
+    it("maps auth() itself throwing onto ERROR rather than letting it escape uncaught", async () => {
+      mockAuth.mockRejectedValue(new Error("jwt decrypt failed"));
+      const res = await raiseAdminReturnAction({ storeId: "store-1", lines: oneLine });
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+      expect(mockCreateFieldReturn).not.toHaveBeenCalled();
+    });
+
+    /*
+     * The whole point of this action: an admin at the office raises a store return with no
+     * nota photo and no transport mode at all (never sent as input), and it still succeeds —
+     * origin is forced to ADMIN server-side, not trusted from the caller. Also pins that the
+     * store detail page revalidates, since Task 4 puts the raise flow there; a revalidate that
+     * skips it is a silent no-op the moment that UI lands.
+     */
+    it("raises an ADMIN-origin return at a KONSI store with no nota photo and no transport, and revalidates list, detail, and store pages", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockCreateFieldReturn.mockResolvedValue({ returnId: "ret-1", docNo: "FIELDRET/2026/08/0001" });
+      const res = await raiseAdminReturnAction({ storeId: "konsi-store-1", lines: oneLine, note: "gudang minta retur" });
+      expect(res).toEqual({ ok: true, returnId: "ret-1", docNo: "FIELDRET/2026/08/0001" });
+      expect(mockCreateFieldReturn).toHaveBeenCalledWith({
+        storeId: "konsi-store-1",
+        raisedById: "user-1",
+        origin: "ADMIN",
+        note: "gudang minta retur",
+        lines: oneLine,
+      });
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/ret-1");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/stores/konsi-store-1");
+    });
+
+    it("defaults note to null when omitted", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockCreateFieldReturn.mockResolvedValue({ returnId: "ret-2", docNo: "FIELDRET/2026/08/0002" });
+      await raiseAdminReturnAction({ storeId: "store-1", lines: oneLine });
+      expect(mockCreateFieldReturn).toHaveBeenCalledWith(expect.objectContaining({ note: null }));
+    });
+
+    /*
+     * Bookkeeping never refuses to record physical reality because the ledger disagrees — the
+     * writer's own DB-backed spec (admin-origin.test.ts) pins that a receipt against an
+     * already-negative StoreStock row is accepted. This unit test proves the action layer adds
+     * no extra guard on top of that: it forwards to the writer and passes through whatever the
+     * writer decides, without itself second-guessing the store's stock state.
+     */
+    it("succeeds for a raise against a store whose StoreStock row is already negative", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockCreateFieldReturn.mockResolvedValue({ returnId: "ret-neg", docNo: "FIELDRET/2026/08/0003" });
+      const res = await raiseAdminReturnAction({
+        storeId: "konsi-store-negative-stock",
+        lines: [{ itemId: "item-negative-stock", variantSku: "", qty: 5, reason: "UNSOLD" }],
+      });
+      expect(res).toEqual({ ok: true, returnId: "ret-neg", docNo: "FIELDRET/2026/08/0003" });
     });
   });
 
