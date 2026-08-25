@@ -1,11 +1,27 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createFieldReturn } from "./writer";
 import { receiveFieldReturn } from "./receive-writer";
 
+vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
+
+/**
+ * Reads `FIELD_RETURN_MISMATCH` rows scoped to one seeded retur, matched in JS on
+ * `metadata.returnId` — this MariaDB adapter's JSON-path filtering is unreliable, and this
+ * spec shares the dev DB with real notification rows, so a global count would prove nothing.
+ */
+async function mismatchNotificationsFor(returnId: string) {
+  const recent = await prisma.adminNotification.findMany({
+    where: { category: "FIELD_RETURN_MISMATCH" },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+  return recent.filter((n) => (n.metadata as { returnId?: string } | null)?.returnId === returnId);
+}
 
 d("receiveFieldReturn (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
@@ -78,6 +94,12 @@ d("receiveFieldReturn (test bed only)", () => {
   });
 
   afterEach(async () => {
+    if (returnId) {
+      const notifications = await mismatchNotificationsFor(returnId);
+      if (notifications.length) {
+        await prisma.adminNotification.deleteMany({ where: { id: { in: notifications.map((n) => n.id) } } });
+      }
+    }
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
     await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -124,6 +146,45 @@ d("receiveFieldReturn (test bed only)", () => {
       ],
     });
     expect(res.status).toBe("MISMATCH_PENDING_RESOLUTION");
+  });
+
+  it("a mismatched receive writes a FIELD_RETURN_MISMATCH admin notification naming the docNo and mismatch count", async () => {
+    const before = await mismatchNotificationsFor(returnId);
+    expect(before).toHaveLength(0);
+
+    await receiveFieldReturn({
+      returnId,
+      receivedById: adminId,
+      counts: [
+        { lineId: lineAId, receivedQty: 1, sellableQty: 1, rejectedQty: 0 },
+        { lineId: lineBId, receivedQty: 2, sellableQty: 2, rejectedQty: 0 },
+      ],
+    });
+
+    const retDoc = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: seededId(returnId) } });
+    const after = await mismatchNotificationsFor(returnId);
+    expect(after).toHaveLength(1);
+    expect(after[0].severity).toBe("WARNING");
+    expect(after[0].title).toContain(retDoc.docNo);
+    expect(after[0].message).toContain(retDoc.docNo);
+    expect(after[0].message).toContain("1");
+    expect(after[0].metadata).toMatchObject({
+      returnId,
+      docNo: retDoc.docNo,
+      storeId,
+      mismatchedLineCount: 1,
+    });
+  });
+
+  it("a clean count writes no FIELD_RETURN_MISMATCH admin notification", async () => {
+    await receiveFieldReturn({
+      returnId,
+      receivedById: adminId,
+      counts: cleanCounts(),
+    });
+
+    const after = await mismatchNotificationsFor(returnId);
+    expect(after).toHaveLength(0);
   });
 
   it("accepts an ALL-ZERO count — the lost-sack case", async () => {

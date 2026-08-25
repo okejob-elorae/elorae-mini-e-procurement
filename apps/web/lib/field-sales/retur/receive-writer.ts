@@ -1,4 +1,6 @@
+import type { AdminNotification } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { FieldReturnError } from "./errors";
 
 type ReceiveCount = { lineId: string; receivedQty: number; sellableQty: number; rejectedQty: number };
@@ -23,10 +25,12 @@ export async function receiveFieldReturn(input: {
 }): Promise<{ ok: true; status: "PENDING_APPROVAL" | "MISMATCH_PENDING_RESOLUTION" }> {
   for (const c of input.counts) assertCountShape(c);
 
-  return runSerializable(async (tx) => {
+  let notification: AdminNotification | null = null;
+
+  const result = await runSerializable(async (tx) => {
     const ret = await tx.fieldReturn.findUnique({
       where: { id: input.returnId },
-      select: { id: true, status: true, lines: { select: { id: true, qty: true } } },
+      select: { id: true, docNo: true, storeId: true, status: true, lines: { select: { id: true, qty: true } } },
     });
     if (!ret) throw new FieldReturnError("NOT_FOUND");
     if (ret.status !== "PENDING_WAREHOUSE_RECEIVING") throw new FieldReturnError("INVALID_STATE");
@@ -40,22 +44,44 @@ export async function receiveFieldReturn(input: {
       if (!byLineId.has(l.id)) throw new FieldReturnError("MISSING_LINE");
     }
 
-    let anyVariance = false;
+    let mismatchedLineCount = 0;
     for (const l of ret.lines) {
       const c = byLineId.get(l.id)!;
-      if (c.receivedQty !== l.qty) anyVariance = true;
+      if (c.receivedQty !== l.qty) mismatchedLineCount += 1;
       await tx.fieldReturnLine.update({
         where: { id: l.id },
         data: { receivedQty: c.receivedQty, sellableQty: c.sellableQty, rejectedQty: c.rejectedQty },
       });
     }
 
-    const status = anyVariance ? "MISMATCH_PENDING_RESOLUTION" : "PENDING_APPROVAL";
+    const status: "MISMATCH_PENDING_RESOLUTION" | "PENDING_APPROVAL" =
+      mismatchedLineCount > 0 ? "MISMATCH_PENDING_RESOLUTION" : "PENDING_APPROVAL";
     await tx.fieldReturn.update({
       where: { id: ret.id },
       data: { status, receivedAt: new Date(), receivedById: input.receivedById },
     });
 
+    if (status === "MISMATCH_PENDING_RESOLUTION") {
+      notification = await tx.adminNotification.create({
+        data: {
+          category: "FIELD_RETURN_MISMATCH",
+          severity: "WARNING",
+          title: `Retur ${ret.docNo} has a count mismatch`,
+          message: `${mismatchedLineCount} line${mismatchedLineCount === 1 ? "" : "s"} on retur ${ret.docNo} disagree with the warehouse count and need resolution.`,
+          metadata: { returnId: ret.id, docNo: ret.docNo, storeId: ret.storeId, mismatchedLineCount },
+        },
+      });
+    }
+
     return { ok: true as const, status };
   });
+
+  /**
+   * Outside the transaction on purpose — `fanOutAdminNotification` performs FCM network calls
+   * and must never run inside one — and not awaited, because the warehouse operator who just
+   * submitted the count should not wait on a bell ping for the document that already committed.
+   * The seam swallows its own failures, so there is no outcome here for this function to report.
+   */
+  if (notification) void fanOutAdminNotification(notification);
+  return result;
 }

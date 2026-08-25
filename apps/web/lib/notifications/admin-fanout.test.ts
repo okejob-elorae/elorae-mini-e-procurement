@@ -73,6 +73,9 @@ describe("fanOutAdminNotification", () => {
 
     await fanOutAdminNotification({ ...BASE, category: "TAX_INVOICE_PENDING" });
     expect(mockGetUsers).toHaveBeenCalledWith("tax_invoices:manage");
+
+    await fanOutAdminNotification({ ...BASE, category: "FIELD_RETURN_MISMATCH" });
+    expect(mockGetUsers).toHaveBeenCalledWith("field_returns:manage");
   });
 
   it("sends the category as the type and carries the source id in data", async () => {
