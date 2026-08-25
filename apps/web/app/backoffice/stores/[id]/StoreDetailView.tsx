@@ -17,12 +17,15 @@ import {
   Phone,
   ShoppingBag,
   Store,
+  Undo2,
   User as UserIcon,
 } from "lucide-react";
 import type { StoreListItem } from "@/lib/stores/queries";
 import type { StoreSentItemRow } from "@/lib/field-sales/queries";
 import type { StoreStocktakeStatusValue } from "@/lib/stores/stocktake/queries";
 import { createAction as createStocktakeAction } from "@/app/actions/store-stocktakes";
+import { raiseAdminReturnAction } from "@/app/actions/field-returns";
+import { FIELD_RETURN_REASONS, type FieldReturnLineInput, type FieldReturnReasonInput } from "@/lib/field-sales/retur/types";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +36,23 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -93,7 +112,18 @@ type Visit = {
 type StockCardProps = {
   rows: StoreStockCardData["rows"];
   negativeCount: number;
+  inTransitAdminReturnQty: number;
   movements: SerializedStockMovement[];
+};
+
+/** One row of the admin return picker's draft state, keyed by `${itemId}::${variantSku}`. */
+type RaiseLineDraft = {
+  itemId: string;
+  variantSku: string;
+  itemName: string;
+  qtyRaw: string;
+  reason: FieldReturnReasonInput;
+  reasonNote: string;
 };
 
 type StocktakeHistoryRow = {
@@ -115,6 +145,7 @@ type StocktakesCardProps = {
 type Props = {
   store: StoreListItem;
   canEdit: boolean;
+  canManageFieldReturns: boolean;
   visits: Visit[];
   orders: OrderRow[];
   sentItems: StoreSentItemRow[];
@@ -198,6 +229,21 @@ function groupSentItemsByArticle(
   return groups;
 }
 
+function raiseLineKey(itemId: string, variantSku: string): string {
+  return `${itemId}::${variantSku}`;
+}
+
+/**
+ * A non-negative integer only — `FieldReturnLine.qty` is an `Int` column. `null` means invalid,
+ * never silently rounded or clamped, so a garbled entry blocks submit instead of being dropped.
+ */
+function parseRaiseQty(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const n = parseInt(trimmed, 10);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
 function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
@@ -207,7 +253,17 @@ function DetailField({ label, children }: { label: string; children: React.React
   );
 }
 
-export function StoreDetailView({ store, canEdit, visits, orders, sentItems, stockCard, stocktakes, pendingChange }: Props) {
+export function StoreDetailView({
+  store,
+  canEdit,
+  canManageFieldReturns,
+  visits,
+  orders,
+  sentItems,
+  stockCard,
+  stocktakes,
+  pendingChange,
+}: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
   const tDetail = useTranslations("stores.detail");
@@ -216,6 +272,9 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, sto
   const tOrders = useTranslations("stores.orders");
   const tSentItems = useTranslations("stores.sentItems");
   const tStocktake = useTranslations("stores.stocktake");
+  const tAdminReturn = useTranslations("stores.adminReturn");
+  const tReturReason = useTranslations("fieldReturns.reason");
+  const tCommon = useTranslations("common");
   const tST = useTranslations("storeStocktakes");
   const tFso = useTranslations("fieldSalesOrders");
   const router = useRouter();
@@ -226,6 +285,10 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, sto
     label: string;
     photos: Array<{ id: string; url: string; caption: string | null; capturedAtIso: string }>;
   } | null>(null);
+  const [raiseOpen, setRaiseOpen] = useState(false);
+  const [raiseLines, setRaiseLines] = useState<Map<string, RaiseLineDraft>>(new Map());
+  const [raiseNote, setRaiseNote] = useState("");
+  const [raising, startRaiseTransition] = useTransition();
 
   const totalVisits = visits.length;
   const lastVisit = visits[0];
@@ -242,6 +305,106 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, sto
         if (!result.ok) toast.error(tST(`err.${result.code}`));
       } catch {
         toast.error(tST("err.ERROR"));
+      }
+    });
+  }
+
+  function resetRaiseForm(): void {
+    setRaiseLines(new Map());
+    setRaiseNote("");
+  }
+
+  function openRaiseDialog(): void {
+    resetRaiseForm();
+    setRaiseOpen(true);
+  }
+
+  function closeRaiseDialog(open: boolean): void {
+    if (raising) return;
+    setRaiseOpen(open);
+    if (!open) resetRaiseForm();
+  }
+
+  function setRaiseLineQty(row: StockCardProps["rows"][number], qtyRaw: string): void {
+    const key = raiseLineKey(row.itemId, row.variantSku);
+    setRaiseLines((prev) => {
+      const next = new Map(prev);
+      if (qtyRaw.trim() === "") {
+        next.delete(key);
+        return next;
+      }
+      const existing = prev.get(key);
+      next.set(key, {
+        itemId: row.itemId,
+        variantSku: row.variantSku,
+        itemName: row.itemName,
+        qtyRaw,
+        reason: existing?.reason ?? "DAMAGED",
+        reasonNote: existing?.reasonNote ?? "",
+      });
+      return next;
+    });
+  }
+
+  function setRaiseLineReason(key: string, reason: FieldReturnReasonInput): void {
+    setRaiseLines((prev) => {
+      const existing = prev.get(key);
+      if (!existing) return prev;
+      const next = new Map(prev);
+      next.set(key, { ...existing, reason, reasonNote: reason === "OTHER" ? existing.reasonNote : "" });
+      return next;
+    });
+  }
+
+  function setRaiseLineReasonNote(key: string, reasonNote: string): void {
+    setRaiseLines((prev) => {
+      const existing = prev.get(key);
+      if (!existing) return prev;
+      const next = new Map(prev);
+      next.set(key, { ...existing, reasonNote });
+      return next;
+    });
+  }
+
+  const raiseLineArr = Array.from(raiseLines.values());
+  /**
+   * A garbled qty (anything parseRaiseQty refuses) blocks submit rather than being silently
+   * dropped — the operator must fix or clear it, never have it vanish unnoticed.
+   */
+  const hasInvalidRaiseQty = raiseLineArr.some((l) => parseRaiseQty(l.qtyRaw) === null);
+  const includedRaiseLines = raiseLineArr.filter((l) => (parseRaiseQty(l.qtyRaw) ?? 0) > 0);
+  const hasRaiseOtherWithoutNote = includedRaiseLines.some(
+    (l) => l.reason === "OTHER" && l.reasonNote.trim() === "",
+  );
+  const canSubmitRaise =
+    includedRaiseLines.length > 0 && !hasInvalidRaiseQty && !hasRaiseOtherWithoutNote && !raising;
+
+  function submitRaise(): void {
+    if (!canSubmitRaise) return;
+    startRaiseTransition(async () => {
+      try {
+        const lines: FieldReturnLineInput[] = includedRaiseLines.map((l) => ({
+          itemId: l.itemId,
+          variantSku: l.variantSku,
+          qty: parseRaiseQty(l.qtyRaw) as number,
+          reason: l.reason,
+          ...(l.reason === "OTHER" ? { reasonNote: l.reasonNote.trim() } : {}),
+        }));
+        const result = await raiseAdminReturnAction({
+          storeId: store.id,
+          lines,
+          note: raiseNote.trim() || undefined,
+        });
+        if (result.ok) {
+          toast.success(tAdminReturn("success", { docNo: result.docNo }));
+          setRaiseOpen(false);
+          resetRaiseForm();
+          router.push(`/backoffice/field-returns/${result.returnId}`);
+          return;
+        }
+        toast.error(tAdminReturn(`err.${result.code}`));
+      } catch {
+        toast.error(tAdminReturn("err.ERROR"));
       }
     });
   }
@@ -607,8 +770,28 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, sto
         <StoreStockCard
           rows={stockCard.rows}
           negativeCount={stockCard.negativeCount}
+          inTransitAdminReturnQty={stockCard.inTransitAdminReturnQty}
           movements={stockCard.movements}
         />
+      )}
+
+      {store.termsType === "KONSI" && stockCard && canManageFieldReturns && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Undo2 className="h-4 w-4" />
+              {tAdminReturn("cardTitle")}
+            </CardTitle>
+            <Button size="sm" disabled={stockCard.rows.length === 0} onClick={openRaiseDialog}>
+              {tAdminReturn("raiseButton")}
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              {stockCard.rows.length === 0 ? tAdminReturn("emptyStock") : tAdminReturn("description")}
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {store.termsType === "KONSI" && stocktakes && (
@@ -716,6 +899,119 @@ export function StoreDetailView({ store, canEdit, visits, orders, sentItems, sto
               {lightbox.caption && <p className="text-sm text-muted-foreground">{lightbox.caption}</p>}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={raiseOpen} onOpenChange={closeRaiseDialog}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{tAdminReturn("dialogTitle")}</DialogTitle>
+            <DialogDescription>{tAdminReturn("dialogDescription")}</DialogDescription>
+          </DialogHeader>
+
+          {(stockCard?.rows ?? []).length === 0 ? (
+            <div className="text-center py-8">
+              <Undo2 className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">{tAdminReturn("emptyStock")}</p>
+            </div>
+          ) : (
+            <div className="overflow-auto max-h-96 rounded-md border">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-background">
+                  <TableRow>
+                    <TableHead>{tAdminReturn("colProduct")}</TableHead>
+                    <TableHead>{tAdminReturn("colVariant")}</TableHead>
+                    <TableHead className="text-right">{tAdminReturn("colCurrentQty")}</TableHead>
+                    <TableHead className="w-28">{tAdminReturn("colReturnQty")}</TableHead>
+                    <TableHead className="min-w-[200px]">{tAdminReturn("colReason")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(stockCard?.rows ?? []).map((row) => {
+                    const key = raiseLineKey(row.itemId, row.variantSku);
+                    const draft = raiseLines.get(key);
+                    const invalidQty = draft !== undefined && parseRaiseQty(draft.qtyRaw) === null;
+                    const rowLabel = row.variantSku ? `${row.itemName} ${row.variantSku}` : row.itemName;
+                    return (
+                      <TableRow key={key}>
+                        <TableCell className="text-sm">{row.itemName}</TableCell>
+                        <TableCell className="font-mono text-xs">{row.variantSku || "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">{row.qty}</TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            step={1}
+                            disabled={raising}
+                            aria-label={`${tAdminReturn("colReturnQty")} — ${rowLabel}`}
+                            className="w-20 text-right tabular-nums"
+                            value={draft?.qtyRaw ?? ""}
+                            onChange={(e) => setRaiseLineQty(row, e.target.value)}
+                          />
+                          {invalidQty && <p className="mt-1 text-xs text-destructive">{tAdminReturn("qtyInvalid")}</p>}
+                        </TableCell>
+                        <TableCell>
+                          {draft && (
+                            <div className="space-y-1.5">
+                              <Select
+                                value={draft.reason}
+                                disabled={raising}
+                                onValueChange={(v) => setRaiseLineReason(key, v as FieldReturnReasonInput)}
+                              >
+                                <SelectTrigger className="w-full" aria-label={`${tAdminReturn("colReason")} — ${rowLabel}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {FIELD_RETURN_REASONS.map((reason) => (
+                                    <SelectItem key={reason} value={reason}>
+                                      {tReturReason(reason)}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {draft.reason === "OTHER" && (
+                                <Input
+                                  placeholder={tAdminReturn("reasonNotePlaceholder")}
+                                  disabled={raising}
+                                  aria-label={`${tAdminReturn("reasonNotePlaceholder")} — ${rowLabel}`}
+                                  value={draft.reasonNote}
+                                  onChange={(e) => setRaiseLineReasonNote(key, e.target.value)}
+                                />
+                              )}
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label htmlFor="admin-return-note" className="text-sm font-medium">
+              {tAdminReturn("noteLabel")}
+            </label>
+            <Textarea
+              id="admin-return-note"
+              rows={2}
+              disabled={raising}
+              placeholder={tAdminReturn("notePlaceholder")}
+              value={raiseNote}
+              onChange={(e) => setRaiseNote(e.target.value)}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" disabled={raising} onClick={() => closeRaiseDialog(false)}>
+              {tCommon("cancel")}
+            </Button>
+            <Button disabled={!canSubmitRaise} onClick={submitRaise}>
+              {raising ? tAdminReturn("submitting") : tAdminReturn("submit")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

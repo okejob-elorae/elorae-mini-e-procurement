@@ -25,6 +25,14 @@ export type SerializedStockMovement = Omit<StoreStockCardData["movements"][numbe
 type Props = {
   rows: StoreStockCardData["rows"];
   negativeCount: number;
+  /**
+   * Units claimed by an ADMIN-origin return that the warehouse has not yet received —
+   * `StoreStock` only decrements for that origin at receipt, so this ledger still counts them
+   * as on-hand while they are physically on a truck. Display only — never netted out of this
+   * card's own rows or of the stocktake's `expectedQty`, both of which read the ledger as-is
+   * by design.
+   */
+  inTransitAdminReturnQty: number;
   movements: SerializedStockMovement[];
 };
 
@@ -43,7 +51,7 @@ const MOVEMENT_BADGE_VARIANT: Record<StoreStockMovementKind, "default" | "second
   RETUR_OUT: "secondary",
 };
 
-export function StoreStockCard({ rows, negativeCount, movements }: Props) {
+export function StoreStockCard({ rows, negativeCount, inTransitAdminReturnQty, movements }: Props) {
   const t = useTranslations("stores.stockCard");
 
   return (
@@ -61,7 +69,13 @@ export function StoreStockCard({ rows, negativeCount, movements }: Props) {
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {inTransitAdminReturnQty > 0 && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <p className="text-xs">{t("inTransitNote", { qty: inTransitAdminReturnQty })}</p>
+            </div>
+          )}
           {rows.length === 0 ? (
             <div className="text-center py-8">
               <Layers className="h-10 w-10 text-muted-foreground mx-auto mb-3" />

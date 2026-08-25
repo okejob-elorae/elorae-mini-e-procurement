@@ -6,6 +6,7 @@ import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
 import { getStoreOrderSummary, getStoreSentItems } from "@/lib/field-sales/queries";
 import { getStoreStockCard } from "@/lib/inventory/store-stock-card";
 import { listStoreStocktakes } from "@/lib/stores/stocktake/queries";
+import { getInTransitAdminReturnQty } from "@/lib/field-sales/retur/queries";
 import { StoreDetailView } from "./StoreDetailView";
 
 const STOCKTAKE_HISTORY_PAGE_SIZE = 10;
@@ -22,12 +23,14 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
   if (!store) notFound();
 
   const canEdit = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
+  const canManageFieldReturns = hasPermission(perms, PERMISSIONS.FIELD_RETURNS_MANAGE);
   const visits = await listVisitsForStore(store.id, 50);
   const photosByVisit = await listVisitPhotosForVisits(visits.map((v) => v.id));
   const pending = await getPendingStoreChangeRequest(store.id);
   const orders = await getStoreOrderSummary(store.id);
   const sentItems = await getStoreSentItems(store.id);
   const stockCard = store.termsType === "KONSI" ? await getStoreStockCard(store.id) : null;
+  const inTransitAdminReturnQty = store.termsType === "KONSI" ? await getInTransitAdminReturnQty(store.id) : 0;
   const stocktakes =
     store.termsType === "KONSI"
       ? await listStoreStocktakes({ storeId: store.id, page: 1, perPage: STOCKTAKE_HISTORY_PAGE_SIZE })
@@ -47,6 +50,7 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
     <StoreDetailView
       store={store}
       canEdit={canEdit}
+      canManageFieldReturns={canManageFieldReturns}
       pendingChange={pending ? { requestId: pending.id, requestedByLabel: pending.requestedByLabel, proposed: pending.proposed, old: pending.old } : null}
       orders={orders}
       sentItems={sentItems}
@@ -55,6 +59,7 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
           ? {
               rows: stockCard.rows,
               negativeCount: stockCard.negativeCount,
+              inTransitAdminReturnQty,
               movements: stockCard.movements.map(({ occurredAt, ...m }) => ({ ...m, occurredAtIso: occurredAt.toISOString() })),
             }
           : null

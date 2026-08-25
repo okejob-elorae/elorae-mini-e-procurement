@@ -2154,6 +2154,7 @@
       "elsewhere": "Main: {main} · Van: {van}",
       "negativeBadge": "Negative stock",
       "negativeNote": "A negative row is absorbed automatically by the next konsi transfer to this store. There is no manual correction path in this slice.",
+      "inTransitNote": "{qty} unit(s) are on an admin return the warehouse has not received yet — this store's stock still counts those units until the warehouse actually receives them.",
       "movementsTitle": "Stock Movements",
       "movementsEmpty": "No stock movements yet",
       "colDate": "Date",
@@ -2173,6 +2174,32 @@
       "colCountedAt": "Count Date",
       "colStatus": "Status",
       "colLines": "Lines"
+    },
+    "adminReturn": {
+      "cardTitle": "Admin Return to Warehouse",
+      "description": "Raise a pull-back of this store's stock to the main warehouse straight from the office. The nota photo and shipping details are filled in later, once the goods actually ship.",
+      "emptyStock": "This store has no consignment stock to return yet.",
+      "raiseButton": "Raise Return",
+      "dialogTitle": "Raise Admin Return",
+      "dialogDescription": "Pick the items and enter the quantities pulled back to the warehouse. The return will wait for warehouse receiving just like a regular field return.",
+      "colProduct": "Product",
+      "colVariant": "Variant",
+      "colCurrentQty": "Current Stock",
+      "colReturnQty": "Return Qty",
+      "colReason": "Reason",
+      "qtyInvalid": "Enter a valid, non-negative whole number.",
+      "reasonNotePlaceholder": "Explain the reason for the return…",
+      "noteLabel": "Note (optional)",
+      "notePlaceholder": "Write an additional note for this return…",
+      "submit": "Raise",
+      "submitting": "Submitting…",
+      "success": "Admin return {docNo} was raised successfully.",
+      "err": {
+        "FORBIDDEN": "You do not have permission to raise an admin return.",
+        "INVALID_REQUEST": "The submitted data is invalid. Reload the page and try again.",
+        "NOT_FOUND": "The store was not found or is no longer active.",
+        "ERROR": "Something went wrong. Try again."
+      }
     }
   },
   "pwa": {
@@ -2526,19 +2553,26 @@
   },
   "fieldReturns": {
     "pageTitle": "Field Returns",
-    "subtitle": "Store returns raised by field salesmen, awaiting warehouse receiving",
+    "subtitle": "Store returns raised by field salesmen or admins, awaiting warehouse receiving",
     "search": "Search",
     "searchPlaceholder": "Search by doc number or store name",
     "reset": "Reset",
     "cardTitle": "Return List",
     "colDocNo": "Doc No.",
     "colStore": "Store",
+    "colOrigin": "Origin",
     "colRaisedAt": "Raised At",
     "colTransport": "Transport",
     "colLineCount": "Lines",
     "colStatus": "Status",
     "empty": "No field returns yet.",
     "emptyFiltered": "No field returns match this search.",
+    "originFilterLabel": "Origin",
+    "originFilterAll": "All Origins",
+    "origin": {
+      "FIELD": "Field",
+      "ADMIN": "Admin"
+    },
     "transport": {
       "SELF_CARRY": "Self Carry",
       "EXPEDITION": "Expedition"

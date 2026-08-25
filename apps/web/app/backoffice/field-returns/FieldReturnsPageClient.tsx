@@ -4,12 +4,19 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Search, Undo2 } from "lucide-react";
-import type { FieldReturnRow, FieldReturnStatus } from "@/lib/field-sales/retur/queries";
+import type { FieldReturnOrigin, FieldReturnRow, FieldReturnStatus } from "@/lib/field-sales/retur/queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -21,13 +28,20 @@ import {
 import { Pager } from "@/components/Pager";
 
 const ROUTE = "/backoffice/field-returns";
+const ORIGIN_FILTER_ALL = "__all__";
 
 type Props = {
   rows: FieldReturnRow[];
   total: number;
   q: string;
+  origin: FieldReturnOrigin | "";
   page: number;
   pageSize: number;
+};
+
+const ORIGIN_BADGE_VARIANT: Record<FieldReturnOrigin, "secondary" | "outline"> = {
+  FIELD: "secondary",
+  ADMIN: "outline",
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldReturnStatus, "secondary" | "destructive" | "default" | "outline"> = {
@@ -94,7 +108,7 @@ export function FieldReturnsPageClient(props: Props) {
 
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -105,6 +119,22 @@ export function FieldReturnsPageClient(props: Props) {
                 className="pl-9"
               />
             </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("originFilterLabel")}</label>
+            <Select
+              value={props.origin || ORIGIN_FILTER_ALL}
+              onValueChange={(v) => pushParam("origin", v === ORIGIN_FILTER_ALL ? undefined : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ORIGIN_FILTER_ALL}>{t("originFilterAll")}</SelectItem>
+                <SelectItem value="FIELD">{t("origin.FIELD")}</SelectItem>
+                <SelectItem value="ADMIN">{t("origin.ADMIN")}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col justify-end">
             <Button variant="outline" onClick={reset} className="w-full">
@@ -125,7 +155,7 @@ export function FieldReturnsPageClient(props: Props) {
           {props.rows.length === 0 ? (
             <div className="text-center py-12">
               <Undo2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">{props.q ? t("emptyFiltered") : t("empty")}</p>
+              <p className="text-muted-foreground">{props.q || props.origin ? t("emptyFiltered") : t("empty")}</p>
             </div>
           ) : (
             <>
@@ -135,6 +165,7 @@ export function FieldReturnsPageClient(props: Props) {
                     <TableRow>
                       <TableHead>{t("colDocNo")}</TableHead>
                       <TableHead>{t("colStore")}</TableHead>
+                      <TableHead>{t("colOrigin")}</TableHead>
                       <TableHead>{t("colRaisedAt")}</TableHead>
                       <TableHead>{t("colTransport")}</TableHead>
                       <TableHead className="text-right">{t("colLineCount")}</TableHead>
@@ -159,8 +190,13 @@ export function FieldReturnsPageClient(props: Props) {
                         >
                           <TableCell className="font-mono text-sm">{r.docNo}</TableCell>
                           <TableCell className="max-w-[220px] truncate">{r.storeName}</TableCell>
+                          <TableCell>
+                            <Badge variant={ORIGIN_BADGE_VARIANT[r.origin]}>{t(`origin.${r.origin}`)}</Badge>
+                          </TableCell>
                           <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(r.createdAt)}</TableCell>
-                          <TableCell>{t(`transport.${r.transport}`)}</TableCell>
+                          <TableCell>
+                            {r.transport ? t(`transport.${r.transport}`) : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
                           <TableCell className="text-right tabular-nums">{r.lineCount}</TableCell>
                           <TableCell className="text-right tabular-nums whitespace-nowrap">
                             {r.totalValue !== null ? (
