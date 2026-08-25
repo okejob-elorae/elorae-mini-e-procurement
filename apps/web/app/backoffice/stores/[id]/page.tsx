@@ -39,10 +39,13 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
       ? await listStoreStocktakes({ storeId: store.id, page: 1, perPage: STOCKTAKE_HISTORY_PAGE_SIZE })
       : null;
   /**
-   * The assortment CRUD card is gated on `stores:manage` alone (not `termsType`) — a viewer with
-   * no manage permission never sees the list, so it is never fetched for them.
+   * The assortment lines are only ever rendered as an editable list for a KONSI store — a PUTUS
+   * store's card shows a static explanation instead (see `StoreAssortmentCard`'s `termsType`
+   * branch), so there is nothing to fetch there. A viewer with no `stores:manage` never sees the
+   * card at all, so the list is skipped for them too.
    */
-  const assortmentLines = canEdit ? await listAssortmentLines(store.id) : [];
+  const assortmentLines =
+    canEdit && store.termsType === "KONSI" ? await listAssortmentLines(store.id) : [];
   /**
    * A store can only ever have ONE open (DRAFT / PENDING_VERIFICATION) document at a time —
    * `openKey`'s unique constraint enforces that, and creating a new one is refused while one is

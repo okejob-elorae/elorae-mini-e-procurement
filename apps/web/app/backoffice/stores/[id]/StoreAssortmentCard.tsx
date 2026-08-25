@@ -51,6 +51,7 @@ export type AssortmentLineViewModel = Omit<AssortmentLineRow, "createdAt"> & { c
 
 type Props = {
   storeId: string;
+  termsType: "PUTUS" | "KONSI";
   lines: AssortmentLineViewModel[];
 };
 
@@ -95,7 +96,7 @@ function targetRawForDisplay(targetQty: number | null): string {
   return targetQty === null ? "" : String(targetQty);
 }
 
-export function StoreAssortmentCard({ storeId, lines }: Props) {
+export function StoreAssortmentCard({ storeId, termsType, lines }: Props) {
   const t = useTranslations("stores.assortment");
   const tCommon = useTranslations("common");
   const router = useRouter();
@@ -250,6 +251,28 @@ export function StoreAssortmentCard({ storeId, lines }: Props) {
         removeInFlight.current = false;
       }
     });
+  }
+
+  /**
+   * A PUTUS store has no `StoreStock` ledger, so nothing here would ever surface — the gap
+   * section lives inside the KONSI-only stock card, and the other two consumers (order approval,
+   * stocktake) are consignment-only documents too. Explain why rather than rendering nothing, so
+   * an admin who goes looking learns the reason instead of concluding the feature is missing.
+   */
+  if (termsType !== "KONSI") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ListChecks className="h-4 w-4" />
+            {t("cardTitle")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">{t("putusNotice")}</p>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (

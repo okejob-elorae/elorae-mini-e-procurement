@@ -792,7 +792,7 @@ export function StoreDetailView({
         </CardContent>
       </Card>
 
-      {assortment && <StoreAssortmentCard storeId={store.id} lines={assortment.lines} />}
+      {assortment && <StoreAssortmentCard storeId={store.id} termsType={store.termsType} lines={assortment.lines} />}
 
       {store.termsType === "KONSI" && stockCard && (
         <StoreStockCard

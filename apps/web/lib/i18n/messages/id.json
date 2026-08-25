@@ -2146,6 +2146,7 @@
     "assortment": {
       "cardTitle": "Assortment Toko",
       "description": "Daftar SKU yang seharusnya selalu tersedia di toko ini. Bersifat referensi — tidak memblokir transfer atau penjualan apa pun.",
+      "putusNotice": "Assortment hanya berlaku untuk toko dengan terms Konsi, karena dibandingkan langsung dengan stok konsi toko tersebut. Toko ini memakai terms Putus dan tidak memiliki stok konsi, jadi fitur ini belum bisa dipakai di sini.",
       "empty": "Belum ada SKU yang diatur untuk toko ini. Tambahkan barang yang seharusnya selalu tersedia di sini.",
       "colProduct": "Produk",
       "colVariant": "Varian",

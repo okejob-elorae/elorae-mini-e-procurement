@@ -2146,6 +2146,7 @@
     "assortment": {
       "cardTitle": "Store Assortment",
       "description": "SKUs that should always be stocked at this store. Reference data only — it does not block any transfer or sale.",
+      "putusNotice": "The assortment only applies to stores on Konsi terms, since it is compared directly against that store's consignment stock. This store is on Putus terms and holds no consignment stock, so this feature isn't available here.",
       "empty": "No SKUs configured for this store yet. Add the items that should always be stocked here.",
       "colProduct": "Product",
       "colVariant": "Variant",
