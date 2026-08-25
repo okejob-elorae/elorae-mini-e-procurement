@@ -250,7 +250,7 @@ export async function approveAction(returnId: string): Promise<FieldReturnAction
  * UNPRICEABLE — a manual override is only for a line auto-resolve genuinely could not price
  * without help, never a lever to override a price that already resolves cleanly on its own.
  *
-
+ *
  * The initial `findUnique` status check is a friendly early exit, not the real guard — it reads
  * and the actual write are two separate round trips, so a concurrent `approveFieldReturn` (which
  * runs inside its own serializable transaction) can freeze the line in between. The `updateMany`
