@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { getFieldReturnById, previewKonsiReturStockImpact } from "./queries";
+import { getFieldReturnById, getInTransitAdminReturnQty, listFieldReturns, previewKonsiReturStockImpact } from "./queries";
 import { createFieldReturn } from "./writer";
 import { receiveFieldReturn } from "./receive-writer";
 
@@ -429,5 +429,266 @@ d("previewKonsiReturStockImpact (test bed only)", () => {
       storeQty: 2,
       shortfall: 1,
     });
+  });
+});
+
+d("getInTransitAdminReturnQty (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let userId = "";
+  let storeUnreceivedId = "";
+  let storeReceivedId = "";
+  let storeFieldOnlyId = "";
+  let storeScopeAId = "";
+  let storeScopeBId = "";
+  let unreceivedReturnId = "";
+  let receivedReturnId = "";
+  let fieldReturnId = "";
+  let scopeAReturnId = "";
+  let scopeBReturnId = "";
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    userId = "";
+    storeUnreceivedId = "";
+    storeReceivedId = "";
+    storeFieldOnlyId = "";
+    storeScopeAId = "";
+    storeScopeBId = "";
+    unreceivedReturnId = "";
+    receivedReturnId = "";
+    fieldReturnId = "";
+    scopeAReturnId = "";
+    scopeBReturnId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-ITQ-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: {
+        sku: `TEST-ITQ-${token}`,
+        nameId: "In-transit query item",
+        nameEn: "In-transit query item",
+        type: "FINISHED_GOOD",
+        uomId,
+        isActive: true,
+        sellingPrice: 40000,
+      },
+    });
+    itemId = item.id;
+
+    const user = await prisma.user.create({ data: { email: `test-itq-${token}@example.com`, name: "Test In-Transit User" } });
+    userId = user.id;
+
+    const mkStore = (suffix: string) =>
+      prisma.store.create({
+        data: {
+          code: `TEST-ITQ-${suffix}-${token}`,
+          name: `Test In-Transit Store ${suffix} ${token}`,
+          address: "Test address",
+          termsType: "KONSI",
+          isActive: true,
+        },
+      });
+
+    storeUnreceivedId = (await mkStore("UNRECEIVED")).id;
+    storeReceivedId = (await mkStore("RECEIVED")).id;
+    storeFieldOnlyId = (await mkStore("FIELDONLY")).id;
+    storeScopeAId = (await mkStore("SCOPE-A")).id;
+    storeScopeBId = (await mkStore("SCOPE-B")).id;
+
+    /* Left in PENDING_WAREHOUSE_RECEIVING — the one case that must count. */
+    const createdUnreceived = await createFieldReturn({
+      storeId: storeUnreceivedId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 4, reason: "UNSOLD" }],
+    });
+    unreceivedReturnId = createdUnreceived.returnId;
+
+    /*
+     * Raised the same way, then actually received — this is the case that pins the claimed
+     * equivalence (PENDING_WAREHOUSE_RECEIVING === receivedAt IS NULL) rather than trusting a
+     * doc comment: if the query ever drifted to matching on something other than status, or the
+     * status transition on receipt broke, this is what would catch it.
+     */
+    const createdReceived = await createFieldReturn({
+      storeId: storeReceivedId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 6, reason: "UNSOLD" }],
+    });
+    receivedReturnId = createdReceived.returnId;
+    const receivedLine = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(receivedReturnId) } });
+    await receiveFieldReturn({
+      returnId: receivedReturnId,
+      receivedById: userId,
+      counts: [{ lineId: receivedLine.id, receivedQty: 6, sellableQty: 6, rejectedQty: 0 }],
+    });
+
+    /*
+     * FIELD origin, left in the SAME PENDING_WAREHOUSE_RECEIVING status a counting ADMIN return
+     * would have — isolates origin, not status, as the excluding factor.
+     */
+    const createdField = await createFieldReturn({
+      storeId: storeFieldOnlyId,
+      raisedById: userId,
+      transport: "SELF_CARRY",
+      notaPhotoUrl: "https://cdn.example/nota.jpg",
+      notaPhotoR2Key: "field-returns/x/nota.jpg",
+      lines: [{ itemId, variantSku: "", qty: 5, reason: "UNSOLD" }],
+    });
+    fieldReturnId = createdField.returnId;
+
+    const createdScopeA = await createFieldReturn({
+      storeId: storeScopeAId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 3, reason: "UNSOLD" }],
+    });
+    scopeAReturnId = createdScopeA.returnId;
+
+    const createdScopeB = await createFieldReturn({
+      storeId: storeScopeBId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 8, reason: "UNSOLD" }],
+    });
+    scopeBReturnId = createdScopeB.returnId;
+  });
+
+  afterEach(async () => {
+    const returnIds = [
+      seededId(unreceivedReturnId),
+      seededId(receivedReturnId),
+      seededId(fieldReturnId),
+      seededId(scopeAReturnId),
+      seededId(scopeBReturnId),
+    ];
+    const storeIds = [
+      seededId(storeUnreceivedId),
+      seededId(storeReceivedId),
+      seededId(storeFieldOnlyId),
+      seededId(storeScopeAId),
+      seededId(storeScopeBId),
+    ];
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
+    await prisma.store.deleteMany({ where: { id: { in: storeIds } } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+  });
+
+  it("counts an ADMIN return raised but not yet received", async () => {
+    expect(await getInTransitAdminReturnQty(storeUnreceivedId)).toBe(4);
+  });
+
+  it("excludes an ADMIN return once the warehouse has received it", async () => {
+    expect(await getInTransitAdminReturnQty(storeReceivedId)).toBe(0);
+  });
+
+  it("never counts a FIELD-origin return, even sitting in the same PENDING_WAREHOUSE_RECEIVING status an ADMIN return would count in", async () => {
+    expect(await getInTransitAdminReturnQty(storeFieldOnlyId)).toBe(0);
+  });
+
+  it("scopes to the one store, not picking up another store's ADMIN returns", async () => {
+    expect(await getInTransitAdminReturnQty(storeScopeAId)).toBe(3);
+    expect(await getInTransitAdminReturnQty(storeScopeBId)).toBe(8);
+  });
+});
+
+d("listFieldReturns — origin filter (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let userId = "";
+  let storeId = "";
+  let storeName = "";
+  let adminReturnId = "";
+  let fieldReturnId = "";
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    userId = "";
+    storeId = "";
+    storeName = "";
+    adminReturnId = "";
+    fieldReturnId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-LFO-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: {
+        sku: `TEST-LFO-${token}`,
+        nameId: "List filter item",
+        nameEn: "List filter item",
+        type: "FINISHED_GOOD",
+        uomId,
+        isActive: true,
+        sellingPrice: 40000,
+      },
+    });
+    itemId = item.id;
+
+    const user = await prisma.user.create({ data: { email: `test-lfo-${token}@example.com`, name: "Test List Filter User" } });
+    userId = user.id;
+
+    /*
+     * `listFieldReturns` has no storeId param of its own — a token-suffixed store name is what
+     * isolates this fixture's rows from real dev data and other specs on the shared test bed,
+     * via the same `q` (docNo/store-name contains) filter the register's own search box uses.
+     */
+    storeName = `Test List Filter Store ${token}`;
+    const store = await prisma.store.create({
+      data: { code: `TEST-LFO-STORE-${token}`, name: storeName, address: "Test address", termsType: "KONSI", isActive: true },
+    });
+    storeId = store.id;
+
+    const createdAdmin = await createFieldReturn({
+      storeId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 2, reason: "UNSOLD" }],
+    });
+    adminReturnId = createdAdmin.returnId;
+
+    const createdField = await createFieldReturn({
+      storeId,
+      raisedById: userId,
+      transport: "SELF_CARRY",
+      notaPhotoUrl: "https://cdn.example/nota.jpg",
+      notaPhotoR2Key: "field-returns/x/nota.jpg",
+      lines: [{ itemId, variantSku: "", qty: 2, reason: "UNSOLD" }],
+    });
+    fieldReturnId = createdField.returnId;
+  });
+
+  afterEach(async () => {
+    const returnIds = [seededId(adminReturnId), seededId(fieldReturnId)];
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+  });
+
+  it(`filters to origin: "ADMIN" and returns only the admin-origin row`, async () => {
+    const { rows, total } = await listFieldReturns({ q: storeName, origin: "ADMIN", page: 1, perPage: 50 });
+    expect(total).toBe(1);
+    expect(rows.map((r) => r.id)).toEqual([adminReturnId]);
+    expect(rows[0].origin).toBe("ADMIN");
+  });
+
+  it("returns both the admin- and field-origin rows when no origin filter is given", async () => {
+    const { rows, total } = await listFieldReturns({ q: storeName, page: 1, perPage: 50 });
+    expect(total).toBe(2);
+    expect(rows.map((r) => r.id).sort()).toEqual([adminReturnId, fieldReturnId].sort());
   });
 });
