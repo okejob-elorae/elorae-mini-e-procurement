@@ -436,6 +436,34 @@ d("store stocktake writer (test bed only)", () => {
       expect(Number(after.avgCost)).toBe(0);
     });
 
+    it("seeds expectedQty from a live StoreStock row created after the document opened, so a late-landing item shows a shortfall, not a surplus", async () => {
+      const id = await mkStocktake({ lines: [] });
+      /*
+       * Simulate a konsi transfer landing at the store AFTER the document opened (with no
+       * StoreStock row for this item at snapshot time) but BEFORE this save — exactly the
+       * Monday-open / Tuesday-transfer / Wednesday-count sequence this test guards against.
+       */
+      await prisma.storeStock.create({ data: { storeId, itemId: itemAddedId, variantSku: "", qty: 100, avgCost: 0 } });
+
+      await saveStocktakeCounts({
+        stocktakeId: id,
+        lines: [],
+        addedLines: [{ itemId: itemAddedId, variantSku: "", countedQty: 90, cause: "SHRINKAGE", reason: "counted 90 on shelf" }],
+        submit: false,
+        userId: adminId,
+      });
+
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: id, itemId: itemAddedId } });
+      expect(Number(line.expectedQty)).toBe(100);
+      expect(Number(line.varianceQty)).toBe(-10);
+      expect(line.isAdded).toBe(true);
+
+      const res = await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+      expect(res.ok).toBe(true);
+      const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemAddedId) } });
+      expect(Number(ss.qty)).toBe(90);
+    });
+
     it("returns ITEM_NOT_FOUND for an added line with a dangling itemId, and writes nothing", async () => {
       const id = await mkStocktake({ lines: [] });
       await expect(

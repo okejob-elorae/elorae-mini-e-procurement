@@ -82,15 +82,18 @@ export async function createStoreStocktake(input: {
  * the detail page can show a live variance before approval — approval does not trust this value
  * and recomputes it independently from whatever is on the line at that moment.
  *
- * `addedLines` is the add-item picker's path: a line for an item the store's ledger has no
- * `StoreStock` row for. Each lands with `isAdded: true`, `expectedQty: 0` (nothing was expected —
- * there was no shelf row), and `productName` resolved from `Item` the same way
- * `buildStocktakeLines` fills it. Its variance is therefore just the count itself
- * (`countedQty − 0`), which is always zero or a surplus, never a shortfall — so `approveStoreStocktake`
- * will require a reason on it but never a cause; `SHORTFALL_NEEDS_CAUSE` cannot fire on this path
- * by construction. That reason check is NOT enforced here at save time — see the comment at the
- * added-lines block below for why — only the structural guards (`ITEM_NOT_FOUND`,
- * `DUPLICATE_LINE`) are.
+ * `addedLines` is the add-item picker's path: a line for an item that was not on the document's
+ * own snapshot. `expectedQty` is seeded from the store's LIVE `StoreStock` row for that
+ * `itemId::variantSku`, looked up inside this same transaction — falling back to `0` only when no
+ * such row exists at all. The snapshot and "live" can genuinely diverge (a konsi transfer landing
+ * between the document opening and this save), and the SPG's own screen renders from live stock,
+ * so a pair that lands here as "added" may still have real expected stock; seeding `0` in that
+ * case would misreport a shortfall as a surplus. `productName` is resolved from `Item` the same
+ * way `buildStocktakeLines` fills it. Its variance is `countedQty − expectedQty`, computed with
+ * the now-correct `expectedQty`, so `approveStoreStocktake`'s `SHORTFALL_NEEDS_CAUSE` check can
+ * fire on an added line exactly as it would have had the line existed on the original snapshot.
+ * The reason check is NOT enforced here at save time — see the comment at the added-lines block
+ * below for why — only the structural guards (`ITEM_NOT_FOUND`, `DUPLICATE_LINE`) are.
  */
 export async function saveStocktakeCounts(input: {
   stocktakeId: string;
@@ -102,7 +105,7 @@ export async function saveStocktakeCounts(input: {
   return runSerializable(async (tx) => {
     const st = await tx.storeStocktake.findUnique({
       where: { id: input.stocktakeId },
-      select: { id: true, status: true, lines: { select: { id: true, itemId: true, variantSku: true, expectedQty: true } } },
+      select: { id: true, storeId: true, status: true, lines: { select: { id: true, itemId: true, variantSku: true, expectedQty: true } } },
     });
     if (!st) throw new StoreStocktakeError("NOT_FOUND");
     if (st.status !== "DRAFT" && st.status !== "PENDING_VERIFICATION") throw new StoreStocktakeError("INVALID_STATE");
@@ -125,6 +128,7 @@ export async function saveStocktakeCounts(input: {
     const addedLines = input.addedLines ?? [];
     const normalizedAdded = addedLines.map((al) => ({ ...al, variantSku: al.variantSku ?? "" }));
     const addedItemNameById = new Map<string, string>();
+    const liveQtyByAddedKey = new Map<string, number>();
 
     if (normalizedAdded.length > 0) {
       /*
@@ -162,14 +166,28 @@ export async function saveStocktakeCounts(input: {
       }
 
       /*
+       * Live StoreStock for these items, batched — the snapshot the document opened with may
+       * already be stale by the time an added line is saved (a konsi transfer landing after
+       * `createStoreStocktake` ran), so `expectedQty` below comes from the CURRENT row, never a
+       * hardcoded 0. `0` is only the fallback for an item::variant the store has genuinely never
+       * held stock for.
+       */
+      const liveAddedStock = await tx.storeStock.findMany({
+        where: { storeId: st.storeId, itemId: { in: addedItemIds } },
+        select: { itemId: true, variantSku: true, qty: true },
+      });
+      for (const s of liveAddedStock) liveQtyByAddedKey.set(`${s.itemId}::${s.variantSku}`, s.qty.toNumber());
+
+      /*
        * The reason check is deliberately NOT here. A save is a batch of counts from one sitting
        * (the PWA submits up to a whole store's worth of lines in one call) — aborting the entire
        * transaction over one added line missing a reason would discard every other line's count
        * with an error that names none of them. `approveStoreStocktake` already runs the identical
-       * VARIANCE_NEEDS_REASON check over every line uniformly (added or not, since an added line
-       * is just a StoreStocktakeLine with expectedQty: 0), so deferring it there keeps the rule
-       * in one place and makes losing a batch at save time impossible. ITEM_NOT_FOUND and
-       * DUPLICATE_LINE stay here because both are structural — either would write a bad row.
+       * VARIANCE_NEEDS_REASON check over every line uniformly (added or not — an added line is
+       * just a StoreStocktakeLine, and its `expectedQty` is now seeded from live stock rather than
+       * hardcoded), so deferring it there keeps the rule in one place and makes losing a batch at
+       * save time impossible. ITEM_NOT_FOUND and DUPLICATE_LINE stay here because both are
+       * structural — either would write a bad row.
        */
     }
 
@@ -188,7 +206,8 @@ export async function saveStocktakeCounts(input: {
     }
 
     for (const al of normalizedAdded) {
-      const variance = al.countedQty === null ? null : al.countedQty - 0;
+      const expected = liveQtyByAddedKey.get(`${al.itemId}::${al.variantSku}`) ?? 0;
+      const variance = al.countedQty === null ? null : al.countedQty - expected;
       try {
         await tx.storeStocktakeLine.create({
           data: {
@@ -196,7 +215,7 @@ export async function saveStocktakeCounts(input: {
             itemId: al.itemId,
             variantSku: al.variantSku,
             productName: addedItemNameById.get(al.itemId)!,
-            expectedQty: 0,
+            expectedQty: expected,
             countedQty: al.countedQty,
             varianceQty: variance,
             soldInPeriodQty: 0,
