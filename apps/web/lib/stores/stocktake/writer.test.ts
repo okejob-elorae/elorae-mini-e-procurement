@@ -131,9 +131,22 @@ d("store stocktake writer (test bed only)", () => {
     const id = await mkStocktake({
       lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: null }],
     });
+    /*
+     * Moved AFTER the line is built, so the live StoreStock.qty (15) differs from both the
+     * line's snapshotted expectedQty (10) and the seeded starting qty (10) — a regression that
+     * coerces a null count to `expected` or to the pre-move seed value would still fail this
+     * assertion, only a coercion to the CURRENT live qty could slip through undetected, and
+     * nothing in the writer ever reads the live qty for an uncounted line.
+     */
+    await prisma.storeStock.update({ where: { storeId_itemId_variantSku: { storeId, itemId: itemMainId, variantSku: "" } }, data: { qty: 15 } });
+
     await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
     const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
-    expect(Number(ss.qty)).toBe(10);
+    expect(Number(ss.qty)).toBe(15);
+    const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: seededId(id) } });
+    expect(line.appliedQty).toBeNull();
+    expect(line.qtyAtApproval).toBeNull();
   });
 
   it("clears a NEGATIVE row when it is counted at zero — the correction path", async () => {
@@ -187,6 +200,13 @@ d("store stocktake writer (test bed only)", () => {
     expect(Number(ss.qty)).toBe(10);
   });
 
+  it("returns VARIANCE_NEEDS_REASON for a whitespace-only reason — .trim() rejects it too", async () => {
+    const id = await mkStocktake({
+      lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: 6, reason: "   ", cause: "SHRINKAGE" }],
+    });
+    await expect(approveStoreStocktake({ stocktakeId: id, approvedById: adminId })).rejects.toMatchObject({ code: "VARIANCE_NEEDS_REASON" });
+  });
+
   it("returns SHORTFALL_NEEDS_CAUSE for a negative variance with a reason but no cause", async () => {
     const id = await mkStocktake({
       lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: 6, reason: "recount" }],
@@ -228,15 +248,23 @@ d("store stocktake writer (test bed only)", () => {
     expect(Number(line.varianceQty)).toBe(-3);
   });
 
-  it("writes the \"\"-keyed row for a variantless line, without forking a second row", async () => {
+  it("writes distinct StoreStock rows for the same item's \"\"-keyed and variant-keyed lines, without collapsing them", async () => {
+    await prisma.storeStock.create({ data: { storeId, itemId: itemMainId, variantSku: `${tag}-V1`, qty: 20, avgCost: 3000 } });
     const id = await mkStocktake({
-      lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: 6, reason: "recount", cause: "SHRINKAGE" }],
+      lines: [
+        { itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: 6, reason: "recount", cause: "SHRINKAGE" },
+        { itemId: itemMainId, variantSku: `${tag}-V1`, productName: "Main V1", expectedQty: 20, countedQty: 12, reason: "recount", cause: "SHRINKAGE" },
+      ],
     });
+
     await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+    const plain = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId), variantSku: "" } });
+    const variant = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId), variantSku: `${tag}-V1` } });
+    expect(Number(plain.qty)).toBe(6);
+    expect(Number(variant.qty)).toBe(12);
     const rows = await prisma.storeStock.findMany({ where: { storeId: seededId(storeId), itemId: seededId(itemMainId) } });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].variantSku).toBe("");
-    expect(Number(rows[0].qty)).toBe(6);
+    expect(rows).toHaveLength(2);
   });
 
   it("stamps qtyAtApproval from the live row when the ledger drifted after the snapshot, and still writes the counted figure", async () => {
@@ -379,6 +407,16 @@ d("store stocktake writer (test bed only)", () => {
       });
     });
 
+    it("returns INVALID_REQUEST for a negative countedQty", async () => {
+      const id = await mkStocktake({
+        lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: null }],
+      });
+      const line = await prisma.storeStocktakeLine.findFirstOrThrow({ where: { stocktakeId: id } });
+      await expect(saveStocktakeCounts({ stocktakeId: id, lines: [{ lineId: line.id, countedQty: -1 }], submit: false, userId: adminId })).rejects.toMatchObject({
+        code: "INVALID_REQUEST",
+      });
+    });
+
     it("an added line creates a StoreStock row on approval that did not exist before", async () => {
       const id = await mkStocktake({ lines: [] });
       await saveStocktakeCounts({
@@ -427,6 +465,25 @@ d("store stocktake writer (test bed only)", () => {
           userId: adminId,
         }),
       ).rejects.toMatchObject({ code: "DUPLICATE_LINE" });
+    });
+
+    it("returns DUPLICATE_LINE for two identical added lines within the same batch", async () => {
+      const id = await mkStocktake({ lines: [] });
+      await expect(
+        saveStocktakeCounts({
+          stocktakeId: id,
+          lines: [],
+          addedLines: [
+            { itemId: itemAddedId, variantSku: "", countedQty: 5, reason: "found on shelf" },
+            { itemId: itemAddedId, variantSku: "", countedQty: 2, reason: "found on shelf again" },
+          ],
+          submit: false,
+          userId: adminId,
+        }),
+      ).rejects.toMatchObject({ code: "DUPLICATE_LINE" });
+
+      const lines = await prisma.storeStocktakeLine.findMany({ where: { stocktakeId: id } });
+      expect(lines).toHaveLength(0);
     });
 
     it("accepts an added line with a non-zero count and no reason — the reason check is deferred to approval", async () => {
@@ -492,6 +549,15 @@ d("store stocktake writer (test bed only)", () => {
       const second = await createStoreStocktake({ storeId, createdById: adminId, countedAt: new Date() });
       stocktakeIds.push(second.id);
       expect(second.id).toBeTruthy();
+    });
+
+    it("refuses INVALID_STATE on an already-APPROVED document", async () => {
+      const id = await mkStocktake({
+        lines: [{ itemId: itemMainId, variantSku: "", productName: "Main", expectedQty: 10, countedQty: 10 }],
+      });
+      await approveStoreStocktake({ stocktakeId: id, approvedById: adminId });
+
+      await expect(cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "too late" })).rejects.toMatchObject({ code: "INVALID_STATE" });
     });
   });
 });
