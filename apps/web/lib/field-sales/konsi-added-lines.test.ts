@@ -28,6 +28,8 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
   let orderId = "";
   let putusOrderId = "";
   let priorOrderId = "";
+  let gapVariantOrderId = "";
+  const assortmentLineIds: string[] = [];
 
   beforeEach(async () => {
     uomId = "";
@@ -44,6 +46,8 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     orderId = "";
     putusOrderId = "";
     priorOrderId = "";
+    gapVariantOrderId = "";
+    assortmentLineIds.length = 0;
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-KAL-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -139,7 +143,8 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
       seededId(variantItemId),
       seededId(shortItemId),
     ];
-    const allOrderIds = [seededId(orderId), seededId(putusOrderId), seededId(priorOrderId)];
+    const allOrderIds = [seededId(orderId), seededId(putusOrderId), seededId(priorOrderId), seededId(gapVariantOrderId)];
+    await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: allOrderIds } } });
@@ -271,12 +276,61 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     expect(lines).toHaveLength(1);
   });
 
-  it("rejects an item already sent to the store on a different konsi order", async () => {
+  it("rejects an item already sent to the store on a different konsi order — NOT a current assortment gap", async () => {
     await expect(
       approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: alreadySentItemId, variantSku: "", qty: 1 }] }),
     ).rejects.toMatchObject({ code: "ALREADY_SENT" });
     const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
     expect(lines).toHaveLength(1);
+  });
+
+  it("approves a previously-sent item staged as an added line when it is a CURRENT assortment gap for the store", async () => {
+    const line = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: alreadySentItemId, variantSku: "", targetQty: null, createdById: userId },
+    });
+    assortmentLineIds.push(line.id);
+
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: alreadySentItemId, variantSku: "", qty: 2 }] }),
+    ).resolves.toEqual({ ok: true });
+
+    const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
+    expect(lines).toHaveLength(2);
+    const added = lines.find((l) => l.itemId === alreadySentItemId)!;
+    expect(added.addedById).toBe(userId);
+    expect(added.qty).toBe(2);
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, select: { status: true } });
+    expect(order.status).toBe("APPROVED");
+  });
+
+  it("approves a gap staged on a variant OTHER than the one already on the order under approval — item-grain ALREADY_SENT must not swallow it", async () => {
+    /*
+     * variantItemId's RED line lands on this brand-new order, which makes variantItemId
+     * item-grain "already sent" (sentItemIds counts the PENDING_APPROVAL order being approved
+     * itself). BLUE is a genuine current gap for the store and must still be stageable.
+     */
+    const { orderId: newOrderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId: userId,
+      visitId,
+      lines: [{ itemId: variantItemId, variantSku: "RED", productName: "Variant item", qty: 1, unitPrice: 0 }],
+    });
+    gapVariantOrderId = newOrderId;
+
+    const line = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: variantItemId, variantSku: "BLUE", targetQty: null, createdById: userId },
+    });
+    assortmentLineIds.push(line.id);
+
+    await expect(
+      approveFieldSalesOrder({ orderId: newOrderId, approvedById: userId, addedLines: [{ itemId: variantItemId, variantSku: "BLUE", qty: 1 }] }),
+    ).resolves.toEqual({ ok: true });
+
+    const lines = await prisma.fieldSalesOrderLine.findMany({
+      where: { orderId: seededId(newOrderId), itemId: variantItemId },
+      select: { variantSku: true },
+    });
+    expect(lines.map((l) => l.variantSku).sort()).toEqual(["BLUE", "RED"]);
   });
 
   it("rejects an unknown item and creates nothing", async () => {

@@ -88,7 +88,13 @@ export function KonsiSuggestionsCard({
   onStagedChange,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
-  const [open, setOpen] = useState(() => shortLineCount > 0);
+  /*
+   * Seeded open whenever there is something to act on — a short line OR a standing assortment
+   * gap. A gap can only be staged while a salesman happens to raise an order at this store, so
+   * hiding it behind a collapsed toggle on the one occasion it is actionable would negate the
+   * surface entirely, even when every line on this particular order is fully stockable.
+   */
+  const [open, setOpen] = useState(() => shortLineCount > 0 || gapSuggestions.length > 0);
   const [filter, setFilter] = useState("");
   const [neverSentPage, setNeverSentPage] = useState(1);
   const [gapPage, setGapPage] = useState(1);
@@ -429,6 +435,7 @@ export function KonsiSuggestionsCard({
         <CardTitle className="flex flex-wrap items-center gap-2">
           <Sparkles className="h-5 w-5" />
           {t("konsiSuggestions.title")}
+          {gapSuggestions.length > 0 && <Badge variant="destructive">{gapSuggestions.length}</Badge>}
           {staged.length > 0 && <Badge variant="secondary">{staged.length}</Badge>}
         </CardTitle>
         <CardAction className={ACTION_SLOT_CLASS}>
