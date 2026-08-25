@@ -95,9 +95,9 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
  */
 /*
  * Typed as the narrower error-only slice, not the full `FieldReturnActionResult` — it never
- * actually returns an `ok: true`, but returning the wider union would make `toResult(e)` fail to
- * satisfy `RaiseAdminReturnActionResult` below, whose own `ok: true` branch carries extra fields
- * `FieldReturnActionResult`'s does not.
+ * actually returns an `ok: true`. Shared by every action in this file EXCEPT
+ * `raiseAdminReturnAction`, which has its own narrower `toRaiseAdminReturnResult` below — this
+ * one's codes are too wide for that action's own narrower `RaiseAdminReturnActionResult` type.
  */
 function toResult(e: unknown): Exclude<FieldReturnActionResult, { ok: true }> {
   if (e instanceof FieldReturnError) return { ok: false, code: ERROR_CODE_MAP[e.code] };
@@ -276,15 +276,60 @@ export async function resolveAction(input: {
 /**
  * The `ok: true` branch carries `returnId`/`docNo` (Task 4's UI needs both — one to navigate to
  * the new return's detail page, the other to show the operator what got raised) so it cannot
- * reuse `FieldReturnActionResult`'s plain `{ ok: true }` shape. The error side reuses that
- * union's codes as-is rather than inventing a parallel set: every `FieldReturnErrorCode`
- * `createFieldReturn` can throw for an ADMIN-origin raise (`NO_LINES`, `BAD_QTY`,
- * `BAD_LINE_SHAPE`, `ITEM_NOT_FOUND`, `STORE_NOT_FOUND`, `MISSING_REASON_NOTE`) already has an
- * entry in `ERROR_CODE_MAP` above, so nothing new needs adding there for this action.
+ * reuse `FieldReturnActionResult`'s plain `{ ok: true }` shape.
+ *
+ * The error side is deliberately NARROWER than `FieldReturnActionResult`'s full 21-code union,
+ * not a reuse of it — `guard()` can only ever return `FORBIDDEN`, shape validation can only ever
+ * return `INVALID_REQUEST`, and of everything `createFieldReturn` can throw for this call, only
+ * `ITEM_NOT_FOUND`/`STORE_NOT_FOUND` (→ `NOT_FOUND`) and `MISSING_REASON_NOTE` (→
+ * `INVALID_REQUEST`) are reachable: `isValidRaiseAdminReturnInput` already rules out
+ * `NO_LINES`/`BAD_QTY`/`BAD_LINE_SHAPE` before the writer runs, this call never passes `visitId`
+ * or `transport` so `VISIT_NOT_OWNED`/`MISSING_EXPEDITION_NAME`/`MISSING_RESI` can't fire, and
+ * `origin` is always `"ADMIN"` so the `FIELD`-only `MISSING_TRANSPORT`/`MISSING_NOTA_PHOTO` rule
+ * can't either. Reusing the full union here would let a code this action can never actually
+ * produce reach the UI typed as valid, with nothing to catch a missing translation for it — see
+ * `RAISE_ADMIN_RETURN_ERROR_CODE_MAP` below for how the implementation stays inside this type.
  */
 export type RaiseAdminReturnActionResult =
   | { ok: true; returnId: string; docNo: string }
-  | Exclude<FieldReturnActionResult, { ok: true }>;
+  | { ok: false; code: "FORBIDDEN" | "INVALID_REQUEST" | "NOT_FOUND" | "ERROR" };
+
+/**
+ * Exhaustive over the FULL `FieldReturnErrorCode` union, not just the codes this call path can
+ * reach — a code newly added to `errors.ts` fails to satisfy this `Record` and is a compile
+ * error here rather than a silent gap. Every code this action cannot actually reach still maps
+ * somewhere safe (`ERROR`) rather than being omitted, so `toRaiseAdminReturnResult` below can
+ * never return a code outside `RaiseAdminReturnActionResult`'s own narrower declared type.
+ */
+const RAISE_ADMIN_RETURN_ERROR_CODE_MAP: Record<FieldReturnErrorCode, "INVALID_REQUEST" | "NOT_FOUND" | "ERROR"> = {
+  NO_LINES: "ERROR",
+  BAD_QTY: "ERROR",
+  BAD_LINE_SHAPE: "ERROR",
+  ITEM_NOT_FOUND: "NOT_FOUND",
+  STORE_NOT_FOUND: "NOT_FOUND",
+  VISIT_NOT_OWNED: "ERROR",
+  MISSING_RESI: "ERROR",
+  MISSING_EXPEDITION_NAME: "ERROR",
+  MISSING_REASON_NOTE: "INVALID_REQUEST",
+  MISSING_NOTA_PHOTO: "ERROR",
+  MISSING_TRANSPORT: "ERROR",
+  INVALID_STATE: "ERROR",
+  SPLIT_MISMATCH: "ERROR",
+  UNKNOWN_LINE: "ERROR",
+  MISSING_LINE: "ERROR",
+  NOT_FOUND: "NOT_FOUND",
+  DUPLICATE_LINE: "ERROR",
+  NO_VARIANCE: "ERROR",
+  RESOLUTION_DIRECTION_MISMATCH: "ERROR",
+  SALESMAN_BEARS_NOT_ALLOWED: "ERROR",
+  UNRESOLVED_LINES: "ERROR",
+};
+
+/** Mirrors `toResult` above, but stays inside `RaiseAdminReturnActionResult`'s narrower type. */
+function toRaiseAdminReturnResult(e: unknown): Exclude<RaiseAdminReturnActionResult, { ok: true }> {
+  if (e instanceof FieldReturnError) return { ok: false, code: RAISE_ADMIN_RETURN_ERROR_CODE_MAP[e.code] };
+  return { ok: false, code: "ERROR" };
+}
 
 /**
  * Lets an admin at the office raise a store return without a nota photo, a transport mode, or a
@@ -316,7 +361,7 @@ export async function raiseAdminReturnAction(input: {
     returnId = created.returnId;
     docNo = created.docNo;
   } catch (e) {
-    return toResult(e);
+    return toRaiseAdminReturnResult(e);
   }
   /*
    * The list, the new return's own detail page, and the store detail page all repaint — Task 4

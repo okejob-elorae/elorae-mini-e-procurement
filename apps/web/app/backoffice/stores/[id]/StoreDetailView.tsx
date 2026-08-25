@@ -24,7 +24,7 @@ import type { StoreListItem } from "@/lib/stores/queries";
 import type { StoreSentItemRow } from "@/lib/field-sales/queries";
 import type { StoreStocktakeStatusValue } from "@/lib/stores/stocktake/queries";
 import { createAction as createStocktakeAction } from "@/app/actions/store-stocktakes";
-import { raiseAdminReturnAction } from "@/app/actions/field-returns";
+import { raiseAdminReturnAction, type RaiseAdminReturnActionResult } from "@/app/actions/field-returns";
 import { FIELD_RETURN_REASONS, type FieldReturnLineInput, type FieldReturnReasonInput } from "@/lib/field-sales/retur/types";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -244,6 +244,22 @@ function parseRaiseQty(raw: string): number | null {
   return Number.isSafeInteger(n) ? n : null;
 }
 
+type RaiseAdminReturnErrorCode = Exclude<RaiseAdminReturnActionResult, { ok: true }>["code"];
+
+/**
+ * Exhaustive over `RaiseAdminReturnActionResult`'s own declared error codes, derived from the
+ * action's type rather than hand-copied — the same technique `field-returns.ts` uses for its own
+ * `ERROR_CODE_MAP`/`RAISE_ADMIN_RETURN_ERROR_CODE_MAP`. If that action's declared error union
+ * ever widens, this `Record` stops being exhaustive and fails to compile here, rather than
+ * `result.code` reaching `stores.adminReturn.err.*` as a raw untranslated key on screen.
+ */
+const RAISE_ADMIN_RETURN_ERR_KEY: Record<RaiseAdminReturnErrorCode, string> = {
+  FORBIDDEN: "err.FORBIDDEN",
+  INVALID_REQUEST: "err.INVALID_REQUEST",
+  NOT_FOUND: "err.NOT_FOUND",
+  ERROR: "err.ERROR",
+};
+
 function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
@@ -406,9 +422,9 @@ export function StoreDetailView({
           router.push(`/backoffice/field-returns/${result.returnId}`);
           return;
         }
-        toast.error(tAdminReturn(`err.${result.code}`));
+        toast.error(tAdminReturn(RAISE_ADMIN_RETURN_ERR_KEY[result.code]));
       } catch {
-        toast.error(tAdminReturn("err.ERROR"));
+        toast.error(tAdminReturn(RAISE_ADMIN_RETURN_ERR_KEY.ERROR));
       }
     });
   }
