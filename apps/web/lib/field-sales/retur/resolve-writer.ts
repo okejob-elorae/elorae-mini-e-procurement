@@ -25,7 +25,7 @@ export async function resolveFieldReturnLine(input: {
         qty: true,
         receivedQty: true,
         returnId: true,
-        returnDoc: { select: { status: true } },
+        returnDoc: { select: { status: true, origin: true } },
       },
     });
     if (!line) throw new FieldReturnError("NOT_FOUND");
@@ -45,6 +45,16 @@ export async function resolveFieldReturnLine(input: {
      */
     if (!isValidResolutionDirection(input.type, variance)) {
       throw new FieldReturnError("RESOLUTION_DIRECTION_MISMATCH");
+    }
+
+    /*
+     * SALESMAN_BEARS records what the salesman owes — meaningless on an ADMIN-origin return,
+     * since no salesman raised the document. The UI hides this option for ADMIN returns too,
+     * but the UI has never been a guarantee here: every "use server" export is an independently
+     * callable endpoint, so the rule has to be enforced in the writer.
+     */
+    if (input.type === "SALESMAN_BEARS" && line.returnDoc.origin === "ADMIN") {
+      throw new FieldReturnError("SALESMAN_BEARS_NOT_ALLOWED");
     }
 
     await tx.fieldReturnResolution.create({

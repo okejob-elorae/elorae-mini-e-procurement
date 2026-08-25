@@ -11,12 +11,20 @@ export type FieldReturnStatus =
   | "CANCELLED";
 export type FieldReturnReason = "DAMAGED" | "UNSOLD" | "EXPIRED" | "OTHER";
 export type FieldReturnTransport = "SELF_CARRY" | "EXPEDITION";
+/**
+ * `ADMIN` has neither a transport mode nor a nota photo at raise (both columns are nullable for
+ * that origin only — see `docs/ARCHITECTURE-NOTES.md`). `FIELD` still requires both, enforced in
+ * the writer, not here.
+ */
+export type FieldReturnOrigin = "FIELD" | "ADMIN";
 
 export type FieldReturnRow = {
   id: string;
   docNo: string;
   storeName: string;
-  transport: FieldReturnTransport;
+  origin: FieldReturnOrigin;
+  /** `null` on an ADMIN-origin return that has not yet been shipped. */
+  transport: FieldReturnTransport | null;
   status: FieldReturnStatus;
   lineCount: number;
   createdAt: Date;
@@ -26,13 +34,15 @@ export type FieldReturnRow = {
 
 export async function listFieldReturns(params: {
   q?: string;
+  origin?: FieldReturnOrigin;
   page: number;
   perPage: number;
 }): Promise<{ rows: FieldReturnRow[]; total: number }> {
   const q = params.q?.trim();
-  const where: Prisma.FieldReturnWhereInput = q
-    ? { OR: [{ docNo: { contains: q } }, { store: { name: { contains: q } } }] }
-    : {};
+  const where: Prisma.FieldReturnWhereInput = {
+    ...(q ? { OR: [{ docNo: { contains: q } }, { store: { name: { contains: q } } }] } : {}),
+    ...(params.origin ? { origin: params.origin } : {}),
+  };
 
   const [rows, total] = await Promise.all([
     prisma.fieldReturn.findMany({
@@ -44,6 +54,7 @@ export async function listFieldReturns(params: {
         id: true,
         docNo: true,
         status: true,
+        origin: true,
         transport: true,
         createdAt: true,
         totalValue: true,
@@ -60,6 +71,7 @@ export async function listFieldReturns(params: {
       id: r.id,
       docNo: r.docNo,
       storeName: r.store.name,
+      origin: r.origin,
       transport: r.transport,
       status: r.status,
       lineCount: r._count.lines,
@@ -137,10 +149,13 @@ export type FieldReturnDetail = {
   status: FieldReturnStatus;
   storeName: string;
   raisedByLabel: string;
-  transport: FieldReturnTransport;
+  origin: FieldReturnOrigin;
+  /** `null` on an ADMIN-origin return that has not yet been shipped. */
+  transport: FieldReturnTransport | null;
   expeditionName: string | null;
   resiNo: string | null;
-  notaPhotoUrl: string;
+  /** `null` on an ADMIN-origin return — an admin at the office has no nota to photograph. */
+  notaPhotoUrl: string | null;
   note: string | null;
   createdAt: Date;
   totalValue: number | null;
@@ -158,6 +173,7 @@ export async function getFieldReturnById(
       id: true,
       docNo: true,
       status: true,
+      origin: true,
       transport: true,
       expeditionName: true,
       resiNo: true,
@@ -257,6 +273,7 @@ export async function getFieldReturnById(
     status: r.status,
     storeName: r.store.name,
     raisedByLabel: labelFor(r.raisedById),
+    origin: r.origin,
     transport: r.transport,
     expeditionName: r.expeditionName,
     resiNo: r.resiNo,
@@ -410,4 +427,55 @@ export async function previewKonsiReturStockImpact(returnId: string): Promise<Ko
   }
 
   return impacted;
+}
+
+/**
+ * Two figures describing an ADMIN-origin return that has left this store's `StoreStock` ledger
+ * (or is about to) but has not yet reached APPROVED — split by WHERE the return currently sits,
+ * so the store card can tell "still on a truck" from "already off the shelf" instead of the two
+ * reading identically:
+ *
+ * - `raisedQty`: claimed by a return still `PENDING_WAREHOUSE_RECEIVING` — the ledger's
+ *   temporary OVERSTATEMENT `receive-writer.ts` documents. `StoreStock` for an ADMIN return only
+ *   decrements at receipt, so between raise and receipt the store's own ledger still counts
+ *   units that are physically on a truck.
+ * - `receivedQty`: what the warehouse actually counted in on a return sitting in
+ *   `MISMATCH_PENDING_RESOLUTION` or `PENDING_APPROVAL` — `receive-writer.ts` has already
+ *   applied this decrement, so it is the ledger's temporary UNDERSTATEMENT: the units are gone
+ *   from `StoreStock` but there is no `RETUR_OUT` movement row to explain the drop until the
+ *   return reaches APPROVED (`getStoreStockCard` only lists movements for an APPROVED return).
+ *   An `INVESTIGATE` resolution can hold a return here indefinitely.
+ *
+ * Together these cover every ADMIN-origin status except `APPROVED` (by then the movement row
+ * exists) and `CANCELLED` (nothing left the ledger). Deliberately NOT folded into
+ * `getStoreStockCard` or netted out of the stocktake's `expectedQty` — both read the ledger
+ * as-is, by design; this is a separate, purely informational pair for the store card to display
+ * alongside it.
+ */
+export type InTransitAdminReturnQty = {
+  raisedQty: number;
+  receivedQty: number;
+};
+
+export async function getInTransitAdminReturnQty(storeId: string): Promise<InTransitAdminReturnQty> {
+  const [raised, received] = await Promise.all([
+    prisma.fieldReturnLine.aggregate({
+      where: { returnDoc: { storeId, origin: "ADMIN", status: "PENDING_WAREHOUSE_RECEIVING" } },
+      _sum: { qty: true },
+    }),
+    prisma.fieldReturnLine.aggregate({
+      where: {
+        returnDoc: {
+          storeId,
+          origin: "ADMIN",
+          status: { in: ["MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] },
+        },
+      },
+      _sum: { receivedQty: true },
+    }),
+  ]);
+  return {
+    raisedQty: raised._sum.qty ?? 0,
+    receivedQty: received._sum.receivedQty ?? 0,
+  };
 }

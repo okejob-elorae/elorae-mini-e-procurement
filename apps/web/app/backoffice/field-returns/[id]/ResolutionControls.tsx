@@ -22,13 +22,20 @@ import {
 } from "@/components/ui/alert-dialog";
 import { formatDateTime } from "@/lib/sales-orders/format";
 import { isSettled } from "@/lib/field-sales/retur/variance";
-import type { FieldReturnLineDetail, FieldReturnStatus } from "@/lib/field-sales/retur/queries";
+import type { FieldReturnLineDetail, FieldReturnOrigin, FieldReturnStatus } from "@/lib/field-sales/retur/queries";
 import { resolveAction } from "@/app/actions/field-returns";
 import { fieldReturnErrorKey } from "./ReceiveForm";
 
 type ResolutionType = "SALESMAN_BEARS" | "INVESTIGATE" | "WRITE_OFF" | "ACCEPT_SURPLUS";
 
-/** Shortage-direction resolutions (variance < 0) — WRITE_OFF is filtered out separately by canWriteOff. */
+/**
+ * Shortage-direction resolutions (variance < 0) — WRITE_OFF is filtered out separately by
+ * canWriteOff, and SALESMAN_BEARS is filtered out separately for an ADMIN-origin return (no
+ * salesman raised the document, so there is nobody to bear the shortfall). The writer refuses
+ * both regardless of what this list offers — every "use server" export is an independently
+ * callable endpoint — so these filters keep the UI consistent with the writer, not a substitute
+ * for it.
+ */
 const SHORTAGE_TYPES: ResolutionType[] = ["SALESMAN_BEARS", "INVESTIGATE", "WRITE_OFF"];
 /** Surplus-direction resolutions (variance > 0). */
 const SURPLUS_TYPES: ResolutionType[] = ["ACCEPT_SURPLUS"];
@@ -37,6 +44,7 @@ const NOTE_REQUIRED_TYPES: ReadonlySet<ResolutionType> = new Set(["INVESTIGATE",
 
 type Props = {
   status: FieldReturnStatus;
+  origin: FieldReturnOrigin;
   lines: FieldReturnLineDetail[];
   canManage: boolean;
   canWriteOff: boolean;
@@ -67,7 +75,7 @@ function VarianceBadge({ variance }: { variance: number }) {
  * CANCELLED) so the counts and resolution history stay visible read-only once the retur moves
  * on — only the action controls are gated on status and canManage.
  */
-export function ResolutionControls({ status, lines, canManage, canWriteOff }: Props) {
+export function ResolutionControls({ status, origin, lines, canManage, canWriteOff }: Props) {
   const t = useTranslations("fieldReturnReceiving");
   const tCommon = useTranslations("common");
   const locale = useLocale();
@@ -125,7 +133,9 @@ export function ResolutionControls({ status, lines, canManage, canWriteOff }: Pr
             ? []
             : variance > 0
               ? SURPLUS_TYPES
-              : SHORTAGE_TYPES.filter((type) => type !== "WRITE_OFF" || canWriteOff);
+              : SHORTAGE_TYPES.filter((type) => type !== "WRITE_OFF" || canWriteOff).filter(
+                  (type) => type !== "SALESMAN_BEARS" || origin !== "ADMIN",
+                );
 
           return (
             <div key={line.id} className="space-y-3 py-4 first:pt-0 last:pb-0">

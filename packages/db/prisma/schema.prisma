@@ -572,6 +572,11 @@ enum FieldReturnTransport {
   EXPEDITION
 }
 
+enum FieldReturnOrigin {
+  FIELD
+  ADMIN
+}
+
 enum FieldReturnPriceSource {
   DELIVERY
   MANUAL
@@ -589,11 +594,12 @@ model FieldReturn {
   visitId         String?
   raisedById      String
   status          FieldReturnStatus          @default(PENDING_WAREHOUSE_RECEIVING)
-  transport       FieldReturnTransport
+  origin          FieldReturnOrigin          @default(FIELD)
+  transport       FieldReturnTransport?
   expeditionName  String?
   resiNo          String?
-  notaPhotoUrl    String
-  notaPhotoR2Key  String
+  notaPhotoUrl    String?
+  notaPhotoR2Key  String?
   note            String?                    @db.Text
   createdAt       DateTime                   @default(now())
   receivedAt      DateTime?

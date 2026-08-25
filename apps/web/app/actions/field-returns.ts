@@ -7,9 +7,11 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
 import { resolveFieldReturnLine } from "@/lib/field-sales/retur/resolve-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
+import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { listPriceCandidates, resolveLinePrice } from "@/lib/field-sales/retur/pricing";
 import { round2 } from "@/lib/field-sales/retur/pricing-rules";
 import { FieldReturnError, type FieldReturnErrorCode } from "@/lib/field-sales/retur/errors";
+import { FIELD_RETURN_REASONS, type FieldReturnLineInput } from "@/lib/field-sales/retur/types";
 import {
   PRICEABLE_STATUSES,
   PRICEABLE_STATUS_SET,
@@ -32,6 +34,7 @@ export type FieldReturnActionResult =
         | "DUPLICATE_LINE"
         | "NO_VARIANCE"
         | "RESOLUTION_DIRECTION_MISMATCH"
+        | "SALESMAN_BEARS_NOT_ALLOWED"
         | "UNRESOLVED_LINES"
         | "PRICE_NOT_AVAILABLE"
         | "ALREADY_APPROVED"
@@ -64,6 +67,8 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
   MISSING_RESI: "INVALID_REQUEST",
   MISSING_EXPEDITION_NAME: "INVALID_REQUEST",
   MISSING_REASON_NOTE: "INVALID_REQUEST",
+  MISSING_NOTA_PHOTO: "INVALID_REQUEST",
+  MISSING_TRANSPORT: "INVALID_REQUEST",
   INVALID_STATE: "INVALID_STATE",
   SPLIT_MISMATCH: "SPLIT_MISMATCH",
   UNKNOWN_LINE: "UNKNOWN_LINE",
@@ -72,6 +77,14 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
   DUPLICATE_LINE: "DUPLICATE_LINE",
   NO_VARIANCE: "NO_VARIANCE",
   RESOLUTION_DIRECTION_MISMATCH: "RESOLUTION_DIRECTION_MISMATCH",
+  /*
+   * NOT the same bucket as RESOLUTION_DIRECTION_MISMATCH or INVALID_REQUEST: this is a rule
+   * refusal specific to who raised the return (no salesman exists to bear the shortfall on an
+   * ADMIN-origin retur), not a malformed payload or a shortage/surplus direction error. Kept as
+   * its own result code so the resolution card can tell an admin "that resolution does not
+   * apply here" instead of "your request was invalid."
+   */
+  SALESMAN_BEARS_NOT_ALLOWED: "SALESMAN_BEARS_NOT_ALLOWED",
   UNRESOLVED_LINES: "UNRESOLVED_LINES",
 };
 
@@ -80,7 +93,13 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
  * hiccup, a programmer error) becomes `ERROR` rather than leaking a thrown message —
  * production digest-masking would swallow it anyway.
  */
-function toResult(e: unknown): FieldReturnActionResult {
+/*
+ * Typed as the narrower error-only slice, not the full `FieldReturnActionResult` — it never
+ * actually returns an `ok: true`. Shared by every action in this file EXCEPT
+ * `raiseAdminReturnAction`, which has its own narrower `toRaiseAdminReturnResult` below — this
+ * one's codes are too wide for that action's own narrower `RaiseAdminReturnActionResult` type.
+ */
+function toResult(e: unknown): Exclude<FieldReturnActionResult, { ok: true }> {
   if (e instanceof FieldReturnError) return { ok: false, code: ERROR_CODE_MAP[e.code] };
   return { ok: false, code: "ERROR" };
 }
@@ -117,6 +136,41 @@ function isValidReceiveInput(
       isNonNegativeInt(cc.rejectedQty)
     );
   });
+}
+
+/**
+ * Line shape for an admin-raised return, mirrored against the writer's own `assertLineShape`
+ * so a malformed line is refused HERE as `INVALID_REQUEST` rather than reaching the writer and
+ * coming back as `BAD_LINE_SHAPE`/`BAD_QTY` — both already map to the same result code, but the
+ * action layer owning request shape (rather than leaning on the writer's backstop) keeps this
+ * action's own tests meaningful about what "malformed" means at this boundary.
+ */
+function isValidRaiseAdminReturnLine(l: unknown): l is FieldReturnLineInput {
+  if (typeof l !== "object" || l === null) return false;
+  const ll = l as Record<string, unknown>;
+  if (typeof ll.itemId !== "string" || ll.itemId === "") return false;
+  if (typeof ll.variantSku !== "string") return false;
+  if (typeof ll.qty !== "number" || !Number.isInteger(ll.qty) || ll.qty <= 0) return false;
+  if (typeof ll.reason !== "string" || !(FIELD_RETURN_REASONS as readonly string[]).includes(ll.reason)) return false;
+  if (ll.reasonNote !== undefined && ll.reasonNote !== null && typeof ll.reasonNote !== "string") return false;
+  return true;
+}
+
+/**
+ * No `transport`/`notaPhotoUrl`/`notaPhotoR2Key`/`visitId` fields at all — an admin raising a
+ * return from the office has no nota to photograph, no carrier, and no field visit to attach.
+ * The writer enforces that ADMIN origin needs none of those (Task 2); this action never even
+ * accepts them as input, so there is no client-controlled way to smuggle a FIELD-only field in.
+ */
+function isValidRaiseAdminReturnInput(
+  input: unknown
+): input is { storeId: string; lines: FieldReturnLineInput[]; note?: string | null } {
+  if (typeof input !== "object" || input === null) return false;
+  const i = input as Record<string, unknown>;
+  if (typeof i.storeId !== "string" || i.storeId === "") return false;
+  if (i.note !== undefined && i.note !== null && typeof i.note !== "string") return false;
+  if (!Array.isArray(i.lines) || i.lines.length === 0) return false;
+  return i.lines.every(isValidRaiseAdminReturnLine);
 }
 
 function isValidResolveInput(
@@ -217,6 +271,107 @@ export async function resolveAction(input: {
   revalidatePath("/backoffice/field-returns");
   revalidatePath(`/backoffice/field-returns/${returnId}`);
   return { ok: true };
+}
+
+/**
+ * The `ok: true` branch carries `returnId`/`docNo` (Task 4's UI needs both — one to navigate to
+ * the new return's detail page, the other to show the operator what got raised) so it cannot
+ * reuse `FieldReturnActionResult`'s plain `{ ok: true }` shape.
+ *
+ * The error side is deliberately NARROWER than `FieldReturnActionResult`'s full 21-code union,
+ * not a reuse of it — `guard()` can only ever return `FORBIDDEN`, shape validation can only ever
+ * return `INVALID_REQUEST`, and of everything `createFieldReturn` can throw for this call, only
+ * `ITEM_NOT_FOUND`/`STORE_NOT_FOUND` (→ `NOT_FOUND`) and `MISSING_REASON_NOTE` (→
+ * `INVALID_REQUEST`) are reachable: `isValidRaiseAdminReturnInput` already rules out
+ * `NO_LINES`/`BAD_QTY`/`BAD_LINE_SHAPE` before the writer runs, this call never passes `visitId`
+ * or `transport` so `VISIT_NOT_OWNED`/`MISSING_EXPEDITION_NAME`/`MISSING_RESI` can't fire, and
+ * `origin` is always `"ADMIN"` so the `FIELD`-only `MISSING_TRANSPORT`/`MISSING_NOTA_PHOTO` rule
+ * can't either. Reusing the full union here would let a code this action can never actually
+ * produce reach the UI typed as valid, with nothing to catch a missing translation for it — see
+ * `RAISE_ADMIN_RETURN_ERROR_CODE_MAP` below for how the implementation stays inside this type.
+ */
+export type RaiseAdminReturnActionResult =
+  | { ok: true; returnId: string; docNo: string }
+  | { ok: false; code: "FORBIDDEN" | "INVALID_REQUEST" | "NOT_FOUND" | "ERROR" };
+
+/**
+ * Exhaustive over the FULL `FieldReturnErrorCode` union, not just the codes this call path can
+ * reach — a code newly added to `errors.ts` fails to satisfy this `Record` and is a compile
+ * error here rather than a silent gap. Every code this action cannot actually reach still maps
+ * somewhere safe (`ERROR`) rather than being omitted, so `toRaiseAdminReturnResult` below can
+ * never return a code outside `RaiseAdminReturnActionResult`'s own narrower declared type.
+ */
+const RAISE_ADMIN_RETURN_ERROR_CODE_MAP: Record<FieldReturnErrorCode, "INVALID_REQUEST" | "NOT_FOUND" | "ERROR"> = {
+  NO_LINES: "ERROR",
+  BAD_QTY: "ERROR",
+  BAD_LINE_SHAPE: "ERROR",
+  ITEM_NOT_FOUND: "NOT_FOUND",
+  STORE_NOT_FOUND: "NOT_FOUND",
+  VISIT_NOT_OWNED: "ERROR",
+  MISSING_RESI: "ERROR",
+  MISSING_EXPEDITION_NAME: "ERROR",
+  MISSING_REASON_NOTE: "INVALID_REQUEST",
+  MISSING_NOTA_PHOTO: "ERROR",
+  MISSING_TRANSPORT: "ERROR",
+  INVALID_STATE: "ERROR",
+  SPLIT_MISMATCH: "ERROR",
+  UNKNOWN_LINE: "ERROR",
+  MISSING_LINE: "ERROR",
+  NOT_FOUND: "NOT_FOUND",
+  DUPLICATE_LINE: "ERROR",
+  NO_VARIANCE: "ERROR",
+  RESOLUTION_DIRECTION_MISMATCH: "ERROR",
+  SALESMAN_BEARS_NOT_ALLOWED: "ERROR",
+  UNRESOLVED_LINES: "ERROR",
+};
+
+/** Mirrors `toResult` above, but stays inside `RaiseAdminReturnActionResult`'s narrower type. */
+function toRaiseAdminReturnResult(e: unknown): Exclude<RaiseAdminReturnActionResult, { ok: true }> {
+  if (e instanceof FieldReturnError) return { ok: false, code: RAISE_ADMIN_RETURN_ERROR_CODE_MAP[e.code] };
+  return { ok: false, code: "ERROR" };
+}
+
+/**
+ * Lets an admin at the office raise a store return without a nota photo, a transport mode, or a
+ * field visit — `createFieldReturn` (Task 2's writer) already refuses none of those for
+ * `origin: "ADMIN"`; this action just never accepts them as input in the first place. Follows
+ * this file's own shape: `guard()`, shape validation and the writer call all sit inside the one
+ * try/catch so a throwing `auth()` returns a typed `ERROR` instead of escaping uncaught — the
+ * exact bug this file shipped once, missed by three prior tests because each rejected the
+ * *writer* mock instead of `auth()` itself.
+ */
+export async function raiseAdminReturnAction(input: {
+  storeId: string;
+  lines: FieldReturnLineInput[];
+  note?: string | null;
+}): Promise<RaiseAdminReturnActionResult> {
+  let returnId = "";
+  let docNo = "";
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (!isValidRaiseAdminReturnInput(input)) return { ok: false, code: "INVALID_REQUEST" };
+    const created = await createFieldReturn({
+      storeId: input.storeId,
+      raisedById: g.userId,
+      origin: "ADMIN",
+      note: input.note ?? null,
+      lines: input.lines,
+    });
+    returnId = created.returnId;
+    docNo = created.docNo;
+  } catch (e) {
+    return toRaiseAdminReturnResult(e);
+  }
+  /*
+   * The list, the new return's own detail page, and the store detail page all repaint — Task 4
+   * puts the raise flow ON the store detail page, so a revalidate that skips it is a silent
+   * no-op the moment that UI lands.
+   */
+  revalidatePath("/backoffice/field-returns");
+  revalidatePath(`/backoffice/field-returns/${returnId}`);
+  revalidatePath(`/backoffice/stores/${input.storeId}`);
+  return { ok: true, returnId, docNo };
 }
 
 export async function approveAction(returnId: string): Promise<FieldReturnActionResult> {

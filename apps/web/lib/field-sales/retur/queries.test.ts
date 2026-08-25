@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { getFieldReturnById, previewKonsiReturStockImpact } from "./queries";
+import { getFieldReturnById, getInTransitAdminReturnQty, listFieldReturns, previewKonsiReturStockImpact } from "./queries";
 import { createFieldReturn } from "./writer";
 import { receiveFieldReturn } from "./receive-writer";
 
@@ -12,6 +12,23 @@ import { receiveFieldReturn } from "./receive-writer";
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
+
+/**
+ * Reads `FIELD_RETURN_MISMATCH` rows scoped to a set of returns, matched in JS on
+ * `metadata.returnId` — this MariaDB adapter's JSON-path filtering is unreliable, and this spec
+ * shares the dev DB with real notification rows, so a global count would prove nothing. Same
+ * approach as `receive-writer.test.ts`'s `mismatchNotificationsFor`, generalised to a list of
+ * return ids. Used by the `getInTransitAdminReturnQty` block below, whose mismatch fixture
+ * writes one of these on every run.
+ */
+async function mismatchNotificationsFor(returnIds: string[]) {
+  const recent = await prisma.adminNotification.findMany({
+    where: { category: "FIELD_RETURN_MISMATCH" },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+  return recent.filter((n) => returnIds.includes((n.metadata as { returnId?: string } | null)?.returnId ?? ""));
+}
 
 d("getFieldReturnById — pricing fields (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
@@ -429,5 +446,302 @@ d("previewKonsiReturStockImpact (test bed only)", () => {
       storeQty: 2,
       shortfall: 1,
     });
+  });
+});
+
+d("getInTransitAdminReturnQty (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let userId = "";
+  let storeUnreceivedId = "";
+  let storeReceivedId = "";
+  let storeMismatchId = "";
+  let storeFieldOnlyId = "";
+  let storeScopeAId = "";
+  let storeScopeBId = "";
+  let unreceivedReturnId = "";
+  let receivedReturnId = "";
+  let mismatchReturnId = "";
+  let fieldReturnId = "";
+  let scopeAReturnId = "";
+  let scopeBReturnId = "";
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    userId = "";
+    storeUnreceivedId = "";
+    storeReceivedId = "";
+    storeMismatchId = "";
+    storeFieldOnlyId = "";
+    storeScopeAId = "";
+    storeScopeBId = "";
+    unreceivedReturnId = "";
+    receivedReturnId = "";
+    mismatchReturnId = "";
+    fieldReturnId = "";
+    scopeAReturnId = "";
+    scopeBReturnId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-ITQ-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: {
+        sku: `TEST-ITQ-${token}`,
+        nameId: "In-transit query item",
+        nameEn: "In-transit query item",
+        type: "FINISHED_GOOD",
+        uomId,
+        isActive: true,
+        sellingPrice: 40000,
+      },
+    });
+    itemId = item.id;
+
+    const user = await prisma.user.create({ data: { email: `test-itq-${token}@example.com`, name: "Test In-Transit User" } });
+    userId = user.id;
+
+    const mkStore = (suffix: string) =>
+      prisma.store.create({
+        data: {
+          code: `TEST-ITQ-${suffix}-${token}`,
+          name: `Test In-Transit Store ${suffix} ${token}`,
+          address: "Test address",
+          termsType: "KONSI",
+          isActive: true,
+        },
+      });
+
+    storeUnreceivedId = (await mkStore("UNRECEIVED")).id;
+    storeReceivedId = (await mkStore("RECEIVED")).id;
+    storeMismatchId = (await mkStore("MISMATCH")).id;
+    storeFieldOnlyId = (await mkStore("FIELDONLY")).id;
+    storeScopeAId = (await mkStore("SCOPE-A")).id;
+    storeScopeBId = (await mkStore("SCOPE-B")).id;
+
+    /* Left in PENDING_WAREHOUSE_RECEIVING — the one case that must count. */
+    const createdUnreceived = await createFieldReturn({
+      storeId: storeUnreceivedId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 4, reason: "UNSOLD" }],
+    });
+    unreceivedReturnId = createdUnreceived.returnId;
+
+    /*
+     * Raised the same way, then received CLEAN (claimed == received) — lands PENDING_APPROVAL.
+     * The receipt-time decrement (`receive-writer.ts`) has already applied, and the return has
+     * not reached APPROVED yet, so this must now move from `raisedQty` to `receivedQty` rather
+     * than being excluded outright: the units are off the shelf but there is still no
+     * `RETUR_OUT` movement row to explain the drop until approval.
+     */
+    const createdReceived = await createFieldReturn({
+      storeId: storeReceivedId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 6, reason: "UNSOLD" }],
+    });
+    receivedReturnId = createdReceived.returnId;
+    const receivedLine = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(receivedReturnId) } });
+    await receiveFieldReturn({
+      returnId: receivedReturnId,
+      receivedById: userId,
+      counts: [{ lineId: receivedLine.id, receivedQty: 6, sellableQty: 6, rejectedQty: 0 }],
+    });
+
+    /*
+     * Raised 6, received 4 (shortage), left UNRESOLVED — lands MISMATCH_PENDING_RESOLUTION,
+     * which an INVESTIGATE resolution can hold indefinitely. `receivedQty` must count what was
+     * actually counted in (4), never the claimed qty (6) — that's the whole point of splitting
+     * this from `raisedQty`, which is claimed-qty based.
+     */
+    const createdMismatch = await createFieldReturn({
+      storeId: storeMismatchId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 6, reason: "UNSOLD" }],
+    });
+    mismatchReturnId = createdMismatch.returnId;
+    const mismatchLine = await prisma.fieldReturnLine.findFirstOrThrow({ where: { returnId: seededId(mismatchReturnId) } });
+    await receiveFieldReturn({
+      returnId: mismatchReturnId,
+      receivedById: userId,
+      counts: [{ lineId: mismatchLine.id, receivedQty: 4, sellableQty: 4, rejectedQty: 0 }],
+    });
+
+    /*
+     * FIELD origin, left in the SAME PENDING_WAREHOUSE_RECEIVING status a counting ADMIN return
+     * would have — isolates origin, not status, as the excluding factor.
+     */
+    const createdField = await createFieldReturn({
+      storeId: storeFieldOnlyId,
+      raisedById: userId,
+      transport: "SELF_CARRY",
+      notaPhotoUrl: "https://cdn.example/nota.jpg",
+      notaPhotoR2Key: "field-returns/x/nota.jpg",
+      lines: [{ itemId, variantSku: "", qty: 5, reason: "UNSOLD" }],
+    });
+    fieldReturnId = createdField.returnId;
+
+    const createdScopeA = await createFieldReturn({
+      storeId: storeScopeAId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 3, reason: "UNSOLD" }],
+    });
+    scopeAReturnId = createdScopeA.returnId;
+
+    const createdScopeB = await createFieldReturn({
+      storeId: storeScopeBId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 8, reason: "UNSOLD" }],
+    });
+    scopeBReturnId = createdScopeB.returnId;
+  });
+
+  afterEach(async () => {
+    const returnIds = [
+      seededId(unreceivedReturnId),
+      seededId(receivedReturnId),
+      seededId(mismatchReturnId),
+      seededId(fieldReturnId),
+      seededId(scopeAReturnId),
+      seededId(scopeBReturnId),
+    ];
+    const storeIds = [
+      seededId(storeUnreceivedId),
+      seededId(storeReceivedId),
+      seededId(storeMismatchId),
+      seededId(storeFieldOnlyId),
+      seededId(storeScopeAId),
+      seededId(storeScopeBId),
+    ];
+    const notifications = await mismatchNotificationsFor(returnIds);
+    if (notifications.length) {
+      await prisma.adminNotification.deleteMany({ where: { id: { in: notifications.map((n) => n.id) } } });
+    }
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
+    await prisma.store.deleteMany({ where: { id: { in: storeIds } } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+  });
+
+  it("counts an ADMIN return raised but not yet received, under raisedQty", async () => {
+    expect(await getInTransitAdminReturnQty(storeUnreceivedId)).toEqual({ raisedQty: 4, receivedQty: 0 });
+  });
+
+  it("moves an ADMIN return from raisedQty to receivedQty once the warehouse has received it clean, rather than excluding it — it is not APPROVED yet", async () => {
+    expect(await getInTransitAdminReturnQty(storeReceivedId)).toEqual({ raisedQty: 0, receivedQty: 6 });
+  });
+
+  it("counts receivedQty by what was actually counted in, not the claimed qty, for a received-but-unresolved mismatch", async () => {
+    expect(await getInTransitAdminReturnQty(storeMismatchId)).toEqual({ raisedQty: 0, receivedQty: 4 });
+  });
+
+  it("never counts a FIELD-origin return, even sitting in the same PENDING_WAREHOUSE_RECEIVING status an ADMIN return would count in", async () => {
+    expect(await getInTransitAdminReturnQty(storeFieldOnlyId)).toEqual({ raisedQty: 0, receivedQty: 0 });
+  });
+
+  it("scopes to the one store, not picking up another store's ADMIN returns", async () => {
+    expect(await getInTransitAdminReturnQty(storeScopeAId)).toEqual({ raisedQty: 3, receivedQty: 0 });
+    expect(await getInTransitAdminReturnQty(storeScopeBId)).toEqual({ raisedQty: 8, receivedQty: 0 });
+  });
+});
+
+d("listFieldReturns — origin filter (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let userId = "";
+  let storeId = "";
+  let storeName = "";
+  let adminReturnId = "";
+  let fieldReturnId = "";
+
+  beforeEach(async () => {
+    uomId = "";
+    itemId = "";
+    userId = "";
+    storeId = "";
+    storeName = "";
+    adminReturnId = "";
+    fieldReturnId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-LFO-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: {
+        sku: `TEST-LFO-${token}`,
+        nameId: "List filter item",
+        nameEn: "List filter item",
+        type: "FINISHED_GOOD",
+        uomId,
+        isActive: true,
+        sellingPrice: 40000,
+      },
+    });
+    itemId = item.id;
+
+    const user = await prisma.user.create({ data: { email: `test-lfo-${token}@example.com`, name: "Test List Filter User" } });
+    userId = user.id;
+
+    /*
+     * `listFieldReturns` has no storeId param of its own — a token-suffixed store name is what
+     * isolates this fixture's rows from real dev data and other specs on the shared test bed,
+     * via the same `q` (docNo/store-name contains) filter the register's own search box uses.
+     */
+    storeName = `Test List Filter Store ${token}`;
+    const store = await prisma.store.create({
+      data: { code: `TEST-LFO-STORE-${token}`, name: storeName, address: "Test address", termsType: "KONSI", isActive: true },
+    });
+    storeId = store.id;
+
+    const createdAdmin = await createFieldReturn({
+      storeId,
+      raisedById: userId,
+      origin: "ADMIN",
+      lines: [{ itemId, variantSku: "", qty: 2, reason: "UNSOLD" }],
+    });
+    adminReturnId = createdAdmin.returnId;
+
+    const createdField = await createFieldReturn({
+      storeId,
+      raisedById: userId,
+      transport: "SELF_CARRY",
+      notaPhotoUrl: "https://cdn.example/nota.jpg",
+      notaPhotoR2Key: "field-returns/x/nota.jpg",
+      lines: [{ itemId, variantSku: "", qty: 2, reason: "UNSOLD" }],
+    });
+    fieldReturnId = createdField.returnId;
+  });
+
+  afterEach(async () => {
+    const returnIds = [seededId(adminReturnId), seededId(fieldReturnId)];
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+  });
+
+  it(`filters to origin: "ADMIN" and returns only the admin-origin row`, async () => {
+    const { rows, total } = await listFieldReturns({ q: storeName, origin: "ADMIN", page: 1, perPage: 50 });
+    expect(total).toBe(1);
+    expect(rows.map((r) => r.id)).toEqual([adminReturnId]);
+    expect(rows[0].origin).toBe("ADMIN");
+  });
+
+  it("returns both the admin- and field-origin rows when no origin filter is given", async () => {
+    const { rows, total } = await listFieldReturns({ q: storeName, page: 1, perPage: 50 });
+    expect(total).toBe(2);
+    expect(rows.map((r) => r.id).sort()).toEqual([adminReturnId, fieldReturnId].sort());
   });
 });

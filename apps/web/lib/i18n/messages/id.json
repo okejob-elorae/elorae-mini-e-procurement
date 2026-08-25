@@ -2154,6 +2154,8 @@
       "elsewhere": "Gudang: {main} · Van: {van}",
       "negativeBadge": "Stok negatif",
       "negativeNote": "Stok negatif akan diserap otomatis oleh pengiriman konsi berikutnya ke toko ini. Tidak ada cara mengoreksinya secara manual pada tahap ini.",
+      "inTransitNote": "{qty} unit sedang dalam retur admin yang belum diterima gudang — stok toko ini masih menghitung unit tersebut sampai gudang benar-benar menerimanya.",
+      "receivedAwaitingApprovalNote": "{qty} unit sudah diterima gudang dari retur admin yang masih menunggu persetujuan — stok toko ini sudah berkurang sejumlah itu, meskipun retur belum selesai.",
       "movementsTitle": "Pergerakan Stok",
       "movementsEmpty": "Belum ada pergerakan stok",
       "colDate": "Tanggal",
@@ -2173,6 +2175,33 @@
       "colCountedAt": "Tanggal Hitung",
       "colStatus": "Status",
       "colLines": "Baris"
+    },
+    "adminReturn": {
+      "cardTitle": "Retur Admin ke Gudang",
+      "description": "Ajukan penarikan stok toko ini ke gudang pusat langsung dari kantor. Foto nota dan info pengiriman dilengkapi nanti saat barang benar-benar dikirim.",
+      "emptyStock": "Toko ini belum memiliki stok konsi untuk diretur.",
+      "raiseButton": "Ajukan Retur",
+      "dialogTitle": "Ajukan Retur Admin",
+      "dialogDescription": "Pilih barang dan isi jumlah yang ditarik kembali ke gudang. Retur akan menunggu penerimaan gudang seperti retur lapangan biasa.",
+      "colProduct": "Produk",
+      "colVariant": "Varian",
+      "colCurrentQty": "Stok Saat Ini",
+      "colReturnQty": "Qty Retur",
+      "colReason": "Alasan",
+      "qtyInvalid": "Masukkan jumlah bulat yang valid dan tidak negatif.",
+      "noQtyEntered": "Isi jumlah lebih dari nol pada minimal satu baris sebelum mengirim.",
+      "reasonNotePlaceholder": "Jelaskan alasan retur…",
+      "noteLabel": "Catatan (opsional)",
+      "notePlaceholder": "Tulis catatan tambahan untuk retur ini…",
+      "submit": "Ajukan",
+      "submitting": "Mengirim…",
+      "success": "Retur admin {docNo} berhasil diajukan.",
+      "err": {
+        "FORBIDDEN": "Anda tidak memiliki izin untuk mengajukan retur admin.",
+        "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
+        "NOT_FOUND": "Toko tidak ditemukan atau sudah nonaktif.",
+        "ERROR": "Terjadi kesalahan. Coba lagi."
+      }
     }
   },
   "pwa": {
@@ -2526,19 +2555,26 @@
   },
   "fieldReturns": {
     "pageTitle": "Retur Lapangan",
-    "subtitle": "Retur toko yang diajukan oleh salesman lapangan, menunggu penerimaan gudang",
+    "subtitle": "Retur toko yang diajukan oleh salesman lapangan atau admin, menunggu penerimaan gudang",
     "search": "Cari",
     "searchPlaceholder": "Cari berdasarkan nomor dokumen atau nama toko",
     "reset": "Reset",
     "cardTitle": "Daftar Retur",
     "colDocNo": "No. Dokumen",
     "colStore": "Toko",
+    "colOrigin": "Asal",
     "colRaisedAt": "Diajukan",
     "colTransport": "Pengiriman",
     "colLineCount": "Baris",
     "colStatus": "Status",
     "empty": "Belum ada retur lapangan.",
     "emptyFiltered": "Tidak ada retur lapangan yang cocok dengan pencarian ini.",
+    "originFilterLabel": "Asal",
+    "originFilterAll": "Semua Asal",
+    "origin": {
+      "FIELD": "Lapangan",
+      "ADMIN": "Admin"
+    },
     "transport": {
       "SELF_CARRY": "Dibawa Sendiri",
       "EXPEDITION": "Ekspedisi"
@@ -2663,6 +2699,7 @@
       "DUPLICATE_LINE": "Ada baris yang dikirim lebih dari satu kali.",
       "NO_VARIANCE": "Baris ini tidak memiliki selisih untuk diselesaikan.",
       "RESOLUTION_DIRECTION_MISMATCH": "Jenis penyelesaian yang dipilih tidak sesuai dengan arah selisih baris ini (kurang atau lebih).",
+      "SALESMAN_BEARS_NOT_ALLOWED": "Ditanggung Salesman tidak berlaku untuk retur yang diajukan admin — tidak ada salesman yang mengajukannya untuk menanggung kekurangannya. Gunakan Write-off atau Investigasi sebagai gantinya.",
       "UNRESOLVED_LINES": "Masih ada baris dengan selisih yang belum diselesaikan.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "ERROR": "Terjadi kesalahan. Coba lagi.",

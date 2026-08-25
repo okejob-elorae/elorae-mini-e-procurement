@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ArrowLeft, AlertTriangle, CheckCircle2, Info, Wallet } from "lucide-react";
 import type {
   FieldReturnDetail,
+  FieldReturnOrigin,
   FieldReturnStatus,
   KonsiReturStockImpactLine,
 } from "@/lib/field-sales/retur/queries";
@@ -59,6 +60,11 @@ const STATUS_BADGE_CLASS: Record<FieldReturnStatus, string> = {
   PENDING_APPROVAL: "border-amber-500/40 text-amber-700",
   APPROVED: "",
   CANCELLED: "",
+};
+
+const ORIGIN_BADGE_VARIANT: Record<FieldReturnOrigin, "secondary" | "outline"> = {
+  FIELD: "secondary",
+  ADMIN: "outline",
 };
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -202,6 +208,7 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
             </Link>
           </Button>
           <h1 className="text-2xl font-semibold font-mono">{r.docNo}</h1>
+          <Badge variant={ORIGIN_BADGE_VARIANT[r.origin]}>{t(`origin.${r.origin}`)}</Badge>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={STATUS_BADGE_VARIANT[r.status]} className={STATUS_BADGE_CLASS[r.status]}>
@@ -221,27 +228,34 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
         <Field label={t("detail.store")} value={r.storeName} />
         <Field label={t("detail.raisedBy")} value={r.raisedByLabel} />
         <Field label={t("detail.raisedAt")} value={formatDateOnlyJakarta(r.createdAt)} />
-        <Field label={t("detail.transport")} value={t(`transport.${r.transport}`)} />
-        {r.transport === "EXPEDITION" && (
+        {/* ADMIN-origin, not yet shipped — hidden rather than rendered with an empty value. */}
+        {r.transport && (
           <>
-            <Field label={t("detail.expeditionName")} value={r.expeditionName} />
-            <Field label={t("detail.resiNo")} value={r.resiNo} />
+            <Field label={t("detail.transport")} value={t(`transport.${r.transport}`)} />
+            {r.transport === "EXPEDITION" && (
+              <>
+                <Field label={t("detail.expeditionName")} value={r.expeditionName} />
+                <Field label={t("detail.resiNo")} value={r.resiNo} />
+              </>
+            )}
           </>
         )}
         <Field label={t("detail.note")} value={r.note} />
       </Card>
 
-      <Card className="p-4 space-y-2">
-        <h2 className="font-semibold">{t("detail.notaPhoto")}</h2>
-        <div className="overflow-hidden rounded-md border bg-muted">
-          {/* eslint-disable-next-line @next/next/no-img-element -- external R2-hosted photo, not an optimizable local asset */}
-          <img
-            src={r.notaPhotoUrl}
-            alt={t("detail.notaPhoto")}
-            className="max-h-[70vh] w-full object-contain"
-          />
-        </div>
-      </Card>
+      {r.notaPhotoUrl && (
+        <Card className="p-4 space-y-2">
+          <h2 className="font-semibold">{t("detail.notaPhoto")}</h2>
+          <div className="overflow-hidden rounded-md border bg-muted">
+            {/* eslint-disable-next-line @next/next/no-img-element -- external R2-hosted photo, not an optimizable local asset */}
+            <img
+              src={r.notaPhotoUrl}
+              alt={t("detail.notaPhoto")}
+              className="max-h-[70vh] w-full object-contain"
+            />
+          </div>
+        </Card>
+      )}
 
       <Card className="p-4">
         <h2 className="font-semibold mb-2">{t("detail.linesTitle")}</h2>
@@ -292,6 +306,7 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
       {showResolutionControls && (
         <ResolutionControls
           status={r.status}
+          origin={r.origin}
           lines={r.lines}
           canManage={canManage}
           canWriteOff={canWriteOff}

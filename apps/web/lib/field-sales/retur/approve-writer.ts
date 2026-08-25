@@ -24,6 +24,7 @@ export async function approveFieldReturn(input: {
         status: true,
         receivedAt: true,
         storeId: true,
+        origin: true,
         store: { select: { termsType: true } },
         lines: {
           orderBy: { id: "asc" },
@@ -315,7 +316,23 @@ export async function approveFieldReturn(input: {
     if (ret.store.termsType === "KONSI") {
       for (const line of ret.lines) {
         const creditedQty = creditedQtyByLineId.get(line.id) ?? 0;
-        if (creditedQty === 0) continue;
+
+        /*
+         * FIELD decrements the full creditedQty here, exactly as before this feature — a FIELD
+         * return's stock never leaves the store's ledger until approve.
+         *
+         * ADMIN already decremented `receivedQty` at RECEIPT (receiveFieldReturn), so only the
+         * DELTA belongs here: creditedQty - receivedQty. That is 0 on a clean count (the common
+         * case — the whole decrement already happened at receipt) and non-zero only where a
+         * resolution credited a different qty than what physically arrived (a shortage borne by
+         * the salesman or written off credits the store for the full claimed qty, beyond what
+         * was received; an accepted surplus credits exactly what was received, so the delta is
+         * zero there too). Implementing this as two FULL decrements instead of one full plus one
+         * delta would silently halve the store's ledger on every admin return — that is the bug
+         * this comment exists to prevent a future edit from reintroducing.
+         */
+        const decrementQty = ret.origin === "ADMIN" ? creditedQty - (line.receivedQty ?? 0) : creditedQty;
+        if (decrementQty === 0) continue;
 
         const storeKey = {
           storeId_itemId_variantSku: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku },
@@ -325,8 +342,8 @@ export async function approveFieldReturn(input: {
 
         await tx.storeStock.upsert({
           where: storeKey,
-          create: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku, qty: -creditedQty, avgCost: 0 },
-          update: { qty: prevStoreQty - creditedQty },
+          create: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku, qty: -decrementQty, avgCost: 0 },
+          update: { qty: prevStoreQty - decrementQty },
         });
       }
     }

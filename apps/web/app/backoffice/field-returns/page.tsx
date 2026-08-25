@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
-import { listFieldReturns } from "@/lib/field-sales/retur/queries";
+import { listFieldReturns, type FieldReturnOrigin } from "@/lib/field-sales/retur/queries";
 import { FieldReturnsPageClient } from "./FieldReturnsPageClient";
 
 export const dynamic = "force-dynamic";
@@ -9,16 +9,22 @@ export const dynamic = "force-dynamic";
 type PageProps = {
   searchParams: Promise<{
     q?: string;
+    origin?: string;
     page?: string;
     pageSize?: string;
   }>;
 };
 
 const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
+const ALLOWED_ORIGINS: ReadonlySet<string> = new Set(["FIELD", "ADMIN"]);
 
 function parsePageSize(raw: string | undefined): number {
   const n = parseInt(raw ?? "", 10);
   return ALLOWED_PAGE_SIZES.includes(n) ? n : DEFAULT_PAGE_SIZE;
+}
+
+function parseOrigin(raw: string | undefined): FieldReturnOrigin | undefined {
+  return raw && ALLOWED_ORIGINS.has(raw) ? (raw as FieldReturnOrigin) : undefined;
 }
 
 export default async function FieldReturnsPage({ searchParams }: PageProps) {
@@ -27,16 +33,18 @@ export default async function FieldReturnsPage({ searchParams }: PageProps) {
 
   const sp = await searchParams;
   const q = sp.q?.trim() || undefined;
+  const origin = parseOrigin(sp.origin);
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
 
-  const { rows, total } = await listFieldReturns({ q, page, perPage: pageSize });
+  const { rows, total } = await listFieldReturns({ q, origin, page, perPage: pageSize });
 
   return (
     <FieldReturnsPageClient
       rows={rows}
       total={total}
       q={q ?? ""}
+      origin={origin ?? ""}
       page={page}
       pageSize={pageSize}
     />

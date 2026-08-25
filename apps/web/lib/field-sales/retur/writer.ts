@@ -26,14 +26,19 @@ export async function createFieldReturn(input: {
   storeId: string;
   visitId?: string | null;
   raisedById: string;
-  transport: "SELF_CARRY" | "EXPEDITION";
+  origin?: "FIELD" | "ADMIN";
+  transport?: "SELF_CARRY" | "EXPEDITION" | null;
   expeditionName?: string | null;
   resiNo?: string | null;
-  notaPhotoUrl: string;
-  notaPhotoR2Key: string;
+  notaPhotoUrl?: string | null;
+  notaPhotoR2Key?: string | null;
   note?: string | null;
   lines: Line[];
 }): Promise<{ returnId: string; docNo: string }> {
+  /* Defaults to FIELD, matching the schema's own default — a caller that omits `origin`
+     entirely (every pre-existing caller) gets the exact same rules as before this feature. */
+  const origin: "FIELD" | "ADMIN" = input.origin ?? "FIELD";
+
   if (input.lines.length === 0) throw new FieldReturnError("NO_LINES");
   for (const l of input.lines) {
     assertLineShape(l);
@@ -42,6 +47,23 @@ export async function createFieldReturn(input: {
       throw new FieldReturnError("MISSING_REASON_NOTE");
     }
   }
+
+  /*
+   * A FIELD return still requires a nota photo and a transport mode, exactly like before Task
+   * 1 made the underlying columns nullable — that migration relaxed the DATABASE, not this
+   * rule. Every "use server" export here is independently callable, so the rule has to live in
+   * the writer, not just in the form. ADMIN raises none of this: an admin at the office has no
+   * nota to photograph and no carrier to record.
+   */
+  if (origin === "FIELD") {
+    if (input.transport !== "SELF_CARRY" && input.transport !== "EXPEDITION") {
+      throw new FieldReturnError("MISSING_TRANSPORT");
+    }
+    if ((input.notaPhotoUrl ?? "").trim() === "" || (input.notaPhotoR2Key ?? "").trim() === "") {
+      throw new FieldReturnError("MISSING_NOTA_PHOTO");
+    }
+  }
+
   if (input.transport === "EXPEDITION") {
     if ((input.expeditionName ?? "").trim() === "") {
       throw new FieldReturnError("MISSING_EXPEDITION_NAME");
@@ -78,11 +100,12 @@ export async function createFieldReturn(input: {
         storeId: input.storeId,
         visitId: input.visitId ?? null,
         raisedById: input.raisedById,
-        transport: input.transport,
+        origin,
+        transport: input.transport ?? null,
         expeditionName: input.transport === "EXPEDITION" ? input.expeditionName?.trim() || null : null,
         resiNo: input.transport === "EXPEDITION" ? input.resiNo?.trim() || null : null,
-        notaPhotoUrl: input.notaPhotoUrl,
-        notaPhotoR2Key: input.notaPhotoR2Key,
+        notaPhotoUrl: input.notaPhotoUrl ?? null,
+        notaPhotoR2Key: input.notaPhotoR2Key ?? null,
         note: input.note?.trim() || null,
         lines: {
           create: input.lines.map((l) => ({
