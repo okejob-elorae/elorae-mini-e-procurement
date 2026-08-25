@@ -104,6 +104,7 @@ One line per known trap: **the situation you are in — what bites — where the
 - Adding a doc-number sequence for a new register? Take your own `DocType` — field retur takes `FIELDRET`, NOT the vendor-return `RET`; sharing a counter interleaves two registers and lets a Settings prefix edit renumber the other one.
 - Touching `recordFieldSalesDelivery`? It creates exactly one `TaxInvoice` per nota tagihan inside its own serializable transaction — the finance queue is keyed on the nota being ISSUED, not printed, so a delivery written without that row is invisible to finance and fails closed and silent.
 - Changing the konsi approve path? An already-APPROVED order must REFUSE a payload carrying admin-added lines rather than returning its idempotent `ok` — returning `ok` reports a success that created nothing.
+- Wondering why a store stops getting konsi suggestions for an item it used to carry? `listKonsiSuggestions`'s never-sent exclusion (`sentItemIds`) is PERMANENT once any unit of an item has ever shipped, even after that store's `StoreStock` drops to zero — that silence is why `StoreAssortmentLine` exists: an assortment gap catches exactly the case never-sent can't, and it gates nothing (advisory only, no push transfer of its own). See `docs/ARCHITECTURE-NOTES.md`.
 
 **Data ownership + auth**
 
