@@ -1,6 +1,7 @@
-import type { Prisma } from "@elorae/db";
+import { InventoryValueMissingError, type Prisma } from "@elorae/db";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
 import { generateDocNumber } from "@/lib/docNumber";
+import { KonsiTransferReservationMismatchError } from "../errors";
 
 type TxClient = Prisma.TransactionClient;
 
@@ -43,7 +44,7 @@ export async function issueKonsiTransfer(
     const main = isVariantless
       ? await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, OR: [{ variantSku: null }, { variantSku: "" }] }, select })
       : await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, variantSku: l.variantSku }, select });
-    if (!main) throw new Error(`InventoryValue missing for ${l.itemId}::${l.variantSku}`);
+    if (!main) throw new InventoryValueMissingError(l.itemId, l.variantSku);
 
     const prevQty = main.qtyOnHand.toNumber();
     const avgCost = main.avgCost.toNumber();
@@ -87,12 +88,24 @@ export async function issueKonsiTransfer(
       update: { qty: prevStoreQty + l.qty, avgCost: weightedAvgCost(prevStoreQty, prevStoreAvg, l.qty, avgCost) },
     });
 
-    // The reservation reserveKonsiFieldSalesOrder created earlier in this same transaction is
-    // now resolved — flip it to CONSUMED rather than leaving it RESERVED against nothing.
-    await tx.stockReservation.updateMany({
+    /*
+     * The reservation reserveKonsiFieldSalesOrder created earlier in this same transaction is
+     * now resolved — flip it to CONSUMED rather than leaving it RESERVED against nothing.
+     *
+     * Guarded, not fire-and-forget: reserveKonsiFieldSalesOrder has a silent skip branch (an
+     * existing reservation on the same fieldSalesLineId short-circuits without incrementing
+     * reservedQty), and the current approve() guards (status !== PENDING_APPROVAL rejects
+     * re-entry) mean nothing observed reaches this skip today. But if it ever did, this
+     * updateMany would silently match 0 rows while qtyOnHand and reservedQty above had already
+     * been decremented unconditionally — reservedQty would drift permanently negative with no
+     * reservation ever released against it, exactly the invariant this module exists to protect.
+     * So the match count is checked rather than discarded.
+     */
+    const resolved = await tx.stockReservation.updateMany({
       where: { fieldSalesLineId: l.id, state: "RESERVED" },
       data: { state: "CONSUMED", consumedQty: l.qty, resolvedAt: new Date() },
     });
+    if (resolved.count !== 1) throw new KonsiTransferReservationMismatchError(l.id, resolved.count);
 
     lineData.push({ orderLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, productName: l.productName, qty: l.qty, unitCost: avgCost });
   }

@@ -107,6 +107,22 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     const itemIds = [seededId(itemId), seededId(variantlessItemId), seededId(shortItemId)];
     const orderIds = [seededId(orderId), seededId(secondOrderId), seededId(variantlessOrderId), seededId(shortOrderId)];
 
+    /*
+     * createFieldSalesOrder writes one AdminNotification per order with no orderId column to
+     * filter on (only a Json metadata blob), and Prisma's JSON path filtering is unreliable on
+     * this MariaDB adapter (see the van-journal-pending follow-up). So: read the category's rows,
+     * match orderId in JS against our own seeded ids, then delete by the resulting explicit id
+     * list — never by category alone, which would over-match every other test's notifications.
+     */
+    const candidateNotifs = await prisma.adminNotification.findMany({
+      where: { category: "PENDING_ORDER_APPROVAL" },
+      select: { id: true, metadata: true },
+    });
+    const leakedNotifIds = candidateNotifs
+      .filter((n) => orderIds.includes((n.metadata as { orderId?: string } | null)?.orderId ?? ""))
+      .map((n) => n.id);
+    if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds } } });
+
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: orderIds } } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
@@ -137,7 +153,7 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     expect(Number(after.reservedQty)).toBe(Number(before.reservedQty));
   });
 
-  it("upserts StoreStock at the blended cost", async () => {
+  it("creates StoreStock at the transferred qty and cost on a first transfer into an empty store", async () => {
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
     const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
     expect(Number(ss.qty)).toBe(6);
@@ -189,10 +205,18 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
   });
 
   it("moves nothing when a line is short — the existing reserve guard still aborts", async () => {
+    /*
+     * The KonsiTransfer document is created LAST, so a bare count of 0 on it would also pass for
+     * a half-run transfer that had already moved stock and then thrown partway through — it only
+     * proves the last step never finished, not that nothing moved. Assert the whole-transaction
+     * rollback directly: qtyOnHand and reservedQty both unchanged, and no StoreStock row exists.
+     */
     const before = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(shortItemId) } });
     await expect(approveFieldSalesOrder({ orderId: shortOrderId, approvedById: salesmanId })).rejects.toBeInstanceOf(InsufficientStockError);
     const after = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(shortItemId) } });
     expect(Number(after.qtyOnHand)).toBe(Number(before.qtyOnHand));
+    expect(Number(after.reservedQty)).toBe(Number(before.reservedQty));
+    expect(await prisma.storeStock.count({ where: { storeId: seededId(storeId), itemId: seededId(shortItemId) } })).toBe(0);
     expect(await prisma.konsiTransfer.count({ where: { orderId: seededId(shortOrderId) } })).toBe(0);
   });
 

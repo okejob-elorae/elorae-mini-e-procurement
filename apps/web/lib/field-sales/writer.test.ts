@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { createFieldSalesOrder, approveFieldSalesOrder, rejectFieldSalesOrder } from "./writer";
 import { NoActiveVisitError, MinQtyViolationError, InsufficientStockError } from "./errors";
 
@@ -424,9 +424,9 @@ d("approveFieldSalesOrder — konsi", () => {
 
   afterEach(async () => {
     await prisma.salesHistory.deleteMany({ where: { itemId } });
-    await prisma.konsiTransferLine.deleteMany({ where: { itemId } });
-    await prisma.konsiTransfer.deleteMany({ where: { storeId } });
-    await prisma.storeStock.deleteMany({ where: { storeId } });
+    await prisma.konsiTransferLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.konsiTransfer.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
     await prisma.storeVisit.deleteMany({ where: { id: visitId } });
