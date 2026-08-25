@@ -424,6 +424,9 @@ d("approveFieldSalesOrder — konsi", () => {
 
   afterEach(async () => {
     await prisma.salesHistory.deleteMany({ where: { itemId } });
+    await prisma.konsiTransferLine.deleteMany({ where: { itemId } });
+    await prisma.konsiTransfer.deleteMany({ where: { storeId } });
+    await prisma.storeStock.deleteMany({ where: { storeId } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
     await prisma.storeVisit.deleteMany({ where: { id: visitId } });
@@ -435,7 +438,7 @@ d("approveFieldSalesOrder — konsi", () => {
     await prisma.uOM.deleteMany({ where: { id: uomId } });
   });
 
-  it("reserves (not consumes), stores gross-up, writes NO SalesHistory", async () => {
+  it("moves stock to the store's virtual warehouse at approve, stores gross-up, writes NO SalesHistory", async () => {
     await seedItemWithStock(10, 10000);
     const { orderId } = await createFieldSalesOrder({
       storeId,
@@ -453,14 +456,18 @@ d("approveFieldSalesOrder — konsi", () => {
     expect(Number(order!.lines[0].unitPrice)).toBe(12500);
     expect(Number(order!.lines[0].lineTotal)).toBe(50000);
     expect(Number(order!.total)).toBe(50000);
-    // reserved, NOT consumed
+    // stock moves out of main and into the store's virtual warehouse — reserve (+4) then
+    // consume (-4) both run inside this one approve() call, so reservedQty nets back to 0.
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
-    expect(Number(inv!.reservedQty)).toBe(4);
-    expect(Number(inv!.qtyOnHand)).toBe(10); // unchanged — no consume
+    expect(Number(inv!.reservedQty)).toBe(0);
+    expect(Number(inv!.qtyOnHand)).toBe(6); // 10 - 4
     const rsv = await prisma.stockReservation.findUnique({ where: { fieldSalesLineId: order!.lines[0].id } });
     expect(rsv!.source).toBe("FIELD_SALES_KONSI");
-    expect(rsv!.state).toBe("RESERVED");
-    // NO SalesHistory written
+    expect(rsv!.state).toBe("CONSUMED");
+    expect(Number(rsv!.consumedQty)).toBe(4);
+    const ss = await prisma.storeStock.findFirst({ where: { storeId, itemId } });
+    expect(Number(ss!.qty)).toBe(4);
+    // NO SalesHistory written — a transfer is not a sale
     expect(await prisma.salesHistory.count()).toBe(before);
   });
 
