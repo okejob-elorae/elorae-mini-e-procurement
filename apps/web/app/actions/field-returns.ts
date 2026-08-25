@@ -1,12 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
 import { resolveFieldReturnLine } from "@/lib/field-sales/retur/resolve-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
+import { listPriceCandidates, resolveLinePrice } from "@/lib/field-sales/retur/pricing";
+import { round2 } from "@/lib/field-sales/retur/pricing-rules";
 import { FieldReturnError, type FieldReturnErrorCode } from "@/lib/field-sales/retur/errors";
+import { PRICEABLE_STATUSES, PRICEABLE_STATUS_SET } from "@/lib/field-sales/retur/queries";
 
 export type FieldReturnActionResult =
   | { ok: true }
@@ -24,6 +28,9 @@ export type FieldReturnActionResult =
         | "NO_VARIANCE"
         | "RESOLUTION_DIRECTION_MISMATCH"
         | "UNRESOLVED_LINES"
+        | "PRICE_NOT_AVAILABLE"
+        | "ALREADY_APPROVED"
+        | "AUTO_PRICE_AVAILABLE"
         | "INVALID_REQUEST"
         | "ERROR";
     };
@@ -118,6 +125,32 @@ function isValidResolveInput(
   return true;
 }
 
+type SetLinePriceInput =
+  | { lineId: string; deliveryLineId: string }
+  | { lineId: string; manualUnitPrice: number; note: string };
+
+/**
+ * The two shapes share `lineId`; whichever of `deliveryLineId` (a real string) or
+ * `manualUnitPrice` discriminates which branch the action takes. A manual price must be a
+ * POSITIVE finite number — `<= 0`, not just `< 0`, is rejected: a manual price of exactly 0
+ * would still pass a Prisma `Decimal` truthiness check downstream and reads as a genuine,
+ * complete valuation of zero rather than "no price was ever recorded" (the same GL-incident
+ * class as a `cogs = 0` line that looked like real data). Its note must also be non-blank after
+ * trimming — provenance is the entire point of the manual path, so an empty note is as invalid
+ * as a missing price.
+ */
+function isValidSetLinePriceInput(input: unknown): input is SetLinePriceInput {
+  if (typeof input !== "object" || input === null) return false;
+  const i = input as Record<string, unknown>;
+  if (typeof i.lineId !== "string" || i.lineId === "") return false;
+  if (typeof i.deliveryLineId === "string") return i.deliveryLineId !== "";
+  if (typeof i.manualUnitPrice === "number") {
+    if (!Number.isFinite(i.manualUnitPrice) || i.manualUnitPrice <= 0) return false;
+    return typeof i.note === "string" && i.note.trim() !== "";
+  }
+  return false;
+}
+
 export async function receiveAction(input: {
   returnId: string;
   counts: ReceiveCount[];
@@ -193,4 +226,100 @@ export async function approveAction(returnId: string): Promise<FieldReturnAction
   revalidatePath("/backoffice/field-returns");
   revalidatePath(`/backoffice/field-returns/${returnId}`);
   return { ok: true };
+}
+
+/**
+ * Lets an admin resolve a price the auto-resolve at approval could not pick on its own —
+ * either by pointing at one of this line's own genuine delivery candidates, or by recording a
+ * manual price with a required note. `resolveFieldReturnLine`'s own writer only touches
+ * resolutions; this one writes the pricing columns directly since there is no dedicated
+ * pricing writer file, matching this file's existing shape of guard + write inside one
+ * try/catch so `auth()` can never escape uncaught.
+ *
+ * The delivery branch is the security-relevant one: `deliveryLineId` arrives from the client,
+ * so it MUST be re-verified against `listPriceCandidates` for this exact line's store + item +
+ * variant before it is trusted. Skipping that check would let an admin point a line at a
+ * delivery from a different store entirely and inflate the retur's value — the one thing the
+ * epic's acceptance criteria forbid.
+ *
+ * The MANUAL branch is EQUALLY security-relevant, for the same acceptance criterion, even
+ * though the UI never renders a manual-price control on a line whose `priceState` is AUTO —
+ * every export of a `"use server"` module is an independently callable endpoint regardless of
+ * what the UI withholds. So this re-resolves the line's price server-side via
+ * `resolveLinePrice` and refuses `AUTO_PRICE_AVAILABLE` unless the verdict is AMBIGUOUS or
+ * UNPRICEABLE — a manual override is only for a line auto-resolve genuinely could not price
+ * without help, never a lever to override a price that already resolves cleanly on its own.
+ *
+ *
+ * The initial `findUnique` status check is a friendly early exit, not the real guard — it reads
+ * and the actual write are two separate round trips, so a concurrent `approveFieldReturn` (which
+ * runs inside its own serializable transaction) can freeze the line in between. The `updateMany`
+ * below is the real guard: it repeats the same status condition as part of the write itself, and
+ * a `count` of zero means the retur moved out from under this call, so nothing was written and
+ * the caller is told `ALREADY_APPROVED` rather than a success that silently wrote nothing.
+ */
+export async function setLinePriceAction(input: SetLinePriceInput): Promise<FieldReturnActionResult> {
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (!isValidSetLinePriceInput(input)) return { ok: false, code: "INVALID_REQUEST" };
+
+    const line = await prisma.fieldReturnLine.findUnique({
+      where: { id: input.lineId },
+      select: {
+        id: true,
+        itemId: true,
+        variantSku: true,
+        returnDoc: { select: { id: true, status: true, storeId: true } },
+      },
+    });
+    if (!line) return { ok: false, code: "NOT_FOUND" };
+    /* CANCELLED is not "already approved" — a wrong code sends whoever debugs this to the
+       wrong place, so it keeps the existing generic wrong-state code instead. */
+    if (line.returnDoc.status === "CANCELLED") return { ok: false, code: "INVALID_STATE" };
+    if (!PRICEABLE_STATUS_SET.has(line.returnDoc.status)) return { ok: false, code: "ALREADY_APPROVED" };
+
+    if ("deliveryLineId" in input) {
+      const candidates = await listPriceCandidates(prisma, {
+        storeId: line.returnDoc.storeId,
+        itemId: line.itemId,
+        variantSku: line.variantSku,
+      });
+      const match = candidates.find((c) => c.deliveryLineId === input.deliveryLineId);
+      if (!match) return { ok: false, code: "PRICE_NOT_AVAILABLE" };
+      const swapped = await prisma.fieldReturnLine.updateMany({
+        where: { id: input.lineId, returnDoc: { status: { in: [...PRICEABLE_STATUSES] } } },
+        data: {
+          priceSource: "DELIVERY",
+          priceDeliveryLineId: input.deliveryLineId,
+          unitPrice: null,
+          priceNote: null,
+        },
+      });
+      if (swapped.count === 0) return { ok: false, code: "ALREADY_APPROVED" };
+    } else {
+      const resolved = await resolveLinePrice(prisma, {
+        storeId: line.returnDoc.storeId,
+        itemId: line.itemId,
+        variantSku: line.variantSku,
+      });
+      if (resolved.kind === "AUTO") return { ok: false, code: "AUTO_PRICE_AVAILABLE" };
+      const swapped = await prisma.fieldReturnLine.updateMany({
+        where: { id: input.lineId, returnDoc: { status: { in: [...PRICEABLE_STATUSES] } } },
+        data: {
+          priceSource: "MANUAL",
+          priceDeliveryLineId: null,
+          unitPrice: round2(input.manualUnitPrice),
+          priceNote: input.note.trim(),
+        },
+      });
+      if (swapped.count === 0) return { ok: false, code: "ALREADY_APPROVED" };
+    }
+
+    revalidatePath("/backoffice/field-returns");
+    revalidatePath(`/backoffice/field-returns/${line.returnDoc.id}`);
+    return { ok: true };
+  } catch (e) {
+    return toResult(e);
+  }
 }

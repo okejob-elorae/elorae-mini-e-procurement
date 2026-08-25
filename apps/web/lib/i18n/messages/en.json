@@ -2539,6 +2539,25 @@
       "colQty": "Qty",
       "colReason": "Reason",
       "colReasonNote": "Reason Note"
+    },
+    "colValue": "Value",
+    "valuationIncomplete": "Not Fully Valued",
+    "valuation": {
+      "cardTitle": "Return Valuation",
+      "notYetValuedBody": "The return's value will be computed automatically once this return is approved.",
+      "incompleteTitle": "Valuation Incomplete",
+      "incompleteBody": "{count} line(s) still need a price before this return can be fully valued.",
+      "incompleteBodyApproved": "{count} line(s) could not be priced and are permanently excluded from this return's total — values were locked at approval and cannot be changed from here.",
+      "surplusNote": "This return has a line credited at the quantity the warehouse actually received, so its value may exceed the store's own paper nota.",
+      "colCreditedQty": "Credited Qty",
+      "colUnitPriceRef": "Unit Price (Reference)",
+      "colLineValue": "Line Value",
+      "colProvenance": "Price Source",
+      "provenanceManual": "Manual",
+      "provenanceNone": "Not Set",
+      "surplusBadge": "Surplus Credited",
+      "surplusStats": "Claimed {claimed} · Received {received} · Credited {credited}",
+      "cancelledBody": "This return was cancelled, so it was never valued."
     }
   },
   "fieldReturnReceiving": {
@@ -2612,8 +2631,31 @@
       "RESOLUTION_DIRECTION_MISMATCH": "The chosen settlement type does not match whether this line is short or over.",
       "UNRESOLVED_LINES": "There are still lines with an unresolved discrepancy.",
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
-      "ERROR": "Something went wrong. Please try again."
-    }
+      "ERROR": "Something went wrong. Please try again.",
+      "PRICE_NOT_AVAILABLE": "The selected delivery is no longer a valid price source for this line. Reload the page and try again.",
+      "ALREADY_APPROVED": "This return has already been approved, so its price can no longer be changed.",
+      "AUTO_PRICE_AVAILABLE": "This line has a valid automatic price from a delivery — a manual price is not allowed while that automatic price still applies."
+    },
+    "pricing": {
+      "autoTitle": "Automatic Price",
+      "autoBody": "This price will be taken automatically from delivery {docNo} ({price}).",
+      "pickerLabel": "Choose the source delivery",
+      "pickerPlaceholder": "Choose a delivery...",
+      "pickerHint": "This store received this item from more than one delivery at a different price — choose one as this line's reference.",
+      "confirmPick": "Use This Price",
+      "manualLabel": "Manual Unit Price",
+      "manualPlaceholder": "e.g. 15000",
+      "manualNotePlaceholder": "Explain where this price comes from, e.g. the store's own nota",
+      "confirmManual": "Save Manual Price",
+      "changeButton": "Change Price",
+      "switchToManual": "Use a manual price instead",
+      "switchToPicker": "Choose from a delivery instead",
+      "provenanceDeliveryTitle": "Priced from a delivery",
+      "provenanceManualTitle": "Manual price",
+      "unpriceableBody": "This item has never been delivered to this store, so there is no automatic price to use — enter a manual price with a note.",
+      "successSet": "Line price saved."
+    },
+    "approveConfirmValuationWarning": "{count} line(s) still have no price. They will still be approved and restored to stock, but their value will never be computed after this."
   },
   "promos": {
     "pageTitle": "Promos",
@@ -3247,7 +3289,6 @@
       "failed": "Export failed"
     }
   },
-
   "financeAccountMapping": {
     "title": "Account Mapping",
     "cardTitle": "Posting Account Mapping",
@@ -3310,7 +3351,6 @@
       "WRONG_ACCOUNT_TYPE": "That account has the wrong type for this role — e.g. the Accounts Payable role must map to a LIABILITAS account."
     }
   },
-
   "financeCashFlowSections": {
     "title": "Cash Flow Classification",
     "subtitle": "Assign each balance-sheet account to operating, investing, or financing activities.",
@@ -3347,7 +3387,6 @@
       "KAS_REQUIRES_ASET": "Only ASET accounts can be marked as Cash and Cash Equivalents. Marking a liability or equity account as cash would make the cash flow statement wrong."
     }
   },
-
   "leadTime": {
     "title": "Lead Time",
     "subtitle": "Process library & board to assign processes to each supplier",

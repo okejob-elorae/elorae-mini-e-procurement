@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, AlertTriangle, CheckCircle2, Info, Wallet } from "lucide-react";
 import type { FieldReturnDetail, FieldReturnStatus } from "@/lib/field-sales/retur/queries";
 import { isSettled } from "@/lib/field-sales/retur/variance";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -33,6 +33,7 @@ import {
 import { approveAction } from "@/app/actions/field-returns";
 import { ReceiveForm, fieldReturnErrorKey } from "./ReceiveForm";
 import { ResolutionControls } from "./ResolutionControls";
+import { LinePriceControls } from "./LinePriceControls";
 
 type Props = {
   fieldReturn: FieldReturnDetail;
@@ -74,6 +75,41 @@ function outstandingLineCount(lines: FieldReturnDetail["lines"]): number {
   }).length;
 }
 
+/** Mirrors setLinePriceAction's own PRICEABLE_STATUSES — the line price controls must stop
+ *  rendering the instant a retur is no longer eligible to be repriced. */
+const PRICEABLE_STATUSES: ReadonlySet<FieldReturnStatus> = new Set([
+  "PENDING_WAREHOUSE_RECEIVING",
+  "MISMATCH_PENDING_RESOLUTION",
+  "PENDING_APPROVAL",
+]);
+
+/**
+ * A line still awaiting an admin's pricing decision on a retur that is STILL OPEN — `priceState`
+ * AMBIGUOUS or UNPRICEABLE is exactly the pair LinePriceControls itself renders a picker/manual
+ * form for. Deliberately NOT used once the retur is APPROVED: `priceState` reads "SET" for a
+ * preserved-but-never-resolved admin choice (a dangling `priceDeliveryLineId`, a MANUAL choice
+ * whose price was never actually recorded), so on an approved retur this count can read 0 while
+ * a line's `lineValue` is genuinely null — see `unvaluedLineCount` for the post-approval signal.
+ */
+function unpricedLineCount(lines: FieldReturnDetail["lines"]): number {
+  return lines.filter((l) => l.priceState === "AMBIGUOUS" || l.priceState === "UNPRICEABLE").length;
+}
+
+/**
+ * The header's post-approval signal, and the one that must agree with the register's own
+ * `status === "APPROVED" && valuationStatus === "PENDING"` badge condition. `lineValue` is
+ * stamped once, at approval, straight from what actually got priced — unlike `priceState`,
+ * it cannot read "resolved" for a line whose admin choice never actually resolved.
+ */
+function unvaluedLineCount(lines: FieldReturnDetail["lines"]): number {
+  return lines.filter((l) => l.lineValue === null).length;
+}
+
+/** Same 2dp Rupiah formatting LinePriceControls uses beside it — money always renders id-ID grouped. */
+function formatMoney2(n: number): string {
+  return `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff }: Props) {
   const t = useTranslations("fieldReturns");
   const tReceiving = useTranslations("fieldReturnReceiving");
@@ -94,6 +130,12 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
    */
   const showResolutionControls = r.status !== "PENDING_WAREHOUSE_RECEIVING";
   const showApprove = canManage && r.status === "PENDING_APPROVAL";
+  const showLinePriceControls = canManage && PRICEABLE_STATUSES.has(r.status);
+  const unpricedCount = unpricedLineCount(r.lines);
+  /* ACCEPT_SURPLUS is the one settlement path that credits a line above what the store's own
+     paper claimed — surfaced once at the card header rather than only per-line, per the spec's
+     surplus rule. */
+  const hasSurplusCredit = r.lines.some((l) => l.resolutions[0]?.type === "ACCEPT_SURPLUS");
 
   function callApprove(): void {
     startTransition(async () => {
@@ -225,12 +267,142 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
         />
       )}
 
+      <Card>
+        <CardHeader className="space-y-2">
+          <CardTitle className="flex items-center gap-2">
+            <Wallet className="h-5 w-5" />
+            {t("valuation.cardTitle")}
+          </CardTitle>
+          {r.status === "CANCELLED" ? (
+            /* A cancelled retur never gets priced — an "incomplete" alarm here would point at
+               controls that no longer render for anyone, on a document nobody can act on. */
+            <p className="text-sm text-muted-foreground">{t("valuation.cancelledBody")}</p>
+          ) : r.valuationStatus === "VALUED" && r.totalValue !== null ? (
+            <p className="text-2xl font-bold tabular-nums">{formatMoney2(r.totalValue)}</p>
+          ) : r.status === "APPROVED" ? (
+            /*
+             * APPROVED but NOT valued — the same signal the register's own badge condition
+             * uses (status === APPROVED && valuationStatus === PENDING). Values are frozen at
+             * approval with no UI path back to re-enter them, so this is a STATEMENT of a
+             * permanent gap, never an instruction — there is nothing left for the operator to
+             * do about it here. unvaluedLineCount (lineValue === null), not the priceState-based
+             * unpricedCount, because a preserved dangling admin choice reads priceState "SET"
+             * despite never having resolved to an actual value.
+             */
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium">{t("valuation.incompleteTitle")}</p>
+                <p className="text-xs">
+                  {t("valuation.incompleteBodyApproved", { count: unvaluedLineCount(r.lines) })}
+                </p>
+              </div>
+            </div>
+          ) : unpricedCount > 0 ? (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium">{t("valuation.incompleteTitle")}</p>
+                <p className="text-xs">{t("valuation.incompleteBody", { count: unpricedCount })}</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">{t("valuation.notYetValuedBody")}</p>
+          )}
+          {hasSurplusCredit && (
+            <div className="flex items-start gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-2 text-emerald-700">
+              <Info className="h-4 w-4 mt-0.5 shrink-0" />
+              <p className="text-xs">{t("valuation.surplusNote")}</p>
+            </div>
+          )}
+        </CardHeader>
+        <CardContent className="divide-y">
+          {r.lines.map((line) => {
+            const isSurplus = line.resolutions[0]?.type === "ACCEPT_SURPLUS";
+            return (
+              <div key={line.id} className="space-y-2 py-4 first:pt-0 last:pb-0">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium">{line.itemName}</p>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {line.itemSku}
+                      {line.variantSku ? ` · ${line.variantSku}` : ""}
+                    </p>
+                  </div>
+                  {isSurplus && (
+                    <Badge variant="outline" className="border-emerald-500/40 text-emerald-700">
+                      {t("valuation.surplusBadge")}
+                    </Badge>
+                  )}
+                </div>
+
+                {isSurplus && (
+                  <p className="text-xs text-muted-foreground">
+                    {/* creditedQty is only stamped at approval — before that, "0" would falsely
+                        read as a computed answer rather than "not decided yet". */}
+                    {t("valuation.surplusStats", {
+                      claimed: line.qty,
+                      received: line.receivedQty ?? "—",
+                      credited: line.creditedQty ?? "—",
+                    })}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    {t("valuation.colCreditedQty")}:{" "}
+                    <span className="tabular-nums text-foreground">{line.creditedQty ?? "—"}</span>
+                  </span>
+                  <span>
+                    {t("valuation.colUnitPriceRef")}:{" "}
+                    <span className="tabular-nums text-foreground">
+                      {line.unitPrice !== null ? formatMoney2(line.unitPrice) : "—"}
+                    </span>
+                  </span>
+                  <span>
+                    {t("valuation.colLineValue")}:{" "}
+                    <span className="tabular-nums font-medium text-foreground">
+                      {line.lineValue !== null ? formatMoney2(line.lineValue) : "—"}
+                    </span>
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{t("valuation.colProvenance")}:</span>
+                  <Badge variant="secondary" className="font-mono text-xs">
+                    {line.priceSource === "DELIVERY"
+                      ? (line.priceDeliveryDocNo ?? "—")
+                      : line.priceSource === "MANUAL"
+                        ? t("valuation.provenanceManual")
+                        : t("valuation.provenanceNone")}
+                  </Badge>
+                </div>
+
+                {showLinePriceControls && <LinePriceControls line={line} />}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
       <AlertDialog open={approveOpen} onOpenChange={(open) => !isPending && setApproveOpen(open)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{tReceiving("approveConfirmTitle")}</AlertDialogTitle>
             <AlertDialogDescription>{tReceiving("approveConfirmDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
+          {unpricedCount > 0 && (
+            /*
+             * Surfaced here, not just discovered afterwards on the card below — approving with
+             * an incomplete valuation must be a deliberate choice. There is no post-approval
+             * repricing path (values freeze at approval by design), so this is the only moment
+             * this warning can still change anyone's mind.
+             */
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <p className="text-xs">{tReceiving("approveConfirmValuationWarning", { count: unpricedCount })}</p>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
             <AlertDialogAction

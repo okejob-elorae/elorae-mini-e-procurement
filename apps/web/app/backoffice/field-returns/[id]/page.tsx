@@ -15,19 +15,18 @@ export default async function FieldReturnDetailPage({ params }: PageProps) {
   if (!session) redirect("/login");
 
   const { id } = await params;
-  const fieldReturn = await getFieldReturnById(id);
-  if (!fieldReturn) notFound();
 
   /*
-   * Viewing stays open to any authenticated user — the register has no view gate today and
-   * this slice adds none. canManage/canWriteOff are computed here, server-side, and passed
-   * down as plain booleans so the client never has to decide who is allowed to act; the
-   * server actions enforce the same two permissions independently, so this is only about not
-   * offering a control that will be refused.
+   * canManage is computed before the query, not after — getFieldReturnById needs it to decide
+   * whether it is worth resolving price candidates for this viewer at all (see its own comment).
+   * canWriteOff has no bearing on that query, only on which resolution buttons render below.
    */
   const permissions = session.user.permissions ?? [];
   const canManage = hasPermission(permissions, PERMISSIONS.FIELD_RETURNS_MANAGE);
   const canWriteOff = hasPermission(permissions, PERMISSIONS.FIELD_RETURNS_WRITEOFF);
+
+  const fieldReturn = await getFieldReturnById(id, { canManage });
+  if (!fieldReturn) notFound();
 
   return (
     <FieldReturnDetailClient

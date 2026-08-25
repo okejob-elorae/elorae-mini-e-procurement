@@ -57,3 +57,41 @@ export function allDiscrepantLinesSettled(
     return isSettled(l.resolutions[0]?.type ?? null);
   });
 }
+
+/**
+ * Credited quantity is NEITHER the received qty NOR the claimed qty. It is derived from the
+ * line's variance and its latest resolution:
+ *
+ *   no variance                -> received (equal to claimed)
+ *   short + SALESMAN_BEARS     -> claimed   (the store sent what its paper says; the shortfall
+ *                                            is the salesman's debt, not the store's problem)
+ *   short + WRITE_OFF          -> claimed   (a company loss only exists if we credited goods we
+ *                                            never received)
+ *   surplus + ACCEPT_SURPLUS   -> received  (we hold the goods and they re-enter sellable stock)
+ *   anything else              -> null      (not creditable yet)
+ *
+ * DO NOT collapse this to Math.max(claimed, received). Every row above happens to be the larger
+ * of the two numbers, and that is a coincidence of four independent business decisions, not a
+ * rule anyone chose. A Math.max would pass every test in this file while being wrong the moment
+ * a fifth resolution type lands or one of these four is revisited — and it would be wrong
+ * silently, in money, on a document a store owner reads.
+ */
+export function creditedQtyForLine(line: {
+  qty: number;
+  receivedQty: number | null;
+  latestResolutionType: "SALESMAN_BEARS" | "INVESTIGATE" | "WRITE_OFF" | "ACCEPT_SURPLUS" | null;
+}): number | null {
+  if (line.receivedQty === null) return null;
+
+  const variance = lineVariance(line.qty, line.receivedQty);
+  if (variance === 0) return line.receivedQty;
+
+  if (variance < 0) {
+    if (line.latestResolutionType === "SALESMAN_BEARS") return line.qty;
+    if (line.latestResolutionType === "WRITE_OFF") return line.qty;
+    return null;
+  }
+
+  if (line.latestResolutionType === "ACCEPT_SURPLUS") return line.receivedQty;
+  return null;
+}

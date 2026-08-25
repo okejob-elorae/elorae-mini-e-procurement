@@ -5,16 +5,29 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * dev database. Each writer already has its own DB-backed spec — this file exists to pin the
  * permission gate + error-code mapping the actions add on top of them.
  */
-const { mockAuth, mockHasPermission, mockReceive, mockResolve, mockApprove, mockRevalidatePath } = vi.hoisted(
-  () => ({
-    mockAuth: vi.fn(),
-    mockHasPermission: vi.fn(),
-    mockReceive: vi.fn(),
-    mockResolve: vi.fn(),
-    mockApprove: vi.fn(),
-    mockRevalidatePath: vi.fn(),
-  })
-);
+const {
+  mockAuth,
+  mockHasPermission,
+  mockReceive,
+  mockResolve,
+  mockApprove,
+  mockRevalidatePath,
+  mockFindLine,
+  mockUpdateMany,
+  mockListPriceCandidates,
+  mockResolveLinePrice,
+} = vi.hoisted(() => ({
+  mockAuth: vi.fn(),
+  mockHasPermission: vi.fn(),
+  mockReceive: vi.fn(),
+  mockResolve: vi.fn(),
+  mockApprove: vi.fn(),
+  mockRevalidatePath: vi.fn(),
+  mockFindLine: vi.fn(),
+  mockUpdateMany: vi.fn(),
+  mockListPriceCandidates: vi.fn(),
+  mockResolveLinePrice: vi.fn(),
+}));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@/lib/rbac", async (importActual) => {
@@ -24,10 +37,17 @@ vi.mock("@/lib/rbac", async (importActual) => {
 vi.mock("@/lib/field-sales/retur/receive-writer", () => ({ receiveFieldReturn: mockReceive }));
 vi.mock("@/lib/field-sales/retur/resolve-writer", () => ({ resolveFieldReturnLine: mockResolve }));
 vi.mock("@/lib/field-sales/retur/approve-writer", () => ({ approveFieldReturn: mockApprove }));
+vi.mock("@/lib/field-sales/retur/pricing", () => ({
+  listPriceCandidates: mockListPriceCandidates,
+  resolveLinePrice: mockResolveLinePrice,
+}));
+vi.mock("@elorae/db", () => ({
+  prisma: { fieldReturnLine: { findUnique: mockFindLine, updateMany: mockUpdateMany } },
+}));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
 
 import { FieldReturnError } from "@/lib/field-sales/retur/errors";
-import { receiveAction, resolveAction, approveAction } from "./field-returns";
+import { receiveAction, resolveAction, approveAction, setLinePriceAction } from "./field-returns";
 
 describe("field retur receiving actions (unit — writers mocked)", () => {
   beforeEach(() => {
@@ -37,6 +57,10 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     mockResolve.mockReset();
     mockApprove.mockReset();
     mockRevalidatePath.mockReset();
+    mockFindLine.mockReset();
+    mockUpdateMany.mockReset();
+    mockListPriceCandidates.mockReset();
+    mockResolveLinePrice.mockReset();
     mockAuth.mockResolvedValue({
       user: { id: "user-1", permissions: ["field_returns:manage", "field_returns:writeoff"] },
     });
@@ -432,6 +456,185 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(mockApprove).toHaveBeenCalledWith({ returnId: "r1", approvedById: "user-1" });
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/r1");
+    });
+  });
+
+  describe("setLinePriceAction", () => {
+    /*
+     * Default happy-path fixtures: a line on a still-open retur whose store/item/variant has
+     * exactly one genuine delivery candidate ("d1"). Individual tests override whichever of
+     * these proves the case they're pinning.
+     */
+    beforeEach(() => {
+      mockFindLine.mockResolvedValue({
+        id: "l1",
+        itemId: "item-1",
+        variantSku: "M",
+        returnDoc: { id: "r1", status: "PENDING_APPROVAL", storeId: "s1" },
+      });
+      mockListPriceCandidates.mockResolvedValue([{ deliveryLineId: "d1" }]);
+      mockUpdateMany.mockResolvedValue({ count: 1 });
+      /* Manual-path tests need a resolveLinePrice verdict that is NOT "AUTO" or the guard added
+         for the auto-priceable-line refusal would refuse them all by default; UNPRICEABLE is
+         the neutral "nothing to auto-resolve" case most of these fixtures represent. */
+      mockResolveLinePrice.mockResolvedValue({ kind: "UNPRICEABLE" });
+    });
+
+    it("refuses without field_returns:manage", async () => {
+      mockHasPermission.mockReturnValue(false);
+      const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d1" });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it("pins the permission it checks", async () => {
+      mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "field_returns:manage");
+      const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d1" });
+      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "field_returns:manage");
+      expect(res.ok).toBe(true);
+    });
+
+    it("returns ERROR rather than throwing when auth() rejects", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockAuth.mockRejectedValue(new Error("boom"));
+      const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d1" });
+      expect(res).toEqual({ ok: false, code: "ERROR" });
+    });
+
+    it("refuses a manual price that is not a positive number", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: -5, note: "x" });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    /*
+     * A manual price of exactly 0 must be refused, not just a negative one — a Prisma Decimal
+     * of 0 is still truthy, so a zero price would round-trip as a "complete" valuation of zero
+     * rather than reading as "no price was ever recorded" (the same shape as the GL incident
+     * where a cogs of 0 read as real data).
+     */
+    it("refuses a manual price of exactly 0", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 0, note: "x" });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it("requires a note on a manual price — provenance is the point", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 500, note: "  " });
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it("refuses to reprice an already-approved retur — values are frozen at approval", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockFindLine.mockResolvedValue({ id: "l1", returnDoc: { id: "r1", status: "APPROVED", storeId: "s1" } });
+      const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d1" });
+      expect(res).toEqual({ ok: false, code: "ALREADY_APPROVED" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    /*
+     * CANCELLED is not "already approved" — a wrong code sends whoever debugs it to the wrong
+     * place. It shares the same fail-closed whitelist gate as APPROVED, but must surface as the
+     * existing generic wrong-state code instead of borrowing APPROVED's.
+     */
+    it("refuses to reprice a cancelled retur with INVALID_STATE, not ALREADY_APPROVED", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockFindLine.mockResolvedValue({ id: "l1", returnDoc: { id: "r1", status: "CANCELLED", storeId: "s1" } });
+      const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d1" });
+      expect(res).toEqual({ ok: false, code: "INVALID_STATE" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    /*
+     * The read-time status check alone cannot defend against a concurrent approveFieldReturn
+     * landing between this action's read and its write — that is exactly what the compare-and-
+     * swap on the write itself is for. This pins the branch directly: the write is attempted (the
+     * read-time gate passed), but a `count` of 0 — as a concurrent approval would produce against
+     * the real DB — must still surface as ALREADY_APPROVED rather than a false ok:true. The real
+     * concurrency scenario (a status flip landing between the two calls) is exercised against the
+     * actual database in field-returns-pricing-race.spec.ts.
+     */
+    it("treats an updateMany count of 0 as a concurrent approval, not a silent success", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockUpdateMany.mockResolvedValue({ count: 0 });
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 12_500, note: "too late" });
+      expect(res).toEqual({ ok: false, code: "ALREADY_APPROVED" });
+      expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuses a delivery line that is not a candidate for this retur line", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockListPriceCandidates.mockResolvedValue([{ deliveryLineId: "d-other" }]);
+      const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d1" });
+      expect(res).toEqual({ ok: false, code: "PRICE_NOT_AVAILABLE" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    /*
+     * The UI never renders a manual-price control on a line whose priceState is AUTO — but
+     * every "use server" export is an independently callable endpoint regardless of what the
+     * UI withholds. This pins the server-side guard directly: a caller who calls the action
+     * anyway, on a line that would resolve cleanly on its own, must be refused rather than
+     * allowed to override a price that already resolves.
+     */
+    it("refuses a manual price when the line would auto-resolve on its own", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolveLinePrice.mockResolvedValue({ kind: "AUTO", price: 833_333.3333, candidate: { deliveryLineId: "d1" } });
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 500_000, note: "trying to undercut it" });
+      expect(res).toEqual({ ok: false, code: "AUTO_PRICE_AVAILABLE" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it("allows a manual price when the line is only AMBIGUOUS, not cleanly AUTO", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockResolveLinePrice.mockResolvedValue({ kind: "AMBIGUOUS", candidates: [] });
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 500_000, note: "picking one myself" });
+      expect(res).toEqual({ ok: true });
+      expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it("writes a manual price with its note and clears any prior delivery choice", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await setLinePriceAction({ lineId: "l1", manualUnitPrice: 12_500, note: "harga kesepakatan toko" });
+      expect(res).toEqual({ ok: true });
+      expect(mockUpdateMany).toHaveBeenCalledWith({
+        where: { id: "l1", returnDoc: { status: { in: ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] } } },
+        data: {
+          priceSource: "MANUAL",
+          priceDeliveryLineId: null,
+          unitPrice: 12_500,
+          priceNote: "harga kesepakatan toko",
+        },
+      });
+    });
+
+    it("writes a verified delivery choice and clears any prior manual price", async () => {
+      mockHasPermission.mockReturnValue(true);
+      const res = await setLinePriceAction({ lineId: "l1", deliveryLineId: "d1" });
+      expect(res).toEqual({ ok: true });
+      expect(mockUpdateMany).toHaveBeenCalledWith({
+        where: { id: "l1", returnDoc: { status: { in: ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] } } },
+        data: {
+          priceSource: "DELIVERY",
+          priceDeliveryLineId: "d1",
+          unitPrice: null,
+          priceNote: null,
+        },
+      });
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns");
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/field-returns/r1");
+    });
+
+    it("returns NOT_FOUND for an unknown lineId without calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockFindLine.mockResolvedValue(null);
+      const res = await setLinePriceAction({ lineId: "no-such-line", deliveryLineId: "d1" });
+      expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
+      expect(mockUpdateMany).not.toHaveBeenCalled();
     });
   });
 });
