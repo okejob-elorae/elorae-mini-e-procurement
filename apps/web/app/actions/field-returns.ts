@@ -288,7 +288,7 @@ export async function setLinePriceAction(input: SetLinePriceInput): Promise<Fiel
       const match = candidates.find((c) => c.deliveryLineId === input.deliveryLineId);
       if (!match) return { ok: false, code: "PRICE_NOT_AVAILABLE" };
       const swapped = await prisma.fieldReturnLine.updateMany({
-        where: { id: input.lineId, returnDoc: { status: { in: PRICEABLE_STATUSES } } },
+        where: { id: input.lineId, returnDoc: { status: { in: [...PRICEABLE_STATUSES] } } },
         data: {
           priceSource: "DELIVERY",
           priceDeliveryLineId: input.deliveryLineId,
@@ -305,7 +305,7 @@ export async function setLinePriceAction(input: SetLinePriceInput): Promise<Fiel
       });
       if (resolved.kind === "AUTO") return { ok: false, code: "AUTO_PRICE_AVAILABLE" };
       const swapped = await prisma.fieldReturnLine.updateMany({
-        where: { id: input.lineId, returnDoc: { status: { in: PRICEABLE_STATUSES } } },
+        where: { id: input.lineId, returnDoc: { status: { in: [...PRICEABLE_STATUSES] } } },
         data: {
           priceSource: "MANUAL",
           priceDeliveryLineId: null,

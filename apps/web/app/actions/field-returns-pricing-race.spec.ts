@@ -110,11 +110,17 @@ d("setLinePriceAction — concurrent approval race (test bed only)", () => {
      * so only the updateMany's own repeated status condition can still catch it.
      */
     const original = prisma.fieldReturnLine.findUnique.bind(prisma.fieldReturnLine);
-    const spy = vi.spyOn(prisma.fieldReturnLine, "findUnique").mockImplementation(async (args: unknown) => {
-      const result = await original(args as Parameters<typeof original>[0]);
-      await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED" } });
-      return result;
-    });
+    const spy = vi.spyOn(prisma.fieldReturnLine, "findUnique").mockImplementation(
+      /* Cast needed: the real findUnique returns a Prisma__FieldReturnLineClient — a thenable
+         that also carries relation-navigation methods (returnDoc, item, resolutions) — not a
+         plain Promise. This mock deliberately doesn't provide those; the action under test
+         never calls them. */
+      (async (args: unknown) => {
+        const result = await original(args as Parameters<typeof original>[0]);
+        await prisma.fieldReturn.update({ where: { id: returnId }, data: { status: "APPROVED" } });
+        return result;
+      }) as unknown as typeof prisma.fieldReturnLine.findUnique,
+    );
 
     const res = await setLinePriceAction({ lineId, manualUnitPrice: 7000, note: "new price after race" });
     expect(res).toEqual({ ok: false, code: "ALREADY_APPROVED" });
