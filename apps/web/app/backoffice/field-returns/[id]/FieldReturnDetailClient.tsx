@@ -261,7 +261,11 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
             <Wallet className="h-5 w-5" />
             {t("valuation.cardTitle")}
           </CardTitle>
-          {r.valuationStatus === "VALUED" && r.totalValue !== null ? (
+          {r.status === "CANCELLED" ? (
+            /* A cancelled retur never gets priced — an "incomplete" alarm here would point at
+               controls that no longer render for anyone, on a document nobody can act on. */
+            <p className="text-sm text-muted-foreground">{t("valuation.cancelledBody")}</p>
+          ) : r.valuationStatus === "VALUED" && r.totalValue !== null ? (
             <p className="text-2xl font-bold tabular-nums">{formatMoney2(r.totalValue)}</p>
           ) : unpricedCount > 0 ? (
             <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
@@ -303,10 +307,12 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
 
                 {isSurplus && (
                   <p className="text-xs text-muted-foreground">
+                    {/* creditedQty is only stamped at approval — before that, "0" would falsely
+                        read as a computed answer rather than "not decided yet". */}
                     {t("valuation.surplusStats", {
                       claimed: line.qty,
-                      received: line.receivedQty ?? 0,
-                      credited: line.creditedQty ?? 0,
+                      received: line.receivedQty ?? "—",
+                      credited: line.creditedQty ?? "—",
                     })}
                   </p>
                 )}

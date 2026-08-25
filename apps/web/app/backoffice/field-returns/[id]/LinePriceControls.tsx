@@ -159,9 +159,11 @@ export function LinePriceControls({ line }: Props) {
 
       {showPicker && (
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">{t("pricing.pickerLabel")}</Label>
+          <Label htmlFor={`price-pick-${line.id}`} className="text-xs text-muted-foreground">
+            {t("pricing.pickerLabel")}
+          </Label>
           <Select value={selectedDeliveryLineId} onValueChange={setSelectedDeliveryLineId} disabled={isPending}>
-            <SelectTrigger className="h-10 w-full">
+            <SelectTrigger id={`price-pick-${line.id}`} className="h-10 w-full">
               <SelectValue placeholder={t("pricing.pickerPlaceholder")} />
             </SelectTrigger>
             <SelectContent>
@@ -196,8 +198,11 @@ export function LinePriceControls({ line }: Props) {
 
       {showManual && (
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">{t("pricing.manualLabel")}</Label>
+          <Label htmlFor={`price-manual-${line.id}`} className="text-xs text-muted-foreground">
+            {t("pricing.manualLabel")}
+          </Label>
           <Input
+            id={`price-manual-${line.id}`}
             value={manualPrice}
             onChange={(e) => setManualPrice(e.target.value)}
             placeholder={t("pricing.manualPlaceholder")}
@@ -205,10 +210,11 @@ export function LinePriceControls({ line }: Props) {
             inputMode="decimal"
             className="h-10"
           />
-          <Label className="text-xs text-muted-foreground">
+          <Label htmlFor={`price-note-${line.id}`} className="text-xs text-muted-foreground">
             {t("noteLabel")} ({tCommon("required")})
           </Label>
           <Textarea
+            id={`price-note-${line.id}`}
             value={manualNote}
             onChange={(e) => setManualNote(e.target.value)}
             disabled={isPending}

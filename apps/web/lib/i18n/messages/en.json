@@ -2556,7 +2556,8 @@
       "provenanceManual": "Manual",
       "provenanceNone": "Not Set",
       "surplusBadge": "Surplus Credited",
-      "surplusStats": "Claimed {claimed} · Received {received} · Credited {credited}"
+      "surplusStats": "Claimed {claimed} · Received {received} · Credited {credited}",
+      "cancelledBody": "This return was cancelled, so it was never valued."
     }
   },
   "fieldReturnReceiving": {

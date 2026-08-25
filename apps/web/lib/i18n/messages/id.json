@@ -2556,7 +2556,8 @@
       "provenanceManual": "Manual",
       "provenanceNone": "Belum Ditentukan",
       "surplusBadge": "Kelebihan Dikreditkan",
-      "surplusStats": "Klaim {claimed} · Diterima {received} · Dikreditkan {credited}"
+      "surplusStats": "Klaim {claimed} · Diterima {received} · Dikreditkan {credited}",
+      "cancelledBody": "Retur ini dibatalkan sehingga tidak pernah dinilai."
     }
   },
   "fieldReturnReceiving": {
