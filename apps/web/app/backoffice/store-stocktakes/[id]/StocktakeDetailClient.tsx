@@ -648,6 +648,7 @@ export function StocktakeDetailClient({
                             size="icon"
                             className="text-destructive"
                             aria-label={tDetail("removeAdded")}
+                            disabled={!canEdit || saving}
                             onClick={() => removePendingRow(row.key)}
                           >
                             <Trash2 className="h-4 w-4" />
