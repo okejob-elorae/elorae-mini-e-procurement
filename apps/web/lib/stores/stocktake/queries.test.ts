@@ -19,6 +19,7 @@ d("store stocktake queries (test bed only)", () => {
   let stocktakeIds: string[] = [];
   let spgSaleIds: string[] = [];
   let storeStockIds: string[] = [];
+  let assortmentLineIds: string[] = [];
 
   beforeEach(async () => {
     uomId = "";
@@ -32,6 +33,7 @@ d("store stocktake queries (test bed only)", () => {
     stocktakeIds = [];
     spgSaleIds = [];
     storeStockIds = [];
+    assortmentLineIds = [];
 
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -72,6 +74,7 @@ d("store stocktake queries (test bed only)", () => {
     await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: spgSaleIds } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: spgSaleIds } } });
     await prisma.storeStock.deleteMany({ where: { id: { in: storeStockIds } } });
+    await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds } } });
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(freshStoreId), seededId(quietStoreId)] } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemAId), seededId(itemBId), seededId(itemCId)] } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -206,5 +209,63 @@ d("store stocktake queries (test bed only)", () => {
 
     expect(lines).toHaveLength(1);
     expect(lines[0].soldInPeriodQty).toBe(0);
+  });
+
+  it("prefills an assortment SKU with no StoreStock row as an expectedQty 0 line", async () => {
+    const assortmentLine = await prisma.storeAssortmentLine.create({
+      data: { storeId: freshStoreId, itemId: itemAId, variantSku: "", createdById: userId },
+    });
+    assortmentLineIds.push(assortmentLine.id);
+
+    const lines = await buildStocktakeLines(prisma, seededId(freshStoreId), null, new Date());
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      itemId: itemAId,
+      variantSku: "",
+      productName: "Test Stocktake Item A",
+      expectedQty: 0,
+      soldInPeriodQty: 0,
+    });
+  });
+
+  it("does not mark a prefilled assortment line isAdded", async () => {
+    const assortmentLine = await prisma.storeAssortmentLine.create({
+      data: { storeId: freshStoreId, itemId: itemAId, variantSku: "", createdById: userId },
+    });
+    assortmentLineIds.push(assortmentLine.id);
+
+    const lines = await buildStocktakeLines(prisma, seededId(freshStoreId), null, new Date());
+    const line = lines.find((l) => l.itemId === itemAId && l.variantSku === "")!;
+
+    expect("isAdded" in line).toBe(false);
+  });
+
+  it("produces exactly ONE line for a SKU that is both stocked and on the assortment", async () => {
+    const stockRow = await prisma.storeStock.create({ data: { storeId, itemId: itemBId, variantSku: "", qty: 7, avgCost: 0 } });
+    storeStockIds.push(stockRow.id);
+    const assortmentLine = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: itemBId, variantSku: "", createdById: userId },
+    });
+    assortmentLineIds.push(assortmentLine.id);
+
+    const lines = await buildStocktakeLines(prisma, seededId(storeId), null, new Date());
+    const matching = lines.filter((l) => l.itemId === seededId(itemBId) && l.variantSku === "");
+
+    expect(matching).toHaveLength(1);
+    expect(matching[0].expectedQty).toBe(7);
+  });
+
+  it("still returns every StoreStock row when the store has no assortment at all", async () => {
+    const rowA = await prisma.storeStock.create({ data: { storeId: quietStoreId, itemId: itemAId, variantSku: "", qty: 4, avgCost: 0 } });
+    const rowB = await prisma.storeStock.create({ data: { storeId: quietStoreId, itemId: itemBId, variantSku: "", qty: 9, avgCost: 0 } });
+    storeStockIds.push(rowA.id, rowB.id);
+
+    const lines = await buildStocktakeLines(prisma, seededId(quietStoreId), null, new Date());
+
+    expect(lines).toHaveLength(2);
+    expect(
+      lines.map((l) => l.expectedQty).sort((a, b) => a - b),
+    ).toEqual([4, 9]);
   });
 });

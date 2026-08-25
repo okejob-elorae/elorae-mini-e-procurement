@@ -19,6 +19,18 @@ export type StocktakeLineDraft = {
  * negative and there is currently no correction path); filtering them out here would silently
  * defeat the feature.
  *
+ * Also reads the store's `StoreAssortmentLine` rows and merges in one draft line, at
+ * `expectedQty: 0`, for every assortment SKU that has NO matching `StoreStock` row. This does not
+ * give `expectedQty` a second meaning — it is still, exactly, the live ledger figure. A store with
+ * no `StoreStock` row for a SKU genuinely holds zero of it right now, so `0` IS that live figure,
+ * not a stand-in for "not tracked" or "unknown". Without this, an assortment SKU the store has
+ * never received is invisible to the counter — they would have to find it through the add-item
+ * picker — so nobody ever counts the very thing the store is supposed to stock. A SKU present in
+ * BOTH sources is merged into exactly ONE line, keyed on `${itemId}::${variantSku}` and always
+ * sourced from the `StoreStock` row (never overwritten by the assortment pass) so `expectedQty`
+ * stays the real quantity — a duplicate would otherwise violate `StoreStocktakeLine`'s own
+ * `@@unique([stocktakeId, itemId, variantSku])` the moment the document is written.
+ *
  * The sold-in-window figure joins `SpgSaleLine` to its parent `SpgSale` — the line itself carries
  * neither `storeId` nor `createdAt` — batched into one findMany + one folded map, not one query
  * per line. `periodFrom === null` means since inception, so the window's lower bound falls back
@@ -31,18 +43,28 @@ export async function buildStocktakeLines(
   periodFrom: Date | null,
   countedAt: Date,
 ): Promise<StocktakeLineDraft[]> {
-  const stockRows = await client.storeStock.findMany({
-    where: { storeId },
-    select: {
-      itemId: true,
-      variantSku: true,
-      qty: true,
-      item: { select: { nameId: true } },
-    },
-  });
-  if (stockRows.length === 0) return [];
+  const [stockRows, assortmentRows] = await Promise.all([
+    client.storeStock.findMany({
+      where: { storeId },
+      select: {
+        itemId: true,
+        variantSku: true,
+        qty: true,
+        item: { select: { nameId: true } },
+      },
+    }),
+    client.storeAssortmentLine.findMany({
+      where: { storeId },
+      select: {
+        itemId: true,
+        variantSku: true,
+        item: { select: { nameId: true } },
+      },
+    }),
+  ]);
+  if (stockRows.length === 0 && assortmentRows.length === 0) return [];
 
-  const itemIds = Array.from(new Set(stockRows.map((r) => r.itemId)));
+  const itemIds = Array.from(new Set([...stockRows.map((r) => r.itemId), ...assortmentRows.map((r) => r.itemId)]));
   const saleLines = await client.spgSaleLine.findMany({
     where: {
       itemId: { in: itemIds },
@@ -57,13 +79,30 @@ export async function buildStocktakeLines(
     soldByKey.set(key, (soldByKey.get(key) ?? 0) + l.qty);
   }
 
-  return stockRows.map((r) => ({
-    itemId: r.itemId,
-    variantSku: r.variantSku,
-    productName: r.item.nameId,
-    expectedQty: r.qty.toNumber(),
-    soldInPeriodQty: soldByKey.get(`${r.itemId}::${r.variantSku}`) ?? 0,
-  }));
+  const draftByKey = new Map<string, StocktakeLineDraft>();
+  for (const r of stockRows) {
+    const key = `${r.itemId}::${r.variantSku}`;
+    draftByKey.set(key, {
+      itemId: r.itemId,
+      variantSku: r.variantSku,
+      productName: r.item.nameId,
+      expectedQty: r.qty.toNumber(),
+      soldInPeriodQty: soldByKey.get(key) ?? 0,
+    });
+  }
+  for (const a of assortmentRows) {
+    const key = `${a.itemId}::${a.variantSku}`;
+    if (draftByKey.has(key)) continue;
+    draftByKey.set(key, {
+      itemId: a.itemId,
+      variantSku: a.variantSku,
+      productName: a.item.nameId,
+      expectedQty: 0,
+      soldInPeriodQty: soldByKey.get(key) ?? 0,
+    });
+  }
+
+  return Array.from(draftByKey.values());
 }
 
 /**
