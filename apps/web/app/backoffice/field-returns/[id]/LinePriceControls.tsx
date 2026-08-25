@@ -23,9 +23,13 @@ function formatMoney2(n: number): string {
   return `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** A non-negative number with at most 2 decimals — mirrors the writer's own money precision. */
+/**
+ * A non-negative number with at most 2 decimals — mirrors the writer's own money precision.
+ * Accepts both the dot and the Indonesian comma decimal separator; the writer only ever sees
+ * the parsed number, never the raw string, so this is purely an input-friendliness normalisation.
+ */
 function parseMoneyInput(raw: string): number | null {
-  const trimmed = raw.trim();
+  const trimmed = raw.trim().replace(",", ".");
   if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null;
   const n = Number(trimmed);
   return Number.isFinite(n) && n >= 0 ? n : null;
