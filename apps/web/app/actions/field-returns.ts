@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { receiveFieldReturn } from "@/lib/field-sales/retur/receive-writer";
 import { resolveFieldReturnLine } from "@/lib/field-sales/retur/resolve-writer";
 import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
+import { listPriceCandidates } from "@/lib/field-sales/retur/pricing";
+import { round2 } from "@/lib/field-sales/retur/pricing-rules";
 import { FieldReturnError, type FieldReturnErrorCode } from "@/lib/field-sales/retur/errors";
 
 export type FieldReturnActionResult =
@@ -24,6 +27,8 @@ export type FieldReturnActionResult =
         | "NO_VARIANCE"
         | "RESOLUTION_DIRECTION_MISMATCH"
         | "UNRESOLVED_LINES"
+        | "PRICE_NOT_AVAILABLE"
+        | "ALREADY_APPROVED"
         | "INVALID_REQUEST"
         | "ERROR";
     };
@@ -118,6 +123,39 @@ function isValidResolveInput(
   return true;
 }
 
+type SetLinePriceInput =
+  | { lineId: string; deliveryLineId: string }
+  | { lineId: string; manualUnitPrice: number; note: string };
+
+/**
+ * The two shapes share `lineId`; whichever of `deliveryLineId` (a real string) or
+ * `manualUnitPrice` discriminates which branch the action takes. A manual price must be a
+ * non-negative finite number (matching `isNonNegativeInt`'s spirit, but money is not
+ * integer-only) and its note must be non-blank after trimming — provenance is the entire point
+ * of the manual path, so an empty note is as invalid as a missing price.
+ */
+function isValidSetLinePriceInput(input: unknown): input is SetLinePriceInput {
+  if (typeof input !== "object" || input === null) return false;
+  const i = input as Record<string, unknown>;
+  if (typeof i.lineId !== "string" || i.lineId === "") return false;
+  if (typeof i.deliveryLineId === "string") return i.deliveryLineId !== "";
+  if (typeof i.manualUnitPrice === "number") {
+    if (!Number.isFinite(i.manualUnitPrice) || i.manualUnitPrice < 0) return false;
+    return typeof i.note === "string" && i.note.trim() !== "";
+  }
+  return false;
+}
+
+/**
+ * Returns are priceable only while they are still open — once APPROVED (or CANCELLED) their
+ * values are frozen and a reprice must be refused rather than silently rewriting history.
+ */
+const PRICEABLE_STATUSES: ReadonlySet<string> = new Set([
+  "PENDING_WAREHOUSE_RECEIVING",
+  "MISMATCH_PENDING_RESOLUTION",
+  "PENDING_APPROVAL",
+]);
+
 export async function receiveAction(input: {
   returnId: string;
   counts: ReceiveCount[];
@@ -193,4 +231,73 @@ export async function approveAction(returnId: string): Promise<FieldReturnAction
   revalidatePath("/backoffice/field-returns");
   revalidatePath(`/backoffice/field-returns/${returnId}`);
   return { ok: true };
+}
+
+/**
+ * Lets an admin resolve a price the auto-resolve at approval could not pick on its own —
+ * either by pointing at one of this line's own genuine delivery candidates, or by recording a
+ * manual price with a required note. `resolveFieldReturnLine`'s own writer only touches
+ * resolutions; this one writes the pricing columns directly since there is no dedicated
+ * pricing writer file, matching this file's existing shape of guard + write inside one
+ * try/catch so `auth()` can never escape uncaught.
+ *
+ * The delivery branch is the security-relevant one: `deliveryLineId` arrives from the client,
+ * so it MUST be re-verified against `listPriceCandidates` for this exact line's store + item +
+ * variant before it is trusted. Skipping that check would let an admin point a line at a
+ * delivery from a different store entirely and inflate the retur's value — the one thing the
+ * epic's acceptance criteria forbid.
+ */
+export async function setLinePriceAction(input: SetLinePriceInput): Promise<FieldReturnActionResult> {
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    if (!isValidSetLinePriceInput(input)) return { ok: false, code: "INVALID_REQUEST" };
+
+    const line = await prisma.fieldReturnLine.findUnique({
+      where: { id: input.lineId },
+      select: {
+        id: true,
+        itemId: true,
+        variantSku: true,
+        returnDoc: { select: { id: true, status: true, storeId: true } },
+      },
+    });
+    if (!line) return { ok: false, code: "NOT_FOUND" };
+    if (!PRICEABLE_STATUSES.has(line.returnDoc.status)) return { ok: false, code: "ALREADY_APPROVED" };
+
+    if ("deliveryLineId" in input) {
+      const candidates = await listPriceCandidates(prisma, {
+        storeId: line.returnDoc.storeId,
+        itemId: line.itemId,
+        variantSku: line.variantSku,
+      });
+      const match = candidates.find((c) => c.deliveryLineId === input.deliveryLineId);
+      if (!match) return { ok: false, code: "PRICE_NOT_AVAILABLE" };
+      await prisma.fieldReturnLine.update({
+        where: { id: input.lineId },
+        data: {
+          priceSource: "DELIVERY",
+          priceDeliveryLineId: input.deliveryLineId,
+          unitPrice: null,
+          priceNote: null,
+        },
+      });
+    } else {
+      await prisma.fieldReturnLine.update({
+        where: { id: input.lineId },
+        data: {
+          priceSource: "MANUAL",
+          priceDeliveryLineId: null,
+          unitPrice: round2(input.manualUnitPrice),
+          priceNote: input.note.trim(),
+        },
+      });
+    }
+
+    revalidatePath("/backoffice/field-returns");
+    revalidatePath(`/backoffice/field-returns/${line.returnDoc.id}`);
+    return { ok: true };
+  } catch (e) {
+    return toResult(e);
+  }
 }
