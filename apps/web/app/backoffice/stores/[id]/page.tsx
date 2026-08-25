@@ -32,7 +32,7 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
     store.termsType === "KONSI"
       ? await listStoreStocktakes({ storeId: store.id, page: 1, perPage: STOCKTAKE_HISTORY_PAGE_SIZE })
       : null;
-  /*
+  /**
    * A store can only ever have ONE open (DRAFT / PENDING_VERIFICATION) document at a time —
    * `openKey`'s unique constraint enforces that, and creating a new one is refused while one is
    * already open. That means the open document, if any, is always the most recently created row

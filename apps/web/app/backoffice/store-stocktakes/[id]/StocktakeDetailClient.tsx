@@ -92,8 +92,10 @@ const STATUS_BADGE_CLASS: Record<StoreStocktakeStatusValue, string> = {
   CANCELLED: "",
 };
 
-/** Every `StoreStocktakeActionResult` failure code, derived from the action module's own type
- *  rather than duplicated here — a future code added there is a type error here, not a silent gap. */
+/**
+ * Every `StoreStocktakeActionResult` failure code, derived from the action module's own type
+ * rather than duplicated here — a future code added there is a type error here, not a silent gap.
+ */
 type ActionErrorCode = Exclude<StoreStocktakeActionResult, { ok: true }>["code"];
 
 function errKey(code: ActionErrorCode): string {
