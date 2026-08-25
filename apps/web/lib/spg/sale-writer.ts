@@ -137,8 +137,17 @@ export async function recordSpgSale(input: {
      * would invent a liability for stock Elorae does not own.
      *
      * The quantity is p.line.qty from the same `priced` array the SpgSaleLine rows were
-     * written from, NOT from input.lines — those are pre-merge, so a client that sent one line
-     * twice would decrement twice against a document row that recorded it once.
+     * written from, NOT from input.lines. Note this is a structural choice, not one a test on
+     * the final StoreStock balance can distinguish: the pricing loop above either pushes every
+     * `merged` entry into `priced` or returns early before any write happens at all (including
+     * before this decrement and before tx.spgSale.create), so `priced` is never a partial
+     * subset of `merged` — a line is never silently dropped. And because each key here is
+     * re-read fresh per iteration, decrementing off raw (pre-merge) input.lines would settle at
+     * the same final qty as decrementing off the merged priced entry (two decrements of 3 land
+     * on the same total as one decrement of 6). The reason to reuse `priced` is that it is the
+     * exact same aggregation SpgSaleLine was built from, so the ledger key and the document
+     * line can never disagree about which qty produced which document row — not because
+     * rebuilding from input.lines would produce a different number here.
      */
     if (store.termsType === "KONSI") {
       for (const p of priced) {

@@ -196,9 +196,16 @@ d("recordSpgSale (test bed only)", () => {
 
   it("decrements ONCE by the merged quantity when a client sends the same line twice", async () => {
     /*
-     * This is the case that catches a decrement rebuilt from input.lines rather than from the
-     * merged `priced` array. Pre-merge there are two lines of 3; merged there is one of 6, and
-     * SpgSaleLine records one row of 6. The ledger must agree with the document.
+     * Pins that a single merged entry (qty 6) is decremented via ONE fresh findUnique + upsert,
+     * not a naive implementation that reads prevQty once outside a per-key loop and reuses that
+     * stale snapshot across entries (which would decrement using the same starting value more
+     * than once and corrupt the result once a sale carries more than one distinct item/variant
+     * key). It does NOT prove the decrement is built from `priced` rather than raw
+     * `input.lines`: since each key here is re-read fresh, two decrements of 3 land on the same
+     * final total as one decrement of 6, so that distinction is not observable from the final
+     * StoreStock balance — see the comment at the decrement site in sale-writer.ts for why
+     * `priced` is used anyway (structural agreement with the SpgSaleLine document, not a
+     * different final number).
      */
     await recordSpgSale({ salesmanId, storeId, lines: [line(3), line(3)] });
     const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
