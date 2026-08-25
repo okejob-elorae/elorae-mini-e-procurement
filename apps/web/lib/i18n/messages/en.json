@@ -2960,6 +2960,7 @@
     "totalLabel": "Total",
     "cashTenderedLabel": "Cash tendered",
     "changeLabel": "Change",
+    "onCounterQty": "{qty} at the store",
     "backoffice": {
       "list": {
         "pageTitle": "SPG Sales",

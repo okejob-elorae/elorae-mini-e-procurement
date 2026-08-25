@@ -2960,6 +2960,7 @@
     "totalLabel": "Total",
     "cashTenderedLabel": "Uang diterima",
     "changeLabel": "Kembalian",
+    "onCounterQty": "{qty} di toko",
     "backoffice": {
       "list": {
         "pageTitle": "Penjualan SPG",

@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, ChevronRight, Loader2, Minus, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -59,6 +60,7 @@ function getPositionBestEffort(): Promise<{ lat: number; lng: number } | null> {
  */
 export function SpgSaleShell({ catalog }: { catalog: SpgCatalogRow[] }) {
   const router = useRouter();
+  const t = useTranslations("spgSale");
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState("");
   const [cart, setCart] = useState<Map<string, CartEntry>>(new Map());
@@ -187,6 +189,9 @@ export function SpgSaleShell({ catalog }: { catalog: SpgCatalogRow[] }) {
                   ) : (
                     <span className="text-xs italic text-muted-foreground">Harga belum diset</span>
                   )}
+                  <Badge variant={row.onCounterQty < 0 ? "destructive" : "outline"} className="text-xs">
+                    {t("onCounterQty", { qty: row.onCounterQty })}
+                  </Badge>
                   {canSell && (
                     <div className="flex items-center gap-1.5">
                       <Button
