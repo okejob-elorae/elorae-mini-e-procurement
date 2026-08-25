@@ -25,7 +25,7 @@ export default async function SpgSalePage() {
   const active = await getActiveVisit(session.user.id);
   if (!active || active.storeId !== me.assignedStoreId) redirect("/pwa");
 
-  const catalog = await getSellableCatalogForSpg();
+  const catalog = await getSellableCatalogForSpg(me.assignedStoreId);
 
   return <SpgSaleShell catalog={catalog} />;
 }
