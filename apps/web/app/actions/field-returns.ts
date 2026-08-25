@@ -147,14 +147,13 @@ function isValidSetLinePriceInput(input: unknown): input is SetLinePriceInput {
 }
 
 /**
- * Returns are priceable only while they are still open — once APPROVED (or CANCELLED) their
- * values are frozen and a reprice must be refused rather than silently rewriting history.
+ * Returns are priceable only while they are still open — once APPROVED their values are frozen
+ * and a reprice must be refused rather than silently rewriting history. Kept as an array (not
+ * just a Set) because the compare-and-swap below needs it as a Prisma `in` filter, not only a
+ * `.has()` lookup.
  */
-const PRICEABLE_STATUSES: ReadonlySet<string> = new Set([
-  "PENDING_WAREHOUSE_RECEIVING",
-  "MISMATCH_PENDING_RESOLUTION",
-  "PENDING_APPROVAL",
-]);
+const PRICEABLE_STATUSES = ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] as const;
+const PRICEABLE_STATUS_SET: ReadonlySet<string> = new Set(PRICEABLE_STATUSES);
 
 export async function receiveAction(input: {
   returnId: string;
@@ -246,6 +245,13 @@ export async function approveAction(returnId: string): Promise<FieldReturnAction
  * variant before it is trusted. Skipping that check would let an admin point a line at a
  * delivery from a different store entirely and inflate the retur's value — the one thing the
  * epic's acceptance criteria forbid.
+ *
+ * The initial `findUnique` status check is a friendly early exit, not the real guard — it reads
+ * and the actual write are two separate round trips, so a concurrent `approveFieldReturn` (which
+ * runs inside its own serializable transaction) can freeze the line in between. The `updateMany`
+ * below is the real guard: it repeats the same status condition as part of the write itself, and
+ * a `count` of zero means the retur moved out from under this call, so nothing was written and
+ * the caller is told `ALREADY_APPROVED` rather than a success that silently wrote nothing.
  */
 export async function setLinePriceAction(input: SetLinePriceInput): Promise<FieldReturnActionResult> {
   try {
@@ -263,7 +269,10 @@ export async function setLinePriceAction(input: SetLinePriceInput): Promise<Fiel
       },
     });
     if (!line) return { ok: false, code: "NOT_FOUND" };
-    if (!PRICEABLE_STATUSES.has(line.returnDoc.status)) return { ok: false, code: "ALREADY_APPROVED" };
+    /* CANCELLED is not "already approved" — a wrong code sends whoever debugs this to the
+       wrong place, so it keeps the existing generic wrong-state code instead. */
+    if (line.returnDoc.status === "CANCELLED") return { ok: false, code: "INVALID_STATE" };
+    if (!PRICEABLE_STATUS_SET.has(line.returnDoc.status)) return { ok: false, code: "ALREADY_APPROVED" };
 
     if ("deliveryLineId" in input) {
       const candidates = await listPriceCandidates(prisma, {
@@ -273,8 +282,8 @@ export async function setLinePriceAction(input: SetLinePriceInput): Promise<Fiel
       });
       const match = candidates.find((c) => c.deliveryLineId === input.deliveryLineId);
       if (!match) return { ok: false, code: "PRICE_NOT_AVAILABLE" };
-      await prisma.fieldReturnLine.update({
-        where: { id: input.lineId },
+      const swapped = await prisma.fieldReturnLine.updateMany({
+        where: { id: input.lineId, returnDoc: { status: { in: PRICEABLE_STATUSES } } },
         data: {
           priceSource: "DELIVERY",
           priceDeliveryLineId: input.deliveryLineId,
@@ -282,9 +291,10 @@ export async function setLinePriceAction(input: SetLinePriceInput): Promise<Fiel
           priceNote: null,
         },
       });
+      if (swapped.count === 0) return { ok: false, code: "ALREADY_APPROVED" };
     } else {
-      await prisma.fieldReturnLine.update({
-        where: { id: input.lineId },
+      const swapped = await prisma.fieldReturnLine.updateMany({
+        where: { id: input.lineId, returnDoc: { status: { in: PRICEABLE_STATUSES } } },
         data: {
           priceSource: "MANUAL",
           priceDeliveryLineId: null,
@@ -292,6 +302,7 @@ export async function setLinePriceAction(input: SetLinePriceInput): Promise<Fiel
           priceNote: input.note.trim(),
         },
       });
+      if (swapped.count === 0) return { ok: false, code: "ALREADY_APPROVED" };
     }
 
     revalidatePath("/backoffice/field-returns");
