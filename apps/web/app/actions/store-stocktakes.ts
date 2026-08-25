@@ -27,6 +27,7 @@ export type StoreStocktakeActionResult =
         | "ITEM_NOT_FOUND"
         | "INVALID_REQUEST"
         | "DUPLICATE_LINE"
+        | "NO_ASSIGNED_STORE"
         | "NO_ACTIVE_VISIT"
         | "ERROR";
     };
@@ -143,14 +144,16 @@ function isValidCancelInput(input: unknown): input is { stocktakeId: string; rea
 
 /**
  * Mirrors the gate `recordSpgSaleAction` (`@/app/actions/spg-sale.ts`) already uses: look up the
- * user's fixed `assignedStoreId`, then require an active check-in AT that same store. That gate
- * has two distinct refusal reasons (no assigned store at all / not currently checked in there),
- * but this action's result union only carries `NO_ACTIVE_VISIT` — both collapse onto it here,
- * since from the caller's point of view neither leaves them able to submit a count right now.
+ * user's fixed `assignedStoreId`, then require an active check-in AT that same store. Matches
+ * `spg-sale.ts`'s own two codes rather than inventing a third spelling — `NO_ASSIGNED_STORE` when
+ * there is no assignment to check in against at all (no amount of checking in fixes that), and
+ * `NO_ACTIVE_VISIT` when there is an assignment but no current check-in there.
  */
-async function requireSpgActiveStore(userId: string): Promise<{ ok: true; storeId: string } | { ok: false; code: "NO_ACTIVE_VISIT" }> {
+async function requireSpgActiveStore(
+  userId: string,
+): Promise<{ ok: true; storeId: string } | { ok: false; code: "NO_ASSIGNED_STORE" } | { ok: false; code: "NO_ACTIVE_VISIT" }> {
   const me = await prisma.user.findUnique({ where: { id: userId }, select: { assignedStoreId: true } });
-  if (!me?.assignedStoreId) return { ok: false, code: "NO_ACTIVE_VISIT" };
+  if (!me?.assignedStoreId) return { ok: false, code: "NO_ASSIGNED_STORE" };
   const activeVisit = await getActiveVisit(userId);
   if (!activeVisit || activeVisit.storeId !== me.assignedStoreId) {
     return { ok: false, code: "NO_ACTIVE_VISIT" };
@@ -197,12 +200,20 @@ export async function createAction(input: { storeId: string; countedAt: string }
  *   opened first. The SPG branch re-verifies the document's own `storeId` against the SPG's
  *   active-visit store — the id alone is not proof of ownership, since every export here is an
  *   independently callable endpoint regardless of what the UI ever offers.
- * - `{ storeId }` — SPG-only create-if-absent. Reachable ONLY when the caller holds
- *   `spg_sales:record` and is actively checked in at that exact store; an admin can never reach
- *   this branch (it is gated on the SPG permission before anything else), which matters because
- *   this branch swallows `ALREADY_OPEN` by design (it reuses the existing open document instead
- *   of refusing) — letting an admin in here would let them dodge the `ALREADY_OPEN` refusal the
- *   `createAction` path deliberately enforces.
+ * - `{ storeId }` — create-if-absent, meant for the SPG only. The `!isSpg` check right below does
+ *   NOT, by itself, keep an admin out of this branch: `hasPermission` treats the wildcard `'*'`
+ *   as satisfying every code (`@/lib/rbac.ts`), and a genuine ADMIN session's permission list IS
+ *   that wildcard, granted in code by `isSystem`, not by a seeded DB row — so `isSpg` evaluates
+ *   `true` for an admin exactly as it does for an SPG. What actually keeps an admin out is
+ *   `requireSpgActiveStore` immediately below: an admin has no `assignedStoreId`, so they are
+ *   refused there (`NO_ASSIGNED_STORE`) before ever reaching `createStoreStocktake` — which
+ *   matters because this branch swallows `ALREADY_OPEN` by design (it reuses an existing open
+ *   document instead of refusing), and that reuse is exactly what would let an admin dodge the
+ *   `ALREADY_OPEN` refusal `createAction` deliberately enforces. The one residual case — an
+ *   admin who also happens to carry an `assignedStoreId` and is checked in there (e.g. an SPG
+ *   promoted to admin without clearing the field) — does reach this branch, but only ever reuses
+ *   that one store's own already-open `DRAFT`, which is exactly the one-open-document-per-store
+ *   invariant `openKey` enforces; no corruption follows, so no extra guard was added for it.
  *
  * Either way the SPG always lands the document in `PENDING_VERIFICATION` (`submit` is forced
  * true on that path) — an SPG count is, by definition, a submission for an admin to verify, never
@@ -229,6 +240,16 @@ export async function saveCountsAction(input: SaveCountsActionInput): Promise<St
       if (!gate.ok) return gate;
       if (gate.storeId !== input.storeId) return { ok: false, code: "FORBIDDEN" };
 
+      /*
+       * Known, deliberately unfixed: two concurrent submits from the same SPG (or a retried
+       * request) can both pass this `findFirst` before either creates. The loser's
+       * `createStoreStocktake` then hits the `openKey` unique constraint and surfaces
+       * `ALREADY_OPEN` — a code the PWA's own submit flow has no concept of, since from the
+       * SPG's side there is no "open a document" step to conflict on. Cosmetic only: no
+       * duplicate document is created, `openKey` still enforces one open document per store, and
+       * a retry after the loser's failure lands on the winner's document via this same
+       * `findFirst`. Logged, not fixed.
+       */
       const open = await prisma.storeStocktake.findFirst({
         where: { storeId: input.storeId, openKey: { not: null } },
         select: { id: true },

@@ -270,10 +270,15 @@ describe("store stocktake actions (unit — writers mocked)", () => {
         expect(mockSave).not.toHaveBeenCalled();
       });
 
-      it("refuses when the SPG has no assigned store at all", async () => {
+      /*
+       * A missing assignment is a different dead end than a missing check-in — no amount of
+       * checking in fixes it — so it gets its own code rather than collapsing onto
+       * NO_ACTIVE_VISIT, matching the two distinct codes recordSpgSaleAction already returns.
+       */
+      it("refuses with NO_ASSIGNED_STORE — not NO_ACTIVE_VISIT — when the SPG has no assigned store at all", async () => {
         mockFindUser.mockResolvedValue({ assignedStoreId: null });
         const res = await saveCountsAction({ stocktakeId: "st1", lines: [] });
-        expect(res).toEqual({ ok: false, code: "NO_ACTIVE_VISIT" });
+        expect(res).toEqual({ ok: false, code: "NO_ASSIGNED_STORE" });
         expect(mockSave).not.toHaveBeenCalled();
       });
 
@@ -328,6 +333,14 @@ describe("store stocktake actions (unit — writers mocked)", () => {
         expect(mockSave).not.toHaveBeenCalled();
       });
 
+      it("refuses with NO_ASSIGNED_STORE when the caller has no assigned store at all", async () => {
+        mockFindUser.mockResolvedValue({ assignedStoreId: null });
+        const res = await saveCountsAction({ storeId: "s1", lines: [] });
+        expect(res).toEqual({ ok: false, code: "NO_ASSIGNED_STORE" });
+        expect(mockCreate).not.toHaveBeenCalled();
+        expect(mockSave).not.toHaveBeenCalled();
+      });
+
       it("refuses when the requested storeId doesn't match the SPG's own active-visit store", async () => {
         const res = await saveCountsAction({ storeId: "some-other-store", lines: [] });
         expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
@@ -348,14 +361,35 @@ describe("store stocktake actions (unit — writers mocked)", () => {
 
     /*
      * The core of the ruling that overrides the brief: the create-if-absent (storeId) branch
-     * must be reachable ONLY on the SPG path. An admin who holds stores:manage but not
-     * spg_sales:record must never reach it — that branch swallows ALREADY_OPEN by design, so
-     * letting an admin in would let them dodge the refusal createAction enforces.
+     * must be reachable ONLY on the SPG path. This pins the case with a CURATED permission list
+     * that happens to hold stores:manage but not spg_sales:record — a shape no real ADMIN
+     * session actually has (see the wildcard test right below), but still a useful pin that the
+     * `!isSpg` check does its job whenever hasPermission legitimately says no.
      */
-    it("refuses the storeId create-if-absent shape for an admin without spg_sales:record", async () => {
+    it("refuses the storeId create-if-absent shape for a curated permission list without spg_sales:record", async () => {
       mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "stores:manage");
       const res = await saveCountsAction({ storeId: "s1", lines: [] });
       expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockSave).not.toHaveBeenCalled();
+    });
+
+    /*
+     * The real shape of an ADMIN session: `hasPermission` treats the wildcard '*' as satisfying
+     * every code (apps/web/lib/rbac.ts), and `isSystem` roles are granted `['*']` in code, not by
+     * a seeded permission row. So for a genuine admin `isSpg` evaluates true too — the `!isSpg`
+     * check above does NOT separate this admin from an SPG. What actually refuses them is
+     * `requireSpgActiveStore`: an admin has no `assignedStoreId`, so they are refused with
+     * NO_ASSIGNED_STORE before ever reaching the writer. This test reproduces the wildcard (not
+     * a curated list) and asserts the refusal is the assigned-store gate, not a permission check
+     * — the one a future edit that quietly removes that gate would actually break.
+     */
+    it("refuses a genuine admin session (permissions: ['*']) via the assigned-store gate, not a permission check", async () => {
+      mockHasPermission.mockImplementation((permissions: unknown, _code: string) => Array.isArray(permissions) && permissions.includes("*"));
+      mockAuth.mockResolvedValue({ user: { id: "admin-1", permissions: ["*"] } });
+      mockFindUser.mockResolvedValue({ assignedStoreId: null });
+      const res = await saveCountsAction({ storeId: "s1", lines: [] });
+      expect(res).toEqual({ ok: false, code: "NO_ASSIGNED_STORE" });
       expect(mockCreate).not.toHaveBeenCalled();
       expect(mockSave).not.toHaveBeenCalled();
     });
