@@ -165,7 +165,7 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
             </div>
           </CardContent>
         </Card>
-        <Button asChild className="w-full py-3 text-lg font-medium">
+        <Button asChild size="lg" className="w-full py-3 text-lg font-medium">
           <Link href="/pwa">{t("success.backHome")}</Link>
         </Button>
       </div>

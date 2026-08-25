@@ -2753,7 +2753,7 @@
       "countInvalid": "Enter a valid non-negative number.",
       "causePlaceholder": "Choose a cause",
       "reasonPlaceholder": "Explain the variance",
-      "addedBadge": "Ditambahkan",
+      "addedBadge": "Added",
       "removeAdded": "Remove line",
       "varianceUncounted": "Not counted",
       "varianceMatch": "Matches",

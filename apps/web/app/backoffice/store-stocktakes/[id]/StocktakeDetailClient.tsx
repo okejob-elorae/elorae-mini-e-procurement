@@ -612,7 +612,7 @@ export function StocktakeDetailClient({
                         <Select
                           value={effectiveCause(row) || "__none__"}
                           onValueChange={(v) => updateCause(row.key, v === "__none__" ? "" : (v as StoreStocktakeCauseValue))}
-                          disabled={!canEdit}
+                          disabled={!canEdit || saving}
                         >
                           <SelectTrigger className="w-40">
                             <SelectValue placeholder={tDetail("causePlaceholder")} />
@@ -635,7 +635,7 @@ export function StocktakeDetailClient({
                         aria-label={tDetail("colReason")}
                         placeholder={tDetail("reasonPlaceholder")}
                         className="h-10 min-w-[160px]"
-                        disabled={!canEdit}
+                        disabled={!canEdit || saving}
                         value={effectiveReason(row)}
                         onChange={(e) => updateReason(row.key, e.target.value)}
                       />

@@ -127,7 +127,7 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
             </Link>
           </Button>
           {isKonsi && (
-            <Button asChild variant="outline" className="w-full py-3 text-lg font-medium">
+            <Button asChild variant="outline" size="lg" className="w-full py-3 text-lg font-medium">
               <Link href="/pwa/spg/stocktake">
                 <ClipboardList className="h-5 w-5" />
                 {t("entryCta")}
@@ -143,7 +143,7 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
             Catat Penjualan (check-in dulu)
           </Button>
           {isKonsi && (
-            <Button disabled variant="secondary" className="w-full py-3 text-lg font-medium">
+            <Button disabled variant="secondary" size="lg" className="w-full py-3 text-lg font-medium">
               <ClipboardList className="h-5 w-5" />
               {t("entryCtaDisabled")}
             </Button>
