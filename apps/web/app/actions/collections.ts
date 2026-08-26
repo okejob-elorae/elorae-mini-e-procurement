@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import {
   buatKontrabon,
+  pasangFotoKontrabon,
   tutupKontrabon,
   type AlasanGagalKontrabon,
 } from '@/lib/receivables/collection-writer';
@@ -49,6 +50,7 @@ export async function buatKontrabonAction(input: {
   handoverDate: string;
   promisedDate: string;
   receivedBy?: string;
+  photoUrl?: string | null;
   note?: string;
 }): Promise<HasilAksiKontrabon> {
   const session = await auth();
@@ -68,6 +70,7 @@ export async function buatKontrabonAction(input: {
       handoverDate: serah,
       promisedDate: janji,
       receivedBy: input.receivedBy,
+      photoUrl: input.photoUrl,
       note: input.note,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
@@ -103,6 +106,33 @@ export async function tutupKontrabonAction(
     return { ok: true };
   } catch (err) {
     console.error('tutupKontrabon gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/** Pasang foto lembar kontrabon yang sudah ditandatangani toko. */
+export async function pasangFotoKontrabonAction(
+  collectionNoteId: string,
+  photoUrl: string,
+): Promise<HasilAksiKontrabon> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)) {
+    return { ok: false, kode: 'TANPA_AKSES' };
+  }
+
+  try {
+    const hasil = await pasangFotoKontrabon({
+      collectionNoteId,
+      photoUrl,
+      olehUserId: session.user.id,
+    });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    segarkan();
+    revalidatePath(`/backoffice/kontrabon/${collectionNoteId}`);
+    return { ok: true };
+  } catch (err) {
+    console.error('pasangFotoKontrabon gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

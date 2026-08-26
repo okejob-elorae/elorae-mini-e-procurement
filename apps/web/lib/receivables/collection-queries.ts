@@ -123,3 +123,91 @@ export async function piutangSiapKontrabon(): Promise<TokoSiapKontrabon[]> {
 
   return [...perToko.values()].sort((a, b) => b.total - a.total);
 }
+
+export type RincianKontrabon = {
+  baris: BarisKontrabon;
+  fotoUrl: string | null;
+  catatan: string | null;
+  faktur: {
+    id: string;
+    invoiceNo: string;
+    nilaiSerah: number;
+    sisaSekarang: number;
+    keadaan: string;
+  }[];
+  klaim: { id: string; docNo: string; nilaiDiterima: number; status: string }[];
+};
+
+/**
+ * Satu kontrabon, faktur-fakturnya, dan klaim yang lahir darinya.
+ *
+ * `nilaiSerah` per faktur adalah nilai saat kertasnya ditandatangani dan tidak
+ * pernah berubah; `sisaSekarang` dihitung ulang. Keduanya ditampilkan karena
+ * selisihnya adalah apa yang sudah dibayar sejak diserahkan.
+ */
+export async function rincianKontrabon(id: string): Promise<RincianKontrabon | null> {
+  const r = await prisma.collectionNote.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      docNo: true,
+      handoverDate: true,
+      promisedDate: true,
+      receivedBy: true,
+      amount: true,
+      status: true,
+      photoUrl: true,
+      note: true,
+      store: { select: { name: true } },
+      salesman: { select: { name: true } },
+      receivableLinks: {
+        select: { amount: true, receivable: { select: { id: true, invoiceNo: true } } },
+      },
+      claims: {
+        select: { id: true, docNo: true, receivedAmount: true, status: true },
+      },
+    },
+  });
+  if (!r) return null;
+
+  const semua = await daftarPiutang();
+  const perPiutang = new Map(semua.map((p) => [p.id, p]));
+  const hariIni = new Date();
+
+  const faktur = r.receivableLinks.map((l) => {
+    const p = perPiutang.get(l.receivable.id);
+    return {
+      id: l.receivable.id,
+      invoiceNo: l.receivable.invoiceNo,
+      nilaiSerah: angka(l.amount),
+      sisaSekarang: p?.outstanding ?? 0,
+      keadaan: p?.keadaan ?? 'lunas',
+    };
+  });
+
+  return {
+    baris: {
+      id: r.id,
+      docNo: r.docNo,
+      storeName: r.store.name,
+      salesmanName: r.salesman?.name ?? null,
+      handoverDate: r.handoverDate.toISOString(),
+      promisedDate: r.promisedDate.toISOString(),
+      receivedBy: r.receivedBy,
+      nilaiSerah: angka(r.amount),
+      sisaSekarang: faktur.reduce((s, f) => s + f.sisaSekarang, 0),
+      jumlahFaktur: r.receivableLinks.length,
+      status: r.status as BarisKontrabon['status'],
+      sisaHari: r.status === 'BERJALAN' ? selisihHari(hariIni, r.promisedDate) : null,
+    },
+    fotoUrl: r.photoUrl,
+    catatan: r.note,
+    faktur,
+    klaim: r.claims.map((k) => ({
+      id: k.id,
+      docNo: k.docNo,
+      nilaiDiterima: angka(k.receivedAmount),
+      status: k.status,
+    })),
+  };
+}

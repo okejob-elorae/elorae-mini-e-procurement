@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -194,7 +195,14 @@ export function KontrabonClient({
                            merah tipis — sisanya belum menuntut tindakan apa pun. */
                         className={cn(terlambat && 'bg-destructive/[0.06]')}
                       >
-                        <TableCell className="font-medium">{b.docNo}</TableCell>
+                        <TableCell>
+                        <Link
+                          href={`/backoffice/kontrabon/${b.id}`}
+                          className="font-medium text-primary underline-offset-2 hover:underline"
+                        >
+                          {b.docNo}
+                        </Link>
+                      </TableCell>
                         <TableCell>
                           {b.storeName}
                           <span className="block text-xs text-muted-foreground">

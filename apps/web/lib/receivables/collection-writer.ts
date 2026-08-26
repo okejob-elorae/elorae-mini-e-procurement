@@ -63,6 +63,7 @@ export async function buatKontrabon(input: {
   handoverDate: Date;
   promisedDate: Date;
   receivedBy?: string | null;
+  photoUrl?: string | null;
   note?: string | null;
 }): Promise<HasilKontrabon> {
   if (input.receivableIds.length === 0) return { ok: false, alasan: 'TANPA_PIUTANG' };
@@ -125,6 +126,7 @@ export async function buatKontrabon(input: {
           handoverDate: input.handoverDate,
           promisedDate: input.promisedDate,
           receivedBy: input.receivedBy?.trim() || null,
+          photoUrl: input.photoUrl?.trim() || null,
           note: input.note?.trim() || null,
           amount: new Prisma.Decimal(nilai),
           status: 'BERJALAN',
@@ -230,5 +232,44 @@ export async function tutupKontrabon(input: {
     });
 
     return { ok: true as const, status: input.keputusan };
+  });
+}
+
+/**
+ * Pasang atau ganti foto lembar kontrabon.
+ *
+ * Terpisah dari pembuatannya karena urutannya di lapangan memang begitu: tanda
+ * terima dibuat di kantor, kertasnya ditandatangani di toko, fotonya menyusul.
+ * Memaksa fotonya ada saat pembuatan berarti kontrabon tidak bisa dibuat
+ * sebelum sales berangkat.
+ */
+export async function pasangFotoKontrabon(input: {
+  collectionNoteId: string;
+  photoUrl: string;
+  olehUserId: string;
+}): Promise<{ ok: true } | { ok: false; alasan: AlasanGagalKontrabon | 'TIDAK_DITEMUKAN' }> {
+  return runSerializable(async (tx) => {
+    const nota = await tx.collectionNote.findUnique({
+      where: { id: input.collectionNoteId },
+      select: { id: true, docNo: true, photoUrl: true },
+    });
+    if (!nota) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+
+    await tx.collectionNote.update({
+      where: { id: nota.id },
+      data: { photoUrl: input.photoUrl.trim() },
+    });
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONTRABON_FOTO,
+      entityType: 'CollectionNote',
+      entityId: nota.id,
+      // Mengganti foto menimpa bukti sebelumnya. Yang lama hanya hidup di sini.
+      changes: { before: { photoUrl: nota.photoUrl }, after: { photoUrl: input.photoUrl } },
+      metadata: { docNo: nota.docNo },
+    });
+
+    return { ok: true as const };
   });
 }
