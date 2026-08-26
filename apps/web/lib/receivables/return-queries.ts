@@ -369,6 +369,24 @@ export async function notaBelumBerpasangan(storeId?: string | null) {
   });
 }
 
+/**
+ * Katalog barang untuk pemilih baris.
+ *
+ * Hanya barang aktif. Baris yang menunjuk salah satunya akan menambah stok saat
+ * gudang menyimpan hitungan; yang hanya diketik namanya tidak.
+ */
+export async function katalogBarang(): Promise<{ value: string; label: string; nama: string }[]> {
+  // `Item` menyimpan nama dua bahasa. Modul ini berbahasa Indonesia, dan nama
+  // itulah yang dipakai menyandingkan baris dengan nota toko.
+  const rows = await prisma.item.findMany({
+    where: { isActive: true },
+    orderBy: { nameId: 'asc' },
+    select: { id: true, sku: true, nameId: true },
+    take: 500,
+  });
+  return rows.map((i) => ({ value: i.id, label: `${i.sku} · ${i.nameId}`, nama: i.nameId }));
+}
+
 /** Toko aktif, untuk memilih saat mencatat nota retur. */
 export async function tokoUntukRetur(): Promise<{ id: string; name: string }[]> {
   return prisma.store.findMany({

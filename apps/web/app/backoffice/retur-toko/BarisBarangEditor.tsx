@@ -6,7 +6,10 @@ import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import type { BarisBarang } from '@/lib/receivables/return-writer';
+
+export type PilihanBarang = { value: string; label: string; nama: string };
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 
@@ -25,6 +28,8 @@ export function BarisBarangEditor({
   rows,
   onChange,
   qtyLabel,
+  katalog,
+  jelaskanStok = false,
 }: {
   rows: BarisBarang[];
   /*
@@ -35,6 +40,9 @@ export function BarisBarangEditor({
    */
   onChange: Dispatch<SetStateAction<BarisBarang[]>>;
   qtyLabel: string;
+  katalog: PilihanBarang[];
+  /** Sisi gudang: pilihan katalog menentukan stok bergerak atau tidak. */
+  jelaskanStok?: boolean;
 }) {
   const t = useTranslations('storeReturns');
   const total = rows.reduce((s, r) => s + (r.qty || 0) * (r.price || 0), 0);
@@ -62,14 +70,39 @@ export function BarisBarangEditor({
       ) : (
         <div className="space-y-2">
           {rows.map((r, i) => (
-            <div key={i} className="flex items-end gap-2">
+            <div key={i} className="flex flex-wrap items-end gap-2">
               <div className="min-w-0 flex-1 space-y-1">
                 {i === 0 && <span className="text-xs text-muted-foreground">{t('colItem')}</span>}
-                <Input
-                  value={r.itemName}
-                  onChange={(e) => ubah(i, { itemName: e.target.value })}
-                  placeholder={t('itemNamePlaceholder')}
-                />
+                <div className="flex gap-2">
+                  {/*
+                   * Dua isian, bukan satu, dan itu disengaja. Katalog menentukan
+                   * apakah stok ikut bergerak; namanya menentukan baris ini
+                   * bisa disandingkan dengan nota toko. Barang yang tidak ada di
+                   * katalog tetap harus bisa dicatat — nota toko sering memuat
+                   * barang yang bukan milik kita.
+                   */}
+                  <SearchableCombobox
+                    options={katalog}
+                    value={r.itemId ?? ''}
+                    onValueChange={(v) => {
+                      const dipilih = katalog.find((k) => k.value === v);
+                      ubah(i, {
+                        itemId: v || null,
+                        itemName: dipilih ? dipilih.nama : r.itemName,
+                      });
+                    }}
+                    placeholder={t('itemPickPlaceholder')}
+                    searchPlaceholder={t('itemSearchPlaceholder')}
+                    emptyMessage={t('itemNoMatch')}
+                    triggerClassName="w-full min-w-0 flex-1"
+                  />
+                  <Input
+                    value={r.itemName}
+                    onChange={(e) => ubah(i, { itemName: e.target.value })}
+                    placeholder={t('itemNamePlaceholder')}
+                    className="min-w-0 flex-1"
+                  />
+                </div>
               </div>
               <div className="w-20 space-y-1">
                 {i === 0 && <span className="text-xs text-muted-foreground">{qtyLabel}</span>}
@@ -105,6 +138,9 @@ export function BarisBarangEditor({
           <p className="text-right text-sm">
             {t('itemsTotal', { value: rupiah(total) })}
           </p>
+          {jelaskanStok && (
+            <p className="text-xs text-muted-foreground">{t('stockHint')}</p>
+          )}
         </div>
       )}
     </div>

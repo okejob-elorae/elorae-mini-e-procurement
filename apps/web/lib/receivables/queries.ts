@@ -50,7 +50,20 @@ const angka = (v: unknown): number => Number(v ?? 0);
  */
 export async function daftarPiutang(opts?: { salesmanId?: string }): Promise<BarisPiutang[]> {
   const rows = await prisma.receivable.findMany({
-    where: opts?.salesmanId ? { salesmanId: opts.salesmanId } : undefined,
+    /*
+     * Toko konsinyasi TIDAK PERNAH muncul di sini. Barang di toko konsi masih
+     * milik kita sampai terjual — mengirimnya bukan penjualan, jadi tidak ada
+     * piutang yang lahir dari sana. Kalau toko konsi ikut terdaftar, sales
+     * menagih uang untuk barang yang belum laku, dan angkanya ikut menaikkan
+     * total piutang perusahaan yang sebenarnya tidak ada.
+     *
+     * Disaring di kueri, bukan di layar: setiap pemanggil `daftarPiutang`
+     * mendapat aturan ini tanpa harus mengingatnya.
+     */
+    where: {
+      store: { termsType: { not: 'KONSI' } },
+      ...(opts?.salesmanId ? { salesmanId: opts.salesmanId } : {}),
+    },
     orderBy: [{ dueDate: 'asc' }],
     select: {
       id: true,

@@ -3907,6 +3907,10 @@
     "colPrice": "Price",
     "removeItem": "Remove row",
     "itemsTotal": "Total from detail: {value}",
-    "qtyItems": "{qty} items"
+    "qtyItems": "{qty} items",
+    "itemPickPlaceholder": "Pick from the catalogue",
+    "itemSearchPlaceholder": "Search SKU or name…",
+    "itemNoMatch": "No matching item.",
+    "stockHint": "Items picked from the catalogue will ADD to warehouse stock when this count is saved. Rows with only a typed name do not move stock."
   }
 }

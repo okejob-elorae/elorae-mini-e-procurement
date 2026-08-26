@@ -1,5 +1,6 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { generateDocNumber } from '@/lib/docNumber';
 import { hitungUlangPiutang } from './writer';
 
 /**
@@ -89,6 +90,88 @@ async function hitungUlangTersentuh(tx: Klien, storeReturnId: string | null): Pr
   const ids = [...new Set(links.map((l) => l.receivableId))];
   for (const id of ids) await hitungUlangPiutang(tx, id);
   return ids.length;
+}
+
+/**
+ * Masukkan barang retur ke stok.
+ *
+ * NRI **MENAMBAH** stok, tidak mengurangi — barangnya kembali ke gudang. Ini
+ * pernah salah arah dan dikoreksi pemilik, jadi tandanya sengaja ditulis
+ * eksplisit di sini dan di jenis penyesuaiannya (`POSITIVE`).
+ *
+ * Hanya baris yang menunjuk barang katalog (`itemId`) yang menggerakkan stok.
+ * Baris yang cuma diketik namanya tidak punya tempat di buku stok — dan
+ * memaksanya masuk akan menciptakan barang hantu tiap kali ada salah ketik.
+ *
+ * Harga rata-ratanya TIDAK digeser: barang kembali dicatat sebesar biaya
+ * bukunya sendiri. Retur bukan pembelian, jadi ia tidak membawa harga baru
+ * yang boleh mengubah rata-rata.
+ */
+async function masukkanKeStok(
+  tx: Klien,
+  input: {
+    items: { itemId?: string | null; itemName: string; qty: number }[];
+    noNri: string;
+    olehUserId: string;
+  },
+): Promise<number> {
+  let jumlahBarisStok = 0;
+
+  for (const b of input.items) {
+    if (!b.itemId || !(b.qty > 0)) continue;
+
+    // Baris tanpa varian memakai `variantSku: null` di sebagian data dan `""`
+    // di sebagian lain. Pencarian yang toleran mencegah baris hantu kedua.
+    const stok = await tx.inventoryValue.findFirst({
+      where: { itemId: b.itemId, OR: [{ variantSku: null }, { variantSku: '' }] },
+      select: { id: true, qtyOnHand: true, avgCost: true },
+    });
+
+    const qtyLama = stok ? Number(stok.qtyOnHand) : 0;
+    const hargaRata = stok ? Number(stok.avgCost) : 0;
+    const qtyBaru = qtyLama + b.qty;
+
+    if (stok) {
+      await tx.inventoryValue.update({
+        where: { id: stok.id },
+        data: {
+          qtyOnHand: qtyBaru,
+          totalValue: qtyBaru * hargaRata,
+          lastUpdated: new Date(),
+        },
+      });
+    } else {
+      await tx.inventoryValue.create({
+        data: {
+          itemId: b.itemId,
+          variantSku: '',
+          qtyOnHand: qtyBaru,
+          reservedQty: 0,
+          avgCost: hargaRata,
+          totalValue: qtyBaru * hargaRata,
+        },
+      });
+    }
+
+    await tx.stockAdjustment.create({
+      data: {
+        docNumber: await generateDocNumber('ADJ', tx),
+        itemId: b.itemId,
+        type: 'POSITIVE',
+        qtyChange: b.qty,
+        reason: `Retur toko ${input.noNri} — ${b.itemName}`,
+        prevQty: qtyLama,
+        newQty: qtyBaru,
+        prevAvgCost: hargaRata,
+        newAvgCost: hargaRata,
+        createdById: input.olehUserId,
+        source: 'STORE_RETURN_RECEIVE',
+      },
+    });
+    jumlahBarisStok += 1;
+  }
+
+  return jumlahBarisStok;
 }
 
 /**
@@ -231,7 +314,10 @@ export async function catatHitunganGudang(input: {
   physicalAmount?: number;
   items?: BarisBarang[];
   note?: string | null;
-}): Promise<{ ok: true; id: string; noNri: string; piutangDihitungUlang: number } | Gagal> {
+}): Promise<
+  | { ok: true; id: string; noNri: string; barisStok: number; piutangDihitungUlang: number }
+  | Gagal
+> {
   const items = (input.items ?? []).filter((b) => b.itemName.trim() && b.qty >= 0);
   // Nol sah — artinya tidak ada barang yang sampai. Itu berbeda dari belum
   // dihitung, dan menolaknya akan memaksa gudang berbohong.
@@ -297,12 +383,19 @@ export async function catatHitunganGudang(input: {
         select: { id: true, noNri: true },
       });
 
+      const barisStok = await masukkanKeStok(tx, {
+        items,
+        noNri: nri.noNri,
+        olehUserId: input.warehouseUserId,
+      });
+
       if (input.storeReturnId) await selaraskanSetelahHitung(tx, input.storeReturnId);
 
       return {
         ok: true as const,
         id: nri.id,
         noNri: nri.noNri,
+        barisStok,
         piutangDihitungUlang: await hitungUlangTersentuh(tx, input.storeReturnId ?? null),
       };
     });

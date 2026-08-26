@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
   daftarKerjaRetur,
+  katalogBarang,
   notaBelumBerpasangan,
   ringkasKerjaRetur,
   tokoUntukRetur,
@@ -15,10 +16,11 @@ export default async function ReturTokoPage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  const [baris, toko, calonPasangan] = await Promise.all([
+  const [baris, toko, calonPasangan, katalog] = await Promise.all([
     daftarKerjaRetur(),
     tokoUntukRetur(),
     notaBelumBerpasangan(),
+    katalogBarang(),
   ]);
   const izin = session.user.permissions ?? [];
 
@@ -27,6 +29,7 @@ export default async function ReturTokoPage() {
       baris={baris}
       ringkasan={ringkasKerjaRetur(baris)}
       toko={toko}
+      katalog={katalog}
       calonPasangan={calonPasangan.map((n) => ({
         id: n.id,
         noNrt: n.noNrt,

@@ -50,7 +50,7 @@ import type {
 import type { LangkahRetur } from '@/lib/receivables/rules';
 import type { BarisBarang } from '@/lib/receivables/return-writer';
 import { NADA_LANGKAH, URUT_LANGKAH } from './langkah';
-import { BarisBarangEditor } from './BarisBarangEditor';
+import { BarisBarangEditor, type PilihanBarang } from './BarisBarangEditor';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string) =>
@@ -80,6 +80,7 @@ export function ReturTokoClient({
   baris,
   ringkasan,
   toko,
+  katalog,
   calonPasangan,
   bolehMengelola,
   bolehMenghitung,
@@ -87,6 +88,7 @@ export function ReturTokoClient({
   baris: BarisKerjaRetur[];
   ringkasan: RingkasanKerjaRetur;
   toko: { id: string; name: string }[];
+  katalog: PilihanBarang[];
   calonPasangan: CalonPasangan[];
   bolehMengelola: boolean;
   bolehMenghitung: boolean;
@@ -459,6 +461,7 @@ export function ReturTokoClient({
               rows={barangKlaim}
               onChange={setBarangKlaim}
               qtyLabel={t('colQtyClaim')}
+              katalog={katalog}
             />
             {barangKlaim.length === 0 && (
               <div className="space-y-2">
@@ -542,6 +545,8 @@ export function ReturTokoClient({
               rows={barangFisik}
               onChange={setBarangFisik}
               qtyLabel={t('colQtyPhysical')}
+              katalog={katalog}
+              jelaskanStok
             />
             {barangFisik.length === 0 && (
               <div className="space-y-2">

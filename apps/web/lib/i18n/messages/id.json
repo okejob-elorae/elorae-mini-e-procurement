@@ -3907,6 +3907,10 @@
     "colPrice": "Harga",
     "removeItem": "Hapus baris",
     "itemsTotal": "Total dari rincian: {value}",
-    "qtyItems": "{qty} barang"
+    "qtyItems": "{qty} barang",
+    "itemPickPlaceholder": "Pilih dari katalog",
+    "itemSearchPlaceholder": "Cari SKU atau nama…",
+    "itemNoMatch": "Tidak ada barang yang cocok.",
+    "stockHint": "Barang yang dipilih dari katalog akan MENAMBAH stok gudang saat hitungan ini disimpan. Baris yang hanya diketik namanya tidak menggerakkan stok."
   }
 }

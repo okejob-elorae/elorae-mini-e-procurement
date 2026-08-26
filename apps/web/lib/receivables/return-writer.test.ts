@@ -27,6 +27,10 @@ const state = {
   potongan: [] as { paymentClaimId: string }[],
   links: [] as { receivableId: string }[],
   dihitungUlang: [] as string[],
+  stok: null as { id: string; qtyOnHand: number; avgCost: number } | null,
+  stokDibuat: [] as Record<string, unknown>[],
+  stokUpdates: [] as Record<string, unknown>[],
+  penyesuaian: [] as Record<string, unknown>[],
 };
 
 const tx = {
@@ -71,10 +75,30 @@ const tx = {
   },
   paymentClaimDeduction: { findMany: vi.fn(async () => state.potongan) },
   paymentClaimReceivable: { findMany: vi.fn(async () => state.links) },
+  inventoryValue: {
+    findFirst: vi.fn(async () => state.stok),
+    create: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      state.stokDibuat.push(a.data);
+      return {};
+    }),
+    update: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      state.stokUpdates.push(a.data);
+      return {};
+    }),
+  },
+  stockAdjustment: {
+    create: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      state.penyesuaian.push(a.data);
+      return {};
+    }),
+  },
 };
 
 vi.mock('@/lib/db/tx-retry', () => ({
   runSerializable: (cb: (c: unknown) => Promise<unknown>) => cb(tx),
+}));
+vi.mock('@/lib/docNumber', () => ({
+  generateDocNumber: async () => 'ADJ/2026/0001',
 }));
 vi.mock('./writer', () => ({
   hitungUlangPiutang: async (_c: unknown, id: string) => {
@@ -129,6 +153,10 @@ beforeEach(() => {
   state.potongan = [{ paymentClaimId: 'k1' }];
   state.links = [{ receivableId: 'r1' }, { receivableId: 'r2' }];
   state.dihitungUlang = [];
+  state.stok = { id: 'iv1', qtyOnHand: 10, avgCost: 50_000 };
+  state.stokDibuat = [];
+  state.stokUpdates = [];
+  state.penyesuaian = [];
 });
 
 const NRT_DASAR = {
@@ -234,6 +262,58 @@ describe('catatHitunganGudang', () => {
     await catatHitunganGudang({ ...DASAR, storeReturnId: 'nrt1', physicalAmount: 800_000 });
     // findUnique dipanggil ulang oleh selaraskan; nota sekarang punya NRI final.
     expect(state.nrtUpdates.some((u) => u.status === 'MENUNGGU' || u.status === 'SELISIH')).toBe(true);
+  });
+
+  it('MENAMBAH stok untuk baris yang menunjuk barang katalog', async () => {
+    // NRI menambah, tidak mengurangi — barangnya kembali ke gudang. Arah ini
+    // pernah salah dan dikoreksi pemilik.
+    const h = await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [{ itemId: 'brg1', itemName: 'Cat Tembok', qty: 2, price: 780_000 }],
+    });
+    expect(h).toMatchObject({ ok: true, barisStok: 1 });
+    expect(state.stokUpdates[0].qtyOnHand).toBe(12);
+    expect(state.penyesuaian[0]).toMatchObject({
+      type: 'POSITIVE',
+      qtyChange: 2,
+      source: 'STORE_RETURN_RECEIVE',
+    });
+  });
+
+  it('TIDAK menggeser harga rata-rata', async () => {
+    // Retur bukan pembelian; ia tidak membawa harga baru. Menggesernya akan
+    // mengubah HPP setiap kali ada barang kembali.
+    await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [{ itemId: 'brg1', itemName: 'Cat Tembok', qty: 2, price: 999_999 }],
+    });
+    expect(state.penyesuaian[0].prevAvgCost).toBe(50_000);
+    expect(state.penyesuaian[0].newAvgCost).toBe(50_000);
+    expect(state.stokUpdates[0].totalValue).toBe(12 * 50_000);
+  });
+
+  it('tidak menggerakkan stok untuk baris yang hanya diketik namanya', async () => {
+    // Nota toko sering memuat barang yang bukan milik kita. Memaksanya masuk
+    // buku stok akan menciptakan barang hantu tiap kali ada salah ketik.
+    const h = await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [{ itemName: 'Barang tidak dikenal', qty: 5, price: 10_000 }],
+    });
+    expect(h).toMatchObject({ ok: true, barisStok: 0 });
+    expect(state.penyesuaian).toHaveLength(0);
+  });
+
+  it('membuat baris stok baru kalau barangnya belum pernah ada', async () => {
+    state.stok = null;
+    await catatHitunganGudang({
+      ...DASAR,
+      storeReturnId: 'nrt1',
+      items: [{ itemId: 'brg9', itemName: 'Barang Baru', qty: 3, price: 100 }],
+    });
+    expect(state.stokDibuat[0]).toMatchObject({ itemId: 'brg9', qtyOnHand: 3 });
   });
 
   it('menghitung ulang SETIAP piutang yang tersentuh', async () => {
