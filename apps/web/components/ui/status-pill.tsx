@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
  */
 export type StatusTone = 'settled' | 'progress' | 'waiting' | 'attention' | 'inactive';
 
-const TONE_CLASS: Record<StatusTone, string> = {
+export const STATUS_TONE_CLASS: Record<StatusTone, string> = {
   settled:
     'bg-emerald-500/12 text-emerald-700 ring-emerald-600/25 dark:text-emerald-300 dark:ring-emerald-400/25',
   progress:
@@ -54,7 +54,7 @@ export function StatusPill({
       <span
         className={cn(
           'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap',
-          TONE_CLASS[tone],
+          STATUS_TONE_CLASS[tone],
         )}
       >
         <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', DOT_CLASS[tone])} />

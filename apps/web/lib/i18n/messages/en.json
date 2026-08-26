@@ -539,7 +539,23 @@
     "noOverduePOs": "No overdue purchase orders",
     "noWorkOrdersInRange": "No work orders in range",
     "somethingWentWrong": "Something went wrong.",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "totalRealised": "Total realised",
+    "totalOutstanding": "Total outstanding",
+    "noShortage": "No shortage. Material needs for every active WO are covered.",
+    "procurementReport": "Procurement report",
+    "dateRange": "Date range",
+    "outstandingValue": "Outstanding value",
+    "selectVendor": "Select vendor",
+    "returnValue": "Return value",
+    "totalSkus": "Total SKUs",
+    "totalQuantity": "Total quantity",
+    "totalValue": "Total value",
+    "avgValuePerItem": "Avg value/item",
+    "lowStockAlerts": "Low stock alerts",
+    "valueDistribution": "Value distribution by type",
+    "percentOfTotal": "% of total",
+    "all": "All"
   },
   "production": {
     "targetCutting": "Target cutting",
@@ -3502,5 +3518,30 @@
     "remaining": "Remaining",
     "status": "Status",
     "sku": "SKU"
+  },
+  "ui": {
+    "code": "Code",
+    "name": "Name",
+    "description": "Description",
+    "actions": "Actions",
+    "active": "Active",
+    "inactive": "Inactive",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "loading": "Loading...",
+    "required": "required",
+    "optional": "optional",
+    "allStatus": "All statuses",
+    "totalValue": "Total value",
+    "search": "Search..."
+  },
+  "quickActions": {
+    "quickAction": "Quick action",
+    "newPO": "New purchase order",
+    "newWO": "New work order",
+    "newItem": "New item"
   }
 }

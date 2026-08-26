@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,6 +59,7 @@ type Permission = {
 };
 
 export default function RBACSettingsPage() {
+  const tUi = useTranslations('ui');
   const { data: session } = useSession();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Record<string, Permission[]>>({});
@@ -171,7 +174,7 @@ export default function RBACSettingsPage() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center p-8">Loading...</div>;
+    return <div className="flex items-center justify-center p-8">{tUi('loading')}</div>;
   }
 
   return (
@@ -261,7 +264,7 @@ export default function RBACSettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">{tUi('description')}</Label>
               <Textarea
                 id="description"
                 value={formData.description}
@@ -389,7 +392,7 @@ export default function RBACSettingsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tUi('cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-destructive-foreground">
               Delete
             </AlertDialogAction>

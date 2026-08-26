@@ -78,6 +78,8 @@ interface SupplierTypeRecord {
 }
 
 export default function SupplierTypesPage() {
+  const tUi = useTranslations('ui');
+  const tTable = useTranslations('tableHeaders');
   const tSupplierTypes = useTranslations('supplierTypes');
   const [types, setTypes] = useState<SupplierTypeRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -247,7 +249,7 @@ export default function SupplierTypesPage() {
                       checked={isActive}
                       onCheckedChange={(v) => setValue('isActive', v)}
                     />
-                    <Label htmlFor="isActive">Active</Label>
+                    <Label htmlFor="isActive">{tUi('active')}</Label>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="sortOrder">Sort order (optional)</Label>
@@ -283,11 +285,11 @@ export default function SupplierTypesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Name</TableHead>
+                <TableHead>{tUi('code')}</TableHead>
+                <TableHead>{tUi('name')}</TableHead>
                 <TableHead>Sort</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-[80px]">Actions</TableHead>
+                <TableHead>{tTable('status')}</TableHead>
+                <TableHead className="w-[80px]">{tUi('actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -305,9 +307,9 @@ export default function SupplierTypesPage() {
                     <TableCell>{row.sortOrder ?? '—'}</TableCell>
                     <TableCell>
                       {row.isActive ? (
-                        <Badge variant="secondary">Active</Badge>
+                        <Badge variant="secondary">{tUi('active')}</Badge>
                       ) : (
-                        <Badge variant="outline">Inactive</Badge>
+                        <Badge variant="outline">{tUi('inactive')}</Badge>
                       )}
                     </TableCell>
                     <TableCell>
@@ -355,7 +357,7 @@ export default function SupplierTypesPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tUi('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={onDelete}
               disabled={isDeleting}

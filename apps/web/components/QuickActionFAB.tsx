@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { Zap, ShoppingCart, ClipboardList, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,42 +13,47 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 const actions = [
-  { label: 'New Purchase Order', href: '/backoffice/purchase-orders/new', icon: ShoppingCart },
-  { label: 'Create Work Order', href: '/backoffice/work-orders/new', icon: ClipboardList },
-  { label: 'Create New Item', href: '/backoffice/items/new', icon: Package },
+  { labelKey: 'newPO', href: '/backoffice/purchase-orders/new', icon: ShoppingCart },
+  { labelKey: 'newWO', href: '/backoffice/work-orders/new', icon: ClipboardList },
+  { labelKey: 'newItem', href: '/backoffice/items/new', icon: Package },
 ];
 
+/**
+ * Quick actions, in the header rather than floating over the page.
+ *
+ * It used to be a fixed button in the bottom-right corner, which is exactly
+ * where every list puts its pagination — so it sat on top of "Next" and
+ * swallowed the click. Padding the page bottom only cleared it while scrolled
+ * to the very end; mid-scroll and on short pages the collision came back,
+ * measured with elementFromPoint on three controls at once.
+ *
+ * A header button cannot collide with anything, and it is where the primary
+ * action lives in the rest of this product family.
+ */
 export function QuickActionFAB() {
+  const t = useTranslations('quickActions');
   return (
-    <div className="fixed bottom-6 right-6 z-50 no-print">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            size="icon"
-            className="h-14 w-14 rounded-full shadow-lg"
-            aria-label="Quick actions"
-          >
-            <Zap className="h-6 w-6" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="end" sideOffset={8}>
-          <DropdownMenuLabel>Quick Action</DropdownMenuLabel>
-          {actions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <DropdownMenuItem key={action.href} asChild>
-                <Link
-                  href={action.href}
-                  className="flex cursor-pointer items-center gap-2"
-                >
-                  <Icon className="h-4 w-4" />
-                  {action.label}
-                </Link>
-              </DropdownMenuItem>
-            );
-          })}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="gap-1.5 no-print" aria-label={t('quickAction')}>
+          <Zap className="h-4 w-4" />
+          <span className="hidden sm:inline">{t('quickAction')}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={8}>
+        <DropdownMenuLabel>{t('quickAction')}</DropdownMenuLabel>
+        {actions.map((action) => {
+          const Icon = action.icon;
+          return (
+            <DropdownMenuItem key={action.href} asChild>
+              <Link href={action.href} className="flex cursor-pointer items-center gap-2">
+                <Icon className="h-4 w-4" />
+                {t(action.labelKey as never)}
+              </Link>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

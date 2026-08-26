@@ -539,7 +539,23 @@
     "noOverduePOs": "Tidak ada pesanan pembelian terlambat",
     "noWorkOrdersInRange": "Tidak ada work order dalam rentang",
     "somethingWentWrong": "Terjadi kesalahan.",
-    "loading": "Memuat..."
+    "loading": "Memuat...",
+    "totalRealised": "Total Terealisasi",
+    "totalOutstanding": "Total Belum Selesai",
+    "noShortage": "Tidak ada kekurangan. Kebutuhan bahan semua WO aktif sudah tercukupi.",
+    "procurementReport": "Laporan Pengadaan",
+    "dateRange": "Rentang tanggal",
+    "outstandingValue": "Nilai Belum Selesai",
+    "selectVendor": "Pilih vendor",
+    "returnValue": "Nilai Retur",
+    "totalSkus": "Total SKU",
+    "totalQuantity": "Total Kuantitas",
+    "totalValue": "Total Nilai",
+    "avgValuePerItem": "Rata-rata Nilai/Barang",
+    "lowStockAlerts": "Peringatan Stok Menipis",
+    "valueDistribution": "Sebaran nilai per jenis",
+    "percentOfTotal": "% dari Total",
+    "all": "Semua"
   },
   "production": {
     "targetCutting": "Target cutting",
@@ -3502,5 +3518,30 @@
     "remaining": "Sisa",
     "status": "Status",
     "sku": "SKU"
+  },
+  "ui": {
+    "code": "Kode",
+    "name": "Nama",
+    "description": "Keterangan",
+    "actions": "Tindakan",
+    "active": "Aktif",
+    "inactive": "Nonaktif",
+    "cancel": "Batal",
+    "save": "Simpan",
+    "delete": "Hapus",
+    "edit": "Ubah",
+    "create": "Buat",
+    "loading": "Memuat...",
+    "required": "wajib",
+    "optional": "opsional",
+    "allStatus": "Semua status",
+    "totalValue": "Total Nilai",
+    "search": "Cari..."
+  },
+  "quickActions": {
+    "quickAction": "Aksi Cepat",
+    "newPO": "Buat PO",
+    "newWO": "Buat Perintah Kerja",
+    "newItem": "Tambah Item"
   }
 }

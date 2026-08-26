@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -64,6 +66,8 @@ type VendorReturnRow = Extract<
 >['items'][number];
 
 export default function VendorReturnsPage() {
+  const tUi = useTranslations('ui');
+  const tTable = useTranslations('tableHeaders');
   const { data: session } = useSession();
   const [returns, setReturns] = useState<VendorReturnRow[]>([]);
   const [vendors, setVendors] = useState<SupplierOption[]>([]);
@@ -202,7 +206,7 @@ export default function VendorReturnsPage() {
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All Status</SelectItem>
+            <SelectItem value="__all__">{tUi('allStatus')}</SelectItem>
             <SelectItem value="DRAFT">Draft</SelectItem>
             <SelectItem value="PROCESSED">Processed</SelectItem>
             <SelectItem value="COMPLETED">Completed</SelectItem>
@@ -237,10 +241,10 @@ export default function VendorReturnsPage() {
                       <TableHead>Doc #</TableHead>
                       <TableHead>Vendor</TableHead>
                       <TableHead>Work Order</TableHead>
-                      <TableHead className="text-right">Total Value</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">{tUi('totalValue')}</TableHead>
+                      <TableHead>{tTable('status')}</TableHead>
                       <TableHead>Created</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
+                      <TableHead className="w-[100px]">{tUi('actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

@@ -348,6 +348,32 @@ const navItems: NavItem[] = [
   },
 ];
 
+/**
+ * Title of the page actually open.
+ *
+ * The header hardcoded the dashboard label, so every screen in the app
+ * announced itself as "Beranda" — the one place that always tells you where
+ * you are was always wrong. Resolved against the same nav tree the sidebar
+ * renders, longest match first so a child route beats its parent.
+ */
+function useCurrentPageLabel(): string | null {
+  const pathname = usePathname();
+  const tNav = useTranslations('navigation');
+  let best: { href: string; key: string } | null = null;
+  for (const item of navItems) {
+    for (const candidate of [
+      { href: item.href, key: item.labelKey },
+      ...(item.children ?? []).map((c) => ({ href: c.href, key: c.labelKey })),
+    ]) {
+      if (candidate.href === '#' || candidate.href === '') continue;
+      if (pathname === candidate.href || pathname.startsWith(`${candidate.href}/`)) {
+        if (!best || candidate.href.length > best.href.length) best = candidate;
+      }
+    }
+  }
+  return best ? tNav(best.key as never) : null;
+}
+
 function ThemeDropdownItems() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const current = theme ?? 'system';
@@ -576,6 +602,7 @@ export function BackofficeShell({
 }: {
   children: React.ReactNode;
 }) {
+  const pageLabel = useCurrentPageLabel();
   const tRole = useTranslations('auth.roles');
   const tNav = useTranslations('navigation');
   const { data: session, status } = useSession();
@@ -655,12 +682,12 @@ export function BackofficeShell({
               </SheetContent>
             </Sheet>
             <h2 className="text-lg font-semibold hidden sm:block">
-              {tNav('dashboard')} - {session.user.name || session.user.email}
+              {pageLabel ?? tNav('dashboard')}
             </h2>
           </div>
 
-          <div className="flex items-center gap-4">
-            <NotificationIcon />
+          <div className="flex items-center gap-2 sm:gap-3">
+                <NotificationIcon />
             <LanguageSwitcher />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -702,17 +729,9 @@ export function BackofficeShell({
         </header>
 
         {/* Page Content */}
-        {/*
-          * pb-24 reserves the corner the Quick actions button occupies
-          * (fixed bottom-6 right-6, 56px). Without it, content that ends
-          * bottom-right — every list's pagination — scrolls underneath the
-          * button, which then swallows the click: measured 56x32px of overlap
-          * on "Next", with elementFromPoint returning the FAB.
-          */}
-        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 pb-24 lg:p-6 lg:pb-24">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 lg:p-6">
           {children}
         </main>
-        <QuickActionFAB />
         <FcmRegistration />
       </div>
     </div>

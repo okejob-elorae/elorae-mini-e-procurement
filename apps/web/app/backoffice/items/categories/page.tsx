@@ -82,6 +82,8 @@ interface ItemCategoryRecord {
 }
 
 export default function ItemCategoriesPage() {
+  const tUi = useTranslations('ui');
+  const tTable = useTranslations('tableHeaders');
   const t = useTranslations('items');
   const tCommon = useTranslations('common');
   const [categories, setCategories] = useState<ItemCategoryRecord[]>([]);
@@ -259,7 +261,7 @@ export default function ItemCategoriesPage() {
                       checked={isActive}
                       onCheckedChange={(v) => setValue('isActive', v)}
                     />
-                    <Label htmlFor="isActive">Active</Label>
+                    <Label htmlFor="isActive">{tUi('active')}</Label>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="sortOrder">Sort order (optional)</Label>
@@ -298,10 +300,10 @@ export default function ItemCategoriesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Code</TableHead>
+                  <TableHead>{tUi('name')}</TableHead>
+                  <TableHead>{tUi('code')}</TableHead>
                   <TableHead>Sort</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{tTable('status')}</TableHead>
                   <TableHead className="w-[80px]">{tCommon('actions')}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -354,7 +356,7 @@ export default function ItemCategoriesPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>{tUi('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={onDelete}
               disabled={isDeleting}

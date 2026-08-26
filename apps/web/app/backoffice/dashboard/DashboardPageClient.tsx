@@ -204,6 +204,7 @@ export function DashboardPageClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const tDashboard = useTranslations('dashboard');
+  const tTable = useTranslations('tableHeaders');
   const tWO = useTranslations('workOrders');
   const tabFromUrl = searchParams.get('tab');
   const activeTab: DashboardTab = isDashboardTab(tabFromUrl) ? tabFromUrl : 'overview';
@@ -679,7 +680,7 @@ export function DashboardPageClient({
         <div className="grid gap-4 sm:grid-cols-2">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Realised</CardTitle>
+              <CardTitle className="text-sm font-medium">{tDashboard('totalRealised')}</CardTitle>
               <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
             </CardHeader>
             <CardContent>
@@ -693,7 +694,7 @@ export function DashboardPageClient({
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Outstanding</CardTitle>
+              <CardTitle className="text-sm font-medium">{tDashboard('totalOutstanding')}</CardTitle>
               <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
             </CardHeader>
             <CardContent>
@@ -821,7 +822,7 @@ export function DashboardPageClient({
             </CardHeader>
             <CardContent>
               {rawMaterialShortage.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No shortage. All active WO material needs are covered.</p>
+                <p className="text-sm text-muted-foreground">{tDashboard('noShortage')}</p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -1011,7 +1012,7 @@ export function DashboardPageClient({
         <TabsContent value="rp1" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Procurement Report</CardTitle>
+              <CardTitle>{tDashboard('procurementReport')}</CardTitle>
               <p className="text-sm text-muted-foreground">
                 Outstanding POs with ETA alerts. Default status: SUBMITTED, PARTIAL.
               </p>
@@ -1019,7 +1020,7 @@ export function DashboardPageClient({
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-4 items-end">
                 <div className="space-y-2">
-                  <Label htmlFor="rp1-date-range">Date range</Label>
+                  <Label htmlFor="rp1-date-range">{tDashboard('dateRange')}</Label>
                   <DateRangePicker
                     id="rp1-date-range"
                     triggerClassName="w-[220px]"
@@ -1037,7 +1038,7 @@ export function DashboardPageClient({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Supplier</Label>
+                  <Label>{tTable('supplier')}</Label>
                   <SearchableCombobox
                     options={[
                       { value: 'all', label: 'All' },
@@ -1047,12 +1048,12 @@ export function DashboardPageClient({
                     onValueChange={(v) =>
                       setRp1Filters((f) => ({ ...f, supplierId: v === 'all' ? '' : v }))
                     }
-                    placeholder="All"
+                    placeholder={tDashboard('all')}
                     triggerClassName="w-[200px]"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Status</Label>
+                  <Label>{tTable('status')}</Label>
                   <Select
                     value={rp1Filters.status.join(',') || 'SUBMITTED,PARTIAL'}
                     onValueChange={(v) =>
@@ -1107,12 +1108,12 @@ export function DashboardPageClient({
                       <TableHeader>
                         <TableRow>
                           <TableHead>Doc #</TableHead>
-                          <TableHead>Supplier</TableHead>
-                          <TableHead>Status</TableHead>
+                          <TableHead>{tTable('supplier')}</TableHead>
+                          <TableHead>{tTable('status')}</TableHead>
                           <TableHead>ETA</TableHead>
                           <TableHead>ETA Alert</TableHead>
                           <TableHead className="text-right">Outstanding Qty</TableHead>
-                          <TableHead className="text-right">Outstanding Value</TableHead>
+                          <TableHead className="text-right">{tDashboard('outstandingValue')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1168,12 +1169,12 @@ export function DashboardPageClient({
                     options={suppliers.map((sup) => ({ value: sup.id, label: `${sup.name} (${sup.code})` }))}
                     value={rp2VendorId}
                     onValueChange={setRp2VendorId}
-                    placeholder="Select vendor"
+                    placeholder={tDashboard('selectVendor')}
                     triggerClassName="w-[220px]"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="rp2-date-range">Date range</Label>
+                  <Label htmlFor="rp2-date-range">{tDashboard('dateRange')}</Label>
                   <DateRangePicker
                     id="rp2-date-range"
                     triggerClassName="w-[220px]"
@@ -1222,8 +1223,8 @@ export function DashboardPageClient({
                         <TableHead className="text-right">Actual</TableHead>
                         <TableHead className="text-right">Efficiency %</TableHead>
                         <TableHead className="text-right">Material Cost</TableHead>
-                        <TableHead className="text-right">Return Value</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">{tDashboard('returnValue')}</TableHead>
+                        <TableHead>{tTable('status')}</TableHead>
                         <TableHead className="text-right">Completion (days)</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1291,7 +1292,7 @@ export function DashboardPageClient({
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Total SKUs</CardTitle>
+                        <CardTitle className="text-sm">{tDashboard('totalSkus')}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">{rp3Data.summary.totalSKUs}</div>
@@ -1299,7 +1300,7 @@ export function DashboardPageClient({
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Total Quantity</CardTitle>
+                        <CardTitle className="text-sm">{tDashboard('totalQuantity')}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">{rp3Data.summary.totalQuantity.toLocaleString('id-ID')}</div>
@@ -1307,7 +1308,7 @@ export function DashboardPageClient({
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Total Value</CardTitle>
+                        <CardTitle className="text-sm">{tDashboard('totalValue')}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
@@ -1317,7 +1318,7 @@ export function DashboardPageClient({
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Avg Value/Item</CardTitle>
+                        <CardTitle className="text-sm">{tDashboard('avgValuePerItem')}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
@@ -1327,7 +1328,7 @@ export function DashboardPageClient({
                     </Card>
                     <Card>
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Low Stock Alerts</CardTitle>
+                        <CardTitle className="text-sm">{tDashboard('lowStockAlerts')}</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold text-destructive">
@@ -1337,7 +1338,7 @@ export function DashboardPageClient({
                     </Card>
                   </div>
                   <div>
-                    <h4 className="font-medium mb-2">Value distribution by type</h4>
+                    <h4 className="font-medium mb-2">{tDashboard('valueDistribution')}</h4>
                     <div className="space-y-2">
                       {Object.entries(rp3Data.categories).map(([type, { totalValue, count }]) => {
                         const pct = rp3Data.summary.totalValue > 0 ? (totalValue / rp3Data.summary.totalValue) * 100 : 0;
@@ -1379,11 +1380,11 @@ export function DashboardPageClient({
                       <TableHeader>
                         <TableRow>
                           <TableHead>SKU</TableHead>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Type</TableHead>
+                          <TableHead>{tTable('name')}</TableHead>
+                          <TableHead>{tTable('type')}</TableHead>
                           <TableHead className="text-right">Qty</TableHead>
-                          <TableHead className="text-right">Total Value</TableHead>
-                          <TableHead className="text-right">% of Total</TableHead>
+                          <TableHead className="text-right">{tDashboard('totalValue')}</TableHead>
+                          <TableHead className="text-right">{tDashboard('percentOfTotal')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
