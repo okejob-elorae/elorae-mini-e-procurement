@@ -1,0 +1,226 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import { BadgeCheck, Wallet } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
+import { verifikasiKlaimAction } from '@/app/actions/receivables';
+
+export type BarisKlaim = {
+  id: string;
+  docNo: string;
+  storeName: string;
+  salesmanName: string | null;
+  claimedTransferAt: string;
+  invoiceAmount: number;
+  deductionTotal: number;
+  receivedAmount: number;
+  deductionCount: number;
+  status: string;
+  verifyNote: string | null;
+  nilaiTertahan: number;
+};
+
+const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
+const tanggal = (iso: string) =>
+  new Date(iso).toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Jakarta',
+  });
+
+const NADA: Record<string, StatusTone> = {
+  DIKIRIM: 'waiting',
+  TERVERIFIKASI: 'settled',
+  DITOLAK: 'inactive',
+};
+
+export function PelunasanClient({
+  baris,
+  bolehMemutuskan,
+}: {
+  baris: BarisKlaim[];
+  bolehMemutuskan: boolean;
+}) {
+  const t = useTranslations('payments');
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [tolakId, setTolakId] = useState<string | null>(null);
+  const [alasan, setAlasan] = useState('');
+
+  const menunggu = baris.filter((b) => b.status === 'DIKIRIM').length;
+
+  const putuskan = (id: string, keputusan: 'TERVERIFIKASI' | 'DITOLAK', catatan?: string) => {
+    startTransition(async () => {
+      const hasil = await verifikasiKlaimAction(id, keputusan, catatan);
+      if (hasil.ok) {
+        toast.success(keputusan === 'TERVERIFIKASI' ? t('okVerified') : t('okRejected'));
+        setTolakId(null);
+        setAlasan('');
+        router.refresh();
+      } else {
+        toast.error(t(`err${hasil.kode}` as never));
+      }
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={t('pageTitle')}
+        description={t('pageDescription')}
+        meta={t('summary', { count: baris.length, pending: menunggu })}
+      />
+
+      <Card>
+        <CardContent className={baris.length === 0 ? 'p-0' : 'px-0'}>
+          {baris.length === 0 ? (
+            <EmptyState icon={Wallet} title={t('emptyTitle')} description={t('emptyBody')} />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('colDoc')}</TableHead>
+                    <TableHead>{t('colStore')}</TableHead>
+                    <TableHead>{t('colClaimedAt')}</TableHead>
+                    <TableHead className="text-right">{t('colInvoice')}</TableHead>
+                    <TableHead className="text-right">{t('colReceived')}</TableHead>
+                    <TableHead>{t('colStatus')}</TableHead>
+                    <TableHead className="text-right">{t('colAction')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {baris.map((b) => (
+                    <TableRow
+                      key={b.id}
+                      /* Klaim yang menunggu keputusan diberi latar tipis: inilah
+                         satu-satunya baris yang menuntut tindakan hari ini. */
+                      className={cn(b.status === 'DIKIRIM' && 'bg-amber-500/[0.05]')}
+                    >
+                      <TableCell className="font-medium">{b.docNo}</TableCell>
+                      <TableCell>
+                        {b.storeName}
+                        {b.salesmanName && (
+                          <span className="block text-xs text-muted-foreground">
+                            {b.salesmanName}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>{tanggal(b.claimedTransferAt)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {rupiah(b.invoiceAmount)}
+                        {b.deductionCount > 0 && (
+                          <span className="block text-xs">
+                            {t('deductions', {
+                              count: b.deductionCount,
+                              value: rupiah(b.deductionTotal),
+                            })}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {rupiah(b.receivedAmount)}
+                      </TableCell>
+                      <TableCell>
+                        <StatusPill
+                          tone={NADA[b.status] ?? 'inactive'}
+                          detail={
+                            b.status === 'TERVERIFIKASI' && b.nilaiTertahan > 0
+                              ? t('held', { value: rupiah(b.nilaiTertahan) })
+                              : b.verifyNote
+                          }
+                        >
+                          {t(`status${b.status}` as never)}
+                        </StatusPill>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {b.status === 'DIKIRIM' && bolehMemutuskan && (
+                          <span className="inline-flex gap-2">
+                            <Button
+                              size="sm"
+                              disabled={pending}
+                              onClick={() => putuskan(b.id, 'TERVERIFIKASI')}
+                            >
+                              <BadgeCheck className="mr-1.5 h-3.5 w-3.5" />
+                              {t('verify')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={pending}
+                              onClick={() => {
+                                setTolakId(b.id);
+                                setAlasan('');
+                              }}
+                            >
+                              {t('reject')}
+                            </Button>
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={tolakId !== null} onOpenChange={(open) => !open && setTolakId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('rejectTitle')}</DialogTitle>
+            <DialogDescription>{t('rejectBody')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="alasan-tolak">{t('rejectReason')}</Label>
+            <Textarea
+              id="alasan-tolak"
+              value={alasan}
+              onChange={(e) => setAlasan(e.target.value)}
+              placeholder={t('rejectPlaceholder')}
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              disabled={pending || alasan.trim().length === 0}
+              onClick={() => tolakId && putuskan(tolakId, 'DITOLAK', alasan)}
+            >
+              {t('reject')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -93,7 +93,8 @@
     "settings": "Pengaturan",
     "masterData": "Data Master",
     "archive": "Arsip Dokumen",
-    "receivables": "Faktur & Piutang"
+    "receivables": "Faktur & Piutang",
+    "payments": "Pelunasan & Klaim"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -3649,5 +3650,39 @@
     "reasonLewat": "Toko janji bayar {tgl} — sudah lewat {hari} hari dan uang belum masuk. Tagih ulang dan minta tanggal baru.",
     "reasonTt": "Sudah dikontrabon ({no}). Toko janji bayar {tgl} — tunggu tanggalnya.",
     "reasonBelum": "Siap dikontrabon — tidak ada retur menggantung dan tidak ada tunggakan."
+  },
+  "payments": {
+    "pageTitle": "Pelunasan & Klaim",
+    "pageDescription": "Klaim transfer yang dilapor sales. Piutang baru berkurang setelah admin keuangan mencocokkannya dengan mutasi rekening.",
+    "summary": "{count} klaim · {pending} menunggu verifikasi",
+    "colDoc": "No. Klaim",
+    "colStore": "Toko",
+    "colSalesman": "Salesman",
+    "colClaimedAt": "Tgl Transfer",
+    "colInvoice": "Nilai Faktur",
+    "colReceived": "Diterima",
+    "colStatus": "Keadaan",
+    "colAction": "",
+    "statusDIKIRIM": "Belum diverifikasi",
+    "statusTERVERIFIKASI": "Terverifikasi",
+    "statusDITOLAK": "Ditolak",
+    "verify": "Cocok di rekening",
+    "reject": "Tolak",
+    "rejectTitle": "Tolak klaim ini?",
+    "rejectBody": "Sales akan membaca alasannya di HP. Tulis apa yang salah dan apa yang harus dia lakukan — tanpa itu dia akan menagih ke tempat yang sama lagi.",
+    "rejectReason": "Alasan penolakan",
+    "rejectPlaceholder": "Contoh: uang belum masuk rekening per hari ini, minta toko kirim ulang bukti transfer",
+    "confirmVerify": "Verifikasi",
+    "deductions": "{count} potongan · {value}",
+    "held": "termasuk retur tertahan {value}",
+    "emptyTitle": "Belum ada klaim pelunasan",
+    "emptyBody": "Klaim muncul di sini setelah sales melapor dari lapangan bahwa toko sudah transfer.",
+    "okVerified": "Klaim diverifikasi — piutang sudah dihitung ulang.",
+    "okRejected": "Klaim ditolak. Sales akan melihat alasannya.",
+    "errTANPA_AKSES": "Hanya admin keuangan yang boleh memutuskan klaim.",
+    "errTIDAK_DITEMUKAN": "Klaim tidak ditemukan — mungkin sudah dihapus.",
+    "errSUDAH_DIPUTUSKAN": "Klaim ini sudah diputuskan sebelumnya. Muat ulang halaman.",
+    "errALASAN_WAJIB": "Tulis alasan penolakannya dulu.",
+    "errGAGAL": "Gagal menyimpan keputusan. Coba lagi."
   }
 }

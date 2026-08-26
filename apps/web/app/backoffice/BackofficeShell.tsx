@@ -326,6 +326,13 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
   },
   {
+    labelKey: 'payments',
+    emoji: '💵',
+    href: '/backoffice/pelunasan',
+    icon: Wallet,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+  },
+  {
     labelKey: 'archive',
     emoji: '🗂️',
     href: '/backoffice/archive',

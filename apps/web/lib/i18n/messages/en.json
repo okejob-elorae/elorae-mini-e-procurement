@@ -93,7 +93,8 @@
     "settings": "Settings",
     "masterData": "Master Data",
     "archive": "Document archive",
-    "receivables": "Invoices & receivables"
+    "receivables": "Invoices & receivables",
+    "payments": "Payments & claims"
   },
   "notifications": {
     "title": "Notifications",
@@ -3649,5 +3650,39 @@
     "reasonLewat": "The shop promised {tgl} — {hari} days past and no money has arrived. Chase it and get a new date.",
     "reasonTt": "Handed over ({no}). The shop promised {tgl} — wait for the date.",
     "reasonBelum": "Ready to hand over — no return hanging and nothing overdue."
+  },
+  "payments": {
+    "pageTitle": "Payments & claims",
+    "pageDescription": "Transfer claims reported by sales. A receivable only drops once finance matches it against the bank statement.",
+    "summary": "{count} claims · {pending} awaiting verification",
+    "colDoc": "Claim no.",
+    "colStore": "Store",
+    "colSalesman": "Salesman",
+    "colClaimedAt": "Transfer date",
+    "colInvoice": "Invoice amount",
+    "colReceived": "Received",
+    "colStatus": "State",
+    "colAction": "",
+    "statusDIKIRIM": "Not verified",
+    "statusTERVERIFIKASI": "Verified",
+    "statusDITOLAK": "Rejected",
+    "verify": "Matches the bank",
+    "reject": "Reject",
+    "rejectTitle": "Reject this claim?",
+    "rejectBody": "Sales reads the reason on their phone. Say what is wrong and what they should do — without it they will chase the same place again.",
+    "rejectReason": "Reason for rejection",
+    "rejectPlaceholder": "e.g. money has not landed as of today, ask the shop to resend the transfer proof",
+    "confirmVerify": "Verify",
+    "deductions": "{count} deductions · {value}",
+    "held": "including {value} withheld by return",
+    "emptyTitle": "No payment claims yet",
+    "emptyBody": "Claims appear here once sales reports from the field that a shop has transferred.",
+    "okVerified": "Claim verified — the receivable has been recomputed.",
+    "okRejected": "Claim rejected. Sales will see the reason.",
+    "errTANPA_AKSES": "Only finance may decide a claim.",
+    "errTIDAK_DITEMUKAN": "Claim not found — it may have been deleted.",
+    "errSUDAH_DIPUTUSKAN": "This claim was already decided. Reload the page.",
+    "errALASAN_WAJIB": "Write the rejection reason first.",
+    "errGAGAL": "Could not save the decision. Try again."
   }
 }
