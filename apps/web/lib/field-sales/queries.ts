@@ -268,7 +268,14 @@ export type StoreOrderSummaryRow = {
 export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderSummaryRow[]> {
   const rows = await prisma.fieldSalesOrder.findMany({
     where: { storeId, status: { not: "REJECTED" } },
-    orderBy: { createdAt: "desc" },
+    /*
+     * `createdAt` alone is not a total order. It has millisecond resolution, so
+     * two orders taken in the same tick tie and the database is free to return
+     * them either way — which means the "5 newest" window itself can differ
+     * between two identical calls. `orderNo` breaks the tie deterministically
+     * because it is unique and monotonic within its prefix.
+     */
+    orderBy: [{ createdAt: "desc" }, { orderNo: "desc" }],
     take: 5,
     select: { id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true },
   });
