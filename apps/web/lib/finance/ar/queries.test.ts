@@ -192,7 +192,13 @@ d("AR queries (test bed only)", () => {
   it("filters by status", async () => {
     await prisma.receivable.update({ where: { id: currentRec }, data: { status: "PAID", outstandingAmount: 0 } });
     const res = await listReceivables({ storeId, status: "OUTSTANDING", asOf });
-    expect(res.rows.map((r) => r.id)).toEqual([overdueRec]);
+    /*
+     * thirdRec is also OUTSTANDING (its status is never touched here), and its dueDate
+     * (2026-03-01) sorts before overdueRec's (2026-05-01) under `orderBy: [{ dueDate: "asc" }, ...
+     * ]`. Asserting both survivors, in order, still proves the PAID row (currentRec) is excluded —
+     * and pins the dueDate-asc ordering, which nothing else in this file checks.
+     */
+    expect(res.rows.map((r) => r.id)).toEqual([thirdRec, overdueRec]);
   });
 
   it("returns null for an unknown receivable", async () => {
