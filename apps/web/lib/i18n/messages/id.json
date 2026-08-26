@@ -2532,7 +2532,9 @@
         "OVER_DELIVER": "Jumlah kirim melebihi sisa pesanan.",
         "INSUFFICIENT_STOCK": "Stok tidak cukup untuk pengiriman ini.",
         "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal nota.",
-        "CONFLICT": "Tanggal nota ini baru saja diubah orang lain. Muat ulang halaman dan coba lagi."
+        "CONFLICT": "Tanggal nota ini baru saja diubah orang lain. Muat ulang halaman dan coba lagi.",
+        "NOT_RETRYABLE": "Jurnal pengiriman ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
+        "RECEIVABLE_HAS_PAYMENTS": "Nota ini sudah memiliki pembayaran yang diterapkan, jadi tanggalnya tidak bisa dikoreksi. Batalkan (void) pembayarannya dahulu, lalu coba lagi."
       }
     },
     "print": {

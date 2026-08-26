@@ -1,16 +1,29 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 
-const { mockAuth, staleSnapshot, mockUpdateMany, mockAdminNotificationCreate, mockFanOut, mockLogAudit, notaDeliveryLookup } =
-  vi.hoisted(() => ({
-    mockAuth: vi.fn(),
-    staleSnapshot: { value: null as { invoiceDate: Date; dueDate: Date } | null },
-    mockUpdateMany: vi.fn(),
-    mockAdminNotificationCreate: vi.fn(),
-    mockFanOut: vi.fn(),
-    mockLogAudit: vi.fn(),
-    notaDeliveryLookup: { impl: null as ((args: unknown) => Promise<unknown>) | null },
-  }));
+const {
+  mockAuth,
+  staleSnapshot,
+  mockUpdateMany,
+  mockAdminNotificationCreate,
+  mockFanOut,
+  mockLogAudit,
+  notaDeliveryLookup,
+  adminNotificationCreateMock,
+} = vi.hoisted(() => ({
+  mockAuth: vi.fn(),
+  staleSnapshot: { value: null as { invoiceDate: Date; dueDate: Date } | null },
+  mockUpdateMany: vi.fn(),
+  mockAdminNotificationCreate: vi.fn(),
+  mockFanOut: vi.fn(),
+  mockLogAudit: vi.fn(),
+  notaDeliveryLookup: { impl: null as ((args: unknown) => Promise<unknown>) | null },
+  /* Toggled on only for the `recordNotaTagihanPrinted` suite, whose `TaxInvoice`/`AdminNotification`
+   * path has nothing real to write to (see the mock comment below). Everywhere else — including the
+   * new `postFieldDeliveryJournalsAction` tests, which need `adminNotification.findMany` to read the
+   * real JOURNAL_PENDING rows they seed — `adminNotification` must reach the real client. */
+  adminNotificationCreateMock: { active: false },
+}));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: mockFanOut }));
@@ -39,7 +52,15 @@ vi.mock("@elorae/db", async (importOriginal) => {
   const patchedPrisma = new Proxy({} as typeof actual.prisma, {
     get(_target, prop) {
       if (prop === "taxInvoice") return { updateMany: mockUpdateMany };
-      if (prop === "adminNotification") return { create: mockAdminNotificationCreate };
+      if (prop === "adminNotification") {
+        const real = actual.prisma.adminNotification as unknown as Record<string, unknown>;
+        return new Proxy({} as typeof actual.prisma.adminNotification, {
+          get(_t, p) {
+            if (p === "create" && adminNotificationCreateMock.active) return mockAdminNotificationCreate;
+            return real[p as string];
+          },
+        });
+      }
       if (prop === "fieldSalesDelivery") {
         const real = actual.prisma.fieldSalesDelivery as unknown as Record<string, unknown>;
         return new Proxy({} as typeof actual.prisma.fieldSalesDelivery, {
@@ -85,6 +106,15 @@ vi.mock("@/lib/db/tx-retry", async (importActual) => {
           updateMany: (args: Parameters<typeof db.fieldSalesDelivery.updateMany>[0]) =>
             db.fieldSalesDelivery.updateMany(args),
         },
+        /* Only ever reached once a stale-snapshot test's CAS actually succeeds — every stale test
+         * today hits CONFLICT first, but a future one that wins the CAS must still find these. */
+        receivable: {
+          findUnique: (args: Parameters<typeof db.receivable.findUnique>[0]) => db.receivable.findUnique(args),
+          updateMany: (args: Parameters<typeof db.receivable.updateMany>[0]) => db.receivable.updateMany(args),
+        },
+        journal: {
+          updateMany: (args: Parameters<typeof db.journal.updateMany>[0]) => db.journal.updateMany(args),
+        },
         auditLog: {
           create: (args: Parameters<typeof db.auditLog.create>[0]) => db.auditLog.create(args),
         },
@@ -94,7 +124,7 @@ vi.mock("@/lib/db/tx-retry", async (importActual) => {
   };
 });
 
-import { recordNotaTagihanPrinted, updateDeliveryDatesAction } from "./field-sales-deliveries";
+import { recordNotaTagihanPrinted, updateDeliveryDatesAction, postFieldDeliveryJournalsAction } from "./field-sales-deliveries";
 
 /* Writes to real rows — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -111,12 +141,14 @@ d("updateDeliveryDatesAction (test bed only)", () => {
   let lineId = "";
   let deliveryId = "";
   let docNo = "";
+  let journalPendingNotificationId = "";
 
   const INVOICE = new Date("2026-04-01T00:00:00.000+07:00");
   const DUE = new Date("2026-05-01T00:00:00.000+07:00");
 
   beforeEach(async () => {
     uomId = ""; itemId = ""; storeId = ""; userId = ""; orderId = ""; lineId = ""; deliveryId = ""; docNo = "";
+    journalPendingNotificationId = "";
 
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-FSDA-${token}`, nameId: "test", nameEn: "test" },
@@ -183,6 +215,11 @@ d("updateDeliveryDatesAction (test bed only)", () => {
      * `notaDeliveryLookup.impl` is reset.
      */
     staleSnapshot.value = null;
+
+    if (journalPendingNotificationId !== "") {
+      await prisma.adminNotification.delete({ where: { id: journalPendingNotificationId } }).catch(() => undefined);
+      journalPendingNotificationId = "";
+    }
 
     await prisma.auditLog.deleteMany({ where: { entityId: seededId(deliveryId) } });
     await prisma.journalLine.deleteMany({ where: { journal: { sourceId: seededId(deliveryId) } } });
@@ -380,7 +417,7 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     expect(Number(after.originalAmount)).toBe(1000);
   });
 
-  it("re-dates the delivery's posted journals to the new invoice date", async () => {
+  it("re-dates both the revenue and the COGS journal to the new invoice date", async () => {
     await prisma.receivable.create({
       data: {
         deliveryId,
@@ -391,11 +428,25 @@ d("updateDeliveryDatesAction (test bed only)", () => {
         outstandingAmount: 1000,
       },
     });
-    const journal = await prisma.journal.create({
+    /*
+     * Both `sourceType`s are seeded on purpose: dropping "FIELD_DELIVERY_COGS" from the action's
+     * `in` filter would still pass a test that only seeds the revenue journal, so this asserts both
+     * rows actually move.
+     */
+    const revenueJournal = await prisma.journal.create({
       data: {
         date: new Date("2026-01-01T00:00:00.000+07:00"),
         description: "test revenue",
         sourceType: "FIELD_DELIVERY_REVENUE",
+        sourceId: deliveryId,
+        postedById: userId,
+      },
+    });
+    const cogsJournal = await prisma.journal.create({
+      data: {
+        date: new Date("2026-01-01T00:00:00.000+07:00"),
+        description: "test cogs",
+        sourceType: "FIELD_DELIVERY_COGS",
         sourceId: deliveryId,
         postedById: userId,
       },
@@ -408,8 +459,86 @@ d("updateDeliveryDatesAction (test bed only)", () => {
       reason: "wrong month keyed",
     });
 
-    const after = await prisma.journal.findUniqueOrThrow({ where: { id: journal.id } });
-    expect(after.date.toISOString().slice(0, 10)).toBe("2026-01-31");
+    const afterRevenue = await prisma.journal.findUniqueOrThrow({ where: { id: revenueJournal.id } });
+    const afterCogs = await prisma.journal.findUniqueOrThrow({ where: { id: cogsJournal.id } });
+    expect(afterRevenue.date.toISOString().slice(0, 10)).toBe("2026-01-31");
+    expect(afterCogs.date.toISOString().slice(0, 10)).toBe("2026-01-31");
+  });
+
+  it("refuses to move dates once the receivable has a payment applied, and leaves everything untouched", async () => {
+    const receivable = await prisma.receivable.create({
+      data: {
+        deliveryId,
+        storeId,
+        invoiceDate: new Date("2026-01-01T00:00:00.000+07:00"),
+        dueDate: new Date("2026-01-08T00:00:00.000+07:00"),
+        originalAmount: 1000,
+        outstandingAmount: 400,
+        paidAmount: 600,
+      },
+    });
+    const journal = await prisma.journal.create({
+      data: {
+        date: new Date("2026-01-01T00:00:00.000+07:00"),
+        description: "test revenue",
+        sourceType: "FIELD_DELIVERY_REVENUE",
+        sourceId: deliveryId,
+        postedById: userId,
+      },
+    });
+
+    const result = await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-02-01",
+      dueDate: "2026-02-15",
+      reason: "wrong month keyed",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "RECEIVABLE_HAS_PAYMENTS" });
+
+    const afterDelivery = await currentDates();
+    expect(afterDelivery.invoiceDate).toBe(INVOICE.toISOString());
+    expect(afterDelivery.dueDate).toBe(DUE.toISOString());
+
+    const afterReceivable = await prisma.receivable.findUniqueOrThrow({ where: { id: receivable.id } });
+    expect(afterReceivable.invoiceDate.toISOString()).toBe(new Date("2026-01-01T00:00:00.000+07:00").toISOString());
+    expect(afterReceivable.dueDate.toISOString()).toBe(new Date("2026-01-08T00:00:00.000+07:00").toISOString());
+
+    const afterJournal = await prisma.journal.findUniqueOrThrow({ where: { id: journal.id } });
+    expect(afterJournal.date.toISOString()).toBe(new Date("2026-01-01T00:00:00.000+07:00").toISOString());
+
+    expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+  });
+
+  it("reports NOT_RETRYABLE when no journal-pending notification exists for either kind", async () => {
+    const result = await postFieldDeliveryJournalsAction(deliveryId);
+    expect(result).toEqual({ ok: false, reason: "NOT_RETRYABLE" });
+  });
+
+  it("returns which kinds posted and which are still pending", async () => {
+    /*
+     * Seeds a JOURNAL_PENDING row for "field_delivery_cogs" only, so `revenue` stays ungated and
+     * only the COGS kind is attempted — this deliberately avoids the revenue path, which would
+     * need a real AR/SALES_REVENUE account mapping to post and is otherwise nondeterministic
+     * against the shared dev DB. The seeded delivery has no `cogsAmount`, so the attempt resolves
+     * NOTHING_TO_POST: nothing posts, the seeded notification is left standing untouched, and
+     * `isArJournalRetryable` still reports it retryable afterwards — the kind belongs in
+     * `stillPending`, not `posted`.
+     */
+    const notification = await prisma.adminNotification.create({
+      data: {
+        category: "JOURNAL_PENDING",
+        severity: "WARNING",
+        title: "test cogs pending",
+        message: "test",
+        metadata: { docId: deliveryId, kind: "field_delivery_cogs", reason: "NOTHING_TO_POST" },
+      },
+    });
+    journalPendingNotificationId = notification.id;
+
+    const result = await postFieldDeliveryJournalsAction(deliveryId);
+
+    expect(result).toEqual({ ok: true, posted: [], stillPending: ["field_delivery_cogs"] });
   });
 });
 
@@ -454,11 +583,14 @@ describe("recordNotaTagihanPrinted", () => {
     mockFindDelivery.mockReset();
     mockFindDelivery.mockResolvedValue({ docNo: "DLV/TEST-1", order: { store: { name: "Toko Test" } } });
     notaDeliveryLookup.impl = mockFindDelivery;
+    adminNotificationCreateMock.active = true;
   });
 
   afterEach(() => {
-    /* Never leaks into the DB-backed suite above, whose `findUnique` calls must hit the real DB. */
+    /* Never leaks into the DB-backed suite above, whose `findUnique`/`adminNotification` calls must
+     * hit the real DB. */
     notaDeliveryLookup.impl = null;
+    adminNotificationCreateMock.active = false;
   });
 
   it("first print stamps notaPrintedAt and notifies", async () => {

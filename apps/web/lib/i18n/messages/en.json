@@ -2532,7 +2532,9 @@
         "OVER_DELIVER": "Delivered quantity exceeds the outstanding quantity.",
         "INSUFFICIENT_STOCK": "Not enough stock for this delivery.",
         "INVALID_DATES": "The due date cannot be earlier than the invoice date.",
-        "CONFLICT": "Someone else just changed this nota's dates. Reload the page and try again."
+        "CONFLICT": "Someone else just changed this nota's dates. Reload the page and try again.",
+        "NOT_RETRYABLE": "This delivery's journals were never flagged as failed, so there is nothing to retry.",
+        "RECEIVABLE_HAS_PAYMENTS": "This invoice already has a payment applied, so its dates can't be corrected. Void the payment first, then try again."
       }
     },
     "print": {
