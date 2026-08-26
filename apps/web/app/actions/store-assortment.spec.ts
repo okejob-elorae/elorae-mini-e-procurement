@@ -139,7 +139,7 @@ describe("store assortment actions (unit — prisma mocked)", () => {
     });
 
     it("narrows a raw P2002 from a race at create-time onto DUPLICATE_LINE, not an opaque error", async () => {
-      mockLineCreate.mockRejectedValue(new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002" }));
+      mockLineCreate.mockRejectedValue(new Prisma.PrismaClientKnownRequestError("dup", { code: "P2002", clientVersion: "test" }));
       const res = await addAssortmentLineAction({ storeId: "s1", itemId: "item-1", variantSku: "", targetQty: 5 });
       expect(res).toEqual({ ok: false, code: "DUPLICATE_LINE" });
     });
