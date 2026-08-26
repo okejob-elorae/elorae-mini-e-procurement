@@ -92,6 +92,30 @@ d("recordVanSale (test bed only)", () => {
     expect(Number(van!.qty)).toBe(15);                 // 20 - 5
   });
 
+  it("persists the store's discounted, rounded unitPrice for a store sale; list price for a walk-in", async () => {
+    const store = await prisma.store.create({
+      data: { code: `${tag}-S`, name: "Disc Store", address: "x", termsType: "PUTUS", priceDiscountPercent: 15 },
+    });
+    const storeId = store.id;
+
+    // 5000 * (1 - 15/100) = 4250; 2 * 4250 = 8500
+    const storeRes = await recordVanSale({ salesmanId, storeId, lines: [line(2)], amountPaid: 8500 });
+    expect(storeRes.ok).toBe(true);
+    if (!storeRes.ok) throw new Error("expected ok");
+    const storeSale = await prisma.vanSale.findUnique({ where: { id: storeRes.saleId }, include: { lines: true } });
+    expect(Number(storeSale!.lines[0].unitPrice)).toBe(4250);
+    expect(Number(storeSale!.total)).toBe(8500);
+
+    const walkinRes = await recordVanSale({ salesmanId, lines: [line(2)], amountPaid: 10000, buyerName: "Walk-in" });
+    expect(walkinRes.ok).toBe(true);
+    if (!walkinRes.ok) throw new Error("expected ok");
+    const walkinSale = await prisma.vanSale.findUnique({ where: { id: walkinRes.saleId }, include: { lines: true } });
+    expect(Number(walkinSale!.lines[0].unitPrice)).toBe(5000); // no discount for a walk-in sale
+
+    await prisma.vanSale.delete({ where: { id: storeRes.saleId } }); // cascades its VanSaleLine
+    await prisma.store.delete({ where: { id: storeId } });
+  });
+
   it("stamps the variant label into productName on van sale + sales history", async () => {
     const vUom = await prisma.uOM.create({ data: { code: `UVS-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     const vItem = await prisma.item.create({

@@ -9,10 +9,10 @@ const d = isProd ? describe.skip : describe;
 d("recordSpgSale (test bed only)", () => {
   const tag = `SPGSALE-${Math.random().toString(36).slice(2, 10)}`;
   let uomId = ""; let itemId = ""; let salesmanId = ""; let storeId = "";
-  let putusStoreId = ""; let shortItemId = ""; let neverHeldItemId = "";
+  let putusStoreId = ""; let shortItemId = ""; let neverHeldItemId = ""; let discountStoreId = "";
 
   beforeEach(async () => {
-    uomId = ""; itemId = ""; salesmanId = ""; storeId = ""; putusStoreId = ""; shortItemId = ""; neverHeldItemId = "";
+    uomId = ""; itemId = ""; salesmanId = ""; storeId = ""; putusStoreId = ""; shortItemId = ""; neverHeldItemId = ""; discountStoreId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
@@ -31,6 +31,11 @@ d("recordSpgSale (test bed only)", () => {
     const putusStore = await prisma.store.create({ data: { code: `${tag}-PUTUS`, name: "Toko SPG Putus Test", address: "Jl. Test", termsType: "PUTUS", isActive: true } });
     putusStoreId = putusStore.id;
 
+    const discountStore = await prisma.store.create({
+      data: { code: `${tag}-DISC`, name: "Toko SPG Diskon Test", address: "Jl. Test", termsType: "PUTUS", priceDiscountPercent: 12, isActive: true },
+    });
+    discountStoreId = discountStore.id;
+
     /* StoreStock seeds — the itemId row and the shortItemId row back the KONSI decrement tests;
        the PUTUS row is seeded DELIBERATELY on the exact key this sale would hit, so the
        "writes NO StoreStock row at a PUTUS store" test fails loudly if the KONSI gate is
@@ -42,7 +47,7 @@ d("recordSpgSale (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const storeIds = [seededId(storeId), seededId(putusStoreId)];
+    const storeIds = [seededId(storeId), seededId(putusStoreId), seededId(discountStoreId)];
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
     await prisma.spgSaleLine.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
@@ -67,6 +72,17 @@ d("recordSpgSale (test bed only)", () => {
     expect(Number(sale!.total)).toBe(20000);
     const sh = await prisma.salesHistory.findFirst({ where: { itemId, orderId: res.docNo } });
     expect(sh).not.toBeNull();
+  });
+
+  it("applies the store's priceDiscountPercent on top of PUTUS pricing", async () => {
+    // 5000 * (1 - 12/100) = 4400; 4 * 4400 = 17600
+    const res = await recordSpgSale({ salesmanId, storeId: discountStoreId, lines: [line(4)], cashReceived: 17600 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.changeGiven).toBe(0);
+    const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId }, include: { lines: true } });
+    expect(Number(sale!.lines[0].unitPrice)).toBe(4400);
+    expect(Number(sale!.total)).toBe(17600);
   });
 
   it("does not touch VanStock, InventoryValue, or write a StockAdjustment (record-only)", async () => {
