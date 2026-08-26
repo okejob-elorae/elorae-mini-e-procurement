@@ -15,8 +15,10 @@ export type VanSaleDetail = {
 };
 
 export async function getSellableVanStock(salesmanId: string): Promise<SellableVanRow[]> {
-  // Van sale price = PUTUS = item sellingPrice (store margin only affects KONSI, which van sales never are),
-  // so pricing is buyer-independent.
+  // Van sale price = PUTUS = item sellingPrice (store margin only affects KONSI, which van sales never are).
+  // No buyer is chosen yet at this point (recordVanSale's storeId is picked at checkout), so this is the
+  // un-discounted reference price; priceDiscountPercent is applied for real once a store buyer is known, in
+  // recordVanSale itself.
   const rows = await prisma.vanStock.findMany({
     where: { userId: salesmanId, qty: { gt: 0 } },
     include: { item: { select: { sku: true, nameId: true, sellingPrice: true, variants: true } } },
@@ -24,7 +26,7 @@ export async function getSellableVanStock(salesmanId: string): Promise<SellableV
   });
   return rows.map((r) => {
     const sp = r.item.sellingPrice === null ? null : Number(r.item.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null });
+    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent: null });
     return {
       itemId: r.itemId, sku: r.item.sku, productName: r.item.nameId,
       variantSku: r.variantSku, variantLabel: variantDetailForSku(r.item.variants, r.variantSku),

@@ -60,14 +60,15 @@ export async function buildSmartRequestAction(input: unknown): Promise<BuildSmar
     where: { id: { in: itemIds } },
     select: { id: true, nameId: true, sellingPrice: true, variants: true },
   });
-  const store = await prisma.store.findUnique({ where: { id: parsed.data.storeId }, select: { termsType: true, marginPercent: true } });
+  const store = await prisma.store.findUnique({ where: { id: parsed.data.storeId }, select: { termsType: true, marginPercent: true, priceDiscountPercent: true } });
   const margin = store?.marginPercent == null ? null : Number(store.marginPercent);
+  const priceDiscount = store?.priceDiscountPercent == null ? null : Number(store.priceDiscountPercent);
   const itemById = new Map(items.map((i) => [i.id, i]));
 
   const lines: SmartRequestLine[] = plan.lines.map((l) => {
     const it = itemById.get(l.itemId);
     const sellingPrice = it?.sellingPrice == null ? null : Number(it.sellingPrice);
-    const unitPrice = computeStorePrice({ sellingPrice, termsType: "PUTUS", marginPercent: margin }).price ?? 0;
+    const unitPrice = computeStorePrice({ sellingPrice, termsType: "PUTUS", marginPercent: margin, priceDiscountPercent: priceDiscount }).price ?? 0;
     return {
       itemId: l.itemId,
       variantSku: l.variantSku,

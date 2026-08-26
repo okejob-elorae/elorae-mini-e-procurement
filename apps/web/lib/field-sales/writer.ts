@@ -58,10 +58,11 @@ export async function createFieldSalesOrder(input: {
 
     const store = await tx.store.findUniqueOrThrow({
       where: { id: input.storeId },
-      select: { termsType: true, marginPercent: true },
+      select: { termsType: true, marginPercent: true, priceDiscountPercent: true },
     });
     const isKonsi = store.termsType === "KONSI";
     const margin = store.marginPercent === null ? null : Number(store.marginPercent);
+    const priceDiscount = store.priceDiscountPercent === null ? null : Number(store.priceDiscountPercent);
 
     // Server-authoritative putus price: the salesman never sets it, the office rules (store price) do.
     const priceByItemId = new Map<string, number | null>();
@@ -87,7 +88,7 @@ export async function createFieldSalesOrder(input: {
     const linesData = input.lines.map((l) => {
       const unitPrice = isKonsi
         ? 0
-        : computeStorePrice({ sellingPrice: priceByItemId.get(l.itemId) ?? null, termsType: "PUTUS", marginPercent: margin }).price ?? 0;
+        : computeStorePrice({ sellingPrice: priceByItemId.get(l.itemId) ?? null, termsType: "PUTUS", marginPercent: margin, priceDiscountPercent: priceDiscount }).price ?? 0;
       return {
         ...l,
         unitPrice,
@@ -234,7 +235,7 @@ export async function approveFieldSalesOrder(input: {
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
       include: {
-        store: { select: { marginPercent: true } },
+        store: { select: { marginPercent: true, priceDiscountPercent: true } },
         lines: { include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } } },
       },
     });
@@ -341,12 +342,14 @@ export async function approveFieldSalesOrder(input: {
       if (shortLines.length > 0) throw new InsufficientStockError(shortLines);
 
       const margin = order.store.marginPercent === null ? null : Number(order.store.marginPercent);
+      const priceDiscount = order.store.priceDiscountPercent === null ? null : Number(order.store.priceDiscountPercent);
       let total = 0;
       for (const l of lines) {
         const { price } = computeStorePrice({
           sellingPrice: l.item.sellingPrice === null ? null : Number(l.item.sellingPrice),
           termsType: "KONSI",
           marginPercent: margin,
+          priceDiscountPercent: priceDiscount,
         });
         const unit = price ?? 0;
         const lineTotal = unit * l.qty;

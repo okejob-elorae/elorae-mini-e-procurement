@@ -38,13 +38,21 @@ export async function recordVanSale(input: {
     }
 
     // Load item price + meta for each line
-    // (van sales price at PUTUS = item sellingPrice; store margin only affects KONSI, which van sales never are)
+    // (van sales price at PUTUS = item sellingPrice; store margin only affects KONSI, which van sales never are.
+    // priceDiscountPercent DOES apply though — a van sale attributed to a registered store (input.storeId) still
+    // gets that store's standing discount; a walk-in sale with no storeId gets none.)
     const itemIds = Array.from(new Set(merged.map((l) => l.itemId)));
     const items = await tx.item.findMany({
       where: { id: { in: itemIds } },
       select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true, category: { select: { name: true } } },
     });
     const itemById = new Map(items.map((i) => [i.id, i]));
+
+    let priceDiscount: number | null = null;
+    if (input.storeId) {
+      const storeRow = await tx.store.findUnique({ where: { id: input.storeId }, select: { priceDiscountPercent: true } });
+      priceDiscount = storeRow?.priceDiscountPercent == null ? null : Number(storeRow.priceDiscountPercent);
+    }
 
     type Priced = { line: VanSaleLineInput; item: typeof items[number]; unitPrice: number; vanQty: number; vanCost: number };
     const priced: Priced[] = [];
@@ -54,7 +62,7 @@ export async function recordVanSale(input: {
       const item = itemById.get(l.itemId);
       if (!item) return { ok: false, code: "NO_PRICE" };
       const sp = item.sellingPrice === null ? null : Number(item.sellingPrice);
-      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null });
+      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent: priceDiscount });
       if (price === null) return { ok: false, code: "NO_PRICE" };
 
       const van = await tx.vanStock.findUnique({

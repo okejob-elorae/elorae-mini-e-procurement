@@ -280,6 +280,26 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.subtotal)).toBe(6 * 35000);
   });
 
+  it("putus create persists the store's discounted, rounded unitPrice onto the order line", async () => {
+    // 45678 * (1 - 10/100) = 41110.200000000004 unrounded — this is the case that
+    // actually discriminates whether roundCents ran (mirrors packages/db/src/pricing.spec.ts).
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 45678 } });
+    await prisma.store.update({ where: { id: storeId }, data: { priceDiscountPercent: 10 } });
+
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      // client-sent unitPrice is ignored; the server recomputes off item.sellingPrice + the store's discount.
+      lines: [{ itemId, variantSku: "", productName: "T", qty: 6, unitPrice: 1 }],
+    });
+
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    expect(Number(order!.lines[0].unitPrice)).toBe(41110.2);
+    expect(Number(order!.lines[0].lineTotal)).toBe(6 * 41110.2);
+    expect(Number(order!.subtotal)).toBe(6 * 41110.2);
+  });
+
   it("putus create with no appeal stores null requestedUnitPrice/appealReason", async () => {
     const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
     const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });

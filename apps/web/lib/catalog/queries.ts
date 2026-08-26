@@ -21,7 +21,7 @@ export type CatalogItem = {
 };
 
 export type CatalogPayload = {
-  store: { id: string; termsType: "PUTUS" | "KONSI"; marginPercent: number | null };
+  store: { id: string; termsType: "PUTUS" | "KONSI"; marginPercent: number | null; priceDiscountPercent: number | null };
   items: CatalogItem[];
 };
 
@@ -41,7 +41,7 @@ const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
 export function serializeCatalogItem(
   row: CatalogRow,
-  store: { termsType: "PUTUS" | "KONSI"; marginPercent: number | null },
+  store: { termsType: "PUTUS" | "KONSI"; marginPercent: number | null; priceDiscountPercent: number | null },
   imageUrl: string | null,
   neverSent: boolean,
   globalMin: number,
@@ -56,6 +56,7 @@ export function serializeCatalogItem(
         sellingPrice: toNum(row.sellingPrice),
         termsType: store.termsType,
         marginPercent: store.marginPercent,
+        priceDiscountPercent: store.priceDiscountPercent,
       });
   const labelBySku = new Map(
     variantSelectOptions(parseItemVariants(row.variants)).map((o) => [o.sku, o.label]),
@@ -92,7 +93,7 @@ export async function listCatalogForPwa(
 ): Promise<CatalogPayload | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
-    select: { id: true, isActive: true, termsType: true, marginPercent: true },
+    select: { id: true, isActive: true, termsType: true, marginPercent: true, priceDiscountPercent: true },
   });
   if (!store || !store.isActive) return null;
 
@@ -100,6 +101,7 @@ export async function listCatalogForPwa(
     id: store.id,
     termsType: store.termsType,
     marginPercent: store.marginPercent ? store.marginPercent.toNumber() : null,
+    priceDiscountPercent: store.priceDiscountPercent ? store.priceDiscountPercent.toNumber() : null,
   };
 
   const sentSet = store.termsType === "KONSI" ? await sentItemIds(store.id) : new Set<string>();

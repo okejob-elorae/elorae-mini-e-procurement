@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { serializeCatalogItem, listCatalogForPwa } from "./queries";
 import { prisma } from "@elorae/db";
 
-const store = { id: "s1", termsType: "KONSI" as const, marginPercent: 20 };
+const store = { id: "s1", termsType: "KONSI" as const, marginPercent: 20, priceDiscountPercent: null };
 
 describe("serializeCatalogItem", () => {
   const baseRow = {
@@ -39,7 +39,7 @@ describe("serializeCatalogItem", () => {
   });
 
   it("returns the real selling price + label for a putus store", () => {
-    const putusStore = { id: "s2", termsType: "PUTUS" as const, marginPercent: null };
+    const putusStore = { id: "s2", termsType: "PUTUS" as const, marginPercent: null, priceDiscountPercent: null };
     const out = serializeCatalogItem(baseRow, putusStore, null, false, 6);
     expect(out.price).toBe(10000);
     expect(out.priceLabel).toBe("Harga");
@@ -48,8 +48,15 @@ describe("serializeCatalogItem", () => {
     expect(out.minOrderQty).toBe(6);
   });
 
+  it("applies the store's priceDiscountPercent to the putus price", () => {
+    const discountedStore = { id: "s3", termsType: "PUTUS" as const, marginPercent: null, priceDiscountPercent: 10 };
+    const out = serializeCatalogItem(baseRow, discountedStore, null, false, 6);
+    expect(out.price).toBe(9000); // 10000 * (1 - 10/100)
+    expect(out.priceLabel).toBe("Harga");
+  });
+
   it("uses the item-level minOrderQty override instead of the global default", () => {
-    const putusStore = { id: "s2", termsType: "PUTUS" as const, marginPercent: null };
+    const putusStore = { id: "s2", termsType: "PUTUS" as const, marginPercent: null, priceDiscountPercent: null };
     const row = { ...baseRow, minOrderQty: 3 };
     const out = serializeCatalogItem(row, putusStore, null, false, 6);
     expect(out.minOrderQty).toBe(3);
@@ -66,7 +73,7 @@ describe("serializeCatalogItem", () => {
       minOrderQty: null,
       inventoryValues: [],
     };
-    expect(serializeCatalogItem(row, { termsType: "PUTUS", marginPercent: null }, null, false, 6)).toEqual({
+    expect(serializeCatalogItem(row, { termsType: "PUTUS", marginPercent: null, priceDiscountPercent: null }, null, false, 6)).toEqual({
       itemId: "i2",
       sku: "FG-X",
       nameId: "X",
@@ -98,7 +105,7 @@ describe("serializeCatalogItem variants", () => {
     variants,
     inventoryValues: inv.map((r) => ({ variantSku: r.variantSku, qtyOnHand: r.qtyOnHand, reservedQty: r.reservedQty, totalValue: 0 })),
   });
-  const putusStore = { termsType: "PUTUS" as const, marginPercent: null };
+  const putusStore = { termsType: "PUTUS" as const, marginPercent: null, priceDiscountPercent: null };
 
   it("variant item → per-variant available list, aggregate on the card", () => {
     const c = serializeCatalogItem(
