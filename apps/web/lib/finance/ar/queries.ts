@@ -170,7 +170,10 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
       status: true,
       store: { select: { name: true, code: true } },
       delivery: {
-        select: { docNo: true, order: { select: { orderNo: true, salesman: { select: { name: true } } } } },
+        select: {
+          docNo: true,
+          order: { select: { id: true, orderNo: true, salesman: { select: { name: true } } } },
+        },
       },
       /*
        * VOIDED payments stay in the history. Hiding them makes the arithmetic unexplainable — the

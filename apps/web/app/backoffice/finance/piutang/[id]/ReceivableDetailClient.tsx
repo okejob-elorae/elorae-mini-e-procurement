@@ -185,7 +185,7 @@ export function ReceivableDetailClient({
         <div className="flex justify-between gap-4 text-sm">
           <span className="text-muted-foreground">{t("colDocNo")}</span>
           <Link
-            href={`/backoffice/field-sales-orders?search=${encodeURIComponent(r.delivery.order.orderNo)}`}
+            href={`/backoffice/field-sales-orders/${r.delivery.order.id}`}
             className="inline-flex items-center gap-1 font-mono hover:underline"
           >
             {r.delivery.docNo}
