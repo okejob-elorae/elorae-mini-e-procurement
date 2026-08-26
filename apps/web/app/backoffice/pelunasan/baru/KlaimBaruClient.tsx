@@ -69,7 +69,18 @@ export function KlaimBaruClient({
 
   const piutang = bahan.piutangPerToko[storeId] ?? [];
   const retur = bahan.returPerToko[storeId] ?? [];
+  /*
+   * Jenis khusus PKP dikunci begitu tokonya bukan PKP. Servernya sudah menolak
+   * — dan penolakan itu tetap yang menjaga — tapi penolakan yang baru muncul
+   * setelah seluruh formulir terisi membuat orang mengetik ulang semuanya untuk
+   * kesalahan yang sudah bisa terlihat sejak jenisnya dipilih.
+   *
+   * DIKUNCI, bukan disembunyikan: kalau hilang, orang mengira jenisnya belum
+   * dibuat dan pergi membuat duplikatnya di Pengaturan.
+   */
+  const tokoPkp = bahan.toko.find((t) => t.id === storeId)?.pkp ?? false;
   const jenis = bahan.jenisPotongan;
+  const terkunci = (j: { hanyaPkp: boolean }) => j.hanyaPkp && !tokoPkp;
 
   const nilaiFaktur = useMemo(
     () => Object.values(dipilih).reduce((s, n) => s + (n || 0), 0),
@@ -297,8 +308,13 @@ export function KlaimBaruClient({
                         </SelectTrigger>
                         <SelectContent>
                           {jenis.map((j) => (
-                            <SelectItem key={j.id} value={j.id}>
+                            <SelectItem key={j.id} value={j.id} disabled={terkunci(j)}>
                               {j.nama}
+                              {terkunci(j) && (
+                                <span className="ml-1.5 text-xs text-muted-foreground">
+                                  {t('pkpOnly')}
+                                </span>
+                              )}
                             </SelectItem>
                           ))}
                           <SelectItem value="lainnya">{t('deductionOther')}</SelectItem>

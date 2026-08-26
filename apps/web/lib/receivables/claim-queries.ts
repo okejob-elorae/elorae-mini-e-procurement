@@ -146,10 +146,16 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
 }
 
 export type BahanKlaimBaru = {
-  toko: { id: string; name: string }[];
+  toko: { id: string; name: string; pkp: boolean }[];
   piutangPerToko: Record<string, BarisPiutang[]>;
   returPerToko: Record<string, { id: string; noNrt: string; nilaiKlaim: number }[]>;
-  jenisPotongan: { id: string; nama: string; cara: CaraPotongan; wajibCatatan: boolean }[];
+  jenisPotongan: {
+    id: string;
+    nama: string;
+    cara: CaraPotongan;
+    wajibCatatan: boolean;
+    hanyaPkp: boolean;
+  }[];
 };
 
 /**
@@ -173,6 +179,11 @@ export async function bahanKlaimBaru(): Promise<BahanKlaimBaru> {
     jenisPotonganAktif(),
   ]);
 
+  // Status PKP tiap toko, untuk mengunci jenis potongan khusus PKP di formulir.
+  const pkp = new Set(
+    (await prisma.store.findMany({ where: { isPkp: true }, select: { id: true } })).map((t) => t.id),
+  );
+
   const terbuka = semua.filter((p) => p.outstanding > 0);
   const piutangPerToko: Record<string, BarisPiutang[]> = {};
   const namaToko = new Map<string, string>();
@@ -191,7 +202,7 @@ export async function bahanKlaimBaru(): Promise<BahanKlaimBaru> {
   }
 
   return {
-    toko: [...namaToko.entries()].map(([id, name]) => ({ id, name })),
+    toko: [...namaToko.entries()].map(([id, name]) => ({ id, name, pkp: pkp.has(id) })),
     piutangPerToko,
     returPerToko,
     jenisPotongan: jenis,

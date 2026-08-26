@@ -3763,6 +3763,7 @@
     "errNOMOR_BENTROK": "The claim number clashed. Try sending again.",
     "print": "Print",
     "deductionOther": "Other (type it)",
+    "pkpOnly": "· PKP stores only",
     "errJENIS_BUTUH_RETUR": "A deduction of this type must be linked to a return note.",
     "errJENIS_HANYA_PKP": "This deduction is for PKP stores only. Mark the store as PKP first if that is correct.",
     "errJENIS_BUTUH_CATATAN": "A deduction of this type must have an explanation.",

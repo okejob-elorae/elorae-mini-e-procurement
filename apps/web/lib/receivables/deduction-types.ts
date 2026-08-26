@@ -56,18 +56,25 @@ export async function daftarJenisPotongan(): Promise<BarisJenisPotongan[]> {
 
 /** Jenis yang boleh dipilih saat membuat BKM. */
 export async function jenisPotonganAktif(): Promise<
-  { id: string; nama: string; cara: CaraPotongan; wajibCatatan: boolean }[]
+  { id: string; nama: string; cara: CaraPotongan; wajibCatatan: boolean; hanyaPkp: boolean }[]
 > {
   const rows = await prisma.deductionType.findMany({
     where: { isActive: true },
     orderBy: { name: 'asc' },
-    select: { id: true, name: true, method: true, noteRequired: true },
+    select: { id: true, name: true, method: true, noteRequired: true, pkpOnly: true },
   });
   return rows.map((r) => ({
     id: r.id,
     nama: r.name,
     cara: r.method as CaraPotongan,
     wajibCatatan: r.noteRequired,
+    /*
+     * Ikut dikirim ke formulir supaya jenis khusus PKP bisa dikunci begitu
+     * tokonya dipilih. Penolakan servernya sudah benar dan tetap ada, tapi
+     * penolakan yang baru muncul setelah seluruh formulir terisi membuat orang
+     * mengetik ulang semuanya untuk kesalahan yang bisa terlihat sejak awal.
+     */
+    hanyaPkp: r.pkpOnly,
   }));
 }
 
