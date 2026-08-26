@@ -118,4 +118,18 @@ d("voidPayment (test bed only)", () => {
     expect(err).toBeInstanceOf(PaymentError);
     expect(err.code).toBe("NOT_FOUND");
   });
+
+  it("rejects a blank void reason", async () => {
+    const err = await voidPayment({ paymentId, reason: "   ", voidedById: userId }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("MISSING_REASON");
+
+    /* The refusal is total: the beforeEach payment (400 against a 1000 receivable) is untouched. */
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+    expect(payment.status).toBe("POSTED");
+
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: recA } });
+    expect(Number(after.paidAmount)).toBe(400);
+    expect(Number(after.outstandingAmount)).toBe(600);
+  });
 });

@@ -60,6 +60,14 @@ export async function voidPayment(input: {
        */
       const paid = Number(restored.paidAmount);
       const outstanding = Number(restored.outstandingAmount);
+      /*
+       * The `PAID` arm is UNREACHABLE from a void and is kept as insurance, not as live logic: this
+       * restore increments `outstandingAmount` by an allocation amount `recordPayment` guarantees is
+       * > 0, and the prior outstanding is never negative, so `outstanding === 0` cannot hold here.
+       * Do not go looking for the test that covers it — there isn't one, and there cannot be. It
+       * stays so that a future partial-void, which could leave a receivable settled, does not
+       * silently fall through to `PARTIAL`.
+       */
       const status = paid === 0 ? "OUTSTANDING" : outstanding === 0 ? "PAID" : "PARTIAL";
       await tx.receivable.update({ where: { id: a.receivableId }, data: { status } });
     }
