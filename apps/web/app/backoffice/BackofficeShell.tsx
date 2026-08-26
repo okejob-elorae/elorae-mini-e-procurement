@@ -26,6 +26,7 @@ import {
   ClipboardList,
   PackageOpen,
   FolderArchive,
+  Scale,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -322,6 +323,13 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    labelKey: 'dasborPelunasan',
+    emoji: '📈',
+    href: '/backoffice/pelunasan-dasbor',
+    icon: LayoutDashboard,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+  },
+  {
     labelKey: 'receivables',
     emoji: '🧾',
     href: '/backoffice/piutang',
@@ -333,6 +341,13 @@ const navItems: NavItem[] = [
     emoji: '📦',
     href: '/backoffice/retur-toko',
     icon: PackageOpen,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+  },
+  {
+    labelKey: 'bebanSelisih',
+    emoji: '⚖️',
+    href: '/backoffice/beban-selisih',
+    icon: Scale,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
   },
   {
