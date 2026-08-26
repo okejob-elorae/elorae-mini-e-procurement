@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { ArrowLeft, ExternalLink, MapPin, Printer } from "lucide-react";
 import type { SpgSaleDetail } from "@/lib/spg/sale-queries";
+import { roundCents } from "@elorae/db/pricing";
 import { spgSaleNotaHtml } from "@/lib/print/spg-sale-nota-html";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,7 +73,7 @@ export function SpgSaleDetailClient({ sale }: Props) {
   // total is the whole-rupiah CHARGED figure; subtotal is the exact 2dp line sum. Nonzero only
   // when a fractional line price (a discount, or any fractional Item.sellingPrice) left a
   // sub-rupiah remainder rounded off at the cash boundary.
-  const roundingAdjustment = Math.round((sale.total - sale.subtotal) * 100) / 100;
+  const roundingAdjustment = roundCents(sale.total - sale.subtotal);
 
   function handlePrint() {
     const html = spgSaleNotaHtml(sale);

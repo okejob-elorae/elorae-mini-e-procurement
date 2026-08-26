@@ -8,6 +8,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, BookText, ExternalLink, MapPin, Printer } from "lucide-react";
 import type { VanSaleDetail } from "@/lib/canvassing/sale-queries";
+import { roundCents } from "@elorae/db/pricing";
 import { postVanSaleJournalAction } from "@/app/actions/van-sale";
 import { vanSaleNotaHtml } from "@/lib/print/van-sale-nota-html";
 import { hasPermission } from "@/lib/rbac";
@@ -83,7 +84,7 @@ export function VanSaleDetailClient({ sale }: Props) {
   // total is the whole-rupiah CHARGED figure; subtotal is the exact 2dp line sum. Nonzero only
   // when a fractional line price (a discount, or any fractional Item.sellingPrice) left a
   // sub-rupiah remainder rounded off at the cash boundary.
-  const roundingAdjustment = Math.round((sale.total - sale.subtotal) * 100) / 100;
+  const roundingAdjustment = roundCents(sale.total - sale.subtotal);
 
   async function handlePostJournal() {
     setPostingJournal(true);
