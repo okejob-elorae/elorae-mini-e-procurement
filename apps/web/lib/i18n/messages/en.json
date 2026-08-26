@@ -3949,6 +3949,64 @@
     "loadErrorRetry": "Reload",
     "agingTotalAll": "Total Outstanding",
     "agingTotalFiltered": "Outstanding in Selected Bucket",
-    "agingFilterHint": "Showing the {bucket} bucket only. Click it again to clear."
+    "agingFilterHint": "Showing the {bucket} bucket only. Click it again to clear.",
+    "recordPaymentAction": "Record Payment",
+    "methodCash": "Cash",
+    "methodTransfer": "Transfer",
+    "detail": {
+      "back": "Back",
+      "invoiceFactsTitle": "Invoice Details",
+      "moneyTitle": "Amount",
+      "paid": "Paid",
+      "allocationHistoryTitle": "Payment History",
+      "allocationEmpty": "No payments recorded yet.",
+      "colPaymentDocNo": "Payment No.",
+      "colPaidAt": "Date",
+      "colMethod": "Method",
+      "colAllocatedAmount": "Allocated",
+      "voidedBadge": "Cancelled",
+      "primaryActionDisabledPaid": "This receivable is already paid off.",
+      "primaryActionDisabledWrittenOff": "This receivable has been written off."
+    },
+    "journalWarning": {
+      "title": "Journal not posted",
+      "description": "The revenue or COGS journal for this delivery failed to post automatically. Retry it, or fix the account mapping first.",
+      "retryButton": "Post Journal",
+      "retrying": "Posting...",
+      "successAll": "Both journals posted.",
+      "stillPendingToast": "One or more journals are still failing to post. Check the account mapping, then try again.",
+      "err": {
+        "FORBIDDEN": "You don't have permission to manage payments.",
+        "INVALID_REQUEST": "That request was not valid. Close this page and open it again.",
+        "NOT_RETRYABLE": "This journal was never flagged as failed, so there is nothing to retry.",
+        "GENERIC": "Something went wrong posting this journal. Try again."
+      }
+    },
+    "paymentSheet": {
+      "description": "Applies to {store}.",
+      "paidAtLabel": "Payment Date",
+      "methodLabel": "Method",
+      "amountLabel": "Amount",
+      "referenceLabel": "Reference No. (optional)",
+      "noteLabel": "Note (optional)",
+      "proofLabel": "Proof of Payment (optional)",
+      "proofUploadButton": "Upload",
+      "proofUploading": "Uploading...",
+      "proofUploaded": "Proof attached: {name}",
+      "proofUploadError": "Failed to upload the proof. Try again.",
+      "proofNotUploadedHint": "Click Upload to attach this file.",
+      "allocationTitle": "Allocate to Receivables",
+      "allocationEmpty": "This store has no other outstanding receivables.",
+      "colAllocation": "Allocation",
+      "allocateFull": "Full",
+      "fillFromOldest": "Fill oldest-first",
+      "runningTotalLabel": "Allocated",
+      "mismatchError": "Allocated amounts ({allocated}) don't match the payment amount ({amount}).",
+      "amountRequired": "Enter a payment amount greater than zero.",
+      "paidAtRequired": "Select a payment date.",
+      "noAllocations": "Allocate the payment to at least one receivable.",
+      "submitting": "Recording...",
+      "successToast": "Payment {docNo} recorded."
+    }
   }
 }

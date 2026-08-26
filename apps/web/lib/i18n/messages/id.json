@@ -3949,6 +3949,64 @@
     "loadErrorRetry": "Muat Ulang",
     "agingTotalAll": "Total Piutang Belum Lunas",
     "agingTotalFiltered": "Total di Kategori Terpilih",
-    "agingFilterHint": "Menampilkan kategori {bucket} saja. Klik lagi untuk membersihkan."
+    "agingFilterHint": "Menampilkan kategori {bucket} saja. Klik lagi untuk membersihkan.",
+    "recordPaymentAction": "Catat Pembayaran",
+    "methodCash": "Tunai",
+    "methodTransfer": "Transfer",
+    "detail": {
+      "back": "Kembali",
+      "invoiceFactsTitle": "Detail Faktur",
+      "moneyTitle": "Nilai",
+      "paid": "Sudah Dibayar",
+      "allocationHistoryTitle": "Riwayat Pembayaran",
+      "allocationEmpty": "Belum ada pembayaran yang tercatat.",
+      "colPaymentDocNo": "No. Pembayaran",
+      "colPaidAt": "Tanggal",
+      "colMethod": "Metode",
+      "colAllocatedAmount": "Dialokasikan",
+      "voidedBadge": "Dibatalkan",
+      "primaryActionDisabledPaid": "Piutang ini sudah lunas.",
+      "primaryActionDisabledWrittenOff": "Piutang ini sudah dihapusbukukan."
+    },
+    "journalWarning": {
+      "title": "Jurnal belum diposting",
+      "description": "Jurnal pendapatan atau HPP untuk pengiriman ini gagal diposting otomatis. Coba lagi, atau perbaiki pemetaan akun terlebih dahulu.",
+      "retryButton": "Posting Jurnal",
+      "retrying": "Memposting...",
+      "successAll": "Kedua jurnal berhasil diposting.",
+      "stillPendingToast": "Satu atau lebih jurnal masih gagal diposting. Periksa pemetaan akun, lalu coba lagi.",
+      "err": {
+        "FORBIDDEN": "Anda tidak memiliki izin untuk mengelola pembayaran.",
+        "INVALID_REQUEST": "Permintaan tidak valid. Tutup halaman ini lalu buka lagi.",
+        "NOT_RETRYABLE": "Jurnal ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
+        "GENERIC": "Terjadi kesalahan saat memposting jurnal ini. Coba lagi."
+      }
+    },
+    "paymentSheet": {
+      "description": "Berlaku untuk {store}.",
+      "paidAtLabel": "Tanggal Bayar",
+      "methodLabel": "Metode",
+      "amountLabel": "Jumlah",
+      "referenceLabel": "No. Referensi (opsional)",
+      "noteLabel": "Catatan (opsional)",
+      "proofLabel": "Bukti Pembayaran (opsional)",
+      "proofUploadButton": "Unggah",
+      "proofUploading": "Mengunggah...",
+      "proofUploaded": "Bukti terlampir: {name}",
+      "proofUploadError": "Gagal mengunggah bukti. Coba lagi.",
+      "proofNotUploadedHint": "Klik Unggah untuk melampirkan berkas ini.",
+      "allocationTitle": "Alokasikan ke Piutang",
+      "allocationEmpty": "Toko ini tidak memiliki piutang lain yang belum lunas.",
+      "colAllocation": "Alokasi",
+      "allocateFull": "Penuh",
+      "fillFromOldest": "Isi dari terlama",
+      "runningTotalLabel": "Dialokasikan",
+      "mismatchError": "Jumlah alokasi ({allocated}) tidak sama dengan jumlah pembayaran ({amount}).",
+      "amountRequired": "Masukkan jumlah pembayaran lebih dari nol.",
+      "paidAtRequired": "Pilih tanggal pembayaran.",
+      "noAllocations": "Alokasikan pembayaran ke minimal satu piutang.",
+      "submitting": "Menyimpan...",
+      "successToast": "Pembayaran {docNo} berhasil dicatat."
+    }
   }
 }
