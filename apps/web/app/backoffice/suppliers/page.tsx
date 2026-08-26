@@ -57,6 +57,8 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useTranslations } from 'next-intl';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { toast } from 'sonner';
@@ -108,9 +110,8 @@ type SupplierForm = z.infer<typeof supplierSchema>;
 export default function SuppliersPage() {
   const t = useTranslations('toasts');
   const tSecurity = useTranslations('security');
-  const _tSupplier = useTranslations('supplier');
+  const tSupplier = useTranslations('supplier');
   const _tCommon = useTranslations('common');
-  void _tSupplier;
   void _tCommon;
   const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -349,233 +350,231 @@ export default function SuppliersPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Suppliers</h1>
-          <p className="text-muted-foreground">
-            Manage your fabric, accessories, and production vendors
-          </p>
-        </div>
-        <Dialog
-          open={isSupplierFormOpen}
-          onOpenChange={(open) => {
-            if (open) {
-              setSupplierDialogMode('create');
-            } else {
-              setSupplierDialogMode(null);
-              setEditSupplier(null);
-            }
-          }}
-        >
-          <Button onClick={() => setSupplierDialogMode('create')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Supplier
-          </Button>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {supplierDialogMode === 'edit' ? 'Edit Supplier' : 'Create New Supplier'}
-              </DialogTitle>
-              <DialogDescription>
-                {supplierDialogMode === 'edit'
-                  ? 'Update supplier details'
-                  : 'Add a new supplier to your database'}
-              </DialogDescription>
-            </DialogHeader>
-            <form
-              onSubmit={(e) => {
-                clearErrors();
-                handleSubmit(onSubmit)(e);
-              }}
-              className="space-y-4"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="code">Supplier Code (optional)</Label>
-                <Input
-                  id="code"
-                  {...register('code')}
-                  placeholder="Leave blank to auto-generate"
-                  aria-invalid={!!errors.code}
-                  className={errors.code ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                />
-                {errors.code && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.code.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="name">Supplier Name *</Label>
-                <Input
-                  id="name"
-                  {...register('name')}
-                  aria-invalid={!!errors.name}
-                  className={errors.name ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                />
-                {errors.name && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.name.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="typeId">Supplier Type *</Label>
-                <Controller
-                  name="typeId"
-                  control={control}
-                  render={({ field }) => (
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    >
-                      <SelectTrigger
-                        id="typeId"
-                        aria-invalid={!!errors.typeId}
-                        className={errors.typeId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+      <PageHeader
+        title={tSupplier('pageTitle')}
+        description={tSupplier('pageDescription')}
+        actions={
+          <Dialog
+            open={isSupplierFormOpen}
+            onOpenChange={(open) => {
+              if (open) {
+                setSupplierDialogMode('create');
+              } else {
+                setSupplierDialogMode(null);
+                setEditSupplier(null);
+              }
+            }}
+          >
+            <Button onClick={() => setSupplierDialogMode('create')}>
+              <Plus className="mr-2 h-4 w-4" />
+              {tSupplier('newSupplier')}
+            </Button>
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {supplierDialogMode === 'edit' ? tSupplier('editSupplier') : tSupplier('createSupplier')}
+                </DialogTitle>
+                <DialogDescription>
+                  {supplierDialogMode === 'edit'
+                    ? 'Update supplier details'
+                    : 'Add a new supplier to your database'}
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                onSubmit={(e) => {
+                  clearErrors();
+                  handleSubmit(onSubmit)(e);
+                }}
+                className="space-y-4"
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="code">Supplier Code (optional)</Label>
+                  <Input
+                    id="code"
+                    {...register('code')}
+                    placeholder="Leave blank to auto-generate"
+                    aria-invalid={!!errors.code}
+                    className={errors.code ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
+                  {errors.code && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.code.message}
+                    </p>
+                  )}
+                </div>
+    
+                <div className="space-y-2">
+                  <Label htmlFor="name">Supplier Name *</Label>
+                  <Input
+                    id="name"
+                    {...register('name')}
+                    aria-invalid={!!errors.name}
+                    className={errors.name ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
+                  {errors.name && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.name.message}
+                    </p>
+                  )}
+                </div>
+    
+                <div className="space-y-2">
+                  <Label htmlFor="typeId">Supplier Type *</Label>
+                  <Controller
+                    name="typeId"
+                    control={control}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
                       >
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {supplierTypes.map((st) => (
-                          <SelectItem key={st.id} value={st.id}>
-                            {st.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                {errors.typeId && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.typeId.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="address">Address</Label>
-                <Input
-                  id="address"
-                  {...register('address')}
-                  aria-invalid={!!errors.address}
-                  className={errors.address ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                />
-                {errors.address && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.address.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input
-                    id="phone"
-                    {...register('phone')}
-                    aria-invalid={!!errors.phone}
-                    className={errors.phone ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                        <SelectTrigger
+                          id="typeId"
+                          aria-invalid={!!errors.typeId}
+                          className={errors.typeId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                        >
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {supplierTypes.map((st) => (
+                            <SelectItem key={st.id} value={st.id}>
+                              {st.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   />
-                  {errors.phone && (
+                  {errors.typeId && (
                     <p className="text-sm text-destructive" role="alert">
-                      {errors.phone.message}
+                      {errors.typeId.message}
                     </p>
                   )}
                 </div>
+    
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="address">Address</Label>
                   <Input
-                    id="email"
-                    type="email"
-                    {...register('email')}
-                    aria-invalid={!!errors.email}
-                    className={errors.email ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                    id="address"
+                    {...register('address')}
+                    aria-invalid={!!errors.address}
+                    className={errors.address ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                   />
-                  {errors.email && (
+                  {errors.address && (
                     <p className="text-sm text-destructive" role="alert">
-                      {errors.email.message}
+                      {errors.address.message}
                     </p>
                   )}
                 </div>
-              </div>
-
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-medium mb-3">Bank Information</h4>
-                <div className="space-y-4">
+    
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="bankName">Bank Name</Label>
+                    <Label htmlFor="phone">Phone</Label>
                     <Input
-                      id="bankName"
-                      {...register('bankName')}
-                      aria-invalid={!!errors.bankName}
-                      className={errors.bankName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      id="phone"
+                      {...register('phone')}
+                      aria-invalid={!!errors.phone}
+                      className={errors.phone ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                     />
-                    {errors.bankName && (
+                    {errors.phone && (
                       <p className="text-sm text-destructive" role="alert">
-                        {errors.bankName.message}
+                        {errors.phone.message}
                       </p>
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="bankAccount">Account Number</Label>
+                    <Label htmlFor="email">Email</Label>
                     <Input
-                      id="bankAccount"
-                      {...register('bankAccount')}
-                      aria-invalid={!!errors.bankAccount}
-                      className={errors.bankAccount ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      id="email"
+                      type="email"
+                      {...register('email')}
+                      aria-invalid={!!errors.email}
+                      className={errors.email ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                     />
-                    {errors.bankAccount && (
+                    {errors.email && (
                       <p className="text-sm text-destructive" role="alert">
-                        {errors.bankAccount.message}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bankAccountName">Account Holder Name</Label>
-                    <Input
-                      id="bankAccountName"
-                      {...register('bankAccountName')}
-                      aria-invalid={!!errors.bankAccountName}
-                      className={errors.bankAccountName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                    />
-                    {errors.bankAccountName && (
-                      <p className="text-sm text-destructive" role="alert">
-                        {errors.bankAccountName.message}
+                        {errors.email.message}
                       </p>
                     )}
                   </div>
                 </div>
-              </div>
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setSupplierDialogMode(null);
-                    setEditSupplier(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {supplierDialogMode === 'edit' ? 'Update Supplier' : 'Create Supplier'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+    
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium mb-3">Bank Information</h4>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="bankName">Bank Name</Label>
+                      <Input
+                        id="bankName"
+                        {...register('bankName')}
+                        aria-invalid={!!errors.bankName}
+                        className={errors.bankName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      />
+                      {errors.bankName && (
+                        <p className="text-sm text-destructive" role="alert">
+                          {errors.bankName.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bankAccount">Account Number</Label>
+                      <Input
+                        id="bankAccount"
+                        {...register('bankAccount')}
+                        aria-invalid={!!errors.bankAccount}
+                        className={errors.bankAccount ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      />
+                      {errors.bankAccount && (
+                        <p className="text-sm text-destructive" role="alert">
+                          {errors.bankAccount.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bankAccountName">Account Holder Name</Label>
+                      <Input
+                        id="bankAccountName"
+                        {...register('bankAccountName')}
+                        aria-invalid={!!errors.bankAccountName}
+                        className={errors.bankAccountName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      />
+                      {errors.bankAccountName && (
+                        <p className="text-sm text-destructive" role="alert">
+                          {errors.bankAccountName.message}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+    
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setSupplierDialogMode(null);
+                      setEditSupplier(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {supplierDialogMode === 'edit' ? 'Update Supplier' : 'Create Supplier'}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {/* Search and filters */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search suppliers..."
+            placeholder={tSupplier('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -589,7 +588,7 @@ export default function SuppliersPage() {
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
+            <SelectItem value="all">{tSupplier('allTypes')}</SelectItem>
             {supplierTypes.map((st) => (
               <SelectItem key={st.id} value={st.id}>
                 {st.name}
@@ -605,7 +604,7 @@ export default function SuppliersPage() {
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="all">{tSupplier('allStatuses')}</SelectItem>
             <SelectItem value="PENDING_APPROVAL">Pending approval</SelectItem>
             <SelectItem value="ACTIVE">Active</SelectItem>
             <SelectItem value="REJECTED">Rejected</SelectItem>
@@ -620,17 +619,18 @@ export default function SuppliersPage() {
         </div>
       ) : suppliers.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Building2 className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No suppliers found</p>
-            <Button
-              variant="outline"
-              className="mt-4"
-              onClick={() => setSupplierDialogMode('create')}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add your first supplier
-            </Button>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={Building2}
+              title={tSupplier('emptyTitle')}
+              description={tSupplier('emptyDescription')}
+              action={
+                <Button variant="outline" onClick={() => setSupplierDialogMode('create')}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  {tSupplier('newSupplier')}
+                </Button>
+              }
+            />
           </CardContent>
         </Card>
       ) : (

@@ -91,7 +91,10 @@ interface NavChild {
 interface NavItem {
   labelKey: string;
   href: string;
+  /** Kept for callers outside the sidebar; the sidebar itself renders `emoji`. */
   icon: React.ElementType;
+  /** Sidebar glyph. Emoji reads faster than a line icon in a scanned list. */
+  emoji: string;
   permission: string; // Permission code required to view this nav item
   children?: NavChild[];
 }
@@ -100,12 +103,14 @@ const navItems: NavItem[] = [
   {
     labelKey: 'dashboard',
     href: '/backoffice/dashboard',
+    emoji: '📊',
     icon: LayoutDashboard,
     permission: PERMISSIONS.DASHBOARD_VIEW,
   },
   {
     labelKey: 'suppliers',
     href: '/backoffice/suppliers',
+    emoji: '🤝',
     icon: Building2,
     permission: PERMISSIONS.SUPPLIERS_VIEW,
     children: [
@@ -134,6 +139,7 @@ const navItems: NavItem[] = [
   {
     labelKey: 'items',
     href: '/backoffice/items',
+    emoji: '👕',
     icon: Package,
     permission: PERMISSIONS.ITEMS_VIEW,
     children: [
@@ -144,6 +150,7 @@ const navItems: NavItem[] = [
   {
     labelKey: 'inventory',
     href: '/backoffice/inventory',
+    emoji: '📦',
     icon: Package,
     permission: PERMISSIONS.INVENTORY_VIEW,
     children: [
@@ -163,6 +170,7 @@ const navItems: NavItem[] = [
   {
     labelKey: 'sales',
     href: '/backoffice/sales-orders',
+    emoji: '🛒',
     icon: Store,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
     children: [
@@ -199,6 +207,7 @@ const navItems: NavItem[] = [
   {
     labelKey: 'finance',
     href: '#',
+    emoji: '💰',
     icon: Wallet,
     permission: PERMISSIONS.COA_VIEW,
     children: [
@@ -253,6 +262,7 @@ const navItems: NavItem[] = [
   {
     labelKey: 'production',
     href: '/backoffice/production/planning',
+    emoji: '🏭',
     icon: CalendarDays,
     permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
     children: [
@@ -301,6 +311,7 @@ const navItems: NavItem[] = [
   {
     labelKey: 'reports',
     href: '/backoffice/reports/hpp',
+    emoji: '📈',
     icon: BarChart2,
     permission: PERMISSIONS.REPORTS_HPP_VIEW,
     children: [
@@ -310,12 +321,14 @@ const navItems: NavItem[] = [
   {
     labelKey: 'auditTrail',
     href: '/backoffice/audit-trail',
+    emoji: '📋',
     icon: FileText,
     permission: PERMISSIONS.AUDIT_TRAIL_VIEW,
   },
   {
     labelKey: 'jubelio',
     href: '/backoffice/jubelio/admin',
+    emoji: '🔌',
     icon: Activity,
     permission: PERMISSIONS.JUBELIO_ADMIN_VIEW,
     children: [
@@ -329,6 +342,7 @@ const navItems: NavItem[] = [
   {
     labelKey: 'settings',
     href: '/backoffice/settings',
+    emoji: '⚙️',
     icon: Settings,
     permission: PERMISSIONS.SETTINGS_SECURITY_VIEW, // Settings hub - check any settings permission
   },
@@ -453,7 +467,6 @@ function Sidebar({
       <div className="relative flex-1 min-h-0">
         <nav className="h-full overflow-y-auto py-4 px-3 space-y-1">
         {filteredItems.map((item) => {
-          const Icon = item.icon;
           const hasChildren = item.children && item.children.length > 0;
           const pathOpenKey = getOpenKeyFromPath(pathname);
           const isParentActive = hasChildren
@@ -476,7 +489,9 @@ function Sidebar({
                       : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
                   )}
                 >
-                  <Icon className="w-5 h-5 shrink-0" />
+                  <span aria-hidden className="w-5 shrink-0 text-center text-base leading-none">
+                    {item.emoji}
+                  </span>
                   <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
                   <NavCountBadge count={navCounts[item.href] ?? 0} />
                   <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
@@ -534,7 +549,9 @@ function Sidebar({
                   : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
               )}
             >
-              <Icon className="w-5 h-5" />
+              <span aria-hidden className="w-5 shrink-0 text-center text-base leading-none">
+                {item.emoji}
+              </span>
               <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
               <NavCountBadge count={navCounts[item.href] ?? 0} />
             </Link>

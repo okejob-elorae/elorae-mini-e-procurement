@@ -18,6 +18,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatusPill } from '@/components/ui/status-pill';
+import { EmptyState } from '@/components/ui/empty-state';
+import { getStatusMeta } from '@/lib/ui/status-map';
 import {
   Card,
   CardContent,
@@ -132,6 +136,7 @@ export function PurchaseOrdersPageClient({
   const tToasts = useTranslations('toasts');
   const tSecurity = useTranslations('security');
   const tPO = useTranslations('purchaseOrders');
+  const tStatus = useTranslations('statuses');
   const [pos, setPOs] = useState<PurchaseOrder[]>(initialPOs ?? []);
   const [isLoading, setIsLoading] = useState(!initialPOs);
   const [searchQuery, setSearchQuery] = useState('');
@@ -246,27 +251,25 @@ export function PurchaseOrdersPageClient({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Purchase Orders</h1>
-          <p className="text-muted-foreground">
-            Manage procurement and track deliveries
-          </p>
-        </div>
-        <Link href="/backoffice/purchase-orders/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New PO
-          </Button>
-        </Link>
-      </div>
+      <PageHeader
+        title={tPO('pageTitle')}
+        description={tPO('pageDescription')}
+        actions={
+          <Link href="/backoffice/purchase-orders/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              {tPO('newPO')}
+            </Button>
+          </Link>
+        }
+      />
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search PO number or supplier..."
+            placeholder={tPO('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -277,10 +280,10 @@ export function PurchaseOrdersPageClient({
           onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : (v as POStatus))}
         >
           <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All Status" />
+            <SelectValue placeholder={tPO('allStatus')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All Status</SelectItem>
+            <SelectItem value="__all__">{tPO('allStatus')}</SelectItem>
             {(Object.entries(statusLabels) as [POStatus, string][]).map(([status, label]) => (
               <SelectItem key={status} value={status}>
                 {label}
@@ -295,7 +298,7 @@ export function PurchaseOrdersPageClient({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShoppingCart className="h-5 w-5" />
-            Purchase Order List
+            {tPO('listTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -336,10 +339,10 @@ export function PurchaseOrdersPageClient({
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={statusColors[po.status]}>
-                          {statusIcons[po.status]}
-                          <span className="ml-1">{statusLabels[po.status]}</span>
-                        </Badge>
+                        {(() => {
+                          const meta = getStatusMeta('purchaseOrder', po.status);
+                          return <StatusPill tone={meta.tone}>{tStatus(meta.labelKey as never)}</StatusPill>;
+                        })()}
                       </TableCell>
                       <TableCell>
                         {po.etaDate ? (
@@ -356,13 +359,13 @@ export function PurchaseOrdersPageClient({
                       </TableCell>
                       <TableCell>
                         {po.paidAt ? (
-                          <Badge variant="default" className="bg-green-600">Paid</Badge>
+                          <StatusPill tone="settled">{tPO('paid')}</StatusPill>
                         ) : (
-                          <Badge variant="secondary">Unpaid</Badge>
+                          <StatusPill tone="waiting">{tPO('unpaid')}</StatusPill>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        Rp {Number(po.grandTotal).toLocaleString()}
+                        Rp {Number(po.grandTotal).toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell>
                         {(() => {

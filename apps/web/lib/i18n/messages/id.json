@@ -122,7 +122,19 @@
       "ACCESSORIES": "Pemasok Aksesoris",
       "TAILOR": "Penjahit/Produksi",
       "OTHER": "Lainnya"
-    }
+    },
+    "pageTitle": "Pemasok",
+    "pageDescription": "Vendor kain, aksesoris, dan penjahit. Dari sinilah PO dibuat dan hutang pemasok dicatat.",
+    "newSupplier": "Tambah Pemasok",
+    "editSupplier": "Ubah Pemasok",
+    "createSupplier": "Pemasok Baru",
+    "searchPlaceholder": "Cari nama atau kode pemasok...",
+    "allTypes": "Semua jenis",
+    "allStatuses": "Semua status",
+    "emptyTitle": "Belum ada pemasok",
+    "emptyDescription": "Tambahkan pemasok lebih dulu — PO, penerimaan barang, dan pembayaran semuanya bersandar pada data ini.",
+    "emptyFilteredTitle": "Tidak ada pemasok yang cocok",
+    "emptyFilteredDescription": "Coba ubah kata pencarian, jenis, atau status."
   },
   "common": {
     "save": "Simpan",
@@ -1159,7 +1171,20 @@
     "paymentTermsLabel": "Syarat Pembayaran",
     "cancelReasonDescription": "Masukkan alasan pembatalan PO. Tindakan ini tidak dapat dibatalkan.",
     "confirmCancelPO": "Yakin ingin membatalkan PO ini?",
-    "pinActionCancelPO": "membatalkan PO ini"
+    "pinActionCancelPO": "membatalkan PO ini",
+    "pageTitle": "Pesanan Pembelian",
+    "pageDescription": "Pesanan kain dan aksesoris ke pemasok. Dibuat tim pengadaan, lalu dicocokkan saat barang datang lewat GRN.",
+    "newPO": "Buat PO",
+    "searchPlaceholder": "Cari nomor PO atau pemasok...",
+    "allStatus": "Semua status",
+    "listTitle": "Daftar PO",
+    "listMeta": "{count} PO · nilai {value}",
+    "paid": "Lunas",
+    "unpaid": "Belum lunas",
+    "emptyTitle": "Belum ada pesanan pembelian",
+    "emptyDescription": "PO muncul di sini setelah tim pengadaan membuatnya. Dari PO inilah penerimaan barang dan hutang pemasok dicatat.",
+    "emptyFilteredTitle": "Tidak ada PO yang cocok",
+    "emptyFilteredDescription": "Coba ubah kata pencarian atau pilih status lain."
   },
   "workOrdersList": {
     "noWorkOrdersFound": "Tidak ada work order ditemukan"
@@ -3407,5 +3432,47 @@
     "taxInvoicePending": "Nota tagihan belum punya nomor faktur pajak",
     "submittedPOs": "PO menunggu persetujuan",
     "storeChangesPending": "Perubahan data toko menunggu ditinjau"
+  },
+  "statuses": {
+    "unknown": "Tidak diketahui",
+    "poDraft": "Draf",
+    "poSubmitted": "Menunggu persetujuan",
+    "poPartial": "Diterima sebagian",
+    "poClosed": "Selesai",
+    "poOver": "Lebih dari pesanan",
+    "poCancelled": "Dibatalkan",
+    "soNew": "Baru masuk",
+    "soProcessing": "Sedang disiapkan",
+    "soShipped": "Sudah dikirim",
+    "soCompleted": "Selesai",
+    "soCancelled": "Dibatalkan",
+    "soReturned": "Diretur",
+    "fulPending": "Menunggu diproses",
+    "fulPicked": "Sudah dipetik",
+    "fulPacked": "Sudah dikemas",
+    "fulShipped": "Sudah dikirim",
+    "woDraft": "Draf",
+    "woReleased": "Siap dikerjakan",
+    "woInProgress": "Sedang dikerjakan",
+    "woCompleted": "Selesai",
+    "woCancelled": "Dibatalkan",
+    "fsPendingApproval": "Menunggu persetujuan",
+    "fsApproved": "Disetujui",
+    "fsRejected": "Ditolak",
+    "dlvPending": "Belum dikirim",
+    "dlvPartial": "Terkirim sebagian",
+    "dlvDelivered": "Terkirim penuh",
+    "dlvClosed": "Sisa ditutup",
+    "taxPending": "Belum ada faktur",
+    "taxCreated": "Faktur terbit",
+    "taxNotRequired": "Tidak perlu faktur"
+  },
+  "pagination": {
+    "showing": "Menampilkan {start}–{end} dari {total}",
+    "page": "Halaman {page} dari {total}",
+    "previous": "Sebelumnya",
+    "next": "Berikutnya",
+    "previousAria": "Halaman sebelumnya",
+    "nextAria": "Halaman berikutnya"
   }
 }

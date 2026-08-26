@@ -48,7 +48,7 @@
 }
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.5rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
@@ -236,6 +236,81 @@ html.backoffice-shell body {
 /* Headings carry weight contrast now that the face supports it. */
 h1, h2, h3 {
   letter-spacing: -0.015em;
+}
+
+/* ==========================================================================
+   Shared surface layer
+   --------------------------------------------------------------------------
+   shadcn primitives all carry data-slot attributes, so the whole app can be
+   retuned from here instead of editing ninety-odd pages. Everything below is
+   scoped to the backoffice shell: print views and the PWA keep their own
+   geometry.
+   ========================================================================== */
+
+/* Every page arrives with the same gesture, without a single page editing
+   itself. main's direct child is each route's own wrapper. */
+html.backoffice-shell main > * {
+  animation: elorae-rise 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.backoffice-shell main > * {
+    animation: none !important;
+  }
+}
+
+/* Figures line up in columns. Without tabular figures the thousands separator
+   drifts row to row and the eye cannot compare two amounts by shape. */
+html.backoffice-shell [data-slot="table-cell"],
+html.backoffice-shell [data-slot="table-head"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rows were 62px tall, so a 768px screen showed seven of them. Trimming the
+   cell padding and line height fits about a third more without crowding. */
+html.backoffice-shell [data-slot="table-cell"] {
+  padding-block: 0.5rem;
+  line-height: 1.35;
+}
+
+html.backoffice-shell [data-slot="table-head"] {
+  height: 2.25rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Cards: slightly tighter than the stock 24px, and they lift under the cursor
+   when they lead somewhere. */
+html.backoffice-shell [data-slot="card"] {
+  gap: 1.25rem;
+  padding-block: 1.25rem;
+  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+html.backoffice-shell [data-slot="card-header"] {
+  padding-inline: 1.25rem;
+}
+
+html.backoffice-shell [data-slot="card-content"],
+html.backoffice-shell [data-slot="card-footer"] {
+  padding-inline: 1.25rem;
+}
+
+/* A card wrapping a table should let the table meet its own edges. */
+html.backoffice-shell [data-slot="card-content"]:has(> [data-slot="table-container"]),
+html.backoffice-shell [data-slot="card-content"]:has(> table) {
+  padding-inline: 0;
+}
+
+/* Section eyebrows, matching the uppercase labels used across the sidebar. */
+.eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 
 @keyframes global-loading-bar {

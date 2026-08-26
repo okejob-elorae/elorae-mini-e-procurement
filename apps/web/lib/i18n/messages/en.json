@@ -122,7 +122,19 @@
       "ACCESSORIES": "Accessories Supplier",
       "TAILOR": "Tailor/Production",
       "OTHER": "Other"
-    }
+    },
+    "pageTitle": "Suppliers",
+    "pageDescription": "Fabric, accessory, and tailoring vendors. POs are raised against these, and payables recorded here.",
+    "newSupplier": "New supplier",
+    "editSupplier": "Edit supplier",
+    "createSupplier": "New supplier",
+    "searchPlaceholder": "Search supplier name or code...",
+    "allTypes": "All types",
+    "allStatuses": "All statuses",
+    "emptyTitle": "No suppliers yet",
+    "emptyDescription": "Add a supplier first — POs, goods receipts, and payments all rest on this record.",
+    "emptyFilteredTitle": "No suppliers match",
+    "emptyFilteredDescription": "Try a different search term, type, or status."
   },
   "common": {
     "save": "Save",
@@ -1159,7 +1171,20 @@
     "paymentTermsLabel": "Payment Terms",
     "cancelReasonDescription": "Enter the reason for cancelling this PO. This action cannot be undone.",
     "confirmCancelPO": "Are you sure you want to cancel this PO?",
-    "pinActionCancelPO": "cancel this PO"
+    "pinActionCancelPO": "cancel this PO",
+    "pageTitle": "Purchase Orders",
+    "pageDescription": "Fabric and accessory orders to suppliers. Raised by procurement, then matched against goods received via GRN.",
+    "newPO": "New PO",
+    "searchPlaceholder": "Search PO number or supplier...",
+    "allStatus": "All statuses",
+    "listTitle": "PO list",
+    "listMeta": "{count} POs · {value} in value",
+    "paid": "Paid",
+    "unpaid": "Unpaid",
+    "emptyTitle": "No purchase orders yet",
+    "emptyDescription": "POs appear here once procurement raises one. They are what goods receipts and supplier payables are recorded against.",
+    "emptyFilteredTitle": "No POs match",
+    "emptyFilteredDescription": "Try a different search term or pick another status."
   },
   "workOrdersList": {
     "noWorkOrdersFound": "No work orders found"
@@ -3407,5 +3432,47 @@
     "taxInvoicePending": "Billing notes with no tax invoice number yet",
     "submittedPOs": "POs awaiting approval",
     "storeChangesPending": "Store detail changes awaiting review"
+  },
+  "statuses": {
+    "unknown": "Unknown",
+    "poDraft": "Draft",
+    "poSubmitted": "Awaiting approval",
+    "poPartial": "Partially received",
+    "poClosed": "Closed",
+    "poOver": "Over-received",
+    "poCancelled": "Cancelled",
+    "soNew": "Just in",
+    "soProcessing": "Being prepared",
+    "soShipped": "Shipped",
+    "soCompleted": "Completed",
+    "soCancelled": "Cancelled",
+    "soReturned": "Returned",
+    "fulPending": "Awaiting handling",
+    "fulPicked": "Picked",
+    "fulPacked": "Packed",
+    "fulShipped": "Shipped",
+    "woDraft": "Draft",
+    "woReleased": "Ready to start",
+    "woInProgress": "In progress",
+    "woCompleted": "Completed",
+    "woCancelled": "Cancelled",
+    "fsPendingApproval": "Awaiting approval",
+    "fsApproved": "Approved",
+    "fsRejected": "Rejected",
+    "dlvPending": "Not yet delivered",
+    "dlvPartial": "Partly delivered",
+    "dlvDelivered": "Fully delivered",
+    "dlvClosed": "Remainder closed",
+    "taxPending": "No tax invoice yet",
+    "taxCreated": "Tax invoice issued",
+    "taxNotRequired": "No invoice needed"
+  },
+  "pagination": {
+    "showing": "Showing {start}–{end} of {total}",
+    "page": "Page {page} of {total}",
+    "previous": "Previous",
+    "next": "Next",
+    "previousAria": "Previous page",
+    "nextAria": "Next page"
   }
 }
