@@ -92,7 +92,8 @@
     "navJubelioCouriers": "Couriers",
     "settings": "Settings",
     "masterData": "Master Data",
-    "archive": "Document archive"
+    "archive": "Document archive",
+    "receivables": "Invoices & receivables"
   },
   "notifications": {
     "title": "Notifications",
@@ -3619,5 +3620,34 @@
     "deliveredAt": "Delivered",
     "dueDate": "Due",
     "taxInvoice": "Tax invoice"
+  },
+  "receivables": {
+    "pageTitle": "Invoices & receivables",
+    "pageDescription": "Unpaid store billing. A receivable only drops once finance matches the payment claim against the bank statement.",
+    "summary": "{count} receivables · {value} outstanding",
+    "colInvoice": "Invoice no.",
+    "colStore": "Store",
+    "colSalesman": "Salesman",
+    "colDue": "Due",
+    "colAmount": "Amount",
+    "colOutstanding": "Outstanding",
+    "colState": "State",
+    "emptyTitle": "No receivables yet",
+    "emptyBody": "A receivable appears on its own once a billing note is issued from a putus delivery, or can be brought in by Excel import for sales made outside Elorae.",
+    "sourceDELIVERY": "from delivery",
+    "sourceIMPORT": "imported",
+    "sourceMANUAL": "manual",
+    "stateLunas": "Settled",
+    "stateKlaim": "Transfer claimed",
+    "stateTertahan": "Held by return",
+    "stateLewat": "Past promised date",
+    "stateTt": "Handed over",
+    "stateBelum": "Ready to hand over",
+    "reasonLunas": "Settled — verified by finance.",
+    "reasonKlaim": "You reported a transfer via {no}. Finance has not seen the money land yet, so it does not count as settled.",
+    "reasonTertahan": "Held by return {nilai} — the return deduction does not match what the warehouse received. The balance cannot reach zero until the shortfall is settled.",
+    "reasonLewat": "The shop promised {tgl} — {hari} days past and no money has arrived. Chase it and get a new date.",
+    "reasonTt": "Handed over ({no}). The shop promised {tgl} — wait for the date.",
+    "reasonBelum": "Ready to hand over — no return hanging and nothing overdue."
   }
 }

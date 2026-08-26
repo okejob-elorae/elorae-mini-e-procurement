@@ -92,7 +92,8 @@
     "navJubelioCouriers": "Kurir",
     "settings": "Pengaturan",
     "masterData": "Data Master",
-    "archive": "Arsip Dokumen"
+    "archive": "Arsip Dokumen",
+    "receivables": "Faktur & Piutang"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -3619,5 +3620,34 @@
     "deliveredAt": "Tanggal Kirim",
     "dueDate": "Jatuh Tempo",
     "taxInvoice": "Faktur Pajak"
+  },
+  "receivables": {
+    "pageTitle": "Faktur & Piutang",
+    "pageDescription": "Tagihan yang belum lunas ke toko. Piutang hanya berkurang setelah admin keuangan mencocokkan klaim pembayaran dengan mutasi rekening.",
+    "summary": "{count} piutang · sisa {value}",
+    "colInvoice": "No. Faktur",
+    "colStore": "Toko",
+    "colSalesman": "Salesman",
+    "colDue": "Jatuh Tempo",
+    "colAmount": "Nilai",
+    "colOutstanding": "Sisa",
+    "colState": "Keadaan",
+    "emptyTitle": "Belum ada piutang",
+    "emptyBody": "Piutang lahir sendiri begitu nota tagihan diterbitkan dari pengiriman putus, atau bisa dimasukkan lewat impor Excel untuk penjualan di luar Elorae.",
+    "sourceDELIVERY": "dari pengiriman",
+    "sourceIMPORT": "impor",
+    "sourceMANUAL": "manual",
+    "stateLunas": "Lunas",
+    "stateKlaim": "Klaim transfer",
+    "stateTertahan": "Tertahan retur",
+    "stateLewat": "Lewat janji bayar",
+    "stateTt": "Sudah dikontrabon",
+    "stateBelum": "Siap dikontrabon",
+    "reasonLunas": "Lunas — sudah diverifikasi admin keuangan.",
+    "reasonKlaim": "Kamu lapor transfer lewat {no}. Admin belum melihat uangnya masuk rekening, jadi belum dihitung lunas.",
+    "reasonTertahan": "Tertahan retur {nilai} — potongan retur belum cocok dengan barang yang diterima gudang. Sisa faktur belum bisa nol sampai selisih beres.",
+    "reasonLewat": "Toko janji bayar {tgl} — sudah lewat {hari} hari dan uang belum masuk. Tagih ulang dan minta tanggal baru.",
+    "reasonTt": "Sudah dikontrabon ({no}). Toko janji bayar {tgl} — tunggu tanggalnya.",
+    "reasonBelum": "Siap dikontrabon — tidak ada retur menggantung dan tidak ada tunggakan."
   }
 }

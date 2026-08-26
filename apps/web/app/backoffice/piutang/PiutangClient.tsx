@@ -1,0 +1,197 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { Receipt } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import { CategoryBadge } from '@/components/ui/category-badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { cn } from '@/lib/utils';
+import type { BarisPiutang, RingkasanPiutang } from '@/lib/receivables/queries';
+import type { KeadaanPiutang } from '@/lib/receivables/rules';
+
+const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
+const tanggal = (iso: string) =>
+  new Date(iso).toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Jakarta',
+  });
+
+/**
+ * Nada per keadaan. `lewat` dan `tertahan` merah karena keduanya berarti uang
+ * berhenti bergerak; `klaim` biru karena ada yang sudah dikerjakan dan sedang
+ * menunggu orang lain — bukan kesalahan sales.
+ */
+const NADA: Record<KeadaanPiutang, StatusTone> = {
+  lunas: 'settled',
+  klaim: 'progress',
+  tertahan: 'attention',
+  lewat: 'attention',
+  tt: 'waiting',
+  belum: 'inactive',
+};
+
+const URUT: KeadaanPiutang[] = ['lewat', 'tertahan', 'klaim', 'tt', 'belum', 'lunas'];
+
+export function PiutangClient({
+  baris,
+  ringkasan,
+}: {
+  baris: BarisPiutang[];
+  ringkasan: RingkasanPiutang;
+}) {
+  const t = useTranslations('receivables');
+  const [saring, setSaring] = useState<KeadaanPiutang | null>(null);
+
+  const label = (k: KeadaanPiutang) =>
+    t(`state${k.charAt(0).toUpperCase()}${k.slice(1)}` as never);
+
+  /** Kalimat alasan — inti programnya. Tanpa ini halaman ini cuma tabel angka. */
+  const alasan = (b: BarisPiutang): string => {
+    switch (b.keadaan) {
+      case 'lunas':
+        return t('reasonLunas');
+      case 'klaim':
+        return t('reasonKlaim', { no: b.alasan.noKlaim ?? '—' });
+      case 'tertahan':
+        return t('reasonTertahan', { nilai: rupiah(b.alasan.nilaiTertahan ?? 0) });
+      case 'lewat':
+        return t('reasonLewat', {
+          tgl: b.alasan.janjiBayar ? tanggal(b.alasan.janjiBayar) : '—',
+          hari: b.alasan.hariTerlambat ?? 0,
+        });
+      case 'tt':
+        return t('reasonTt', {
+          no: b.alasan.noKontrabon ?? '—',
+          tgl: b.alasan.janjiBayar ? tanggal(b.alasan.janjiBayar) : '—',
+        });
+      default:
+        return t('reasonBelum');
+    }
+  };
+
+  const tampil = useMemo(
+    () => (saring ? baris.filter((b) => b.keadaan === saring) : baris),
+    [baris, saring],
+  );
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={t('pageTitle')}
+        description={t('pageDescription')}
+        meta={t('summary', {
+          count: ringkasan.jumlahPiutang,
+          value: rupiah(ringkasan.total),
+        })}
+      />
+
+      {baris.length > 0 && (
+        <div className="anim-stagger flex flex-wrap gap-2">
+          {URUT.filter((k) => ringkasan.perKeadaan[k].jumlah > 0).map((k) => {
+            const aktif = saring === k;
+            const d = ringkasan.perKeadaan[k];
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setSaring(aktif ? null : k)}
+                aria-pressed={aktif}
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-left transition-colors',
+                  aktif ? 'border-primary ring-1 ring-primary/40' : 'border-border hover:bg-muted/60',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <StatusPill tone={NADA[k]}>{label(k)}</StatusPill>
+                  <span className="text-sm font-semibold tabular-nums">{d.jumlah}</span>
+                </span>
+                <span className="mt-1 block text-xs tabular-nums text-muted-foreground">
+                  {rupiah(d.nilai)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <Card>
+        <CardContent className={baris.length === 0 ? 'p-0' : 'px-0'}>
+          {baris.length === 0 ? (
+            <EmptyState icon={Receipt} title={t('emptyTitle')} description={t('emptyBody')} />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('colInvoice')}</TableHead>
+                    <TableHead>{t('colStore')}</TableHead>
+                    <TableHead>{t('colDue')}</TableHead>
+                    <TableHead className="text-right">{t('colAmount')}</TableHead>
+                    <TableHead className="text-right">{t('colOutstanding')}</TableHead>
+                    <TableHead className="min-w-[22rem]">{t('colState')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tampil.map((b) => (
+                    <TableRow
+                      key={b.id}
+                      /* Baris yang menuntut tindakan diberi latar tipis, supaya
+                         pekerjaan ditemukan tanpa membaca kolom keadaan. */
+                      className={cn(
+                        (b.keadaan === 'lewat' || b.keadaan === 'tertahan') &&
+                          'bg-destructive/[0.04]',
+                      )}
+                    >
+                      <TableCell className="font-medium">
+                        {b.invoiceNo}
+                        <span className="mt-0.5 block">
+                          <CategoryBadge label={b.source}>
+                            {t(`source${b.source}` as never)}
+                          </CategoryBadge>
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {b.storeName}
+                        {b.salesmanName && (
+                          <span className="block text-xs text-muted-foreground">
+                            {b.salesmanName}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>{tanggal(b.dueDate)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {rupiah(b.amount)}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {rupiah(b.outstanding)}
+                      </TableCell>
+                      <TableCell>
+                        <StatusPill tone={NADA[b.keadaan]}>{label(b.keadaan)}</StatusPill>
+                        <span className="mt-1 block text-xs leading-snug text-muted-foreground">
+                          {alasan(b)}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

@@ -319,6 +319,13 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    labelKey: 'receivables',
+    emoji: '🧾',
+    href: '/backoffice/piutang',
+    icon: FileText,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+  },
+  {
     labelKey: 'archive',
     emoji: '🗂️',
     href: '/backoffice/archive',
