@@ -100,7 +100,8 @@
     "arsipRetur": "Arsip Nota Retur",
     "dasborPelunasan": "Beranda Piutang",
     "bebanSelisih": "Beban Selisih",
-    "konsinyasi": "Konsinyasi"
+    "konsinyasi": "Konsinyasi",
+    "jenisPotongan": "Jenis Potongan"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -305,6 +306,10 @@
       "noteGruvbox": "Oranye retro, nuansa kertas dan tanah",
       "noteSolarized": "Biru klasik, dirancang untuk mata yang lelah",
       "noteOneDark": "Ungu editor, dikenal dari Atom dan VS Code"
+    },
+    "jenisPotongan": {
+      "title": "Jenis Potongan",
+      "description": "Daftar potongan yang boleh dipakai pada BKM, beserta aturan yang melekat padanya."
     }
   },
   "tax": {
@@ -3754,7 +3759,10 @@
     "errRETUR_BEDA_TOKO": "Nota retur itu milik toko lain.",
     "errFOTO_WAJIB": "Foto bukti transfer wajib diisi.",
     "errNOMOR_BENTROK": "Nomor BKM bentrok. Coba kirim lagi.",
-    "print": "Cetak"
+    "print": "Cetak",
+    "deductionOther": "Lainnya (ketik sendiri)",
+    "errJENIS_BUTUH_RETUR": "Potongan jenis ini wajib ditautkan ke nota retur.",
+    "errJENIS_BUTUH_CATATAN": "Potongan jenis ini wajib punya keterangan."
   },
   "collections": {
     "pageTitle": "Kontrabon / Tanda Terima",
@@ -4408,5 +4416,49 @@
     "errNOMOR_BENTROK": "Nomor bentrok. Coba simpan lagi.",
     "errGAGAL": "Gagal menyimpan. Coba lagi.",
     "print": "Cetak"
+  },
+  "jenisPotongan": {
+    "pageTitle": "Jenis Potongan",
+    "pageDescription": "Daftar potongan yang boleh dipakai pada BKM, beserta aturan yang melekat padanya.",
+    "summary": "{count} jenis aktif",
+    "add": "Tambah jenis",
+    "edit": "Ubah",
+    "disable": "Nonaktifkan",
+    "inactive": "nonaktif",
+    "colName": "Nama",
+    "colMethod": "Cara",
+    "colRules": "Aturan",
+    "colUsed": "Dipakai",
+    "colAction": "Tindakan",
+    "method_NOMINAL": "Nominal",
+    "method_PERSEN": "Persen",
+    "method_DARI_RETUR": "Dari retur",
+    "methodHint_NOMINAL": "Nilainya diketik langsung.",
+    "methodHint_PERSEN": "Nilainya persentase dari faktur.",
+    "methodHint_DARI_RETUR": "WAJIB ditautkan ke nota retur. Tautan itulah yang membuat nilainya ditahan sampai gudang selesai menghitung — tanpa jenis ini, penautan sepenuhnya bergantung ingatan orang yang mengetik.",
+    "ruleNote": "Catatan wajib",
+    "ruleNoteHint": "Potongan jenis ini tidak bisa disimpan tanpa keterangan.",
+    "rulePkp": "Hanya toko PKP",
+    "rulePkpHint": "Penanda saja — Elorae belum punya kolom PKP pada toko, jadi ini belum dipaksa di mana pun.",
+    "ruleManual": "Boleh diketik manual",
+    "ruleManualHint": "Kalau dimatikan, jenis ini hanya boleh datang dari proses lain, bukan diketik admin.",
+    "ruleActive": "Aktif",
+    "ruleActiveHint": "Yang nonaktif tidak muncul saat membuat BKM, tapi tetap menempel pada BKM lama.",
+    "addTitle": "Jenis potongan baru",
+    "editTitle": "Ubah jenis potongan",
+    "formBody": "Aturan yang dipilih di sini dipaksa saat BKM disimpan, bukan cuma ditampilkan.",
+    "namePlaceholder": "mis. Retur barang",
+    "save": "Simpan",
+    "emptyTitle": "Belum ada jenis potongan",
+    "emptyBody": "Selama daftarnya kosong, nama potongan diketik bebas di setiap BKM.",
+    "explain": "Jenis TIDAK DIHAPUS, hanya dinonaktifkan. Yang pernah dipakai menempel pada BKM lama, dan menghapusnya membuat potongan bersejarah kehilangan namanya — laporan lama berubah setelah ditutup.",
+    "okSaved": "Jenis potongan tersimpan.",
+    "okDisabled": "Jenis potongan dinonaktifkan.",
+    "errTANPA_AKSES": "Anda tidak punya akses mengubah jenis potongan.",
+    "errNAMA_WAJIB": "Isi namanya.",
+    "errNAMA_SUDAH_ADA": "Nama itu sudah dipakai jenis lain.",
+    "errTIDAK_DITEMUKAN": "Jenis potongan tidak ditemukan.",
+    "errSEDANG_DIPAKAI": "Jenis ini sedang dipakai.",
+    "errGAGAL": "Gagal menyimpan. Coba lagi."
   }
 }

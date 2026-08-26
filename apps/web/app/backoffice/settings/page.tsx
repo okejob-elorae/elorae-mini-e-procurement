@@ -22,6 +22,7 @@ import {
   Ruler,
   Shield,
   Users,
+  Tags,
 } from 'lucide-react';
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import { UIThemePicker } from '@/components/settings/UIThemePicker';
@@ -67,6 +68,7 @@ export default function SettingsPage() {
     { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
     { titleKey: 'rbac.title' as const, descriptionKey: 'rbac.description' as const, href: '/backoffice/settings/rbac', icon: Users },
     { titleKey: 'packRatio.title' as const, descriptionKey: 'packRatio.description' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
+    { titleKey: 'jenisPotongan.title' as const, descriptionKey: 'jenisPotongan.description' as const, href: '/backoffice/settings/jenis-potongan', icon: Tags },
   ];
 
   const userId = session?.user?.id ?? null;

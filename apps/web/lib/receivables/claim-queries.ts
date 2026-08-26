@@ -2,6 +2,7 @@ import { prisma } from '@elorae/db';
 import { returTertahan } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
 import { daftarPiutang, type BarisPiutang } from './queries';
+import { jenisPotonganAktif, type CaraPotongan } from './deduction-types';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -124,6 +125,7 @@ export type BahanKlaimBaru = {
   toko: { id: string; name: string }[];
   piutangPerToko: Record<string, BarisPiutang[]>;
   returPerToko: Record<string, { id: string; noNrt: string; nilaiKlaim: number }[]>;
+  jenisPotongan: { id: string; nama: string; cara: CaraPotongan; wajibCatatan: boolean }[];
 };
 
 /**
@@ -136,13 +138,14 @@ export type BahanKlaimBaru = {
  * menghilangkan justru kasus yang paling sering terjadi.
  */
 export async function bahanKlaimBaru(): Promise<BahanKlaimBaru> {
-  const [semua, retur] = await Promise.all([
+  const [semua, retur, jenis] = await Promise.all([
     daftarPiutang(),
     prisma.storeReturn.findMany({
       where: { status: { not: 'BATAL' } },
       orderBy: { claimDate: 'desc' },
       select: { id: true, noNrt: true, storeId: true, claimedAmount: true },
     }),
+    jenisPotonganAktif(),
   ]);
 
   const terbuka = semua.filter((p) => p.outstanding > 0);
@@ -166,5 +169,6 @@ export async function bahanKlaimBaru(): Promise<BahanKlaimBaru> {
     toko: [...namaToko.entries()].map(([id, name]) => ({ id, name })),
     piutangPerToko,
     returPerToko,
+    jenisPotongan: jenis,
   };
 }

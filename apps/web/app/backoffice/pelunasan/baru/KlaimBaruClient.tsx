@@ -39,7 +39,13 @@ function hariIniWib(): string {
 
 const CARA = ['transfer', 'tunai', 'giro'] as const;
 
-type Potongan = { nama: string; nilai: number; storeReturnId: string; catatan: string };
+type Potongan = {
+  nama: string;
+  nilai: number;
+  deductionTypeId: string;
+  storeReturnId: string;
+  catatan: string;
+};
 
 export function KlaimBaruClient({
   bahan,
@@ -63,6 +69,7 @@ export function KlaimBaruClient({
 
   const piutang = bahan.piutangPerToko[storeId] ?? [];
   const retur = bahan.returPerToko[storeId] ?? [];
+  const jenis = bahan.jenisPotongan;
 
   const nilaiFaktur = useMemo(
     () => Object.values(dipilih).reduce((s, n) => s + (n || 0), 0),
@@ -100,6 +107,7 @@ export function KlaimBaruClient({
         potongan: potongan.map((p) => ({
           nama: p.nama,
           nilai: p.nilai,
+          deductionTypeId: p.deductionTypeId || null,
           storeReturnId: p.storeReturnId || null,
           catatan: p.catatan,
         })),
@@ -244,7 +252,7 @@ export function KlaimBaruClient({
                 onClick={() =>
                   setPotongan((lama) => [
                     ...lama,
-                    { nama: '', nilai: 0, storeReturnId: '', catatan: '' },
+                    { nama: '', nilai: 0, deductionTypeId: '', storeReturnId: '', catatan: '' },
                   ])
                 }
               >
@@ -262,15 +270,62 @@ export function KlaimBaruClient({
                 <div key={i} className="flex flex-wrap items-end gap-2">
                   <div className="min-w-40 flex-1 space-y-1">
                     <span className="text-xs text-muted-foreground">{t('deductionName')}</span>
-                    <Input
-                      value={p.nama}
-                      placeholder={t('deductionNamePlaceholder')}
-                      onChange={(e) =>
-                        setPotongan((lama) =>
-                          lama.map((r, n) => (n === i ? { ...r, nama: e.target.value } : r)),
-                        )
-                      }
-                    />
+                    {/*
+                      Dipilih dari master, bukan diketik. Nama bebas membuat
+                      "Retur barang" dan "retur brg" jadi dua hal berbeda, dan
+                      laporan apa pun di atas potongan pecah.
+                    */}
+                    {jenis.length > 0 ? (
+                      <Select
+                        value={p.deductionTypeId || 'lainnya'}
+                        onValueChange={(v) =>
+                          setPotongan((lama) =>
+                            lama.map((r, n) => {
+                              if (n !== i) return r;
+                              const dipilih = jenis.find((j) => j.id === v);
+                              return {
+                                ...r,
+                                deductionTypeId: dipilih ? v : '',
+                                nama: dipilih ? dipilih.nama : r.nama,
+                              };
+                            }),
+                          )
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {jenis.map((j) => (
+                            <SelectItem key={j.id} value={j.id}>
+                              {j.nama}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="lainnya">{t('deductionOther')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={p.nama}
+                        placeholder={t('deductionNamePlaceholder')}
+                        onChange={(e) =>
+                          setPotongan((lama) =>
+                            lama.map((r, n) => (n === i ? { ...r, nama: e.target.value } : r)),
+                          )
+                        }
+                      />
+                    )}
+                    {p.deductionTypeId === '' && jenis.length > 0 && (
+                      <Input
+                        value={p.nama}
+                        placeholder={t('deductionNamePlaceholder')}
+                        onChange={(e) =>
+                          setPotongan((lama) =>
+                            lama.map((r, n) => (n === i ? { ...r, nama: e.target.value } : r)),
+                          )
+                        }
+                      />
+                    )}
                   </div>
                   <div className="w-36 space-y-1">
                     <span className="text-xs text-muted-foreground">{t('deductionAmount')}</span>

@@ -24,6 +24,7 @@ export type BarisPelunasan = { receivableId: string; nilai: number };
 export type BarisPotongan = {
   nama: string;
   nilai: number;
+  deductionTypeId?: string | null;
   storeReturnId?: string | null;
   catatan?: string | null;
 };
@@ -39,6 +40,8 @@ export type AlasanGagalKlaim =
   | 'RETUR_TIDAK_DITEMUKAN'
   | 'RETUR_BEDA_TOKO'
   | 'FOTO_WAJIB'
+  | 'JENIS_BUTUH_RETUR'
+  | 'JENIS_BUTUH_CATATAN'
   | 'NOMOR_BENTROK';
 
 /** Nomor BKM berikutnya dalam tahun berjalan. */
@@ -116,6 +119,36 @@ export async function buatKlaimPembayaran(input: {
         if (baris.nilai > sisa) return { ok: false as const, alasan: 'MELEBIHI_SISA' as const };
       }
 
+      /*
+       * Aturan yang melekat pada jenis potongan, dipaksa di sini.
+       *
+       * `DARI_RETUR` menuntut tautan ke nota retur — dan tautan itulah yang
+       * membuat Aturan 2 bekerja. Sebelum jenis potongan ada, penautan
+       * sepenuhnya bergantung pada ingatan orang yang mengetik, dan sebuah
+       * potongan retur yang lupa ditautkan lolos sebagai pengurang biasa yang
+       * tidak pernah ditahan.
+       */
+      const idJenis = [
+        ...new Set(potongan.map((p) => p.deductionTypeId).filter((x): x is string => Boolean(x))),
+      ];
+      if (idJenis.length > 0) {
+        const jenis = await tx.deductionType.findMany({
+          where: { id: { in: idJenis } },
+          select: { id: true, method: true, noteRequired: true },
+        });
+        const peta = new Map(jenis.map((j) => [j.id, j]));
+        for (const p of potongan) {
+          const j = p.deductionTypeId ? peta.get(p.deductionTypeId) : undefined;
+          if (!j) continue;
+          if (j.method === 'DARI_RETUR' && !p.storeReturnId) {
+            return { ok: false as const, alasan: 'JENIS_BUTUH_RETUR' as const };
+          }
+          if (j.noteRequired && !p.catatan?.trim()) {
+            return { ok: false as const, alasan: 'JENIS_BUTUH_CATATAN' as const };
+          }
+        }
+      }
+
       const returIds = [
         ...new Set(potongan.map((p) => p.storeReturnId).filter((x): x is string => Boolean(x))),
       ];
@@ -160,6 +193,7 @@ export async function buatKlaimPembayaran(input: {
               name: p.nama.trim(),
               amount: D(p.nilai),
               note: p.catatan?.trim() || null,
+              deductionTypeId: p.deductionTypeId ?? null,
               storeReturnId: p.storeReturnId ?? null,
             })),
           },

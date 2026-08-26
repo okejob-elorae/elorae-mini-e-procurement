@@ -100,7 +100,8 @@
     "arsipRetur": "Return archive",
     "dasborPelunasan": "Receivables home",
     "bebanSelisih": "Return differences",
-    "konsinyasi": "Consignment"
+    "konsinyasi": "Consignment",
+    "jenisPotongan": "Deduction types"
   },
   "notifications": {
     "title": "Notifications",
@@ -305,6 +306,10 @@
       "noteGruvbox": "Retro orange, paper and earth tones",
       "noteSolarized": "Classic blue, designed for tired eyes",
       "noteOneDark": "Editor violet, known from Atom and VS Code"
+    },
+    "jenisPotongan": {
+      "title": "Deduction types",
+      "description": "The deductions allowed on a payment claim, and the rules attached to each."
     }
   },
   "tax": {
@@ -3754,7 +3759,10 @@
     "errRETUR_BEDA_TOKO": "That return note belongs to a different shop.",
     "errFOTO_WAJIB": "The transfer receipt photo is required.",
     "errNOMOR_BENTROK": "The claim number clashed. Try sending again.",
-    "print": "Print"
+    "print": "Print",
+    "deductionOther": "Other (type it)",
+    "errJENIS_BUTUH_RETUR": "A deduction of this type must be linked to a return note.",
+    "errJENIS_BUTUH_CATATAN": "A deduction of this type must have an explanation."
   },
   "collections": {
     "pageTitle": "Collection notes",
@@ -4408,5 +4416,49 @@
     "errNOMOR_BENTROK": "The number clashed. Try again.",
     "errGAGAL": "Could not save. Try again.",
     "print": "Print"
+  },
+  "jenisPotongan": {
+    "pageTitle": "Deduction types",
+    "pageDescription": "The deductions allowed on a payment claim, and the rules attached to each.",
+    "summary": "{count} active",
+    "add": "Add type",
+    "edit": "Edit",
+    "disable": "Disable",
+    "inactive": "inactive",
+    "colName": "Name",
+    "colMethod": "Method",
+    "colRules": "Rules",
+    "colUsed": "Used",
+    "colAction": "Action",
+    "method_NOMINAL": "Fixed amount",
+    "method_PERSEN": "Percentage",
+    "method_DARI_RETUR": "From a return",
+    "methodHint_NOMINAL": "The amount is typed directly.",
+    "methodHint_PERSEN": "The amount is a percentage of the invoice.",
+    "methodHint_DARI_RETUR": "MUST be linked to a return note. That link is what holds the amount until the warehouse finishes counting — without this type, linking depends entirely on whoever is typing remembering to.",
+    "ruleNote": "Note required",
+    "ruleNoteHint": "A deduction of this type cannot be saved without an explanation.",
+    "rulePkp": "Taxable shops only",
+    "rulePkpHint": "A marker only — Elorae has no taxable flag on a shop, so nothing enforces it yet.",
+    "ruleManual": "May be typed manually",
+    "ruleManualHint": "When off, this type may only arrive from another process, not be typed by an admin.",
+    "ruleActive": "Active",
+    "ruleActiveHint": "Inactive types do not appear when creating a claim, but stay attached to older ones.",
+    "addTitle": "New deduction type",
+    "editTitle": "Edit deduction type",
+    "formBody": "The rules chosen here are enforced when a claim is saved, not merely displayed.",
+    "namePlaceholder": "e.g. Goods returned",
+    "save": "Save",
+    "emptyTitle": "No deduction types yet",
+    "emptyBody": "While the list is empty, deduction names are typed freehand on every claim.",
+    "explain": "Types are NOT deleted, only disabled. One that has been used stays attached to older claims, and deleting it would strip the name off historical deductions — old reports would change after being closed.",
+    "okSaved": "Deduction type saved.",
+    "okDisabled": "Deduction type disabled.",
+    "errTANPA_AKSES": "You do not have access to change deduction types.",
+    "errNAMA_WAJIB": "Enter a name.",
+    "errNAMA_SUDAH_ADA": "That name is already used by another type.",
+    "errTIDAK_DITEMUKAN": "Deduction type not found.",
+    "errSEDANG_DIPAKAI": "This type is in use.",
+    "errGAGAL": "Could not save. Try again."
   }
 }
