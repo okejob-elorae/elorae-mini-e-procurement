@@ -23,6 +23,7 @@ const DEFAULT_CONFIGS: Record<
   FIELDRET: { prefix: 'FRET/', resetPeriod: 'MONTHLY', padding: 4 },
   KONSITRF: { prefix: 'KTRF/', resetPeriod: 'YEARLY', padding: 4 },
   STOCKTAKE: { prefix: 'STK/', resetPeriod: 'MONTHLY', padding: 4 },
+  PAYMENT: { prefix: 'KWT/', resetPeriod: 'MONTHLY', padding: 4 },
 };
 
 type ConfigRow = {
