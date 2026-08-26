@@ -85,6 +85,29 @@ d("recordSpgSale (test bed only)", () => {
     expect(Number(sale!.total)).toBe(17600);
   });
 
+  it("rounds the charged total to whole rupiah at the cash boundary; subtotal stays the exact sum", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 33333 } });
+    // 33333 * (1 - 12/100) = 29333.04 exact; the whole-rupiah charged total rounds DOWN to 29333.
+    // Paying exactly 29333 previously dead-ended as INSUFFICIENT_PAYMENT (29333 < 29333.04).
+    const res = await recordSpgSale({ salesmanId, storeId: discountStoreId, lines: [line(1)], cashReceived: 29333 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.changeGiven).toBe(0);
+    const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId } });
+    expect(Number(sale!.subtotal)).toBe(29333.04); // exact 2dp sum — unrounded
+    expect(Number(sale!.total)).toBe(29333); // whole-rupiah charged figure
+    expect(Number(sale!.total) - Number(sale!.subtotal)).toBeCloseTo(-0.04, 5); // derivable adjustment
+  });
+
+  it("leaves total equal to subtotal when the line sum has no fraction", async () => {
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(4)], cashReceived: 20000 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId } });
+    expect(Number(sale!.total)).toBe(20000);
+    expect(Number(sale!.subtotal)).toBe(Number(sale!.total));
+  });
+
   it("does not touch VanStock, InventoryValue, or write a StockAdjustment (record-only)", async () => {
     const invBefore = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku: "" } } });
     const adjBefore = await prisma.stockAdjustment.count({ where: { itemId } });

@@ -116,6 +116,37 @@ d("recordVanSale (test bed only)", () => {
     await prisma.store.delete({ where: { id: storeId } });
   });
 
+  it("rounds the charged total to whole rupiah at the cash boundary; subtotal stays the exact sum", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 33333 } });
+    const store = await prisma.store.create({
+      data: { code: `${tag}-FRAC`, name: "Frac Store", address: "x", termsType: "PUTUS", priceDiscountPercent: 20 },
+    });
+    const storeId = store.id;
+
+    // 33333 * (1 - 20/100) = 26666.4 exact; the whole-rupiah charged total rounds DOWN to 26666.
+    // Paying exactly 26666 previously dead-ended as INSUFFICIENT_PAYMENT (26666 < 26666.4).
+    const res = await recordVanSale({ salesmanId, storeId, lines: [line(1)], amountPaid: 26666 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.changeAmount).toBe(0);
+    const sale = await prisma.vanSale.findUnique({ where: { id: res.saleId } });
+    expect(Number(sale!.subtotal)).toBe(26666.4); // exact 2dp sum — unrounded
+    expect(Number(sale!.total)).toBe(26666); // whole-rupiah charged figure
+    expect(Number(sale!.total) - Number(sale!.subtotal)).toBeCloseTo(-0.4, 5); // derivable adjustment
+
+    await prisma.vanSale.delete({ where: { id: res.saleId } });
+    await prisma.store.delete({ where: { id: storeId } });
+  });
+
+  it("leaves total equal to subtotal when the line sum has no fraction", async () => {
+    const res = await recordVanSale({ salesmanId, lines: [line(4)], amountPaid: 20000, buyerName: "Walk-in" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    const sale = await prisma.vanSale.findUnique({ where: { id: res.saleId } });
+    expect(Number(sale!.total)).toBe(20000);
+    expect(Number(sale!.subtotal)).toBe(Number(sale!.total));
+  });
+
   it("stamps the variant label into productName on van sale + sales history", async () => {
     const vUom = await prisma.uOM.create({ data: { code: `UVS-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     const vItem = await prisma.item.create({

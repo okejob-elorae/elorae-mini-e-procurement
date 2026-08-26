@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeStorePrice } from "./pricing";
+import { computeStorePrice, roundToWholeRupiah } from "./pricing";
 
 describe("computeStorePrice", () => {
   it("PUTUS returns sellingPrice as-is with sale label", () => {
@@ -95,5 +95,23 @@ describe("computeStorePrice", () => {
     // proves the discount math itself, not the rounding.
     expect(computeStorePrice({ sellingPrice: 10000, termsType: "PUTUS", marginPercent: null, priceDiscountPercent: 10 }))
       .toEqual({ price: 9000, label: "Harga", flagged: false });
+  });
+});
+
+describe("roundToWholeRupiah", () => {
+  it("rounds a fraction below the half down", () => {
+    expect(roundToWholeRupiah(26666.4)).toBe(26666);
+  });
+
+  it("rounds a fraction above the half up", () => {
+    expect(roundToWholeRupiah(26666.6)).toBe(26667);
+  });
+
+  it("rounds exactly half up", () => {
+    expect(roundToWholeRupiah(26666.5)).toBe(26667);
+  });
+
+  it("leaves an already-whole value unchanged", () => {
+    expect(roundToWholeRupiah(20000)).toBe(20000);
   });
 });
