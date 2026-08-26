@@ -2,6 +2,7 @@ import { prisma } from '@elorae/db';
 import { daftarPiutang, ringkasPiutang, type BarisPiutang } from './queries';
 import { daftarKerjaRetur, ringkasKerjaRetur } from './return-queries';
 import { selisihHari, type KeadaanPiutang } from './rules';
+import { pemakaianFoto, type PemakaianFoto } from '@/lib/foto/pembersih';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -32,6 +33,15 @@ export type Dasbor = {
   tindakan: TindakanHariIni[];
   perSales: PiutangPerSales[];
   perKeadaan: { keadaan: KeadaanPiutang; jumlah: number; nilai: number }[];
+  /**
+   * Berapa besar foto yang sedang disimpan, dan berapa di antaranya sampah.
+   *
+   * Ada di beranda dan bukan di halaman pengaturan tersembunyi karena foto
+   * disimpan sebagai bytes DI DALAM basis data: yang menumpuk di sini ikut ke
+   * setiap cadangan. Satu-satunya cara mengetahuinya sebelum ini adalah dengan
+   * sudah terlanjur kehabisan tempat.
+   */
+  foto: PemakaianFoto;
 };
 
 /**
@@ -43,7 +53,7 @@ export type Dasbor = {
  * akan berhenti mempercayai keduanya.
  */
 export async function muatDasbor(): Promise<Dasbor> {
-  const [piutang, retur, klaimMenunggu, beban] = await Promise.all([
+  const [piutang, retur, klaimMenunggu, beban, foto] = await Promise.all([
     daftarPiutang(),
     daftarKerjaRetur(),
     prisma.paymentClaim.findMany({
@@ -65,6 +75,7 @@ export async function muatDasbor(): Promise<Dasbor> {
         store: { select: { name: true } },
       },
     }),
+    pemakaianFoto(),
   ]);
 
   const ringkas = ringkasPiutang(piutang);
@@ -161,6 +172,7 @@ export async function muatDasbor(): Promise<Dasbor> {
     // Dua puluh teratas. Daftar tindakan yang panjangnya ratusan bukan daftar
     // tindakan lagi — ia jadi laporan, dan tidak ada yang mengerjakannya.
     tindakan: tindakan.slice(0, 20),
+    foto,
     perSales: [...perSales.values()].sort((a, b) => b.nilai - a.nilai),
     perKeadaan: URUT.map((k) => ({
       keadaan: k,

@@ -163,7 +163,8 @@ export type BahanKlaimBaru = {
  */
 export async function bahanKlaimBaru(): Promise<BahanKlaimBaru> {
   const [semua, retur, jenis] = await Promise.all([
-    daftarPiutang(),
+    // BKM hanya melunasi faktur yang masih terbuka.
+    daftarPiutang({ hanyaTerbuka: true }),
     prisma.storeReturn.findMany({
       where: { status: { not: 'BATAL' } },
       orderBy: { claimDate: 'desc' },

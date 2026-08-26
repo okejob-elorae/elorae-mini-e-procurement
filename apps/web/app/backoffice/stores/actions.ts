@@ -28,6 +28,7 @@ const storeInputSchema = z.object({
   lat: z.number().min(-90).max(90).nullable(),
   lng: z.number().min(-180).max(180).nullable(),
   checkinRadiusMeters: z.number().int().min(0).max(100000).nullable(),
+  isPkp: z.boolean(),
 });
 
 async function requireManage(): Promise<

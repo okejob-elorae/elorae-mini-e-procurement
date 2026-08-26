@@ -1,5 +1,6 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { denganNomorUnik } from './nomor';
 import { generateDocNumber } from '@/lib/docNumber';
 import { hitungUlangPiutang } from './writer';
 import { catatJejak, JEJAK } from './jejak';
@@ -263,42 +264,44 @@ export async function catatReturToko(input: {
   if (!(total > 0)) return { ok: false, alasan: 'NILAI_TIDAK_VALID' };
 
   try {
-    return await runSerializable(async (tx) => {
-      const nota = await tx.storeReturn.create({
-        data: {
-          noNrt: nomor,
-          storeId: input.storeId,
-          salesmanId: input.salesmanId ?? null,
-          claimDate: input.claimDate,
-          deliveryMethod: input.deliveryMethod,
-          claimedAmount: D(total),
-          photoUrl: input.photoUrl?.trim() || null,
-          note: input.note?.trim() || null,
-          status: 'MENUNGGU',
-          items: {
-            create: items.map((b) => ({
-              itemId: b.itemId ?? null,
-              itemName: b.itemName.trim(),
-              qty: b.qty,
-              price: D(b.price),
-              amount: D(b.qty * b.price),
-            })),
+    return await denganNomorUnik(() =>
+      runSerializable(async (tx) => {
+        const nota = await tx.storeReturn.create({
+          data: {
+            noNrt: nomor,
+            storeId: input.storeId,
+            salesmanId: input.salesmanId ?? null,
+            claimDate: input.claimDate,
+            deliveryMethod: input.deliveryMethod,
+            claimedAmount: D(total),
+            photoUrl: input.photoUrl?.trim() || null,
+            note: input.note?.trim() || null,
+            status: 'MENUNGGU',
+            items: {
+              create: items.map((b) => ({
+                itemId: b.itemId ?? null,
+                itemName: b.itemName.trim(),
+                qty: b.qty,
+                price: D(b.price),
+                amount: D(b.qty * b.price),
+              })),
+            },
           },
-        },
-        select: { id: true, noNrt: true },
-      });
+          select: { id: true, noNrt: true },
+        });
 
-      await catatJejak(tx, {
-        userId: input.olehUserId,
-        action: JEJAK.RETUR_DICATAT,
-        entityType: 'StoreReturn',
-        entityId: nota.id,
-        changes: { after: { noNrt: nota.noNrt, claimedAmount: total, storeId: input.storeId } },
-        metadata: { deliveryMethod: input.deliveryMethod, jumlahBaris: items.length },
-      });
+        await catatJejak(tx, {
+          userId: input.olehUserId,
+          action: JEJAK.RETUR_DICATAT,
+          entityType: 'StoreReturn',
+          entityId: nota.id,
+          changes: { after: { noNrt: nota.noNrt, claimedAmount: total, storeId: input.storeId } },
+          metadata: { deliveryMethod: input.deliveryMethod, jumlahBaris: items.length },
+        });
 
-      return { ok: true as const, id: nota.id, noNrt: nota.noNrt };
-    });
+        return { ok: true as const, id: nota.id, noNrt: nota.noNrt };
+      }),
+    );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return { ok: false, alasan: 'NOMOR_SUDAH_DIPAKAI' };
@@ -340,89 +343,91 @@ export async function catatHitunganGudang(input: {
   if (!(total >= 0)) return { ok: false, alasan: 'NILAI_TIDAK_VALID' };
 
   try {
-    return await runSerializable(async (tx) => {
-      let storeId = input.storeId ?? null;
-      let klaim = 0;
-      let qtyKlaimPerBarang = new Map<string, number>();
+    return await denganNomorUnik(() =>
+      runSerializable(async (tx) => {
+        let storeId = input.storeId ?? null;
+        let klaim = 0;
+        let qtyKlaimPerBarang = new Map<string, number>();
 
-      if (input.storeReturnId) {
-        const nrt = await tx.storeReturn.findUnique({
-          where: { id: input.storeReturnId },
-          select: {
-            id: true,
-            storeId: true,
-            status: true,
-            claimedAmount: true,
-            warehouseReturn: { select: { id: true } },
-            items: { select: { itemName: true, qty: true } },
+        if (input.storeReturnId) {
+          const nrt = await tx.storeReturn.findUnique({
+            where: { id: input.storeReturnId },
+            select: {
+              id: true,
+              storeId: true,
+              status: true,
+              claimedAmount: true,
+              warehouseReturn: { select: { id: true } },
+              items: { select: { itemName: true, qty: true } },
+            },
+          });
+          if (!nrt) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+          if (nrt.status === 'BATAL') return { ok: false as const, alasan: 'SUDAH_DIBATALKAN' as const };
+          // Menimpa hitungan berarti mengubah angka yang mungkin sudah dipakai
+          // memutuskan siapa menanggung selisihnya. Yang salah dilepas dulu.
+          if (nrt.warehouseReturn) return { ok: false as const, alasan: 'SUDAH_DIHITUNG' as const };
+          storeId = nrt.storeId;
+          klaim = angka(nrt.claimedAmount);
+          qtyKlaimPerBarang = new Map(nrt.items.map((i) => [i.itemName, i.qty]));
+        }
+
+        const nri = await tx.warehouseReturn.create({
+          data: {
+            noNri: await nomorNri(tx, input.receivedAt),
+            storeId,
+            storeReturnId: input.storeReturnId ?? null,
+            warehouseUserId: input.warehouseUserId,
+            receivedAt: input.receivedAt,
+            deliveryMethod: input.deliveryMethod,
+            physicalAmount: D(total),
+            claimedAmount: D(klaim),
+            note: input.note?.trim() || null,
+            status: 'FINAL',
+            finalisedAt: new Date(),
+            items: {
+              create: items.map((b) => ({
+                itemId: b.itemId ?? null,
+                itemName: b.itemName.trim(),
+                // Qty klaim disalin dari NRT per nama barang supaya selisihnya
+                // terbaca per baris, bukan cuma sebagai total.
+                qtyClaim: qtyKlaimPerBarang.get(b.itemName.trim()) ?? 0,
+                qty: b.qty,
+                price: D(b.price),
+                amount: D(b.qty * b.price),
+              })),
+            },
           },
+          select: { id: true, noNri: true },
         });
-        if (!nrt) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
-        if (nrt.status === 'BATAL') return { ok: false as const, alasan: 'SUDAH_DIBATALKAN' as const };
-        // Menimpa hitungan berarti mengubah angka yang mungkin sudah dipakai
-        // memutuskan siapa menanggung selisihnya. Yang salah dilepas dulu.
-        if (nrt.warehouseReturn) return { ok: false as const, alasan: 'SUDAH_DIHITUNG' as const };
-        storeId = nrt.storeId;
-        klaim = angka(nrt.claimedAmount);
-        qtyKlaimPerBarang = new Map(nrt.items.map((i) => [i.itemName, i.qty]));
-      }
 
-      const nri = await tx.warehouseReturn.create({
-        data: {
-          noNri: await nomorNri(tx, input.receivedAt),
-          storeId,
-          storeReturnId: input.storeReturnId ?? null,
-          warehouseUserId: input.warehouseUserId,
-          receivedAt: input.receivedAt,
-          deliveryMethod: input.deliveryMethod,
-          physicalAmount: D(total),
-          claimedAmount: D(klaim),
-          note: input.note?.trim() || null,
-          status: 'FINAL',
-          finalisedAt: new Date(),
-          items: {
-            create: items.map((b) => ({
-              itemId: b.itemId ?? null,
-              itemName: b.itemName.trim(),
-              // Qty klaim disalin dari NRT per nama barang supaya selisihnya
-              // terbaca per baris, bukan cuma sebagai total.
-              qtyClaim: qtyKlaimPerBarang.get(b.itemName.trim()) ?? 0,
-              qty: b.qty,
-              price: D(b.price),
-              amount: D(b.qty * b.price),
-            })),
-          },
-        },
-        select: { id: true, noNri: true },
-      });
+        const barisStok = await masukkanKeStok(tx, {
+          items,
+          noNri: nri.noNri,
+          olehUserId: input.warehouseUserId,
+        });
 
-      const barisStok = await masukkanKeStok(tx, {
-        items,
-        noNri: nri.noNri,
-        olehUserId: input.warehouseUserId,
-      });
+        await catatJejak(tx, {
+          userId: input.warehouseUserId,
+          action: JEJAK.RETUR_DIHITUNG,
+          entityType: 'WarehouseReturn',
+          entityId: nri.id,
+          // Hitungan ini hanya bisa dicatat sekali dan menentukan berapa yang
+          // ditahan dari piutang. Angkanya harus bisa ditelusuri ke orangnya.
+          changes: { after: { noNri: nri.noNri, physicalAmount: total, claimedAmount: klaim } },
+          metadata: { storeReturnId: input.storeReturnId ?? null, barisStok },
+        });
 
-      await catatJejak(tx, {
-        userId: input.warehouseUserId,
-        action: JEJAK.RETUR_DIHITUNG,
-        entityType: 'WarehouseReturn',
-        entityId: nri.id,
-        // Hitungan ini hanya bisa dicatat sekali dan menentukan berapa yang
-        // ditahan dari piutang. Angkanya harus bisa ditelusuri ke orangnya.
-        changes: { after: { noNri: nri.noNri, physicalAmount: total, claimedAmount: klaim } },
-        metadata: { storeReturnId: input.storeReturnId ?? null, barisStok },
-      });
+        if (input.storeReturnId) await selaraskanSetelahHitung(tx, input.storeReturnId);
 
-      if (input.storeReturnId) await selaraskanSetelahHitung(tx, input.storeReturnId);
-
-      return {
-        ok: true as const,
-        id: nri.id,
-        noNri: nri.noNri,
-        barisStok,
-        piutangDihitungUlang: await hitungUlangTersentuh(tx, input.storeReturnId ?? null),
-      };
-    });
+        return {
+          ok: true as const,
+          id: nri.id,
+          noNri: nri.noNri,
+          barisStok,
+          piutangDihitungUlang: await hitungUlangTersentuh(tx, input.storeReturnId ?? null),
+        };
+      }),
+    );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return { ok: false, alasan: 'NOMOR_BENTROK' };

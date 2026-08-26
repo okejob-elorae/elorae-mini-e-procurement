@@ -1,5 +1,6 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { denganNomorUnik } from './nomor';
 import { hitungUlangPiutang } from './writer';
 import { catatJejak, JEJAK } from './jejak';
 
@@ -76,86 +77,89 @@ export async function buatKontrabon(input: {
   const ids = [...new Set(input.receivableIds)];
 
   try {
-    return await runSerializable(async (tx) => {
-      const piutang = await tx.receivable.findMany({
-        where: { id: { in: ids } },
-        select: {
-          id: true,
-          storeId: true,
-          collectionLinks: {
-            select: { collectionNote: { select: { status: true } } },
+    return await denganNomorUnik(() =>
+      runSerializable(async (tx) => {
+        const piutang = await tx.receivable.findMany({
+          where: { id: { in: ids } },
+          select: {
+            id: true,
+            storeId: true,
+            collectionLinks: {
+              select: { collectionNote: { select: { status: true } } },
+            },
           },
-        },
-      });
-      if (piutang.length !== ids.length) {
-        return { ok: false as const, alasan: 'PIUTANG_TIDAK_DITEMUKAN' as const };
-      }
+        });
+        if (piutang.length !== ids.length) {
+          return { ok: false as const, alasan: 'PIUTANG_TIDAK_DITEMUKAN' as const };
+        }
 
-      // Satu kontrabon diserahkan ke satu toko — mencampur toko akan membuat
-      // tanda terimanya tidak bisa ditandatangani siapa pun.
-      const toko = new Set(piutang.map((p) => p.storeId));
-      if (toko.size > 1) return { ok: false as const, alasan: 'BEDA_TOKO' as const };
+        // Satu kontrabon diserahkan ke satu toko — mencampur toko akan membuat
+        // tanda terimanya tidak bisa ditandatangani siapa pun.
+        const toko = new Set(piutang.map((p) => p.storeId));
+        if (toko.size > 1) return { ok: false as const, alasan: 'BEDA_TOKO' as const };
 
-      // Sebuah piutang hanya boleh berada di SATU kontrabon berjalan. Kalau
-      // tidak, dua sales bisa menagih faktur yang sama ke toko yang sama —
-      // persis kebocoran yang program ini dibuat untuk menutup.
-      const sudahDipegang = piutang.some((p) =>
-        p.collectionLinks.some((l) => l.collectionNote.status === 'BERJALAN'),
-      );
-      if (sudahDipegang) return { ok: false as const, alasan: 'SUDAH_DI_KONTRABON' as const };
+        // Sebuah piutang hanya boleh berada di SATU kontrabon berjalan. Kalau
+        // tidak, dua sales bisa menagih faktur yang sama ke toko yang sama —
+        // persis kebocoran yang program ini dibuat untuk menutup.
+        const sudahDipegang = piutang.some((p) =>
+          p.collectionLinks.some((l) => l.collectionNote.status === 'BERJALAN'),
+        );
+        if (sudahDipegang) return { ok: false as const, alasan: 'SUDAH_DI_KONTRABON' as const };
 
-      const sisaPerPiutang = new Map<string, number>();
-      for (const p of piutang) {
-        sisaPerPiutang.set(p.id, await hitungUlangPiutang(tx, p.id));
-      }
-      // Menyerahkan faktur yang sudah lunas berarti menagih uang yang sudah
-      // masuk. Ditolak seluruhnya, bukan disaring diam-diam, supaya yang
-      // menyusun tanda terima tahu daftarnya sudah basi.
-      if ([...sisaPerPiutang.values()].some((s) => s === 0)) {
-        return { ok: false as const, alasan: 'SUDAH_LUNAS' as const };
-      }
+        const sisaPerPiutang = new Map<string, number>();
+        for (const p of piutang) {
+          sisaPerPiutang.set(p.id, await hitungUlangPiutang(tx, p.id));
+        }
+        // Menyerahkan faktur yang sudah lunas berarti menagih uang yang sudah
+        // masuk. Ditolak seluruhnya, bukan disaring diam-diam, supaya yang
+        // menyusun tanda terima tahu daftarnya sudah basi.
+        if ([...sisaPerPiutang.values()].some((s) => s === 0)) {
+          return { ok: false as const, alasan: 'SUDAH_LUNAS' as const };
+        }
 
-      const nilai = [...sisaPerPiutang.values()].reduce((a, b) => a + b, 0);
-      const docNo = await nomorBerikutnya(tx, 'TT', input.handoverDate.getFullYear());
+        const nilai = [...sisaPerPiutang.values()].reduce((a, b) => a + b, 0);
+        const docNo = await nomorBerikutnya(tx, 'TT', input.handoverDate.getFullYear());
 
-      const nota = await tx.collectionNote.create({
-        data: {
-          docNo,
-          storeId: piutang[0].storeId,
-          salesmanId: input.salesmanId,
-          handoverDate: input.handoverDate,
-          promisedDate: input.promisedDate,
-          receivedBy: input.receivedBy?.trim() || null,
-          photoUrl: input.photoUrl?.trim() || null,
-          note: input.note?.trim() || null,
-          amount: new Prisma.Decimal(nilai),
-          status: 'BERJALAN',
-          receivableLinks: {
-            create: ids.map((id) => ({
-              receivableId: id,
-              amount: new Prisma.Decimal(sisaPerPiutang.get(id) ?? 0),
-            })),
+        const nota = await tx.collectionNote.create({
+          data: {
+            docNo,
+            storeId: piutang[0].storeId,
+            salesmanId: input.salesmanId,
+            handoverDate: input.handoverDate,
+            promisedDate: input.promisedDate,
+            receivedBy: input.receivedBy?.trim() || null,
+            photoUrl: input.photoUrl?.trim() || null,
+            note: input.note?.trim() || null,
+            amount: new Prisma.Decimal(nilai),
+            status: 'BERJALAN',
+            receivableLinks: {
+              create: ids.map((id) => ({
+                receivableId: id,
+                amount: new Prisma.Decimal(sisaPerPiutang.get(id) ?? 0),
+              })),
+            },
           },
-        },
-        select: { id: true, docNo: true },
-      });
+          select: { id: true, docNo: true },
+        });
 
-      await catatJejak(tx, {
-        userId: input.salesmanId,
-        action: JEJAK.KONTRABON_DIBUAT,
-        entityType: 'CollectionNote',
-        entityId: nota.id,
-        // Membuat kontrabon mengunci fakturnya dari kontrabon lain sampai
-        // ditutup. Siapa yang menguncinya harus bisa ditanyakan.
-        changes: { after: { docNo: nota.docNo, amount: nilai, storeId: piutang[0].storeId } },
-        metadata: { jumlahFaktur: ids.length, promisedDate: input.promisedDate.toISOString() },
-      });
+        await catatJejak(tx, {
+          userId: input.salesmanId,
+          action: JEJAK.KONTRABON_DIBUAT,
+          entityType: 'CollectionNote',
+          entityId: nota.id,
+          // Membuat kontrabon mengunci fakturnya dari kontrabon lain sampai
+          // ditutup. Siapa yang menguncinya harus bisa ditanyakan.
+          changes: { after: { docNo: nota.docNo, amount: nilai, storeId: piutang[0].storeId } },
+          metadata: { jumlahFaktur: ids.length, promisedDate: input.promisedDate.toISOString() },
+        });
 
-      return { ok: true as const, id: nota.id, docNo: nota.docNo, nilai };
-    });
+        return { ok: true as const, id: nota.id, docNo: nota.docNo, nilai };
+      }),
+    );
   } catch (err) {
-    // Nomor kembar dari dua penyimpanan bersamaan. Pemanggil boleh mencoba lagi;
-    // percobaan berikutnya membaca nomor terakhir yang sudah bergerak.
+    // Sisa terakhir setelah `denganNomorUnik` kalah tiga kali berturut-turut.
+    // Tiga kekalahan beruntun bukan lagi tabrakan kebetulan, jadi kabarnya
+    // memang harus sampai ke layar dan bukan diulang lagi diam-diam.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return { ok: false, alasan: 'NOMOR_BENTROK' };
     }

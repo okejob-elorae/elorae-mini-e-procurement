@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Collapsible,
   CollapsibleContent,
@@ -495,6 +496,23 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                   update("marginPercent", e.target.value === "" ? null : Number(e.target.value))
                 }
               />
+            </div>
+          </div>
+
+          {/* Menentukan boleh-tidaknya potongan PPh 23 di BKM. Milik admin, bukan
+              sales — mengubahnya mengubah berapa yang boleh dipotong dari tagihan. */}
+          <div className="flex items-start gap-3 rounded-lg border p-3">
+            <Switch
+              id="isPkp"
+              disabled={pending || readOnly}
+              checked={form.isPkp}
+              onCheckedChange={(v) => update("isPkp", v)}
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="isPkp" className="cursor-pointer">
+                {t("isPkp")}
+              </Label>
+              <p className="text-xs text-muted-foreground">{t("isPkpHint")}</p>
             </div>
           </div>
         </section>

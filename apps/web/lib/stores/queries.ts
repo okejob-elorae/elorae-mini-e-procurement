@@ -12,6 +12,14 @@ export type StoreFields = {
   lat: number | null;
   lng: number | null;
   checkinRadiusMeters: number | null;
+  /**
+   * Toko pengusaha kena pajak.
+   *
+   * Menentukan boleh-tidaknya potongan berjenis `pkpOnly` (PPh 23). Milik
+   * admin, BUKAN sales — sama seperti termsType dan marginPercent, karena
+   * mengubahnya mengubah berapa yang boleh dipotong dari tagihan.
+   */
+  isPkp: boolean;
 };
 
 export type StoreListItem = StoreFields & {
@@ -38,6 +46,7 @@ function serializeStore(s: {
   lat: Prisma.Decimal | null;
   lng: Prisma.Decimal | null;
   checkinRadiusMeters: number | null;
+  isPkp: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -55,6 +64,7 @@ function serializeStore(s: {
     lat: s.lat ? s.lat.toNumber() : null,
     lng: s.lng ? s.lng.toNumber() : null,
     checkinRadiusMeters: s.checkinRadiusMeters,
+    isPkp: s.isPkp,
     isActive: s.isActive,
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
@@ -114,6 +124,7 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,
+      isPkp: input.isPkp,
     },
   });
   return serializeStore(created);
@@ -134,6 +145,7 @@ export async function updateStore(id: string, input: StoreFields): Promise<Store
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,
+      isPkp: input.isPkp,
     },
   });
   return serializeStore(updated);

@@ -1,5 +1,6 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { denganNomorUnik } from './nomor';
 import { hitungUlangPiutang } from './writer';
 import { catatJejak, JEJAK } from './jejak';
 
@@ -42,6 +43,7 @@ export type AlasanGagalKlaim =
   | 'FOTO_WAJIB'
   | 'JENIS_BUTUH_RETUR'
   | 'JENIS_BUTUH_CATATAN'
+  | 'JENIS_HANYA_PKP'
   | 'NOMOR_BENTROK';
 
 /** Nomor BKM berikutnya dalam tahun berjalan. */
@@ -98,143 +100,159 @@ export async function buatKlaimPembayaran(input: {
   if (totalPotongan > nilaiFaktur) return { ok: false, alasan: 'POTONGAN_MELEBIHI' };
 
   try {
-    return await runSerializable(async (tx) => {
-      const ids = pelunasan.map((p) => p.receivableId);
-      const piutang = await tx.receivable.findMany({
-        where: { id: { in: ids } },
-        select: { id: true, storeId: true },
-      });
-      if (piutang.length !== ids.length) {
-        return { ok: false as const, alasan: 'PIUTANG_TIDAK_DITEMUKAN' as const };
-      }
-      if (piutang.some((p) => p.storeId !== input.storeId)) {
-        return { ok: false as const, alasan: 'BEDA_TOKO' as const };
-      }
-
-      for (const baris of pelunasan) {
-        const sisa = await hitungUlangPiutang(tx, baris.receivableId);
-        if (sisa === 0) return { ok: false as const, alasan: 'SUDAH_LUNAS' as const };
-        // Melunasi lebih dari sisanya membuat porsi klaim ini melebihi 100%
-        // dan menggeser perhitungan setiap klaim lain atas faktur yang sama.
-        if (baris.nilai > sisa) return { ok: false as const, alasan: 'MELEBIHI_SISA' as const };
-      }
-
-      /*
-       * Aturan yang melekat pada jenis potongan, dipaksa di sini.
-       *
-       * `DARI_RETUR` menuntut tautan ke nota retur — dan tautan itulah yang
-       * membuat Aturan 2 bekerja. Sebelum jenis potongan ada, penautan
-       * sepenuhnya bergantung pada ingatan orang yang mengetik, dan sebuah
-       * potongan retur yang lupa ditautkan lolos sebagai pengurang biasa yang
-       * tidak pernah ditahan.
-       */
-      const idJenis = [
-        ...new Set(potongan.map((p) => p.deductionTypeId).filter((x): x is string => Boolean(x))),
-      ];
-      if (idJenis.length > 0) {
-        const jenis = await tx.deductionType.findMany({
-          where: { id: { in: idJenis } },
-          select: { id: true, method: true, noteRequired: true },
+    return await denganNomorUnik(() =>
+      runSerializable(async (tx) => {
+        const ids = pelunasan.map((p) => p.receivableId);
+        const toko = await tx.store.findUnique({
+          where: { id: input.storeId },
+          select: { isPkp: true },
         });
-        const peta = new Map(jenis.map((j) => [j.id, j]));
-        for (const p of potongan) {
-          const j = p.deductionTypeId ? peta.get(p.deductionTypeId) : undefined;
-          if (!j) continue;
-          if (j.method === 'DARI_RETUR' && !p.storeReturnId) {
-            return { ok: false as const, alasan: 'JENIS_BUTUH_RETUR' as const };
-          }
-          if (j.noteRequired && !p.catatan?.trim()) {
-            return { ok: false as const, alasan: 'JENIS_BUTUH_CATATAN' as const };
-          }
-        }
-      }
-
-      const returIds = [
-        ...new Set(potongan.map((p) => p.storeReturnId).filter((x): x is string => Boolean(x))),
-      ];
-      if (returIds.length > 0) {
-        const retur = await tx.storeReturn.findMany({
-          where: { id: { in: returIds } },
+        const piutang = await tx.receivable.findMany({
+          where: { id: { in: ids } },
           select: { id: true, storeId: true },
         });
-        if (retur.length !== returIds.length) {
-          return { ok: false as const, alasan: 'RETUR_TIDAK_DITEMUKAN' as const };
+        if (piutang.length !== ids.length) {
+          return { ok: false as const, alasan: 'PIUTANG_TIDAK_DITEMUKAN' as const };
         }
-        // Nota retur toko lain tidak boleh memotong pembayaran toko ini —
-        // itu memindahkan pengurang dari satu tagihan ke tagihan lain.
-        if (retur.some((r) => r.storeId !== input.storeId)) {
-          return { ok: false as const, alasan: 'RETUR_BEDA_TOKO' as const };
+        if (piutang.some((p) => p.storeId !== input.storeId)) {
+          return { ok: false as const, alasan: 'BEDA_TOKO' as const };
         }
-      }
 
-      const klaim = await tx.paymentClaim.create({
-        data: {
-          docNo: await nomorBerikutnya(tx, input.claimedTransferAt.getFullYear()),
-          storeId: input.storeId,
-          salesmanId: input.salesmanId,
-          createdById: input.createdById,
-          collectionNoteId: input.collectionNoteId ?? null,
-          claimedTransferAt: input.claimedTransferAt,
-          method: input.method,
-          invoiceAmount: D(nilaiFaktur),
-          deductionTotal: D(totalPotongan),
-          receivedAmount: D(nilaiFaktur - totalPotongan),
-          transferPhotoUrl: fotoTransfer,
-          breakdownPhotoUrl: input.breakdownPhotoUrl?.trim() || null,
-          status: 'DIKIRIM',
-          receivableLinks: {
-            create: pelunasan.map((p) => ({
-              receivableId: p.receivableId,
-              settledAmount: D(p.nilai),
-            })),
+        for (const baris of pelunasan) {
+          const sisa = await hitungUlangPiutang(tx, baris.receivableId);
+          if (sisa === 0) return { ok: false as const, alasan: 'SUDAH_LUNAS' as const };
+          // Melunasi lebih dari sisanya membuat porsi klaim ini melebihi 100%
+          // dan menggeser perhitungan setiap klaim lain atas faktur yang sama.
+          if (baris.nilai > sisa) return { ok: false as const, alasan: 'MELEBIHI_SISA' as const };
+        }
+
+        /*
+         * Aturan yang melekat pada jenis potongan, dipaksa di sini.
+         *
+         * `DARI_RETUR` menuntut tautan ke nota retur — dan tautan itulah yang
+         * membuat Aturan 2 bekerja. Sebelum jenis potongan ada, penautan
+         * sepenuhnya bergantung pada ingatan orang yang mengetik, dan sebuah
+         * potongan retur yang lupa ditautkan lolos sebagai pengurang biasa yang
+         * tidak pernah ditahan.
+         */
+        const idJenis = [
+          ...new Set(potongan.map((p) => p.deductionTypeId).filter((x): x is string => Boolean(x))),
+        ];
+        if (idJenis.length > 0) {
+          const jenis = await tx.deductionType.findMany({
+            where: { id: { in: idJenis } },
+            select: { id: true, method: true, noteRequired: true, pkpOnly: true },
+          });
+          const peta = new Map(jenis.map((j) => [j.id, j]));
+          for (const p of potongan) {
+            const j = p.deductionTypeId ? peta.get(p.deductionTypeId) : undefined;
+            if (!j) continue;
+            if (j.method === 'DARI_RETUR' && !p.storeReturnId) {
+              return { ok: false as const, alasan: 'JENIS_BUTUH_RETUR' as const };
+            }
+            if (j.noteRequired && !p.catatan?.trim()) {
+              return { ok: false as const, alasan: 'JENIS_BUTUH_CATATAN' as const };
+            }
+            /*
+             * PPh 23 hanya boleh dipotongkan toko PKP. Sebelum `Store.isPkp` ada,
+             * `pkpOnly` adalah aturan yang tidak menjaga apa pun — tidak ada satu
+             * kolom pun yang bisa ditanya, jadi ia hanya kalimat di layar jenis
+             * potongan. Potongan pajak yang seharusnya tidak ada mengurangi
+             * tagihan diam-diam dan baru ketahuan jauh di belakang.
+             */
+            if (j.pkpOnly && !toko?.isPkp) {
+              return { ok: false as const, alasan: 'JENIS_HANYA_PKP' as const };
+            }
+          }
+        }
+
+        const returIds = [
+          ...new Set(potongan.map((p) => p.storeReturnId).filter((x): x is string => Boolean(x))),
+        ];
+        if (returIds.length > 0) {
+          const retur = await tx.storeReturn.findMany({
+            where: { id: { in: returIds } },
+            select: { id: true, storeId: true },
+          });
+          if (retur.length !== returIds.length) {
+            return { ok: false as const, alasan: 'RETUR_TIDAK_DITEMUKAN' as const };
+          }
+          // Nota retur toko lain tidak boleh memotong pembayaran toko ini —
+          // itu memindahkan pengurang dari satu tagihan ke tagihan lain.
+          if (retur.some((r) => r.storeId !== input.storeId)) {
+            return { ok: false as const, alasan: 'RETUR_BEDA_TOKO' as const };
+          }
+        }
+
+        const klaim = await tx.paymentClaim.create({
+          data: {
+            docNo: await nomorBerikutnya(tx, input.claimedTransferAt.getFullYear()),
+            storeId: input.storeId,
+            salesmanId: input.salesmanId,
+            createdById: input.createdById,
+            collectionNoteId: input.collectionNoteId ?? null,
+            claimedTransferAt: input.claimedTransferAt,
+            method: input.method,
+            invoiceAmount: D(nilaiFaktur),
+            deductionTotal: D(totalPotongan),
+            receivedAmount: D(nilaiFaktur - totalPotongan),
+            transferPhotoUrl: fotoTransfer,
+            breakdownPhotoUrl: input.breakdownPhotoUrl?.trim() || null,
+            status: 'DIKIRIM',
+            receivableLinks: {
+              create: pelunasan.map((p) => ({
+                receivableId: p.receivableId,
+                settledAmount: D(p.nilai),
+              })),
+            },
+            deductions: {
+              create: potongan.map((p) => ({
+                name: p.nama.trim(),
+                amount: D(p.nilai),
+                note: p.catatan?.trim() || null,
+                deductionTypeId: p.deductionTypeId ?? null,
+                storeReturnId: p.storeReturnId ?? null,
+              })),
+            },
           },
-          deductions: {
-            create: potongan.map((p) => ({
-              name: p.nama.trim(),
-              amount: D(p.nilai),
-              note: p.catatan?.trim() || null,
-              deductionTypeId: p.deductionTypeId ?? null,
-              storeReturnId: p.storeReturnId ?? null,
-            })),
+          select: { id: true, docNo: true },
+        });
+
+        /*
+         * Piutang TIDAK berkurang di sini. Aturan 1: selama klaim berstatus
+         * DIKIRIM, nilai yang diakui nol. Perhitungan ulang tetap dijalankan agar
+         * kolom cache-nya konsisten — dan hasilnya memang tidak berubah, yang
+         * justru membuktikan aturannya bekerja.
+         */
+        for (const baris of pelunasan) {
+          await hitungUlangPiutang(tx, baris.receivableId);
+        }
+
+        await catatJejak(tx, {
+          userId: input.createdById,
+          action: JEJAK.KLAIM_DIBUAT,
+          entityType: 'PaymentClaim',
+          entityId: klaim.id,
+          changes: {
+            after: {
+              docNo: klaim.docNo,
+              invoiceAmount: nilaiFaktur,
+              deductionTotal: totalPotongan,
+              receivedAmount: nilaiFaktur - totalPotongan,
+            },
           },
-        },
-        select: { id: true, docNo: true },
-      });
-
-      /*
-       * Piutang TIDAK berkurang di sini. Aturan 1: selama klaim berstatus
-       * DIKIRIM, nilai yang diakui nol. Perhitungan ulang tetap dijalankan agar
-       * kolom cache-nya konsisten — dan hasilnya memang tidak berubah, yang
-       * justru membuktikan aturannya bekerja.
-       */
-      for (const baris of pelunasan) {
-        await hitungUlangPiutang(tx, baris.receivableId);
-      }
-
-      await catatJejak(tx, {
-        userId: input.createdById,
-        action: JEJAK.KLAIM_DIBUAT,
-        entityType: 'PaymentClaim',
-        entityId: klaim.id,
-        changes: {
-          after: {
-            docNo: klaim.docNo,
-            invoiceAmount: nilaiFaktur,
-            deductionTotal: totalPotongan,
-            receivedAmount: nilaiFaktur - totalPotongan,
+          metadata: {
+            storeId: input.storeId,
+            jumlahFaktur: pelunasan.length,
+            // Potongan yang tertaut nota retur dicatat terpisah: itulah yang
+            // menentukan berapa nanti ditahan, dan tautannya bisa diubah.
+            potonganRetur: potongan.filter((p) => p.storeReturnId).length,
           },
-        },
-        metadata: {
-          storeId: input.storeId,
-          jumlahFaktur: pelunasan.length,
-          // Potongan yang tertaut nota retur dicatat terpisah: itulah yang
-          // menentukan berapa nanti ditahan, dan tautannya bisa diubah.
-          potonganRetur: potongan.filter((p) => p.storeReturnId).length,
-        },
-      });
+        });
 
-      return { ok: true as const, id: klaim.id, docNo: klaim.docNo };
-    });
+        return { ok: true as const, id: klaim.id, docNo: klaim.docNo };
+      }),
+    );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return { ok: false, alasan: 'NOMOR_BENTROK' };

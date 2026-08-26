@@ -56,7 +56,12 @@ export async function daftarKontrabon(opts?: {
    * Membaca kolom `outstanding` di sini akan lebih murah tapi melanggar aturan
    * yang sama yang dijaga di seluruh modul: kolom itu cache, bukan kebenaran.
    */
-  const semuaPiutang = await daftarPiutang();
+  // Hanya piutang yang benar-benar ada di kontrabon-kontrabon ini. Sebelumnya
+  // daftar ini memuat setiap piutang yang pernah ada untuk mengisi satu kolom.
+  const idPiutang = [
+    ...new Set(rows.flatMap((r) => r.receivableLinks.map((l) => l.receivableId))),
+  ];
+  const semuaPiutang = await daftarPiutang({ receivableIds: idPiutang });
   const sisaPerPiutang = new Map(semuaPiutang.map((p) => [p.id, p.outstanding]));
   const hariIni = new Date();
 
@@ -96,7 +101,8 @@ export type TokoSiapKontrabon = {
  */
 export async function piutangSiapKontrabon(): Promise<TokoSiapKontrabon[]> {
   const [semua, terpakai] = await Promise.all([
-    daftarPiutang(),
+    // Kontrabon hanya untuk faktur yang masih terbuka.
+    daftarPiutang({ hanyaTerbuka: true }),
     prisma.collectionNoteReceivable.findMany({
       where: { collectionNote: { status: 'BERJALAN' } },
       select: { receivableId: true },
@@ -170,7 +176,10 @@ export async function rincianKontrabon(id: string): Promise<RincianKontrabon | n
   });
   if (!r) return null;
 
-  const semua = await daftarPiutang();
+  // Satu kontrabon, jadi hanya faktur yang ada di dalamnya.
+  const semua = await daftarPiutang({
+    receivableIds: r.receivableLinks.map((l) => l.receivable.id),
+  });
   const perPiutang = new Map(semua.map((p) => [p.id, p]));
   const hariIni = new Date();
 

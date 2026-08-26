@@ -185,8 +185,39 @@ export function DasborClient({ data }: { data: Dasbor }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Foto disimpan sebagai bytes DI DALAM basis data, jadi yang menumpuk di
+          sini ikut ke setiap cadangan. Ditampilkan hanya kalau memang ada
+          isinya — kartu yang selalu menulis nol cuma jadi derau. */}
+      {data.foto.jumlah > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{t('photoTitle')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5 text-sm">
+            <p className="text-muted-foreground">
+              {t('photoStored', { count: data.foto.jumlah, size: mb(data.foto.totalByte) })}
+            </p>
+            {data.foto.yatimJumlah > 0 ? (
+              <p className="text-muted-foreground">
+                {t('photoOrphan', {
+                  count: data.foto.yatimJumlah,
+                  size: mb(data.foto.yatimByte),
+                })}
+              </p>
+            ) : (
+              <p className="text-muted-foreground">{t('photoClean')}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
+}
+
+/** Byte ke MB dengan satu desimal. Angka byte mentah tidak berarti apa pun. */
+function mb(byte: number): string {
+  return `${(byte / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function Kartu({

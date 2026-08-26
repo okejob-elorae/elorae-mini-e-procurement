@@ -45,6 +45,7 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
           lat: store.lat,
           lng: store.lng,
           checkinRadiusMeters: store.checkinRadiusMeters,
+        isPkp: store.isPkp,
           isActive: store.isActive,
         }}
       />

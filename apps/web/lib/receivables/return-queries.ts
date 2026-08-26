@@ -118,14 +118,38 @@ function dariNrt(r: {
   };
 }
 
+export type LingkupKerjaRetur = {
+  /** Hanya nota tertentu — dipakai layar yang menampilkan satu folder atau satu sales. */
+  storeReturnIds?: string[];
+  storeId?: string;
+  /** Sembunyikan penerimaan gudang yatim; sebagian layar tidak memerlukannya. */
+  tanpaYatim?: boolean;
+};
+
 /**
  * Daftar kerja retur — nota toko dan penerimaan gudang yatim dalam satu daftar.
+ *
+ * Lingkupnya opsional dan sengaja: layar daftar kerja memang butuh semuanya,
+ * tapi layar yang cuma menampilkan satu toko atau satu sales tidak — dan
+ * sebelum lingkup ini ada, membuka satu folder arsip memuat setiap nota retur
+ * yang pernah dicatat.
  */
-export async function daftarKerjaRetur(): Promise<BarisKerjaRetur[]> {
+export async function daftarKerjaRetur(
+  lingkup?: LingkupKerjaRetur,
+): Promise<BarisKerjaRetur[]> {
   const [nrt, yatim] = await Promise.all([
-    prisma.storeReturn.findMany({ orderBy: [{ claimDate: 'desc' }], select: PILIH_NRT }),
-    prisma.warehouseReturn.findMany({
-      where: { storeReturnId: null },
+    prisma.storeReturn.findMany({
+      where: {
+        ...(lingkup?.storeReturnIds ? { id: { in: lingkup.storeReturnIds } } : {}),
+        ...(lingkup?.storeId ? { storeId: lingkup.storeId } : {}),
+      },
+      orderBy: [{ claimDate: 'desc' }],
+      select: PILIH_NRT,
+    }),
+    lingkup?.tanpaYatim || lingkup?.storeReturnIds
+      ? Promise.resolve([])
+      : prisma.warehouseReturn.findMany({
+      where: { storeReturnId: null, ...(lingkup?.storeId ? { storeId: lingkup.storeId } : {}) },
       orderBy: [{ receivedAt: 'desc' }],
       select: {
         id: true,
@@ -380,15 +404,33 @@ export async function notaBelumBerpasangan(storeId?: string | null) {
  * Hanya barang aktif. Baris yang menunjuk salah satunya akan menambah stok saat
  * gudang menyimpan hitungan; yang hanya diketik namanya tidak.
  */
+/**
+ * Batas katalog barang.
+ *
+ * Ada batasnya karena daftar pilihan ribuan baris tidak bisa dipakai siapa pun.
+ * Tapi batas yang DIAM berarti barang ke-501 tidak bisa dipilih dan tidak ada
+ * yang memberi tahu — jadi kalau terpotong, ia mengeluh ke log.
+ */
+const BATAS_KATALOG = 500;
+
 export async function katalogBarang(): Promise<{ value: string; label: string; nama: string }[]> {
   // `Item` menyimpan nama dua bahasa. Modul ini berbahasa Indonesia, dan nama
   // itulah yang dipakai menyandingkan baris dengan nota toko.
-  const rows = await prisma.item.findMany({
-    where: { isActive: true },
-    orderBy: { nameId: 'asc' },
-    select: { id: true, sku: true, nameId: true },
-    take: 500,
-  });
+  const [rows, jumlah] = await Promise.all([
+    prisma.item.findMany({
+      where: { isActive: true },
+      orderBy: { nameId: 'asc' },
+      select: { id: true, sku: true, nameId: true },
+      take: BATAS_KATALOG,
+    }),
+    prisma.item.count({ where: { isActive: true } }),
+  ]);
+  if (jumlah > BATAS_KATALOG) {
+    console.warn(
+      `[katalogBarang] ${jumlah} barang aktif, hanya ${BATAS_KATALOG} yang bisa dipilih — ` +
+        'pemilihnya perlu diganti pencarian sisi server sebelum sisanya jadi tak terjangkau.',
+    );
+  }
   return rows.map((i) => ({ value: i.id, label: `${i.sku} · ${i.nameId}`, nama: i.nameId }));
 }
 
@@ -400,11 +442,20 @@ export async function katalogBarang(): Promise<{ value: string; label: string; n
  * Tanpa id orangnya, beban SALES tersimpan sebagai tuduhan tanpa alamat.
  */
 export async function kandidatPenanggung(): Promise<{ id: string; name: string }[]> {
-  const rows = await prisma.user.findMany({
-    orderBy: { name: 'asc' },
-    select: { id: true, name: true, email: true },
-    take: 200,
-  });
+  const BATAS = 200;
+  const [rows, jumlah] = await Promise.all([
+    prisma.user.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, email: true },
+      take: BATAS,
+    }),
+    prisma.user.count(),
+  ]);
+  if (jumlah > BATAS) {
+    console.warn(
+      `[kandidatPenanggung] ${jumlah} pengguna, hanya ${BATAS} yang bisa dipilih sebagai penanggung.`,
+    );
+  }
   // Nama boleh kosong di `User`; surel dipakai sebagai gantinya supaya tidak
   // ada baris pilihan yang tampil tanpa label sama sekali.
   return rows.map((u) => ({ id: u.id, name: u.name ?? u.email }));
@@ -513,7 +564,9 @@ export async function folderArsip(): Promise<FolderArsip[]> {
  * mengenali notanya sebelum membaca nomornya.
  */
 export async function isiArsip(storeId: string | null): Promise<IsiArsip[]> {
-  const baris = await daftarKerjaRetur();
+  // Satu folder = satu toko. Memuat seluruh daftar kerja untuk menampilkan
+  // isinya adalah pemborosan murni.
+  const baris = await daftarKerjaRetur(storeId === null ? {} : { storeId });
   const dipilih = baris.filter((b) =>
     storeId === null ? b.jenis === 'GUDANG_YATIM' : b.jenis === 'NRT' && b.storeId === storeId,
   );

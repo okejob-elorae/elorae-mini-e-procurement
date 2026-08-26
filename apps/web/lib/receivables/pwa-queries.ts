@@ -5,6 +5,16 @@ import { daftarKerjaRetur } from './return-queries';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
+/**
+ * Berapa banyak riwayat yang dibawa ke layar HP.
+ *
+ * Diberi nama, bukan angka telanjang di tengah kueri. Layar lapangan memang
+ * riwayat — sales melihat yang terbaru, bukan seluruh tahun — tapi batas yang
+ * tidak bernama dan tidak dilaporkan membuat baris ke-51 hilang tanpa ada yang
+ * tahu ia pernah ada.
+ */
+const BATAS_LAPANGAN = 50;
+
 export type TokoLapangan = {
   storeId: string;
   storeName: string;
@@ -84,7 +94,7 @@ export async function klaimSaya(salesmanId: string): Promise<KlaimSaya[]> {
   const rows = await prisma.paymentClaim.findMany({
     where: { salesmanId },
     orderBy: [{ createdAt: 'desc' }],
-    take: 50,
+    take: BATAS_LAPANGAN,
     select: {
       id: true,
       docNo: true,
@@ -118,17 +128,21 @@ export type ReturSaya = {
 
 /** Nota retur yang pernah dicatat sales ini. */
 export async function returSaya(salesmanId: string): Promise<ReturSaya[]> {
-  const kerja = await daftarKerjaRetur();
   const rows = await prisma.storeReturn.findMany({
     where: { salesmanId },
     orderBy: [{ claimDate: 'desc' }],
-    take: 50,
+    take: BATAS_LAPANGAN,
     select: { id: true },
   });
-  const milikSaya = new Set(rows.map((r) => r.id));
+  const milikSaya = rows.map((r) => r.id);
+  if (milikSaya.length === 0) return [];
+
+  // Dilingkupi ke nota milik sales ini; sebelumnya seluruh daftar kerja dimuat
+  // hanya untuk menyaringnya lagi di memori.
+  const kerja = await daftarKerjaRetur({ storeReturnIds: milikSaya });
 
   return kerja
-    .filter((k) => k.jenis === 'NRT' && milikSaya.has(k.id))
+    .filter((k) => k.jenis === 'NRT')
     .map((k) => ({
       id: k.id,
       noNrt: k.nomor,
@@ -184,7 +198,9 @@ export async function bebanSaya(userId: string): Promise<BebanSaya[]> {
 
 /** Nota retur yang menunggu dicek gudang — layar anak gudang. */
 export async function menungguGudang() {
-  const kerja = await daftarKerjaRetur();
+  // Yatim tidak ditampilkan di layar gudang: yang belum berpasangan bukan
+  // pekerjaan menghitung, melainkan pekerjaan menjodohkan di kantor.
+  const kerja = await daftarKerjaRetur({ tanpaYatim: true });
   return kerja
     .filter((k) => k.langkah === 'cek')
     .map((k) => ({

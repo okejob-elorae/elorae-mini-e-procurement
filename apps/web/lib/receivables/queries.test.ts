@@ -122,3 +122,33 @@ describe('daftarPiutang (basis data)', () => {
     expect(baris.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(false);
   });
 });
+
+describe('daftarPiutang — lingkup', () => {
+  it('hanya mengambil piutang yang diminta', async () => {
+    // Tanpa lingkup, layar yang menampilkan SATU dokumen memuat seluruh tabel.
+    const baris = await daftarPiutang({ receivableIds: [piutangPutusId] });
+    expect(baris).toHaveLength(1);
+    expect(baris[0].invoiceNo).toBe(`${tag}/PUTUS`);
+  });
+
+  it('mengembalikan kosong untuk daftar id kosong, bukan seluruh tabel', async () => {
+    // Prisma MENGABAIKAN filter `undefined`. Kalau lingkupnya pernah berubah
+    // jadi undefined saat daftarnya kosong, kueri melebar ke semua baris —
+    // kelas kesalahan yang sama dengan teardown yang menghapus satu tabel.
+    const baris = await daftarPiutang({ receivableIds: [] });
+    expect(baris).toHaveLength(0);
+  });
+
+  it('menyaring menurut toko', async () => {
+    const baris = await daftarPiutang({ storeId: tokoPutusId });
+    expect(baris.every((b) => b.storeId === tokoPutusId)).toBe(true);
+  });
+
+  it('hanyaTerbuka tidak pernah membuang yang benar-benar masih terbuka', async () => {
+    // Saringan kasar lewat kolom cache. Arah yang berbahaya adalah membuang
+    // yang masih terbuka; itu tidak mungkin karena penulisnya selalu menulis
+    // kolom ini saat sisanya berubah.
+    const terbuka = await daftarPiutang({ hanyaTerbuka: true });
+    expect(terbuka.some((b) => b.invoiceNo === `${tag}/PUTUS`)).toBe(true);
+  });
+});

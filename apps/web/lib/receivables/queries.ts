@@ -49,7 +49,25 @@ const angka = (v: unknown): number => Number(v ?? 0);
  * diketik dan tidak pernah dikurangi bertahap. Kolomnya tetap ada sebagai
  * cache untuk penyaringan cepat, bukan sebagai kebenaran.
  */
-export async function daftarPiutang(opts?: { salesmanId?: string }): Promise<BarisPiutang[]> {
+export type LingkupPiutang = {
+  salesmanId?: string;
+  /** Hanya piutang tertentu — dipakai layar yang menampilkan satu dokumen. */
+  receivableIds?: string[];
+  storeId?: string;
+  /**
+   * Hanya yang kolom `outstanding`-nya masih di atas nol.
+   *
+   * Penyaringan KASAR, memakai kolom cache. Ia hanya boleh dipakai pemanggil
+   * yang memang cuma butuh yang terbuka — memilih faktur untuk kontrabon atau
+   * BKM — karena satu-satunya risikonya adalah baris yang sudah lunas ikut
+   * terbawa lalu tersaring lagi setelah dihitung ulang. Arah sebaliknya tidak
+   * mungkin: penulisnya selalu menulis kolom ini saat sisanya berubah, jadi
+   * yang benar-benar terbuka tidak akan pernah tersaring keluar.
+   */
+  hanyaTerbuka?: boolean;
+};
+
+export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang[]> {
   const rows = await prisma.receivable.findMany({
     /*
      * Toko konsinyasi TIDAK PERNAH muncul di sini. Barang di toko konsi masih
@@ -64,6 +82,9 @@ export async function daftarPiutang(opts?: { salesmanId?: string }): Promise<Bar
     where: {
       store: { termsType: { not: 'KONSI' } },
       ...(opts?.salesmanId ? { salesmanId: opts.salesmanId } : {}),
+      ...(opts?.receivableIds ? { id: { in: opts.receivableIds } } : {}),
+      ...(opts?.storeId ? { storeId: opts.storeId } : {}),
+      ...(opts?.hanyaTerbuka ? { outstanding: { gt: 0 } } : {}),
     },
     orderBy: [{ dueDate: 'asc' }],
     select: {

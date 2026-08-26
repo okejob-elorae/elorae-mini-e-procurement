@@ -1,5 +1,6 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { denganNomorUnik } from '@/lib/receivables/nomor';
 import { bagiKomisi } from './aturan';
 import { catatJejak, JEJAK } from '@/lib/receivables/jejak';
 
@@ -73,49 +74,58 @@ export async function bukaSiklus(input: {
   }
 
   try {
-    return await runSerializable(async (tx) => {
-      const toko = await tx.store.findUnique({
-        where: { id: input.storeId },
-        select: { id: true, termsType: true },
-      });
-      if (!toko) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
-      // Siklus konsinyasi hanya berarti untuk toko konsinyasi. Membukanya untuk
-      // toko putus akan menghitung "stok titipan" atas barang yang sudah dijual.
-      if (toko.termsType !== 'KONSI') {
-        return { ok: false as const, alasan: 'TOKO_BUKAN_KONSI' as const };
-      }
+    return await denganNomorUnik(() =>
+      runSerializable(async (tx) => {
+        const toko = await tx.store.findUnique({
+          where: { id: input.storeId },
+          select: { id: true, termsType: true },
+        });
+        if (!toko) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+        // Siklus konsinyasi hanya berarti untuk toko konsinyasi. Membukanya untuk
+        // toko putus akan menghitung "stok titipan" atas barang yang sudah dijual.
+        if (toko.termsType !== 'KONSI') {
+          return { ok: false as const, alasan: 'TOKO_BUKAN_KONSI' as const };
+        }
 
-      const siklus = await tx.consignmentCycle.create({
-        data: {
-          noKonsi: await nomorKonsi(tx, input.periodYear, input.periodMonth),
-          storeId: input.storeId,
-          periodYear: input.periodYear,
-          periodMonth: input.periodMonth,
-          spgDueDate: input.spgDueDate ?? null,
-        },
-        select: { id: true, noKonsi: true },
-      });
-
-      await catatJejak(tx, {
-        userId: input.olehUserId,
-        action: JEJAK.KONSI_DIBUKA,
-        entityType: 'ConsignmentCycle',
-        entityId: siklus.id,
-        changes: {
-          after: {
-            noKonsi: siklus.noKonsi,
+        const siklus = await tx.consignmentCycle.create({
+          data: {
+            noKonsi: await nomorKonsi(tx, input.periodYear, input.periodMonth),
             storeId: input.storeId,
-            periode: `${input.periodYear}-${String(input.periodMonth).padStart(2, '0')}`,
+            periodYear: input.periodYear,
+            periodMonth: input.periodMonth,
+            spgDueDate: input.spgDueDate ?? null,
           },
-        },
-      });
+          select: { id: true, noKonsi: true },
+        });
 
-      return { ok: true as const, id: siklus.id, noKonsi: siklus.noKonsi };
-    });
+        await catatJejak(tx, {
+          userId: input.olehUserId,
+          action: JEJAK.KONSI_DIBUKA,
+          entityType: 'ConsignmentCycle',
+          entityId: siklus.id,
+          changes: {
+            after: {
+              noKonsi: siklus.noKonsi,
+              storeId: input.storeId,
+              periode: `${input.periodYear}-${String(input.periodMonth).padStart(2, '0')}`,
+            },
+          },
+        });
+
+        return { ok: true as const, id: siklus.id, noKonsi: siklus.noKonsi };
+      }),
+    );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      // Kunci uniknya (toko, tahun, bulan): dua siklus untuk bulan yang sama
-      // akan memecah angka terjual dan setiap total di bawahnya diam-diam separuh.
+      /*
+       * Yang sampai ke sini pasti kunci (toko, tahun, bulan) — bentrok `noKonsi`
+       * sudah diulang oleh `denganNomorUnik` di atas. Sebelum pengulangan itu
+       * ada, dua penyimpanan bersamaan dilaporkan sebagai "siklus bulan ini
+       * sudah ada", padahal belum: yang bentrok hanya nomornya.
+       *
+       * Dua siklus untuk bulan yang sama akan memecah angka terjual dan setiap
+       * total di bawahnya diam-diam separuh.
+       */
       return { ok: false, alasan: 'SIKLUS_SUDAH_ADA' };
     }
     throw err;
@@ -135,54 +145,56 @@ export async function kirimTitipan(input: {
   if (items.length === 0) return { ok: false, alasan: 'TANPA_BARIS' };
 
   try {
-    return await runSerializable(async (tx) => {
-      const depan = `KKIRIM/${input.shippedAt.getFullYear()}/`;
-      const terakhir = await tx.consignmentShipment.findFirst({
-        where: { noKirim: { startsWith: depan } },
-        orderBy: { noKirim: 'desc' },
-        select: { noKirim: true },
-      });
-      const urutan = terakhir ? Number(terakhir.noKirim.slice(depan.length)) + 1 : 1;
+    return await denganNomorUnik(() =>
+      runSerializable(async (tx) => {
+        const depan = `KKIRIM/${input.shippedAt.getFullYear()}/`;
+        const terakhir = await tx.consignmentShipment.findFirst({
+          where: { noKirim: { startsWith: depan } },
+          orderBy: { noKirim: 'desc' },
+          select: { noKirim: true },
+        });
+        const urutan = terakhir ? Number(terakhir.noKirim.slice(depan.length)) + 1 : 1;
 
-      const kirim = await tx.consignmentShipment.create({
-        data: {
-          noKirim: `${depan}${String(urutan).padStart(4, '0')}`,
-          storeId: input.storeId,
-          cycleId: input.cycleId ?? null,
-          shippedAt: input.shippedAt,
-          note: input.note?.trim() || null,
-          items: {
-            create: items.map((b) => ({
-              itemId: b.itemId ?? null,
-              itemName: b.itemName.trim(),
-              qty: b.qty,
-              price: D(b.price),
-              amount: D(b.qty * b.price),
-            })),
-          },
-        },
-        select: { id: true, noKirim: true },
-      });
-
-      await catatJejak(tx, {
-        userId: input.olehUserId,
-        action: JEJAK.KONSI_DIKIRIM,
-        entityType: 'ConsignmentShipment',
-        entityId: kirim.id,
-        // Kiriman menentukan sisi "dikirim" dari stok titipan. Kiriman yang
-        // salah membuat sisa titipan salah selamanya, tanpa ada yang menghitung.
-        changes: {
-          after: {
-            noKirim: kirim.noKirim,
+        const kirim = await tx.consignmentShipment.create({
+          data: {
+            noKirim: `${depan}${String(urutan).padStart(4, '0')}`,
             storeId: input.storeId,
-            nilai: items.reduce((s, b) => s + b.qty * b.price, 0),
+            cycleId: input.cycleId ?? null,
+            shippedAt: input.shippedAt,
+            note: input.note?.trim() || null,
+            items: {
+              create: items.map((b) => ({
+                itemId: b.itemId ?? null,
+                itemName: b.itemName.trim(),
+                qty: b.qty,
+                price: D(b.price),
+                amount: D(b.qty * b.price),
+              })),
+            },
           },
-        },
-        metadata: { jumlahBaris: items.length },
-      });
+          select: { id: true, noKirim: true },
+        });
 
-      return { ok: true as const, id: kirim.id, noKirim: kirim.noKirim };
-    });
+        await catatJejak(tx, {
+          userId: input.olehUserId,
+          action: JEJAK.KONSI_DIKIRIM,
+          entityType: 'ConsignmentShipment',
+          entityId: kirim.id,
+          // Kiriman menentukan sisi "dikirim" dari stok titipan. Kiriman yang
+          // salah membuat sisa titipan salah selamanya, tanpa ada yang menghitung.
+          changes: {
+            after: {
+              noKirim: kirim.noKirim,
+              storeId: input.storeId,
+              nilai: items.reduce((s, b) => s + b.qty * b.price, 0),
+            },
+          },
+          metadata: { jumlahBaris: items.length },
+        });
+
+        return { ok: true as const, id: kirim.id, noKirim: kirim.noKirim };
+      }),
+    );
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return { ok: false, alasan: 'NOMOR_BENTROK' };

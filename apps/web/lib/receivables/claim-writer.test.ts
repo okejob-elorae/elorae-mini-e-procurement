@@ -9,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  */
 
 const state = {
+  tokoPkp: false,
+  jenis: [] as { id: string; method: string; noteRequired: boolean; pkpOnly: boolean }[],
   piutang: [] as { id: string; storeId: string }[],
   retur: [] as { id: string; storeId: string }[],
   sisa: new Map<string, number>(),
@@ -31,6 +33,13 @@ const saring = <T extends { id: string }>(sumber: () => T[]) =>
   });
 
 const tx = {
+  store: { findUnique: vi.fn(async () => ({ isPkp: state.tokoPkp })) },
+  deductionType: {
+    findMany: vi.fn(async (args?: { where?: { id?: { in?: string[] } } }) => {
+      const minta = args?.where?.id?.in;
+      return minta ? state.jenis.filter((j) => minta.includes(j.id)) : state.jenis;
+    }),
+  },
   receivable: { findMany: saring(() => state.piutang) },
   storeReturn: { findMany: saring(() => state.retur) },
   auditLog: {
@@ -93,6 +102,11 @@ beforeEach(() => {
   state.dibuat = [];
   state.dihitungUlang = [];
   state.jejak = [];
+  state.tokoPkp = false;
+  state.jenis = [
+    { id: 'pph23', method: 'NOMINAL', noteRequired: false, pkpOnly: true },
+    { id: 'biasa', method: 'NOMINAL', noteRequired: false, pkpOnly: false },
+  ];
 });
 
 const angka = (v: unknown) => Number((v as { value: number }).value);
@@ -219,5 +233,40 @@ describe('buatKlaimPembayaran', () => {
       pelunasan: [{ receivableId: 'r1', nilai: 5_000_000 }],
     });
     expect(state.dibuat[0].status).toBe('DIKIRIM');
+  });
+});
+
+describe('aturan jenis potongan yang menempel pada toko', () => {
+  const potonganPph = (deductionTypeId: string) => ({
+    ...DASAR,
+    pelunasan: [{ receivableId: 'r1', nilai: 1_000_000 }],
+    potongan: [{ nama: 'PPh 23', nilai: 20_000, deductionTypeId }],
+  });
+
+  it('MENOLAK potongan khusus PKP pada toko non-PKP', async () => {
+    /*
+     * Sebelum `Store.isPkp` ada, `pkpOnly` adalah aturan yang tidak menjaga
+     * apa pun — tidak ada kolom yang bisa ditanya, jadi potongan pajak yang
+     * seharusnya tidak ada mengurangi tagihan diam-diam.
+     */
+    state.tokoPkp = false;
+    expect(await buatKlaimPembayaran(potonganPph('pph23'))).toEqual({
+      ok: false,
+      alasan: 'JENIS_HANYA_PKP',
+    });
+    expect(state.dibuat).toHaveLength(0);
+  });
+
+  it('mengizinkannya pada toko PKP', async () => {
+    state.tokoPkp = true;
+    const hasil = await buatKlaimPembayaran(potonganPph('pph23'));
+    expect(hasil.ok).toBe(true);
+  });
+
+  it('tidak menghalangi potongan biasa di toko non-PKP', async () => {
+    // Penjagaannya harus sempit: hanya jenis yang ditandai, bukan semua potongan.
+    state.tokoPkp = false;
+    const hasil = await buatKlaimPembayaran(potonganPph('biasa'));
+    expect(hasil.ok).toBe(true);
   });
 });
