@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Scale } from 'lucide-react';
+import { AlertTriangle, Scale } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
@@ -20,7 +20,25 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { tandaiBebanLunasAction } from '@/app/actions/store-returns';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { dinamis } from '@/lib/i18n/dinamis';
+import { alihkanBebanAction, tandaiBebanLunasAction } from '@/app/actions/store-returns';
 import type { BarisBeban } from '@/lib/receivables/dashboard-queries';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
@@ -42,17 +60,28 @@ const NADA: Record<BarisBeban['status'], StatusTone> = {
 
 const URUT: BarisBeban['status'][] = ['TERBUKA', 'DITETAPKAN', 'LUNAS'];
 
+const PENANGGUNG = ['TOKO', 'SALES', 'GUDANG', 'PERUSAHAAN'] as const;
+
 export function BebanClient({
   baris,
+  kandidat,
   bolehMengelola,
 }: {
   baris: BarisBeban[];
+  kandidat: { id: string; name: string }[];
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('bebanSelisih');
+  const td = dinamis(t);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [saring, setSaring] = useState<BarisBeban['status'] | null>(null);
+  const [alih, setAlih] = useState<BarisBeban | null>(null);
+  const [penanggung, setPenanggung] = useState<(typeof PENANGGUNG)[number]>('SALES');
+  const [orangId, setOrangId] = useState('');
+  const [alasan, setAlasan] = useState('');
+
+  const yatim = baris.filter((b) => b.tanpaAlamat).length;
 
   const tampil = saring ? baris.filter((b) => b.status === saring) : baris;
   const jumlah = (s: BarisBeban['status']) => baris.filter((b) => b.status === s).length;
@@ -79,6 +108,15 @@ export function BebanClient({
         description={t('pageDescription')}
         meta={t('summary', { count: jumlah('TERBUKA'), value: rupiah(nilaiTerbuka) })}
       />
+
+      {yatim > 0 && (
+        <Card className="border-destructive/40 bg-destructive/[0.05]">
+          <CardContent className="flex items-start gap-3 py-4 text-sm leading-relaxed">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <span>{t('orphanWarning', { count: yatim })}</span>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="anim-stagger flex flex-wrap gap-2">
         {URUT.filter((s) => jumlah(s) > 0).map((s) => (
@@ -147,6 +185,11 @@ export function BebanClient({
                                 {b.penanggungNama}
                               </span>
                             )}
+                            {b.tanpaAlamat && (
+                              <span className="block text-xs font-medium text-destructive">
+                                {t('orphanRow')}
+                              </span>
+                            )}
                           </>
                         ) : (
                           <span className="text-muted-foreground">{t('notAssigned')}</span>
@@ -178,14 +221,29 @@ export function BebanClient({
                           </Button>
                         )}
                         {b.status === 'DITETAPKAN' && bolehMengelola && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={pending}
-                            onClick={() => lunaskan(b.id)}
-                          >
-                            {t('markSettled')}
-                          </Button>
+                          <span className="inline-flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={pending}
+                              onClick={() => {
+                                setAlih(b);
+                                setPenanggung(b.penanggung ?? 'SALES');
+                                setOrangId('');
+                                setAlasan('');
+                              }}
+                            >
+                              {t('reassign')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={pending}
+                              onClick={() => lunaskan(b.id)}
+                            >
+                              {t('markSettled')}
+                            </Button>
+                          </span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -200,6 +258,87 @@ export function BebanClient({
       <Card className="border-primary/30 bg-primary/[0.03]">
         <CardContent className="py-4 text-sm leading-relaxed">{t('explain')}</CardContent>
       </Card>
+
+      <Dialog open={alih !== null} onOpenChange={(o) => !o && setAlih(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('reassignTitle')}</DialogTitle>
+            <DialogDescription>{t('reassignBody')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="alih-siapa">{t('colBearer')}</Label>
+              <Select value={penanggung} onValueChange={(v) => setPenanggung(v as never)}>
+                <SelectTrigger id="alih-siapa">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PENANGGUNG.map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {td(`bearer${k}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {penanggung === 'SALES' && (
+              <div className="space-y-2">
+                <Label htmlFor="alih-orang">{t('bearerPerson')}</Label>
+                <Select value={orangId} onValueChange={setOrangId}>
+                  <SelectTrigger id="alih-orang">
+                    <SelectValue placeholder={t('bearerPersonPlaceholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {kandidat.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="alih-alasan">{t('reassignReason')}</Label>
+              <Textarea
+                id="alih-alasan"
+                value={alasan}
+                onChange={(e) => setAlasan(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={
+                pending ||
+                alasan.trim().length === 0 ||
+                (penanggung === 'SALES' && orangId === '')
+              }
+              onClick={() =>
+                alih &&
+                startTransition(async () => {
+                  const hasil = await alihkanBebanAction(
+                    alih.id,
+                    penanggung,
+                    alasan,
+                    penanggung === 'SALES' ? orangId : null,
+                  );
+                  if (hasil.ok) {
+                    toast.success(t('okReassigned'));
+                    setAlih(null);
+                    router.refresh();
+                  } else {
+                    toast.error(td(`err${hasil.kode}`));
+                  }
+                })
+              }
+            >
+              {t('save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

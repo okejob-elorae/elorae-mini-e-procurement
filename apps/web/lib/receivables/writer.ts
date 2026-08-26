@@ -1,5 +1,5 @@
 import { prisma, Prisma } from '@elorae/db';
-import { hitungSisaPiutang } from './rules';
+import { hitungSisaPiutang, type StatusKlaim } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
 import { catatJejak, JEJAK } from './jejak';
 
@@ -49,7 +49,7 @@ export async function hitungUlangPiutang(client: Klien, receivableId: string): P
   const sisa = hitungSisaPiutang(
     angka(piutang.amount),
     piutang.claimLinks.map((link) => ({
-      status: link.paymentClaim.status as 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK',
+      status: link.paymentClaim.status as StatusKlaim,
       nilaiFaktur: angka(link.paymentClaim.invoiceAmount),
       potonganRetur: potonganRetur(link.paymentClaim.deductions),
       nilaiDilunasiPiutangIni: angka(link.settledAmount),
@@ -78,6 +78,144 @@ export async function hitungUlangDariKlaim(client: Klien, paymentClaimId: string
   for (const link of links) {
     await hitungUlangPiutang(client, link.receivableId);
   }
+}
+
+export type HasilKoreksi =
+  | { ok: true; piutangDihitungUlang: number }
+  | {
+      ok: false;
+      alasan: 'TIDAK_DITEMUKAN' | 'SUDAH_DIBATALKAN' | 'ALASAN_WAJIB' | 'RETUR_BEDA_TOKO';
+    };
+
+/**
+ * Batalkan klaim yang salah catat.
+ *
+ * BUKAN penolakan. Menolak berarti keuangan melihat dan uangnya tidak ada;
+ * membatalkan berarti klaimnya sendiri keliru — salah faktur, salah nominal,
+ * salah tautan retur. Sebelum ini hanya penolakan yang ada, jadi membetulkan
+ * salah ketik menuntut seseorang mencatat pernyataan palsu tentang rekening.
+ *
+ * Barisnya TIDAK dihapus: ia satu-satunya tempat kekeliruan dan koreksinya
+ * sama-sama terlihat. Piutangnya dihitung ulang, jadi yang sempat ditahan atau
+ * dilepas oleh klaim ini kembali seperti semula.
+ */
+export async function batalkanKlaim(input: {
+  paymentClaimId: string;
+  alasan: string;
+  olehUserId: string;
+}): Promise<HasilKoreksi> {
+  if (!input.alasan?.trim()) return { ok: false, alasan: 'ALASAN_WAJIB' };
+
+  return prisma.$transaction(async (tx) => {
+    const klaim = await tx.paymentClaim.findUnique({
+      where: { id: input.paymentClaimId },
+      select: { id: true, docNo: true, status: true, verifyNote: true },
+    });
+    if (!klaim) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+    if (klaim.status === 'DIBATALKAN') {
+      return { ok: false as const, alasan: 'SUDAH_DIBATALKAN' as const };
+    }
+
+    await tx.paymentClaim.update({
+      where: { id: klaim.id },
+      data: {
+        status: 'DIBATALKAN',
+        verifiedById: input.olehUserId,
+        verifiedAt: new Date(),
+        verifyNote: input.alasan.trim(),
+      },
+    });
+
+    const links = await tx.paymentClaimReceivable.findMany({
+      where: { paymentClaimId: klaim.id },
+      select: { receivableId: true },
+    });
+    for (const l of links) await hitungUlangPiutang(tx, l.receivableId);
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KLAIM_DIBATALKAN,
+      entityType: 'PaymentClaim',
+      entityId: klaim.id,
+      changes: { before: { status: klaim.status }, after: { status: 'DIBATALKAN' } },
+      metadata: { docNo: klaim.docNo, piutangDihitungUlang: links.length },
+      reason: input.alasan,
+    });
+
+    return { ok: true as const, piutangDihitungUlang: links.length };
+  });
+}
+
+/**
+ * Tautkan ulang sebuah potongan ke nota retur — atau lepaskan tautannya.
+ *
+ * Tanpa ini, potongan yang menunjuk nota retur yang sudah tidak ada menahan
+ * uang SELAMANYA dan tidak ada satu layar pun yang bisa membetulkannya.
+ * Penjagaannya benar — uangnya ditahan, bukan lepas — tapi tanpa pintu keluar
+ * ia berubah jadi jebakan.
+ *
+ * Mengubah tautan mengubah berapa yang ditahan, jadi piutangnya dihitung ulang
+ * dan alasannya wajib.
+ */
+export async function tautkanUlangPotongan(input: {
+  deductionId: string;
+  storeReturnId: string | null;
+  alasan: string;
+  olehUserId: string;
+}): Promise<HasilKoreksi> {
+  if (!input.alasan?.trim()) return { ok: false, alasan: 'ALASAN_WAJIB' };
+
+  return prisma.$transaction(async (tx) => {
+    const potongan = await tx.paymentClaimDeduction.findUnique({
+      where: { id: input.deductionId },
+      select: {
+        id: true,
+        name: true,
+        storeReturnId: true,
+        paymentClaim: { select: { id: true, docNo: true, storeId: true } },
+      },
+    });
+    if (!potongan) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+
+    if (input.storeReturnId) {
+      const retur = await tx.storeReturn.findUnique({
+        where: { id: input.storeReturnId },
+        select: { storeId: true },
+      });
+      // Nota retur toko lain tidak boleh memotong pembayaran toko ini — itu
+      // memindahkan pengurang dari satu tagihan ke tagihan lain.
+      if (!retur) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+      if (retur.storeId !== potongan.paymentClaim.storeId) {
+        return { ok: false as const, alasan: 'RETUR_BEDA_TOKO' as const };
+      }
+    }
+
+    await tx.paymentClaimDeduction.update({
+      where: { id: potongan.id },
+      data: { storeReturnId: input.storeReturnId },
+    });
+
+    const links = await tx.paymentClaimReceivable.findMany({
+      where: { paymentClaimId: potongan.paymentClaim.id },
+      select: { receivableId: true },
+    });
+    for (const l of links) await hitungUlangPiutang(tx, l.receivableId);
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.POTONGAN_DITAUTKAN,
+      entityType: 'PaymentClaimDeduction',
+      entityId: potongan.id,
+      changes: {
+        before: { storeReturnId: potongan.storeReturnId },
+        after: { storeReturnId: input.storeReturnId },
+      },
+      metadata: { docNo: potongan.paymentClaim.docNo, potongan: potongan.name },
+      reason: input.alasan,
+    });
+
+    return { ok: true as const, piutangDihitungUlang: links.length };
+  });
 }
 
 export type HasilVerifikasi =

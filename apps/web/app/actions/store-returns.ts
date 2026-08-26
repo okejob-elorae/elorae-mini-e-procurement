@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { bolehMelapor } from '@/lib/receivables/izin';
 import {
+  alihkanBeban,
   batalkanRetur,
   catatHitunganGudang,
   catatReturToko,
@@ -205,6 +206,28 @@ export async function batalkanReturAction(
     return { ok: true };
   } catch (err) {
     console.error('batalkanRetur gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/** Alihkan beban yang sudah diputuskan — atau lengkapi orangnya. */
+export async function alihkanBebanAction(
+  chargeId: string,
+  bearer: 'TOKO' | 'SALES' | 'GUDANG' | 'PERUSAHAAN',
+  alasan: string,
+  bearerUserId?: string | null,
+): Promise<HasilAksiRetur> {
+  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+
+  try {
+    const hasil = await alihkanBeban({ chargeId, bearer, alasan, bearerUserId, olehUserId: userId });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    segarkan();
+    revalidatePath('/backoffice/beban-selisih');
+    return { ok: true };
+  } catch (err) {
+    console.error('alihkanBeban gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

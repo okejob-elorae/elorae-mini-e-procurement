@@ -21,7 +21,13 @@
  * ini bisa diuji tanpa menyeret Prisma.
  */
 
-export type StatusKlaim = 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK';
+/**
+ * `DIBATALKAN` berbeda arti dari `DITOLAK` walau keduanya diakui nol.
+ * Ditolak = keuangan melihat dan uangnya tidak ada. Dibatalkan = klaimnya
+ * sendiri salah catat. Membedakannya penting karena yang satu pernyataan
+ * tentang bank, yang lain pernyataan tentang ketikan.
+ */
+export type StatusKlaim = 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK' | 'DIBATALKAN';
 
 /** Satu potongan retur pada sebuah klaim pembayaran. */
 export type PotonganRetur = {

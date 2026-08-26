@@ -3696,7 +3696,7 @@
     "errTANPA_AKSES": "Only finance may decide a claim.",
     "errTIDAK_DITEMUKAN": "Claim not found — it may have been deleted.",
     "errSUDAH_DIPUTUSKAN": "This claim was already decided. Reload the page.",
-    "errALASAN_WAJIB": "Write the rejection reason first.",
+    "errALASAN_WAJIB": "Write the reason.",
     "errGAGAL": "Could not save the decision. Try again.",
     "backToList": "Back to the list",
     "newTitle": "Report a payment (BKM)",
@@ -3762,7 +3762,26 @@
     "print": "Print",
     "deductionOther": "Other (type it)",
     "errJENIS_BUTUH_RETUR": "A deduction of this type must be linked to a return note.",
-    "errJENIS_BUTUH_CATATAN": "A deduction of this type must have an explanation."
+    "errJENIS_BUTUH_CATATAN": "A deduction of this type must have an explanation.",
+    "void": "Void claim",
+    "voidTitle": "Void this claim",
+    "voidBody": "For a claim that was ENTERED WRONG — wrong invoice, wrong amount, wrong return link. Different from rejecting, which means the money genuinely was not in the account. The row is kept, and the receivable is recomputed.",
+    "voidReason": "Reason for voiding",
+    "voidPlaceholder": "e.g. wrong invoice picked, re-entered on another claim",
+    "okVoided": "Claim voided; receivable recomputed.",
+    "status_DIBATALKAN": "Voided",
+    "statusDIBATALKAN": "Voided",
+    "why_DIBATALKAN": "This report was voided because it was entered wrong, not because the money was missing.",
+    "relink": "Re-link",
+    "relinkTitle": "Re-link deduction",
+    "relinkBody": "Change which return note the deduction “{nama}” points at, or unlink it. This changes how much is held, so the receivable is recomputed.",
+    "relinkReason": "Reason",
+    "okRelinked": "Link updated; receivable recomputed.",
+    "danglingRow": "the return note it points at no longer exists",
+    "danglingWarning": "A deduction points at a return note that no longer exists. Its value is held in full against the receivable — the safe direction — but it will never be released until the link is corrected with “Re-link”.",
+    "errSUDAH_DIBATALKAN": "This claim is already voided.",
+    "save": "Save",
+    "dueOn": "due {date}"
   },
   "collections": {
     "pageTitle": "Collection notes",
@@ -4195,7 +4214,18 @@
     "errTIDAK_DITEMUKAN": "Charge not found.",
     "errBELUM_DIPUTUSKAN": "This has not been assigned yet.",
     "errSUDAH_LUNAS": "This is already marked paid back.",
-    "errGAGAL": "Could not save. Try again."
+    "errGAGAL": "Could not save. Try again.",
+    "reassign": "Reassign",
+    "reassignTitle": "Reassign this difference",
+    "reassignBody": "Change who carries it. A charge already paid back cannot be moved — moving it would make that payment record a lie.",
+    "reassignReason": "Reason for reassigning",
+    "bearerPerson": "Which salesman",
+    "bearerPersonPlaceholder": "Pick the person",
+    "orphanRow": "no person named",
+    "orphanWarning": "{count} charges are assigned to a salesman without naming one. Until that is fixed they appear on nobody's screen — reassign to complete them.",
+    "okReassigned": "Charge reassigned.",
+    "save": "Save",
+    "errALASAN_WAJIB": "Write the reason."
   },
   "pwaPiutang": {
     "pageTitle": "My shops",
@@ -4219,7 +4249,8 @@
     "empty": "No payment reports yet.",
     "why_DIKIRIM": "Reported. Finance has not matched it against the bank statement yet, so the receivable has not dropped.",
     "why_TERVERIFIKASI": "Matched against the bank statement.",
-    "why_DITOLAK": "Rejected by finance."
+    "why_DITOLAK": "Rejected by finance.",
+    "why_DIBATALKAN": "This report was voided because it was entered wrong, not because the money was missing."
   },
   "pwaRetur": {
     "pageTitle": "My returns",
@@ -4477,6 +4508,7 @@
     "errNAMA_SUDAH_ADA": "That name is already used by another type.",
     "errTIDAK_DITEMUKAN": "Deduction type not found.",
     "errSEDANG_DIPAKAI": "This type is in use.",
-    "errGAGAL": "Could not save. Try again."
+    "errGAGAL": "Could not save. Try again.",
+    "ruleNoManual": "not typed manually"
   }
 }

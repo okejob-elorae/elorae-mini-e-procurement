@@ -683,3 +683,58 @@ export async function batalkanRetur(input: {
     return { ok: true as const, piutangDihitungUlang: await hitungUlangTersentuh(tx, nota.id) };
   });
 }
+
+/**
+ * Alihkan beban yang sudah diputuskan ke orang lain — atau lengkapi orangnya.
+ *
+ * Ada karena beban ke SALES pernah tersimpan tanpa orangnya sama sekali:
+ * tuduhan tanpa alamat, yang tidak akan pernah muncul di layar siapa pun. Baris
+ * semacam itu tidak bisa dibetulkan lewat jalur mana pun sebelum ini.
+ *
+ * Beban yang SUDAH LUNAS tidak boleh dialihkan: uangnya sudah diganti orang
+ * yang tercatat, dan memindahkannya membuat catatan pembayaran itu berbohong.
+ */
+export async function alihkanBeban(input: {
+  chargeId: string;
+  bearer: 'TOKO' | 'SALES' | 'GUDANG' | 'PERUSAHAAN';
+  bearerUserId?: string | null;
+  alasan: string;
+  olehUserId: string;
+}): Promise<{ ok: true } | Gagal> {
+  if (!input.alasan?.trim()) return { ok: false, alasan: 'ALASAN_WAJIB' };
+
+  return runSerializable(async (tx) => {
+    const beban = await tx.returnCharge.findUnique({
+      where: { id: input.chargeId },
+      select: { id: true, status: true, bearer: true, bearerUserId: true, note: true },
+    });
+    if (!beban) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+    if (beban.status === 'TERBUKA') return { ok: false as const, alasan: 'BELUM_DIPUTUSKAN' as const };
+    if (beban.status === 'LUNAS') return { ok: false as const, alasan: 'SUDAH_LUNAS' as const };
+
+    await tx.returnCharge.update({
+      where: { id: beban.id },
+      data: {
+        bearer: input.bearer,
+        bearerUserId: input.bearer === 'SALES' ? (input.bearerUserId ?? null) : null,
+        note: input.alasan.trim(),
+        decidedById: input.olehUserId,
+        decidedAt: new Date(),
+      },
+    });
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.BEBAN_DIALIHKAN,
+      entityType: 'ReturnCharge',
+      entityId: beban.id,
+      changes: {
+        before: { bearer: beban.bearer, bearerUserId: beban.bearerUserId },
+        after: { bearer: input.bearer, bearerUserId: input.bearerUserId ?? null },
+      },
+      reason: input.alasan,
+    });
+
+    return { ok: true as const };
+  });
+}

@@ -179,6 +179,8 @@ export type BarisBeban = {
   status: 'TERBUKA' | 'DITETAPKAN' | 'LUNAS';
   penanggung: 'TOKO' | 'SALES' | 'GUDANG' | 'PERUSAHAAN' | null;
   penanggungNama: string | null;
+  /** Dibebankan ke sales tapi tidak menyebut orangnya — tuduhan tanpa alamat. */
+  tanpaAlamat: boolean;
   catatan: string | null;
   diputuskanOleh: string | null;
   diputuskanPada: string | null;
@@ -195,6 +197,7 @@ export async function daftarBeban(): Promise<BarisBeban[]> {
       amount: true,
       status: true,
       bearer: true,
+      bearerUserId: true,
       note: true,
       decidedAt: true,
       settledAt: true,
@@ -214,6 +217,8 @@ export async function daftarBeban(): Promise<BarisBeban[]> {
     status: r.status as BarisBeban['status'],
     penanggung: r.bearer as BarisBeban['penanggung'],
     penanggungNama: r.bearerUser?.name ?? null,
+    // Baris seperti ini tidak akan pernah muncul di layar siapa pun.
+    tanpaAlamat: r.bearer === 'SALES' && r.bearerUserId === null,
     catatan: r.note,
     diputuskanOleh: r.decidedBy?.name ?? null,
     diputuskanPada: r.decidedAt?.toISOString() ?? null,

@@ -3696,7 +3696,7 @@
     "errTANPA_AKSES": "Hanya admin keuangan yang boleh memutuskan klaim.",
     "errTIDAK_DITEMUKAN": "Klaim tidak ditemukan — mungkin sudah dihapus.",
     "errSUDAH_DIPUTUSKAN": "Klaim ini sudah diputuskan sebelumnya. Muat ulang halaman.",
-    "errALASAN_WAJIB": "Tulis alasan penolakannya dulu.",
+    "errALASAN_WAJIB": "Tulis alasannya.",
     "errGAGAL": "Gagal menyimpan keputusan. Coba lagi.",
     "backToList": "Kembali ke daftar",
     "newTitle": "Lapor pelunasan (BKM)",
@@ -3762,7 +3762,26 @@
     "print": "Cetak",
     "deductionOther": "Lainnya (ketik sendiri)",
     "errJENIS_BUTUH_RETUR": "Potongan jenis ini wajib ditautkan ke nota retur.",
-    "errJENIS_BUTUH_CATATAN": "Potongan jenis ini wajib punya keterangan."
+    "errJENIS_BUTUH_CATATAN": "Potongan jenis ini wajib punya keterangan.",
+    "void": "Batalkan BKM",
+    "voidTitle": "Batalkan BKM ini",
+    "voidBody": "Untuk BKM yang SALAH CATAT — salah faktur, salah nominal, salah tautan retur. Berbeda dari menolak: menolak berarti uangnya memang tidak ada di rekening. Barisnya tidak dihapus, dan piutangnya dihitung ulang.",
+    "voidReason": "Alasan pembatalan",
+    "voidPlaceholder": "mis. salah pilih faktur, sudah dibuat ulang di BKM lain",
+    "okVoided": "BKM dibatalkan; piutang sudah dihitung ulang.",
+    "status_DIBATALKAN": "Dibatalkan",
+    "statusDIBATALKAN": "Dibatalkan",
+    "why_DIBATALKAN": "Laporan ini dibatalkan karena salah catat, bukan karena uangnya tidak ada.",
+    "relink": "Tautkan ulang",
+    "relinkTitle": "Tautkan ulang potongan",
+    "relinkBody": "Ubah nota retur yang ditunjuk potongan “{nama}”, atau lepaskan tautannya. Ini mengubah berapa yang ditahan, jadi piutangnya dihitung ulang.",
+    "relinkReason": "Alasan",
+    "okRelinked": "Tautan diperbarui; piutang sudah dihitung ulang.",
+    "danglingRow": "nota retur yang ditunjuk sudah tidak ada",
+    "danglingWarning": "Ada potongan yang menunjuk nota retur yang sudah tidak ada. Nilainya ditahan penuh dari piutang — arah yang aman — tapi ia tidak akan pernah lepas sampai tautannya dibetulkan lewat “Tautkan ulang”.",
+    "errSUDAH_DIBATALKAN": "BKM ini sudah dibatalkan.",
+    "save": "Simpan",
+    "dueOn": "jatuh tempo {date}"
   },
   "collections": {
     "pageTitle": "Kontrabon / Tanda Terima",
@@ -4195,7 +4214,18 @@
     "errTIDAK_DITEMUKAN": "Bebannya tidak ditemukan.",
     "errBELUM_DIPUTUSKAN": "Bebannya belum diputuskan.",
     "errSUDAH_LUNAS": "Beban ini sudah ditandai diganti.",
-    "errGAGAL": "Gagal menyimpan. Coba lagi."
+    "errGAGAL": "Gagal menyimpan. Coba lagi.",
+    "reassign": "Alihkan",
+    "reassignTitle": "Alihkan beban",
+    "reassignBody": "Ubah siapa menanggung selisih ini. Beban yang sudah diganti tidak bisa dialihkan — memindahkannya membuat catatan pembayaran itu berbohong.",
+    "reassignReason": "Alasan pengalihan",
+    "bearerPerson": "Sales yang menanggung",
+    "bearerPersonPlaceholder": "Pilih orangnya",
+    "orphanRow": "belum menyebut orangnya",
+    "orphanWarning": "{count} beban dibebankan ke sales tanpa menyebut orangnya. Selama begitu ia tidak akan pernah muncul di layar siapa pun — alihkan untuk melengkapinya.",
+    "okReassigned": "Beban dialihkan.",
+    "save": "Simpan",
+    "errALASAN_WAJIB": "Tulis alasannya."
   },
   "pwaPiutang": {
     "pageTitle": "Toko Saya",
@@ -4219,7 +4249,8 @@
     "empty": "Belum ada laporan pelunasan.",
     "why_DIKIRIM": "Sudah dilaporkan. Admin keuangan belum mencocokkannya dengan mutasi rekening, jadi piutangnya belum berkurang.",
     "why_TERVERIFIKASI": "Sudah dicocokkan dengan mutasi rekening.",
-    "why_DITOLAK": "Ditolak admin keuangan."
+    "why_DITOLAK": "Ditolak admin keuangan.",
+    "why_DIBATALKAN": "Laporan ini dibatalkan karena salah catat, bukan karena uangnya tidak ada."
   },
   "pwaRetur": {
     "pageTitle": "Retur Saya",
@@ -4477,6 +4508,7 @@
     "errNAMA_SUDAH_ADA": "Nama itu sudah dipakai jenis lain.",
     "errTIDAK_DITEMUKAN": "Jenis potongan tidak ditemukan.",
     "errSEDANG_DIPAKAI": "Jenis ini sedang dipakai.",
-    "errGAGAL": "Gagal menyimpan. Coba lagi."
+    "errGAGAL": "Gagal menyimpan. Coba lagi.",
+    "ruleNoManual": "tidak boleh diketik manual"
   }
 }

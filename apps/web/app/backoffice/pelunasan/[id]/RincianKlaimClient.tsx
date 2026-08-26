@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, BadgeCheck, ImageOff, Printer } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, BadgeCheck, ImageOff, Link2, Printer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -29,7 +29,19 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
-import { verifikasiKlaimAction } from '@/app/actions/receivables';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { dinamis } from '@/lib/i18n/dinamis';
+import {
+  batalkanKlaimAction,
+  tautkanUlangPotonganAction,
+  verifikasiKlaimAction,
+} from '@/app/actions/receivables';
 import type { RincianKlaim } from '@/lib/receivables/claim-queries';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
@@ -45,6 +57,7 @@ const NADA: Record<RincianKlaim['status'], StatusTone> = {
   DIKIRIM: 'waiting',
   TERVERIFIKASI: 'settled',
   DITOLAK: 'inactive',
+  DIBATALKAN: 'inactive',
 };
 
 export function RincianKlaimClient({
@@ -55,10 +68,18 @@ export function RincianKlaimClient({
   bolehMemutuskan: boolean;
 }) {
   const t = useTranslations('payments');
+  const td = dinamis(t);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [tolakTerbuka, setTolakTerbuka] = useState(false);
   const [alasan, setAlasan] = useState('');
+  const [batalTerbuka, setBatalTerbuka] = useState(false);
+  const [alasanBatal, setAlasanBatal] = useState('');
+  const [tautUlang, setTautUlang] = useState<{ id: string; nama: string } | null>(null);
+  const [returBaru, setReturBaru] = useState<string>('none');
+  const [alasanTaut, setAlasanTaut] = useState('');
+
+  const adaMenggantung = data.potongan.some((p) => p.tautanMenggantung);
 
   const putuskan = (keputusan: 'TERVERIFIKASI' | 'DITOLAK', catatan?: string) => {
     startTransition(async () => {
@@ -101,6 +122,24 @@ export function RincianKlaimClient({
                 {t('print')}
               </a>
             </Button>
+            {/*
+              Membatalkan tersedia di keadaan APA PUN, termasuk yang sudah
+              terverifikasi. Klaim yang salah catat tidak berhenti salah hanya
+              karena sudah sempat disahkan — dan sebelum ini satu-satunya jalan
+              keluar adalah "menolak", yang artinya lain sama sekali.
+            */}
+            {data.status !== 'DIBATALKAN' && bolehMemutuskan && (
+              <Button
+                variant="ghost"
+                disabled={pending}
+                onClick={() => {
+                  setBatalTerbuka(true);
+                  setAlasanBatal('');
+                }}
+              >
+                {t('void')}
+              </Button>
+            )}
             {data.status === 'DIKIRIM' && bolehMemutuskan && (
               <>
               <Button disabled={pending} onClick={() => putuskan('TERVERIFIKASI')}>
@@ -122,6 +161,15 @@ export function RincianKlaimClient({
           </span>
         }
       />
+
+      {adaMenggantung && (
+        <Card className="border-destructive/40 bg-destructive/[0.05]">
+          <CardContent className="flex items-start gap-3 py-4 text-sm leading-relaxed">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <span>{t('danglingWarning')}</span>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Dua bukti berdampingan — inilah yang dicocokkan admin dengan mutasi. */}
       <Card>
@@ -195,8 +243,29 @@ export function RincianKlaimClient({
                             {p.noNrt}
                           </Link>
                         )}
+                        {p.tautanMenggantung && (
+                          <span className="block text-xs font-medium text-destructive">
+                            {t('danglingRow')}
+                          </span>
+                        )}
                         {p.catatan && (
                           <span className="block text-xs text-muted-foreground">{p.catatan}</span>
+                        )}
+                        {bolehMemutuskan && data.status !== 'DIBATALKAN' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="mt-1 h-7 px-2 text-xs"
+                            disabled={pending}
+                            onClick={() => {
+                              setTautUlang({ id: p.id, nama: p.nama });
+                              setReturBaru(p.storeReturnId ?? 'none');
+                              setAlasanTaut('');
+                            }}
+                          >
+                            <Link2 className="mr-1 h-3 w-3" />
+                            {t('relink')}
+                          </Button>
                         )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{rupiah(p.nilai)}</TableCell>
@@ -251,6 +320,107 @@ export function RincianKlaimClient({
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={batalTerbuka} onOpenChange={setBatalTerbuka}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('voidTitle')}</DialogTitle>
+            <DialogDescription>{t('voidBody')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="alasan-batal">{t('voidReason')}</Label>
+            <Textarea
+              id="alasan-batal"
+              value={alasanBatal}
+              onChange={(e) => setAlasanBatal(e.target.value)}
+              placeholder={t('voidPlaceholder')}
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              disabled={pending || alasanBatal.trim().length === 0}
+              onClick={() =>
+                startTransition(async () => {
+                  const hasil = await batalkanKlaimAction(data.id, alasanBatal);
+                  if (hasil.ok) {
+                    toast.success(t('okVoided'));
+                    setBatalTerbuka(false);
+                    router.refresh();
+                  } else {
+                    toast.error(td(`err${hasil.kode}`));
+                  }
+                })
+              }
+            >
+              {t('void')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={tautUlang !== null} onOpenChange={(o) => !o && setTautUlang(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('relinkTitle')}</DialogTitle>
+            <DialogDescription>
+              {tautUlang && t('relinkBody', { nama: tautUlang.nama })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="taut-nota">{t('deductionReturn')}</Label>
+              <Select value={returBaru} onValueChange={setReturBaru}>
+                <SelectTrigger id="taut-nota">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t('deductionNoReturn')}</SelectItem>
+                  {data.returToko.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.noNrt} · {rupiah(r.nilaiKlaim)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="taut-alasan">{t('relinkReason')}</Label>
+              <Textarea
+                id="taut-alasan"
+                value={alasanTaut}
+                onChange={(e) => setAlasanTaut(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              disabled={pending || alasanTaut.trim().length === 0}
+              onClick={() =>
+                tautUlang &&
+                startTransition(async () => {
+                  const hasil = await tautkanUlangPotonganAction(
+                    tautUlang.id,
+                    returBaru === 'none' ? null : returBaru,
+                    alasanTaut,
+                  );
+                  if (hasil.ok) {
+                    toast.success(t('okRelinked'));
+                    setTautUlang(null);
+                    router.refresh();
+                  } else {
+                    toast.error(td(`err${hasil.kode}`));
+                  }
+                })
+              }
+            >
+              {t('save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={tolakTerbuka} onOpenChange={setTolakTerbuka}>
         <DialogContent>

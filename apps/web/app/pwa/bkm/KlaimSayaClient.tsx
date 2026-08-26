@@ -22,6 +22,7 @@ const NADA: Record<KlaimSaya['status'], string> = {
   DIKIRIM: 'bg-primary/10 text-primary',
   TERVERIFIKASI: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   DITOLAK: 'bg-destructive/10 text-destructive',
+  DIBATALKAN: 'bg-muted text-muted-foreground',
 };
 
 export function KlaimSayaClient({ baris }: { baris: KlaimSaya[] }) {
@@ -70,7 +71,7 @@ export function KlaimSayaClient({ baris }: { baris: KlaimSaya[] }) {
                 </div>
                 <p className={cn('rounded-lg px-3 py-2 text-sm leading-relaxed', NADA[b.status])}>
                   {td(`why_${b.status}`)}
-                  {b.status === 'DITOLAK' && b.catatan && (
+                  {(b.status === 'DITOLAK' || b.status === 'DIBATALKAN') && b.catatan && (
                     <span className="mt-1 block font-medium">{b.catatan}</span>
                   )}
                 </p>

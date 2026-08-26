@@ -20,6 +20,7 @@ const KEADAAN: Record<RincianKlaim['status'], string> = {
   DIKIRIM: 'Belum diverifikasi',
   TERVERIFIKASI: 'Terverifikasi',
   DITOLAK: 'Ditolak',
+  DIBATALKAN: 'Dibatalkan',
 };
 
 export default function CetakBkmPage({ params }: { params: Promise<{ id: string }> }) {

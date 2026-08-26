@@ -6,6 +6,7 @@ import {
   returTertahan,
   selisihHari,
   type KeadaanPiutang,
+  type StatusKlaim,
 } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
 
@@ -103,7 +104,7 @@ export async function daftarPiutang(opts?: { salesmanId?: string }): Promise<Bar
 
   return rows.map((r) => {
     const klaimList = r.claimLinks.map((link) => ({
-      status: link.paymentClaim.status as 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK',
+      status: link.paymentClaim.status as StatusKlaim,
       nilaiFaktur: angka(link.paymentClaim.invoiceAmount),
       potonganRetur: potonganRetur(link.paymentClaim.deductions),
       nilaiDilunasiPiutangIni: angka(link.settledAmount),

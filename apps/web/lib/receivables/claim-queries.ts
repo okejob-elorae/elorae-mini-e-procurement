@@ -1,5 +1,5 @@
 import { prisma } from '@elorae/db';
-import { returTertahan } from './rules';
+import { returTertahan, type StatusKlaim } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
 import { daftarPiutang, type BarisPiutang } from './queries';
 import { jenisPotonganAktif, type CaraPotongan } from './deduction-types';
@@ -18,7 +18,7 @@ export type RincianKlaim = {
   nilaiDiterima: number;
   fotoTransfer: string | null;
   fotoRincian: string | null;
-  status: 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK';
+  status: StatusKlaim;
   verifikatorNama: string | null;
   verifikasiPada: string | null;
   catatanVerifikasi: string | null;
@@ -26,15 +26,21 @@ export type RincianKlaim = {
   /** Yang belum diakui walau klaimnya sudah terverifikasi. */
   nilaiTertahan: number;
   faktur: { id: string; invoiceNo: string; nilaiDilunasi: number; nilaiFaktur: number }[];
+  storeId: string;
   potongan: {
+    id: string;
     nama: string;
     nilai: number;
     catatan: string | null;
     noNrt: string | null;
     storeReturnId: string | null;
+    /** Tautan menunjuk nota yang sudah tidak ada — ini yang menahan selamanya. */
+    tautanMenggantung: boolean;
     /** Kalimat kenapa potongan ini menahan uang, kalau memang menahan. */
     tertahan: number;
   }[];
+  /** Nota retur milik toko ini, untuk menautkan ulang potongan yang keliru. */
+  returToko: { id: string; noNrt: string; nilaiKlaim: number }[];
 };
 
 /** Satu BKM, lengkap dengan kedua fotonya dan tautan potongannya ke nota retur. */
@@ -54,6 +60,7 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
       status: true,
       verifiedAt: true,
       verifyNote: true,
+      storeId: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
       verifiedBy: { select: { name: true } },
@@ -67,6 +74,7 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
       deductions: {
         select: {
           ...PILIH_POTONGAN,
+          id: true,
           name: true,
           note: true,
           storeReturn: {
@@ -83,6 +91,12 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
     },
   });
   if (!k) return null;
+
+  const returToko = await prisma.storeReturn.findMany({
+    where: { storeId: k.storeId, status: { not: 'BATAL' } },
+    orderBy: { claimDate: 'desc' },
+    select: { id: true, noNrt: true, claimedAmount: true },
+  });
 
   return {
     id: k.id,
@@ -101,6 +115,12 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
     verifikasiPada: k.verifiedAt?.toISOString() ?? null,
     catatanVerifikasi: k.verifyNote,
     dibuatOleh: k.createdBy?.name ?? null,
+    storeId: k.storeId,
+    returToko: returToko.map((r) => ({
+      id: r.id,
+      noNrt: r.noNrt,
+      nilaiKlaim: angka(r.claimedAmount),
+    })),
     nilaiTertahan: returTertahan(potonganRetur(k.deductions)),
     faktur: k.receivableLinks.map((l) => ({
       id: l.receivable.id,
@@ -109,11 +129,15 @@ export async function rincianKlaim(id: string): Promise<RincianKlaim | null> {
       nilaiFaktur: angka(l.receivable.amount),
     })),
     potongan: k.deductions.map((d) => ({
+      id: d.id,
       nama: d.name,
       nilai: angka(d.amount),
       catatan: d.note,
       noNrt: d.storeReturn?.noNrt ?? null,
       storeReturnId: d.storeReturnId,
+      // Menunjuk sesuatu, tapi yang ditunjuk tidak ada. Inilah baris yang
+      // menahan uang selamanya sampai seseorang menautkannya ulang.
+      tautanMenggantung: d.storeReturnId !== null && d.storeReturn === null,
       // Dihitung per potongan lewat jalur yang sama dengan totalnya, supaya
       // baris dan totalnya mustahil bercerita berbeda.
       tertahan: returTertahan(potonganRetur([d])),

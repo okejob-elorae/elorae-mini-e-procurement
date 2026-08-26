@@ -2561,6 +2561,7 @@ enum PaymentClaimStatus {
   DIKIRIM
   TERVERIFIKASI
   DITOLAK
+  DIBATALKAN
 }
 
 model PaymentClaim {

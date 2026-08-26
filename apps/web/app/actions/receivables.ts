@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { bolehMelapor } from '@/lib/receivables/izin';
-import { putuskanKlaim } from '@/lib/receivables/writer';
+import { batalkanKlaim, putuskanKlaim, tautkanUlangPotongan } from '@/lib/receivables/writer';
 import {
   buatKlaimPembayaran,
   type AlasanGagalKlaim,
@@ -105,6 +105,75 @@ export async function buatKlaimAction(input: {
     return { ok: true, docNo: hasil.docNo };
   } catch (err) {
     console.error('buatKlaim gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+export type KodeKoreksi =
+  | 'TANPA_AKSES'
+  | 'TIDAK_DITEMUKAN'
+  | 'SUDAH_DIBATALKAN'
+  | 'ALASAN_WAJIB'
+  | 'RETUR_BEDA_TOKO'
+  | 'GAGAL';
+
+export type HasilKoreksiAksi = { ok: true } | { ok: false; kode: KodeKoreksi };
+
+/**
+ * Batalkan BKM yang salah catat.
+ *
+ * Dibatasi ke `journals:manage` sama seperti verifikasi: membatalkan mengubah
+ * sisa piutang, jadi ia keputusan keuangan — bukan pembetulan ketikan yang
+ * boleh dilakukan pelapornya sendiri.
+ */
+export async function batalkanKlaimAction(
+  paymentClaimId: string,
+  alasan: string,
+): Promise<HasilKoreksiAksi> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, kode: 'TANPA_AKSES' };
+  }
+
+  try {
+    const hasil = await batalkanKlaim({ paymentClaimId, alasan, olehUserId: session.user.id });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    revalidatePath('/backoffice/pelunasan');
+    revalidatePath(`/backoffice/pelunasan/${paymentClaimId}`);
+    revalidatePath('/backoffice/piutang');
+    return { ok: true };
+  } catch (err) {
+    console.error('batalkanKlaim gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/** Tautkan ulang potongan ke nota retur, atau lepaskan tautannya. */
+export async function tautkanUlangPotonganAction(
+  deductionId: string,
+  storeReturnId: string | null,
+  alasan: string,
+): Promise<HasilKoreksiAksi> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+    return { ok: false, kode: 'TANPA_AKSES' };
+  }
+
+  try {
+    const hasil = await tautkanUlangPotongan({
+      deductionId,
+      storeReturnId,
+      alasan,
+      olehUserId: session.user.id,
+    });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    revalidatePath('/backoffice/pelunasan');
+    revalidatePath('/backoffice/piutang');
+    return { ok: true };
+  } catch (err) {
+    console.error('tautkanUlangPotongan gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

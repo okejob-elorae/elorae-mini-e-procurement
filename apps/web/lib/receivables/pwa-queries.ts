@@ -1,5 +1,6 @@
 import { prisma } from '@elorae/db';
 import { daftarPiutang, type BarisPiutang } from './queries';
+import type { StatusKlaim } from './rules';
 import { daftarKerjaRetur } from './return-queries';
 
 const angka = (v: unknown): number => Number(v ?? 0);
@@ -74,7 +75,7 @@ export type KlaimSaya = {
   storeName: string;
   tanggal: string;
   nilaiDiterima: number;
-  status: 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK';
+  status: StatusKlaim;
   catatan: string | null;
 };
 
