@@ -522,7 +522,7 @@ export function DashboardPageClient({
   return (
     <div className="space-y-6">
       {/* Welcome Section */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="anim-fade flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{tDashboard('title')}</h1>
           <p className="text-muted-foreground">
@@ -535,13 +535,15 @@ export function DashboardPageClient({
       </div>
 
       {/* What is waiting for me — before the how-are-we-doing numbers below. */}
-      <ActionNeededPanel items={actionItems} />
+      <div className="anim-rise">
+        <ActionNeededPanel items={actionItems} />
+      </div>
 
       {/* Marketplace Section */}
       <div className="space-y-2">
         <h2 className="text-lg font-semibold">{tDashboard('marketplaceSection')}</h2>
         <TooltipProvider>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="anim-stagger grid gap-4 sm:grid-cols-2">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-1">
@@ -589,7 +591,7 @@ export function DashboardPageClient({
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="anim-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Link href="/backoffice/inventory?tab=stock&oversold=1" className="block h-full">
           <Card
             className={cn(

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Geist_Mono, Plus_Jakarta_Sans } from 'next/font/google';
 import { SessionProvider } from 'next-auth/react';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/theme-provider';
@@ -9,9 +9,18 @@ import { GlobalLoadingBar } from '@/components/GlobalLoadingBar';
 import { getThemeInitScript } from '@/lib/theme/theme-init-script';
 import './globals.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+/*
+ * Plus Jakarta Sans by Tokotype — drawn in Jakarta, for Jakarta's city
+ * identity. Warmer and more humanist than the engineered-neutral grotesque it
+ * replaces, which is what made the interface read as stiff, and a face with an
+ * actual reason to be on an Indonesian product rather than a safe default.
+ * Weights are pinned so headings can carry real weight contrast.
+ */
+const appSans = Plus_Jakarta_Sans({
+  variable: '--font-app-sans',
   subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  display: 'swap',
 });
 
 const geistMono = Geist_Mono({
@@ -44,7 +53,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="id" suppressHydrationWarning>
+    <html
+      lang="id"
+      className={`${appSans.variable} ${geistMono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <script
@@ -52,10 +65,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: getThemeInitScript() }}
         />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
-      >
+      <body className="font-sans antialiased" suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

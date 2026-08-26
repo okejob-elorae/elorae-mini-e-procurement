@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-app-sans);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -143,6 +143,99 @@ html.backoffice-shell,
 html.backoffice-shell body {
   height: 100%;
   overflow: hidden;
+}
+
+/* ==========================================================================
+   Motion layer
+   --------------------------------------------------------------------------
+   One entrance gesture reused everywhere, not a different flourish per screen.
+   Content rises 8px while fading in — enough to read as "this just arrived",
+   short enough that an operator opening the same page forty times a day never
+   waits on it. Durations stay under 300ms for that reason.
+
+   Everything here is opt-in via a class. Nothing animates unless a component
+   asks, so a dense table never inherits motion it does not want.
+   ========================================================================== */
+
+@keyframes elorae-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes elorae-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.anim-rise {
+  animation: elorae-rise 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--anim-delay, 0ms);
+}
+
+.anim-fade {
+  animation: elorae-fade 200ms ease-out both;
+  animation-delay: var(--anim-delay, 0ms);
+}
+
+/*
+ * Stagger for a grid of cards: each child starts 40ms after the one before it,
+ * capped at the 8th so a long list never makes the last card feel broken.
+ */
+.anim-stagger > * {
+  animation: elorae-rise 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.anim-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.anim-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.anim-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.anim-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.anim-stagger > *:nth-child(6) { animation-delay: 200ms; }
+.anim-stagger > *:nth-child(7) { animation-delay: 240ms; }
+.anim-stagger > *:nth-child(n + 8) { animation-delay: 280ms; }
+
+/* A card that leads somewhere should say so before it is clicked. */
+.card-interactive {
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms ease-out,
+    border-color 160ms ease-out;
+}
+.card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px -8px rgb(0 0 0 / 0.28);
+}
+
+/*
+ * Respect the OS setting. This is not politeness — vestibular disorders make
+ * motion genuinely painful, and the setting exists to be honoured. Transitions
+ * collapse to 1ms rather than 0 so transitionend still fires and no component
+ * waiting on it hangs.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .anim-rise,
+  .anim-fade,
+  .anim-stagger > * {
+    animation: none !important;
+  }
+  .card-interactive {
+    transition: none;
+  }
+  .card-interactive:hover {
+    transform: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Headings carry weight contrast now that the face supports it. */
+h1, h2, h3 {
+  letter-spacing: -0.015em;
 }
 
 @keyframes global-loading-bar {
