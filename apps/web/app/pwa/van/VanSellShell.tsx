@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { recordVanSaleAction, getVanStockForStoreAction } from "@/app/actions/van-sale";
+import { roundToWholeRupiah, roundCents } from "@elorae/db/pricing";
 import { VanVariantSheet, type VanStockRow, type VanGroup } from "./VanVariantSheet";
 
 type StoreOption = { id: string; name: string };
@@ -22,6 +23,14 @@ type ShortLine = { itemId: string; variantSku: string | null; requested: number;
 type CartEntry = { itemId: string; variantSku: string | null; sku: string; productName: string; unitPrice: number; qty: number; qtyOnVan: number };
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+// Exact 2dp display — for the Subtotal row ONLY. `rupiah()` rounds for display, which would make
+// Subtotal look identical to the already-rounded Total whenever they differ by under Rp 1 — the
+// entire point of showing Subtotal is the fraction `rupiah()` would hide.
+const rupiahExact = (n: number) => `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Signed sub-rupiah delta display (Total - Subtotal) — the rounding itself is never sub-rupiah,
+// but the ADJUSTMENT it represents is, by construction (see roundToWholeRupiah in @elorae/db/pricing).
+const formatAdjustment = (n: number) =>
+  `${n >= 0 ? "+" : "-"}Rp ${Math.abs(n).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function lineKey(itemId: string, variantSku: string | null) {
   return `${itemId}::${variantSku ?? ""}`;
@@ -158,7 +167,12 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
   }
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
-  const total = useMemo(() => cartLines.reduce((s, l) => s + l.qty * l.unitPrice, 0), [cartLines]);
+  // subtotal = exact 2dp sum of lines; total = the whole-rupiah CHARGED figure recordVanSale
+  // actually persists and compares payment against — derived from the SAME shared helper the
+  // writer uses (@elorae/db/pricing), so this preview can never drift from what gets charged.
+  const subtotal = useMemo(() => cartLines.reduce((s, l) => s + l.qty * l.unitPrice, 0), [cartLines]);
+  const total = roundToWholeRupiah(subtotal);
+  const roundingAdjustment = roundCents(total - subtotal);
   const paid = Number(amountPaid) || 0;
   const change = paid - total;
 
@@ -479,10 +493,22 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
 
       {cartLines.length > 0 && (
         <div className="sticky bottom-0 -mx-4 -mb-4 space-y-2 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          {roundingAdjustment !== 0 && (
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{t("subtotalLabel")}</span>
+              <span className="tabular-nums">{rupiahExact(subtotal)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{t("totalLabel")}</span>
             <span className="font-semibold tabular-nums">{rupiah(total)}</span>
           </div>
+          {roundingAdjustment !== 0 && (
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{t("roundingAdjustmentLabel")}</span>
+              <span className="tabular-nums">{formatAdjustment(roundingAdjustment)}</span>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="van-cash-tendered" className="text-xs">
               {t("cashTenderedLabel")}

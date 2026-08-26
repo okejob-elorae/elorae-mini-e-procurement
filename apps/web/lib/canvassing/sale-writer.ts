@@ -1,5 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
-import { computeStorePrice } from "@elorae/db/pricing";
+import { computeStorePrice, roundToWholeRupiah } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -80,7 +80,10 @@ export async function recordVanSale(input: {
       return label ? `${p.item.nameId} — ${label}` : p.item.nameId;
     };
 
-    const total = priced.reduce((s, p) => s + p.line.qty * p.unitPrice, 0);
+    // subtotal = exact 2dp sum of lines; total = the whole-rupiah CHARGED figure (cash boundary —
+    // sen do not exist as physical currency). Payment is compared against `total`, never `subtotal`.
+    const subtotal = priced.reduce((s, p) => s + p.line.qty * p.unitPrice, 0);
+    const total = roundToWholeRupiah(subtotal);
     if (input.amountPaid < total) return { ok: false, code: "INSUFFICIENT_PAYMENT" };
     const changeAmount = input.amountPaid - total;
 
@@ -101,7 +104,7 @@ export async function recordVanSale(input: {
         buyerPhone: input.buyerPhone ?? null,
         saleLat: input.saleLat == null ? null : new Prisma.Decimal(input.saleLat),
         saleLng: input.saleLng == null ? null : new Prisma.Decimal(input.saleLng),
-        subtotal: total,
+        subtotal,
         total,
         amountPaid: input.amountPaid,
         changeAmount,
