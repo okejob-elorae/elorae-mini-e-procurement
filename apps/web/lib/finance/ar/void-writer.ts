@@ -14,7 +14,15 @@ export async function voidPayment(input: {
   voidedById: string;
 }): Promise<{ voided: boolean }> {
   const reason = input.reason.trim();
-  if (reason === "") throw new PaymentError("MISSING_REASON", "A void reason is required");
+  /*
+   * A reason of pure zero-width/format characters (Unicode category `Cf`, e.g. U+200B ZERO WIDTH
+   * SPACE) or U+2800 BRAILLE PATTERN BLANK survives `.trim()` unchanged — neither is whitespace by
+   * the ECMAScript WhiteSpace production — and would otherwise persist as an audit reason that
+   * renders blank. Require at least one character outside those classes before accepting the
+   * reason as non-empty.
+   */
+  const hasVisibleContent = /[^\s\p{Cf}\u2800]/u.test(reason);
+  if (!hasVisibleContent) throw new PaymentError("MISSING_REASON", "A void reason is required");
 
   return runSerializable(async (tx) => {
     const payment = await tx.payment.findUnique({
@@ -25,9 +33,13 @@ export async function voidPayment(input: {
     if (payment.status === "VOIDED") return { voided: false };
 
     /*
-     * Guarded updateMany, not update: two concurrent voids would each read POSTED and each restore
-     * the same outstanding, silently doubling the balance back. Zero rows affected means someone
-     * else got there first, and nothing below runs.
+     * Guarded updateMany, not update — defence-in-depth, not the live mechanism. Under this
+     * transaction's SERIALIZABLE isolation, the shared lock the preceding `findUnique` takes on
+     * this row is what actually serialises two concurrent voids: the second one blocks until the
+     * first commits, then deadlocks (1213) and is retried by `runSerializable`, at which point it
+     * reads VOIDED and short-circuits above — the `updateMany` below never even runs for it. This
+     * guard exists in case that isolation level is ever relaxed: zero rows affected then still
+     * means someone else got there first, and nothing below may run.
      */
     const flipped = await tx.payment.updateMany({
       where: { id: payment.id, status: "POSTED" },
@@ -46,6 +58,21 @@ export async function voidPayment(input: {
     });
 
     for (const a of allocations) {
+      /*
+       * `recordPayment` refuses a WRITTEN_OFF receivable outright (`ALREADY_SETTLED`); this writer
+       * must respect the same terminal status rather than silently reviving it. `WRITTEN_OFF` is
+       * reachable only by hand SQL today — this slice ships no write-off writer — so refusing here
+       * costs almost nothing and forces a deliberate un-write-off instead of letting a void quietly
+       * resurrect a closed balance with nothing reversing it in the GL. The throw happens before
+       * this allocation's restore runs, and — because the whole body is inside `runSerializable` —
+       * it rolls back the status flip above too, so the refusal is total.
+       */
+      const receivable = await tx.receivable.findUnique({
+        where: { id: a.receivableId },
+        select: { status: true },
+      });
+      if (receivable?.status === "WRITTEN_OFF") throw new PaymentError("ALREADY_SETTLED");
+
       const restored = await tx.receivable.update({
         where: { id: a.receivableId },
         data: {
@@ -65,8 +92,9 @@ export async function voidPayment(input: {
        * restore increments `outstandingAmount` by an allocation amount `recordPayment` guarantees is
        * > 0, and the prior outstanding is never negative, so `outstanding === 0` cannot hold here.
        * Do not go looking for the test that covers it — there isn't one, and there cannot be. It
-       * stays so that a future partial-void, which could leave a receivable settled, does not
-       * silently fall through to `PARTIAL`.
+       * stays as a defence against out-of-band data: a negative or inconsistent `outstandingAmount`
+       * written by hand SQL — the same route by which `WRITTEN_OFF` itself is reachable today — not
+       * against anything this writer's own code paths can produce.
        */
       const status = paid === 0 ? "OUTSTANDING" : outstanding === 0 ? "PAID" : "PARTIAL";
       await tx.receivable.update({ where: { id: a.receivableId }, data: { status } });
