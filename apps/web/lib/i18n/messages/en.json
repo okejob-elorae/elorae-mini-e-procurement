@@ -282,6 +282,21 @@
       "studioNote": "Crisp corners, widely tracked column heads. Feels like an instrument.",
       "applied": "Theme applied",
       "currentAccent": "Accent: {name}"
+    },
+    "developerThemes": {
+      "tabPantone": "Pantone",
+      "tabPopular": "Popular",
+      "pantoneHint": "Colours from the Pantone TCX book — the language the factory and the dyer already speak.",
+      "popularHint": "Palettes developers and UI designers commonly use. Pick one, then Save theme.",
+      "noPantone": "No Pantone code",
+      "noteNord": "Arctic blue, cool and calm",
+      "noteCatppuccin": "Pastel violet, the most popular of recent years",
+      "noteTokyo": "Night blue, high contrast",
+      "noteDracula": "Bright lilac, a developer classic",
+      "noteRosePine": "Dusty rose, warm and soft",
+      "noteGruvbox": "Retro orange, paper and earth tones",
+      "noteSolarized": "Classic blue, designed for tired eyes",
+      "noteOneDark": "Editor violet, known from Atom and VS Code"
     }
   },
   "tax": {

@@ -25,6 +25,9 @@ import {
 } from 'lucide-react';
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import { UIThemePicker } from '@/components/settings/UIThemePicker';
+import { DEVELOPER_PALETTES } from '@/lib/theme/developer-palettes';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import {
   applyDefaultTheme,
   applyThemeFromPantoneSeed,
@@ -43,6 +46,7 @@ type ThemeDraft = {
 export default function SettingsPage() {
   const t = useTranslations('settings');
   const tTheme = useTranslations('settings.theme');
+  const tDev = useTranslations('settings.developerThemes');
   const tToasts = useTranslations('toasts');
   const { data: session, status } = useSession();
   const [saved, setSaved] = useState<ThemeDraft>({
@@ -82,8 +86,18 @@ export default function SettingsPage() {
       : previewPalette.light
     : null;
 
+  const isDefaultSeed = (hex: string) =>
+    hex.toLowerCase() === DEFAULT_THEME_PRIMARY_COLOR.toLowerCase();
+
   const applyDraftToDocument = (next: ThemeDraft) => {
-    if (next.pantoneTcx === null) {
+    /*
+     * Keyed on the colour, not on whether it has a Pantone code. Before the
+     * popular palettes existed, "no TCX" could only mean "nothing chosen", so
+     * branching on it was correct; now it can also mean a real colour with no
+     * Pantone identity, and treating that as the default silently threw the
+     * choice away.
+     */
+    if (isDefaultSeed(next.primaryHex)) {
       applyDefaultTheme();
       return;
     }
@@ -105,8 +119,11 @@ export default function SettingsPage() {
         primaryHex: cached.seedHex,
       };
       setDraft(cachedDraft);
-      if (cached.pantoneTcx) {
-        applyThemeFromPantoneSeed(cached.seedHex, cached.palette);
+      if (cached.seedHex && !isDefaultSeed(cached.seedHex)) {
+        applyThemeFromPantoneSeed(
+          cached.seedHex,
+          cached.palette ?? generatePaletteFromSeed(cached.seedHex),
+        );
       } else {
         applyDefaultTheme();
       }
@@ -123,8 +140,9 @@ export default function SettingsPage() {
         setSaved(next);
         setDraft(next);
         applyDraftToDocument(next);
-        const palette =
-          next.pantoneTcx !== null ? generatePaletteFromSeed(primaryHex) : undefined;
+        const palette = isDefaultSeed(primaryHex)
+          ? undefined
+          : generatePaletteFromSeed(primaryHex);
         saveThemeToLocalStorage(
           {
             primary: primaryHex,
@@ -152,15 +170,23 @@ export default function SettingsPage() {
     applyDraftToDocument(next);
   };
 
+  const handlePaletteSelect = (palette: { name: string; hex: string }) => {
+    // Same draft shape as the Pantone path, minus the code — a palette with no
+    // Pantone identity must record that honestly rather than borrow one.
+    const next: ThemeDraft = {
+      pantoneTcx: null,
+      pantoneName: palette.name,
+      primaryHex: normalizeThemeHexColor(palette.hex),
+    };
+    setDraft(next);
+    applyDraftToDocument(next);
+  };
+
   const handleThemeSave = async () => {
     if (!userId) return;
     setIsThemeSaving(true);
 
     try {
-      if (draft.pantoneTcx === null) {
-        throw new Error('Select a Pantone color first');
-      }
-
       const palette = generatePaletteFromSeed(draft.primaryHex);
       applyThemeFromPantoneSeed(draft.primaryHex, palette);
       saveThemeToLocalStorage(
@@ -173,7 +199,10 @@ export default function SettingsPage() {
         userId
       );
 
-      const result = await setUserThemePreference({ tcx: draft.pantoneTcx });
+      const result =
+        draft.pantoneTcx !== null
+          ? await setUserThemePreference({ tcx: draft.pantoneTcx })
+          : await setUserThemePreference({ hex: draft.primaryHex });
       const savedState: ThemeDraft = {
         pantoneTcx: result.pantoneTcx,
         pantoneName: result.pantoneName ?? draft.pantoneName,
@@ -304,20 +333,67 @@ export default function SettingsPage() {
             </div>
           )}
 
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setPickerOpen(true)}
-            disabled={isThemeLoading || isThemeSaving}
-          >
-            {tTheme('choosePantone')}
-          </Button>
+          <Tabs defaultValue={draft.pantoneTcx === null ? 'popular' : 'pantone'}>
+            <TabsList>
+              <TabsTrigger value="pantone">{tDev('tabPantone')}</TabsTrigger>
+              <TabsTrigger value="popular">{tDev('tabPopular')}</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="pantone" className="space-y-3 pt-3">
+              <p className="text-sm text-muted-foreground">{tDev('pantoneHint')}</p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPickerOpen(true)}
+                disabled={isThemeLoading || isThemeSaving}
+              >
+                {tTheme('choosePantone')}
+              </Button>
+            </TabsContent>
+
+            <TabsContent value="popular" className="space-y-3 pt-3">
+              <p className="text-sm text-muted-foreground">{tDev('popularHint')}</p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                {DEVELOPER_PALETTES.map((palette) => {
+                  const active =
+                    draft.pantoneTcx === null &&
+                    draft.primaryHex.toLowerCase() === palette.hex.toLowerCase();
+                  return (
+                    <button
+                      key={palette.id}
+                      type="button"
+                      onClick={() => handlePaletteSelect(palette)}
+                      aria-pressed={active}
+                      className={cn(
+                        'flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors',
+                        active
+                          ? 'border-primary ring-1 ring-primary/40'
+                          : 'border-border hover:bg-muted/60',
+                      )}
+                    >
+                      <span
+                        className="mt-0.5 h-8 w-8 shrink-0 rounded-md border"
+                        style={{ backgroundColor: palette.hex }}
+                        aria-hidden
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">{palette.name}</span>
+                        <span className="block text-[11px] leading-snug text-muted-foreground">
+                          {tDev(palette.noteKey as never)}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </TabsContent>
+          </Tabs>
 
           <div className="flex flex-wrap gap-2">
             <Button
               onClick={handleThemeSave}
               disabled={
-                isThemeLoading || isThemeSaving || !isDirty || draft.pantoneTcx === null
+                isThemeLoading || isThemeSaving || !isDirty
               }
             >
               {isThemeSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : tTheme('save')}

@@ -282,6 +282,21 @@
       "studioNote": "Sudut tegas, kepala kolom berjarak lebar. Terasa seperti alat kerja.",
       "applied": "Tema diterapkan",
       "currentAccent": "Aksen: {name}"
+    },
+    "developerThemes": {
+      "tabPantone": "Pantone",
+      "tabPopular": "Populer",
+      "pantoneHint": "Warna dari buku Pantone TCX — bahasa yang sudah dipakai pabrik dan tukang celup.",
+      "popularHint": "Palet yang lazim dipakai developer dan desainer UI. Pilih satu, lalu Simpan tema.",
+      "noPantone": "Tanpa kode Pantone",
+      "noteNord": "Biru arktik, dingin dan tenang",
+      "noteCatppuccin": "Ungu pastel, paling populer beberapa tahun terakhir",
+      "noteTokyo": "Biru malam, kontras tinggi",
+      "noteDracula": "Lilac terang, klasik di kalangan developer",
+      "noteRosePine": "Mawar tua, hangat dan lembut",
+      "noteGruvbox": "Oranye retro, nuansa kertas dan tanah",
+      "noteSolarized": "Biru klasik, dirancang untuk mata yang lelah",
+      "noteOneDark": "Ungu editor, dikenal dari Atom dan VS Code"
     }
   },
   "tax": {

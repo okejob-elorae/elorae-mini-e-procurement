@@ -75,7 +75,7 @@ export async function listPantoneColorsForTheme(
 }
 
 export async function setUserThemePreference(
-  preference: { tcx: string } | { reset: true }
+  preference: { tcx: string } | { hex: string } | { reset: true }
 ): Promise<UserThemePreference> {
   const session = await auth();
   if (!session?.user?.id) throw new Error('Unauthorized');
@@ -101,6 +101,31 @@ export async function setUserThemePreference(
       pantoneTcx: updated.themePantoneTcx,
       primaryHex: updated.themePrimaryHex,
       pantoneName: updated.themePantone?.name ?? null,
+    };
+  }
+
+  /*
+   * A palette that is not in the Pantone book still needs to persist across
+   * devices, and the schema already allows it: themePrimaryHex is required,
+   * themePantoneTcx is nullable. Clearing the TCX is the point — it records
+   * that this accent has no Pantone identity rather than pretending it does.
+   */
+  if ('hex' in preference) {
+    const primaryHex = normalizeHexColor(preference.hex);
+    const updated = await prisma.user.update({
+      where: { id: session.user.id },
+      data: { themePantoneTcx: null, themePrimaryHex: primaryHex },
+      select: {
+        themePantoneTcx: true,
+        themePrimaryHex: true,
+        themePantone: { select: { name: true } },
+      },
+    });
+    revalidatePath('/backoffice/settings');
+    return {
+      pantoneTcx: updated.themePantoneTcx,
+      primaryHex: updated.themePrimaryHex,
+      pantoneName: null,
     };
   }
 
