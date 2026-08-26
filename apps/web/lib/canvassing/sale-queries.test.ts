@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { getSellableVanStock } from "./sale-queries";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -11,6 +11,7 @@ d("getSellableVanStock (test bed only)", () => {
   let uomId = ""; let itemId = ""; let salesmanId = ""; let storeId = "";
 
   beforeEach(async () => {
+    uomId = ""; itemId = ""; salesmanId = ""; storeId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
@@ -25,10 +26,10 @@ d("getSellableVanStock (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.vanStock.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
-    await prisma.store.delete({ where: { id: storeId } });
+    await prisma.vanStock.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
 
   it("prices a discounted store's stock off its priceDiscountPercent", async () => {
