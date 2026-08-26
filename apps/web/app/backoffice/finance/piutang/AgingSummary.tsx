@@ -58,8 +58,8 @@ export function AgingSummary({ bucketTotals, grandOutstanding, activeBucket, onS
                 isActive && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                 !isZero &&
                   (isOverdueBucket
-                    ? "border-red-200 bg-red-50 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/30 dark:hover:bg-red-950/50"
-                    : "border-blue-200 bg-blue-50 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/30 dark:hover:bg-blue-950/50"),
+                    ? "border-red-200 bg-red-100 hover:bg-red-200 dark:border-red-800 dark:bg-red-900 dark:hover:bg-red-800"
+                    : "border-blue-200 bg-blue-100 hover:bg-blue-200 dark:border-blue-800 dark:bg-blue-900 dark:hover:bg-blue-800"),
               )}
             >
               <span
@@ -68,8 +68,8 @@ export function AgingSummary({ bucketTotals, grandOutstanding, activeBucket, onS
                   isZero
                     ? "text-muted-foreground"
                     : isOverdueBucket
-                      ? "text-red-700 dark:text-red-300"
-                      : "text-blue-700 dark:text-blue-300",
+                      ? "text-red-800 dark:text-red-200"
+                      : "text-blue-800 dark:text-blue-200",
                 )}
               >
                 {AGING_BUCKET_LABELS[bucket]}
