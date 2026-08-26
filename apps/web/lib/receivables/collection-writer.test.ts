@@ -21,6 +21,7 @@ const state = {
   dibuat: [] as Record<string, unknown>[],
   nota: null as { id: string; status: string; note: string | null } | null,
   notaUpdates: [] as Record<string, unknown>[],
+  jejak: [] as Record<string, unknown>[],
 };
 
 const tx = {
@@ -36,6 +37,12 @@ const tx = {
     }),
     update: vi.fn(async (args: { data: Record<string, unknown> }) => {
       state.notaUpdates.push(args.data);
+      return {};
+    }),
+  },
+  auditLog: {
+    create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+      state.jejak.push(args.data);
       return {};
     }),
   },
@@ -76,6 +83,7 @@ beforeEach(() => {
   state.dibuat = [];
   state.nota = { id: 'tt1', status: 'BERJALAN', note: null };
   state.notaUpdates = [];
+  state.jejak = [];
 });
 
 describe('buatKontrabon', () => {
@@ -148,7 +156,7 @@ describe('buatKontrabon', () => {
 
 describe('tutupKontrabon', () => {
   it('menolak pembatalan tanpa alasan SEBELUM menulis apa pun', async () => {
-    const h = await tutupKontrabon({ collectionNoteId: 'tt1', keputusan: 'BATAL' });
+    const h = await tutupKontrabon({ collectionNoteId: 'tt1', olehUserId: 'u1', keputusan: 'BATAL' });
     expect(h).toEqual({ ok: false, alasan: 'ALASAN_WAJIB' });
     expect(state.notaUpdates).toHaveLength(0);
   });
@@ -156,7 +164,7 @@ describe('tutupKontrabon', () => {
   it('menolak menandai selesai selama masih ada sisa', async () => {
     // "Selesai" adalah pernyataan bahwa uangnya sudah masuk; sisanya dihitung
     // ulang saat itu juga, bukan dibaca dari kolom.
-    const h = await tutupKontrabon({ collectionNoteId: 'tt1', keputusan: 'SELESAI' });
+    const h = await tutupKontrabon({ collectionNoteId: 'tt1', olehUserId: 'u1', keputusan: 'SELESAI' });
     expect(h).toEqual({ ok: false, alasan: 'MASIH_ADA_SISA' });
     expect(state.notaUpdates).toHaveLength(0);
   });
@@ -166,7 +174,7 @@ describe('tutupKontrabon', () => {
       ['r1', 0],
       ['r2', 0],
     ]);
-    const h = await tutupKontrabon({ collectionNoteId: 'tt1', keputusan: 'SELESAI' });
+    const h = await tutupKontrabon({ collectionNoteId: 'tt1', olehUserId: 'u1', keputusan: 'SELESAI' });
     expect(h).toEqual({ ok: true, status: 'SELESAI' });
     expect(state.notaUpdates[0].status).toBe('SELESAI');
   });
@@ -175,6 +183,7 @@ describe('tutupKontrabon', () => {
     state.nota = { id: 'tt1', status: 'SELESAI', note: null };
     const h = await tutupKontrabon({
       collectionNoteId: 'tt1',
+      olehUserId: 'u1',
       keputusan: 'BATAL',
       catatan: 'ditarik',
     });
@@ -185,6 +194,7 @@ describe('tutupKontrabon', () => {
     state.nota = { id: 'tt1', status: 'BERJALAN', note: 'catatan awal' };
     await tutupKontrabon({
       collectionNoteId: 'tt1',
+      olehUserId: 'u1',
       keputusan: 'BATAL',
       catatan: 'faktur ditarik kembali',
     });

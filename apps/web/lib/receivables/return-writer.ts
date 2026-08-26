@@ -2,6 +2,7 @@ import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { generateDocNumber } from '@/lib/docNumber';
 import { hitungUlangPiutang } from './writer';
+import { catatJejak, JEJAK } from './jejak';
 
 /**
  * Penulis retur toko — dua dokumen, dua tangan.
@@ -240,6 +241,8 @@ async function selaraskanSetelahHitung(tx: Klien, storeReturnId: string): Promis
 export async function catatReturToko(input: {
   noNrt: string;
   storeId: string;
+  /** Yang mencatat. Wajib — sebuah nota tanpa pencatat tak bisa ditanyakan. */
+  olehUserId: string;
   salesmanId?: string | null;
   claimDate: Date;
   deliveryMethod: 'SALES' | 'TOKO' | 'EKSPEDISI';
@@ -284,6 +287,16 @@ export async function catatReturToko(input: {
         },
         select: { id: true, noNrt: true },
       });
+
+      await catatJejak(tx, {
+        userId: input.olehUserId,
+        action: JEJAK.RETUR_DICATAT,
+        entityType: 'StoreReturn',
+        entityId: nota.id,
+        changes: { after: { noNrt: nota.noNrt, claimedAmount: total, storeId: input.storeId } },
+        metadata: { deliveryMethod: input.deliveryMethod, jumlahBaris: items.length },
+      });
+
       return { ok: true as const, id: nota.id, noNrt: nota.noNrt };
     });
   } catch (err) {
@@ -389,6 +402,17 @@ export async function catatHitunganGudang(input: {
         olehUserId: input.warehouseUserId,
       });
 
+      await catatJejak(tx, {
+        userId: input.warehouseUserId,
+        action: JEJAK.RETUR_DIHITUNG,
+        entityType: 'WarehouseReturn',
+        entityId: nri.id,
+        // Hitungan ini hanya bisa dicatat sekali dan menentukan berapa yang
+        // ditahan dari piutang. Angkanya harus bisa ditelusuri ke orangnya.
+        changes: { after: { noNri: nri.noNri, physicalAmount: total, claimedAmount: klaim } },
+        metadata: { storeReturnId: input.storeReturnId ?? null, barisStok },
+      });
+
       if (input.storeReturnId) await selaraskanSetelahHitung(tx, input.storeReturnId);
 
       return {
@@ -411,6 +435,7 @@ export async function catatHitunganGudang(input: {
 export async function jodohkanRetur(input: {
   warehouseReturnId: string;
   storeReturnId: string;
+  olehUserId: string;
 }): Promise<Berhasil | Gagal> {
   return runSerializable(async (tx) => {
     const nri = await tx.warehouseReturn.findUnique({
@@ -449,6 +474,15 @@ export async function jodohkanRetur(input: {
     });
     await selaraskanSetelahHitung(tx, nrt.id);
 
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.RETUR_DIJODOHKAN,
+      entityType: 'WarehouseReturn',
+      entityId: nri.id,
+      changes: { before: { storeReturnId: null }, after: { storeReturnId: nrt.id } },
+      metadata: { storeId: nrt.storeId },
+    });
+
     return { ok: true as const, piutangDihitungUlang: await hitungUlangTersentuh(tx, nrt.id) };
   });
 }
@@ -462,6 +496,7 @@ export async function jodohkanRetur(input: {
  */
 export async function lepasPasangan(input: {
   warehouseReturnId: string;
+  olehUserId: string;
 }): Promise<Berhasil | Gagal> {
   return runSerializable(async (tx) => {
     const nri = await tx.warehouseReturn.findUnique({
@@ -483,6 +518,16 @@ export async function lepasPasangan(input: {
       data: { storeReturnId: null, claimedAmount: D(0) },
     });
     await tx.storeReturn.update({ where: { id: storeReturnId }, data: { status: 'MENUNGGU' } });
+
+    // Pembalikan. Tanpa jejak, sebuah pasangan bisa dilepas dan dijodohkan ulang
+    // ke nota lain tanpa ada yang bisa menunjukkan bahwa itu pernah terjadi.
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.RETUR_DILEPAS,
+      entityType: 'WarehouseReturn',
+      entityId: nri.id,
+      changes: { before: { storeReturnId }, after: { storeReturnId: null } },
+    });
 
     return {
       ok: true as const,
@@ -510,7 +555,7 @@ export async function putuskanBeban(input: {
   return runSerializable(async (tx) => {
     const beban = await tx.returnCharge.findUnique({
       where: { id: input.chargeId },
-      select: { id: true, status: true, amount: true, storeReturnId: true },
+      select: { id: true, status: true, amount: true, storeReturnId: true, bearer: true },
     });
     if (!beban) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
     if (beban.status !== 'TERBUKA') return { ok: false as const, alasan: 'SUDAH_DIPUTUSKAN' as const };
@@ -530,6 +575,21 @@ export async function putuskanBeban(input: {
       },
     });
 
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.BEBAN_DIPUTUSKAN,
+      entityType: 'ReturnCharge',
+      entityId: beban.id,
+      // Keputusan ini menetapkan siapa menanggung kerugian. Alasannya wajib di
+      // penulis; di sini ia ikut tersimpan bersama nilainya.
+      changes: {
+        before: { status: beban.status, bearer: beban.bearer },
+        after: { status: 'DITETAPKAN', bearer: input.bearer },
+      },
+      metadata: { amount: angka(beban.amount), bearerUserId: input.bearerUserId ?? null },
+      reason: input.alasan,
+    });
+
     return {
       ok: true as const,
       piutangDihitungUlang: await hitungUlangTersentuh(tx, beban.storeReturnId),
@@ -546,6 +606,7 @@ export async function putuskanBeban(input: {
  */
 export async function tandaiBebanLunas(input: {
   chargeId: string;
+  olehUserId: string;
 }): Promise<{ ok: true } | Gagal> {
   return runSerializable(async (tx) => {
     const beban = await tx.returnCharge.findUnique({
@@ -560,6 +621,15 @@ export async function tandaiBebanLunas(input: {
       where: { id: beban.id },
       data: { status: 'LUNAS', settledAt: new Date() },
     });
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.BEBAN_LUNAS,
+      entityType: 'ReturnCharge',
+      entityId: beban.id,
+      changes: { before: { status: beban.status }, after: { status: 'LUNAS' } },
+    });
+
     return { ok: true as const };
   });
 }
@@ -575,13 +645,14 @@ export async function tandaiBebanLunas(input: {
 export async function batalkanRetur(input: {
   storeReturnId: string;
   alasan: string;
+  olehUserId: string;
 }): Promise<Berhasil | Gagal> {
   if (!input.alasan?.trim()) return { ok: false, alasan: 'ALASAN_WAJIB' };
 
   return runSerializable(async (tx) => {
     const nota = await tx.storeReturn.findUnique({
       where: { id: input.storeReturnId },
-      select: { id: true, status: true, note: true },
+      select: { id: true, noNrt: true, status: true, note: true },
     });
     if (!nota) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
     if (nota.status === 'BATAL') return { ok: false as const, alasan: 'SUDAH_DIBATALKAN' as const };
@@ -595,6 +666,18 @@ export async function batalkanRetur(input: {
     await tx.storeReturn.update({
       where: { id: nota.id },
       data: { status: 'BATAL', note: [nota.note, input.alasan.trim()].filter(Boolean).join('\n') },
+    });
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.RETUR_DIBATALKAN,
+      entityType: 'StoreReturn',
+      entityId: nota.id,
+      // Membatalkan TIDAK menghapus potongan yang menunjuknya — ia berubah jadi
+      // tertahan penuh. Alasannya harus tercatat, karena angka piutang naik.
+      changes: { before: { status: nota.status }, after: { status: 'BATAL' } },
+      metadata: { noNrt: nota.noNrt },
+      reason: input.alasan,
     });
 
     return { ok: true as const, piutangDihitungUlang: await hitungUlangTersentuh(tx, nota.id) };

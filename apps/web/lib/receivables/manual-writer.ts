@@ -1,5 +1,6 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { catatJejak, JEJAK } from './jejak';
 
 /**
  * Penulis faktur yang diketik manual.
@@ -32,6 +33,7 @@ export async function buatPiutangManual(input: {
   salesmanId?: string | null;
   invoiceDate: Date;
   dueDate: Date;
+  olehUserId: string;
   amount?: number;
   items?: BarisFaktur[];
 }): Promise<{ ok: true; id: string } | { ok: false; alasan: AlasanGagalFaktur }> {
@@ -88,6 +90,15 @@ export async function buatPiutangManual(input: {
         },
       },
       select: { id: true },
+    });
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.FAKTUR_MANUAL,
+      entityType: 'Receivable',
+      entityId: piutang.id,
+      changes: { after: { invoiceNo: nomor, storeId: input.storeId, amount: total } },
+      metadata: { jumlahBaris: items.length },
     });
 
     return { ok: true as const, id: piutang.id };

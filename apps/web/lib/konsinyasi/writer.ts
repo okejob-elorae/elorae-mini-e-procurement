@@ -1,6 +1,7 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { bagiKomisi } from './aturan';
+import { catatJejak, JEJAK } from '@/lib/receivables/jejak';
 
 /**
  * Penulis siklus konsinyasi.
@@ -64,6 +65,7 @@ export async function bukaSiklus(input: {
   storeId: string;
   periodYear: number;
   periodMonth: number;
+  olehUserId: string;
   spgDueDate?: Date | null;
 }): Promise<{ ok: true; id: string; noKonsi: string } | Gagal> {
   if (input.periodMonth < 1 || input.periodMonth > 12 || input.periodYear < 2000) {
@@ -93,6 +95,21 @@ export async function bukaSiklus(input: {
         },
         select: { id: true, noKonsi: true },
       });
+
+      await catatJejak(tx, {
+        userId: input.olehUserId,
+        action: JEJAK.KONSI_DIBUKA,
+        entityType: 'ConsignmentCycle',
+        entityId: siklus.id,
+        changes: {
+          after: {
+            noKonsi: siklus.noKonsi,
+            storeId: input.storeId,
+            periode: `${input.periodYear}-${String(input.periodMonth).padStart(2, '0')}`,
+          },
+        },
+      });
+
       return { ok: true as const, id: siklus.id, noKonsi: siklus.noKonsi };
     });
   } catch (err) {
@@ -108,6 +125,7 @@ export async function bukaSiklus(input: {
 /** Kirim barang titipan ke toko. */
 export async function kirimTitipan(input: {
   storeId: string;
+  olehUserId: string;
   cycleId?: string | null;
   shippedAt: Date;
   items: BarisKirim[];
@@ -145,6 +163,24 @@ export async function kirimTitipan(input: {
         },
         select: { id: true, noKirim: true },
       });
+
+      await catatJejak(tx, {
+        userId: input.olehUserId,
+        action: JEJAK.KONSI_DIKIRIM,
+        entityType: 'ConsignmentShipment',
+        entityId: kirim.id,
+        // Kiriman menentukan sisi "dikirim" dari stok titipan. Kiriman yang
+        // salah membuat sisa titipan salah selamanya, tanpa ada yang menghitung.
+        changes: {
+          after: {
+            noKirim: kirim.noKirim,
+            storeId: input.storeId,
+            nilai: items.reduce((s, b) => s + b.qty * b.price, 0),
+          },
+        },
+        metadata: { jumlahBaris: items.length },
+      });
+
       return { ok: true as const, id: kirim.id, noKirim: kirim.noKirim };
     });
   } catch (err) {
@@ -166,6 +202,8 @@ export async function catatLaporan(input: {
   cycleId: string;
   source: 'SPG' | 'TOKO';
   reportedAt: Date;
+  /** Yang mencatat laporan. Wajib — laporan tanpa pencatat tak bisa ditanyakan. */
+  olehUserId: string;
   reportedById?: string | null;
   items: BarisLaporan[];
   note?: string | null;
@@ -202,6 +240,16 @@ export async function catatLaporan(input: {
           },
         },
       });
+      await catatJejak(tx, {
+        userId: input.olehUserId,
+        action: JEJAK.KONSI_LAPORAN,
+        entityType: 'ConsignmentCycle',
+        entityId: siklus.id,
+        // Laporan boleh ditimpa selama belum dikunci. Yang lama hanya hidup
+        // di sini setelah ditimpa.
+        changes: { before: { source: input.source, diganti: true }, after: { items } },
+        metadata: { source: input.source },
+      });
       return { ok: true as const };
     }
 
@@ -221,6 +269,16 @@ export async function catatLaporan(input: {
         },
       },
     });
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONSI_LAPORAN,
+      entityType: 'ConsignmentCycle',
+      entityId: siklus.id,
+      changes: { after: { items } },
+      metadata: { source: input.source },
+    });
+
     return { ok: true as const };
   });
 }
@@ -335,6 +393,20 @@ export async function kunciAngka(input: {
       data: { lockedAt: new Date(), lockedById: input.olehUserId },
     });
 
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONSI_DIKUNCI,
+      entityType: 'ConsignmentCycle',
+      entityId: siklus.id,
+      /*
+       * Angka inilah yang menagih toko dan membayar komisi. Ia bisa dibuka lagi
+       * selama belum ada gaji dibayar, dan barisnya hanya menyimpan yang
+       * terakhir — jadi angka yang tergantikan hanya ada di sini.
+       */
+      changes: { after: { baris, totalKomisi, gajiPokokPerSpg: input.gajiPokokPerSpg ?? 0 } },
+      metadata: { jumlahSpg: spg.length, jumlahBaris: baris.length },
+    });
+
     return { ok: true as const, totalKomisi, jumlahSpg: spg.length };
   });
 }
@@ -346,12 +418,16 @@ export async function kunciAngka(input: {
  * komisi bisa dihitung ulang lebih kecil dari yang sudah masuk kantong orang —
  * dan tidak ada jalan menariknya kembali.
  */
-export async function bukaKunci(input: { cycleId: string }): Promise<{ ok: true } | Gagal> {
+export async function bukaKunci(input: {
+  cycleId: string;
+  olehUserId: string;
+}): Promise<{ ok: true } | Gagal> {
   return runSerializable(async (tx) => {
     const siklus = await tx.consignmentCycle.findUnique({
       where: { id: input.cycleId },
       select: {
         id: true,
+        noKonsi: true,
         lockedAt: true,
         commissions: { select: { paidAt: true } },
       },
@@ -366,6 +442,22 @@ export async function bukaKunci(input: { cycleId: string }): Promise<{ ok: true 
       where: { id: siklus.id },
       data: { lockedAt: null, lockedById: null },
     });
+
+    // Pembalikan paling berbahaya di modul ini: setelah dibuka, komisi bisa
+    // dihitung ulang. Penulis menolaknya kalau ada gaji sudah dibayar, tapi
+    // yang lolos pun harus meninggalkan nama dan waktunya.
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONSI_DIBUKA_KUNCI,
+      entityType: 'ConsignmentCycle',
+      entityId: siklus.id,
+      changes: {
+        before: { lockedAt: siklus.lockedAt?.toISOString() ?? null },
+        after: { lockedAt: null },
+      },
+      metadata: { noKonsi: siklus.noKonsi },
+    });
+
     return { ok: true as const };
   });
 }
@@ -379,7 +471,7 @@ export async function bayarKomisi(input: {
   return runSerializable(async (tx) => {
     const k = await tx.consignmentCommission.findUnique({
       where: { id: input.commissionId },
-      select: { id: true, paidAt: true },
+      select: { id: true, paidAt: true, cycleId: true, spgUserId: true, total: true },
     });
     if (!k) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
     if (k.paidAt) return { ok: false as const, alasan: 'SUDAH_DIBAYAR' as const };
@@ -388,6 +480,19 @@ export async function bayarKomisi(input: {
       where: { id: k.id },
       data: { paidAt: new Date(), paidById: input.olehUserId, note: input.catatan?.trim() || null },
     });
+
+    // Membayar mengunci siklusnya untuk selamanya: sesudah ini kuncinya tidak
+    // bisa dibuka lagi. Titik itu harus punya nama dan waktu.
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONSI_GAJI_DIBAYAR,
+      entityType: 'ConsignmentCommission',
+      entityId: k.id,
+      changes: { before: { paidAt: null }, after: { paidAt: new Date().toISOString() } },
+      metadata: { cycleId: k.cycleId, spgUserId: k.spgUserId, total: angka(k.total) },
+      reason: input.catatan,
+    });
+
     return { ok: true as const };
   });
 }
@@ -403,6 +508,7 @@ export async function catatNomorDokumen(input: {
   cycleId: string;
   jenis: 'NOTA' | 'PAJAK';
   nomor: string;
+  olehUserId: string;
 }): Promise<{ ok: true } | Gagal> {
   const nomor = input.nomor?.trim();
   if (!nomor) return { ok: false, alasan: 'NOMOR_WAJIB' };
@@ -410,7 +516,7 @@ export async function catatNomorDokumen(input: {
   return runSerializable(async (tx) => {
     const siklus = await tx.consignmentCycle.findUnique({
       where: { id: input.cycleId },
-      select: { id: true, lockedAt: true },
+      select: { id: true, lockedAt: true, noNota: true, noFakturPajak: true },
     });
     if (!siklus) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
     // Nomor nota dan faktur pajak menyatakan nilai yang ditagihkan; sebelum
@@ -424,6 +530,20 @@ export async function catatNomorDokumen(input: {
           ? { noNota: nomor, notaAt: new Date() }
           : { noFakturPajak: nomor, fakturPajakAt: new Date() },
     });
+
+    // Nomor milik orang lain, dan bisa ditimpa. Yang lama hanya hidup di sini.
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONSI_NOMOR,
+      entityType: 'ConsignmentCycle',
+      entityId: siklus.id,
+      changes:
+        input.jenis === 'NOTA'
+          ? { before: { noNota: siklus.noNota }, after: { noNota: nomor } }
+          : { before: { noFakturPajak: siklus.noFakturPajak }, after: { noFakturPajak: nomor } },
+      metadata: { jenis: input.jenis },
+    });
+
     return { ok: true as const };
   });
 }

@@ -1,6 +1,7 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { hitungUlangPiutang } from './writer';
+import { catatJejak, JEJAK } from './jejak';
 
 /**
  * Penulis kontrabon (tanda terima / TT).
@@ -137,6 +138,17 @@ export async function buatKontrabon(input: {
         select: { id: true, docNo: true },
       });
 
+      await catatJejak(tx, {
+        userId: input.salesmanId,
+        action: JEJAK.KONTRABON_DIBUAT,
+        entityType: 'CollectionNote',
+        entityId: nota.id,
+        // Membuat kontrabon mengunci fakturnya dari kontrabon lain sampai
+        // ditutup. Siapa yang menguncinya harus bisa ditanyakan.
+        changes: { after: { docNo: nota.docNo, amount: nilai, storeId: piutang[0].storeId } },
+        metadata: { jumlahFaktur: ids.length, promisedDate: input.promisedDate.toISOString() },
+      });
+
       return { ok: true as const, id: nota.id, docNo: nota.docNo, nilai };
     });
   } catch (err) {
@@ -163,6 +175,7 @@ export type HasilTutupKontrabon =
 export async function tutupKontrabon(input: {
   collectionNoteId: string;
   keputusan: 'SELESAI' | 'BATAL';
+  olehUserId: string;
   catatan?: string | null;
 }): Promise<HasilTutupKontrabon> {
   if (input.keputusan === 'BATAL' && !input.catatan?.trim()) {
@@ -174,6 +187,7 @@ export async function tutupKontrabon(input: {
       where: { id: input.collectionNoteId },
       select: {
         id: true,
+        docNo: true,
         status: true,
         note: true,
         receivableLinks: { select: { receivableId: true } },
@@ -199,6 +213,20 @@ export async function tutupKontrabon(input: {
           ? [nota.note, input.catatan.trim()].filter(Boolean).join('\n')
           : nota.note,
       },
+    });
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action:
+        input.keputusan === 'SELESAI' ? JEJAK.KONTRABON_SELESAI : JEJAK.KONTRABON_DIBATALKAN,
+      entityType: 'CollectionNote',
+      entityId: nota.id,
+      // Membatalkan membebaskan fakturnya untuk kontrabon lain. Tanpa jejak,
+      // sebuah tanda terima bisa hilang dan tidak ada yang bisa menunjukkan
+      // bahwa toko pernah memegangnya.
+      changes: { before: { status: nota.status }, after: { status: input.keputusan } },
+      metadata: { docNo: nota.docNo, jumlahFaktur: nota.receivableLinks.length },
+      reason: input.catatan,
     });
 
     return { ok: true as const, status: input.keputusan };

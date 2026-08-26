@@ -1,6 +1,7 @@
 import { prisma, Prisma } from '@elorae/db';
 import { hitungSisaPiutang } from './rules';
 import { PILIH_POTONGAN, potonganRetur } from './deductions';
+import { catatJejak, JEJAK } from './jejak';
 
 /**
  * Penulis piutang — satu-satunya tempat kolom `outstanding` boleh berubah.
@@ -106,7 +107,7 @@ export async function putuskanKlaim(input: {
   return prisma.$transaction(async (tx) => {
     const klaim = await tx.paymentClaim.findUnique({
       where: { id: input.paymentClaimId },
-      select: { id: true, status: true },
+      select: { id: true, docNo: true, status: true, verifyNote: true },
     });
     if (!klaim) return { ok: false, alasan: 'TIDAK_DITEMUKAN' as const };
     if (klaim.status !== 'DIKIRIM') return { ok: false, alasan: 'SUDAH_DIPUTUSKAN' as const };
@@ -129,6 +130,25 @@ export async function putuskanKlaim(input: {
     for (const link of links) {
       sisaBaru.push(await hitungUlangPiutang(tx, link.receivableId));
     }
+
+    /*
+     * Keputusan ini bisa dibalik lewat basis data, dan barisnya hanya menyimpan
+     * keadaan terakhir. Pasangan sebelum/sesudah di sini adalah satu-satunya
+     * tempat keputusan yang tergantikan masih bisa dibaca.
+     */
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action:
+        input.keputusan === 'TERVERIFIKASI' ? JEJAK.KLAIM_DIVERIFIKASI : JEJAK.KLAIM_DITOLAK,
+      entityType: 'PaymentClaim',
+      entityId: klaim.id,
+      changes: {
+        before: { status: klaim.status, verifyNote: klaim.verifyNote },
+        after: { status: input.keputusan, verifyNote: input.catatan?.trim() || null },
+      },
+      metadata: { docNo: klaim.docNo, piutangDihitungUlang: links.length },
+      reason: input.catatan,
+    });
 
     return { ok: true as const, sisaBaru };
   });

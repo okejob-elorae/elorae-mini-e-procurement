@@ -3983,7 +3983,10 @@
     "stockHint": "Barang yang dipilih dari katalog akan MENAMBAH stok gudang saat hitungan ini disimpan. Baris yang hanya diketik namanya tidak menggerakkan stok.",
     "photoLabel": "Foto nota toko",
     "photoHint": "Wajib. Foto inilah yang jadi isi arsip — nota tanpa foto hanya menyisakan angka yang tak bisa dibuktikan ke toko.",
-    "print": "Cetak"
+    "print": "Cetak",
+    "bearerPerson": "Sales yang menanggung",
+    "bearerPersonPlaceholder": "Pilih orangnya",
+    "bearerPersonHint": "Beban melekat pada orang, bukan pada peran — itulah yang membuatnya muncul di layar orang itu dan bisa dipotong dari komisinya."
   },
   "foto": {
     "pick": "Ambil atau pilih foto",

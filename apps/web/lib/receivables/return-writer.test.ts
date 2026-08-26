@@ -31,6 +31,7 @@ const state = {
   stokDibuat: [] as Record<string, unknown>[],
   stokUpdates: [] as Record<string, unknown>[],
   penyesuaian: [] as Record<string, unknown>[],
+  jejak: [] as Record<string, unknown>[],
 };
 
 const tx = {
@@ -71,6 +72,12 @@ const tx = {
     deleteMany: vi.fn(async () => {
       state.bebanDihapus += 1;
       return { count: 1 };
+    }),
+  },
+  auditLog: {
+    create: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      state.jejak.push(a.data);
+      return {};
     }),
   },
   paymentClaimDeduction: { findMany: vi.fn(async () => state.potongan) },
@@ -157,6 +164,7 @@ beforeEach(() => {
   state.stokDibuat = [];
   state.stokUpdates = [];
   state.penyesuaian = [];
+  state.jejak = [];
 });
 
 const NRT_DASAR = {
@@ -164,6 +172,7 @@ const NRT_DASAR = {
   storeId: 't1',
   claimDate: HARI_INI,
   deliveryMethod: 'SALES' as const,
+  olehUserId: 'u1',
 };
 
 describe('catatReturToko — nomornya milik toko', () => {
@@ -326,7 +335,7 @@ describe('catatHitunganGudang', () => {
 describe('jodohkanRetur', () => {
   it('menolak menjodohkan penerimaan yang sudah punya pasangan', async () => {
     state.nri = { ...state.nri, storeReturnId: 'nrtX' };
-    expect(await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1' })).toEqual({
+    expect(await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1', olehUserId: 'u1' })).toEqual({
       ok: false,
       alasan: 'BUKAN_YATIM',
     });
@@ -335,7 +344,7 @@ describe('jodohkanRetur', () => {
   it('menolak menjodohkan ke toko yang berbeda', async () => {
     // Memindahkan barang satu toko ke tagihan toko lain.
     state.nri = { ...state.nri, storeId: 't2' };
-    expect(await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1' })).toEqual({
+    expect(await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1', olehUserId: 'u1' })).toEqual({
       ok: false,
       alasan: 'BEDA_TOKO',
     });
@@ -343,14 +352,14 @@ describe('jodohkanRetur', () => {
 
   it('menolak nota yang sudah punya hitungan gudang', async () => {
     state.nrt = { ...state.nrt, warehouseReturn: { id: 'nri9' } };
-    expect(await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1' })).toEqual({
+    expect(await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1', olehUserId: 'u1' })).toEqual({
       ok: false,
       alasan: 'SUDAH_DIHITUNG',
     });
   });
 
   it('menjodohkan dan menghitung ulang piutang', async () => {
-    const h = await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1' });
+    const h = await jodohkanRetur({ warehouseReturnId: 'nri1', storeReturnId: 'nrt1', olehUserId: 'u1' });
     expect(h).toEqual({ ok: true, piutangDihitungUlang: 2 });
     expect(state.nriUpdates[0]).toMatchObject({ storeReturnId: 'nrt1', storeId: 't1' });
   });
@@ -362,7 +371,7 @@ describe('lepasPasangan', () => {
     // meninggalkan beban yang menunjuk perbandingan yang tidak ada lagi.
     state.nri = { ...state.nri, storeReturnId: 'nrt1' };
     state.bebanDiputuskanCount = 1;
-    expect(await lepasPasangan({ warehouseReturnId: 'nri1' })).toEqual({
+    expect(await lepasPasangan({ warehouseReturnId: 'nri1', olehUserId: 'u1' })).toEqual({
       ok: false,
       alasan: 'BEBAN_SUDAH_DIPUTUSKAN',
     });
@@ -371,7 +380,7 @@ describe('lepasPasangan', () => {
 
   it('melepas dan membuang beban yang masih terbuka', async () => {
     state.nri = { ...state.nri, storeReturnId: 'nrt1' };
-    const h = await lepasPasangan({ warehouseReturnId: 'nri1' });
+    const h = await lepasPasangan({ warehouseReturnId: 'nri1', olehUserId: 'u1' });
     expect(h).toEqual({ ok: true, piutangDihitungUlang: 2 });
     expect(state.bebanDihapus).toBe(1);
     expect(state.nriUpdates[0].storeReturnId).toBeNull();
@@ -419,7 +428,7 @@ describe('putuskanBeban', () => {
 
 describe('tandaiBebanLunas', () => {
   it('menolak beban yang belum diputuskan', async () => {
-    expect(await tandaiBebanLunas({ chargeId: 'b1' })).toEqual({
+    expect(await tandaiBebanLunas({ chargeId: 'b1', olehUserId: 'u1' })).toEqual({
       ok: false,
       alasan: 'BELUM_DIPUTUSKAN',
     });
@@ -429,20 +438,20 @@ describe('tandaiBebanLunas', () => {
     // Fakturnya sudah dilepas saat bebannya ditetapkan. Ini penagihan pengganti
     // yang berjalan sendiri.
     state.beban = { ...state.beban, status: 'DITETAPKAN' };
-    expect(await tandaiBebanLunas({ chargeId: 'b1' })).toEqual({ ok: true });
+    expect(await tandaiBebanLunas({ chargeId: 'b1', olehUserId: 'u1' })).toEqual({ ok: true });
     expect(state.bebanUpdates[0].status).toBe('LUNAS');
     expect(state.dihitungUlang).toEqual([]);
   });
 
   it('menolak beban yang sudah lunas', async () => {
     state.beban = { ...state.beban, status: 'LUNAS' };
-    expect(await tandaiBebanLunas({ chargeId: 'b1' })).toEqual({ ok: false, alasan: 'SUDAH_LUNAS' });
+    expect(await tandaiBebanLunas({ chargeId: 'b1', olehUserId: 'u1' })).toEqual({ ok: false, alasan: 'SUDAH_LUNAS' });
   });
 });
 
 describe('batalkanRetur', () => {
   it('menolak tanpa alasan', async () => {
-    expect(await batalkanRetur({ storeReturnId: 'nrt1', alasan: '' })).toEqual({
+    expect(await batalkanRetur({ storeReturnId: 'nrt1', alasan: '', olehUserId: 'u1' })).toEqual({
       ok: false,
       alasan: 'ALASAN_WAJIB',
     });
@@ -450,7 +459,7 @@ describe('batalkanRetur', () => {
 
   it('MENOLAK membatalkan kalau bebannya sudah diputuskan', async () => {
     state.bebanDiputuskanCount = 1;
-    expect(await batalkanRetur({ storeReturnId: 'nrt1', alasan: 'ditarik' })).toEqual({
+    expect(await batalkanRetur({ storeReturnId: 'nrt1', alasan: 'ditarik', olehUserId: 'u1' })).toEqual({
       ok: false,
       alasan: 'BEBAN_SUDAH_DIPUTUSKAN',
     });
@@ -460,7 +469,7 @@ describe('batalkanRetur', () => {
   it('membatalkan dan menghitung ulang piutang', async () => {
     // Piutang WAJIB dihitung ulang: potongan yang menunjuk nota batal berubah
     // jadi tertahan penuh, dan sisa piutangnya naik.
-    const h = await batalkanRetur({ storeReturnId: 'nrt1', alasan: 'toko menarik klaim' });
+    const h = await batalkanRetur({ storeReturnId: 'nrt1', alasan: 'toko menarik klaim', olehUserId: 'u1' });
     expect(h).toEqual({ ok: true, piutangDihitungUlang: 2 });
     expect(state.nrtUpdates[0].status).toBe('BATAL');
     expect(state.dihitungUlang).toEqual(['r1', 'r2']);

@@ -14,6 +14,7 @@ const state = {
   sisa: new Map<string, number>(),
   dibuat: [] as Record<string, unknown>[],
   dihitungUlang: [] as string[],
+  jejak: [] as Record<string, unknown>[],
 };
 
 /**
@@ -32,6 +33,12 @@ const saring = <T extends { id: string }>(sumber: () => T[]) =>
 const tx = {
   receivable: { findMany: saring(() => state.piutang) },
   storeReturn: { findMany: saring(() => state.retur) },
+  auditLog: {
+    create: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      state.jejak.push(a.data);
+      return {};
+    }),
+  },
   paymentClaim: {
     findFirst: vi.fn(async () => null),
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
@@ -85,6 +92,7 @@ beforeEach(() => {
   ]);
   state.dibuat = [];
   state.dihitungUlang = [];
+  state.jejak = [];
 });
 
 const angka = (v: unknown) => Number((v as { value: number }).value);

@@ -52,7 +52,7 @@ export async function simpanImporAction(baris: BarisImpor[]): Promise<HasilAksiS
   }
 
   try {
-    const hasil = await simpanImpor(pulihkanTanggal(baris));
+    const hasil = await simpanImpor(pulihkanTanggal(baris), { olehUserId: session.user.id });
     revalidatePath('/backoffice/piutang');
     return { ok: true, hasil };
   } catch (err) {
@@ -121,6 +121,7 @@ export async function buatFakturManualAction(input: {
       invoiceDate: tglFaktur,
       dueDate: tempo,
       salesmanId: session.user.id,
+      olehUserId: session.user.id,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     revalidatePath('/backoffice/piutang');

@@ -14,6 +14,7 @@ const state = {
   links: [] as { receivableId: string }[],
   receivable: { amount: 10_000_000, claimLinks: [] as unknown[] },
   receivableUpdates: [] as Record<string, unknown>[],
+  jejak: [] as Record<string, unknown>[],
 };
 
 const tx = {
@@ -25,6 +26,12 @@ const tx = {
     }),
   },
   paymentClaimReceivable: { findMany: vi.fn(async () => state.links) },
+  auditLog: {
+    create: vi.fn(async (a: { data: Record<string, unknown> }) => {
+      state.jejak.push(a.data);
+      return {};
+    }),
+  },
   receivable: {
     findUnique: vi.fn(async () => state.receivable),
     update: vi.fn(async (args: { data: Record<string, unknown> }) => {
@@ -50,6 +57,7 @@ function reset(klaimStatus: string | null) {
   state.links = [{ receivableId: 'r1' }];
   state.receivable = { amount: 10_000_000, claimLinks: [] };
   state.receivableUpdates = [];
+  state.jejak = [];
 }
 
 describe('putuskanKlaim', () => {

@@ -1,6 +1,7 @@
 import { Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { hitungUlangPiutang } from './writer';
+import { catatJejak, JEJAK } from './jejak';
 
 /**
  * Penulis klaim pembayaran (BKM).
@@ -175,6 +176,28 @@ export async function buatKlaimPembayaran(input: {
       for (const baris of pelunasan) {
         await hitungUlangPiutang(tx, baris.receivableId);
       }
+
+      await catatJejak(tx, {
+        userId: input.createdById,
+        action: JEJAK.KLAIM_DIBUAT,
+        entityType: 'PaymentClaim',
+        entityId: klaim.id,
+        changes: {
+          after: {
+            docNo: klaim.docNo,
+            invoiceAmount: nilaiFaktur,
+            deductionTotal: totalPotongan,
+            receivedAmount: nilaiFaktur - totalPotongan,
+          },
+        },
+        metadata: {
+          storeId: input.storeId,
+          jumlahFaktur: pelunasan.length,
+          // Potongan yang tertaut nota retur dicatat terpisah: itulah yang
+          // menentukan berapa nanti ditahan, dan tautannya bisa diubah.
+          potonganRetur: potongan.filter((p) => p.storeReturnId).length,
+        },
+      });
 
       return { ok: true as const, id: klaim.id, docNo: klaim.docNo };
     });

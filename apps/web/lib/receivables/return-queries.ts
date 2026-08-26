@@ -25,6 +25,7 @@ export type BarisKerjaRetur = {
   nomorPasangan: string | null;
   storeId: string | null;
   storeName: string | null;
+  salesmanId: string | null;
   salesmanName: string | null;
   tanggal: string;
   caraKirim: CaraKirim;
@@ -45,6 +46,7 @@ const PILIH_NRT = {
   id: true,
   noNrt: true,
   storeId: true,
+  salesmanId: true,
   claimDate: true,
   deliveryMethod: true,
   claimedAmount: true,
@@ -67,6 +69,7 @@ function dariNrt(r: {
   photoUrl: string | null;
   status: string;
   store: { name: string };
+  salesmanId: string | null;
   salesman: { name: string | null } | null;
   warehouseReturn: { noNri: string; physicalAmount: unknown; status: string } | null;
   charges: { id: string; status: string; bearer: string | null; amount: unknown }[];
@@ -97,6 +100,7 @@ function dariNrt(r: {
     nomorPasangan: nri?.noNri ?? null,
     storeId: r.storeId,
     storeName: r.store.name,
+    salesmanId: r.salesmanId,
     salesmanName: r.salesman?.name ?? null,
     tanggal: r.claimDate.toISOString(),
     caraKirim: r.deliveryMethod as CaraKirim,
@@ -144,6 +148,7 @@ export async function daftarKerjaRetur(): Promise<BarisKerjaRetur[]> {
       nomorPasangan: null,
       storeId: r.storeId,
       storeName: r.store?.name ?? null,
+      salesmanId: null,
       salesmanName: null,
       tanggal: r.receivedAt.toISOString(),
       caraKirim: r.deliveryMethod as CaraKirim,
@@ -385,6 +390,24 @@ export async function katalogBarang(): Promise<{ value: string; label: string; n
     take: 500,
   });
   return rows.map((i) => ({ value: i.id, label: `${i.sku} · ${i.nameId}`, nama: i.nameId }));
+}
+
+/**
+ * Kandidat penanggung beban ke sales.
+ *
+ * Beban ke "sales" harus melekat pada ORANG, bukan pada peran — itulah yang
+ * membuatnya bisa muncul di layar orang itu dan dipotong dari komisinya nanti.
+ * Tanpa id orangnya, beban SALES tersimpan sebagai tuduhan tanpa alamat.
+ */
+export async function kandidatPenanggung(): Promise<{ id: string; name: string }[]> {
+  const rows = await prisma.user.findMany({
+    orderBy: { name: 'asc' },
+    select: { id: true, name: true, email: true },
+    take: 200,
+  });
+  // Nama boleh kosong di `User`; surel dipakai sebagai gantinya supaya tidak
+  // ada baris pilihan yang tampil tanpa label sama sekali.
+  return rows.map((u) => ({ id: u.id, name: u.name ?? u.email }));
 }
 
 /** Toko aktif, untuk memilih saat mencatat nota retur. */

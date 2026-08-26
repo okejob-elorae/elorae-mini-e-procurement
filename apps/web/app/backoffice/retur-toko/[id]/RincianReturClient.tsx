@@ -21,6 +21,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -51,9 +58,11 @@ const BEBAN = ['TOKO', 'SALES', 'GUDANG', 'PERUSAHAAN'] as const;
 
 export function RincianReturClient({
   data,
+  kandidat,
   bolehMengelola,
 }: {
   data: RincianRetur;
+  kandidat: { id: string; name: string }[];
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('storeReturns');
@@ -61,6 +70,10 @@ export function RincianReturClient({
   const [pending, startTransition] = useTransition();
   const [bebanTerbuka, setBebanTerbuka] = useState<(typeof BEBAN)[number] | null>(null);
   const [alasan, setAlasan] = useState('');
+  /* Beban ke sales harus melekat pada ORANG. Dimulai dari yang mencatat
+     notanya — biasanya benar — tapi bisa diganti: yang mencatat tidak selalu
+     yang keliru. */
+  const [penanggungId, setPenanggungId] = useState<string>(data.baris.salesmanId ?? '');
   const [batalTerbuka, setBatalTerbuka] = useState(false);
   const [alasanBatal, setAlasanBatal] = useState('');
 
@@ -358,6 +371,7 @@ export function RincianReturClient({
                         onClick={() => {
                           setBebanTerbuka(k);
                           setAlasan('');
+                          setPenanggungId(data.baris.salesmanId ?? '');
                         }}
                       >
                         {t(`assign${k}` as never)}
@@ -457,6 +471,25 @@ export function RincianReturClient({
                 })}
             </DialogDescription>
           </DialogHeader>
+          {bebanTerbuka === 'SALES' && (
+            <div className="space-y-2">
+              <Label htmlFor="beban-orang">{t('bearerPerson')}</Label>
+              <Select value={penanggungId} onValueChange={setPenanggungId}>
+                <SelectTrigger id="beban-orang">
+                  <SelectValue placeholder={t('bearerPersonPlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {kandidat.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{t('bearerPersonHint')}</p>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="beban-alasan">{t('assignReason')}</Label>
             <Textarea
@@ -469,12 +502,24 @@ export function RincianReturClient({
           </div>
           <DialogFooter>
             <Button
-              disabled={pending || alasan.trim().length === 0}
+              disabled={
+                pending ||
+                alasan.trim().length === 0 ||
+                // Beban ke sales tanpa orangnya adalah tuduhan tanpa alamat:
+                // ia tidak akan muncul di layar siapa pun.
+                (bebanTerbuka === 'SALES' && penanggungId === '')
+              }
               onClick={() =>
                 bebanTerbuka &&
                 data.beban &&
                 jalankan(
-                  () => putuskanBebanAction(data.beban!.id, bebanTerbuka, alasan),
+                  () =>
+                    putuskanBebanAction(
+                      data.beban!.id,
+                      bebanTerbuka,
+                      alasan,
+                      bebanTerbuka === 'SALES' ? penanggungId : null,
+                    ),
                   t('okAssigned'),
                   () => setBebanTerbuka(null),
                 )

@@ -66,7 +66,12 @@ export async function catatReturTokoAction(input: {
   if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
 
   try {
-    const hasil = await catatReturToko({ ...input, claimDate: tanggal, salesmanId: userId });
+    const hasil = await catatReturToko({
+      ...input,
+      claimDate: tanggal,
+      salesmanId: userId,
+      olehUserId: userId,
+    });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
     return { ok: true };
@@ -122,7 +127,7 @@ export async function jodohkanReturAction(
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
-    const hasil = await jodohkanRetur({ warehouseReturnId, storeReturnId });
+    const hasil = await jodohkanRetur({ warehouseReturnId, storeReturnId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
     return { ok: true };
@@ -138,7 +143,7 @@ export async function lepasPasanganAction(warehouseReturnId: string): Promise<Ha
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
-    const hasil = await lepasPasangan({ warehouseReturnId });
+    const hasil = await lepasPasangan({ warehouseReturnId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
     return { ok: true };
@@ -175,7 +180,7 @@ export async function tandaiBebanLunasAction(chargeId: string): Promise<HasilAks
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
-    const hasil = await tandaiBebanLunas({ chargeId });
+    const hasil = await tandaiBebanLunas({ chargeId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
     return { ok: true };
@@ -194,7 +199,7 @@ export async function batalkanReturAction(
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
-    const hasil = await batalkanRetur({ storeReturnId, alasan });
+    const hasil = await batalkanRetur({ storeReturnId, alasan, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
     return { ok: true };

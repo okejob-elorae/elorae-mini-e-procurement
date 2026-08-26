@@ -1,5 +1,6 @@
 import { prisma, Prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { catatJejak, JEJAK } from '../jejak';
 import type { BarisImpor } from './baris';
 
 /**
@@ -123,7 +124,7 @@ export async function tinjauImpor(baris: BarisImpor[]): Promise<TinjauanImpor> {
 /** Simpan baris yang lolos. Yang tidak lolos dilaporkan, bukan diperbaiki. */
 export async function simpanImpor(
   baris: BarisImpor[],
-  opts: { salesmanId?: string | null } = {},
+  opts: { olehUserId: string; salesmanId?: string | null },
 ): Promise<HasilImpor> {
   const k = await muatKonteks(baris.map((b) => b.noFaktur).filter(Boolean));
 
@@ -150,8 +151,9 @@ export async function simpanImpor(
   if (siap.length === 0) return { masuk: 0, dilewati };
 
   await runSerializable(async (tx) => {
+    const dibuat: string[] = [];
     for (const { b, storeId } of siap) {
-      await tx.receivable.create({
+      const baru = await tx.receivable.create({
         data: {
           invoiceNo: b.noFaktur,
           storeId,
@@ -163,8 +165,33 @@ export async function simpanImpor(
           settledAt: null,
           source: 'IMPORT',
         },
+        select: { id: true },
       });
+      dibuat.push(baru.id);
     }
+
+    /*
+     * SATU jejak untuk seluruh impor, bukan satu per faktur.
+     *
+     * Yang perlu bisa ditelusuri adalah tindakannya — siapa mengimpor berkas
+     * apa, kapan, dan berapa yang masuk. Dua ratus jejak identik hanya
+     * mengubur jejak lain, dan tidak menambah satu pun fakta baru.
+     *
+     * Impor belum bisa dibatalkan lewat layar, jadi daftar id yang dibuat
+     * disimpan di sini — itulah yang dibutuhkan untuk membatalkannya nanti,
+     * dan tanpa itu satu-satunya jalan adalah menebak dari waktu pembuatan.
+     */
+    await catatJejak(tx, {
+      userId: opts.olehUserId,
+      action: JEJAK.FAKTUR_IMPOR,
+      entityType: 'Receivable',
+      entityId: dibuat[0] ?? 'batch',
+      changes: { after: { masuk: dibuat.length, dilewati: dilewati.length } },
+      metadata: {
+        receivableIds: dibuat,
+        alasanDilewati: dilewati.map((d) => ({ baris: d.baris, alasan: d.alasan })),
+      },
+    });
   });
 
   return { masuk: siap.length, dilewati };

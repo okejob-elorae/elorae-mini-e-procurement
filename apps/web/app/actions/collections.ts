@@ -92,7 +92,12 @@ export async function tutupKontrabonAction(
   }
 
   try {
-    const hasil = await tutupKontrabon({ collectionNoteId, keputusan, catatan });
+    const hasil = await tutupKontrabon({
+      collectionNoteId,
+      keputusan,
+      catatan,
+      olehUserId: session.user.id,
+    });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
     return { ok: true };

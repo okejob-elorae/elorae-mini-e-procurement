@@ -3983,7 +3983,10 @@
     "stockHint": "Items picked from the catalogue will ADD to warehouse stock when this count is saved. Rows with only a typed name do not move stock.",
     "photoLabel": "Photo of the shop's note",
     "photoHint": "Required. These photos are what the archive is made of — a note without one leaves only a figure you cannot show the shop.",
-    "print": "Print"
+    "print": "Print",
+    "bearerPerson": "Which salesman",
+    "bearerPersonPlaceholder": "Pick the person",
+    "bearerPersonHint": "A charge attaches to a person, not a role — that is what makes it appear on their screen and deductible from their commission."
   },
   "foto": {
     "pick": "Take or choose a photo",
