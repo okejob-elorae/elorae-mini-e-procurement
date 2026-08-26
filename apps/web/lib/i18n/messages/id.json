@@ -268,18 +268,6 @@
       "pickerPrevious": "Sebelumnya",
       "pickerNext": "Berikutnya",
       "pickerPage": "Halaman {page} dari {totalPages}"
-    },
-    "themePresets": {
-      "presetLabel": "Tema siap pakai",
-      "presetHint": "Tiap tema adalah satu warna Pantone asli. Pilih satu, lalu Simpan tema.",
-      "custom": "Warna lain",
-      "noteViolet": "Ungu SaaS — paling umum di aplikasi web sekarang",
-      "noteBlue": "Biru korporat — kesan dipercaya, cocok untuk keuangan",
-      "noteTeal": "Teal — tenang, tidak melelahkan mata seharian",
-      "noteBotanical": "Hijau botani — teduh, khas bahan alami",
-      "noteRose": "Rose — hangat dan jarang dipakai",
-      "noteWarm": "Oker hangat — nuansa kain dan tanah",
-      "noteNeutral": "Abu netral — warna hanya untuk status, bukan hiasan"
     }
   },
   "tax": {
