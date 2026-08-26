@@ -102,6 +102,9 @@ model User {
   paymentClaimsAsSalesman PaymentClaim[]  @relation("PaymentClaimSalesman")
   paymentClaimsVerified  PaymentClaim[]   @relation("PaymentClaimVerifier")
   paymentClaimsCreated   PaymentClaim[]   @relation("PaymentClaimCreator")
+  storeReturnsAsSalesman StoreReturn[]   @relation("StoreReturnSalesman")
+  storeReturnsCounted    StoreReturn[]   @relation("StoreReturnCountedBy")
+  storeReturnsDecided    StoreReturn[]   @relation("StoreReturnDecidedBy")
 }
 
 model VerificationToken {
@@ -326,6 +329,7 @@ model Store {
   receivables    Receivable[]
   collectionNotes CollectionNote[]
   paymentClaims  PaymentClaim[]
+  storeReturns   StoreReturn[]
 }
 
 model StoreVisit {
@@ -2591,6 +2595,49 @@ model PaymentClaimReceivable {
   @@index([receivableId])
 }
 
+enum StoreReturnStatus {
+  DIAJUKAN
+  DIHITUNG
+  SELESAI
+  BATAL
+}
+
+enum ReturnBearer {
+  TOKO
+  SALES
+  PERUSAHAAN
+}
+
+model StoreReturn {
+  id            String    @id @default(cuid())
+  docNo         String    @unique
+  storeId       String
+  salesmanId    String?
+  claimDate     DateTime
+  claimedAmount Decimal   @db.Decimal(15, 2)
+  countedAmount Decimal?  @db.Decimal(15, 2)
+  countedAt     DateTime?
+  countedById   String?
+  bearer        ReturnBearer?
+  bearerReason  String?   @db.MediumText
+  decidedAt     DateTime?
+  decidedById   String?
+  status        StoreReturnStatus @default(DIAJUKAN)
+  note          String?   @db.MediumText
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  store         Store @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salesman      User? @relation("StoreReturnSalesman", fields: [salesmanId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  countedBy     User? @relation("StoreReturnCountedBy", fields: [countedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  decidedBy     User? @relation("StoreReturnDecidedBy", fields: [decidedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  deductions    PaymentClaimDeduction[]
+
+  @@index([storeId, status])
+  @@index([status])
+  @@index([claimDate])
+}
+
 enum DeductionMethod {
   NOMINAL
   PERSEN
@@ -2620,6 +2667,7 @@ model PaymentClaimDeduction {
 
   paymentClaim   PaymentClaim   @relation(fields: [paymentClaimId], references: [id], onDelete: Cascade)
   deductionType  DeductionType? @relation(fields: [deductionTypeId], references: [id])
+  storeReturn    StoreReturn?   @relation(fields: [storeReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([paymentClaimId])
   @@index([storeReturnId])

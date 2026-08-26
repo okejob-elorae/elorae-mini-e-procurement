@@ -253,3 +253,86 @@ describe('keadaanPiutang — enam keadaan, diperiksa berurutan', () => {
     expect(keadaanPiutang(dasar)).toBe('belum');
   });
 });
+
+describe('bahanPotonganRetur — nilai fisik diprorata per potongan', () => {
+  it('tidak menahan potongan yang bukan retur', async () => {
+    // Potongan promosi bukan janji tentang barang yang akan datang.
+    const { bahanPotonganRetur } = await import('./rules');
+    expect(bahanPotonganRetur([{ nilaiPotongan: 500_000, retur: null }])).toEqual([]);
+  });
+
+  it('menahan penuh selama gudang belum menghitung', async () => {
+    const { bahanPotonganRetur, returTertahan } = await import('./rules');
+    const bahan = bahanPotonganRetur([
+      { nilaiPotongan: 600_000, retur: { nilaiKlaim: 1_000_000, nilaiFisik: null, bebanDiputuskan: false } },
+    ]);
+    expect(returTertahan(bahan)).toBe(600_000);
+  });
+
+  it('memprorata satu NRT yang dipotong lewat dua pembayaran', async () => {
+    // Kasus yang membuat prorata ada. Tanpa prorata seluruh selisih 200.000
+    // lenyap karena tiap potongan tampak sudah tertutup nilai fisik penuh.
+    const { bahanPotonganRetur, returTertahan } = await import('./rules');
+    const retur = { nilaiKlaim: 1_000_000, nilaiFisik: 800_000, bebanDiputuskan: false };
+    const pertama = returTertahan(bahanPotonganRetur([{ nilaiPotongan: 600_000, retur }]));
+    const kedua = returTertahan(bahanPotonganRetur([{ nilaiPotongan: 400_000, retur }]));
+    expect(pertama).toBeCloseTo(120_000, 6);
+    expect(kedua).toBeCloseTo(80_000, 6);
+    expect(pertama + kedua).toBeCloseTo(200_000, 6);
+  });
+
+  it('melepas potongan begitu bebannya diputuskan', async () => {
+    const { bahanPotonganRetur, returTertahan } = await import('./rules');
+    const bahan = bahanPotonganRetur([
+      { nilaiPotongan: 600_000, retur: { nilaiKlaim: 1_000_000, nilaiFisik: 800_000, bebanDiputuskan: true } },
+    ]);
+    expect(returTertahan(bahan)).toBe(0);
+  });
+
+  it('memperlakukan NRT bernilai nol sebagai belum dihitung', async () => {
+    // Tidak bisa diprorata. Arahnya aman: piutang terlihat lebih besar.
+    const { bahanPotonganRetur, returTertahan } = await import('./rules');
+    const bahan = bahanPotonganRetur([
+      { nilaiPotongan: 300_000, retur: { nilaiKlaim: 0, nilaiFisik: 0, bebanDiputuskan: false } },
+    ]);
+    expect(returTertahan(bahan)).toBe(300_000);
+  });
+
+  it('tidak menahan apa pun kalau gudang menerima lebih dari klaim', async () => {
+    const { bahanPotonganRetur, returTertahan } = await import('./rules');
+    const bahan = bahanPotonganRetur([
+      { nilaiPotongan: 500_000, retur: { nilaiKlaim: 500_000, nilaiFisik: 700_000, bebanDiputuskan: false } },
+    ]);
+    expect(returTertahan(bahan)).toBe(0);
+  });
+});
+
+describe('keadaanRetur', () => {
+  const dasar = { status: 'DIHITUNG' as const, nilaiKlaim: 1_000_000, nilaiFisik: 800_000, bebanDiputuskan: false };
+
+  it('menunggu selama gudang belum menghitung', async () => {
+    const { keadaanRetur } = await import('./rules');
+    expect(keadaanRetur({ ...dasar, status: 'DIAJUKAN', nilaiFisik: null })).toBe('menunggu');
+  });
+
+  it('selisih kalau fisik kurang dan belum ada yang menanggung', async () => {
+    const { keadaanRetur } = await import('./rules');
+    expect(keadaanRetur(dasar)).toBe('selisih');
+  });
+
+  it('beres begitu bebannya diputuskan', async () => {
+    const { keadaanRetur } = await import('./rules');
+    expect(keadaanRetur({ ...dasar, bebanDiputuskan: true })).toBe('beres');
+  });
+
+  it('beres kalau fisik sama atau lebih dari klaim', async () => {
+    const { keadaanRetur } = await import('./rules');
+    expect(keadaanRetur({ ...dasar, nilaiFisik: 1_000_000 })).toBe('beres');
+    expect(keadaanRetur({ ...dasar, nilaiFisik: 1_200_000 })).toBe('beres');
+  });
+
+  it('batal menang atas segalanya', async () => {
+    const { keadaanRetur } = await import('./rules');
+    expect(keadaanRetur({ ...dasar, status: 'BATAL' })).toBe('batal');
+  });
+});

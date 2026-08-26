@@ -6,8 +6,8 @@ import {
   returTertahan,
   selisihHari,
   type KeadaanPiutang,
-  type PotonganRetur,
 } from './rules';
+import { PILIH_POTONGAN, potonganRetur } from './deductions';
 
 /**
  * Baris piutang siap tampil, lengkap dengan keadaannya dan bahan untuk
@@ -71,9 +71,7 @@ export async function daftarPiutang(opts?: { salesmanId?: string }): Promise<Bar
               docNo: true,
               status: true,
               invoiceAmount: true,
-              deductions: {
-                select: { amount: true, storeReturnId: true },
-              },
+              deductions: { select: PILIH_POTONGAN },
             },
           },
         },
@@ -91,23 +89,10 @@ export async function daftarPiutang(opts?: { salesmanId?: string }): Promise<Bar
   const hariIni = new Date();
 
   return rows.map((r) => {
-    /*
-     * Retur belum punya tabelnya sendiri (Tahap 4), jadi setiap potongan retur
-     * dianggap belum dikonfirmasi gudang — tertahan penuh. Itu arah yang aman:
-     * kalau salah, piutang terlihat lebih besar dari seharusnya, bukan lebih
-     * kecil. Kebalikannya akan menghapus utang yang belum dibayar.
-     */
-    const potonganDari = (
-      deductions: { amount: unknown; storeReturnId: string | null }[],
-    ): PotonganRetur[] =>
-      deductions
-        .filter((d) => d.storeReturnId !== null)
-        .map((d) => ({ nilaiKlaim: angka(d.amount), nilaiFisik: null, bebanTerbuka: true }));
-
     const klaimList = r.claimLinks.map((link) => ({
       status: link.paymentClaim.status as 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK',
       nilaiFaktur: angka(link.paymentClaim.invoiceAmount),
-      potonganRetur: potonganDari(link.paymentClaim.deductions),
+      potonganRetur: potonganRetur(link.paymentClaim.deductions),
       nilaiDilunasiPiutangIni: angka(link.settledAmount),
     }));
 
@@ -116,7 +101,7 @@ export async function daftarPiutang(opts?: { salesmanId?: string }): Promise<Bar
     const klaimMenunggu = r.claimLinks.find((l) => l.paymentClaim.status === 'DIKIRIM');
     const tertahan = r.claimLinks
       .filter((l) => l.paymentClaim.status === 'TERVERIFIKASI')
-      .reduce((sum, l) => sum + returTertahan(potonganDari(l.paymentClaim.deductions)), 0);
+      .reduce((sum, l) => sum + returTertahan(potonganRetur(l.paymentClaim.deductions)), 0);
 
     const kontrabonAktif = r.collectionLinks
       .map((l) => l.collectionNote)

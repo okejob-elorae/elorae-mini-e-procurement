@@ -1,5 +1,6 @@
 import { prisma, Prisma } from '@elorae/db';
-import { hitungSisaPiutang, type PotonganRetur } from './rules';
+import { hitungSisaPiutang } from './rules';
+import { PILIH_POTONGAN, potonganRetur } from './deductions';
 
 /**
  * Penulis piutang — satu-satunya tempat kolom `outstanding` boleh berubah.
@@ -16,20 +17,6 @@ import { hitungSisaPiutang, type PotonganRetur } from './rules';
 type Klien = typeof prisma | Prisma.TransactionClient;
 
 const angka = (v: unknown): number => Number(v ?? 0);
-
-/**
- * Retur belum punya tabelnya sendiri sampai Tahap 4, jadi setiap potongan yang
- * menunjuk ke sebuah nota retur dianggap belum dihitung gudang — tertahan
- * penuh. Arahnya sengaja aman: piutang terlihat lebih besar dari seharusnya.
- * Kebalikannya akan menghapus utang yang belum dibayar.
- */
-function potonganDari(
-  deductions: { amount: unknown; storeReturnId: string | null }[],
-): PotonganRetur[] {
-  return deductions
-    .filter((d) => d.storeReturnId !== null)
-    .map((d) => ({ nilaiKlaim: angka(d.amount), nilaiFisik: null, bebanTerbuka: true }));
-}
 
 /**
  * Hitung ulang satu piutang dan simpan hasilnya.
@@ -49,7 +36,7 @@ export async function hitungUlangPiutang(client: Klien, receivableId: string): P
             select: {
               status: true,
               invoiceAmount: true,
-              deductions: { select: { amount: true, storeReturnId: true } },
+              deductions: { select: PILIH_POTONGAN },
             },
           },
         },
@@ -63,7 +50,7 @@ export async function hitungUlangPiutang(client: Klien, receivableId: string): P
     piutang.claimLinks.map((link) => ({
       status: link.paymentClaim.status as 'DIKIRIM' | 'TERVERIFIKASI' | 'DITOLAK',
       nilaiFaktur: angka(link.paymentClaim.invoiceAmount),
-      potonganRetur: potonganDari(link.paymentClaim.deductions),
+      potonganRetur: potonganRetur(link.paymentClaim.deductions),
       nilaiDilunasiPiutangIni: angka(link.settledAmount),
     })),
   );

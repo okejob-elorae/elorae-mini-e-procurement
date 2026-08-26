@@ -131,3 +131,79 @@ export function selisihHari(dari: Date, sampai: Date): number {
   const MS = 24 * 60 * 60 * 1000;
   return Math.floor((sampai.getTime() - dari.getTime()) / MS);
 }
+
+/** Satu potongan pada klaim, apa adanya dari basis data. */
+export type PotonganPadaKlaim = {
+  /** Nilai yang dipotong dari pembayaran ini. */
+  nilaiPotongan: number;
+  /**
+   * Nota retur yang ditunjuk potongan ini, kalau ada. `null` berarti potongan
+   * ini bukan retur sama sekali — potongan promosi, misalnya.
+   */
+  retur: {
+    /** Nilai yang diklaim toko di NRT. */
+    nilaiKlaim: number;
+    /** Nilai fisik yang dihitung gudang di NRI. `null` = belum dihitung. */
+    nilaiFisik: number | null;
+    /** Sudah ada yang ditetapkan menanggung selisihnya. */
+    bebanDiputuskan: boolean;
+  } | null;
+};
+
+/**
+ * Ubah potongan pada sebuah klaim menjadi bahan `returTertahan`.
+ *
+ * Potongan yang tidak menunjuk nota retur tidak pernah ditahan: ia bukan janji
+ * tentang barang yang akan datang, melainkan pengurang harga yang sudah pasti.
+ *
+ * Nilai fisiknya DIPRORATA menurut porsi potongan ini terhadap seluruh nilai
+ * NRT. Satu nota retur boleh dipotong lewat beberapa pembayaran, dan
+ * membandingkan tiap potongan langsung dengan nilai fisik seluruh nota membuat
+ * setiap potongan tampak sudah tertutup — selisihnya lenyap sepenuhnya.
+ *
+ *   NRT 1.000.000, fisik 800.000, dipotong 600.000 lalu 400.000.
+ *   Diprorata : (600.000 − 480.000) + (400.000 − 320.000) = 200.000 ✓
+ *   Tidak     : (600.000 − 800.000) + (400.000 − 800.000) = 0       ✗
+ *
+ * NRT bernilai nol tidak bisa diprorata dan diperlakukan sebagai belum
+ * dihitung — arah yang aman, karena piutang jadi terlihat lebih besar, bukan
+ * lebih kecil.
+ */
+export function bahanPotonganRetur(potongan: PotonganPadaKlaim[]): PotonganRetur[] {
+  const hasil: PotonganRetur[] = [];
+  for (const p of potongan) {
+    if (!p.retur) continue;
+    const { nilaiKlaim, nilaiFisik, bebanDiputuskan } = p.retur;
+    if (nilaiFisik === null || nilaiKlaim <= 0) {
+      hasil.push({ nilaiKlaim: p.nilaiPotongan, nilaiFisik: null, bebanTerbuka: true });
+      continue;
+    }
+    hasil.push({
+      nilaiKlaim: p.nilaiPotongan,
+      nilaiFisik: p.nilaiPotongan * (nilaiFisik / nilaiKlaim),
+      bebanTerbuka: !bebanDiputuskan,
+    });
+  }
+  return hasil;
+}
+
+export type KeadaanRetur = 'menunggu' | 'selisih' | 'beres' | 'batal';
+
+/**
+ * Keadaan sebuah nota retur, diperiksa berurutan.
+ *
+ * `selisih` hanya muncul kalau gudang menerima KURANG dari yang diklaim dan
+ * belum ada yang menanggungnya. Menerima lebih banyak dari klaim bukan utang
+ * toko, jadi tidak menahan apa pun.
+ */
+export function keadaanRetur(r: {
+  status: 'DIAJUKAN' | 'DIHITUNG' | 'SELESAI' | 'BATAL';
+  nilaiKlaim: number;
+  nilaiFisik: number | null;
+  bebanDiputuskan: boolean;
+}): KeadaanRetur {
+  if (r.status === 'BATAL') return 'batal';
+  if (r.nilaiFisik === null) return 'menunggu';
+  if (r.nilaiKlaim - r.nilaiFisik > 0 && !r.bebanDiputuskan) return 'selisih';
+  return 'beres';
+}
