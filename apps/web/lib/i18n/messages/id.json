@@ -3976,7 +3976,7 @@
       "successAll": "Kedua jurnal berhasil diposting.",
       "stillPendingToast": "Satu atau lebih jurnal masih gagal diposting. Periksa pemetaan akun, lalu coba lagi.",
       "err": {
-        "FORBIDDEN": "Anda tidak memiliki izin untuk mengelola pembayaran.",
+        "FORBIDDEN": "Anda tidak memiliki izin untuk mencatat pengiriman penjualan lapangan.",
         "INVALID_REQUEST": "Permintaan tidak valid. Tutup halaman ini lalu buka lagi.",
         "NOT_RETRYABLE": "Jurnal ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
         "GENERIC": "Terjadi kesalahan saat memposting jurnal ini. Coba lagi."
@@ -3998,10 +3998,13 @@
       "allocationTitle": "Alokasikan ke Piutang",
       "allocationEmpty": "Toko ini tidak memiliki piutang lain yang belum lunas.",
       "colAllocation": "Alokasi",
+      "negativeAmount": "Jumlah tidak boleh negatif.",
+      "overAllocated": "Melebihi sisa piutang ini.",
       "allocateFull": "Penuh",
       "fillFromOldest": "Isi dari terlama",
       "runningTotalLabel": "Dialokasikan",
       "mismatchError": "Jumlah alokasi ({allocated}) tidak sama dengan jumlah pembayaran ({amount}).",
+      "amountExceedsOutstanding": "Jumlah yang dimasukkan melebihi total piutang toko ini ({total}).",
       "amountRequired": "Masukkan jumlah pembayaran lebih dari nol.",
       "paidAtRequired": "Pilih tanggal pembayaran.",
       "noAllocations": "Alokasikan pembayaran ke minimal satu piutang.",

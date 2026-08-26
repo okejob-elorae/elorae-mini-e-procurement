@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useLayoutEffect, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Loader2, Wallet } from "lucide-react";
@@ -95,13 +95,18 @@ export function RecordPaymentSheet({
   const [proof, setProof] = useState<ProofState>({ status: "idle", file: null });
   const [idempotencyKey, setIdempotencyKey] = useState("");
 
-  /*
+  /**
    * Seeded once per open, not on every parent render — a re-render while the operator is mid-type
    * (e.g. the store's other data revalidating in the background) must not wipe what they already
    * entered. The current receivable's row is pre-filled to its full outstanding, matching the
    * primary-action affordance the sheet was opened from.
+   *
+   * `useLayoutEffect`, not `useEffect`: the seed has to land before the browser paints the frame
+   * where the sheet becomes visible, or the operator sees a flash of the previous (usually empty,
+   * on first-ever open) state — including `amountRequired`/`paidAtRequired` in red — before it
+   * fills in a moment later.
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     const seeded: Record<string, string> = {};
     for (const c of candidates) {
@@ -120,18 +125,44 @@ export function RecordPaymentSheet({
   }, [open]);
 
   const parsedAmount = roundedAmount(amountInput);
-  const allocationRows = candidates.map((c) => ({ ...c, amount: roundedAmount(allocationInputs[c.id] ?? "") }));
+  /**
+   * `negative`/`overAllocated` are computed per row so the table can point at the exact row
+   * responsible, rather than leaving the operator to hunt for it across every row once the
+   * writer's own guard rejects the request. `overAllocated` uses the same 0.005 slack as
+   * `mismatch` below — both sides are already rounded to 2dp, so a real over-allocation is always
+   * at least a full cent past the outstanding balance.
+   */
+  const allocationRows = candidates.map((c) => {
+    const amount = roundedAmount(allocationInputs[c.id] ?? "");
+    return {
+      ...c,
+      amount,
+      negative: amount < 0,
+      overAllocated: amount > c.outstandingAmount + 0.005,
+    };
+  });
+  /**
+   * The payload only ever carries positive amounts (`recordPaymentAction`'s allocations array),
+   * so the displayed running total is summed from that same filtered set — never from every row —
+   * or a negative "netting off" entry could make the panel read "matched" for a payload the
+   * writer will reject as `ALLOCATION_MISMATCH`, with nothing on screen pointing at the row that
+   * caused it.
+   */
   const activeAllocations = allocationRows
     .filter((r) => r.amount > 0)
     .map((r) => ({ receivableId: r.id, amount: r.amount }));
-  const allocatedTotal = roundCents(allocationRows.reduce((sum, r) => sum + r.amount, 0));
+  const allocatedTotal = roundCents(activeAllocations.reduce((sum, a) => sum + a.amount, 0));
   const mismatch = Math.abs(allocatedTotal - parsedAmount) > 0.005;
+  const totalCandidateOutstanding = roundCents(candidates.reduce((sum, c) => sum + c.outstandingAmount, 0));
+  const amountExceedsCapacity = parsedAmount > totalCandidateOutstanding + 0.005;
 
   const amountValid = parsedAmount > 0;
   const paidAtValid = /^\d{4}-\d{2}-\d{2}$/.test(paidAt);
   const hasAllocations = activeAllocations.length > 0;
+  const hasInvalidRow = allocationRows.some((r) => r.negative || r.overAllocated);
   const proofBusy = proof.status === "uploading";
-  const canSubmit = amountValid && paidAtValid && hasAllocations && !mismatch && !proofBusy && !isPending;
+  const canSubmit =
+    amountValid && paidAtValid && hasAllocations && !mismatch && !hasInvalidRow && !proofBusy && !isPending;
 
   function setAllocation(candidateId: string, raw: string): void {
     setAllocationInputs((prev) => ({ ...prev, [candidateId]: raw }));
@@ -333,7 +364,7 @@ export function RecordPaymentSheet({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9"
+                className="h-10"
                 disabled={isPending || candidates.length === 0 || parsedAmount <= 0}
                 onClick={fillFromOldest}
               >
@@ -367,28 +398,37 @@ export function RecordPaymentSheet({
                           {formatRupiahExact(row.outstandingAmount)}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Input
-                              type="number"
-                              inputMode="decimal"
-                              step="0.01"
-                              min="0"
-                              className="h-10 w-28 text-right"
-                              disabled={isPending}
-                              value={allocationInputs[row.id] ?? ""}
-                              onChange={(e) => setAllocation(row.id, e.target.value)}
-                              onBlur={() => setAllocation(row.id, row.amount > 0 ? row.amount.toFixed(2) : "")}
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-10"
-                              disabled={isPending}
-                              onClick={() => allocateFull(row)}
-                            >
-                              {t("paymentSheet.allocateFull")}
-                            </Button>
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Input
+                                type="number"
+                                inputMode="decimal"
+                                step="0.01"
+                                min="0"
+                                className="h-10 w-28 text-right"
+                                disabled={isPending}
+                                value={allocationInputs[row.id] ?? ""}
+                                onChange={(e) => setAllocation(row.id, e.target.value)}
+                                onBlur={() => setAllocation(row.id, row.amount !== 0 ? row.amount.toFixed(2) : "")}
+                                aria-invalid={row.negative || row.overAllocated}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-10"
+                                disabled={isPending}
+                                onClick={() => allocateFull(row)}
+                              >
+                                {t("paymentSheet.allocateFull")}
+                              </Button>
+                            </div>
+                            {row.negative && (
+                              <p className="text-xs text-destructive">{t("paymentSheet.negativeAmount")}</p>
+                            )}
+                            {!row.negative && row.overAllocated && (
+                              <p className="text-xs text-destructive">{t("paymentSheet.overAllocated")}</p>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -404,7 +444,14 @@ export function RecordPaymentSheet({
                 {formatRupiahExact(allocatedTotal)} / {formatRupiahExact(parsedAmount)}
               </span>
             </div>
-            {mismatch && (
+            {mismatch && amountExceedsCapacity && (
+              <p className="text-xs text-destructive">
+                {t("paymentSheet.amountExceedsOutstanding", {
+                  total: formatRupiahExact(totalCandidateOutstanding),
+                })}
+              </p>
+            )}
+            {mismatch && !amountExceedsCapacity && (
               <p className="text-xs text-destructive">
                 {t("paymentSheet.mismatchError", {
                   allocated: formatRupiahExact(allocatedTotal),

@@ -3976,7 +3976,7 @@
       "successAll": "Both journals posted.",
       "stillPendingToast": "One or more journals are still failing to post. Check the account mapping, then try again.",
       "err": {
-        "FORBIDDEN": "You don't have permission to manage payments.",
+        "FORBIDDEN": "You don't have permission to record field sales deliveries.",
         "INVALID_REQUEST": "That request was not valid. Close this page and open it again.",
         "NOT_RETRYABLE": "This journal was never flagged as failed, so there is nothing to retry.",
         "GENERIC": "Something went wrong posting this journal. Try again."
@@ -3998,10 +3998,13 @@
       "allocationTitle": "Allocate to Receivables",
       "allocationEmpty": "This store has no other outstanding receivables.",
       "colAllocation": "Allocation",
+      "negativeAmount": "Amount cannot be negative.",
+      "overAllocated": "Exceeds this receivable's outstanding balance.",
       "allocateFull": "Full",
       "fillFromOldest": "Fill oldest-first",
       "runningTotalLabel": "Allocated",
       "mismatchError": "Allocated amounts ({allocated}) don't match the payment amount ({amount}).",
+      "amountExceedsOutstanding": "The entered amount is more than this store's total outstanding balance ({total}).",
       "amountRequired": "Enter a payment amount greater than zero.",
       "paidAtRequired": "Select a payment date.",
       "noAllocations": "Allocate the payment to at least one receivable.",

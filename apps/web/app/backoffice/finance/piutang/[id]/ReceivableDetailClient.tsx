@@ -108,7 +108,7 @@ export function ReceivableDetailClient({
     : t("recordPaymentAction");
   const isOverdueBucket = r.bucket !== "CURRENT";
 
-  /*
+  /**
    * `stillPending` is read from the action's own returned outcome, never from re-checking
    * `isArJournalRetryable` — that gate ignores `readAt` and nothing in production clears a
    * JOURNAL_PENDING row, so it would read "still pending" forever, even immediately after a
@@ -169,7 +169,7 @@ export function ReceivableDetailClient({
               type="button"
               size="sm"
               variant="outline"
-              className="w-fit h-9"
+              className="w-fit h-10"
               disabled={postingJournal}
               onClick={handlePostJournal}
             >

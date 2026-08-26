@@ -47,7 +47,7 @@ export default async function ReceivableDetailPage({ params }: PageProps) {
 
   const canManagePayments = hasPermission(permissions, PERMISSIONS.PAYMENTS_MANAGE);
 
-  /*
+  /**
    * Every backfilled receivable has no journal by construction, so "no journal exists" is never
    * the gate — only an actual JOURNAL_PENDING notification for this delivery makes the retry
    * button render at all. Resolved here, server-side, and passed down as a plain boolean: the
