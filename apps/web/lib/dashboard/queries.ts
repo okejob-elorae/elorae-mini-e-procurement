@@ -609,3 +609,18 @@ export async function getOversoldInventory(): Promise<OversoldInventoryRow[]> {
     .filter((r) => r.available < 0)
     .sort((a, b) => a.available - b.available);
 }
+
+/**
+ * Oversold SKU count for the sidebar badge.
+ *
+ * `available` is derived (qtyOnHand − reservedQty), never stored, so it cannot
+ * be a WHERE clause — hence the same read-then-filter shape as
+ * getOversoldInventory, narrowed to the two columns the arithmetic needs.
+ */
+export async function countOversoldInventory(): Promise<number> {
+  const rows = await prisma.inventoryValue.findMany({
+    where: { reservedQty: { gt: 0 } },
+    select: { qtyOnHand: true, reservedQty: true },
+  });
+  return rows.filter((r) => Number(r.qtyOnHand) - Number(r.reservedQty) < 0).length;
+}

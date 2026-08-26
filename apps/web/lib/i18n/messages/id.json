@@ -3121,7 +3121,6 @@
       "failed": "Ekspor gagal"
     }
   },
-
   "financeAccountMapping": {
     "title": "Pemetaan Akun",
     "cardTitle": "Pemetaan Akun Posting",
@@ -3184,7 +3183,6 @@
       "WRONG_ACCOUNT_TYPE": "Akun ini bertipe salah untuk peran tersebut — mis. peran Utang Usaha harus dipetakan ke akun bertipe LIABILITAS."
     }
   },
-
   "financeCashFlowSections": {
     "title": "Klasifikasi Arus Kas",
     "subtitle": "Tetapkan setiap akun neraca ke aktivitas operasional, investasi, atau pendanaan.",
@@ -3221,7 +3219,6 @@
       "KAS_REQUIRES_ASET": "Hanya akun bertipe ASET yang dapat ditetapkan sebagai Kas dan Setara Kas. Menetapkan akun liabilitas atau ekuitas sebagai kas akan membuat laporan arus kas salah."
     }
   },
-
   "leadTime": {
     "title": "Lead Time",
     "subtitle": "Daftar proses (pustaka) & papan untuk menarik proses ke tiap supplier",
@@ -3395,5 +3392,20 @@
       "CONFLICT": "Status faktur baru saja diubah oleh pengguna lain. Muat ulang halaman dan coba lagi.",
       "ERROR": "Terjadi kesalahan. Silakan coba lagi."
     }
+  },
+  "dashboardActions": {
+    "title": "{count} hal perlu ditindaklanjuti",
+    "subtitle": "Ini yang biasanya kelewat kalau hanya melihat angka di bawah.",
+    "emptyTitle": "Tidak ada yang menunggu",
+    "emptyBody": "Semua persetujuan, pengiriman, dan pencatatan sudah beres hari ini.",
+    "overduePOs": "PO lewat tanggal kirim — tim pengadaan",
+    "oversold": "SKU terjual melebihi stok — tim gudang",
+    "journalPending": "Jurnal gagal diposting — tim finance",
+    "fieldSalesPendingApproval": "Order salesman menunggu persetujuanmu",
+    "unshippedOrders": "Pesanan marketplace belum dikirim",
+    "salesReturnPending": "Retur menunggu keputusan terima atau tolak",
+    "taxInvoicePending": "Nota tagihan belum punya nomor faktur pajak",
+    "submittedPOs": "PO menunggu persetujuan",
+    "storeChangesPending": "Perubahan data toko menunggu ditinjau"
   }
 }

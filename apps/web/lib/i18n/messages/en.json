@@ -3121,7 +3121,6 @@
       "failed": "Export failed"
     }
   },
-
   "financeAccountMapping": {
     "title": "Account Mapping",
     "cardTitle": "Posting Account Mapping",
@@ -3184,7 +3183,6 @@
       "WRONG_ACCOUNT_TYPE": "That account has the wrong type for this role — e.g. the Accounts Payable role must map to a LIABILITAS account."
     }
   },
-
   "financeCashFlowSections": {
     "title": "Cash Flow Classification",
     "subtitle": "Assign each balance-sheet account to operating, investing, or financing activities.",
@@ -3221,7 +3219,6 @@
       "KAS_REQUIRES_ASET": "Only ASET accounts can be marked as Cash and Cash Equivalents. Marking a liability or equity account as cash would make the cash flow statement wrong."
     }
   },
-
   "leadTime": {
     "title": "Lead Time",
     "subtitle": "Process library & board to assign processes to each supplier",
@@ -3395,5 +3392,20 @@
       "CONFLICT": "The invoice status was just changed by someone else. Reload the page and try again.",
       "ERROR": "Something went wrong. Please try again."
     }
+  },
+  "dashboardActions": {
+    "title": "{count} things need your attention",
+    "subtitle": "These are what a glance at the numbers below usually misses.",
+    "emptyTitle": "Nothing is waiting",
+    "emptyBody": "Every approval, shipment, and posting is settled for today.",
+    "overduePOs": "POs past their delivery date — procurement",
+    "oversold": "SKUs sold beyond stock on hand — warehouse",
+    "journalPending": "Journals that failed to post — finance",
+    "fieldSalesPendingApproval": "Salesman orders awaiting your approval",
+    "unshippedOrders": "Marketplace orders not yet shipped",
+    "salesReturnPending": "Returns awaiting an accept-or-reject decision",
+    "taxInvoicePending": "Billing notes with no tax invoice number yet",
+    "submittedPOs": "POs awaiting approval",
+    "storeChangesPending": "Store detail changes awaiting review"
   }
 }

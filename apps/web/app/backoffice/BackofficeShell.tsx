@@ -52,6 +52,36 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 
+/**
+ * Sidebar badge counts, fetched after mount so navigation never blocks on them.
+ * A failure resolves to an empty map: the shell must survive a bad count.
+ */
+function useNavCounts(): Record<string, number> {
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/backoffice/nav-counts')
+      .then((r) => (r.ok ? r.json() : { counts: {} }))
+      .then((data) => {
+        if (!cancelled) setCounts(data.counts ?? {});
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return counts;
+}
+
+function NavCountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-auto shrink-0 rounded-full bg-destructive px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white tabular-nums">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
 interface NavChild {
   labelKey: string;
   href: string;
@@ -342,6 +372,7 @@ function Sidebar({
 }) {
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
+  const navCounts = useNavCounts();
   const getOpenKeyFromPath = (path: string) => {
     if (
       path.startsWith('/backoffice/suppliers') ||
@@ -413,7 +444,14 @@ function Sidebar({
         </div>
       </div>
 
-      <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-3 space-y-1">
+      {/*
+        * The nav list scrolls on short viewports (768px cuts off the last two
+        * items). Without a cue nothing tells you more menus exist below, so the
+        * wrapper fades the bottom edge — the scroll itself was never broken,
+        * only invisible.
+        */}
+      <div className="relative flex-1 min-h-0">
+        <nav className="h-full overflow-y-auto py-4 px-3 space-y-1">
         {filteredItems.map((item) => {
           const Icon = item.icon;
           const hasChildren = item.children && item.children.length > 0;
@@ -440,6 +478,7 @@ function Sidebar({
                 >
                   <Icon className="w-5 h-5 shrink-0" />
                   <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
+                  <NavCountBadge count={navCounts[item.href] ?? 0} />
                   <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
                 </CollapsibleTrigger>
                 <CollapsibleContent>
@@ -496,11 +535,17 @@ function Sidebar({
               )}
             >
               <Icon className="w-5 h-5" />
-              {tNav(item.labelKey as any)}
+              <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
+              <NavCountBadge count={navCounts[item.href] ?? 0} />
             </Link>
           );
         })}
-      </nav>
+        </nav>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-primary to-transparent"
+        />
+      </div>
 
       <div className="p-4 border-t border-primary-foreground/20 [&_button]:text-primary-foreground [&_button]:hover:bg-primary-foreground/10 [&_button]:hover:text-primary-foreground">
         <OfflineIndicator />
@@ -640,7 +685,16 @@ export function BackofficeShell({
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 lg:p-6">{children}</main>
+        {/*
+          * pb-24 reserves the corner the Quick actions button occupies
+          * (fixed bottom-6 right-6, 56px). Without it, content that ends
+          * bottom-right — every list's pagination — scrolls underneath the
+          * button, which then swallows the click: measured 56x32px of overlap
+          * on "Next", with elementFromPoint returning the FAB.
+          */}
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 pb-24 lg:p-6 lg:pb-24">
+          {children}
+        </main>
         <QuickActionFAB />
         <FcmRegistration />
       </div>

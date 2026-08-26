@@ -13,6 +13,7 @@ import {
 import { getOverduePOs } from "@/lib/purchase-orders/queries";
 import { getMarketplaceKpi } from "@/lib/sales-orders/queries";
 import { serializeDashboardStats, toIso } from "@/lib/dashboard/serialize";
+import { buildActionItems, getActionItemCounts } from "@/lib/dashboard/action-items";
 import { DashboardPageClient } from "./DashboardPageClient";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export default async function DashboardPage() {
     marketplaceKpi,
     oversoldInventory,
     salesmenSales,
+    actionCounts,
   ] = await Promise.all([
     getDashboardStats(),
     getOverduePOs(),
@@ -41,11 +43,25 @@ export default async function DashboardPage() {
     getMarketplaceKpi(),
     getOversoldInventory(),
     getSalesmenSalesSummary(),
+    getActionItemCounts(),
   ]);
+
+  /*
+   * Folded from data the page already loaded rather than re-counted, so the
+   * panel costs five extra COUNTs, not nine.
+   */
+  const actionItems = buildActionItems({
+    ...actionCounts,
+    overduePOs: overduePOs.length,
+    submittedPOs: stats.po.submitted,
+    oversoldSkus: oversoldInventory.length,
+    unshippedOrders: marketplaceKpi.pendingFulfillmentCount,
+  });
 
   return (
     <Suspense fallback={null}>
       <DashboardPageClient
+        actionItems={actionItems}
         initialStats={serializeDashboardStats(stats)}
         initialOverduePOs={overduePOs.map((po) => ({
           ...po,

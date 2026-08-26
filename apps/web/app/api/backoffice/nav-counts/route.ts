@@ -1,0 +1,80 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { hasPermission } from "@/lib/rbac";
+import {
+  buildActionItems,
+  getActionItemCounts,
+} from "@/lib/dashboard/action-items";
+import { getOverduePOCount, getSubmittedPOCount } from "@/lib/purchase-orders/queries";
+import { countOversoldInventory } from "@/lib/dashboard/queries";
+import { getMarketplaceKpi } from "@/lib/sales-orders/queries";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * Which nav group each waiting-work item belongs to, keyed by the top-level
+ * nav href in BackofficeShell. Purchasing lives under Produksi in this app's
+ * information architecture, which is why overdue POs badge that group.
+ */
+const NAV_GROUP_BY_ITEM: Record<string, string> = {
+  overduePOs: "/backoffice/production/planning",
+  submittedPOs: "/backoffice/production/planning",
+  oversold: "/backoffice/inventory",
+  journalPending: "#",
+  taxInvoicePending: "#",
+  fieldSalesPendingApproval: "/backoffice/sales-orders",
+  unshippedOrders: "/backoffice/sales-orders",
+  salesReturnPending: "/backoffice/sales-orders",
+  storeChangesPending: "/backoffice/suppliers",
+};
+
+/**
+ * Badge counts for the sidebar — "where is work piling up", answered without
+ * opening every menu.
+ *
+ * Deliberately a client-fetched route rather than data threaded through the
+ * layout: the shell renders on every backoffice navigation, and blocking each
+ * one on five COUNT queries would trade a real cost for a decoration.
+ */
+export async function GET() {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const permissions = session.user.permissions ?? [];
+
+  try {
+    const [counts, overduePOs, submittedPOs, oversoldSkus, marketplaceKpi] =
+      await Promise.all([
+        getActionItemCounts(),
+        getOverduePOCount(),
+        getSubmittedPOCount(),
+        countOversoldInventory(),
+        getMarketplaceKpi(),
+      ]);
+
+    const items = buildActionItems({
+      ...counts,
+      overduePOs,
+      submittedPOs,
+      oversoldSkus,
+      unshippedOrders: marketplaceKpi.pendingFulfillmentCount,
+    });
+
+    // Same permission filter the panel uses: a badge must never advertise work
+    // behind a door this user cannot open.
+    const byGroup: Record<string, number> = {};
+    for (const item of items) {
+      if (item.permission && !hasPermission(permissions, item.permission)) continue;
+      const group = NAV_GROUP_BY_ITEM[item.key];
+      if (!group) continue;
+      byGroup[group] = (byGroup[group] ?? 0) + item.count;
+    }
+
+    return NextResponse.json({ counts: byGroup });
+  } catch (err) {
+    // A failed badge fetch must never break the shell around it.
+    console.error("nav-counts failed:", err);
+    return NextResponse.json({ counts: {} });
+  }
+}

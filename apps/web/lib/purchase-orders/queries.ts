@@ -287,3 +287,22 @@ export async function getOverduePOs() {
     };
   });
 }
+
+/**
+ * Count-only variants for the sidebar badges. `getOverduePOs` above pulls the
+ * supplier and every line item because the dashboard table renders them; a
+ * badge needs one integer, and paying that price on every navigation would be
+ * a real cost for a decoration.
+ */
+export async function getOverduePOCount(): Promise<number> {
+  return prisma.purchaseOrder.count({
+    where: {
+      etaDate: { lt: new Date() },
+      status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] },
+    },
+  });
+}
+
+export async function getSubmittedPOCount(): Promise<number> {
+  return prisma.purchaseOrder.count({ where: { status: 'SUBMITTED' } });
+}

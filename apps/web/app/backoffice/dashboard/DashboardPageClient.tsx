@@ -57,6 +57,8 @@ import type {
 } from '@/lib/dashboard/queries';
 import { formatIDR } from '@/lib/sales-orders/format';
 import type { MarketplaceKpi } from '@/lib/sales-orders/queries';
+import type { ActionItem } from '@/lib/dashboard/action-items';
+import { ActionNeededPanel } from './ActionNeededPanel';
 import {
   getProcurementReport,
   exportProcurementReport,
@@ -181,11 +183,13 @@ type DashboardPageClientProps = {
   initialRawMaterialShortage: RawMaterialShortageRow[];
   initialWoStatusCounts: WorkOrderStatusCount[];
   marketplaceKpi: MarketplaceKpi;
+  actionItems: ActionItem[];
   initialOversoldInventory: OversoldInventoryRow[];
   initialSalesmenSales: SalesmenSalesSummary;
 };
 
 export function DashboardPageClient({
+  actionItems,
   initialStats,
   initialOverduePOs,
   initialSuppliers,
@@ -529,6 +533,9 @@ export function DashboardPageClient({
           {getRoleLabel((session?.user?.role ?? 'ADMIN') as Role)}
         </Badge>
       </div>
+
+      {/* What is waiting for me — before the how-are-we-doing numbers below. */}
+      <ActionNeededPanel items={actionItems} />
 
       {/* Marketplace Section */}
       <div className="space-y-2">
