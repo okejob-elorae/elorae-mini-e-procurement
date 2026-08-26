@@ -3,8 +3,9 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { FileSpreadsheet, Receipt } from 'lucide-react';
+import { FileSpreadsheet, PenLine, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { FakturManualDialog, type PilihanBarang } from './FakturManualDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -50,14 +51,19 @@ const URUT: KeadaanPiutang[] = ['lewat', 'tertahan', 'klaim', 'tt', 'belum', 'lu
 export function PiutangClient({
   baris,
   ringkasan,
+  toko,
+  katalog,
   bolehMengelola,
 }: {
   baris: BarisPiutang[];
   ringkasan: RingkasanPiutang;
+  toko: { id: string; name: string }[];
+  katalog: PilihanBarang[];
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('receivables');
   const [saring, setSaring] = useState<KeadaanPiutang | null>(null);
+  const [manualTerbuka, setManualTerbuka] = useState(false);
 
   const label = (k: KeadaanPiutang) =>
     t(`state${k.charAt(0).toUpperCase()}${k.slice(1)}` as never);
@@ -102,15 +108,30 @@ export function PiutangClient({
         })}
         actions={
           bolehMengelola ? (
-            <Button variant="outline" asChild>
-              <Link href="/backoffice/piutang/impor">
-                <FileSpreadsheet className="mr-1.5 h-4 w-4" />
-                {t('import')}
-              </Link>
-            </Button>
+            <span className="inline-flex flex-wrap gap-2">
+              <Button variant="outline" asChild>
+                <Link href="/backoffice/piutang/impor">
+                  <FileSpreadsheet className="mr-1.5 h-4 w-4" />
+                  {t('import')}
+                </Link>
+              </Button>
+              <Button onClick={() => setManualTerbuka(true)}>
+                <PenLine className="mr-1.5 h-4 w-4" />
+                {t('manual')}
+              </Button>
+            </span>
           ) : undefined
         }
       />
+
+      {bolehMengelola && (
+        <FakturManualDialog
+          terbuka={manualTerbuka}
+          onOpenChange={setManualTerbuka}
+          toko={toko}
+          katalog={katalog}
+        />
+      )}
 
       {baris.length > 0 && (
         <div className="anim-stagger flex flex-wrap gap-2">

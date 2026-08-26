@@ -5,6 +5,11 @@ import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import type { BarisImpor } from '@/lib/receivables/impor/baris';
 import { simpanImpor, tinjauImpor, type HasilImpor, type TinjauanImpor } from '@/lib/receivables/impor/writer';
+import {
+  buatPiutangManual,
+  type AlasanGagalFaktur,
+  type BarisFaktur,
+} from '@/lib/receivables/manual-writer';
 
 export type HasilAksiImpor =
   | { ok: true; tinjauan: TinjauanImpor }
@@ -74,4 +79,54 @@ function pulihkanTanggal(baris: BarisImpor[]): BarisImpor[] {
     tglFaktur: tgl(b.tglFaktur),
     jatuhTempo: tgl(b.jatuhTempo),
   }));
+}
+
+export type KodeAksiFakturManual =
+  | 'TANPA_AKSES'
+  | 'TANGGAL_TIDAK_VALID'
+  | AlasanGagalFaktur
+  | 'GAGAL';
+
+export type HasilFakturManual = { ok: true } | { ok: false; kode: KodeAksiFakturManual };
+
+/** "YYYY-MM-DD" dibaca sebagai tengah malam WIB, bukan UTC. */
+function tglWib(teks: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(teks)) return null;
+  const d = new Date(`${teks}T00:00:00+07:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Ketik satu faktur dengan tangan, lengkap dengan rincian barangnya. */
+export async function buatFakturManualAction(input: {
+  invoiceNo: string;
+  storeId: string;
+  invoiceDate: string;
+  dueDate: string;
+  amount?: number;
+  items?: BarisFaktur[];
+}): Promise<HasilFakturManual> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)) {
+    return { ok: false, kode: 'TANPA_AKSES' };
+  }
+
+  const tglFaktur = tglWib(input.invoiceDate);
+  const tempo = tglWib(input.dueDate);
+  if (!tglFaktur || !tempo) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
+
+  try {
+    const hasil = await buatPiutangManual({
+      ...input,
+      invoiceDate: tglFaktur,
+      dueDate: tempo,
+      salesmanId: session.user.id,
+    });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    revalidatePath('/backoffice/piutang');
+    return { ok: true };
+  } catch (err) {
+    console.error('buatFakturManual gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
 }

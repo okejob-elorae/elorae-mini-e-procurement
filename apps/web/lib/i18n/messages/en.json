@@ -3653,7 +3653,8 @@
     "reasonLewat": "The shop promised {tgl} — {hari} days past and no money has arrived. Chase it and get a new date.",
     "reasonTt": "Handed over ({no}). The shop promised {tgl} — wait for the date.",
     "reasonBelum": "Ready to hand over — no return hanging and nothing overdue.",
-    "import": "Import invoices"
+    "import": "Import invoices",
+    "manual": "Manual invoice"
   },
   "payments": {
     "pageTitle": "Payments & claims",
@@ -4051,6 +4052,35 @@
     "errKolomWajib": "An invoice number and an amount column are required. Check the headings.",
     "errBacaBerkas": "The file could not be read. Make sure it is Excel or CSV.",
     "errTANPA_AKSES": "You do not have access to import invoices.",
+    "errGAGAL": "Could not save. Try again."
+  },
+  "fakturManual": {
+    "title": "Manual invoice",
+    "body": "Type an invoice that did not arrive in a file. Add the item lines if you have them — those are what can be checked against the shop's copy later.",
+    "invoiceNo": "Invoice no.",
+    "invoiceNoPlaceholder": "e.g. INV/2026/0107",
+    "store": "Shop",
+    "storePlaceholder": "Pick a shop",
+    "invoiceDate": "Invoice date",
+    "dueDate": "Due date",
+    "amount": "Invoice amount",
+    "itemsLabel": "Item detail",
+    "addItem": "Add item",
+    "removeItem": "Remove row",
+    "itemsHint": "May be left empty. If filled, the invoice amount is computed from it.",
+    "itemPickPlaceholder": "Pick from the catalogue",
+    "itemNamePlaceholder": "Item name",
+    "itemsTotal": "Total from detail: {value}",
+    "save": "Save invoice",
+    "okCreated": "Invoice saved.",
+    "errTANPA_AKSES": "You do not have access to create invoices.",
+    "errTANGGAL_TIDAK_VALID": "The date could not be read.",
+    "errNOMOR_WAJIB": "Enter the invoice number.",
+    "errNOMOR_SUDAH_ADA": "That invoice number already exists.",
+    "errTOKO_TIDAK_DITEMUKAN": "Shop not found.",
+    "errTOKO_KONSI": "A consignment shop creates no receivable — the goods are still ours until they sell.",
+    "errNILAI_TIDAK_VALID": "The invoice amount must be more than zero.",
+    "errTEMPO_SEBELUM_FAKTUR": "The due date cannot come before the invoice date.",
     "errGAGAL": "Could not save. Try again."
   }
 }

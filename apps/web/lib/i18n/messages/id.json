@@ -3653,7 +3653,8 @@
     "reasonLewat": "Toko janji bayar {tgl} — sudah lewat {hari} hari dan uang belum masuk. Tagih ulang dan minta tanggal baru.",
     "reasonTt": "Sudah dikontrabon ({no}). Toko janji bayar {tgl} — tunggu tanggalnya.",
     "reasonBelum": "Siap dikontrabon — tidak ada retur menggantung dan tidak ada tunggakan.",
-    "import": "Impor faktur"
+    "import": "Impor faktur",
+    "manual": "Faktur manual"
   },
   "payments": {
     "pageTitle": "Pelunasan & Klaim",
@@ -4051,6 +4052,35 @@
     "errKolomWajib": "Kolom nomor faktur dan nilai wajib ada. Periksa judul kolomnya.",
     "errBacaBerkas": "Berkasnya tidak bisa dibaca. Pastikan formatnya Excel atau CSV.",
     "errTANPA_AKSES": "Anda tidak punya akses mengimpor faktur.",
+    "errGAGAL": "Gagal menyimpan. Coba lagi."
+  },
+  "fakturManual": {
+    "title": "Faktur manual",
+    "body": "Ketik faktur yang tidak datang lewat berkas. Isi rinciannya kalau ada — itu yang bisa dicocokkan dengan salinan toko nanti.",
+    "invoiceNo": "No. faktur",
+    "invoiceNoPlaceholder": "mis. INV/2026/0107",
+    "store": "Toko",
+    "storePlaceholder": "Pilih toko",
+    "invoiceDate": "Tanggal faktur",
+    "dueDate": "Jatuh tempo",
+    "amount": "Nilai faktur",
+    "itemsLabel": "Rincian barang",
+    "addItem": "Tambah barang",
+    "removeItem": "Hapus baris",
+    "itemsHint": "Boleh dikosongkan. Kalau diisi, nilai fakturnya dihitung dari rincian ini.",
+    "itemPickPlaceholder": "Pilih dari katalog",
+    "itemNamePlaceholder": "Nama barang",
+    "itemsTotal": "Total dari rincian: {value}",
+    "save": "Simpan faktur",
+    "okCreated": "Faktur tersimpan.",
+    "errTANPA_AKSES": "Anda tidak punya akses membuat faktur.",
+    "errTANGGAL_TIDAK_VALID": "Tanggalnya tidak terbaca.",
+    "errNOMOR_WAJIB": "Isi nomor fakturnya.",
+    "errNOMOR_SUDAH_ADA": "Nomor faktur itu sudah ada.",
+    "errTOKO_TIDAK_DITEMUKAN": "Tokonya tidak ditemukan.",
+    "errTOKO_KONSI": "Toko konsinyasi tidak melahirkan piutang — barangnya masih milik kita sampai terjual.",
+    "errNILAI_TIDAK_VALID": "Nilai fakturnya harus lebih dari nol.",
+    "errTEMPO_SEBELUM_FAKTUR": "Jatuh tempo tidak boleh mendahului tanggal faktur.",
     "errGAGAL": "Gagal menyimpan. Coba lagi."
   }
 }

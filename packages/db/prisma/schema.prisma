@@ -2500,6 +2500,7 @@ model Receivable {
   salesman       User?     @relation("ReceivableSalesman", fields: [salesmanId], references: [id])
   collectionLinks CollectionNoteReceivable[]
   claimLinks     PaymentClaimReceivable[]
+  items          ReceivableItem[]
 
   @@index([storeId, outstanding])
   @@index([dueDate])
@@ -2597,6 +2598,21 @@ model PaymentClaimReceivable {
 
   @@id([paymentClaimId, receivableId])
   @@index([receivableId])
+}
+
+model ReceivableItem {
+  id           String  @id @default(cuid())
+  receivableId String
+  itemId       String?
+  itemName     String
+  qty          Int
+  price        Decimal @db.Decimal(15, 2)
+  amount       Decimal @db.Decimal(15, 2)
+
+  receivable   Receivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+
+  @@index([receivableId])
+  @@index([itemId])
 }
 
 model Foto {
