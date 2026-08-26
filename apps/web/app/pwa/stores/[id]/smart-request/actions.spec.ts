@@ -5,9 +5,9 @@ import { prisma, seededId } from "@elorae/db";
 const DB_URL = process.env.DATABASE_URL ?? "";
 if (DB_URL.includes(":3307") || DB_URL.includes("api.elorae.cloud")) {
   throw new Error(
-    "REFUSING: this integration test writes rows to Store/Item/ItemCategory and the shared " +
-    "SystemSetting['putus.packRatio'] row. DATABASE_URL points at prod tunnel :3307 or " +
-    "api.elorae.cloud. Run against the local docker testbed :3308 only.",
+    "REFUSING: this integration test writes rows to Store/Item/ItemCategory. " +
+    "DATABASE_URL points at prod tunnel :3307 or api.elorae.cloud. " +
+    "Run against the local docker testbed :3308 only.",
   );
 }
 
@@ -28,21 +28,27 @@ const PACK_RATIO_KEY = "putus.packRatio";
 describe("buildSmartRequestAction (test bed only)", () => {
   const tag = `SMARTREQ-${Math.random().toString(36).slice(2, 10)}`;
   let uomId = ""; let itemId = ""; let categoryId = ""; let storeId = ""; let plainStoreId = "";
-  // Snapshot of the pre-existing SHARED putus.packRatio row (or null if none), restored verbatim
-  // in afterEach — this key is a singleton read by every real smart-request in the dev DB, not a
-  // tag-scoped fixture, so clobbering it without restoring would break dev for everyone else.
-  let priorPackRatioValue: string | null = null;
 
   beforeEach(async () => {
-    uomId = ""; itemId = ""; categoryId = ""; storeId = ""; plainStoreId = ""; priorPackRatioValue = null;
+    uomId = ""; itemId = ""; categoryId = ""; storeId = ""; plainStoreId = "";
 
-    const priorSetting = await prisma.systemSetting.findUnique({ where: { key: PACK_RATIO_KEY }, select: { value: true } });
-    priorPackRatioValue = priorSetting?.value ?? null;
-    await prisma.systemSetting.upsert({
-      where: { key: PACK_RATIO_KEY },
-      create: { key: PACK_RATIO_KEY, value: JSON.stringify([{ size: "S", qty: 1 }]) },
-      update: { value: JSON.stringify([{ size: "S", qty: 1 }]) },
-    });
+    /*
+     * `putus.packRatio` is a SHARED singleton read by every real smart-request in the dev DB —
+     * NOT a tag-scoped fixture, and NOT something this spec is allowed to mutate: a Ctrl-C
+     * between a snapshot and its restore would leave it stuck on a test value and silently
+     * mis-plan every real smart-request afterward (this exact pattern already corrupted real
+     * rows on :3308 once, via JournalAccountMapping — see the hookTimeout comment in
+     * vitest.config.ts). So this reads the ratio that is ALREADY there and seeds a candidate
+     * item with a matching variant + sufficient stock for every size it names, instead.
+     */
+    const packRatioSetting = await prisma.systemSetting.findUnique({ where: { key: PACK_RATIO_KEY }, select: { value: true } });
+    const ratio: Array<{ size: string; qty: number }> = packRatioSetting ? JSON.parse(packRatioSetting.value) : [];
+    if (ratio.length === 0) {
+      throw new Error(
+        "No putus.packRatio configured on this DB — buildSmartRequestAction has nothing to plan against. " +
+        "Configure a pack ratio (Settings → Pack Ratio) on the :3308 test bed before running this spec.",
+      );
+    }
 
     const category = await prisma.itemCategory.create({ data: { name: `Cat ${tag}` } });
     categoryId = category.id;
@@ -50,14 +56,20 @@ describe("buildSmartRequestAction (test bed only)", () => {
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
 
+    const variants = ratio.map((row, i) => ({
+      sku: `${tag}-V${i}`,
+      size: row.size,
+    }));
     const item = await prisma.item.create({
       data: {
         sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true,
-        sellingPrice: 5000, categoryId, variants: [{ sku: `${tag}-S`, size: "S" }],
+        sellingPrice: 5000, categoryId, variants,
       },
     });
     itemId = item.id;
-    await prisma.inventoryValue.create({ data: { itemId, variantSku: `${tag}-S`, qtyOnHand: 10, reservedQty: 0 } });
+    await prisma.inventoryValue.createMany({
+      data: variants.map((v, i) => ({ itemId, variantSku: v.sku, qtyOnHand: ratio[i].qty, reservedQty: 0 })),
+    });
 
     const store = await prisma.store.create({
       data: { code: `${tag}-DISC`, name: "Toko Smart Request Diskon", address: "Jl. Test", termsType: "PUTUS", priceDiscountPercent: 10, isActive: true },
@@ -71,11 +83,6 @@ describe("buildSmartRequestAction (test bed only)", () => {
   });
 
   afterEach(async () => {
-    if (priorPackRatioValue === null) {
-      await prisma.systemSetting.deleteMany({ where: { key: PACK_RATIO_KEY } });
-    } else {
-      await prisma.systemSetting.update({ where: { key: PACK_RATIO_KEY }, data: { value: priorPackRatioValue } });
-    }
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(categoryId) } });
