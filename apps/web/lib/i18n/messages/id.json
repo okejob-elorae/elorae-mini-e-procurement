@@ -3719,6 +3719,23 @@
       "KAS_REQUIRES_ASET": "Hanya akun bertipe ASET yang dapat ditetapkan sebagai Kas dan Setara Kas. Menetapkan akun liabilitas atau ekuitas sebagai kas akan membuat laporan arus kas salah."
     }
   },
+  "payments": {
+    "err": {
+      "FORBIDDEN": "Anda tidak memiliki izin untuk mengelola pembayaran.",
+      "INVALID_REQUEST": "Permintaan pembayaran tidak valid. Tutup dialog ini lalu buka lagi.",
+      "INVALID_AMOUNT": "Jumlah pembayaran harus lebih besar dari nol.",
+      "NO_ALLOCATIONS": "Pilih minimal satu piutang untuk diterapkan pembayaran ini.",
+      "ALLOCATION_MISMATCH": "Jumlah alokasi tidak sama dengan jumlah pembayaran.",
+      "OVER_ALLOCATED": "Salah satu alokasi melebihi sisa tagihan piutang tersebut.",
+      "WRONG_STORE": "Salah satu piutang yang dipilih bukan milik toko ini.",
+      "NOT_FOUND": "Pembayaran atau piutang tidak ditemukan.",
+      "ALREADY_SETTLED": "Piutang tersebut sudah lunas atau sudah dihapusbukukan.",
+      "DUPLICATE_ALLOCATION": "Piutang yang sama dialokasikan lebih dari satu kali.",
+      "NOT_RETRYABLE": "Jurnal pembayaran ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
+      "STILL_PENDING": "Jurnal masih gagal diposting. Periksa pemetaan akun, lalu coba lagi.",
+      "ERROR": "Terjadi kesalahan saat mencatat pembayaran ini. Coba lagi."
+    }
+  },
   "leadTime": {
     "title": "Lead Time",
     "subtitle": "Daftar proses (pustaka) & papan untuk menarik proses ke tiap supplier",

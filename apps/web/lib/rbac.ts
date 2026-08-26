@@ -295,4 +295,7 @@ export const PERMISSIONS = {
   // Field Returns
   FIELD_RETURNS_MANAGE: "field_returns:manage",
   FIELD_RETURNS_WRITEOFF: "field_returns:writeoff",
+  // Finance — AR (Piutang) + Payments
+  RECEIVABLES_VIEW: "receivables:view",
+  PAYMENTS_MANAGE: "payments:manage",
 } as const;

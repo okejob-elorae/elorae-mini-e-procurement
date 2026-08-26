@@ -3719,6 +3719,23 @@
       "KAS_REQUIRES_ASET": "Only ASET accounts can be marked as Cash and Cash Equivalents. Marking a liability or equity account as cash would make the cash flow statement wrong."
     }
   },
+  "payments": {
+    "err": {
+      "FORBIDDEN": "You don't have permission to manage payments.",
+      "INVALID_REQUEST": "That payment request was not valid. Close this dialog and open it again.",
+      "INVALID_AMOUNT": "The payment amount must be greater than zero.",
+      "NO_ALLOCATIONS": "Select at least one receivable to apply this payment to.",
+      "ALLOCATION_MISMATCH": "The allocated amounts don't add up to the payment amount.",
+      "OVER_ALLOCATED": "One of the allocations exceeds that receivable's outstanding balance.",
+      "WRONG_STORE": "One of the selected receivables doesn't belong to this store.",
+      "NOT_FOUND": "Payment or receivable not found.",
+      "ALREADY_SETTLED": "That receivable is already paid off or written off.",
+      "DUPLICATE_ALLOCATION": "The same receivable was allocated more than once.",
+      "NOT_RETRYABLE": "This payment's journal was never flagged as failed, so there is nothing to retry.",
+      "STILL_PENDING": "The journal still failed to post. Check the account mapping, then try again.",
+      "ERROR": "Something went wrong recording this payment. Try again."
+    }
+  },
   "leadTime": {
     "title": "Lead Time",
     "subtitle": "Process library & board to assign processes to each supplier",
