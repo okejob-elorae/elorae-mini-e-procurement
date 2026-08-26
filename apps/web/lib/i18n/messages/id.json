@@ -268,6 +268,20 @@
       "pickerPrevious": "Sebelumnya",
       "pickerNext": "Berikutnya",
       "pickerPage": "Halaman {page} dari {totalPages}"
+    },
+    "uiThemes": {
+      "title": "Tema tampilan",
+      "description": "Tema mengatur kerapatan baris, sudut, bobot kartu, dan warna aksen sekaligus. Berlaku ke seluruh halaman.",
+      "padatName": "Padat",
+      "padatNote": "Baris rapat, sudut tajam, kartu datar. Untuk yang seharian membaca tabel.",
+      "seimbangName": "Seimbang",
+      "seimbangNote": "Jalan tengah. Cocok kalau ragu.",
+      "lapangName": "Lapang",
+      "lapangNote": "Longgar dan hangat, kartu sedikit terangkat. Enak dilihat, muat lebih sedikit.",
+      "studioName": "Studio",
+      "studioNote": "Sudut tegas, kepala kolom berjarak lebar. Terasa seperti alat kerja.",
+      "applied": "Tema diterapkan",
+      "currentAccent": "Aksen: {name}"
     }
   },
   "tax": {

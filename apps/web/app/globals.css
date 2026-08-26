@@ -48,7 +48,6 @@
 }
 
 :root {
-  --radius: 0.5rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
@@ -156,6 +155,73 @@ html.backoffice-shell body {
    Everything here is opt-in via a class. Nothing animates unless a component
    asks, so a dense table never inherits motion it does not want.
    ========================================================================== */
+
+/* ==========================================================================
+   Interface themes
+   --------------------------------------------------------------------------
+   Shape, not colour — the Pantone seed still owns the accent. These tokens are
+   what makes "Padat" feel like a different product from "Lapang" rather than
+   the same screen in another hue: row height, corner radius, card weight, how
+   loud a column heading is.
+
+   Defaults below equal the Seimbang theme, so a document with no data-ui-theme
+   attribute (first load, or storage blocked) renders exactly like the theme
+   most people will keep.
+   ========================================================================== */
+:root {
+  --ui-radius: 0.5rem;
+  --ui-cell-py: 0.5rem;
+  --ui-cell-leading: 1.35;
+  --ui-head-h: 2.25rem;
+  --ui-head-size: 0.75rem;
+  --ui-head-tracking: 0.04em;
+  --ui-head-transform: uppercase;
+  --ui-card-pad: 1.25rem;
+  --ui-card-gap: 1.25rem;
+  --ui-card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+html[data-ui-theme='padat'] {
+  --ui-radius: 0.25rem;
+  --ui-cell-py: 0.3125rem;
+  --ui-cell-leading: 1.25;
+  --ui-head-h: 1.9rem;
+  --ui-head-size: 0.7rem;
+  --ui-head-tracking: 0.05em;
+  --ui-card-pad: 0.875rem;
+  --ui-card-gap: 0.875rem;
+  --ui-card-shadow: none;
+}
+
+html[data-ui-theme='lapang'] {
+  --ui-radius: 0.875rem;
+  --ui-cell-py: 0.875rem;
+  --ui-cell-leading: 1.5;
+  --ui-head-h: 2.75rem;
+  --ui-head-size: 0.8rem;
+  --ui-head-tracking: 0.01em;
+  --ui-head-transform: none;
+  --ui-card-pad: 1.75rem;
+  --ui-card-gap: 1.5rem;
+  --ui-card-shadow: 0 4px 16px -6px rgb(0 0 0 / 0.16);
+}
+
+html[data-ui-theme='studio'] {
+  --ui-radius: 0.125rem;
+  --ui-cell-py: 0.625rem;
+  --ui-cell-leading: 1.4;
+  --ui-head-h: 2.5rem;
+  --ui-head-size: 0.7rem;
+  --ui-head-tracking: 0.12em;
+  --ui-card-pad: 1.5rem;
+  --ui-card-gap: 1.25rem;
+  --ui-card-shadow: none;
+}
+
+/* The shadcn radius scale derives from --radius; point it at the theme. */
+:root {
+  --radius: var(--ui-radius);
+}
 
 @keyframes elorae-rise {
   from { opacity: 0; transform: translateY(8px); }
@@ -269,33 +335,34 @@ html.backoffice-shell [data-slot="table-head"] {
 /* Rows were 62px tall, so a 768px screen showed seven of them. Trimming the
    cell padding and line height fits about a third more without crowding. */
 html.backoffice-shell [data-slot="table-cell"] {
-  padding-block: 0.5rem;
-  line-height: 1.35;
+  padding-block: var(--ui-cell-py);
+  line-height: var(--ui-cell-leading);
 }
 
 html.backoffice-shell [data-slot="table-head"] {
-  height: 2.25rem;
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  height: var(--ui-head-h);
+  font-size: var(--ui-head-size);
+  letter-spacing: var(--ui-head-tracking);
+  text-transform: var(--ui-head-transform);
   color: var(--muted-foreground);
 }
 
 /* Cards: slightly tighter than the stock 24px, and they lift under the cursor
    when they lead somewhere. */
 html.backoffice-shell [data-slot="card"] {
-  gap: 1.25rem;
-  padding-block: 1.25rem;
+  gap: var(--ui-card-gap);
+  padding-block: var(--ui-card-pad);
+  box-shadow: var(--ui-card-shadow);
   transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
 }
 
 html.backoffice-shell [data-slot="card-header"] {
-  padding-inline: 1.25rem;
+  padding-inline: var(--ui-card-pad);
 }
 
 html.backoffice-shell [data-slot="card-content"],
 html.backoffice-shell [data-slot="card-footer"] {
-  padding-inline: 1.25rem;
+  padding-inline: var(--ui-card-pad);
 }
 
 /* A card wrapping a table should let the table meet its own edges. */

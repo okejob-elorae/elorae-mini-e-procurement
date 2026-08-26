@@ -24,6 +24,7 @@ import {
   Users,
 } from 'lucide-react';
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
+import { UIThemePicker } from '@/components/settings/UIThemePicker';
 import {
   applyDefaultTheme,
   applyThemeFromPantoneSeed,
@@ -235,6 +236,12 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
         <p className="text-muted-foreground">{t('subtitle')}</p>
       </div>
+
+      <UIThemePicker
+        onPickAccent={(seed) =>
+          handlePantoneSelect({ tcx: seed.tcx, name: seed.name, hex: seed.hex } as PantoneThemeSelection)
+        }
+      />
 
       <Card>
         <CardHeader>

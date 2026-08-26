@@ -268,6 +268,20 @@
       "pickerPrevious": "Previous",
       "pickerNext": "Next",
       "pickerPage": "Page {page} of {totalPages}"
+    },
+    "uiThemes": {
+      "title": "Interface theme",
+      "description": "A theme sets row density, corner radius, card weight and accent colour together. Applies to every page.",
+      "padatName": "Compact",
+      "padatNote": "Tight rows, sharp corners, flat cards. For reading tables all day.",
+      "seimbangName": "Balanced",
+      "seimbangNote": "The middle ground. Pick this if unsure.",
+      "lapangName": "Airy",
+      "lapangNote": "Roomy and warm, cards lift slightly. Easy on the eye, fits less.",
+      "studioName": "Studio",
+      "studioNote": "Crisp corners, widely tracked column heads. Feels like an instrument.",
+      "applied": "Theme applied",
+      "currentAccent": "Accent: {name}"
     }
   },
   "tax": {
