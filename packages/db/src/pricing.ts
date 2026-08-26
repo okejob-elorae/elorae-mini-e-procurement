@@ -14,9 +14,28 @@ export type StorePrice = {
 const SALE_LABEL = "Harga";
 const KONSI_LABEL = "Retail (info)";
 
-/* Half-up to two decimal places (sen). Applied inside the helper only. */
-function roundCents(value: number): number {
+/* Half-up to two decimal places (sen). */
+export function roundCents(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * Half-up to whole rupiah. Applied ONLY at the cash boundary — the total a human actually
+ * collects and compares payment against (VanSale.total / SpgSale.total) — never to a line's
+ * unitPrice, which stays at 2dp (Decimal(15,2)) exactly as computeStorePrice produces it. Sen do
+ * not exist as physical currency: a store discount (or any fractional Item.sellingPrice, which
+ * Decimal(14,2) permits regardless of discount) can leave the exact line sum on a sub-rupiah
+ * fraction, and a drawer cannot take that fraction whatever caused it. The exact 2dp sum stays
+ * available as `subtotal`, so `total - subtotal` is always the derivable rounding adjustment —
+ * nothing is silently lost, just charged at whole rupiah.
+ *
+ * A single, client-safe home (this module has zero imports) is load-bearing: the writer and the
+ * PWA cash-screen preview MUST derive the charged total from this same function, or the preview
+ * total drifts from what the writer actually persists and compares payment against — the same
+ * preview-vs-writer mismatch this file's `computeStorePrice` discount rounding already fixed once.
+ */
+export function roundToWholeRupiah(value: number): number {
+  return Math.round(value);
 }
 
 export function computeStorePrice(input: StorePriceInput): StorePrice {
