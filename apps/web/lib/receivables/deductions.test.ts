@@ -9,11 +9,14 @@ import { returTertahan } from './rules';
 
 const RETUR = (over: Record<string, unknown> = {}) => ({
   claimedAmount: 1_000_000,
-  countedAmount: null,
-  bearer: null,
-  status: 'DIAJUKAN',
+  status: 'MENUNGGU',
+  warehouseReturn: null,
+  charges: [],
   ...over,
 });
+
+/** Hitungan gudang yang sudah ditutup — inilah yang melepas potongan. */
+const NRI = (physicalAmount: number, status = 'FINAL') => ({ physicalAmount, status });
 
 describe('potonganRetur', () => {
   it('tidak menahan potongan yang memang bukan retur', () => {
@@ -45,7 +48,7 @@ describe('potonganRetur', () => {
       {
         amount: 600_000,
         storeReturnId: 'nrt1',
-        storeReturn: RETUR({ countedAmount: 800_000, status: 'DIHITUNG' }),
+        storeReturn: RETUR({ status: 'SELISIH', warehouseReturn: NRI(800_000) }),
       },
     ]);
     expect(returTertahan(bahan)).toBeCloseTo(120_000, 6);
@@ -56,7 +59,57 @@ describe('potonganRetur', () => {
       {
         amount: 600_000,
         storeReturnId: 'nrt1',
-        storeReturn: RETUR({ countedAmount: 800_000, status: 'SELESAI', bearer: 'TOKO' }),
+        storeReturn: RETUR({
+          status: 'SELISIH',
+          warehouseReturn: NRI(800_000),
+          charges: [{ status: 'DITETAPKAN' }],
+        }),
+      },
+    ]);
+    expect(returTertahan(bahan)).toBe(0);
+  });
+
+  it('TIDAK melepas apa pun selama hitungan gudang masih draft', () => {
+    // Brief menyebutnya tegas: yang melepas adalah NRI *final*. Angka yang
+    // masih bisa berubah tidak boleh melepas uang.
+    const bahan = potonganRetur([
+      {
+        amount: 600_000,
+        storeReturnId: 'nrt1',
+        storeReturn: RETUR({ warehouseReturn: NRI(800_000, 'DRAFT') }),
+      },
+    ]);
+    expect(returTertahan(bahan)).toBe(600_000);
+    expect(bahan[0].nilaiFisik).toBeNull();
+  });
+
+  it('tidak melepas apa pun selama bebannya masih TERBUKA', () => {
+    // Beban terbuka artinya sudah dicatat ada selisihnya, tapi belum ada yang
+    // ditetapkan menanggung. Fakturnya tetap tertahan.
+    const bahan = potonganRetur([
+      {
+        amount: 600_000,
+        storeReturnId: 'nrt1',
+        storeReturn: RETUR({
+          status: 'SELISIH',
+          warehouseReturn: NRI(800_000),
+          charges: [{ status: 'TERBUKA' }],
+        }),
+      },
+    ]);
+    expect(returTertahan(bahan)).toBeCloseTo(120_000, 6);
+  });
+
+  it('tetap lepas kalau bebannya sudah LUNAS', () => {
+    const bahan = potonganRetur([
+      {
+        amount: 600_000,
+        storeReturnId: 'nrt1',
+        storeReturn: RETUR({
+          status: 'SELISIH',
+          warehouseReturn: NRI(800_000),
+          charges: [{ status: 'LUNAS' }],
+        }),
       },
     ]);
     expect(returTertahan(bahan)).toBe(0);
@@ -69,7 +122,11 @@ describe('potonganRetur', () => {
       {
         amount: 600_000,
         storeReturnId: 'nrt1',
-        storeReturn: RETUR({ countedAmount: 800_000, status: 'BATAL', bearer: 'TOKO' }),
+        storeReturn: RETUR({
+          status: 'BATAL',
+          warehouseReturn: NRI(800_000),
+          charges: [{ status: 'DITETAPKAN' }],
+        }),
       },
     ]);
     expect(returTertahan(bahan)).toBe(600_000);
@@ -82,7 +139,7 @@ describe('potonganRetur', () => {
       {
         amount: 600_000,
         storeReturnId: 'nrt1',
-        storeReturn: RETUR({ countedAmount: 0, status: 'DIHITUNG' }),
+        storeReturn: RETUR({ status: 'SELISIH', warehouseReturn: NRI(0) }),
       },
     ]);
     expect(returTertahan(bahan)).toBe(600_000);

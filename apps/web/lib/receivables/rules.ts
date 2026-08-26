@@ -187,23 +187,41 @@ export function bahanPotonganRetur(potongan: PotonganPadaKlaim[]): PotonganRetur
   return hasil;
 }
 
-export type KeadaanRetur = 'menunggu' | 'selisih' | 'beres' | 'batal';
+export type LangkahRetur = 'jodoh' | 'cek' | 'keputusan' | 'beres' | 'batal';
 
 /**
- * Keadaan sebuah nota retur, diperiksa berurutan.
+ * Langkah berikutnya sebuah retur, diperiksa berurutan.
  *
- * `selisih` hanya muncul kalau gudang menerima KURANG dari yang diklaim dan
- * belum ada yang menanggungnya. Menerima lebih banyak dari klaim bukan utang
- * toko, jadi tidak menahan apa pun.
+ * Empat langkah dari alur aslinya, plus `batal`. Yang membedakan program ini
+ * dari tabel angka adalah tiap baris menyebut langkah berikutnya dan giliran
+ * siapa — jadi keadaannya harus satu kata yang bisa diterjemahkan jadi kalimat,
+ * bukan gabungan tiga kolom yang harus dibaca sendiri.
+ *
+ * `jodoh` diperiksa lebih dulu dari `cek`: penerimaan gudang tanpa nota toko
+ * sudah terhitung fisiknya — yang kurang bukan hitungannya, melainkan nota
+ * mana yang ia lunasi.
+ *
+ * `keputusan` hanya muncul kalau gudang menerima KURANG dari klaim. Menerima
+ * lebih banyak bukan utang toko dan tidak menahan apa pun.
  */
-export function keadaanRetur(r: {
-  status: 'DIAJUKAN' | 'DIHITUNG' | 'SELESAI' | 'BATAL';
+export function langkahRetur(r: {
+  dibatalkan: boolean;
+  adaNotaToko: boolean;
+  adaHitunganFinal: boolean;
   nilaiKlaim: number;
   nilaiFisik: number | null;
   bebanDiputuskan: boolean;
-}): KeadaanRetur {
-  if (r.status === 'BATAL') return 'batal';
-  if (r.nilaiFisik === null) return 'menunggu';
-  if (r.nilaiKlaim - r.nilaiFisik > 0 && !r.bebanDiputuskan) return 'selisih';
+}): LangkahRetur {
+  if (r.dibatalkan) return 'batal';
+  if (!r.adaNotaToko) return 'jodoh';
+  if (!r.adaHitunganFinal || r.nilaiFisik === null) return 'cek';
+  if (r.nilaiKlaim - r.nilaiFisik > 0 && !r.bebanDiputuskan) return 'keputusan';
   return 'beres';
+}
+
+/** Giliran siapa mengerjakan sebuah langkah. */
+export function giliranRetur(langkah: LangkahRetur): 'gudang' | 'keuangan' | 'tidak_ada' {
+  if (langkah === 'cek') return 'gudang';
+  if (langkah === 'keputusan' || langkah === 'jodoh') return 'keuangan';
+  return 'tidak_ada';
 }

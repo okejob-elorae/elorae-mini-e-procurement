@@ -307,32 +307,62 @@ describe('bahanPotonganRetur — nilai fisik diprorata per potongan', () => {
   });
 });
 
-describe('keadaanRetur', () => {
-  const dasar = { status: 'DIHITUNG' as const, nilaiKlaim: 1_000_000, nilaiFisik: 800_000, bebanDiputuskan: false };
+describe('langkahRetur — empat langkah, diperiksa berurutan', () => {
+  const dasar = {
+    dibatalkan: false,
+    adaNotaToko: true,
+    adaHitunganFinal: true,
+    nilaiKlaim: 1_000_000,
+    nilaiFisik: 800_000 as number | null,
+    bebanDiputuskan: false,
+  };
 
-  it('menunggu selama gudang belum menghitung', async () => {
-    const { keadaanRetur } = await import('./rules');
-    expect(keadaanRetur({ ...dasar, status: 'DIAJUKAN', nilaiFisik: null })).toBe('menunggu');
+  it('batal menang atas segalanya', async () => {
+    const { langkahRetur } = await import('./rules');
+    expect(langkahRetur({ ...dasar, dibatalkan: true })).toBe('batal');
   });
 
-  it('selisih kalau fisik kurang dan belum ada yang menanggung', async () => {
-    const { keadaanRetur } = await import('./rules');
-    expect(keadaanRetur(dasar)).toBe('selisih');
+  it('jodoh untuk penerimaan gudang tanpa nota toko', async () => {
+    // Fisiknya sudah terhitung; yang kurang adalah nota mana yang ia lunasi.
+    const { langkahRetur } = await import('./rules');
+    expect(langkahRetur({ ...dasar, adaNotaToko: false })).toBe('jodoh');
+  });
+
+  it('cek selama gudang belum menutup hitungan', async () => {
+    const { langkahRetur } = await import('./rules');
+    expect(langkahRetur({ ...dasar, adaHitunganFinal: false, nilaiFisik: null })).toBe('cek');
+  });
+
+  it('cek juga kalau hitungannya masih draft', async () => {
+    // Angka yang masih bisa berubah tidak boleh dianggap sudah dihitung.
+    const { langkahRetur } = await import('./rules');
+    expect(langkahRetur({ ...dasar, adaHitunganFinal: false })).toBe('cek');
+  });
+
+  it('keputusan kalau fisik kurang dan belum ada yang menanggung', async () => {
+    const { langkahRetur } = await import('./rules');
+    expect(langkahRetur(dasar)).toBe('keputusan');
   });
 
   it('beres begitu bebannya diputuskan', async () => {
-    const { keadaanRetur } = await import('./rules');
-    expect(keadaanRetur({ ...dasar, bebanDiputuskan: true })).toBe('beres');
+    const { langkahRetur } = await import('./rules');
+    expect(langkahRetur({ ...dasar, bebanDiputuskan: true })).toBe('beres');
   });
 
   it('beres kalau fisik sama atau lebih dari klaim', async () => {
-    const { keadaanRetur } = await import('./rules');
-    expect(keadaanRetur({ ...dasar, nilaiFisik: 1_000_000 })).toBe('beres');
-    expect(keadaanRetur({ ...dasar, nilaiFisik: 1_200_000 })).toBe('beres');
+    const { langkahRetur } = await import('./rules');
+    expect(langkahRetur({ ...dasar, nilaiFisik: 1_000_000 })).toBe('beres');
+    expect(langkahRetur({ ...dasar, nilaiFisik: 1_200_000 })).toBe('beres');
   });
+});
 
-  it('batal menang atas segalanya', async () => {
-    const { keadaanRetur } = await import('./rules');
-    expect(keadaanRetur({ ...dasar, status: 'BATAL' })).toBe('batal');
+describe('giliranRetur', () => {
+  it('cek adalah giliran gudang, keputusan dan jodoh giliran keuangan', async () => {
+    const { giliranRetur } = await import('./rules');
+    expect(giliranRetur('cek')).toBe('gudang');
+    expect(giliranRetur('keputusan')).toBe('keuangan');
+    expect(giliranRetur('jodoh')).toBe('keuangan');
+    expect(giliranRetur('beres')).toBe('tidak_ada');
+    expect(giliranRetur('batal')).toBe('tidak_ada');
   });
 });

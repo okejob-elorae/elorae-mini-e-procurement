@@ -7,8 +7,12 @@ import {
   batalkanRetur,
   catatHitunganGudang,
   catatReturToko,
-  putuskanBebanSelisih,
+  jodohkanRetur,
+  lepasPasangan,
+  putuskanBeban,
+  tandaiBebanLunas,
   type AlasanGagalRetur,
+  type BarisBarang,
 } from '@/lib/receivables/return-writer';
 
 export type KodeAksiRetur = 'TANPA_AKSES' | 'TANGGAL_TIDAK_VALID' | AlasanGagalRetur | 'GAGAL';
@@ -27,6 +31,13 @@ function tanggalWib(teks: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+async function butuh(izin: string) {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+  if (!hasPermission(session.user.permissions ?? [], izin)) return null;
+  return session.user.id;
+}
+
 /**
  * Catat klaim retur dari toko (NRT).
  *
@@ -34,28 +45,22 @@ function tanggalWib(teks: string): Date | null {
  * nota yang salah menahan piutang sampai seseorang membetulkannya.
  */
 export async function catatReturTokoAction(input: {
+  noNrt: string;
   storeId: string;
   claimDate: string;
-  claimedAmount: number;
+  deliveryMethod: 'SALES' | 'TOKO' | 'EKSPEDISI';
+  claimedAmount?: number;
+  items?: BarisBarang[];
   note?: string;
 }): Promise<HasilAksiRetur> {
-  const session = await auth();
-  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)) {
-    return { ok: false, kode: 'TANPA_AKSES' };
-  }
+  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   const tanggal = tanggalWib(input.claimDate);
   if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
 
   try {
-    const hasil = await catatReturToko({
-      storeId: input.storeId,
-      salesmanId: session.user.id,
-      claimDate: tanggal,
-      claimedAmount: input.claimedAmount,
-      note: input.note,
-    });
+    const hasil = await catatReturToko({ ...input, claimDate: tanggal, salesmanId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
     return { ok: true };
@@ -72,23 +77,26 @@ export async function catatReturTokoAction(input: {
  * retur dua sisi ini adalah bahwa yang mengklaim dan yang menghitung bukan orang
  * yang sama; menyatukan keduanya di satu izin membatalkan gunanya.
  */
-export async function catatHitunganGudangAction(
-  storeReturnId: string,
-  countedAmount: number,
-  note?: string,
-): Promise<HasilAksiRetur> {
-  const session = await auth();
-  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT)) {
-    return { ok: false, kode: 'TANPA_AKSES' };
-  }
+export async function catatHitunganGudangAction(input: {
+  storeReturnId?: string | null;
+  storeId?: string | null;
+  receivedAt: string;
+  deliveryMethod: 'SALES' | 'TOKO' | 'EKSPEDISI';
+  physicalAmount?: number;
+  items?: BarisBarang[];
+  note?: string;
+}): Promise<HasilAksiRetur> {
+  const userId = await butuh(PERMISSIONS.INVENTORY_OPNAME_COUNT);
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+
+  const tanggal = tanggalWib(input.receivedAt);
+  if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
 
   try {
     const hasil = await catatHitunganGudang({
-      storeReturnId,
-      countedAmount,
-      olehUserId: session.user.id,
-      note,
+      ...input,
+      receivedAt: tanggal,
+      warehouseUserId: userId,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
@@ -99,25 +107,53 @@ export async function catatHitunganGudangAction(
   }
 }
 
-/** Tetapkan siapa menanggung selisih. Inilah yang melepas faktur. */
-export async function putuskanBebanAction(
+/** Jodohkan penerimaan gudang yatim dengan nota toko. */
+export async function jodohkanReturAction(
+  warehouseReturnId: string,
   storeReturnId: string,
-  bearer: 'TOKO' | 'SALES' | 'PERUSAHAAN',
-  alasan: string,
 ): Promise<HasilAksiRetur> {
-  const session = await auth();
-  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)) {
-    return { ok: false, kode: 'TANPA_AKSES' };
-  }
+  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
-    const hasil = await putuskanBebanSelisih({
-      storeReturnId,
-      bearer,
-      alasan,
-      olehUserId: session.user.id,
-    });
+    const hasil = await jodohkanRetur({ warehouseReturnId, storeReturnId });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    segarkan();
+    return { ok: true };
+  } catch (err) {
+    console.error('jodohkanRetur gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/** Lepas pasangan NRT–NRI. Ditolak kalau bebannya sudah diputuskan. */
+export async function lepasPasanganAction(warehouseReturnId: string): Promise<HasilAksiRetur> {
+  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+
+  try {
+    const hasil = await lepasPasangan({ warehouseReturnId });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    segarkan();
+    return { ok: true };
+  } catch (err) {
+    console.error('lepasPasangan gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/** Tetapkan siapa menanggung selisih. Inilah yang melepas faktur. */
+export async function putuskanBebanAction(
+  chargeId: string,
+  bearer: 'TOKO' | 'SALES' | 'GUDANG' | 'PERUSAHAAN',
+  alasan: string,
+  bearerUserId?: string | null,
+): Promise<HasilAksiRetur> {
+  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+
+  try {
+    const hasil = await putuskanBeban({ chargeId, bearer, alasan, bearerUserId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     segarkan();
     return { ok: true };
@@ -127,16 +163,29 @@ export async function putuskanBebanAction(
   }
 }
 
-/** Batalkan nota retur. Potongan yang menunjuknya tetap tertahan. */
+/** Tandai beban sudah diganti. Tidak menyentuh piutang. */
+export async function tandaiBebanLunasAction(chargeId: string): Promise<HasilAksiRetur> {
+  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+
+  try {
+    const hasil = await tandaiBebanLunas({ chargeId });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    segarkan();
+    return { ok: true };
+  } catch (err) {
+    console.error('tandaiBebanLunas gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/** Batalkan nota retur toko. Potongan yang menunjuknya tetap tertahan. */
 export async function batalkanReturAction(
   storeReturnId: string,
   alasan: string,
 ): Promise<HasilAksiRetur> {
-  const session = await auth();
-  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)) {
-    return { ok: false, kode: 'TANPA_AKSES' };
-  }
+  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
+  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
     const hasil = await batalkanRetur({ storeReturnId, alasan });

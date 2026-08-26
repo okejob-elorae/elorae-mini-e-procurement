@@ -102,9 +102,10 @@ model User {
   paymentClaimsAsSalesman PaymentClaim[]  @relation("PaymentClaimSalesman")
   paymentClaimsVerified  PaymentClaim[]   @relation("PaymentClaimVerifier")
   paymentClaimsCreated   PaymentClaim[]   @relation("PaymentClaimCreator")
-  storeReturnsAsSalesman StoreReturn[]   @relation("StoreReturnSalesman")
-  storeReturnsCounted    StoreReturn[]   @relation("StoreReturnCountedBy")
-  storeReturnsDecided    StoreReturn[]   @relation("StoreReturnDecidedBy")
+  storeReturnsAsSalesman StoreReturn[]     @relation("StoreReturnSalesman")
+  warehouseReturnsCounted WarehouseReturn[] @relation("WarehouseReturnCounter")
+  returnChargesBorne     ReturnCharge[]    @relation("ReturnChargeBearer")
+  returnChargesDecided   ReturnCharge[]    @relation("ReturnChargeDecider")
 }
 
 model VerificationToken {
@@ -330,6 +331,8 @@ model Store {
   collectionNotes CollectionNote[]
   paymentClaims  PaymentClaim[]
   storeReturns   StoreReturn[]
+  warehouseReturns WarehouseReturn[]
+  returnCharges  ReturnCharge[]
 }
 
 model StoreVisit {
@@ -2595,47 +2598,156 @@ model PaymentClaimReceivable {
   @@index([receivableId])
 }
 
+enum ReturnDeliveryMethod {
+  SALES
+  TOKO
+  EKSPEDISI
+}
+
 enum StoreReturnStatus {
-  DIAJUKAN
-  DIHITUNG
-  SELESAI
+  MENUNGGU
+  COCOK
+  SELISIH
   BATAL
+}
+
+enum WarehouseReturnStatus {
+  DRAFT
+  FINAL
+}
+
+enum ReturnItemCondition {
+  LAYAK
+  RUSAK
+  EXPIRED
 }
 
 enum ReturnBearer {
   TOKO
   SALES
+  GUDANG
   PERUSAHAAN
 }
 
+enum ReturnChargeStatus {
+  TERBUKA
+  DITETAPKAN
+  LUNAS
+}
+
 model StoreReturn {
-  id            String    @id @default(cuid())
-  docNo         String    @unique
-  storeId       String
-  salesmanId    String?
-  claimDate     DateTime
-  claimedAmount Decimal   @db.Decimal(15, 2)
-  countedAmount Decimal?  @db.Decimal(15, 2)
-  countedAt     DateTime?
-  countedById   String?
-  bearer        ReturnBearer?
-  bearerReason  String?   @db.MediumText
-  decidedAt     DateTime?
-  decidedById   String?
-  status        StoreReturnStatus @default(DIAJUKAN)
-  note          String?   @db.MediumText
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  noNrt          String
+  storeId        String
+  salesmanId     String?
+  claimDate      DateTime
+  deliveryMethod ReturnDeliveryMethod @default(SALES)
+  claimedAmount  Decimal   @db.Decimal(15, 2)
+  photoUrl       String?
+  note           String?   @db.MediumText
+  status         StoreReturnStatus @default(MENUNGGU)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  store         Store @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  salesman      User? @relation("StoreReturnSalesman", fields: [salesmanId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  countedBy     User? @relation("StoreReturnCountedBy", fields: [countedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  decidedBy     User? @relation("StoreReturnDecidedBy", fields: [decidedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  deductions    PaymentClaimDeduction[]
+  store          Store @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salesman       User? @relation("StoreReturnSalesman", fields: [salesmanId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items          StoreReturnItem[]
+  warehouseReturn WarehouseReturn?
+  charges        ReturnCharge[]
+  deductions     PaymentClaimDeduction[]
 
+  @@unique([storeId, noNrt])
   @@index([storeId, status])
   @@index([status])
   @@index([claimDate])
+}
+
+model StoreReturnItem {
+  id            String  @id @default(cuid())
+  storeReturnId String
+  itemId        String?
+  itemName      String
+  qty           Int
+  price         Decimal @db.Decimal(15, 2)
+  amount        Decimal @db.Decimal(15, 2)
+
+  storeReturn   StoreReturn @relation(fields: [storeReturnId], references: [id], onDelete: Cascade)
+
+  @@index([storeReturnId])
+  @@index([itemId])
+}
+
+model WarehouseReturn {
+  id              String    @id @default(cuid())
+  noNri           String    @unique
+  storeId         String?
+  storeReturnId   String?   @unique
+  warehouseUserId String
+  receivedAt      DateTime
+  deliveryMethod  ReturnDeliveryMethod @default(SALES)
+  physicalAmount  Decimal   @db.Decimal(15, 2)
+  claimedAmount   Decimal   @default(0) @db.Decimal(15, 2)
+  note            String?   @db.MediumText
+  status          WarehouseReturnStatus @default(DRAFT)
+  finalisedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  store           Store? @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  storeReturn     StoreReturn? @relation(fields: [storeReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouseUser   User @relation("WarehouseReturnCounter", fields: [warehouseUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items           WarehouseReturnItem[]
+  charges         ReturnCharge[]
+
+  @@index([storeId, status])
+  @@index([status])
+  @@index([receivedAt])
+}
+
+model WarehouseReturnItem {
+  id                String  @id @default(cuid())
+  warehouseReturnId String
+  itemId            String?
+  itemName          String
+  qtyClaim          Int     @default(0)
+  qty               Int
+  price             Decimal @db.Decimal(15, 2)
+  amount            Decimal @db.Decimal(15, 2)
+  condition         ReturnItemCondition @default(LAYAK)
+
+  warehouseReturn   WarehouseReturn @relation(fields: [warehouseReturnId], references: [id], onDelete: Cascade)
+
+  @@index([warehouseReturnId])
+  @@index([itemId])
+}
+
+model ReturnCharge {
+  id                String    @id @default(cuid())
+  storeReturnId     String?
+  warehouseReturnId String?
+  storeId           String?
+  amount            Decimal   @db.Decimal(15, 2)
+  bearer            ReturnBearer?
+  bearerUserId      String?
+  status            ReturnChargeStatus @default(TERBUKA)
+  note              String?   @db.MediumText
+  decidedById       String?
+  decidedAt         DateTime?
+  settledAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  storeReturn       StoreReturn? @relation(fields: [storeReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouseReturn   WarehouseReturn? @relation(fields: [warehouseReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store             Store? @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  bearerUser        User? @relation("ReturnChargeBearer", fields: [bearerUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  decidedBy         User? @relation("ReturnChargeDecider", fields: [decidedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status])
+  @@index([storeId, status])
+  @@index([bearerUserId, status])
+  @@index([storeReturnId])
+  @@index([warehouseReturnId])
 }
 
 enum DeductionMethod {

@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { PackageOpen, Plus, Scale } from 'lucide-react';
+import { Camera, Link2, PackageOpen, Plus, Scale } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
-import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import { StatusPill } from '@/components/ui/status-pill';
 import {
   Dialog,
   DialogContent,
@@ -38,13 +39,18 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import {
-  batalkanReturAction,
   catatHitunganGudangAction,
   catatReturTokoAction,
-  putuskanBebanAction,
+  jodohkanReturAction,
 } from '@/app/actions/store-returns';
-import type { BarisRetur, RingkasanRetur } from '@/lib/receivables/return-queries';
-import type { KeadaanRetur } from '@/lib/receivables/rules';
+import type {
+  BarisKerjaRetur,
+  RingkasanKerjaRetur,
+} from '@/lib/receivables/return-queries';
+import type { LangkahRetur } from '@/lib/receivables/rules';
+import type { BarisBarang } from '@/lib/receivables/return-writer';
+import { NADA_LANGKAH, URUT_LANGKAH } from './langkah';
+import { BarisBarangEditor } from './BarisBarangEditor';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string) =>
@@ -59,64 +65,74 @@ function hariIniWib(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(new Date());
 }
 
-/**
- * `menunggu` kuning karena bolanya ada di gudang; `selisih` merah karena uang
- * berhenti di situ dan tidak ada seorang pun yang merasa ditagih — keadaan yang
- * bisa bertahan berbulan-bulan justru karena tak ada yang merasa bertanggung jawab.
- */
-const NADA: Record<KeadaanRetur, StatusTone> = {
-  menunggu: 'waiting',
-  selisih: 'attention',
-  beres: 'settled',
-  batal: 'inactive',
-};
+const KIRIM = ['SALES', 'TOKO', 'EKSPEDISI'] as const;
 
-const URUT: KeadaanRetur[] = ['selisih', 'menunggu', 'beres', 'batal'];
-const BEBAN = ['TOKO', 'SALES', 'PERUSAHAAN'] as const;
+export type CalonPasangan = {
+  id: string;
+  noNrt: string;
+  storeId: string;
+  storeName: string;
+  nilaiKlaim: number;
+  tanggal: string;
+};
 
 export function ReturTokoClient({
   baris,
   ringkasan,
   toko,
+  calonPasangan,
   bolehMengelola,
   bolehMenghitung,
 }: {
-  baris: BarisRetur[];
-  ringkasan: RingkasanRetur;
+  baris: BarisKerjaRetur[];
+  ringkasan: RingkasanKerjaRetur;
   toko: { id: string; name: string }[];
+  calonPasangan: CalonPasangan[];
   bolehMengelola: boolean;
   bolehMenghitung: boolean;
 }) {
   const t = useTranslations('storeReturns');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [saring, setSaring] = useState<KeadaanRetur | null>(null);
+  const [saring, setSaring] = useState<LangkahRetur | 'kerja' | null>('kerja');
 
   const [buatTerbuka, setBuatTerbuka] = useState(false);
+  const [noNrt, setNoNrt] = useState('');
   const [storeId, setStoreId] = useState('');
   const [claimDate, setClaimDate] = useState(hariIniWib());
+  const [caraKirim, setCaraKirim] = useState<(typeof KIRIM)[number]>('SALES');
   const [nilaiKlaim, setNilaiKlaim] = useState('');
+  const [barangKlaim, setBarangKlaim] = useState<BarisBarang[]>([]);
   const [catatan, setCatatan] = useState('');
 
-  const [hitungRetur, setHitungRetur] = useState<BarisRetur | null>(null);
+  const [hitungBaris, setHitungBaris] = useState<BarisKerjaRetur | null>(null);
+  const [terimaTerbuka, setTerimaTerbuka] = useState(false);
   const [nilaiFisik, setNilaiFisik] = useState('');
   const [catatanHitung, setCatatanHitung] = useState('');
+  const [barangFisik, setBarangFisik] = useState<BarisBarang[]>([]);
+  const [kirimFisik, setKirimFisik] = useState<(typeof KIRIM)[number]>('EKSPEDISI');
 
-  const [bebanRetur, setBebanRetur] = useState<BarisRetur | null>(null);
-  const [beban, setBeban] = useState<(typeof BEBAN)[number]>('TOKO');
-  const [alasanBeban, setAlasanBeban] = useState('');
+  const [jodohBaris, setJodohBaris] = useState<BarisKerjaRetur | null>(null);
+  const [pasanganId, setPasanganId] = useState('');
 
-  const [batalRetur, setBatalRetur] = useState<BarisRetur | null>(null);
-  const [alasanBatal, setAlasanBatal] = useState('');
+  const label = (k: LangkahRetur) => t(`step${k.charAt(0).toUpperCase()}${k.slice(1)}` as never);
 
-  const label = (k: KeadaanRetur) => t(`state${k.charAt(0).toUpperCase()}${k.slice(1)}` as never);
-  const tampil = saring ? baris.filter((b) => b.keadaan === saring) : baris;
+  const tampil =
+    saring === 'kerja'
+      ? baris.filter((b) => b.langkah !== 'beres' && b.langkah !== 'batal')
+      : saring
+        ? baris.filter((b) => b.langkah === saring)
+        : baris;
 
-  const jalankan = (fn: () => Promise<{ ok: boolean; kode?: string }>, pesanSukses: string, bersihkan: () => void) => {
+  const jalankan = (
+    fn: () => Promise<{ ok: boolean; kode?: string }>,
+    pesan: string,
+    bersihkan: () => void,
+  ) => {
     startTransition(async () => {
       const hasil = await fn();
       if (hasil.ok) {
-        toast.success(pesanSukses);
+        toast.success(pesan);
         bersihkan();
         router.refresh();
       } else {
@@ -125,27 +141,96 @@ export function ReturTokoClient({
     });
   };
 
+  /* Kartu-kartu langkah. Angkanya besar, tapi yang penting kalimat di bawahnya:
+     ia menyebut AKIBAT langkah itu, bukan sekadar namanya lagi. */
+  const KARTU: { langkah: LangkahRetur; nada: string }[] = [
+    { langkah: 'keputusan', nada: 'text-destructive' },
+    { langkah: 'cek', nada: 'text-amber-600 dark:text-amber-500' },
+    { langkah: 'jodoh', nada: 'text-primary' },
+    { langkah: 'beres', nada: 'text-emerald-600 dark:text-emerald-500' },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
         title={t('pageTitle')}
         description={t('pageDescription')}
         meta={t('summary', {
-          count: ringkasan.jumlah,
+          count: ringkasan.perluDikerjakan,
           held: rupiah(ringkasan.nilaiTertahan),
         })}
         actions={
-          bolehMengelola ? (
-            <Button onClick={() => setBuatTerbuka(true)} disabled={toko.length === 0}>
-              <Plus className="mr-1.5 h-4 w-4" />
-              {t('create')}
-            </Button>
-          ) : undefined
+          <span className="inline-flex flex-wrap gap-2">
+            {bolehMenghitung && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setHitungBaris(null);
+                  setNilaiFisik('');
+                  setCatatanHitung('');
+                  setKirimFisik('EKSPEDISI');
+                  setTerimaTerbuka(true);
+                }}
+              >
+                <PackageOpen className="mr-1.5 h-4 w-4" />
+                {t('receiveOrphan')}
+              </Button>
+            )}
+            {bolehMengelola && (
+              <Button onClick={() => setBuatTerbuka(true)} disabled={toko.length === 0}>
+                <Plus className="mr-1.5 h-4 w-4" />
+                {t('create')}
+              </Button>
+            )}
+          </span>
         }
       />
 
+      {/* Tiga langkah alurnya, supaya orang baru tahu ia sedang di mana. */}
+      <div className="anim-stagger grid gap-3 md:grid-cols-3">
+        {[1, 2, 3].map((n) => (
+          <Card key={n} className="bg-muted/40">
+            <CardContent className="flex gap-3 py-4">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+                {n}
+              </span>
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-semibold">{t(`flow${n}Title` as never)}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {t(`flow${n}Body` as never)}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="anim-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {KARTU.map(({ langkah, nada }) => (
+          <Card key={langkah}>
+            <CardContent className="space-y-1 py-4">
+              <p className="text-sm text-muted-foreground">{label(langkah)}</p>
+              <p className={cn('text-2xl font-semibold tabular-nums', nada)}>
+                {ringkasan.perLangkah[langkah]}
+              </p>
+              <p className="text-xs text-muted-foreground">{t(`effect${langkah.charAt(0).toUpperCase()}${langkah.slice(1)}` as never)}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       <div className="anim-stagger flex flex-wrap gap-2">
-        {URUT.filter((k) => ringkasan.perKeadaan[k] > 0).map((k) => (
+        <button
+          type="button"
+          onClick={() => setSaring('kerja')}
+          className={cn(
+            'rounded-full border px-3 py-1.5 text-sm transition-colors',
+            saring === 'kerja' ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
+          )}
+        >
+          {t('filterWork', { count: ringkasan.perluDikerjakan })}
+        </button>
+        {URUT_LANGKAH.filter((k) => ringkasan.perLangkah[k] > 0).map((k) => (
           <button
             key={k}
             type="button"
@@ -155,8 +240,10 @@ export function ReturTokoClient({
               saring === k ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted',
             )}
           >
-            <StatusPill tone={NADA[k]}>{label(k)}</StatusPill>
-            <span className="ml-2 tabular-nums text-muted-foreground">{ringkasan.perKeadaan[k]}</span>
+            <StatusPill tone={NADA_LANGKAH[k]}>{label(k)}</StatusPill>
+            <span className="ml-2 tabular-nums text-muted-foreground">
+              {ringkasan.perLangkah[k]}
+            </span>
           </button>
         ))}
       </div>
@@ -172,104 +259,130 @@ export function ReturTokoClient({
                   <TableRow>
                     <TableHead>{t('colDoc')}</TableHead>
                     <TableHead>{t('colStore')}</TableHead>
-                    <TableHead>{t('colDate')}</TableHead>
                     <TableHead className="text-right">{t('colClaimed')}</TableHead>
                     <TableHead className="text-right">{t('colCounted')}</TableHead>
-                    <TableHead className="text-right">{t('colGap')}</TableHead>
-                    <TableHead>{t('colState')}</TableHead>
+                    <TableHead>{t('colNextStep')}</TableHead>
                     <TableHead className="text-right">{t('colAction')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {tampil.map((b) => (
                     <TableRow
-                      key={b.id}
-                      /* Hanya selisih yang belum ditanggung diberi latar merah:
-                         itu satu-satunya baris yang menahan uang tanpa pemilik. */
-                      className={cn(b.keadaan === 'selisih' && 'bg-destructive/[0.06]')}
+                      key={`${b.jenis}-${b.id}`}
+                      /* Hanya baris yang menahan uang tanpa pemilik diberi
+                         latar merah tipis. */
+                      className={cn(b.langkah === 'keputusan' && 'bg-destructive/[0.06]')}
                     >
-                      <TableCell className="font-medium">{b.docNo}</TableCell>
-                      <TableCell>
-                        {b.storeName}
-                        {b.salesmanName && (
-                          <span className="block text-xs text-muted-foreground">{b.salesmanName}</span>
+                      <TableCell className="align-top">
+                        <span className="font-medium">{b.nomor}</span>
+                        {b.nomorPasangan && (
+                          <span className="block text-xs text-muted-foreground">
+                            ↔ {b.nomorPasangan}
+                          </span>
+                        )}
+                        <span className="block text-xs text-muted-foreground">
+                          {tanggal(b.tanggal)} · {t(`via${b.caraKirim}` as never)}
+                        </span>
+                        {b.adaFoto && (
+                          <span className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <Camera className="h-3 w-3" />
+                            {t('hasPhoto')}
+                          </span>
                         )}
                       </TableCell>
-                      <TableCell>{tanggal(b.claimDate)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {rupiah(b.nilaiKlaim)}
+                      <TableCell className="align-top">
+                        {b.storeName ?? (
+                          <span className="text-muted-foreground">{t('storeUnknown')}</span>
+                        )}
+                        {b.salesmanName && (
+                          <span className="block text-xs text-muted-foreground">
+                            {b.salesmanName}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="align-top text-right tabular-nums">
+                        {b.nilaiKlaim === null ? '—' : rupiah(b.nilaiKlaim)}
                         {b.jumlahPotongan > 0 && (
                           <span className="block text-xs text-muted-foreground">
                             {t('deducted', { value: rupiah(b.nilaiDipotong) })}
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {b.nilaiFisik === null ? '—' : rupiah(b.nilaiFisik)}
-                        {b.countedByName && (
-                          <span className="block text-xs">{b.countedByName}</span>
+                      <TableCell className="align-top text-right tabular-nums">
+                        {b.nilaiFisik === null ? (
+                          <span className="text-muted-foreground">{t('notCounted')}</span>
+                        ) : (
+                          <>
+                            <span className="font-semibold">{rupiah(b.nilaiFisik)}</span>
+                            {b.selisih > 0 && (
+                              <span className="block text-xs font-medium text-destructive">
+                                {t('short', { value: rupiah(b.selisih) })}
+                              </span>
+                            )}
+                          </>
                         )}
                       </TableCell>
-                      <TableCell
-                        className={cn(
-                          'text-right font-semibold tabular-nums',
-                          b.keadaan === 'selisih' && 'text-destructive',
-                        )}
-                      >
-                        {b.nilaiFisik === null ? '—' : b.selisih === 0 ? '0' : rupiah(b.selisih)}
+                      {/* Inti halamannya: keadaan + giliran siapa + akibatnya.
+                          Tanpa kalimat ini yang tersisa cuma tabel angka. */}
+                      <TableCell className="align-top">
+                        <div className="max-w-sm space-y-1">
+                          <StatusPill tone={NADA_LANGKAH[b.langkah]}>
+                            {label(b.langkah)}
+                          </StatusPill>
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            {b.giliran !== 'tidak_ada' && (
+                              <span className="font-medium text-foreground">
+                                {t('turnOf', { who: t(`who_${b.giliran}` as never) })}{' '}
+                              </span>
+                            )}
+                            {t(`why${b.langkah.charAt(0).toUpperCase()}${b.langkah.slice(1)}` as never)}
+                          </p>
+                          {b.penanggung && (
+                            <p className="text-xs text-muted-foreground">
+                              {t('borneBy', { who: t(`bearer${b.penanggung}` as never) })}
+                              {b.bebanStatus === 'LUNAS' && ` · ${t('chargeSettled')}`}
+                            </p>
+                          )}
+                        </div>
                       </TableCell>
-                      <TableCell>
-                        <StatusPill
-                          tone={NADA[b.keadaan]}
-                          detail={
-                            b.bearer
-                              ? t('borneBy', { who: t(`bearer${b.bearer}` as never) })
-                              : undefined
-                          }
-                        >
-                          {label(b.keadaan)}
-                        </StatusPill>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className="inline-flex gap-2">
-                          {b.status === 'DIAJUKAN' && bolehMenghitung && (
+                      <TableCell className="align-top text-right">
+                        <span className="inline-flex flex-wrap justify-end gap-2">
+                          {b.langkah === 'cek' && bolehMenghitung && (
                             <Button
                               size="sm"
                               disabled={pending}
                               onClick={() => {
-                                setHitungRetur(b);
+                                setHitungBaris(b);
                                 setNilaiFisik('');
                                 setCatatanHitung('');
+                                // Rincian gudang diisi ulang dari nol; nama
+                                // barangnya harus sama persis dengan nota toko
+                                // supaya bisa disandingkan per baris.
+                                setBarangFisik([]);
+                                setKirimFisik(b.caraKirim);
+                                setTerimaTerbuka(true);
                               }}
                             >
                               <Scale className="mr-1.5 h-3.5 w-3.5" />
                               {t('count')}
                             </Button>
                           )}
-                          {b.keadaan === 'selisih' && bolehMengelola && (
+                          {b.langkah === 'jodoh' && bolehMengelola && (
                             <Button
                               size="sm"
                               disabled={pending}
                               onClick={() => {
-                                setBebanRetur(b);
-                                setBeban('TOKO');
-                                setAlasanBeban('');
+                                setJodohBaris(b);
+                                setPasanganId('');
                               }}
                             >
-                              {t('assign')}
+                              <Link2 className="mr-1.5 h-3.5 w-3.5" />
+                              {t('pair')}
                             </Button>
                           )}
-                          {b.status !== 'BATAL' && bolehMengelola && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={pending}
-                              onClick={() => {
-                                setBatalRetur(b);
-                                setAlasanBatal('');
-                              }}
-                            >
-                              {t('cancel')}
+                          {b.jenis === 'NRT' && (
+                            <Button size="sm" variant="outline" asChild>
+                              <Link href={`/backoffice/retur-toko/${b.id}`}>{t('open')}</Link>
                             </Button>
                           )}
                         </span>
@@ -291,6 +404,16 @@ export function ReturTokoClient({
             <DialogDescription>{t('createBody')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="nrt-no">{t('noNrt')}</Label>
+              <Input
+                id="nrt-no"
+                value={noNrt}
+                onChange={(e) => setNoNrt(e.target.value)}
+                placeholder={t('noNrtPlaceholder')}
+              />
+              <p className="text-xs text-muted-foreground">{t('noNrtHint')}</p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="nrt-toko">{t('store')}</Label>
               <Select value={storeId} onValueChange={setStoreId}>
@@ -317,6 +440,28 @@ export function ReturTokoClient({
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="nrt-kirim">{t('deliveryMethod')}</Label>
+                <Select value={caraKirim} onValueChange={(v) => setCaraKirim(v as never)}>
+                  <SelectTrigger id="nrt-kirim">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {KIRIM.map((k) => (
+                      <SelectItem key={k} value={k}>
+                        {t(`via${k}` as never)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <BarisBarangEditor
+              rows={barangKlaim}
+              onChange={setBarangKlaim}
+              qtyLabel={t('colQtyClaim')}
+            />
+            {barangKlaim.length === 0 && (
+              <div className="space-y-2">
                 <Label htmlFor="nrt-nilai">{t('claimedAmount')}</Label>
                 <Input
                   id="nrt-nilai"
@@ -327,7 +472,7 @@ export function ReturTokoClient({
                   onChange={(e) => setNilaiKlaim(e.target.value)}
                 />
               </div>
-            </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="nrt-catatan">{t('noteLabel')}</Label>
               <Textarea
@@ -340,21 +485,33 @@ export function ReturTokoClient({
           </div>
           <DialogFooter>
             <Button
-              disabled={pending || !storeId || !(Number(nilaiKlaim) > 0)}
+              disabled={
+                pending ||
+                !noNrt.trim() ||
+                !storeId ||
+                (barangKlaim.length === 0
+                  ? !(Number(nilaiKlaim) > 0)
+                  : !barangKlaim.every((b) => b.itemName.trim() && b.qty > 0))
+              }
               onClick={() =>
                 jalankan(
                   () =>
                     catatReturTokoAction({
+                      noNrt,
                       storeId,
                       claimDate,
+                      deliveryMethod: caraKirim,
                       claimedAmount: Number(nilaiKlaim),
+                      items: barangKlaim,
                       note: catatan,
                     }),
                   t('okCreated'),
                   () => {
                     setBuatTerbuka(false);
+                    setNoNrt('');
                     setStoreId('');
                     setNilaiKlaim('');
+                    setBarangKlaim([]);
                     setCatatan('');
                   },
                 )
@@ -366,32 +523,57 @@ export function ReturTokoClient({
         </DialogContent>
       </Dialog>
 
-      {/* NRI — hitungan gudang */}
-      <Dialog open={hitungRetur !== null} onOpenChange={(o) => !o && setHitungRetur(null)}>
+      {/* NRI — hitungan gudang, berpasangan atau yatim */}
+      <Dialog open={terimaTerbuka} onOpenChange={setTerimaTerbuka}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('countTitle')}</DialogTitle>
+            <DialogTitle>{hitungBaris ? t('countTitle') : t('receiveOrphanTitle')}</DialogTitle>
             <DialogDescription>
-              {hitungRetur &&
-                t('countBody', {
-                  doc: hitungRetur.docNo,
-                  claimed: rupiah(hitungRetur.nilaiKlaim),
-                })}
+              {hitungBaris
+                ? t('countBody', {
+                    doc: hitungBaris.nomor,
+                    claimed: rupiah(hitungBaris.nilaiKlaim ?? 0),
+                  })
+                : t('receiveOrphanBody')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="nri-nilai">{t('countedAmount')}</Label>
-              <Input
-                id="nri-nilai"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={nilaiFisik}
-                onChange={(e) => setNilaiFisik(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">{t('countHint')}</p>
-            </div>
+            <BarisBarangEditor
+              rows={barangFisik}
+              onChange={setBarangFisik}
+              qtyLabel={t('colQtyPhysical')}
+            />
+            {barangFisik.length === 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="nri-nilai">{t('countedAmount')}</Label>
+                <Input
+                  id="nri-nilai"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={nilaiFisik}
+                  onChange={(e) => setNilaiFisik(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">{t('countHint')}</p>
+              </div>
+            )}
+            {!hitungBaris && (
+              <div className="space-y-2">
+                <Label htmlFor="nri-kirim">{t('deliveryMethod')}</Label>
+                <Select value={kirimFisik} onValueChange={(v) => setKirimFisik(v as never)}>
+                  <SelectTrigger id="nri-kirim">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {KIRIM.map((k) => (
+                      <SelectItem key={k} value={k}>
+                        {t(`via${k}` as never)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="nri-catatan">{t('noteLabel')}</Label>
               <Textarea
@@ -404,18 +586,29 @@ export function ReturTokoClient({
           </div>
           <DialogFooter>
             <Button
-              disabled={pending || nilaiFisik === '' || !(Number(nilaiFisik) >= 0)}
+              disabled={
+                pending ||
+                (barangFisik.length === 0
+                  ? nilaiFisik === '' || !(Number(nilaiFisik) >= 0)
+                  : !barangFisik.every((b) => b.itemName.trim() && b.qty >= 0))
+              }
               onClick={() =>
-                hitungRetur &&
                 jalankan(
                   () =>
-                    catatHitunganGudangAction(
-                      hitungRetur.id,
-                      Number(nilaiFisik),
-                      catatanHitung,
-                    ),
+                    catatHitunganGudangAction({
+                      storeReturnId: hitungBaris?.id ?? null,
+                      receivedAt: hariIniWib(),
+                      deliveryMethod: hitungBaris ? hitungBaris.caraKirim : kirimFisik,
+                      physicalAmount: Number(nilaiFisik),
+                      items: barangFisik,
+                      note: catatanHitung,
+                    }),
                   t('okCounted'),
-                  () => setHitungRetur(null),
+                  () => {
+                    setTerimaTerbuka(false);
+                    setHitungBaris(null);
+                    setBarangFisik([]);
+                  },
                 )
               }
             >
@@ -425,90 +618,51 @@ export function ReturTokoClient({
         </DialogContent>
       </Dialog>
 
-      {/* Beban selisih */}
-      <Dialog open={bebanRetur !== null} onOpenChange={(o) => !o && setBebanRetur(null)}>
+      {/* Jodohkan penerimaan yatim */}
+      <Dialog open={jodohBaris !== null} onOpenChange={(o) => !o && setJodohBaris(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('assignTitle')}</DialogTitle>
+            <DialogTitle>{t('pairTitle')}</DialogTitle>
             <DialogDescription>
-              {bebanRetur && t('assignBody', { gap: rupiah(bebanRetur.selisih) })}
+              {jodohBaris &&
+                t('pairBody', {
+                  doc: jodohBaris.nomor,
+                  value: rupiah(jodohBaris.nilaiFisik ?? 0),
+                })}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          {calonPasangan.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('pairNoCandidates')}</p>
+          ) : (
             <div className="space-y-2">
-              <Label htmlFor="beban-siapa">{t('bearer')}</Label>
-              <Select value={beban} onValueChange={(v) => setBeban(v as (typeof BEBAN)[number])}>
-                <SelectTrigger id="beban-siapa">
-                  <SelectValue />
+              <Label htmlFor="jodoh-nrt">{t('pairPick')}</Label>
+              <Select value={pasanganId} onValueChange={setPasanganId}>
+                <SelectTrigger id="jodoh-nrt">
+                  <SelectValue placeholder={t('pairPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
-                  {BEBAN.map((b) => (
-                    <SelectItem key={b} value={b}>
-                      {t(`bearer${b}` as never)}
+                  {calonPasangan.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.noNrt} · {c.storeName} · {rupiah(c.nilaiKlaim)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="beban-alasan">{t('assignReason')}</Label>
-              <Textarea
-                id="beban-alasan"
-                value={alasanBeban}
-                onChange={(e) => setAlasanBeban(e.target.value)}
-                placeholder={t('assignPlaceholder')}
-                rows={3}
-              />
-            </div>
-          </div>
+          )}
           <DialogFooter>
             <Button
-              disabled={pending || alasanBeban.trim().length === 0}
+              disabled={pending || !pasanganId}
               onClick={() =>
-                bebanRetur &&
+                jodohBaris &&
                 jalankan(
-                  () => putuskanBebanAction(bebanRetur.id, beban, alasanBeban),
-                  t('okAssigned'),
-                  () => setBebanRetur(null),
+                  () => jodohkanReturAction(jodohBaris.id, pasanganId),
+                  t('okPaired'),
+                  () => setJodohBaris(null),
                 )
               }
             >
-              {t('saveAssign')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Batal */}
-      <Dialog open={batalRetur !== null} onOpenChange={(o) => !o && setBatalRetur(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('cancelTitle')}</DialogTitle>
-            <DialogDescription>{t('cancelBody')}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="retur-alasan">{t('cancelReason')}</Label>
-            <Textarea
-              id="retur-alasan"
-              value={alasanBatal}
-              onChange={(e) => setAlasanBatal(e.target.value)}
-              rows={3}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="destructive"
-              disabled={pending || alasanBatal.trim().length === 0}
-              onClick={() =>
-                batalRetur &&
-                jalankan(
-                  () => batalkanReturAction(batalRetur.id, alasanBatal),
-                  t('okCancelled'),
-                  () => setBatalRetur(null),
-                )
-              }
-            >
-              {t('cancel')}
+              {t('savePair')}
             </Button>
           </DialogFooter>
         </DialogContent>

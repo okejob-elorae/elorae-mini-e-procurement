@@ -3,11 +3,9 @@ import { bahanPotonganRetur, type PotonganPadaKlaim, type PotonganRetur } from '
 /**
  * Terjemahan baris basis data menjadi bahan aturan retur.
  *
- * Satu-satunya tempat bentuk Prisma bertemu aturan uang. Sebelumnya penerjemahan
- * ini ada dua salinan — di `queries.ts` dan di `writer.ts` — dan keduanya
- * menganggap setiap potongan retur belum dihitung gudang, karena tabel returnya
- * memang belum ada. Sekarang nilainya nyata, jadi salinannya dijadikan satu:
- * layar dan penulis harus mustahil berbeda pendapat soal berapa yang ditahan.
+ * Satu-satunya tempat bentuk Prisma bertemu aturan uang. Layar dan penulis
+ * membaca lewat berkas ini supaya keduanya mustahil berbeda pendapat soal
+ * berapa yang ditahan.
  */
 
 /** Bentuk yang dipilih dari `PaymentClaimDeduction` beserta nota returnya. */
@@ -21,9 +19,11 @@ export type PotonganBasisData = {
   storeReturnId: string | null;
   storeReturn: {
     claimedAmount: unknown;
-    countedAmount: unknown;
-    bearer: string | null;
     status: string;
+    /** Hitungan gudang. Belum ada, atau masih draft, berarti belum dihitung. */
+    warehouseReturn: { physicalAmount: unknown; status: string } | null;
+    /** Beban yang sudah tercatat atas nota ini. */
+    charges: { status: string }[];
   } | null;
 };
 
@@ -32,7 +32,12 @@ export const PILIH_POTONGAN = {
   amount: true,
   storeReturnId: true,
   storeReturn: {
-    select: { claimedAmount: true, countedAmount: true, bearer: true, status: true },
+    select: {
+      claimedAmount: true,
+      status: true,
+      warehouseReturn: { select: { physicalAmount: true, status: true } },
+      charges: { select: { status: true } },
+    },
   },
 } as const;
 
@@ -63,7 +68,7 @@ export function potonganRetur(deductions: PotonganBasisData[]): PotonganRetur[] 
     }
 
     /*
-     * Nota retur yang dibatalkan berarti barangnya tidak jadi datang, dan tidak
+     * Nota retur yang dibatalkan berarti barangnya tidak jadi datang dan tidak
      * ada siapa pun untuk dibebani — tokonya memang berutang sebesar potongan
      * itu. Dibaca sebagai fisik nol dengan beban terbuka, jadi ditahan penuh dan
      * muncul di layar piutang sebagai "tertahan". Itulah yang membuat ada orang
@@ -76,14 +81,23 @@ export function potonganRetur(deductions: PotonganBasisData[]): PotonganRetur[] 
       };
     }
 
+    /*
+     * NRI yang masih DRAFT dianggap belum ada. Brief menyebutnya tegas — yang
+     * melepas potongan adalah NRI **final**. Selama gudang belum menutup
+     * hitungannya, angkanya masih bisa berubah, dan melepas uang atas angka
+     * yang masih bergerak persis kesalahan yang aturan ini cegah.
+     */
+    const nri = r.warehouseReturn;
+    const sudahDihitung = nri !== null && nri.status === 'FINAL';
+
     return {
       nilaiPotongan: angka(d.amount),
       retur: {
         nilaiKlaim: angka(r.claimedAmount),
-        nilaiFisik: r.countedAmount === null || r.countedAmount === undefined
-          ? null
-          : angka(r.countedAmount),
-        bebanDiputuskan: r.bearer !== null,
+        nilaiFisik: sudahDihitung ? angka(nri.physicalAmount) : null,
+        // Beban yang masih TERBUKA belum menanggung apa pun; yang menanggung
+        // adalah DITETAPKAN (dan LUNAS, yang sudah dibayar balik).
+        bebanDiputuskan: r.charges.some((c) => c.status !== 'TERBUKA'),
       },
     };
   });
