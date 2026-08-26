@@ -107,6 +107,13 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] `Journal` has no history table and no audit trail of its own, so the `UPDATE_DELIVERY_DATES`
       AuditLog row is the ONLY record that a posted GL entry was re-dated. If GL mutation ever becomes
       more than this one path, journals need their own audit.
+- [ ] A narrow GL-dating race exists between a date correction and a journal retry: `delivery-journal.ts`'s
+      retry path reads `invoiceDate` through a NON-transactional client, while `updateDeliveryDatesAction`
+      commits a date correction inside its own serializable transaction. If a correction lands in the
+      window between that read and the journal insert — milliseconds, between commit and post — the
+      journal posts on the STALE date while the receivable already holds the corrected one: a permanent
+      GL-versus-subledger period disagreement, fixable only by hand. Deferred rather than closed because
+      the window is narrow, not because it's harmless.
 - [ ] No unapplied credit / on-account balance — `recordPayment` requires the allocation total to
       equal the payment amount exactly, so an overpayment cannot be parked. Needs its own GL
       treatment.
@@ -136,6 +143,10 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       carrying the AR rounding residue above displays as a round number on the list. Left alone
       deliberately: 15+ sibling finance list pages already define their own `formatRupiah`, and this one
       matches house convention rather than diverging for one page.
+- [ ] The receivable detail page's `allocationEmpty` copy is effectively dead — reachable only via a
+      race inside the page's `Promise.all` (the allocation list resolving empty while the receivable's
+      own status concurrently reads as already-allocated) — and even then its wording misdescribes the
+      state it would show. Low materiality; parked here rather than fixed inline.
 - [ ] The payment sheet's outstanding-receivables candidate fetch (two merged `listReceivables` calls,
       one per `OUTSTANDING`/`PARTIAL` status, since the query takes a single status value) is capped at
       each call's default `pageSize: 500` with no indication to the operator — a store with more than
