@@ -97,6 +97,11 @@ model User {
   @@index([roleId])
   @@index([themePantoneTcx])
   @@index([assignedStoreId])
+  receivablesAsSalesman  Receivable[]     @relation("ReceivableSalesman")
+  collectionNotes        CollectionNote[] @relation("CollectionNoteSalesman")
+  paymentClaimsAsSalesman PaymentClaim[]  @relation("PaymentClaimSalesman")
+  paymentClaimsVerified  PaymentClaim[]   @relation("PaymentClaimVerifier")
+  paymentClaimsCreated   PaymentClaim[]   @relation("PaymentClaimCreator")
 }
 
 model VerificationToken {
@@ -318,6 +323,9 @@ model Store {
   spgSales       SpgSale[]
 
   @@index([isActive, name])
+  receivables    Receivable[]
+  collectionNotes CollectionNote[]
+  paymentClaims  PaymentClaim[]
 }
 
 model StoreVisit {
@@ -476,6 +484,7 @@ model FieldSalesDelivery {
   taxInvoice     TaxInvoice?
   @@index([orderId])
   @@index([deliveredAt])
+  receivable     Receivable?
 }
 
 model FieldSalesDeliveryLine {
@@ -2441,4 +2450,177 @@ model JournalAccountMapping {
   updatedAt      DateTime     @updatedAt
 
   @@index([chartAccountId])
+}
+
+// ==========================================
+// PIUTANG & PELUNASAN
+// Lapisan penagihan di atas penjualan yang sudah ada. Sebelum ini Elorae tidak
+// punya satu pun catatan piutang: nota tagihan terbit, lalu tidak ada yang tahu
+// apakah uangnya masuk.
+//
+// Dua aturan uang yang tidak boleh dilonggarkan:
+//   1. Klaim bukan lunas. Piutang hanya berkurang setelah admin mencocokkan
+//      klaim pembayaran dengan mutasi bank.
+//   2. Retur diakui sebesar barang fisik yang diterima gudang, bukan sebesar
+//      yang diklaim toko.
+// ==========================================
+
+enum ReceivableSource {
+  DELIVERY
+  IMPORT
+  MANUAL
+}
+
+model Receivable {
+  id             String    @id @default(cuid())
+  invoiceNo      String    @unique
+  storeId        String
+  invoiceDate    DateTime
+  dueDate        DateTime
+  amount         Decimal   @db.Decimal(15, 2)
+  outstanding    Decimal   @db.Decimal(15, 2)
+  settledAt      DateTime?
+  source         ReceivableSource @default(DELIVERY)
+  deliveryId     String?   @unique
+  salesmanId     String?
+  note           String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  store          Store     @relation(fields: [storeId], references: [id])
+  delivery       FieldSalesDelivery? @relation(fields: [deliveryId], references: [id])
+  salesman       User?     @relation("ReceivableSalesman", fields: [salesmanId], references: [id])
+  collectionLinks CollectionNoteReceivable[]
+  claimLinks     PaymentClaimReceivable[]
+
+  @@index([storeId, outstanding])
+  @@index([dueDate])
+  @@index([salesmanId])
+}
+
+enum CollectionNoteStatus {
+  BERJALAN
+  SELESAI
+  BATAL
+}
+
+model CollectionNote {
+  id             String   @id @default(cuid())
+  docNo          String   @unique
+  storeId        String
+  salesmanId     String
+  handoverDate   DateTime
+  promisedDate   DateTime
+  receivedBy     String?
+  amount         Decimal  @default(0) @db.Decimal(15, 2)
+  photoUrl       String?
+  note           String?  @db.Text
+  status         CollectionNoteStatus @default(BERJALAN)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  store          Store    @relation(fields: [storeId], references: [id])
+  salesman       User     @relation("CollectionNoteSalesman", fields: [salesmanId], references: [id])
+  receivableLinks CollectionNoteReceivable[]
+  claims         PaymentClaim[]
+
+  @@index([storeId, status])
+  @@index([promisedDate])
+}
+
+model CollectionNoteReceivable {
+  collectionNoteId String
+  receivableId     String
+  amount           Decimal @db.Decimal(15, 2)
+
+  collectionNote   CollectionNote @relation(fields: [collectionNoteId], references: [id], onDelete: Cascade)
+  receivable       Receivable     @relation(fields: [receivableId], references: [id])
+
+  @@id([collectionNoteId, receivableId])
+  @@index([receivableId])
+}
+
+enum PaymentClaimStatus {
+  DIKIRIM
+  TERVERIFIKASI
+  DITOLAK
+}
+
+model PaymentClaim {
+  id                String   @id @default(cuid())
+  docNo             String   @unique
+  storeId           String
+  salesmanId        String
+  collectionNoteId  String?
+  claimedTransferAt DateTime
+  method            String   @default("transfer")
+  invoiceAmount     Decimal  @default(0) @db.Decimal(15, 2)
+  deductionTotal    Decimal  @default(0) @db.Decimal(15, 2)
+  receivedAmount    Decimal  @default(0) @db.Decimal(15, 2)
+  transferPhotoUrl  String?
+  breakdownPhotoUrl String?
+  status            PaymentClaimStatus @default(DIKIRIM)
+  verifiedById      String?
+  verifiedAt        DateTime?
+  verifyNote        String?  @db.Text
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  store             Store    @relation(fields: [storeId], references: [id])
+  salesman          User     @relation("PaymentClaimSalesman", fields: [salesmanId], references: [id])
+  verifiedBy        User?    @relation("PaymentClaimVerifier", fields: [verifiedById], references: [id])
+  createdBy         User     @relation("PaymentClaimCreator", fields: [createdById], references: [id])
+  collectionNote    CollectionNote? @relation(fields: [collectionNoteId], references: [id])
+  receivableLinks   PaymentClaimReceivable[]
+  deductions        PaymentClaimDeduction[]
+
+  @@index([storeId, status])
+  @@index([status, createdAt])
+}
+
+model PaymentClaimReceivable {
+  paymentClaimId String
+  receivableId   String
+  settledAmount  Decimal @db.Decimal(15, 2)
+
+  paymentClaim   PaymentClaim @relation(fields: [paymentClaimId], references: [id], onDelete: Cascade)
+  receivable     Receivable   @relation(fields: [receivableId], references: [id])
+
+  @@id([paymentClaimId, receivableId])
+  @@index([receivableId])
+}
+
+enum DeductionMethod {
+  NOMINAL
+  PERSEN
+  DARI_RETUR
+}
+
+model DeductionType {
+  id            String  @id @default(cuid())
+  name          String  @unique
+  method        DeductionMethod @default(NOMINAL)
+  allowManual   Boolean @default(true)
+  pkpOnly       Boolean @default(false)
+  noteRequired  Boolean @default(false)
+  isActive      Boolean @default(true)
+
+  deductions    PaymentClaimDeduction[]
+}
+
+model PaymentClaimDeduction {
+  id             String  @id @default(cuid())
+  paymentClaimId String
+  deductionTypeId String?
+  name           String
+  note           String?
+  amount         Decimal @db.Decimal(15, 2)
+  storeReturnId  String?
+
+  paymentClaim   PaymentClaim   @relation(fields: [paymentClaimId], references: [id], onDelete: Cascade)
+  deductionType  DeductionType? @relation(fields: [deductionTypeId], references: [id])
+
+  @@index([paymentClaimId])
+  @@index([storeReturnId])
 }
