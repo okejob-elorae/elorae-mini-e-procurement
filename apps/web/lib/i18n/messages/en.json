@@ -4457,6 +4457,7 @@
     "colTotal": "Total",
     "colAction": "Action",
     "markPaid": "Mark paid",
+    "openCharge": "Still owes {value} in return charges — consider netting it off this commission.",
     "paidOn": "paid {date}",
     "unpaid": "Unpaid",
     "okPaid": "Salary marked paid.",

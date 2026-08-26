@@ -123,6 +123,16 @@ export type RincianSiklus = {
     komisi: number;
     total: number;
     dibayarPada: string | null;
+    /**
+     * Beban selisih retur yang masih ditanggung orang ini.
+     *
+     * Brief bilang penagihannya "bisa dipotong dari komisi" — BISA, bukan
+     * harus. Jadi angka ini TIDAK dikurangkan otomatis dari totalnya:
+     * ditampilkan di layar pembayaran supaya admin tahu, dan keputusannya
+     * tetap miliknya. Tanpa ini, komisi dibayar penuh sementara bebannya
+     * menganggur di layar lain yang tidak pernah dibuka bersamaan.
+     */
+    bebanTerbuka: number;
   }[];
   titipan: { itemName: string; dikirim: number; terjual: number; sisa: number }[];
   pengiriman: { id: string; noKirim: string; tanggal: string; nilai: number; jumlahBaris: number }[];
@@ -163,6 +173,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       commissions: {
         select: {
           id: true,
+          spgUserId: true,
           baseSalary: true,
           commission: true,
           total: true,
@@ -186,6 +197,29 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       items: { select: { itemName: true, qty: true, amount: true } },
     },
   });
+
+  /*
+   * Beban selisih retur yang masih ditanggung orang-orang di siklus ini.
+   *
+   * Dikumpulkan HANYA untuk penerima komisi di siklus ini — bukan seluruh
+   * beban terbuka di perusahaan. Beban yang sudah `LUNAS` tidak ikut: yang
+   * sudah dibayar tidak boleh muncul lagi sebagai peringatan.
+   */
+  const idPenerima = c.commissions.map((k) => k.spgUserId);
+  const beban = idPenerima.length
+    ? await prisma.returnCharge.findMany({
+        where: {
+          bearerUserId: { in: idPenerima },
+          status: { not: 'LUNAS' },
+        },
+        select: { bearerUserId: true, amount: true },
+      })
+    : [];
+  const bebanPerOrang = new Map<string, number>();
+  for (const b of beban) {
+    if (!b.bearerUserId) continue;
+    bebanPerOrang.set(b.bearerUserId, (bebanPerOrang.get(b.bearerUserId) ?? 0) + angka(b.amount));
+  }
 
   const spg = c.reports.find((r) => r.source === 'SPG')?.items ?? null;
   const toko = c.reports.find((r) => r.source === 'TOKO')?.items ?? null;
@@ -230,6 +264,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       komisi: angka(k.commission),
       total: angka(k.total),
       dibayarPada: k.paidAt?.toISOString() ?? null,
+      bebanTerbuka: bebanPerOrang.get(k.spgUserId) ?? 0,
     })),
     titipan: stokTitipan(
       kirim.flatMap((k) => k.items.map((i) => ({ itemName: i.itemName, qty: i.qty }))),

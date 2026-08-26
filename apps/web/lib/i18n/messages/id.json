@@ -4474,6 +4474,7 @@
     "colTotal": "Total",
     "colAction": "Tindakan",
     "markPaid": "Tandai dibayar",
+    "openCharge": "Masih menanggung beban retur {value} — pertimbangkan dipotong dari komisi ini.",
     "paidOn": "dibayar {date}",
     "unpaid": "Belum dibayar",
     "okPaid": "Gaji ditandai sudah dibayar.",

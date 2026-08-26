@@ -353,7 +353,18 @@ export function RincianSiklusClient({
               <TableBody>
                 {data.komisi.map((k) => (
                   <TableRow key={k.id} className={cn(!k.dibayarPada && b.gajiTerlambat && 'bg-destructive/[0.06]')}>
-                    <TableCell className="font-medium">{k.spgNama ?? '—'}</TableCell>
+                    <TableCell className="font-medium">
+                      {k.spgNama ?? '—'}
+                      {/* Brief bilang beban selisih "BISA dipotong dari komisi" —
+                          bisa, bukan harus. Jadi angkanya tidak dikurangkan
+                          otomatis; ia hanya muncul di sini, di titik pembayaran,
+                          supaya admin tahu sebelum membayar penuh. */}
+                      {k.bebanTerbuka > 0 && !k.dibayarPada && (
+                        <span className="mt-0.5 block text-xs text-amber-600 dark:text-amber-500">
+                          {t('openCharge', { value: rupiah(k.bebanTerbuka) })}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{rupiah(k.gajiPokok)}</TableCell>
                     <TableCell className="text-right tabular-nums">{rupiah(k.komisi)}</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">
