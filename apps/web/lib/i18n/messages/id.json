@@ -91,7 +91,8 @@
     "navJubelioMigration": "Migrasi",
     "navJubelioCouriers": "Kurir",
     "settings": "Pengaturan",
-    "masterData": "Data Master"
+    "masterData": "Data Master",
+    "archive": "Arsip Dokumen"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -3479,8 +3480,6 @@
     "fulPacked": "Sudah dikemas",
     "fulShipped": "Sudah dikirim",
     "woDraft": "Draf",
-    "woReleased": "Siap dikerjakan",
-    "woInProgress": "Sedang dikerjakan",
     "woCompleted": "Selesai",
     "woCancelled": "Dibatalkan",
     "fsPendingApproval": "Menunggu persetujuan",
@@ -3492,7 +3491,10 @@
     "dlvClosed": "Sisa ditutup",
     "taxPending": "Belum ada faktur",
     "taxCreated": "Faktur terbit",
-    "taxNotRequired": "Tidak perlu faktur"
+    "taxNotRequired": "Tidak perlu faktur",
+    "woIssued": "Sudah dikeluarkan",
+    "woInProduction": "Sedang diproduksi",
+    "woPartial": "Selesai sebagian"
   },
   "pagination": {
     "showing": "Menampilkan {start}–{end} dari {total}",
@@ -3556,5 +3558,26 @@
     "newPO": "Buat PO",
     "newWO": "Buat Perintah Kerja",
     "newItem": "Tambah Item"
+  },
+  "archive": {
+    "pageTitle": "Arsip Dokumen",
+    "pageDescription": "Semua dokumen tersimpan per pihak yang bersangkutan. Buka foldernya, klik dokumennya, lalu cetak.",
+    "tabNotaToko": "Nota Toko",
+    "tabReturPemasok": "Retur Pemasok",
+    "tabWorkOrder": "Perintah Kerja",
+    "noMatch": "Tidak ada folder yang cocok.",
+    "empty": "kosong",
+    "searchStore": "Cari nama toko...",
+    "searchVendor": "Cari nama pemasok...",
+    "allStores": "Semua Toko",
+    "allVendors": "Semua Pemasok",
+    "notaSummary": "{docs} nota pengiriman · {pending} belum berfaktur pajak",
+    "returSummary": "{docs} nota retur · {pending} belum selesai",
+    "woSummary": "{docs} perintah kerja · {pending} masih berjalan",
+    "hintDot": "Titik merah di sudut folder berarti ada dokumen di dalamnya yang masih menggantung.",
+    "hintNota": "Untuk nota toko, itu berarti nota tagihan sudah terbit tapi nomor faktur pajaknya belum diisi.",
+    "hintRetur": "Untuk retur pemasok, itu berarti returnya masih draf atau belum diproses.",
+    "hintWo": "Untuk perintah kerja, itu berarti WO-nya belum selesai di lantai produksi.",
+    "hintLink": "Kerjakan di sini"
   }
 }

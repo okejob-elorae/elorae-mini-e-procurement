@@ -47,8 +47,9 @@ const FULFILLMENT: Record<string, StatusMeta> = {
 /** Work orders. */
 const WORK_ORDER: Record<string, StatusMeta> = {
   DRAFT: { labelKey: 'woDraft', tone: 'inactive' },
-  RELEASED: { labelKey: 'woReleased', tone: 'waiting' },
-  IN_PROGRESS: { labelKey: 'woInProgress', tone: 'progress' },
+  ISSUED: { labelKey: 'woIssued', tone: 'waiting' },
+  IN_PRODUCTION: { labelKey: 'woInProduction', tone: 'progress' },
+  PARTIAL: { labelKey: 'woPartial', tone: 'progress' },
   COMPLETED: { labelKey: 'woCompleted', tone: 'settled' },
   CANCELLED: { labelKey: 'woCancelled', tone: 'inactive' },
 };

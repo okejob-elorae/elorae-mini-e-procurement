@@ -91,7 +91,8 @@
     "navJubelioMigration": "Migration",
     "navJubelioCouriers": "Couriers",
     "settings": "Settings",
-    "masterData": "Master Data"
+    "masterData": "Master Data",
+    "archive": "Document archive"
   },
   "notifications": {
     "title": "Notifications",
@@ -3479,8 +3480,6 @@
     "fulPacked": "Packed",
     "fulShipped": "Shipped",
     "woDraft": "Draft",
-    "woReleased": "Ready to start",
-    "woInProgress": "In progress",
     "woCompleted": "Completed",
     "woCancelled": "Cancelled",
     "fsPendingApproval": "Awaiting approval",
@@ -3492,7 +3491,10 @@
     "dlvClosed": "Remainder closed",
     "taxPending": "No tax invoice yet",
     "taxCreated": "Tax invoice issued",
-    "taxNotRequired": "No invoice needed"
+    "taxNotRequired": "No invoice needed",
+    "woIssued": "Issued",
+    "woInProduction": "In production",
+    "woPartial": "Partly completed"
   },
   "pagination": {
     "showing": "Showing {start}–{end} of {total}",
@@ -3556,5 +3558,26 @@
     "newPO": "New purchase order",
     "newWO": "New work order",
     "newItem": "New item"
+  },
+  "archive": {
+    "pageTitle": "Document archive",
+    "pageDescription": "Every document filed under the party it belongs to. Open the folder, click the document, print it.",
+    "tabNotaToko": "Store notes",
+    "tabReturPemasok": "Vendor returns",
+    "tabWorkOrder": "Work orders",
+    "noMatch": "No folder matches.",
+    "empty": "empty",
+    "searchStore": "Search store name...",
+    "searchVendor": "Search supplier name...",
+    "allStores": "All stores",
+    "allVendors": "All suppliers",
+    "notaSummary": "{docs} delivery notes · {pending} without a tax invoice number",
+    "returSummary": "{docs} return notes · {pending} unfinished",
+    "woSummary": "{docs} work orders · {pending} still running",
+    "hintDot": "A red dot on a folder means something inside is still unfinished.",
+    "hintNota": "For store notes, the billing note has been issued but its tax invoice number is still blank.",
+    "hintRetur": "For vendor returns, the return is still a draft or has not been processed.",
+    "hintWo": "For work orders, the WO has not finished on the production floor.",
+    "hintLink": "Work on it here"
   }
 }

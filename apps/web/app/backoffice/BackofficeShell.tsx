@@ -319,6 +319,13 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    labelKey: 'archive',
+    emoji: '🗂️',
+    href: '/backoffice/archive',
+    icon: FileText,
+    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+  },
+  {
     labelKey: 'auditTrail',
     href: '/backoffice/audit-trail',
     emoji: '📋',
