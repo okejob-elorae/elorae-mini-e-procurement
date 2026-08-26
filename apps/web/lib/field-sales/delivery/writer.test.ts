@@ -85,6 +85,7 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -328,6 +329,62 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(order.closedAt).not.toBeNull();
     expect(order.note).toBe("titip di kasir");
   });
+
+  it("creates a receivable for the delivery at full outstanding", async () => {
+    const res = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
+
+    const receivable = await prisma.receivable.findUnique({ where: { deliveryId: res.deliveryId } });
+    expect(receivable).not.toBeNull();
+    expect(Number(receivable!.originalAmount)).toBe(2000);
+    expect(Number(receivable!.outstandingAmount)).toBe(2000);
+    expect(Number(receivable!.paidAmount)).toBe(0);
+    expect(receivable!.status).toBe("OUTSTANDING");
+    expect(receivable!.storeId).toBe(storeId);
+    expect(receivable!.invoiceDate.getTime()).toBe(defaultInvoiceDate.getTime());
+    expect(receivable!.dueDate.getTime()).toBe(defaultDueDate.getTime());
+  });
+
+  it("writes the delivery cogsAmount from the consumed avg cost", async () => {
+    const res = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
+
+    const delivery = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: res.deliveryId } });
+    expect(Number(delivery.cogsAmount)).toBe(1000);
+    expect(Number(delivery.total)).toBe(2000);
+  });
+
+  it("gives each delivery of the same order its own receivable", async () => {
+    const first = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 1 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
+    const second = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 1 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
+
+    const rows = await prisma.receivable.findMany({
+      where: { deliveryId: { in: [first.deliveryId, second.deliveryId] } },
+    });
+    expect(rows).toHaveLength(2);
+  });
 });
 
 d("recordFieldSalesDelivery — two distinct items in one call (test bed only)", () => {
@@ -412,6 +469,7 @@ d("recordFieldSalesDelivery — two distinct items in one call (test bed only)",
   afterEach(async () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
+    await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
@@ -522,6 +580,7 @@ d("recordFieldSalesDelivery — discount allocation across two deliveries (test 
   afterEach(async () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -575,6 +634,13 @@ d("recordFieldSalesDelivery — discount allocation across two deliveries (test 
     expect(Number(hist2!.unitPriceAfterDiscount)).toBe(900); /* (4000 - 400) / 4 */
     expect(Number(hist2!.lineTotal)).toBe(3600);
     expect(Number(hist2!.orderTotal)).toBe(3400); /* delivery 2's own total: 4000 - 400 - 200 */
+
+    const r1 = await prisma.receivable.findUniqueOrThrow({ where: { deliveryId: d1.deliveryId } });
+    const r2 = await prisma.receivable.findUniqueOrThrow({ where: { deliveryId: d2.deliveryId } });
+    expect(Number(r1.originalAmount)).toBe(5100);
+    expect(Number(r1.outstandingAmount)).toBe(5100);
+    expect(Number(r2.originalAmount)).toBe(3400);
+    expect(Number(r2.outstandingAmount)).toBe(3400);
   });
 });
 
@@ -655,6 +721,7 @@ d("recordFieldSalesDelivery — residue on a line that finishes before the order
   afterEach(async () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });

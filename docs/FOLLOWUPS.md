@@ -56,7 +56,8 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] Van journal outcome is invisible at the moment of the action: `loadVanAction`/`recordVanSaleAction`/`recordVanReconcileAction` call `postVanJournalSafely` and then return `{ok:true}` regardless, so `LoadVanForm`/`ReconcileVanForm`/`VanSellShell` always `toast.success` — the operator is told the document succeeded even when nothing posted to the GL. Same shape the supplier payment toggle just fixed by returning the journal failure and branching to a warning toast (`supplierPayments.journal.err.*` + `supplierPaymentJournalErrorKey`). Exposure is smaller than supplier payment's was, because the van doc detail pages DO render a `JOURNAL_PENDING` badge + "Post journal" retry, so the signal exists — it is just not where the operator is looking. Fix mirrors the supplier payment one: return the failure code from the three actions, add `canvassing`/`vanSale` `journal.err.*` messages, warn instead of confirming. Deliberately out of scope of the supplier payment branch.
 - [ ] `/backoffice/supplier-payments` and the PO detail page are otherwise 100% hardcoded English with no i18n hook; the new supplier-payment journal warning toasts are the first translated strings on them, so an `id`-locale operator now sees an Indonesian warning beside English buttons. Net gain over no warning at all, but those two pages want a proper i18n pass.
 - [ ] `SUPPLIER_PAYMENT` / `SUPPLIER_PAYMENT_REVERSAL` journals key `sourceId` as `poId#generation` (generation = reversals so far + 1), not a bare PO id — any future consumer looking up a PO's payment journal must prefix-match `poId#`. Nothing consumes it today.
-- [ ] Putus/konsi field-sales revenue + receivable auto-journal — all offline order revenue is still absent from the GL, so Laba Rugi understates it. Does not affect cash flow. (Van sale is now journaled — see the van cash journal follow-ups in this section.)
+- [x] Putus field-sales revenue + receivable auto-journal — putus delivery revenue and COGS now post (`FIELD_DELIVERY_REVENUE`/`FIELD_DELIVERY_COGS`) alongside the new AR ledger, see the Finance — AR, payments & piutang section above (PR #_, AR ledger + payment recording slice).
+- [ ] Konsi field-sales revenue + receivable auto-journal — still absent from the GL; a konsi transfer is a stock move, not a sale, so it stays outside this ledger until sell-through invoicing (the AR, Collection & Tax epic's remaining slices, `docs/EPIC-STATUS.md`) exists. Does not affect cash flow. (Van sale is now journaled — see the van cash journal follow-ups in this section.)
 - [ ] SPG sales auto-journal — a KONSI-store sale now decrements `StoreStock`, but nothing SNAPSHOTS a cost at sale time: `SpgSaleLine` has no cost column, and the decrement deliberately leaves `avgCost` untouched. A journal built later would have to read `StoreStock.avgCost` as of the journal's own run, and a konsi transfer in between can re-blend that average — e.g. store holds 10 @ 12.500, the SPG sells 4 (avgCost stays 12.500), a transfer then brings in 10 @ 20.000 and blends to 17.187,50 on qty 6, so a post-cutover journal would credit 4 × 17.187,50 = 68.750 instead of the correct 50.000. So the basis exists but is not preserved; whoever builds this journal must either post at sale time (before any intervening transfer can re-blend the average) or add a cost column to `SpgSaleLine`. It stays blocked on the general GL cutover regardless (see the Finance — Journal & CoA section above). A PUTUS-store sale still moves no stock and still needs its own answer for what to credit.
 - [ ] Itemize TikTok fees from `escrow_list` instead of dumping them into `MARKETPLACE_FEE_OTHER`.
 - [ ] Fiscal-period close so Neraca reads real retained earnings instead of an injected unclosed-earnings line.
@@ -88,6 +89,80 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] `loadCashFlowReport` awaits the current and previous windows sequentially though they are independent — `Promise.all` would roughly halve the latency of the heaviest read in the finance module. Same call site as the double-`getAccountBalances` item above.
 - [ ] `INCOME_STATEMENT_COVERAGE_BODY` carries the SAME staleness the cash flow coverage note was just fixed for: it still names "penjualan kanvas" and "pembayaran ke pemasok" as un-journaled, but van sales post `DR CASH / CR SALES_REVENUE` (`lib/canvassing/van-journal.ts`) and supplier payments post `DR AP / CR BANK` (`lib/purchasing/supplier-payment-journal.ts`) on master today. Mirrored in `financeReports.incomeStatement.coverageBody` in both locales. Left alone on the cash flow branch because it belongs to a different report.
 - [ ] The cash flow comparison table has no `min-w-*`, so on a phone the 4-column layout compresses and wraps rather than scrolling inside its `overflow-x-auto`. Matches `TrialBalanceClient`'s existing house style, so fixing it is a sweep across the finance report clients rather than a one-file change.
+
+### Finance — AR, payments & piutang
+- [ ] AR rounding residue has no write-off path — `FieldSalesDelivery.total` is not rounded to whole
+      rupiah (unlike `VanSale.total`), so a receivable settled in cash can retain sub-rupiah
+      outstanding and never reach `PAID`. `ReceivableStatus.WRITTEN_OFF` exists but nothing sets it.
+      Needs a write-off/adjustment slice with a journal behind it; do not "fix" it by declaring PAID
+      below one rupiah, which writes money off with no GL entry.
+- [ ] No historical GL backfill for pre-existing deliveries — the AR backfill created receivables for
+      every delivery that predates this slice, but posted no revenue or COGS journals, so Laba Rugi
+      stays incomplete for them. Deliberate: backdating entries into possibly-reported periods is a
+      finance decision. The retry gate blocks doing it one document at a time.
+- [ ] A date correction on a receivable with live payments is REFUSED rather than reconciled — the
+      operator must void the payment, correct, then re-record it. Reconciling properly would mean
+      re-dating the receipt journal too, which would be wrong (the cash moved when it moved). If this
+      refusal proves too blunt in practice, the answer is a supervised re-date flow, not a warning.
+- [ ] `Journal` has no history table and no audit trail of its own, so the `UPDATE_DELIVERY_DATES`
+      AuditLog row is the ONLY record that a posted GL entry was re-dated. If GL mutation ever becomes
+      more than this one path, journals need their own audit.
+- [ ] A narrow GL-dating race exists between a date correction and a journal retry: `delivery-journal.ts`'s
+      retry path reads `invoiceDate` through a NON-transactional client, while `updateDeliveryDatesAction`
+      commits a date correction inside its own serializable transaction. If a correction lands in the
+      window between that read and the journal insert — milliseconds, between commit and post — the
+      journal posts on the STALE date while the receivable already holds the corrected one: a permanent
+      GL-versus-subledger period disagreement, fixable only by hand. Deferred rather than closed because
+      the window is narrow, not because it's harmless.
+- [ ] No unapplied credit / on-account balance — `recordPayment` requires the allocation total to
+      equal the payment amount exactly, so an overpayment cannot be parked. Needs its own GL
+      treatment.
+- [ ] `JOURNAL_PENDING` dedup can emit a duplicate row under cross-domain load — `alreadyFlagged`
+      scans only the most recent 200 UNREAD rows, and that category is shared by the van, supplier-
+      payment and AR journals. If 200+ other-domain failures land between a document's first failure
+      and its retry, the original row has aged out of the window and an identical-reason failure
+      writes a second row. Pre-existing in all three implementations, not introduced by the AR slice.
+      A `metadata`-scoped query or a `kind` column would fix it for all three at once.
+- [ ] A thrown journal exception always dedups under the literal reason `"ERROR"`, with the message
+      excluded from the match — so a second, differently-messaged exception on the same document and
+      kind is silently swallowed as a duplicate. Shared with both sibling implementations (van,
+      supplier payment).
+- [ ] `payment-writer.test.ts` and `void-writer.test.ts` seed `Receivable` rows with fake `deliveryId`
+      strings pointing at no delivery. Safe today only because neither spec traverses
+      `receivable.delivery` — under `relationMode = "prisma"` there is no FK, so the insert succeeds and
+      only a read through the required relation throws `Inconsistent query result`. The first spec that
+      adds such a query to those files breaks them. `queries.test.ts` seeds real order + delivery rows
+      for exactly this reason.
+- [ ] The payment sheet's form-vs-writer tolerance is safe only because both sides pre-round through
+      `roundCents`. The form's mismatch check (0.005) is looser than the writer's (1e-6), but since
+      both normalise first the exact 2dp sum either equals the amount or differs by >= 0.01, so nothing
+      slips through today. Fragile, not wrong — if the `roundCents` normalisation is ever dropped from
+      either side, the form becomes exactly the hole the writer's own tolerance comment warns against.
+- [ ] The piutang and payments list pages' local `formatRupiah` rounds to whole rupiah with no
+      indication of a sub-rupiah fraction, unlike the payment sheet's `formatRupiahExact` — a receivable
+      carrying the AR rounding residue above displays as a round number on the list. Left alone
+      deliberately: 15+ sibling finance list pages already define their own `formatRupiah`, and this one
+      matches house convention rather than diverging for one page.
+- [ ] The receivable detail page's `allocationEmpty` copy is effectively dead — reachable only via a
+      race inside the page's `Promise.all` (the allocation list resolving empty while the receivable's
+      own status concurrently reads as already-allocated) — and even then its wording misdescribes the
+      state it would show. Low materiality; parked here rather than fixed inline.
+- [ ] The payment sheet's outstanding-receivables candidate fetch (two merged `listReceivables` calls,
+      one per `OUTSTANDING`/`PARTIAL` status, since the query takes a single status value) is capped at
+      each call's default `pageSize: 500` with no indication to the operator — a store with more than
+      500 open receivables of one status silently truncates the candidate list.
+- [ ] `apps/web/app/api/upload/payment-proof/route.ts` calls `request.formData()` before checking the
+      uploaded file's size, so the full multipart body is buffered into memory before the 10MB cap is
+      enforced. Identical shape in both sibling upload routes (grn-photo, visit-photo); not introduced
+      by this slice.
+- [ ] The two "post journal" retry action families now express "still pending" in two different result
+      shapes — `postFieldDeliveryJournalsAction` (field-sales-deliveries.ts) returns
+      `{ ok: true, posted, stillPending }` arrays, while `postPaymentJournalAction`/
+      `postPaymentVoidJournalAction` return `{ ok: false, reason: "STILL_PENDING" }`. Both are correct
+      for their own single-vs-multi-kind shape, but a future caller that wants to treat them uniformly
+      has to know both spellings.
+- [ ] Cosmetic: one JSX comment's continuation star sits at column 7 instead of 8 in
+      `PaymentDetailClient.tsx:222-227` — every other multi-line comment in the branch aligns correctly.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
@@ -172,7 +247,7 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] Field retur mismatch notification: this new `FIELD_RETURN_MISMATCH` category feeds a bell with a known hard ceiling — `app/api/notifications/route.ts` has `LIMIT = 50` with no cursor and no load-more, there is no mark-all-read, and nothing prunes `NotificationQueue`, so past 50 unread rows everything older is unreachable and the badge can never return to zero. That ceiling is pre-existing recorded debt (see Notifications follow-ups); adding a category feeds it (feat/field-retur-mismatch-notification).
 - [ ] Field retur value: the register's "incomplete" marker only fires on `APPROVED + PENDING` rows (a permanent, un-fixable gap) — a still-open retur whose lines are `AMBIGUOUS`/`UNPRICEABLE` and COULD be fixed via `LinePriceControls` right now gives no signal from the list at all; an admin only discovers it by opening the retur. Worth a second, distinguishable marker for the actionable case (feat/field-retur-value).
 - [ ] Field retur value: once a retur is `APPROVED`, `priceState` can no longer distinguish `AMBIGUOUS` from `UNPRICEABLE` on a line that never got priced — `getFieldReturnById` stops computing `priceCandidates` for a closed retur, so both collapse to `UNPRICEABLE`. The unpriced count stays numerically correct, but the reason (deliveries disagreed vs. never delivered at all) is lost the moment approval happens (feat/field-retur-value).
-- [ ] Field retur value → settlement link is UNBUILT and BLOCKED, not deferred UI polish: there is no AR, receivable or settlement model anywhere in this system for an approved retur's value to auto-populate into. The `APPLIED` marker was deliberately left off the schema too — a column nothing writes is worse than no column. Needs a Finance/AR or settlement epic before this story is buildable at all (feat/field-retur-value).
+- [ ] Field retur value → settlement link is UNBUILT and BLOCKED, not deferred UI polish: an AR model now exists (`Receivable`/`Payment`, AR ledger + payment recording slice), but nothing lets a retur's value offset a receivable — that is slice G (Retur-offset payment) of the AR, Collection & Tax epic, deliberately cut from slice AB because the retur value → settlement link was itself blocked. The `APPLIED` marker was deliberately left off the schema too — a column nothing writes is worse than no column. Needs slice G before this story is buildable at all (feat/field-retur-value).
 - [ ] Admin store return: the in-transit window vs. the stocktake. An admin-origin retur decrements `StoreStock` at RECEIPT, not at raise, so between raise and receipt the store ledger still counts units that are physically on a truck. A stocktake opened in that window reports a shortfall that is really goods in transit. The store card shows the in-transit quantity, but the stocktake count screen does not and must not — `expectedQty` is defined as the live ledger figure and cannot gain a second meaning without breaking the stocktake's own contract (feat/admin-store-return, PR #258).
 - [ ] Admin store return: `SALESMAN_BEARS`/`creditedQty` are vocabulary that now only half-applies. Both read as "the salesman is charged", which is meaningless on an admin-raised return — the writer refuses `SALESMAN_BEARS` on `origin: ADMIN` (`resolve-writer.ts`), but `creditedQty` keeps a name that describes only the FIELD origin it was coined for (feat/admin-store-return, PR #258).
 - [ ] Admin store return: `ReturShell.messageForFailure` (PWA) falls through the two new codes — `MISSING_NOTA_PHOTO` and `MISSING_TRANSPORT` both hit the generic "Gagal menyimpan retur" instead of a specific message. Only reachable via a malformed client request on the FIELD-only PWA route (an admin return never sends these fields), so a UX gap, not a build break (feat/admin-store-return, PR #258).

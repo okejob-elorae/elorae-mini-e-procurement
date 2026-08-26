@@ -93,6 +93,8 @@ model User {
   spgSales      SpgSale[] @relation("SpgSaleSalesman")
   spgSalesCreated SpgSale[] @relation("SpgSaleCreatedBy")
   konsiTransfers KonsiTransfer[] @relation("KonsiTransferUser")
+  paymentsRecorded Payment[] @relation("PaymentRecordedBy")
+  paymentsVoided   Payment[] @relation("PaymentVoidedBy")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -323,6 +325,8 @@ model Store {
   konsiTransfers KonsiTransfer[]
   stocktakes     StoreStocktake[]
   assortmentLines StoreAssortmentLine[]
+  receivables    Receivable[]
+  payments       Payment[]
 
   @@index([isActive, name])
 }
@@ -476,6 +480,7 @@ model FieldSalesDelivery {
   subtotal       Decimal                  @db.Decimal(15, 2)
   discountAmount Decimal                  @default(0) @db.Decimal(15, 2)
   total          Decimal                  @db.Decimal(15, 2)
+  cogsAmount     Decimal?                 @db.Decimal(15, 2)
   note           String?                  @db.Text
   idempotencyKey String?                  @unique
   createdAt      DateTime                 @default(now())
@@ -483,6 +488,7 @@ model FieldSalesDelivery {
   deliveredBy    User                     @relation("FieldSalesDeliveryUser", fields: [deliveredById], references: [id])
   lines          FieldSalesDeliveryLine[]
   taxInvoice     TaxInvoice?
+  receivable     Receivable?
   @@index([orderId])
   @@index([deliveredAt])
 }
@@ -521,6 +527,84 @@ model TaxInvoice {
   markedBy        User?              @relation("TaxInvoiceMarkedBy", fields: [markedById], references: [id])
 
   @@index([status])
+}
+
+model Receivable {
+  id                String             @id @default(cuid())
+  deliveryId        String             @unique
+  storeId           String
+  invoiceDate       DateTime
+  dueDate           DateTime
+  originalAmount    Decimal            @db.Decimal(15, 2)
+  paidAmount        Decimal            @default(0) @db.Decimal(15, 2)
+  outstandingAmount Decimal            @db.Decimal(15, 2)
+  status            ReceivableStatus   @default(OUTSTANDING)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  delivery          FieldSalesDelivery @relation(fields: [deliveryId], references: [id])
+  store             Store              @relation(fields: [storeId], references: [id])
+  allocations       PaymentAllocation[]
+
+  @@index([storeId, status])
+  @@index([status, dueDate])
+  @@index([dueDate])
+}
+
+enum ReceivableStatus {
+  OUTSTANDING
+  PARTIAL
+  PAID
+  WRITTEN_OFF
+}
+
+model Payment {
+  id             String              @id @default(cuid())
+  docNo          String              @unique
+  storeId        String
+  paidAt         DateTime
+  method         PaymentMethod
+  amount         Decimal             @db.Decimal(15, 2)
+  reference      String?
+  proofUrl       String?
+  proofR2Key     String?
+  note           String?             @db.Text
+  status         PaymentStatus       @default(POSTED)
+  recordedById   String
+  voidedAt       DateTime?
+  voidedById     String?
+  voidReason     String?             @db.Text
+  idempotencyKey String?             @unique
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  store          Store               @relation(fields: [storeId], references: [id])
+  recordedBy     User                @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  voidedBy       User?               @relation("PaymentVoidedBy", fields: [voidedById], references: [id])
+  allocations    PaymentAllocation[]
+
+  @@index([storeId, paidAt])
+  @@index([status, paidAt])
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+}
+
+enum PaymentStatus {
+  POSTED
+  VOIDED
+}
+
+model PaymentAllocation {
+  id           String     @id @default(cuid())
+  paymentId    String
+  receivableId String
+  amount       Decimal    @db.Decimal(15, 2)
+  payment      Payment    @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  receivable   Receivable @relation(fields: [receivableId], references: [id])
+
+  @@unique([paymentId, receivableId])
+  @@index([receivableId])
 }
 
 enum FieldSalesOrderStatus {
@@ -2128,6 +2212,7 @@ enum DocType {
   FIELDRET
   KONSITRF
   STOCKTAKE
+  PAYMENT
 }
 
 enum OpnameScope {

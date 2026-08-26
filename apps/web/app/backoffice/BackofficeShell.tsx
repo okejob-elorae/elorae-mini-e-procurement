@@ -228,6 +228,16 @@ const navItems: NavItem[] = [
         href: '/backoffice/finance/faktur-pajak',
         permission: PERMISSIONS.TAX_INVOICES_VIEW,
       },
+      {
+        labelKey: "navFinancePiutang",
+        href: "/backoffice/finance/piutang",
+        permission: PERMISSIONS.RECEIVABLES_VIEW,
+      },
+      {
+        labelKey: "navFinancePayments",
+        href: "/backoffice/finance/payments",
+        permission: PERMISSIONS.PAYMENTS_MANAGE,
+      },
     ],
   },
   {

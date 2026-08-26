@@ -9,6 +9,9 @@ import { DeliveryError } from "@/lib/field-sales/errors";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
+import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
+import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
 import { logPrint } from "./audit";
 
 export type DeliveryActionResult =
@@ -24,7 +27,9 @@ export type DeliveryActionResult =
         | "CONFLICT"
         | "NO_LINES"
         | "OVER_DELIVER"
-        | "INSUFFICIENT_STOCK";
+        | "INSUFFICIENT_STOCK"
+        | "NOT_RETRYABLE"
+        | "RECEIVABLE_HAS_PAYMENTS";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
     };
 
@@ -94,8 +99,9 @@ export async function recordDeliveryAction(input: {
   if (parsedDueDate.getTime() < parsedInvoiceDate.getTime()) {
     return { ok: false, reason: "INVALID_DATES" };
   }
+  let res: { deliveryId: string; docNo: string };
   try {
-    await recordFieldSalesDelivery({
+    res = await recordFieldSalesDelivery({
       orderId,
       deliveredById: g.userId,
       lines,
@@ -108,6 +114,20 @@ export async function recordDeliveryAction(input: {
     if (e instanceof DeliveryError) return { ok: false, reason: e.code, shortLines: e.shortLines };
     throw e;
   }
+
+  /**
+   * Posted AFTER the writer's transaction commits, not inside it. Every value these journals need
+   * is fixed by rows that transaction just created and nothing else can touch them, so posting
+   * inside would only stretch an already long serializable window — it holds the delivery, the
+   * stock consume, the order-line updates and the SalesHistory rows — for no correctness gain.
+   */
+  await postArJournalSafely("field_delivery_revenue", res.deliveryId, () =>
+    postFieldDeliveryRevenueJournal(res.deliveryId, g.userId),
+  );
+  await postArJournalSafely("field_delivery_cogs", res.deliveryId, () =>
+    postFieldDeliveryCogsJournal(res.deliveryId, g.userId),
+  );
+
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
   return { ok: true };
@@ -161,13 +181,42 @@ export async function updateDeliveryDatesAction(input: {
   }
 
   const outcome = await runSerializable<
-    { kind: "OK"; orderId: string } | { kind: "NOT_FOUND" } | { kind: "CONFLICT" }
+    | { kind: "OK"; orderId: string }
+    | { kind: "NOT_FOUND" }
+    | { kind: "CONFLICT" }
+    | { kind: "HAS_PAYMENTS" }
   >(async (tx) => {
     const before = await tx.fieldSalesDelivery.findUnique({
       where: { id: input.deliveryId },
       select: { id: true, orderId: true, invoiceDate: true, dueDate: true },
     });
     if (!before) return { kind: "NOT_FOUND" };
+
+    /**
+     * REFUSE once live money has been applied. A payment posts its own DR Cash / CR AR journal dated
+     * on `paidAt`, and that date is correct — the cash moved then, and no invoice correction changes
+     * when it moved. Re-dating the revenue journal on a paid invoice therefore SPLITS the pair:
+     * invoice Jan 1, payment journaled Jan 5, correct the invoice to Feb 1, and revenue lands in
+     * February while the receipt stays in January — January carries a credit AR balance and revenue
+     * is recognised a month after the cash that settled it.
+     *
+     * Fail closed, not with a warning: the resulting GL disagreement is silent, permanent, and
+     * nothing recomputes a journal's date later. An operator who must re-date a paid invoice voids
+     * the payment first — a deliberate, audited act — which restores `paidAmount` to 0 and reopens
+     * the correction.
+     *
+     * Read and refused BEFORE the delivery CAS below, not after. `runSerializable` is a plain
+     * `prisma.$transaction`, which COMMITS on a normal return and rolls back only on a throw — so a
+     * refusal placed after the CAS would commit the very swap it reports as refused, moving the
+     * delivery's dates while the receivable and both journals kept the old ones. That is the exact
+     * three-way split this guard exists to prevent, and it would be permanent: the same call is
+     * refused thereafter, so nothing ever reconverges them.
+     */
+    const receivable = await tx.receivable.findUnique({
+      where: { deliveryId: before.id },
+      select: { paidAmount: true },
+    });
+    if (receivable && Number(receivable.paidAmount) > 0) return { kind: "HAS_PAYMENTS" };
 
     /**
      * The read pair is part of the filter, so the write only lands on the row the audit entry is
@@ -181,6 +230,31 @@ export async function updateDeliveryDatesAction(input: {
       data: { invoiceDate: parsedInvoiceDate, dueDate: parsedDueDate },
     });
     if (swapped.count === 0) return { kind: "CONFLICT" };
+
+    /**
+     * The receivable denormalises these dates so the aging list and the overdue sweep read one
+     * table. `updateMany`, not `update`: a delivery predating the AR ledger has no receivable, and
+     * that must not fail a date correction.
+     */
+    const receivableSync = await tx.receivable.updateMany({
+      where: { deliveryId: before.id },
+      data: { invoiceDate: parsedInvoiceDate, dueDate: parsedDueDate },
+    });
+
+    /**
+     * An invoice-date correction means the sale belongs to a different period, so its journals move
+     * with it — otherwise the GL and the AR ledger disagree about which month the revenue is in.
+     * Safe only because this system has no period-close mechanism; if one is ever built, this
+     * re-dating must be revisited, since it could move revenue into or out of a closed period.
+     * The action's existing AuditLog entry is what makes the change traceable.
+     */
+    const journalRedate = await tx.journal.updateMany({
+      where: {
+        sourceType: { in: ["FIELD_DELIVERY_REVENUE", "FIELD_DELIVERY_COGS"] },
+        sourceId: before.id,
+      },
+      data: { date: parsedInvoiceDate },
+    });
 
     await tx.auditLog.create({
       data: {
@@ -197,6 +271,17 @@ export async function updateDeliveryDatesAction(input: {
             invoiceDate: parsedInvoiceDate.toISOString(),
             dueDate: parsedDueDate.toISOString(),
           },
+          /**
+           * `Journal` has no history table and no audit of its own, so this row is the ONLY trail
+           * for a mutation of posted GL. `receivablesSynced`/`journalsRedated` are the `updateMany`
+           * counts above; `journalsPreviousDate` is `before.invoiceDate` — accurate because a
+           * journal's `date` is always kept equal to its delivery's `invoiceDate` by this same
+           * action on every prior correction, so the delivery's pre-write snapshot IS the journals'
+           * pre-write date.
+           */
+          receivablesSynced: receivableSync.count,
+          journalsRedated: journalRedate.count,
+          journalsPreviousDate: before.invoiceDate.toISOString(),
         },
         reason,
       },
@@ -207,10 +292,72 @@ export async function updateDeliveryDatesAction(input: {
 
   if (outcome.kind === "NOT_FOUND") return { ok: false, reason: "NOT_FOUND" };
   if (outcome.kind === "CONFLICT") return { ok: false, reason: "CONFLICT" };
+  if (outcome.kind === "HAS_PAYMENTS") return { ok: false, reason: "RECEIVABLE_HAS_PAYMENTS" };
 
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${outcome.orderId}`);
   return { ok: true };
+}
+
+type FieldDeliveryJournalKind = "field_delivery_revenue" | "field_delivery_cogs";
+
+export type PostFieldDeliveryJournalsResult =
+  | { ok: true; posted: FieldDeliveryJournalKind[]; stillPending: FieldDeliveryJournalKind[] }
+  | Extract<DeliveryActionResult, { ok: false }>;
+
+/**
+ * Retries the two delivery journals following the shape of `postVanSaleJournalAction`
+ * (`apps/web/app/actions/van-sale.ts`).
+ *
+ * The ENTRY gate — a kind is only attempted when `isArJournalRetryable` says it was flagged — stays
+ * on `isArJournalRetryable`. That is correct: every backfilled receivable has no journal by
+ * construction, and re-posting one of those would book revenue for a delivery nobody ever attempted
+ * to post.
+ *
+ * The post-attempt success determination is NOT the same gate re-checked. `isArJournalRetryable`
+ * matches any `JOURNAL_PENDING` notification for the (kind, docId) pair and deliberately ignores
+ * `readAt`, and nothing in production ever deletes or updates one of those rows — so once a kind has
+ * failed once, re-checking the gate after a retry reads "still pending" forever, even immediately
+ * after a retry that just succeeded. `postArJournalSafely` now returns the outcome it already
+ * computes, so success is read from THAT instead.
+ */
+export async function postFieldDeliveryJournalsAction(deliveryId: string): Promise<PostFieldDeliveryJournalsResult> {
+  const g = await guard();
+  if ("ok" in g) return g;
+  if (typeof deliveryId !== "string" || deliveryId === "") return { ok: false, reason: "INVALID_REQUEST" };
+
+  const revenue = await isArJournalRetryable("field_delivery_revenue", deliveryId);
+  const cogs = await isArJournalRetryable("field_delivery_cogs", deliveryId);
+  if (!revenue && !cogs) return { ok: false, reason: "NOT_RETRYABLE" };
+
+  const posted: FieldDeliveryJournalKind[] = [];
+  const stillPending: FieldDeliveryJournalKind[] = [];
+
+  if (revenue) {
+    const outcome = await postArJournalSafely("field_delivery_revenue", deliveryId, () =>
+      postFieldDeliveryRevenueJournal(deliveryId, g.userId),
+    );
+    (outcome.ok ? posted : stillPending).push("field_delivery_revenue");
+  }
+  if (cogs) {
+    const outcome = await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
+      postFieldDeliveryCogsJournal(deliveryId, g.userId),
+    );
+    (outcome.ok ? posted : stillPending).push("field_delivery_cogs");
+  }
+
+  /* Same paths `recordDeliveryAction` revalidates after a successful post — the delivery lives on
+   * the order's detail page, not a page of its own. */
+  const delivery = await prisma.fieldSalesDelivery.findUnique({
+    where: { id: deliveryId },
+    select: { orderId: true },
+  });
+  if (delivery) {
+    revalidatePath("/backoffice/field-sales-orders");
+    revalidatePath(`/backoffice/field-sales-orders/${delivery.orderId}`);
+  }
+
+  return { ok: true, posted, stillPending };
 }
 
 export async function closeRemainderAction(orderId: string, reason: string): Promise<DeliveryActionResult> {

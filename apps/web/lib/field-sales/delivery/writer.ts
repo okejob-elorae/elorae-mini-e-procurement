@@ -137,13 +137,25 @@ export async function recordFieldSalesDelivery(input: {
       data: { deliveryId: delivery.id },
     });
 
+    await tx.receivable.create({
+      data: {
+        deliveryId: delivery.id,
+        storeId: order.storeId,
+        invoiceDate: input.invoiceDate,
+        dueDate: input.dueDate,
+        originalAmount: total,
+        outstandingAmount: total,
+      },
+    });
+
     /**
      * Consume AFTER the delivery row exists so the audit adjustment can key on the real delivery
      * id. Everything here is one serializable transaction, so a short-stock throw rolls the
      * delivery back with it.
      */
+    let consumeResult: Awaited<ReturnType<typeof consumeFieldSalesOrderPartial>>;
     try {
-      await consumeFieldSalesOrderPartial(tx, {
+      consumeResult = await consumeFieldSalesOrderPartial(tx, {
         orderNo: order.orderNo,
         deliveryId: delivery.id,
         lines: deliveredLines.map((d) => ({
@@ -162,6 +174,12 @@ export async function recordFieldSalesDelivery(input: {
       }
       throw e;
     }
+
+    const cogsAmount = consumeResult.lines.reduce((s, l) => s + l.qty * l.avgCost, 0);
+    await tx.fieldSalesDelivery.update({
+      where: { id: delivery.id },
+      data: { cogsAmount },
+    });
 
     for (const d of deliveredLines) {
       await tx.fieldSalesOrderLine.update({
