@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, Camera, Unlink } from 'lucide-react';
+import { ArrowLeft, Camera, Printer, Unlink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -146,8 +146,15 @@ export function RincianReturClient({
           </StatusPill>
         }
         actions={
-          bolehMengelola && b.langkah !== 'batal' ? (
-            <span className="inline-flex gap-2">
+          <span className="inline-flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <a href={`/print/retur/${b.id}`} target="_blank" rel="noreferrer">
+                <Printer className="mr-1.5 h-4 w-4" />
+                {t('print')}
+              </a>
+            </Button>
+            {bolehMengelola && b.langkah !== 'batal' && (
+              <>
               {data.gudang && (
                 <Button
                   variant="outline"
@@ -167,11 +174,12 @@ export function RincianReturClient({
                   {t('unpair')}
                 </Button>
               )}
-              <Button variant="ghost" disabled={pending} onClick={() => setBatalTerbuka(true)}>
-                {t('cancel')}
-              </Button>
-            </span>
-          ) : undefined
+                <Button variant="ghost" disabled={pending} onClick={() => setBatalTerbuka(true)}>
+                  {t('cancel')}
+                </Button>
+              </>
+            )}
+          </span>
         }
       />
 

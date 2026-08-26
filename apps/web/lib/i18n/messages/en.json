@@ -3656,7 +3656,8 @@
     "reasonTt": "Handed over ({no}). The shop promised {tgl} — wait for the date.",
     "reasonBelum": "Ready to hand over — no return hanging and nothing overdue.",
     "import": "Import invoices",
-    "manual": "Manual invoice"
+    "manual": "Manual invoice",
+    "print": "Print"
   },
   "payments": {
     "pageTitle": "Payments & claims",
@@ -3751,7 +3752,8 @@
     "errRETUR_TIDAK_DITEMUKAN": "The chosen return note no longer exists.",
     "errRETUR_BEDA_TOKO": "That return note belongs to a different shop.",
     "errFOTO_WAJIB": "The transfer receipt photo is required.",
-    "errNOMOR_BENTROK": "The claim number clashed. Try sending again."
+    "errNOMOR_BENTROK": "The claim number clashed. Try sending again.",
+    "print": "Print"
   },
   "collections": {
     "pageTitle": "Collection notes",
@@ -3979,7 +3981,8 @@
     "itemNoMatch": "No matching item.",
     "stockHint": "Items picked from the catalogue will ADD to warehouse stock when this count is saved. Rows with only a typed name do not move stock.",
     "photoLabel": "Photo of the shop's note",
-    "photoHint": "Required. These photos are what the archive is made of — a note without one leaves only a figure you cannot show the shop."
+    "photoHint": "Required. These photos are what the archive is made of — a note without one leaves only a figure you cannot show the shop.",
+    "print": "Print"
   },
   "foto": {
     "pick": "Take or choose a photo",

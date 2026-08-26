@@ -3656,7 +3656,8 @@
     "reasonTt": "Sudah dikontrabon ({no}). Toko janji bayar {tgl} — tunggu tanggalnya.",
     "reasonBelum": "Siap dikontrabon — tidak ada retur menggantung dan tidak ada tunggakan.",
     "import": "Impor faktur",
-    "manual": "Faktur manual"
+    "manual": "Faktur manual",
+    "print": "Cetak"
   },
   "payments": {
     "pageTitle": "Pelunasan & Klaim",
@@ -3751,7 +3752,8 @@
     "errRETUR_TIDAK_DITEMUKAN": "Nota retur yang dipilih sudah tidak ada.",
     "errRETUR_BEDA_TOKO": "Nota retur itu milik toko lain.",
     "errFOTO_WAJIB": "Foto bukti transfer wajib diisi.",
-    "errNOMOR_BENTROK": "Nomor BKM bentrok. Coba kirim lagi."
+    "errNOMOR_BENTROK": "Nomor BKM bentrok. Coba kirim lagi.",
+    "print": "Cetak"
   },
   "collections": {
     "pageTitle": "Kontrabon / Tanda Terima",
@@ -3979,7 +3981,8 @@
     "itemNoMatch": "Tidak ada barang yang cocok.",
     "stockHint": "Barang yang dipilih dari katalog akan MENAMBAH stok gudang saat hitungan ini disimpan. Baris yang hanya diketik namanya tidak menggerakkan stok.",
     "photoLabel": "Foto nota toko",
-    "photoHint": "Wajib. Foto inilah yang jadi isi arsip — nota tanpa foto hanya menyisakan angka yang tak bisa dibuktikan ke toko."
+    "photoHint": "Wajib. Foto inilah yang jadi isi arsip — nota tanpa foto hanya menyisakan angka yang tak bisa dibuktikan ke toko.",
+    "print": "Cetak"
   },
   "foto": {
     "pick": "Ambil atau pilih foto",

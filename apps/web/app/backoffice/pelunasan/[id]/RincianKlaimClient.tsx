@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, BadgeCheck, ImageOff } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ImageOff, Printer } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -94,8 +94,15 @@ export function RincianKlaimClient({
           .join(' · ')}
         meta={<StatusPill tone={NADA[data.status]}>{t(`status${data.status}` as never)}</StatusPill>}
         actions={
-          data.status === 'DIKIRIM' && bolehMemutuskan ? (
-            <span className="inline-flex gap-2">
+          <span className="inline-flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <a href={`/print/bkm/${data.id}`} target="_blank" rel="noreferrer">
+                <Printer className="mr-1.5 h-4 w-4" />
+                {t('print')}
+              </a>
+            </Button>
+            {data.status === 'DIKIRIM' && bolehMemutuskan && (
+              <>
               <Button disabled={pending} onClick={() => putuskan('TERVERIFIKASI')}>
                 <BadgeCheck className="mr-1.5 h-4 w-4" />
                 {t('verify')}
@@ -110,8 +117,9 @@ export function RincianKlaimClient({
               >
                 {t('reject')}
               </Button>
-            </span>
-          ) : undefined
+              </>
+            )}
+          </span>
         }
       />
 
