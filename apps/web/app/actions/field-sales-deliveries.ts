@@ -9,6 +9,9 @@ import { DeliveryError } from "@/lib/field-sales/errors";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
+import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
+import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
 import { logPrint } from "./audit";
 
 export type DeliveryActionResult =
@@ -24,7 +27,8 @@ export type DeliveryActionResult =
         | "CONFLICT"
         | "NO_LINES"
         | "OVER_DELIVER"
-        | "INSUFFICIENT_STOCK";
+        | "INSUFFICIENT_STOCK"
+        | "NOT_RETRYABLE";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
     };
 
@@ -94,8 +98,9 @@ export async function recordDeliveryAction(input: {
   if (parsedDueDate.getTime() < parsedInvoiceDate.getTime()) {
     return { ok: false, reason: "INVALID_DATES" };
   }
+  let res: { deliveryId: string; docNo: string };
   try {
-    await recordFieldSalesDelivery({
+    res = await recordFieldSalesDelivery({
       orderId,
       deliveredById: g.userId,
       lines,
@@ -108,6 +113,20 @@ export async function recordDeliveryAction(input: {
     if (e instanceof DeliveryError) return { ok: false, reason: e.code, shortLines: e.shortLines };
     throw e;
   }
+
+  /**
+   * Posted AFTER the writer's transaction commits, not inside it. Every value these journals need
+   * is fixed by rows that transaction just created and nothing else can touch them, so posting
+   * inside would only stretch an already long serializable window — it holds the delivery, the
+   * stock consume, the order-line updates and the SalesHistory rows — for no correctness gain.
+   */
+  await postArJournalSafely("field_delivery_revenue", res.deliveryId, () =>
+    postFieldDeliveryRevenueJournal(res.deliveryId, g.userId),
+  );
+  await postArJournalSafely("field_delivery_cogs", res.deliveryId, () =>
+    postFieldDeliveryCogsJournal(res.deliveryId, g.userId),
+  );
+
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
   return { ok: true };
@@ -182,6 +201,31 @@ export async function updateDeliveryDatesAction(input: {
     });
     if (swapped.count === 0) return { kind: "CONFLICT" };
 
+    /**
+     * The receivable denormalises these dates so the aging list and the overdue sweep read one
+     * table. `updateMany`, not `update`: a delivery predating the AR ledger has no receivable, and
+     * that must not fail a date correction.
+     */
+    await tx.receivable.updateMany({
+      where: { deliveryId: before.id },
+      data: { invoiceDate: parsedInvoiceDate, dueDate: parsedDueDate },
+    });
+
+    /**
+     * An invoice-date correction means the sale belongs to a different period, so its journals move
+     * with it — otherwise the GL and the AR ledger disagree about which month the revenue is in.
+     * Safe only because this system has no period-close mechanism; if one is ever built, this
+     * re-dating must be revisited, since it could move revenue into or out of a closed period.
+     * The action's existing AuditLog entry is what makes the change traceable.
+     */
+    await tx.journal.updateMany({
+      where: {
+        sourceType: { in: ["FIELD_DELIVERY_REVENUE", "FIELD_DELIVERY_COGS"] },
+        sourceId: before.id,
+      },
+      data: { date: parsedInvoiceDate },
+    });
+
     await tx.auditLog.create({
       data: {
         userId: g.userId,
@@ -210,6 +254,36 @@ export async function updateDeliveryDatesAction(input: {
 
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${outcome.orderId}`);
+  return { ok: true };
+}
+
+/**
+ * Retries the two delivery journals following the shape of `postVanSaleJournalAction`
+ * (`apps/web/app/actions/van-sale.ts`).
+ *
+ * Gated on a JOURNAL_PENDING notification rather than on a missing Journal row: every backfilled
+ * receivable has no journal by construction, and re-posting one of those would book revenue for a
+ * delivery nobody ever attempted to post.
+ */
+export async function postFieldDeliveryJournalsAction(deliveryId: string): Promise<DeliveryActionResult> {
+  const g = await guard();
+  if ("ok" in g) return g;
+  if (typeof deliveryId !== "string" || deliveryId === "") return { ok: false, reason: "INVALID_REQUEST" };
+
+  const revenue = await isArJournalRetryable("field_delivery_revenue", deliveryId);
+  const cogs = await isArJournalRetryable("field_delivery_cogs", deliveryId);
+  if (!revenue && !cogs) return { ok: false, reason: "NOT_RETRYABLE" };
+
+  if (revenue) {
+    await postArJournalSafely("field_delivery_revenue", deliveryId, () =>
+      postFieldDeliveryRevenueJournal(deliveryId, g.userId),
+    );
+  }
+  if (cogs) {
+    await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
+      postFieldDeliveryCogsJournal(deliveryId, g.userId),
+    );
+  }
   return { ok: true };
 }
 

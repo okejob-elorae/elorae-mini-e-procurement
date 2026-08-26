@@ -185,6 +185,9 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     staleSnapshot.value = null;
 
     await prisma.auditLog.deleteMany({ where: { entityId: seededId(deliveryId) } });
+    await prisma.journalLine.deleteMany({ where: { journal: { sourceId: seededId(deliveryId) } } });
+    await prisma.journal.deleteMany({ where: { sourceId: seededId(deliveryId) } });
+    await prisma.receivable.deleteMany({ where: { deliveryId: seededId(deliveryId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
@@ -349,6 +352,64 @@ d("updateDeliveryDatesAction (test bed only)", () => {
 
     expect(result).toEqual({ ok: false, reason: "NOT_FOUND" });
     expect(await prisma.auditLog.count({ where: { entityId: "does-not-exist" } })).toBe(0);
+  });
+
+  it("moves the receivable's dates with the delivery's", async () => {
+    const receivable = await prisma.receivable.create({
+      data: {
+        deliveryId,
+        storeId,
+        invoiceDate: new Date("2026-01-01T00:00:00.000+07:00"),
+        dueDate: new Date("2026-01-08T00:00:00.000+07:00"),
+        originalAmount: 1000,
+        outstandingAmount: 1000,
+      },
+    });
+
+    const result = await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-02-01",
+      dueDate: "2026-02-15",
+      reason: "wrong month keyed",
+    });
+    expect(result.ok).toBe(true);
+
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: receivable.id } });
+    expect(after.invoiceDate.toISOString().slice(0, 10)).toBe("2026-01-31");
+    expect(after.dueDate.toISOString().slice(0, 10)).toBe("2026-02-14");
+    expect(Number(after.originalAmount)).toBe(1000);
+  });
+
+  it("re-dates the delivery's posted journals to the new invoice date", async () => {
+    await prisma.receivable.create({
+      data: {
+        deliveryId,
+        storeId,
+        invoiceDate: new Date("2026-01-01T00:00:00.000+07:00"),
+        dueDate: new Date("2026-01-08T00:00:00.000+07:00"),
+        originalAmount: 1000,
+        outstandingAmount: 1000,
+      },
+    });
+    const journal = await prisma.journal.create({
+      data: {
+        date: new Date("2026-01-01T00:00:00.000+07:00"),
+        description: "test revenue",
+        sourceType: "FIELD_DELIVERY_REVENUE",
+        sourceId: deliveryId,
+        postedById: userId,
+      },
+    });
+
+    await updateDeliveryDatesAction({
+      deliveryId,
+      invoiceDate: "2026-02-01",
+      dueDate: "2026-02-15",
+      reason: "wrong month keyed",
+    });
+
+    const after = await prisma.journal.findUniqueOrThrow({ where: { id: journal.id } });
+    expect(after.date.toISOString().slice(0, 10)).toBe("2026-01-31");
   });
 });
 
