@@ -56,6 +56,38 @@ function buildTagWhere(filters: ListPantoneFilters): Prisma.PantoneColorWhereInp
   return and;
 }
 
+/**
+ * Fan-deck order: the sequence the physical TCX book is bound in.
+ *
+ * The grid used to sort by groupName then name — alphabetically — which is why
+ * it looked shuffled: a swatch book is arranged so neighbouring colours are
+ * neighbouring hues, and no colour library is ever read alphabetically.
+ * 2,624 of 2,800 colours carry real book coordinates, and the sequence opens on
+ * the whites exactly as the printed deck does.
+ *
+ * The 176 without coordinates sort last by lightness, so the tail still reads
+ * as a gradient rather than a jumble.
+ *
+ * `nulls` is a PostgreSQL-only ordering option in Prisma. MySQL has no
+ * equivalent and sorts NULLs first, which would hoist those 176 to the very
+ * top — so the legacy dialect keeps the alphabetical order it always had
+ * rather than silently getting a worse one.
+ */
+function buildBookOrder(): Prisma.PantoneColorOrderByWithRelationInput[] {
+  if (!usePostgres()) {
+    return [{ groupName: 'asc' }, { name: 'asc' }];
+  }
+  const asc = { sort: 'asc', nulls: 'last' } as const;
+  return [
+    { bookSection: asc },
+    { bookPage: asc },
+    { bookColumn: asc },
+    { bookRow: asc },
+    { labL: { sort: 'desc', nulls: 'last' } },
+    { name: 'asc' },
+  ];
+}
+
 export async function listPantoneColors(
   filters: ListPantoneFilters,
   opts: { page: number; pageSize: number }
@@ -83,7 +115,7 @@ export async function listPantoneColors(
   const [rows, totalCount] = await Promise.all([
     prisma.pantoneColor.findMany({
       where,
-      orderBy: [{ groupName: 'asc' }, { name: 'asc' }],
+      orderBy: buildBookOrder(),
       skip: (page - 1) * pageSize,
       take: pageSize,
       select: {
