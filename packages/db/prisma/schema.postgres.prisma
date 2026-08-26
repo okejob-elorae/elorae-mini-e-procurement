@@ -107,6 +107,10 @@ model User {
   returnChargesBorne     ReturnCharge[]    @relation("ReturnChargeBearer")
   returnChargesDecided   ReturnCharge[]    @relation("ReturnChargeDecider")
   fotoDiunggah           Foto[]            @relation("FotoUploader")
+  konsiDikunci           ConsignmentCycle[] @relation("KonsiLocker")
+  konsiDilaporkan        ConsignmentReport[] @relation("KonsiReporter")
+  konsiKomisiSaya        ConsignmentCommission[] @relation("KonsiSpg")
+  konsiKomisiDibayar     ConsignmentCommission[] @relation("KonsiPayer")
 }
 
 model VerificationToken {
@@ -334,6 +338,8 @@ model Store {
   storeReturns   StoreReturn[]
   warehouseReturns WarehouseReturn[]
   returnCharges  ReturnCharge[]
+  konsiCycles    ConsignmentCycle[]
+  konsiShipments ConsignmentShipment[]
 }
 
 model StoreVisit {
@@ -677,6 +683,8 @@ model Item {
   @@index([sku])
   @@index([uomId])
   @@index([categoryId])
+  commissionPerPcs Decimal @default(0) @db.Decimal(15, 2)
+
 }
 
 model ItemImage {
@@ -2613,6 +2621,140 @@ model ReceivableItem {
 
   @@index([receivableId])
   @@index([itemId])
+}
+
+enum ConsignmentReportSource {
+  SPG
+  TOKO
+}
+
+model ConsignmentCycle {
+  id            String    @id @default(cuid())
+  noKonsi       String    @unique
+  storeId       String
+  periodYear    Int
+  periodMonth   Int
+  spgDueDate    DateTime?
+  noNota        String?
+  notaAt        DateTime?
+  noFakturPajak String?
+  fakturPajakAt DateTime?
+  lockedAt      DateTime?
+  lockedById    String?
+  note          String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  store         Store @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lockedBy      User? @relation("KonsiLocker", fields: [lockedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  shipments     ConsignmentShipment[]
+  reports       ConsignmentReport[]
+  sold          ConsignmentSold[]
+  commissions   ConsignmentCommission[]
+
+  @@unique([storeId, periodYear, periodMonth])
+  @@index([storeId])
+  @@index([periodYear, periodMonth])
+}
+
+model ConsignmentShipment {
+  id         String   @id @default(cuid())
+  noKirim    String   @unique
+  cycleId    String?
+  storeId    String
+  shippedAt  DateTime
+  note       String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  cycle      ConsignmentCycle? @relation(fields: [cycleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  store      Store @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  items      ConsignmentShipmentItem[]
+
+  @@index([cycleId])
+  @@index([storeId])
+}
+
+model ConsignmentShipmentItem {
+  id         String  @id @default(cuid())
+  shipmentId String
+  itemId     String?
+  itemName   String
+  qty        Int
+  price      Decimal @db.Decimal(15, 2)
+  amount     Decimal @db.Decimal(15, 2)
+
+  shipment   ConsignmentShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([itemId])
+}
+
+model ConsignmentReport {
+  id           String   @id @default(cuid())
+  cycleId      String
+  source       ConsignmentReportSource
+  reportedAt   DateTime
+  reportedById String?
+  note         String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  cycle        ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  reportedBy   User? @relation("KonsiReporter", fields: [reportedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  items        ConsignmentReportItem[]
+
+  @@unique([cycleId, source])
+  @@index([cycleId])
+}
+
+model ConsignmentReportItem {
+  id       String  @id @default(cuid())
+  reportId String
+  itemId   String?
+  itemName String
+  qty      Int
+
+  report   ConsignmentReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([itemId])
+}
+
+model ConsignmentSold {
+  id               String  @id @default(cuid())
+  cycleId          String
+  itemId           String?
+  itemName         String
+  qty              Int
+  price            Decimal @db.Decimal(15, 2)
+  amount           Decimal @db.Decimal(15, 2)
+  commissionPerPcs Decimal @default(0) @db.Decimal(15, 2)
+
+  cycle            ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  @@index([cycleId])
+  @@index([itemId])
+}
+
+model ConsignmentCommission {
+  id         String    @id @default(cuid())
+  cycleId    String
+  spgUserId  String
+  baseSalary Decimal   @default(0) @db.Decimal(15, 2)
+  commission Decimal   @default(0) @db.Decimal(15, 2)
+  total      Decimal   @default(0) @db.Decimal(15, 2)
+  paidAt     DateTime?
+  paidById   String?
+  note       String?   @db.Text
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  cycle      ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  spgUser    User @relation("KonsiSpg", fields: [spgUserId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  paidBy     User? @relation("KonsiPayer", fields: [paidById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([cycleId, spgUserId])
+  @@index([cycleId])
+  @@index([spgUserId])
 }
 
 model Foto {

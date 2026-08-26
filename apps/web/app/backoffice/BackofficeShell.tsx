@@ -26,6 +26,7 @@ import {
   ClipboardList,
   PackageOpen,
   FolderArchive,
+  Handshake,
   Scale,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -348,6 +349,13 @@ const navItems: NavItem[] = [
     emoji: '⚖️',
     href: '/backoffice/beban-selisih',
     icon: Scale,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+  },
+  {
+    labelKey: 'konsinyasi',
+    emoji: '🤝',
+    href: '/backoffice/konsinyasi',
+    icon: Handshake,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
   },
   {
