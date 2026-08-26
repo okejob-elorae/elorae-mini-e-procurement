@@ -1,8 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Receipt } from 'lucide-react';
+import { FileSpreadsheet, Receipt } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -48,9 +50,11 @@ const URUT: KeadaanPiutang[] = ['lewat', 'tertahan', 'klaim', 'tt', 'belum', 'lu
 export function PiutangClient({
   baris,
   ringkasan,
+  bolehMengelola,
 }: {
   baris: BarisPiutang[];
   ringkasan: RingkasanPiutang;
+  bolehMengelola: boolean;
 }) {
   const t = useTranslations('receivables');
   const [saring, setSaring] = useState<KeadaanPiutang | null>(null);
@@ -96,6 +100,16 @@ export function PiutangClient({
           count: ringkasan.jumlahPiutang,
           value: rupiah(ringkasan.total),
         })}
+        actions={
+          bolehMengelola ? (
+            <Button variant="outline" asChild>
+              <Link href="/backoffice/piutang/impor">
+                <FileSpreadsheet className="mr-1.5 h-4 w-4" />
+                {t('import')}
+              </Link>
+            </Button>
+          ) : undefined
+        }
       />
 
       {baris.length > 0 && (

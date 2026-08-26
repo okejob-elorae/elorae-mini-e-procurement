@@ -3652,7 +3652,8 @@
     "reasonTertahan": "Tertahan retur {nilai} — potongan retur belum cocok dengan barang yang diterima gudang. Sisa faktur belum bisa nol sampai selisih beres.",
     "reasonLewat": "Toko janji bayar {tgl} — sudah lewat {hari} hari dan uang belum masuk. Tagih ulang dan minta tanggal baru.",
     "reasonTt": "Sudah dikontrabon ({no}). Toko janji bayar {tgl} — tunggu tanggalnya.",
-    "reasonBelum": "Siap dikontrabon — tidak ada retur menggantung dan tidak ada tunggakan."
+    "reasonBelum": "Siap dikontrabon — tidak ada retur menggantung dan tidak ada tunggakan.",
+    "import": "Impor faktur"
   },
   "payments": {
     "pageTitle": "Pelunasan & Klaim",
@@ -4013,5 +4014,43 @@
     "stepJodoh": "Belum dijodohkan",
     "stepBeres": "Selesai",
     "stepBatal": "Batal"
+  },
+  "imporPiutang": {
+    "pageTitle": "Impor faktur",
+    "pageDescription": "Unggah berkas Excel atau CSV. Ditinjau dulu, baru disimpan — tidak ada baris yang masuk sebelum Anda melihatnya.",
+    "back": "Kembali ke piutang",
+    "pickFile": "Pilih berkas Excel atau CSV",
+    "pickFileHint": "Judul kolom dikenali otomatis. Berkasnya diurai di browser ini dan tidak dikirim ke mana pun.",
+    "rowsRead": "Baris terbaca",
+    "rowsReady": "Akan masuk",
+    "rowsSkipped": "Dilewati",
+    "totalOutstanding": "Total sisa",
+    "noSisaColumn": "Berkas ini tidak punya kolom sisa. Setiap faktur dianggap belum dibayar sama sekali — sisa = nilai penuh.",
+    "previewTitle": "Pratinjau",
+    "previewHint": "Baris berlatar kuning tidak akan masuk. Alasannya tertulis di kolom paling kanan.",
+    "colRow": "Baris",
+    "colInvoice": "No. faktur",
+    "colStore": "Toko",
+    "colDue": "Jatuh tempo",
+    "colAmount": "Nilai",
+    "colOutstanding": "Sisa",
+    "colVerdict": "Hasil",
+    "writtenZero": "tertulis nol — sudah lunas",
+    "willImport": "Masuk",
+    "willSkip": "Dilewati",
+    "skipBARIS_BERMASALAH": "Ada isian yang tidak terbaca di baris ini.",
+    "skipTOKO_TIDAK_DITEMUKAN": "Kode atau nama tokonya tidak cocok dengan toko mana pun.",
+    "skipTOKO_KONSI": "Toko konsinyasi. Barang di sana masih milik kita sampai terjual, jadi tidak ada piutang yang lahir dari sana.",
+    "skipSUDAH_ADA": "Nomor faktur ini sudah ada.",
+    "skipLUNAS": "Sisanya nol — fakturnya sudah lunas, tidak perlu dibuat sebagai tagihan.",
+    "save": "Simpan {count} faktur",
+    "saveWaiting": "Menghitung…",
+    "okSaved": "{masuk} faktur masuk, {lewat} dilewati.",
+    "errLembarKosong": "Berkasnya tidak punya lembar apa pun.",
+    "errJudulTidakKetemu": "Baris judul tidak ketemu di 20 baris pertama.",
+    "errKolomWajib": "Kolom nomor faktur dan nilai wajib ada. Periksa judul kolomnya.",
+    "errBacaBerkas": "Berkasnya tidak bisa dibaca. Pastikan formatnya Excel atau CSV.",
+    "errTANPA_AKSES": "Anda tidak punya akses mengimpor faktur.",
+    "errGAGAL": "Gagal menyimpan. Coba lagi."
   }
 }

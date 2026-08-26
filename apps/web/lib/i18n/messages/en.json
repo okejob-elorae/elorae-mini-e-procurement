@@ -3652,7 +3652,8 @@
     "reasonTertahan": "Held by return {nilai} — the return deduction does not match what the warehouse received. The balance cannot reach zero until the shortfall is settled.",
     "reasonLewat": "The shop promised {tgl} — {hari} days past and no money has arrived. Chase it and get a new date.",
     "reasonTt": "Handed over ({no}). The shop promised {tgl} — wait for the date.",
-    "reasonBelum": "Ready to hand over — no return hanging and nothing overdue."
+    "reasonBelum": "Ready to hand over — no return hanging and nothing overdue.",
+    "import": "Import invoices"
   },
   "payments": {
     "pageTitle": "Payments & claims",
@@ -4013,5 +4014,43 @@
     "stepJodoh": "Not matched yet",
     "stepBeres": "Done",
     "stepBatal": "Cancelled"
+  },
+  "imporPiutang": {
+    "pageTitle": "Import invoices",
+    "pageDescription": "Upload an Excel or CSV file. Reviewed first, saved second — nothing goes in before you have seen it.",
+    "back": "Back to receivables",
+    "pickFile": "Choose an Excel or CSV file",
+    "pickFileHint": "Column headings are recognised automatically. The file is read in this browser and sent nowhere.",
+    "rowsRead": "Rows read",
+    "rowsReady": "Will import",
+    "rowsSkipped": "Skipped",
+    "totalOutstanding": "Total outstanding",
+    "noSisaColumn": "This file has no outstanding column. Every invoice is treated as wholly unpaid — outstanding equals the full amount.",
+    "previewTitle": "Preview",
+    "previewHint": "Amber rows will not be imported. The reason is in the last column.",
+    "colRow": "Row",
+    "colInvoice": "Invoice no.",
+    "colStore": "Shop",
+    "colDue": "Due",
+    "colAmount": "Amount",
+    "colOutstanding": "Outstanding",
+    "colVerdict": "Result",
+    "writtenZero": "written zero — already settled",
+    "willImport": "Import",
+    "willSkip": "Skip",
+    "skipBARIS_BERMASALAH": "Something in this row could not be read.",
+    "skipTOKO_TIDAK_DITEMUKAN": "The shop code or name matches no shop.",
+    "skipTOKO_KONSI": "Consignment shop. Goods there are still ours until they sell, so no receivable is born from it.",
+    "skipSUDAH_ADA": "This invoice number already exists.",
+    "skipLUNAS": "Outstanding is zero — the invoice is settled and needs no receivable.",
+    "save": "Save {count} invoices",
+    "saveWaiting": "Checking…",
+    "okSaved": "{masuk} invoices imported, {lewat} skipped.",
+    "errLembarKosong": "The file has no sheets.",
+    "errJudulTidakKetemu": "No heading row found in the first 20 rows.",
+    "errKolomWajib": "An invoice number and an amount column are required. Check the headings.",
+    "errBacaBerkas": "The file could not be read. Make sure it is Excel or CSV.",
+    "errTANPA_AKSES": "You do not have access to import invoices.",
+    "errGAGAL": "Could not save. Try again."
   }
 }
