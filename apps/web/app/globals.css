@@ -521,3 +521,51 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
     color: #166534 !important;
   }
 }
+/* ==========================================================================
+   KONTROL TANPA BAYANGAN
+   --------------------------------------------------------------------------
+   Permintaan tegas pemilik program yang di-port ke sini: "saya tidak suka
+   tombol widget ini ada shadow nya, membuat mata saya tidak enak."
+
+   Aturannya: KARTU boleh punya bayangan lembut, KONTROL tidak. Bayangan pada
+   kontrol membuat setiap tombol tampak melayang sedikit, dan pada layar penuh
+   formulir hasilnya bergetar.
+
+   Disasar lewat `data-slot` — atribut yang dipasang shadcn pada setiap
+   primitifnya — bukan lewat selektor elemen. `input[type=text]` tidak akan
+   kena: kebanyakan input di sini tidak menuliskan atribut `type`.
+
+   Popover, dropdown, dan dialog SENGAJA dikecualikan: ia lapisan melayang di
+   atas halaman, dan tanpa bayangan tepinya hilang ke dalam isi di bawahnya.
+   ========================================================================== */
+[data-slot="button"],
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="checkbox"],
+[data-slot="select-trigger"],
+[data-slot="switch"],
+[data-slot="toggle"],
+[data-slot="tabs-trigger"] {
+  box-shadow: none;
+}
+
+/*
+   Fokus keyboard dipulihkan lewat OUTLINE, bukan bayangan.
+   Aturan di atas mematikan bayangan kontrol, dan shadcn menggambar cincin
+   fokusnya justru dengan bayangan — jadi membuang yang hias ikut membuang yang
+   fungsional, dan halaman ini sempat tak bisa dipakai tanpa tetikus.
+
+   Outline juga pemisahan yang benar: ia memang milik keadaan fokus, tidak
+   diwarisi kontrol lain, dan tidak ikut hilang kalau aturan bayangan berubah.
+*/
+[data-slot="button"]:focus-visible,
+[data-slot="input"]:focus-visible,
+[data-slot="textarea"]:focus-visible,
+[data-slot="checkbox"]:focus-visible,
+[data-slot="select-trigger"]:focus-visible,
+[data-slot="switch"]:focus-visible,
+[data-slot="toggle"]:focus-visible,
+[data-slot="tabs-trigger"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
