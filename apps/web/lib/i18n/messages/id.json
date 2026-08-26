@@ -2030,6 +2030,8 @@
       "termsKonsi": "Konsi",
       "paymentTempo": "Tempo pembayaran (hari)",
       "marginPercent": "Margin (%)",
+      "priceDiscountPercent": "Diskon harga toko (%)",
+      "priceDiscountPercentKonsiNotice": "Diskon harga hanya berlaku untuk toko Putus. Toko Konsi memakai margin, bukan diskon harga, jadi kolom ini tidak tersedia di sini.",
       "coords": "Koordinat",
       "lat": "Latitude",
       "lng": "Longitude",
@@ -2072,7 +2074,9 @@
       "codeUnique": "Kode toko sudah dipakai.",
       "forbidden": "Akses ditolak.",
       "notFound": "Toko tidak ditemukan.",
-      "hasConsignmentStock": "Toko ini masih memiliki stok konsinyasi dan harus meretur atau mentransfernya sebelum beralih dari Konsi."
+      "hasConsignmentStock": "Toko ini masih memiliki stok konsinyasi dan harus meretur atau mentransfernya sebelum beralih dari Konsi.",
+      "invalidPriceDiscount": "Diskon harga harus antara 0 dan di bawah 100.",
+      "discountNotAllowedForKonsi": "Toko Konsi tidak boleh memiliki diskon harga."
     },
     "detail": {
       "infoTitle": "Detail toko",

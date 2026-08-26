@@ -9,6 +9,7 @@ export type StoreFields = {
   termsType: "PUTUS" | "KONSI";
   paymentTempo: number;
   marginPercent: number | null;
+  priceDiscountPercent: number | null;
   lat: number | null;
   lng: number | null;
   checkinRadiusMeters: number | null;
@@ -39,6 +40,42 @@ export class StoreHasConsignmentStockError extends Error {
   }
 }
 
+/**
+ * Thrown when `priceDiscountPercent` is outside `0 <= percent < 100`. `computeStorePrice`
+ * silently falls back to the unadjusted price (`flagged: true`) for an out-of-range value, and
+ * nothing downstream reads `flagged` — so a bad stored value would charge full list price with
+ * no complaint anywhere. This writer boundary is the only place that actually catches it.
+ */
+export class InvalidPriceDiscountPercentError extends Error {
+  constructor(readonly percent: number) {
+    super(`priceDiscountPercent must satisfy 0 <= percent < 100, got ${percent}`);
+    this.name = "InvalidPriceDiscountPercentError";
+  }
+}
+
+/**
+ * Thrown when a non-null `priceDiscountPercent` is set on a KONSI store. KONSI pricing runs on
+ * `marginPercent` only — a discount must never apply there, even though the SPG/van pricing
+ * paths hardcode PUTUS pricing (they run at consignment stores too, since an SPG is an in-store
+ * promoter at a KONSI store selling at retail).
+ */
+export class KonsiPriceDiscountNotAllowedError extends Error {
+  constructor() {
+    super("A KONSI store cannot carry a priceDiscountPercent");
+    this.name = "KonsiPriceDiscountNotAllowedError";
+  }
+}
+
+function assertValidPriceDiscount(input: Pick<StoreFields, "termsType" | "priceDiscountPercent">): void {
+  if (input.priceDiscountPercent === null) return;
+  if (input.priceDiscountPercent < 0 || input.priceDiscountPercent >= 100) {
+    throw new InvalidPriceDiscountPercentError(input.priceDiscountPercent);
+  }
+  if (input.termsType === "KONSI") {
+    throw new KonsiPriceDiscountNotAllowedError();
+  }
+}
+
 function serializeStore(s: {
   id: string;
   code: string;
@@ -49,6 +86,7 @@ function serializeStore(s: {
   termsType: "PUTUS" | "KONSI";
   paymentTempo: number;
   marginPercent: Prisma.Decimal | null;
+  priceDiscountPercent: Prisma.Decimal | null;
   lat: Prisma.Decimal | null;
   lng: Prisma.Decimal | null;
   checkinRadiusMeters: number | null;
@@ -66,6 +104,7 @@ function serializeStore(s: {
     termsType: s.termsType,
     paymentTempo: s.paymentTempo,
     marginPercent: s.marginPercent ? s.marginPercent.toNumber() : null,
+    priceDiscountPercent: s.priceDiscountPercent ? s.priceDiscountPercent.toNumber() : null,
     lat: s.lat ? s.lat.toNumber() : null,
     lng: s.lng ? s.lng.toNumber() : null,
     checkinRadiusMeters: s.checkinRadiusMeters,
@@ -115,6 +154,7 @@ export async function getStore(id: string) {
 }
 
 export async function createStore(input: StoreFields): Promise<StoreListItem> {
+  assertValidPriceDiscount(input);
   const created = await prisma.store.create({
     data: {
       code: input.code,
@@ -125,6 +165,7 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
       termsType: input.termsType,
       paymentTempo: input.paymentTempo,
       marginPercent: toDecimalOrNull(input.marginPercent),
+      priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,
@@ -134,6 +175,8 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
 }
 
 export async function updateStore(id: string, input: StoreFields): Promise<StoreListItem> {
+  assertValidPriceDiscount(input);
+
   if (input.termsType === "PUTUS") {
     const current = await prisma.store.findUnique({ where: { id }, select: { termsType: true } });
     if (current?.termsType === "KONSI") {
@@ -156,6 +199,7 @@ export async function updateStore(id: string, input: StoreFields): Promise<Store
       termsType: input.termsType,
       paymentTempo: input.paymentTempo,
       marginPercent: toDecimalOrNull(input.marginPercent),
+      priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,

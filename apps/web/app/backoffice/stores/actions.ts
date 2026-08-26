@@ -12,6 +12,8 @@ import {
   updateStore,
   deactivateStore,
   StoreHasConsignmentStockError,
+  InvalidPriceDiscountPercentError,
+  KonsiPriceDiscountNotAllowedError,
   type StoreFields,
 } from "@/lib/stores/queries";
 
@@ -26,6 +28,7 @@ const storeInputSchema = z.object({
   termsType: z.enum(["PUTUS", "KONSI"]),
   paymentTempo: z.number().int().min(0).max(365),
   marginPercent: z.number().min(0).max(999.99).nullable(),
+  priceDiscountPercent: z.number().nullable(),
   lat: z.number().min(-90).max(90).nullable(),
   lng: z.number().min(-180).max(180).nullable(),
   checkinRadiusMeters: z.number().int().min(0).max(100000).nullable(),
@@ -72,6 +75,20 @@ export async function createStoreAction(input: StoreFields): Promise<ActionResul
     revalidatePath("/backoffice/stores");
     return { ok: true, data: { id: created.id } };
   } catch (e) {
+    if (e instanceof InvalidPriceDiscountPercentError) {
+      return {
+        ok: false,
+        code: "invalid_price_discount",
+        message: "Price discount must be between 0 and under 100.",
+      };
+    }
+    if (e instanceof KonsiPriceDiscountNotAllowedError) {
+      return {
+        ok: false,
+        code: "konsi_discount_not_allowed",
+        message: "A Konsi store cannot carry a price discount.",
+      };
+    }
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return { ok: false, code: "code_unique", message: "Store code already exists." };
     }
@@ -97,6 +114,20 @@ export async function updateStoreAction(id: string, input: StoreFields): Promise
         ok: false,
         code: "has_consignment_stock",
         message: "This store still holds consignment stock and must return or transfer it before switching off Konsi.",
+      };
+    }
+    if (e instanceof InvalidPriceDiscountPercentError) {
+      return {
+        ok: false,
+        code: "invalid_price_discount",
+        message: "Price discount must be between 0 and under 100.",
+      };
+    }
+    if (e instanceof KonsiPriceDiscountNotAllowedError) {
+      return {
+        ok: false,
+        code: "konsi_discount_not_allowed",
+        message: "A Konsi store cannot carry a price discount.",
       };
     }
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

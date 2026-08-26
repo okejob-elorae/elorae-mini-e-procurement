@@ -2030,6 +2030,8 @@
       "termsKonsi": "Konsi",
       "paymentTempo": "Payment tempo (days)",
       "marginPercent": "Margin (%)",
+      "priceDiscountPercent": "Store price discount (%)",
+      "priceDiscountPercentKonsiNotice": "Price discount only applies to Putus stores. Konsi stores price off margin, not a discount, so this field isn't available here.",
       "coords": "Coordinates",
       "lat": "Latitude",
       "lng": "Longitude",
@@ -2072,7 +2074,9 @@
       "codeUnique": "Store code already exists.",
       "forbidden": "Permission denied.",
       "notFound": "Store not found.",
-      "hasConsignmentStock": "This store still holds consignment stock and must return or transfer it before switching off Konsi."
+      "hasConsignmentStock": "This store still holds consignment stock and must return or transfer it before switching off Konsi.",
+      "invalidPriceDiscount": "Price discount must be between 0 and under 100.",
+      "discountNotAllowedForKonsi": "A Konsi store cannot carry a price discount."
     },
     "detail": {
       "infoTitle": "Store details",
