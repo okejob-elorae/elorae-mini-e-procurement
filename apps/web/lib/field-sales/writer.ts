@@ -1,4 +1,4 @@
-import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert, type AdminNotification } from "@elorae/db";
+import { reserveFieldSalesOrder, releaseFieldSalesOrder, reserveKonsiFieldSalesOrder, type OversellAlert, type AdminNotification, type Prisma } from "@elorae/db";
 import { effectiveMinQty, validateMinQtyLines } from "@elorae/db/field-sales";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { applyItemAggregatedPromos } from "./promo-apply";
@@ -187,6 +187,43 @@ export async function createFieldSalesOrder(input: {
   return result;
 }
 
+/**
+ * Which of the given (itemId, variantSku) candidates are CURRENT assortment gaps for this store,
+ * batched into two queries regardless of candidate count. Mirrors `listAssortmentGaps`'s gap test
+ * (`packages/db` has no access to that helper, and it reads through the un-transacted `prisma`
+ * singleton anyway) — `targetQty === null` means "must merely be present" (`onHandQty <= 0`),
+ * `targetQty !== null` means a minimum (`onHandQty < targetQty`). Run inside the caller's own
+ * transaction so the gap read is consistent with the `StoreStock` state the approval itself acts
+ * on, not a stale snapshot from before the transaction opened.
+ */
+async function currentAssortmentGapKeys(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  candidates: Array<{ itemId: string; variantSku: string }>,
+): Promise<Set<string>> {
+  if (candidates.length === 0) return new Set();
+  const itemIds = Array.from(new Set(candidates.map((c) => c.itemId)));
+  const lines = await tx.storeAssortmentLine.findMany({
+    where: { storeId, itemId: { in: itemIds } },
+    select: { itemId: true, variantSku: true, targetQty: true },
+  });
+  if (lines.length === 0) return new Set();
+  const stockRows = await tx.storeStock.findMany({
+    where: { storeId, itemId: { in: itemIds } },
+    select: { itemId: true, variantSku: true, qty: true },
+  });
+  const onHandByKey = new Map(stockRows.map((r) => [`${r.itemId}::${r.variantSku ?? ""}`, r.qty.toNumber()]));
+  const gapKeys = new Set<string>();
+  for (const line of lines) {
+    const key = `${line.itemId}::${line.variantSku ?? ""}`;
+    const onHandQty = onHandByKey.get(key) ?? 0;
+    const targetQty = line.targetQty === null ? null : line.targetQty.toNumber();
+    const isGap = targetQty === null ? onHandQty <= 0 : onHandQty < targetQty;
+    if (isGap) gapKeys.add(key);
+  }
+  return gapKeys;
+}
+
 export async function approveFieldSalesOrder(input: {
   orderId: string;
   approvedById: string;
@@ -220,6 +257,11 @@ export async function approveFieldSalesOrder(input: {
       if (added.length > 0) {
         const onOrder = new Set(order.lines.map((l) => `${l.itemId}::${l.variantSku}`));
         const alreadySent = await sentItemIds(order.storeId, tx);
+        const gapKeys = await currentAssortmentGapKeys(
+          tx,
+          order.storeId,
+          added.map((a) => ({ itemId: a.itemId, variantSku: a.variantSku ?? "" })),
+        );
         const items = await tx.item.findMany({
           where: { id: { in: added.map((a) => a.itemId) }, isActive: true, type: "FINISHED_GOOD" },
           select: { id: true, nameId: true },
@@ -249,7 +291,17 @@ export async function approveFieldSalesOrder(input: {
           // above is variant-level, so a different variant of an item already on the order is
           // rejected here, not there. Correct for an item-level "never sent" suggestion list —
           // flagged so it isn't a surprise to a future reader.
-          if (alreadySent.has(a.itemId)) throw new InvalidAddedLineError("ALREADY_SENT", a.itemId);
+          //
+          // EXCEPT: an item sentItemIds flags as "already sent" can still be a CURRENT assortment
+          // gap for this store (shipped once, now at zero, or below its target) — exactly the
+          // population listKonsiAssortmentGaps exists to surface, and exactly what the gap panel
+          // just offered the admin to stage. Refusing it here would abort the whole approval for
+          // the feature's primary use case. gapKeys is keyed at (itemId, variantSku) grain, so a
+          // gap on one variant does not exempt a different variant of the same item — that other
+          // variant still hits ALREADY_SENT below, unchanged. ALREADY_SENT still fires for a line
+          // that is merely "never sent" and NOT a current gap — i.e. an admin re-adding something
+          // the never-sent list should not have offered.
+          if (alreadySent.has(a.itemId) && !gapKeys.has(key)) throw new InvalidAddedLineError("ALREADY_SENT", a.itemId);
           if (!byId.has(a.itemId)) throw new InvalidAddedLineError("UNKNOWN_ITEM", a.itemId);
           // A variantSku with no matching InventoryValue row would otherwise surface later as
           // InventoryValueMissingError out of reserveKonsiFieldSalesOrder — a @elorae/db class

@@ -4,7 +4,12 @@ import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft, Printer } from "lucide-react";
-import type { FieldSalesOrderDetail, FieldSalesOrderStatus, KonsiSuggestion } from "@/lib/field-sales/queries";
+import type {
+  FieldSalesOrderDetail,
+  FieldSalesOrderStatus,
+  KonsiSuggestion,
+  KonsiAssortmentGapSuggestion,
+} from "@/lib/field-sales/queries";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +33,7 @@ type Props = {
   canApprove: boolean;
   canDeliver: boolean;
   konsiSuggestions: KonsiSuggestion[];
+  konsiAssortmentGaps: KonsiAssortmentGapSuggestion[];
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldSalesOrderStatus, "secondary" | "default" | "destructive"> = {
@@ -63,7 +69,13 @@ function printHtml(html: string, title: string) {
   setTimeout(() => document.body.removeChild(iframe), 500);
 }
 
-export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, konsiSuggestions }: Props) {
+export function FieldSalesOrderDetailClient({
+  order,
+  canApprove,
+  canDeliver,
+  konsiSuggestions,
+  konsiAssortmentGaps,
+}: Props) {
   const t = useTranslations("fieldSalesOrders");
   const locale = useLocale();
   const [stagedAdditions, setStagedAdditions] = useState<StagedAddition[]>([]);
@@ -193,6 +205,7 @@ export function FieldSalesOrderDetailClient({ order, canApprove, canDeliver, kon
       {showKonsiSuggestions && (
         <KonsiSuggestionsCard
           suggestions={konsiSuggestions}
+          gapSuggestions={konsiAssortmentGaps}
           shortLineCount={shortLineCount}
           staged={stagedAdditions}
           onStagedChange={setStagedAdditions}

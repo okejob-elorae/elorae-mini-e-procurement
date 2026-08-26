@@ -321,6 +321,7 @@ model Store {
   storeStock     StoreStock[]
   konsiTransfers KonsiTransfer[]
   stocktakes     StoreStocktake[]
+  assortmentLines StoreAssortmentLine[]
 
   @@index([isActive, name])
 }
@@ -765,6 +766,22 @@ model StoreStocktakeLine {
   @@index([itemId])
 }
 
+model StoreAssortmentLine {
+  id          String   @id @default(cuid())
+  storeId     String
+  itemId      String
+  variantSku  String   @default("")
+  targetQty   Decimal? @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+  createdById String
+  store       Store    @relation(fields: [storeId], references: [id])
+  item        Item     @relation(fields: [itemId], references: [id])
+
+  @@unique([storeId, itemId, variantSku])
+  @@index([storeId])
+  @@index([itemId])
+}
+
 enum ReserveSource {
   JUBELIO
   FIELD_SALES
@@ -887,6 +904,7 @@ model Item {
   storeStock       StoreStock[]
   konsiTransferLines KonsiTransferLine[]
   stocktakeLines   StoreStocktakeLine[]
+  assortmentLines  StoreAssortmentLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])

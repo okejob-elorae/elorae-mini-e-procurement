@@ -63,7 +63,9 @@ import {
 } from "@/components/ui/table";
 import { StoreChangeReviewCard } from "./StoreChangeReviewCard";
 import { StoreStockCard, type SerializedStockMovement } from "./StoreStockCard";
+import { StoreAssortmentCard, type AssortmentLineViewModel } from "./StoreAssortmentCard";
 import type { StoreStockCardData } from "@/lib/inventory/store-stock-card";
+import type { AssortmentGapRow } from "@/lib/stores/assortment/queries";
 
 let lastMapsOpenAt = 0;
 
@@ -114,6 +116,7 @@ type StockCardProps = {
   negativeCount: number;
   inTransitAdminReturn: { raisedQty: number; receivedQty: number };
   movements: SerializedStockMovement[];
+  gaps: AssortmentGapRow[];
 };
 
 /** One row of the admin return picker's draft state, keyed by `${itemId}::${variantSku}`. */
@@ -153,6 +156,8 @@ type Props = {
   stockCard: StockCardProps | null;
   /** Only ever populated for a KONSI store — same gate as `stockCard`. */
   stocktakes: StocktakesCardProps | null;
+  /** Only populated for a user with `stores:manage` — the card is gated, not just its controls. */
+  assortment: { lines: AssortmentLineViewModel[] } | null;
   pendingChange: {
     requestId: string;
     requestedByLabel: string;
@@ -278,6 +283,7 @@ export function StoreDetailView({
   sentItems,
   stockCard,
   stocktakes,
+  assortment,
   pendingChange,
 }: Props) {
   const t = useTranslations("stores");
@@ -786,12 +792,15 @@ export function StoreDetailView({
         </CardContent>
       </Card>
 
+      {assortment && <StoreAssortmentCard storeId={store.id} termsType={store.termsType} lines={assortment.lines} />}
+
       {store.termsType === "KONSI" && stockCard && (
         <StoreStockCard
           rows={stockCard.rows}
           negativeCount={stockCard.negativeCount}
           inTransitAdminReturn={stockCard.inTransitAdminReturn}
           movements={stockCard.movements}
+          gaps={stockCard.gaps}
         />
       )}
 

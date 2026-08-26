@@ -28,6 +28,9 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
   let orderId = "";
   let putusOrderId = "";
   let priorOrderId = "";
+  let gapVariantOrderId = "";
+  let variantPriorOrderId = "";
+  const assortmentLineIds: string[] = [];
 
   beforeEach(async () => {
     uomId = "";
@@ -44,6 +47,9 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     orderId = "";
     putusOrderId = "";
     priorOrderId = "";
+    gapVariantOrderId = "";
+    variantPriorOrderId = "";
+    assortmentLineIds.length = 0;
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-KAL-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -79,13 +85,20 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     shortItemId = shortItem.id;
     await prisma.inventoryValue.create({ data: { itemId: shortItemId, variantSku: "", qtyOnHand: 1, reservedQty: 0, avgCost: 500, totalValue: 500 } });
 
+    /*
+     * Deliberately NOT "TEST-"-prefixed: apps/web/app/pwa/stores/actions.spec.ts runs a
+     * pre-existing `store.deleteMany({ code: { startsWith: "TEST-" } })` teardown that sweeps the
+     * WHOLE shared dev DB, not just its own fixtures. A "TEST-"-prefixed code here would sit in
+     * that blast radius — and this file's own gap-approval coverage now depends on this store
+     * surviving between setup and assertion.
+     */
     const store = await prisma.store.create({
-      data: { code: `TEST-KAL-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
+      data: { code: `KAL-STORE-${token}`, name: "Test Konsi Store", address: "Test address", termsType: "KONSI", marginPercent: 20, isActive: true },
     });
     storeId = store.id;
 
     const putusStore = await prisma.store.create({
-      data: { code: `TEST-KAL-PSTORE-${token}`, name: "Test Putus Store", address: "Test address", termsType: "PUTUS", isActive: true },
+      data: { code: `KAL-PSTORE-${token}`, name: "Test Putus Store", address: "Test address", termsType: "PUTUS", isActive: true },
     });
     putusStoreId = putusStore.id;
 
@@ -139,7 +152,14 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
       seededId(variantItemId),
       seededId(shortItemId),
     ];
-    const allOrderIds = [seededId(orderId), seededId(putusOrderId), seededId(priorOrderId)];
+    const allOrderIds = [
+      seededId(orderId),
+      seededId(putusOrderId),
+      seededId(priorOrderId),
+      seededId(gapVariantOrderId),
+      seededId(variantPriorOrderId),
+    ];
+    await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: allOrderIds } } });
@@ -271,12 +291,98 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     expect(lines).toHaveLength(1);
   });
 
-  it("rejects an item already sent to the store on a different konsi order", async () => {
+  it("rejects an item already sent to the store on a different konsi order — NOT a current assortment gap", async () => {
     await expect(
       approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: alreadySentItemId, variantSku: "", qty: 1 }] }),
     ).rejects.toMatchObject({ code: "ALREADY_SENT" });
     const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
     expect(lines).toHaveLength(1);
+  });
+
+  it("approves a previously-sent item staged as an added line when it is a CURRENT assortment gap for the store", async () => {
+    const line = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: alreadySentItemId, variantSku: "", targetQty: null, createdById: userId },
+    });
+    assortmentLineIds.push(line.id);
+
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: alreadySentItemId, variantSku: "", qty: 2 }] }),
+    ).resolves.toEqual({ ok: true });
+
+    const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
+    expect(lines).toHaveLength(2);
+    const added = lines.find((l) => l.itemId === alreadySentItemId)!;
+    expect(added.addedById).toBe(userId);
+    expect(added.qty).toBe(2);
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, select: { status: true } });
+    expect(order.status).toBe("APPROVED");
+  });
+
+  it("approves a gap staged on a variant OTHER than the one already on the order under approval — item-grain ALREADY_SENT must not swallow it", async () => {
+    /*
+     * variantItemId's RED line lands on this brand-new order, which makes variantItemId
+     * item-grain "already sent" (sentItemIds counts the PENDING_APPROVAL order being approved
+     * itself). BLUE is a genuine current gap for the store and must still be stageable.
+     */
+    const { orderId: newOrderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId: userId,
+      visitId,
+      lines: [{ itemId: variantItemId, variantSku: "RED", productName: "Variant item", qty: 1, unitPrice: 0 }],
+    });
+    gapVariantOrderId = newOrderId;
+
+    const line = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: variantItemId, variantSku: "BLUE", targetQty: null, createdById: userId },
+    });
+    assortmentLineIds.push(line.id);
+
+    await expect(
+      approveFieldSalesOrder({ orderId: newOrderId, approvedById: userId, addedLines: [{ itemId: variantItemId, variantSku: "BLUE", qty: 1 }] }),
+    ).resolves.toEqual({ ok: true });
+
+    const lines = await prisma.fieldSalesOrderLine.findMany({
+      where: { orderId: seededId(newOrderId), itemId: variantItemId },
+      select: { variantSku: true },
+    });
+    expect(lines.map((l) => l.variantSku).sort()).toEqual(["BLUE", "RED"]);
+  });
+
+  it("throws ALREADY_SENT for a variant that is itself NOT a gap, even though a different variant of the same item IS a gap — the exemption must stay variant-grain, not widen to item-grain", async () => {
+    /*
+     * variantItemId::RED was sent on a separate, already-APPROVED order, so sentItemIds flags the
+     * whole item as "already sent" (it has no variant dimension). variantItemId::BLUE is a genuine
+     * current gap. If the ALREADY_SENT exemption ever regressed to item grain, staging RED here
+     * would wrongly succeed just because BLUE is a gap — this pins that it does not.
+     */
+    const priorVariantOrder = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `KONSI/TEST-KAL-VARPRIOR-${token}`,
+        orderType: "KONSI",
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        subtotal: 1000,
+        total: 1000,
+        lines: {
+          create: [{ itemId: variantItemId, variantSku: "RED", productName: "Variant item", qty: 1, unitPrice: 1000, lineTotal: 1000 }],
+        },
+      },
+    });
+    variantPriorOrderId = priorVariantOrder.id;
+
+    const line = await prisma.storeAssortmentLine.create({
+      data: { storeId, itemId: variantItemId, variantSku: "BLUE", targetQty: null, createdById: userId },
+    });
+    assortmentLineIds.push(line.id);
+
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: variantItemId, variantSku: "RED", qty: 1 }] }),
+    ).rejects.toMatchObject({ code: "ALREADY_SENT" });
+
+    const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
+    expect(lines).toHaveLength(1);
+    expect(lines.every((l) => l.itemId !== variantItemId)).toBe(true);
   });
 
   it("rejects an unknown item and creates nothing", async () => {
