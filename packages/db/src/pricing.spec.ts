@@ -35,10 +35,21 @@ describe("computeStorePrice", () => {
       .toEqual({ price: 10000, label: "Harga", flagged: true });
   });
 
-  it("rounds a non-terminating discount to sen — the client's named case", () => {
-    /* 33333 * (1 - 10/100) = 29999.700000000004 unrounded */
+  it("rounds a non-terminating discount to sen — the client's named documented example", () => {
+    /* 33333 * (1 - 10/100) = 29999.700000000004 unrounded, but 29999.7 IS the nearest
+     * double to that value, so this case cannot fail if roundCents is removed — it
+     * documents the client's named example, not a regression guard. See the next test
+     * for the case that actually discriminates. */
     expect(computeStorePrice({ sellingPrice: 33333, termsType: "PUTUS", marginPercent: null, priceDiscountPercent: 10 }).price)
       .toBe(29999.7);
+  });
+
+  it("rounds a PUTUS discount that would otherwise leave float noise", () => {
+    /* 45678 * (1 - 10/100) = 41110.200000000004 unrounded — this DOES change under
+     * rounding, unlike the 33333 case above, so it fails if roundCents is dropped
+     * from the PUTUS branch. */
+    expect(computeStorePrice({ sellingPrice: 45678, termsType: "PUTUS", marginPercent: null, priceDiscountPercent: 10 }))
+      .toEqual({ price: 41110.2, label: "Harga", flagged: false });
   });
 
   it("treats null and 0 discount as today's passthrough on PUTUS", () => {
