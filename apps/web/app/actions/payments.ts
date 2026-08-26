@@ -27,7 +27,7 @@ export type PaymentActionReason =
   | "ERROR";
 
 export type PaymentActionResult =
-  | { ok: true; paymentId?: string; docNo?: string }
+  | { ok: true; paymentId?: string; docNo?: string; alreadyVoided?: boolean }
   | { ok: false; reason: PaymentActionReason };
 
 export type RecordPaymentActionInput = {
@@ -181,7 +181,12 @@ export async function recordPaymentAction(input: RecordPaymentActionInput): Prom
  * `voidPayment` returning `{ voided: false }` means the payment was already voided and nothing
  * changed — treated here as an idempotent success (no journal reversal posted, nothing to
  * revalidate) rather than an error, mirroring how this repo already treats a repeat
- * mark-paid/mark-unpaid as a no-op success elsewhere in Finance.
+ * mark-paid/mark-unpaid as a no-op success elsewhere in Finance. The two outcomes are still
+ * distinguished via `alreadyVoided` on the `ok: true` result: a bare `{ ok: true }` cannot tell
+ * "voided just now" from "was already voided", and a caller branching on `.ok` alone would toast
+ * a real cancellation for a double-click that changed nothing. `alreadyVoided: false` is set
+ * explicitly (not omitted) on the real-void path so both branches of this function are equally
+ * explicit about which case ran, rather than one being "true" and the other "absent".
  */
 export async function voidPaymentAction(input: { paymentId: string; reason: string }): Promise<PaymentActionResult> {
   let userId = "";
@@ -214,9 +219,10 @@ export async function voidPaymentAction(input: { paymentId: string; reason: stri
     await postArJournalSafely("ar_payment_void", paymentId, () => postPaymentVoidJournal(paymentId, userId));
     revalidatePath("/backoffice/finance/piutang");
     revalidatePath("/backoffice/finance/payments");
+    return { ok: true, paymentId, alreadyVoided: false };
   }
 
-  return { ok: true, paymentId };
+  return { ok: true, paymentId, alreadyVoided: true };
 }
 
 /**

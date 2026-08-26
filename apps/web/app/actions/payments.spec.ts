@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 /*
  * Unit-only: auth, rbac, the payment/void writers, the journal helpers and next/cache are all
  * mocked, so nothing here touches the shared dev database. This file exists to pin the
- * permission gate and the request-shape guards the actions add on top of the writers from
- * earlier tasks — not to re-test the writers themselves.
+ * permission gate, the request-shape guards, the ERROR_CODE_MAP wiring, the already-voided vs.
+ * real-void split, and the retry actions' entry-gate/outcome split — not to re-test the writers
+ * themselves.
  */
 const {
   mockAuth,
@@ -43,7 +44,8 @@ vi.mock("@/lib/finance/ar/payment-journal", () => ({
 vi.mock("@/lib/finance/ar/journal-pending", () => ({ isArJournalRetryable: mockIsArJournalRetryable }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
 
-import { recordPaymentAction, voidPaymentAction } from "./payments";
+import { PaymentError } from "@/lib/finance/ar/errors";
+import { recordPaymentAction, voidPaymentAction, postPaymentJournalAction } from "./payments";
 
 describe("payment action guards", () => {
   beforeEach(() => {
@@ -72,12 +74,14 @@ describe("payment action guards", () => {
       allocations: [{ receivableId: "r1", amount: 100 }],
     });
     expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toBe("FORBIDDEN");
   });
 
   it("refuses to void without payments:manage", async () => {
     mockHasPermission.mockReturnValue(false);
     const res = await voidPaymentAction({ paymentId: "p1", reason: "x" });
     expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toBe("FORBIDDEN");
   });
 
   it("rejects a blank void reason even when permitted", async () => {
@@ -85,5 +89,57 @@ describe("payment action guards", () => {
     const res = await voidPaymentAction({ paymentId: "p1", reason: "   " });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toBe("INVALID_REQUEST");
+  });
+
+  /*
+   * The no-op path and the real-void path (next test) are a deliberate pair. Either one on its
+   * own would pass under a bug that never posts a reversal at all — this one alone can't tell
+   * "correctly skipped the reversal" from "always skips the reversal, even on a real void".
+   */
+  it("reports alreadyVoided: true and posts no reversal when the payment was already voided", async () => {
+    mockVoidPayment.mockResolvedValue({ voided: false });
+    const res = await voidPaymentAction({ paymentId: "p1", reason: "double-click" });
+    expect(res).toEqual({ ok: true, paymentId: "p1", alreadyVoided: true });
+    expect(mockPostArJournalSafely).not.toHaveBeenCalled();
+    expect(mockRevalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("posts the reversal and reports alreadyVoided: false when the void was real", async () => {
+    mockVoidPayment.mockResolvedValue({ voided: true });
+    const res = await voidPaymentAction({ paymentId: "p1", reason: "customer complaint" });
+    expect(res).toEqual({ ok: true, paymentId: "p1", alreadyVoided: false });
+    expect(mockPostArJournalSafely).toHaveBeenCalledWith("ar_payment_void", "p1", expect.any(Function));
+  });
+
+  it("maps a writer OVER_ALLOCATED error onto its own reason via ERROR_CODE_MAP", async () => {
+    mockRecordPayment.mockRejectedValue(new PaymentError("OVER_ALLOCATED"));
+    const res = await recordPaymentAction({
+      storeId: "s1", paidAt: "2026-03-01", method: "CASH", amount: 100,
+      allocations: [{ receivableId: "r1", amount: 100 }],
+    });
+    expect(res).toEqual({ ok: false, reason: "OVER_ALLOCATED" });
+  });
+
+  it("maps an unexpected non-PaymentError throw onto ERROR rather than leaking it", async () => {
+    mockRecordPayment.mockRejectedValue(new Error("db exploded"));
+    const res = await recordPaymentAction({
+      storeId: "s1", paidAt: "2026-03-01", method: "CASH", amount: 100,
+      allocations: [{ receivableId: "r1", amount: 100 }],
+    });
+    expect(res).toEqual({ ok: false, reason: "ERROR" });
+  });
+
+  it("returns NOT_RETRYABLE without calling the poster when the entry gate is closed", async () => {
+    mockIsArJournalRetryable.mockResolvedValue(false);
+    const res = await postPaymentJournalAction("p1");
+    expect(res).toEqual({ ok: false, reason: "NOT_RETRYABLE" });
+    expect(mockPostArJournalSafely).not.toHaveBeenCalled();
+  });
+
+  it("reports STILL_PENDING rather than success when the retried post itself fails", async () => {
+    mockIsArJournalRetryable.mockResolvedValue(true);
+    mockPostArJournalSafely.mockResolvedValue({ ok: false, code: "ERROR" });
+    const res = await postPaymentJournalAction("p1");
+    expect(res).toEqual({ ok: false, reason: "STILL_PENDING" });
   });
 });
