@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
-import { bolehMengelola } from '@/lib/receivables/izin';
+import { bolehMengelolaKonsi } from '@/lib/receivables/izin';
 import {
   bayarKomisi,
   bukaKunci,
@@ -42,7 +42,7 @@ function tanggalWib(teks: string): Date | null {
 async function butuh(): Promise<string | null> {
   const session = await auth();
   if (!session?.user?.id) return null;
-  return bolehMengelola(session.user.permissions) ? session.user.id : null;
+  return bolehMengelolaKonsi(session.user.permissions) ? session.user.id : null;
 }
 
 export async function bukaSiklusAction(input: {

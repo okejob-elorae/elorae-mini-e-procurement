@@ -203,6 +203,11 @@ export const PERMISSIONS = {
   // Receivables & collections
   RECEIVABLES_VIEW: 'receivables:view',
   RECEIVABLES_MANAGE: 'receivables:manage',
+  // Consignment — held separately so a sales-admin or tax-admin role can be
+  // given the consignment cycle WITHOUT being handed the receivables archive,
+  // which carries photographed store documents.
+  CONSIGNMENT_VIEW: 'consignment:view',
+  CONSIGNMENT_MANAGE: 'consignment:manage',
   // Field Sales Orders
   FIELD_SALES_ORDERS_VIEW: 'field_sales_orders:view',
   FIELD_SALES_ORDERS_APPROVE: 'field_sales_orders:approve',

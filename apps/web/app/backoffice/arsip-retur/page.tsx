@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { bolehMembacaArsip } from "@/lib/receivables/izin";
 import { folderArsip, isiArsip } from "@/lib/receivables/return-queries";
 import { ArsipClient } from "./ArsipClient";
 
@@ -12,6 +13,12 @@ export default async function ArsipReturPage({
 }) {
   const session = await auth();
   if (!session) redirect("/login");
+  /*
+   * Arsip ini berisi foto nota retur toko — dokumen keuangan milik toko dan
+   * sales. Sebelum ini halamannya hanya menuntut sudah masuk, jadi seluruh isi
+   * kantor bisa membukanya.
+   */
+  if (!bolehMembacaArsip(session.user.permissions)) redirect("/backoffice");
 
   const { toko, v } = await searchParams;
   // "yatim" adalah folder tanpa nota toko; ia tidak punya id toko.

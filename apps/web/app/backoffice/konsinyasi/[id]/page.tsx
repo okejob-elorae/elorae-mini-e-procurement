@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { bolehMengelola } from "@/lib/receivables/izin";
+import { bolehMembukaKonsi, bolehMengelolaKonsi } from "@/lib/receivables/izin";
 import { rincianSiklus } from "@/lib/konsinyasi/queries";
 import { katalogBarang } from "@/lib/receivables/return-queries";
 import { RincianSiklusClient } from "./RincianSiklusClient";
@@ -15,8 +15,10 @@ export default async function RincianSiklusPage({
   const session = await auth();
   if (!session) redirect("/login");
 
+  if (!bolehMembukaKonsi(session.user.permissions)) redirect("/backoffice");
+
   const { id } = await params;
-  const kelola = bolehMengelola(session.user.permissions);
+  const kelola = bolehMengelolaKonsi(session.user.permissions);
   const [data, katalog] = await Promise.all([
     rincianSiklus(id),
     kelola ? katalogBarang() : Promise.resolve([]),

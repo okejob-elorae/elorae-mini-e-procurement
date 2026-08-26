@@ -39,3 +39,44 @@ export function bolehMenghitung(izin: string[] | undefined): boolean {
 export function bolehMengelola(izin: string[] | undefined): boolean {
   return hasPermission(izin ?? [], PERMISSIONS.RECEIVABLES_MANAGE);
 }
+
+/**
+ * Membaca arsip nota retur.
+ *
+ * Halaman arsip TIDAK BERPAGAR sama sekali sebelum ini: siapa pun yang bisa
+ * masuk melihat setiap nota retur setiap toko, lengkap dengan fotonya. Itu
+ * dokumen keuangan milik toko dan sales, bukan sesuatu yang terbuka bagi
+ * seluruh isi kantor hanya karena mereka punya akun.
+ */
+export function bolehMembacaArsip(izin: string[] | undefined): boolean {
+  return hasPermission(izin ?? [], PERMISSIONS.RECEIVABLES_VIEW);
+}
+
+/**
+ * Membuka siklus konsinyasi.
+ *
+ * Terpisah dari `receivables:*` dengan sengaja. Brief menyebut dua peran —
+ * Admin Penjualan dan Admin Pajak — yang pekerjaannya HANYA konsinyasi, dan
+ * yang secara tegas tidak boleh membuka lampiran di luarnya. Kalau konsinyasi
+ * memakai izin piutang, memberi mereka pekerjaannya berarti sekalian memberi
+ * seluruh arsip retur.
+ */
+export function bolehMembukaKonsi(izin: string[] | undefined): boolean {
+  return hasPermission(izin ?? [], PERMISSIONS.CONSIGNMENT_VIEW);
+}
+
+/**
+ * Menjalankan siklus konsinyasi: kunci angka, bayar komisi, catat nomor faktur.
+ *
+ * SATU izin, bukan "ini ATAU yang mengelola piutang". Sempat saya tulis begitu
+ * supaya orang yang sudah bekerja hari ini tidak terkunci — tapi menu sampingnya
+ * hanya bisa menguji SATU izin, jadi hasilnya pintu terbuka dengan menu yang
+ * tidak menampilkannya: orang yang berhak tidak akan pernah menemukannya.
+ *
+ * Yang benar adalah seed memberi `consignment:*` kepada setiap peran yang sudah
+ * memegang `receivables:manage` — lihat `seed-consignment-permissions.sql`.
+ * Dengan begitu pagar halaman dan menu menguji hal yang persis sama.
+ */
+export function bolehMengelolaKonsi(izin: string[] | undefined): boolean {
+  return hasPermission(izin ?? [], PERMISSIONS.CONSIGNMENT_MANAGE);
+}
