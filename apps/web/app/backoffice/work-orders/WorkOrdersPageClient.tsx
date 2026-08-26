@@ -111,6 +111,7 @@ export function WorkOrdersPageClient() {
   const [totalCount, setTotalCount] = useState(0);
   const tWO = useTranslations('workOrders');
   const tStatus = useTranslations('statuses');
+  const tTable = useTranslations('tableHeaders');
 
   const fetchWorkOrders = async () => {
     setIsLoading(true);
@@ -245,12 +246,12 @@ export function WorkOrdersPageClient() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>WO Number</TableHead>
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{tTable('woNumber')}</TableHead>
+                    <TableHead>{tTable('vendor')}</TableHead>
+                    <TableHead>{tTable('status')}</TableHead>
                     <TableHead>Target Date</TableHead>
                     <TableHead>{tWO('completedAt')}</TableHead>
-                    <TableHead>Progress</TableHead>
+                    <TableHead>{tTable('progress')}</TableHead>
                     <TableHead className="text-right">Issues</TableHead>
                     <TableHead className="text-right">Receipts</TableHead>
                     <TableHead className="w-12"></TableHead>

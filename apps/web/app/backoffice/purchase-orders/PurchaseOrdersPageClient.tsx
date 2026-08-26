@@ -137,6 +137,7 @@ export function PurchaseOrdersPageClient({
   const tSecurity = useTranslations('security');
   const tPO = useTranslations('purchaseOrders');
   const tStatus = useTranslations('statuses');
+  const tTable = useTranslations('tableHeaders');
   const [pos, setPOs] = useState<PurchaseOrder[]>(initialPOs ?? []);
   const [isLoading, setIsLoading] = useState(!initialPOs);
   const [searchQuery, setSearchQuery] = useState('');
@@ -317,11 +318,11 @@ export function PurchaseOrdersPageClient({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>PO Number</TableHead>
-                    <TableHead>Supplier</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>ETA</TableHead>
-                    <TableHead>Payment</TableHead>
+                    <TableHead>{tTable('poNumber')}</TableHead>
+                    <TableHead>{tTable('supplier')}</TableHead>
+                    <TableHead>{tTable('status')}</TableHead>
+                    <TableHead>{tTable('eta')}</TableHead>
+                    <TableHead>{tTable('payment')}</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="min-w-[120px]">Progress</TableHead>
                     <TableHead className="text-right">Pending</TableHead>

@@ -3517,7 +3517,16 @@
     "initial": "Awal",
     "remaining": "Sisa",
     "status": "Status",
-    "sku": "SKU"
+    "sku": "SKU",
+    "poNumber": "No. PO",
+    "eta": "Perkiraan Tiba",
+    "payment": "Pembayaran",
+    "progress": "Kemajuan",
+    "woNumber": "No. WO",
+    "vendor": "Vendor",
+    "target": "Target",
+    "article": "Artikel",
+    "qty": "Qty"
   },
   "ui": {
     "code": "Kode",

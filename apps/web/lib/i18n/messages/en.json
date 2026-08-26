@@ -3517,7 +3517,16 @@
     "initial": "Initial",
     "remaining": "Remaining",
     "status": "Status",
-    "sku": "SKU"
+    "sku": "SKU",
+    "poNumber": "PO number",
+    "eta": "ETA",
+    "payment": "Payment",
+    "progress": "Progress",
+    "woNumber": "WO number",
+    "vendor": "Vendor",
+    "target": "Target",
+    "article": "Article",
+    "qty": "Qty"
   },
   "ui": {
     "code": "Code",

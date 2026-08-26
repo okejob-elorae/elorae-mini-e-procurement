@@ -687,7 +687,8 @@ export function BackofficeShell({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-                <NotificationIcon />
+            <QuickActionFAB />
+            <NotificationIcon />
             <LanguageSwitcher />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
