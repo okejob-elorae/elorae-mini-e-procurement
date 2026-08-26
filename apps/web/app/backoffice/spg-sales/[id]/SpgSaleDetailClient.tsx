@@ -28,6 +28,24 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
+// Exact 2dp display — for the Subtotal row ONLY. `formatRupiah` rounds for display, which would
+// make Subtotal look identical to the already-rounded Total whenever they differ by under Rp 1.
+function formatRupiahExact(value: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+// Signed sub-rupiah delta (Total - Subtotal) — the rounding adjustment applied at the cash
+// boundary (see roundToWholeRupiah in @elorae/db/pricing).
+function formatAdjustment(value: number): string {
+  const sign = value >= 0 ? "+" : "-";
+  return `${sign}${formatRupiahExact(Math.abs(value))}`;
+}
+
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("id-ID", {
     day: "2-digit",
@@ -51,6 +69,10 @@ function Field({ label, value }: { label: string; value: string | null }) {
 export function SpgSaleDetailClient({ sale }: Props) {
   const t = useTranslations("spgSale.backoffice.detail");
   const tSpgSale = useTranslations("spgSale");
+  // total is the whole-rupiah CHARGED figure; subtotal is the exact 2dp line sum. Nonzero only
+  // when a fractional line price (a discount, or any fractional Item.sellingPrice) left a
+  // sub-rupiah remainder rounded off at the cash boundary.
+  const roundingAdjustment = Math.round((sale.total - sale.subtotal) * 100) / 100;
 
   function handlePrint() {
     const html = spgSaleNotaHtml(sale);
@@ -105,10 +127,22 @@ export function SpgSaleDetailClient({ sale }: Props) {
         )}
         <Field label={t("noteLabel")} value={sale.note} />
         <div className="pt-2 border-t space-y-1">
+          {roundingAdjustment !== 0 && (
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{tSpgSale("subtotalLabel")}</span>
+              <span>{formatRupiahExact(sale.subtotal)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-sm font-semibold">
             <span>{tSpgSale("totalLabel")}</span>
             <span>{formatRupiah(sale.total)}</span>
           </div>
+          {roundingAdjustment !== 0 && (
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{tSpgSale("roundingAdjustmentLabel")}</span>
+              <span>{formatAdjustment(roundingAdjustment)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">{tSpgSale("cashTenderedLabel")}</span>
             <span>{formatRupiah(sale.cashReceived)}</span>
