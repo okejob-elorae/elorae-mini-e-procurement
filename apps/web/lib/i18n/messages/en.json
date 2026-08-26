@@ -4240,5 +4240,30 @@
     "bkm": "Payments",
     "retur": "Returns",
     "beban": "Charges"
+  },
+  "pwaGudang": {
+    "pageTitle": "Count returns",
+    "summary": "{count} notes waiting to be counted",
+    "empty": "No return notes waiting.",
+    "claimed": "shop claims",
+    "count": "Count",
+    "countTitle": "Count the goods",
+    "countBody": "{doc} — the shop claims {claimed}. Enter the value of what actually arrived.",
+    "countedAmount": "Value received",
+    "countHint": "Zero is valid and means nothing arrived. It can only be recorded once.",
+    "noteLabel": "Note",
+    "save": "Save count",
+    "okCounted": "Count saved.",
+    "viaSALES": "carried by the salesman",
+    "viaTOKO": "sent by the shop",
+    "viaEKSPEDISI": "by carrier",
+    "errTANPA_AKSES": "You do not have access to count returns.",
+    "errTANGGAL_TIDAK_VALID": "The date could not be read.",
+    "errTIDAK_DITEMUKAN": "Note not found.",
+    "errNILAI_TIDAK_VALID": "That value is not valid.",
+    "errSUDAH_DIHITUNG": "This note has already been counted.",
+    "errSUDAH_DIBATALKAN": "This note is cancelled.",
+    "errNOMOR_BENTROK": "The number clashed. Try again.",
+    "errGAGAL": "Could not save. Try again."
   }
 }

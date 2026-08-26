@@ -41,7 +41,14 @@ const CARA = ['transfer', 'tunai', 'giro'] as const;
 
 type Potongan = { nama: string; nilai: number; storeReturnId: string; catatan: string };
 
-export function KlaimBaruClient({ bahan }: { bahan: BahanKlaimBaru }) {
+export function KlaimBaruClient({
+  bahan,
+  kembaliKe = '/backoffice/pelunasan',
+}: {
+  bahan: BahanKlaimBaru;
+  /** Ke mana kembali setelah kirim — berbeda antara kantor dan lapangan. */
+  kembaliKe?: string;
+}) {
   const t = useTranslations('payments');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -101,7 +108,7 @@ export function KlaimBaruClient({ bahan }: { bahan: BahanKlaimBaru }) {
       });
       if (hasil.ok) {
         toast.success(t('okClaimCreated', { doc: hasil.docNo }));
-        router.push('/backoffice/pelunasan');
+        router.push(kembaliKe);
       } else {
         toast.error(t(`err${hasil.kode}` as never));
       }
@@ -120,7 +127,7 @@ export function KlaimBaruClient({ bahan }: { bahan: BahanKlaimBaru }) {
   return (
     <div className="space-y-6">
       <Button variant="ghost" size="sm" asChild className="-ml-2">
-        <Link href="/backoffice/pelunasan">
+        <Link href={kembaliKe}>
           <ArrowLeft className="mr-1.5 h-4 w-4" />
           {t('backToList')}
         </Link>

@@ -4240,5 +4240,30 @@
     "bkm": "Pelunasan",
     "retur": "Retur",
     "beban": "Beban"
+  },
+  "pwaGudang": {
+    "pageTitle": "Cek Fisik Retur",
+    "summary": "{count} nota menunggu dihitung",
+    "empty": "Tidak ada nota retur yang menunggu dicek.",
+    "claimed": "klaim toko",
+    "count": "Hitung fisik",
+    "countTitle": "Hitung fisik barang",
+    "countBody": "{doc} — toko mengklaim {claimed}. Isi nilai barang yang benar-benar sampai.",
+    "countedAmount": "Nilai fisik yang diterima",
+    "countHint": "Nol sah, artinya tidak ada barang yang sampai. Hanya bisa dicatat sekali.",
+    "noteLabel": "Catatan",
+    "save": "Simpan hitungan",
+    "okCounted": "Hitungan tersimpan.",
+    "viaSALES": "dibawa sales",
+    "viaTOKO": "dikirim toko",
+    "viaEKSPEDISI": "lewat ekspedisi",
+    "errTANPA_AKSES": "Anda tidak punya akses menghitung retur.",
+    "errTANGGAL_TIDAK_VALID": "Tanggalnya tidak terbaca.",
+    "errTIDAK_DITEMUKAN": "Notanya tidak ditemukan.",
+    "errNILAI_TIDAK_VALID": "Nilainya tidak sah.",
+    "errSUDAH_DIHITUNG": "Nota ini sudah dihitung.",
+    "errSUDAH_DIBATALKAN": "Nota ini sudah dibatalkan.",
+    "errNOMOR_BENTROK": "Nomor bentrok. Coba simpan lagi.",
+    "errGAGAL": "Gagal menyimpan. Coba lagi."
   }
 }
