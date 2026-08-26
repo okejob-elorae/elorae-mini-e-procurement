@@ -395,3 +395,124 @@ export async function tokoUntukRetur(): Promise<{ id: string; name: string }[]> 
     select: { id: true, name: true },
   });
 }
+
+export type FolderArsip = {
+  storeId: string | null;
+  storeName: string | null;
+  jumlah: number;
+  nilai: number;
+  /** Ada nota di dalamnya yang masih menggantung — titik merah di sudut. */
+  menggantung: boolean;
+};
+
+export type IsiArsip = {
+  id: string;
+  jenis: 'NRT' | 'GUDANG_YATIM';
+  nomor: string;
+  tanggal: string;
+  nilai: number;
+  fotoUrl: string | null;
+  langkah: LangkahRetur;
+  menggantung: boolean;
+};
+
+/** Sebuah nota masih menggantung selama belum ada yang bisa mengarsipkannya. */
+function menggantung(langkah: LangkahRetur): boolean {
+  return langkah === 'cek' || langkah === 'keputusan' || langkah === 'jodoh';
+}
+
+/**
+ * Folder arsip, satu per toko.
+ *
+ * Disusun dari `daftarKerjaRetur` yang sama, bukan dari kueri agregat sendiri.
+ * Kalau "menggantung" di sini dihitung ulang dengan caranya sendiri, titik
+ * merah di arsip bisa menyala untuk nota yang di daftar kerja sudah bersih —
+ * dan tidak akan ada yang tahu mana yang benar.
+ *
+ * Folder "Tanpa Nota Toko" (`storeId` null) menampung penerimaan gudang yang
+ * belum berpasangan. Ia sengaja berdiri sendiri: barangnya nyata dan sudah di
+ * gudang, ia hanya belum tahu milik toko yang mana.
+ */
+export async function folderArsip(): Promise<FolderArsip[]> {
+  const [baris, toko] = await Promise.all([
+    daftarKerjaRetur(),
+    prisma.store.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  const peta = new Map<string, FolderArsip>();
+  // Semua toko aktif punya foldernya, termasuk yang masih kosong — folder
+  // kosong memberi tahu bahwa toko itu memang belum pernah retur, sedangkan
+  // folder yang hilang hanya menimbulkan pertanyaan.
+  for (const s of toko) {
+    peta.set(s.id, {
+      storeId: s.id,
+      storeName: s.name,
+      jumlah: 0,
+      nilai: 0,
+      menggantung: false,
+    });
+  }
+
+  const yatim: FolderArsip = {
+    storeId: null,
+    storeName: null,
+    jumlah: 0,
+    nilai: 0,
+    menggantung: false,
+  };
+
+  for (const b of baris) {
+    const folder = b.jenis === 'GUDANG_YATIM' ? yatim : b.storeId ? peta.get(b.storeId) : undefined;
+    if (!folder) continue;
+    folder.jumlah += 1;
+    folder.nilai += b.nilaiKlaim ?? b.nilaiFisik ?? 0;
+    if (menggantung(b.langkah)) folder.menggantung = true;
+  }
+
+  // Yang berisi lebih dulu, lalu yang menggantung, lalu menurut nama.
+  const isi = [...peta.values()].sort(
+    (a, b) =>
+      Number(b.jumlah > 0) - Number(a.jumlah > 0) ||
+      Number(b.menggantung) - Number(a.menggantung) ||
+      (a.storeName ?? '').localeCompare(b.storeName ?? ''),
+  );
+  return yatim.jumlah > 0 ? [yatim, ...isi] : isi;
+}
+
+/**
+ * Isi satu folder. `storeId` null berarti folder "Tanpa Nota Toko".
+ *
+ * Fotonya ikut dibawa: di arsip, gambar kecil nota itulah yang membuat orang
+ * mengenali notanya sebelum membaca nomornya.
+ */
+export async function isiArsip(storeId: string | null): Promise<IsiArsip[]> {
+  const baris = await daftarKerjaRetur();
+  const dipilih = baris.filter((b) =>
+    storeId === null ? b.jenis === 'GUDANG_YATIM' : b.jenis === 'NRT' && b.storeId === storeId,
+  );
+
+  const foto = new Map<string, string | null>();
+  const idNrt = dipilih.filter((b) => b.jenis === 'NRT').map((b) => b.id);
+  if (idNrt.length > 0) {
+    const rows = await prisma.storeReturn.findMany({
+      where: { id: { in: idNrt } },
+      select: { id: true, photoUrl: true },
+    });
+    for (const r of rows) foto.set(r.id, r.photoUrl);
+  }
+
+  return dipilih.map((b) => ({
+    id: b.id,
+    jenis: b.jenis,
+    nomor: b.nomor,
+    tanggal: b.tanggal,
+    nilai: b.nilaiKlaim ?? b.nilaiFisik ?? 0,
+    fotoUrl: foto.get(b.id) ?? null,
+    langkah: b.langkah,
+    menggantung: menggantung(b.langkah),
+  }));
+}

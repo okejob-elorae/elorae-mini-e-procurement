@@ -25,6 +25,7 @@ import {
   BarChart2,
   ClipboardList,
   PackageOpen,
+  FolderArchive,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -332,6 +333,13 @@ const navItems: NavItem[] = [
     emoji: '📦',
     href: '/backoffice/retur-toko',
     icon: PackageOpen,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+  },
+  {
+    labelKey: 'arsipRetur',
+    emoji: '🗃️',
+    href: '/backoffice/arsip-retur',
+    icon: FolderArchive,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
   },
   {

@@ -96,7 +96,8 @@
     "receivables": "Invoices & receivables",
     "payments": "Payments & claims",
     "collections": "Collection notes",
-    "storeReturns": "Returns & matching"
+    "storeReturns": "Returns & matching",
+    "arsipRetur": "Return archive"
   },
   "notifications": {
     "title": "Notifications",
@@ -3985,5 +3986,32 @@
     "errTERLALU_BESAR": "That photo is too large. 6 MB maximum after resizing.",
     "errTANPA_AKSES": "Your session expired. Sign in again.",
     "errGAGAL": "Upload failed. Try again."
+  },
+  "arsipRetur": {
+    "pageTitle": "Return note archive",
+    "pageDescription": "Every return note filed by shop. Open the folder, click the note.",
+    "summary": "{count} notes · {orphan} warehouse receipts with no note",
+    "searchPlaceholder": "Search shop name…",
+    "orphanFolder": "No shop note",
+    "unknownFolder": "Folder",
+    "empty": "empty",
+    "folderMeta": "{count} notes · {value}",
+    "hangingDot": "contains a note still hanging",
+    "hangingExplain": "A <tautan>red dot</tautan> on a folder means a note inside it is still hanging — not counted by the warehouse, not matched, or its difference not yet assigned.",
+    "backToFolders": "Back to folders",
+    "folderBody": "{count} notes in this folder.",
+    "emptyFolderTitle": "This folder is empty",
+    "emptyFolderBody": "This shop has never sent anything back.",
+    "viewIcons": "Icons",
+    "viewList": "List",
+    "colNote": "Note",
+    "colDate": "Date",
+    "colValue": "Value",
+    "colState": "State",
+    "stepKeputusan": "Awaiting decision",
+    "stepCek": "Not counted yet",
+    "stepJodoh": "Not matched yet",
+    "stepBeres": "Done",
+    "stepBatal": "Cancelled"
   }
 }

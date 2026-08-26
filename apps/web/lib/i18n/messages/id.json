@@ -96,7 +96,8 @@
     "receivables": "Faktur & Piutang",
     "payments": "Pelunasan & Klaim",
     "collections": "Kontrabon / TT",
-    "storeReturns": "Retur & Pencocokan"
+    "storeReturns": "Retur & Pencocokan",
+    "arsipRetur": "Arsip Nota Retur"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -3985,5 +3986,32 @@
     "errTERLALU_BESAR": "Fotonya terlalu besar. Maksimal 6 MB setelah diperkecil.",
     "errTANPA_AKSES": "Sesi Anda habis. Masuk lagi.",
     "errGAGAL": "Gagal mengunggah. Coba lagi."
+  },
+  "arsipRetur": {
+    "pageTitle": "Arsip Nota Retur",
+    "pageDescription": "Semua nota retur tersimpan per toko. Buka foldernya, klik notanya.",
+    "summary": "{count} nota · {orphan} penerimaan gudang tanpa nota",
+    "searchPlaceholder": "Cari nama toko…",
+    "orphanFolder": "Tanpa Nota Toko",
+    "unknownFolder": "Folder",
+    "empty": "kosong",
+    "folderMeta": "{count} nota · {value}",
+    "hangingDot": "ada nota yang masih menggantung",
+    "hangingExplain": "<tautan>Titik merah</tautan> di sudut folder berarti ada nota di dalamnya yang masih menggantung — belum dicek gudang, belum dijodohkan, atau selisihnya belum diputuskan.",
+    "backToFolders": "Kembali ke folder",
+    "folderBody": "{count} nota di folder ini.",
+    "emptyFolderTitle": "Folder ini kosong",
+    "emptyFolderBody": "Toko ini belum pernah mengembalikan barang.",
+    "viewIcons": "Ikon",
+    "viewList": "Daftar",
+    "colNote": "Nota",
+    "colDate": "Tanggal",
+    "colValue": "Nilai",
+    "colState": "Keadaan",
+    "stepKeputusan": "Menunggu keputusan",
+    "stepCek": "Belum dicek gudang",
+    "stepJodoh": "Belum dijodohkan",
+    "stepBeres": "Selesai",
+    "stepBatal": "Batal"
   }
 }
