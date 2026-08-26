@@ -444,13 +444,13 @@ export default function WorkOrderIssuePage() {
                   <TableRow key={p.itemId}>
                     <TableCell>{p.itemName}</TableCell>
                     <TableCell className="text-right">
-                      {p.plannedQty.toLocaleString()}
+                      {p.plannedQty.toLocaleString('id-ID')}
                     </TableCell>
                     <TableCell className="text-right">
-                      {p.issuedQty.toLocaleString()}
+                      {p.issuedQty.toLocaleString('id-ID')}
                     </TableCell>
                     <TableCell className="text-right">
-                      {(p.plannedQty - p.issuedQty).toLocaleString()}
+                      {(p.plannedQty - p.issuedQty).toLocaleString('id-ID')}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -502,7 +502,7 @@ export default function WorkOrderIssuePage() {
                     .filter((p) => !lines.some((l) => l.itemId === p.itemId))
                     .map((p) => ({
                       value: p.itemId,
-                      label: `${p.itemName} (remaining ${(p.plannedQty - p.issuedQty).toLocaleString()})`,
+                      label: `${p.itemName} (remaining ${(p.plannedQty - p.issuedQty).toLocaleString('id-ID')})`,
                     }))}
                   value=""
                   onValueChange={(itemId) => addLine(itemId)}
@@ -641,7 +641,7 @@ export default function WorkOrderIssuePage() {
                         .filter((r) => !rollBreakdown.some((b) => b.rollRef === r.rollCode || b.rollRef === r.rollRef))
                         .map((r) => ({
                           value: r.rollId,
-                          label: `${r.rollCode} — ${r.remainingLength.toLocaleString()} remaining`,
+                          label: `${r.rollCode} — ${r.remainingLength.toLocaleString('id-ID')} remaining`,
                         }))}
                       value={addRollValue}
                       onValueChange={(value) => {

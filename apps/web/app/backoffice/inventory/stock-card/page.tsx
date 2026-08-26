@@ -467,16 +467,16 @@ export default function StockCardPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Opening balance</p>
                 <p className="text-lg font-semibold">
-                  {data.openingBalance.toLocaleString()} {data.item?.uom?.code ?? ''}
+                  {data.openingBalance.toLocaleString('id-ID')} {data.item?.uom?.code ?? ''}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Rp {data.openingValue.toLocaleString()}
+                  Rp {data.openingValue.toLocaleString('id-ID')}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Closing balance</p>
                 <p className="text-lg font-semibold">
-                  {data.closingBalance.toLocaleString()} {data.item?.uom?.code ?? ''}
+                  {data.closingBalance.toLocaleString('id-ID')} {data.item?.uom?.code ?? ''}
                 </p>
               </div>
             </div>
@@ -506,21 +506,21 @@ export default function StockCardPage() {
                       <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                       <TableCell>{m.variantSku ?? '-'}</TableCell>
                       <TableCell className="text-right text-green-600 dark:text-green-400">
-                        {m.in != null ? m.in.toLocaleString() : '-'}
+                        {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
                       </TableCell>
                       <TableCell className="text-right text-red-600 dark:text-red-400">
-                        {m.out != null ? m.out.toLocaleString() : '-'}
+                        {m.out != null ? m.out.toLocaleString('id-ID') : '-'}
                       </TableCell>
                       <TableCell className="text-right">
-                        {m.balance.toLocaleString()}
+                        {m.balance.toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell className="text-right">
                         {m.unitCost != null
-                          ? `Rp ${m.unitCost.toLocaleString()}`
+                          ? `Rp ${m.unitCost.toLocaleString('id-ID')}`
                           : '-'}
                       </TableCell>
                       <TableCell className="text-right">
-                        Rp {m.balanceValue.toLocaleString()}
+                        Rp {m.balanceValue.toLocaleString('id-ID')}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -641,10 +641,10 @@ export default function StockCardPage() {
                               <TableCell className="whitespace-nowrap">{row.item?.nameId ?? '-'}</TableCell>
                               <TableCell className="whitespace-nowrap">{row.item?.uom?.code ?? '-'}</TableCell>
                               <TableCell className="text-right whitespace-nowrap">
-                                {row.openingBalance.toLocaleString()}
+                                {row.openingBalance.toLocaleString('id-ID')}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap">
-                                {row.closingBalance.toLocaleString()}
+                                {row.closingBalance.toLocaleString('id-ID')}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap">{row.movements.length}</TableCell>
                             </TableRow>
@@ -672,12 +672,12 @@ export default function StockCardPage() {
                                             <TableCell>{m.description}</TableCell>
                                             <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
-                                              {m.in != null ? m.in.toLocaleString() : '-'}
+                                              {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
                                             </TableCell>
                                             <TableCell className="text-right text-red-600 dark:text-red-400">
-                                              {m.out != null ? m.out.toLocaleString() : '-'}
+                                              {m.out != null ? m.out.toLocaleString('id-ID') : '-'}
                                             </TableCell>
-                                            <TableCell className="text-right">{m.balance.toLocaleString()}</TableCell>
+                                            <TableCell className="text-right">{m.balance.toLocaleString('id-ID')}</TableCell>
                                           </TableRow>
                                         ))}
                                       </TableBody>
@@ -815,10 +815,10 @@ export default function StockCardPage() {
                               <TableCell className="whitespace-nowrap">{row.item?.nameId ?? '-'}</TableCell>
                               <TableCell className="whitespace-nowrap">{row.item?.uom?.code ?? '-'}</TableCell>
                               <TableCell className="text-right whitespace-nowrap">
-                                {row.openingBalance.toLocaleString()}
+                                {row.openingBalance.toLocaleString('id-ID')}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap">
-                                {row.closingBalance.toLocaleString()}
+                                {row.closingBalance.toLocaleString('id-ID')}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap">{row.movements.length}</TableCell>
                             </TableRow>
@@ -846,12 +846,12 @@ export default function StockCardPage() {
                                             <TableCell>{m.description}</TableCell>
                                             <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
-                                              {m.in != null ? m.in.toLocaleString() : '-'}
+                                              {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
                                             </TableCell>
                                             <TableCell className="text-right text-red-600 dark:text-red-400">
-                                              {m.out != null ? m.out.toLocaleString() : '-'}
+                                              {m.out != null ? m.out.toLocaleString('id-ID') : '-'}
                                             </TableCell>
-                                            <TableCell className="text-right">{m.balance.toLocaleString()}</TableCell>
+                                            <TableCell className="text-right">{m.balance.toLocaleString('id-ID')}</TableCell>
                                           </TableRow>
                                         ))}
                                       </TableBody>

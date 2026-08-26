@@ -38,7 +38,7 @@ export function DataCoverageBar({ coverage }: { coverage: DataCoverage }) {
             <div className="flex items-center justify-between text-sm">
               <span className="font-medium">{ch.channel}</span>
               <span className="text-muted-foreground">
-                {ch.totalRows.toLocaleString()} rows
+                {ch.totalRows.toLocaleString('id-ID')} rows
                 {ch.earliestDate && ch.latestDate ?
                   ` · ${ch.earliestDate.toLocaleDateString()} → ${ch.latestDate.toLocaleDateString()}`
                 : ''}

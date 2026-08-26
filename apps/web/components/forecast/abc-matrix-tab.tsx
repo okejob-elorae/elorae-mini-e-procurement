@@ -172,14 +172,14 @@ export function ForecastAbcMatrixTab({ results, onSelectArticle }: AbcMatrixTabP
                       <TableCell className="font-mono text-sm">{article.parentSku}</TableCell>
                       <TableCell>{article.productName}</TableCell>
                       <TableCell className="text-right">
-                        {Math.round(article.avgMonthlyDemand).toLocaleString()}
+                        {Math.round(article.avgMonthlyDemand).toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        {article.annualForecast.toLocaleString()}
+                        {article.annualForecast.toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell className="text-right">
                         {article.planTarget != null ?
-                          article.planTarget.toLocaleString()
+                          article.planTarget.toLocaleString('id-ID')
                         : t('results.noPlan')}
                       </TableCell>
                       <TableCell className="text-right">

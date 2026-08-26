@@ -35,7 +35,7 @@ export function MonthlyForecastRow({
           {MONTHS.map((label, i) => (
             <div key={label} className="space-y-1 text-center text-xs">
               <div className="font-medium">{label}</div>
-              <div>{monthlyForecast[i]?.toLocaleString() ?? 0}</div>
+              <div>{monthlyForecast[i]?.toLocaleString('id-ID') ?? 0}</div>
               <Progress value={((monthlyForecast[i] ?? 0) / maxQty) * 100} className="h-1" />
               <div className="text-muted-foreground">SI {(seasonalIndices[i] ?? 1).toFixed(2)}</div>
             </div>
@@ -68,7 +68,7 @@ export function MonthlyForecastTable({
         {MONTHS.map((label, i) => (
           <TableRow key={label}>
             <TableCell>{label}</TableCell>
-            <TableCell className="text-right">{monthlyForecast[i]?.toLocaleString() ?? 0}</TableCell>
+            <TableCell className="text-right">{monthlyForecast[i]?.toLocaleString('id-ID') ?? 0}</TableCell>
             <TableCell>{(seasonalIndices[i] ?? 1).toFixed(2)}</TableCell>
             <TableCell>
               <Progress value={((monthlyForecast[i] ?? 0) / maxQty) * 100} className="h-2" />

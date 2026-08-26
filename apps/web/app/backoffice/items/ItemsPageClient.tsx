@@ -110,6 +110,7 @@ export function ItemsPageClient({
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
+  const tTable = useTranslations('tableHeaders');
   const t = useTranslations('toasts');
   const tNav = useTranslations('navigation');
   const tItems = useTranslations('items');
@@ -290,14 +291,14 @@ export function ItemsPageClient({
                     <TableHead className="w-10"></TableHead>
                     <TableHead className="w-12"></TableHead>
                     <TableHead>SKU</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>{tTable('name')}</TableHead>
+                    <TableHead>{tTable('type')}</TableHead>
                     <TableHead>UOM</TableHead>
-                    <TableHead className="text-right">Stock</TableHead>
-                    <TableHead className="text-right">Available</TableHead>
-                    <TableHead className="text-right">Avg Cost</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
-                    <TableHead className="text-right">Harga Jual</TableHead>
+                    <TableHead className="text-right">{tTable('stock')}</TableHead>
+                    <TableHead className="text-right">{tTable('available')}</TableHead>
+                    <TableHead className="text-right">{tTable('avgCost')}</TableHead>
+                    <TableHead className="text-right">{tTable('value')}</TableHead>
+                    <TableHead className="text-right">{tTable('sellingPrice')}</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -351,7 +352,7 @@ export function ItemsPageClient({
                               <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
                             )}
                             <span>
-                              {Number(item.inventoryValue?.qtyOnHand || 0).toLocaleString()}
+                              {Number(item.inventoryValue?.qtyOnHand || 0).toLocaleString('id-ID')}
                             </span>
                           </div>
                         </TableCell>
@@ -363,18 +364,18 @@ export function ItemsPageClient({
                                 : undefined
                             }
                           >
-                            {Number(item.inventoryValue?.available ?? 0).toLocaleString()}
+                            {Number(item.inventoryValue?.available ?? 0).toLocaleString('id-ID')}
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
-                          Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString()}
+                          Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell className="text-right">
-                          Rp {Number(item.inventoryValue?.totalValue || 0).toLocaleString()}
+                          Rp {Number(item.inventoryValue?.totalValue || 0).toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell className="text-right">
                           {item.type === 'FINISHED_GOOD' && item.sellingPrice != null
-                            ? `Rp ${Number(item.sellingPrice).toLocaleString()}`
+                            ? `Rp ${Number(item.sellingPrice).toLocaleString('id-ID')}`
                             : '—'}
                         </TableCell>
                         <TableCell>

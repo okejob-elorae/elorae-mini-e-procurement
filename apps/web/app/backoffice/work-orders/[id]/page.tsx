@@ -423,7 +423,7 @@ export default function WorkOrderDetailPage() {
             Progress
           </CardTitle>
           <CardDescription>
-            {t('progressTarget')}: {planned.toLocaleString()} pcs · {t('progressActual')}: {actual.toLocaleString()}
+            {t('progressTarget')}: {planned.toLocaleString('id-ID')} pcs · {t('progressActual')}: {actual.toLocaleString('id-ID')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -431,7 +431,7 @@ export default function WorkOrderDetailPage() {
             <div className="flex justify-between text-sm">
               <span>{progressPct}%</span>
               <span>
-                {actual.toLocaleString()} / {planned.toLocaleString()}
+                {actual.toLocaleString('id-ID')} / {planned.toLocaleString('id-ID')}
               </span>
             </div>
             <Progress value={progressPct} className="h-2" />
@@ -439,13 +439,13 @@ export default function WorkOrderDetailPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             {actual < planned
               ? t('setoranSummary', {
-                  target: planned.toLocaleString(),
-                  actual: actual.toLocaleString(),
-                  shortfall: (planned - actual).toLocaleString(),
+                  target: planned.toLocaleString('id-ID'),
+                  actual: actual.toLocaleString('id-ID'),
+                  shortfall: (planned - actual).toLocaleString('id-ID'),
                 })
               : t('setoranSummaryExact', {
-                  target: planned.toLocaleString(),
-                  actual: actual.toLocaleString(),
+                  target: planned.toLocaleString('id-ID'),
+                  actual: actual.toLocaleString('id-ID'),
                 })}
           </p>
           {(wo as any).targetDate && (
@@ -456,7 +456,7 @@ export default function WorkOrderDetailPage() {
           )}
           {(wo as any).expectedConsumption != null && Number((wo as any).expectedConsumption) > 0 && (
             <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-              Expected consumption: {(wo as any).expectedConsumption.toLocaleString()}
+              Expected consumption: {(wo as any).expectedConsumption.toLocaleString('id-ID')}
             </div>
           )}
         </CardContent>
@@ -497,17 +497,17 @@ export default function WorkOrderDetailPage() {
                   return (
                     <TableRow key={i}>
                       <TableCell>{r.rollRef ?? '-'}</TableCell>
-                      <TableCell className="text-right">{Number(r.qty ?? 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-right">{Number(r.qty ?? 0).toLocaleString('id-ID')}</TableCell>
                       {rollAllocationStatus != null && (
                         <>
                           <TableCell className="text-right">
-                            {status?.initialLength != null ? status.initialLength.toLocaleString() : '–'}
+                            {status?.initialLength != null ? status.initialLength.toLocaleString('id-ID') : '–'}
                           </TableCell>
                           <TableCell className="text-right">
-                            {status?.remainingLength != null ? status.remainingLength.toLocaleString() : '–'}
+                            {status?.remainingLength != null ? status.remainingLength.toLocaleString('id-ID') : '–'}
                           </TableCell>
                           <TableCell className="text-right">
-                            {status?.used != null ? status.used.toLocaleString() : '–'}
+                            {status?.used != null ? status.used.toLocaleString('id-ID') : '–'}
                           </TableCell>
                         </>
                       )}
@@ -617,13 +617,13 @@ export default function WorkOrderDetailPage() {
                         <TableCell>{step.stepName || `Step ${step.sequence}`}</TableCell>
                         <TableCell>{step.supplier?.name || step.supplier?.code || '-'}</TableCell>
                         <TableCell className="text-right">
-                          {Number(step.servicePrice || 0).toLocaleString()}
+                          {Number(step.servicePrice || 0).toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell className="text-right">
-                          {step.qty != null ? Number(step.qty).toLocaleString() : '-'}
+                          {step.qty != null ? Number(step.qty).toLocaleString('id-ID') : '-'}
                         </TableCell>
                         <TableCell className="text-right">
-                          {step.totalCost != null ? Number(step.totalCost).toLocaleString() : '-'}
+                          {step.totalCost != null ? Number(step.totalCost).toLocaleString('id-ID') : '-'}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -652,13 +652,13 @@ export default function WorkOrderDetailPage() {
                     <TableRow key={p.itemId}>
                       <TableCell>{p.itemName}</TableCell>
                       <TableCell className="text-right">
-                        {Number(p.plannedQty ?? 0).toLocaleString()}
+                        {Number(p.plannedQty ?? 0).toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell className="text-right">
-                        {Number(p.issuedQty ?? 0).toLocaleString()}
+                        {Number(p.issuedQty ?? 0).toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell className="text-right">
-                        {Number(p.returnedQty ?? 0).toLocaleString()}
+                        {Number(p.returnedQty ?? 0).toLocaleString('id-ID')}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -703,7 +703,7 @@ export default function WorkOrderDetailPage() {
                           {new Date(iss.issuedAt).toLocaleDateString('id-ID')}
                         </TableCell>
                         <TableCell className="text-right">
-                          {Number(iss.totalCost).toLocaleString()}
+                          {Number(iss.totalCost).toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell>
                           <Button
@@ -758,13 +758,13 @@ export default function WorkOrderDetailPage() {
                           {new Date(r.receivedAt).toLocaleDateString('id-ID')}
                         </TableCell>
                         <TableCell className="text-right">
-                          {Number(r.qtyReceived).toLocaleString()}
+                          {Number(r.qtyReceived).toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell className="text-right">
-                          {Number(r.qtyRejected ?? 0).toLocaleString()}
+                          {Number(r.qtyRejected ?? 0).toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell className="text-right">
-                          {Number(r.qtyAccepted).toLocaleString()}
+                          {Number(r.qtyAccepted).toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell>
                           {r.journalId ? (
@@ -844,7 +844,7 @@ export default function WorkOrderDetailPage() {
                   {printData.lines.map((line, i) => (
                     <TableRow key={i}>
                       <TableCell>{line.itemName}</TableCell>
-                      <TableCell className="text-right">{Number(line.qty ?? 0).toLocaleString()}</TableCell>
+                      <TableCell className="text-right">{Number(line.qty ?? 0).toLocaleString('id-ID')}</TableCell>
                       <TableCell>{line.uomCode}</TableCell>
                     </TableRow>
                   ))}
@@ -905,8 +905,8 @@ export default function WorkOrderDetailPage() {
                     {additionalPreview.lines.map((line, i) => (
                       <TableRow key={i}>
                         <TableCell>{line.itemName}</TableCell>
-                        <TableCell className="text-right">{line.qtyNeeded.toLocaleString()}</TableCell>
-                        <TableCell className="text-right">{line.qtyOnHand.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{line.qtyNeeded.toLocaleString('id-ID')}</TableCell>
+                        <TableCell className="text-right">{line.qtyOnHand.toLocaleString('id-ID')}</TableCell>
                         <TableCell>
                           <span className={line.sufficient ? 'text-green-600' : 'text-red-600'}>
                             {line.sufficient ? 'OK' : 'Short'}

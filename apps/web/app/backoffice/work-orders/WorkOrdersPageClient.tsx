@@ -42,6 +42,10 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatusPill } from '@/components/ui/status-pill';
+import { EmptyState } from '@/components/ui/empty-state';
+import { getStatusMeta } from '@/lib/ui/status-map';
 import { getWorkOrders, issueWorkOrder, cancelWorkOrder } from '@/app/actions/production';
 import { WOStatus } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
@@ -106,6 +110,7 @@ export function WorkOrdersPageClient() {
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
   const tWO = useTranslations('workOrders');
+  const tStatus = useTranslations('statuses');
 
   const fetchWorkOrders = async () => {
     setIsLoading(true);
@@ -175,15 +180,13 @@ export function WorkOrdersPageClient() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Work Orders</h1>
-          <p className="text-muted-foreground">
-            Manage production and track material usage
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight">{tWO('pageTitle')}</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">{tWO('pageDescription')}</p>
         </div>
         <Link href="/backoffice/work-orders/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
-            New Work Order
+            {tWO('newWO')}
           </Button>
         </Link>
       </div>
@@ -193,7 +196,7 @@ export function WorkOrdersPageClient() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search WO number or vendor..."
+            placeholder={tWO('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -204,10 +207,10 @@ export function WorkOrdersPageClient() {
           onValueChange={(v) => setStatusFilter(v === '__all__' ? '' : (v as WOStatus))}
         >
           <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All Status" />
+            <SelectValue placeholder={tWO('allStatus')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__all__">All Status</SelectItem>
+            <SelectItem value="__all__">{tWO('allStatus')}</SelectItem>
             {(Object.entries(statusLabels) as [WOStatus, string][]).map(([status, label]) => (
               <SelectItem key={status} value={status}>
                 {label}
@@ -231,10 +234,11 @@ export function WorkOrdersPageClient() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
           ) : filteredWOs.length === 0 ? (
-            <div className="text-center py-12">
-              <ClipboardList className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No work orders found</p>
-            </div>
+            <EmptyState
+              icon={ClipboardList}
+              title={tWO('emptyTitle')}
+              description={tWO('emptyDescription')}
+            />
           ) : (
             <>
             <div className="overflow-x-auto">
@@ -264,10 +268,10 @@ export function WorkOrdersPageClient() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1">
-                          <Badge className={statusColors[wo.status]}>
-                            {statusIcons[wo.status]}
-                            <span className="ml-1">{statusLabels[wo.status]}</span>
-                          </Badge>
+                          {(() => {
+                            const meta = getStatusMeta('workOrder', wo.status);
+                            return <StatusPill tone={meta.tone}>{tStatus(meta.labelKey as never)}</StatusPill>;
+                          })()}
                           {isAwaitingApproval(
                             wo.chainSnapshot as SnapshotStep[] | null,
                             wo.chainConfirmedStepIndex ?? null
@@ -314,7 +318,7 @@ export function WorkOrdersPageClient() {
                           <div className="flex justify-between text-xs mb-1">
                             <span>{getCompletionPercent(wo)}%</span>
                             <span className="text-muted-foreground">
-                              {Number(wo.actualQty || 0).toLocaleString()} / {Number(wo.plannedQty).toLocaleString()}
+                              {Number(wo.actualQty || 0).toLocaleString('id-ID')} / {Number(wo.plannedQty).toLocaleString('id-ID')}
                             </span>
                           </div>
                           <Progress value={getCompletionPercent(wo)} className="h-2" />

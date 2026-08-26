@@ -263,7 +263,7 @@ export function ForecastOverviewTab({
             <CardTitle className="text-sm font-medium">{t('results.annual')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{totalAnnual.toLocaleString()}</p>
+            <p className="text-2xl font-bold">{totalAnnual.toLocaleString('id-ID')}</p>
           </CardContent>
         </Card>
         <Card>
@@ -271,7 +271,7 @@ export function ForecastOverviewTab({
             <CardTitle className="text-sm font-medium">{t('results.avgMonthly')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{avgMonthly.toLocaleString()}</p>
+            <p className="text-2xl font-bold">{avgMonthly.toLocaleString('id-ID')}</p>
           </CardContent>
         </Card>
         <Card>
@@ -386,13 +386,13 @@ export function ForecastOverviewTab({
                       <Badge className={xyzBadgeClass(row.xyzClass)}>{row.xyzClass}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      {Math.round(row.avgMonthlyDemand).toLocaleString()}
+                      {Math.round(row.avgMonthlyDemand).toLocaleString('id-ID')}
                     </TableCell>
                     <TableCell className="text-right font-medium">
-                      {row.annualForecast.toLocaleString()}
+                      {row.annualForecast.toLocaleString('id-ID')}
                     </TableCell>
                     <TableCell className="text-right">
-                      {row.planTarget != null ? row.planTarget.toLocaleString() : t('results.noPlan')}
+                      {row.planTarget != null ? row.planTarget.toLocaleString('id-ID') : t('results.noPlan')}
                     </TableCell>
                   </TableRow>
                   {expandedSku === row.parentSku && (

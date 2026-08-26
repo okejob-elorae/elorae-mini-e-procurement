@@ -252,9 +252,9 @@ export function AdjustmentModal({
               <div className="rounded-md border p-3 text-sm">
                 <p className="font-medium">Current stock</p>
                 <p>
-                  Qty: {currentStock.qtyOnHand.toLocaleString()} | Avg cost: Rp{' '}
-                  {currentStock.avgCost.toLocaleString()} | Value: Rp{' '}
-                  {currentStock.totalValue.toLocaleString()}
+                  Qty: {currentStock.qtyOnHand.toLocaleString('id-ID')} | Avg cost: Rp{' '}
+                  {currentStock.avgCost.toLocaleString('id-ID')} | Value: Rp{' '}
+                  {currentStock.totalValue.toLocaleString('id-ID')}
                 </p>
               </div>
             )}

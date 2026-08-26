@@ -276,7 +276,7 @@ export default function NotaRegisterPage() {
                       <TableCell>{row.vendorName}</TableCell>
                       <TableCell>{row.issueType}</TableCell>
                       <TableCell>{new Date(row.issuedAt).toLocaleDateString('id-ID')}</TableCell>
-                      <TableCell className="text-right">{row.totalCost.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">{row.totalCost.toLocaleString('id-ID')}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => openPrint(row.id)}>
                           <Printer className="h-4 w-4" />
@@ -329,7 +329,7 @@ export default function NotaRegisterPage() {
                   {printData.lines.map((line, i) => (
                     <TableRow key={i}>
                       <TableCell>{line.itemName}</TableCell>
-                      <TableCell className="text-right">{line.qty.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">{line.qty.toLocaleString('id-ID')}</TableCell>
                       <TableCell>{line.uomCode}</TableCell>
                     </TableRow>
                   ))}

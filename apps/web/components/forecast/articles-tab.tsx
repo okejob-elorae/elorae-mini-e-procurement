@@ -46,13 +46,13 @@ export function ForecastArticlesTab({ results, selectedSku, onSelectSku }: Artic
             <Badge>{selected.abcClass}{selected.xyzClass}</Badge>
             <span className="text-sm text-muted-foreground">
               CV: {selected.coefficientOfVariation.toFixed(2)} · Base rate:{' '}
-              {Math.round(selected.avgMonthlyDemand).toLocaleString()}/mo
+              {Math.round(selected.avgMonthlyDemand).toLocaleString('id-ID')}/mo
             </span>
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle>{t('results.annual')}: {selected.annualForecast.toLocaleString()}</CardTitle>
+              <CardTitle>{t('results.annual')}: {selected.annualForecast.toLocaleString('id-ID')}</CardTitle>
             </CardHeader>
             <CardContent>
               <MonthlyForecastTable
@@ -69,17 +69,17 @@ export function ForecastArticlesTab({ results, selectedSku, onSelectSku }: Artic
             <CardContent className="grid gap-2 text-sm md:grid-cols-3">
               <div>
                 <span className="text-muted-foreground">Total historical qty</span>
-                <p className="font-medium">{selected.totalHistoricalQty.toLocaleString()}</p>
+                <p className="font-medium">{selected.totalHistoricalQty.toLocaleString('id-ID')}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Total revenue</span>
-                <p className="font-medium">{selected.totalHistoricalRevenue.toLocaleString()}</p>
+                <p className="font-medium">{selected.totalHistoricalRevenue.toLocaleString('id-ID')}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Plan target</span>
                 <p className="font-medium">
                   {selected.planTarget != null ?
-                    selected.planTarget.toLocaleString()
+                    selected.planTarget.toLocaleString('id-ID')
                   : t('results.noPlan')}
                 </p>
               </div>

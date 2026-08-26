@@ -106,13 +106,13 @@ export function StockItemCard({ item }: Props) {
                 status === "HABIS" && "text-red-600 dark:text-red-400",
               )}
             >
-              {Number(item.available).toLocaleString()}{" "}
+              {Number(item.available).toLocaleString('id-ID')}{" "}
               <span className="text-base font-medium text-muted-foreground">{uom}</span>
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {t("cardOnHand", { qty: Number(item.qtyOnHand).toLocaleString() })}
+              {t("cardOnHand", { qty: Number(item.qtyOnHand).toLocaleString('id-ID') })}
               {" · "}
-              {t("cardReserved", { qty: Number(item.reservedQty).toLocaleString() })}
+              {t("cardReserved", { qty: Number(item.reservedQty).toLocaleString('id-ID') })}
             </p>
           </div>
 
@@ -149,8 +149,8 @@ export function StockItemCard({ item }: Props) {
                     </span>
                     <span className="tabular-nums font-semibold">
                       {t("variantTotalValue", {
-                        qty: Number(item.qtyOnHand).toLocaleString(),
-                        available: Number(item.available).toLocaleString(),
+                        qty: Number(item.qtyOnHand).toLocaleString('id-ID'),
+                        available: Number(item.available).toLocaleString('id-ID'),
                       })}
                     </span>
                   </div>
@@ -166,10 +166,10 @@ export function StockItemCard({ item }: Props) {
             </Badge>
             <div className="text-right text-[11px] text-muted-foreground leading-snug">
               <div>
-                {t("cardAvgCost", { value: Number(item.avgCost).toLocaleString() })}
+                {t("cardAvgCost", { value: Number(item.avgCost).toLocaleString('id-ID') })}
               </div>
               <div>
-                {t("cardValue", { value: Number(item.totalValue).toLocaleString() })}
+                {t("cardValue", { value: Number(item.totalValue).toLocaleString('id-ID') })}
               </div>
             </div>
           </div>

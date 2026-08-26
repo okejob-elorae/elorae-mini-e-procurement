@@ -85,7 +85,7 @@ export function buildVendorReturnPrintHtml(
         `<tr>
           <td class="uom">${esc(line.type)}</td>
           <td class="col-desc"><div class="line-name">${esc(itemDisplay(line))}</div></td>
-          <td class="right">${Number(line.qty).toLocaleString()}</td>
+          <td class="right">${Number(line.qty).toLocaleString('id-ID')}</td>
           <td>${esc(line.condition)}</td>
           <td>${esc(line.reason)}</td>
           <td class="right">${(line.costValue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>

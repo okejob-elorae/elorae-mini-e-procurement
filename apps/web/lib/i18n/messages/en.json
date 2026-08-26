@@ -895,7 +895,14 @@
       "errBAD_STATE": "Receipt is not in a postable state.",
       "errFORBIDDEN": "You don't have journal-posting permission.",
       "errUnexpected": "Something went wrong posting the journal."
-    }
+    },
+    "pageTitle": "Work Orders",
+    "pageDescription": "Production orders to tailors or CMT vendors. Materials are issued and finished goods received against these, forming cost of goods.",
+    "newWO": "New WO",
+    "searchPlaceholder": "Search WO number or vendor...",
+    "allStatus": "All statuses",
+    "emptyTitle": "No work orders yet",
+    "emptyDescription": "A WO is raised when production starts. Material issues and finished-goods receipts are recorded against it."
   },
   "supplierTypes": {
     "cardDescription": "Add, edit, or remove supplier types. Types in use cannot be deleted."
@@ -3474,5 +3481,26 @@
     "next": "Next",
     "previousAria": "Previous page",
     "nextAria": "Next page"
+  },
+  "tableHeaders": {
+    "name": "Name",
+    "type": "Type",
+    "uom": "UOM",
+    "stock": "Stock",
+    "available": "Available",
+    "avgCost": "Avg cost",
+    "value": "Value",
+    "sellingPrice": "Selling price",
+    "date": "Date",
+    "supplier": "Supplier",
+    "amount": "Amount",
+    "overReceive": "Over-receive",
+    "rollCode": "Roll code",
+    "ref": "Ref",
+    "item": "Item",
+    "initial": "Initial",
+    "remaining": "Remaining",
+    "status": "Status",
+    "sku": "SKU"
   }
 }

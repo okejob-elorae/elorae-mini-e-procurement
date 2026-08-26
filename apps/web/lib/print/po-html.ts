@@ -123,7 +123,7 @@ export function buildPOPrintHtml(opts: BuildPOPrintHtmlOptions): string {
           ${variantDetailLine}
           ${notesLine}
         </td>
-        <td class="col-num">${Number(line.qty).toLocaleString()}</td>
+        <td class="col-num">${Number(line.qty).toLocaleString('id-ID')}</td>
         <td class="col-uom">${esc(line.uomCode)}</td>
         <td class="col-num">${Number(line.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
         <td class="col-num">${Number(line.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>

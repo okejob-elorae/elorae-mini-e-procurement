@@ -37,7 +37,7 @@ type OpnameDetail = NonNullable<Awaited<ReturnType<typeof getOpnameById>>>;
 function formatWhen(value: unknown): string {
   if (!value) return "—";
   const d = new Date(String(value));
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString('id-ID');
 }
 
 function StatCard({ label, value }: { label: string; value: number }) {
@@ -45,7 +45,7 @@ function StatCard({ label, value }: { label: string; value: number }) {
     <Card>
       <CardContent className="pt-6">
         <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="text-2xl font-semibold tabular-nums mt-1">{value.toLocaleString()}</p>
+        <p className="text-2xl font-semibold tabular-nums mt-1">{value.toLocaleString('id-ID')}</p>
       </CardContent>
     </Card>
   );

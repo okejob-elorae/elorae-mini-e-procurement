@@ -94,12 +94,12 @@ export function buildReconciliationPrintHtml(
             ? `<div class="line-sku">${esc(line.itemSku)}</div>`
             : ''
         }</td>
-        <td class="right">${line.plannedQty.toLocaleString()} ${esc(line.uomCode)}</td>
-        <td class="right">${line.issuedQty.toLocaleString()} ${esc(line.uomCode)}</td>
-        <td class="right">${line.returnedQty.toLocaleString()} ${esc(line.uomCode)}</td>
-        <td class="right">${line.actualUsed.toLocaleString()} ${esc(line.uomCode)}</td>
-        <td class="right">${line.theoreticalUsage.toLocaleString()} ${esc(line.uomCode)}</td>
-        <td class="right">${line.variance >= 0 ? '+' : ''}${line.variance.toLocaleString()} ${esc(line.uomCode)}</td>
+        <td class="right">${line.plannedQty.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
+        <td class="right">${line.issuedQty.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
+        <td class="right">${line.returnedQty.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
+        <td class="right">${line.actualUsed.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
+        <td class="right">${line.theoreticalUsage.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
+        <td class="right">${line.variance >= 0 ? '+' : ''}${line.variance.toLocaleString('id-ID')} ${esc(line.uomCode)}</td>
         <td class="right">${line.variancePercent >= 0 ? '+' : ''}${line.variancePercent.toFixed(1)}%</td>
         <td class="right">${line.varianceValue >= 0 ? '+' : ''}${line.varianceValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
         <td class="center"><span class="${badgeClass(line.status)}">${esc(line.status)}</span></td>

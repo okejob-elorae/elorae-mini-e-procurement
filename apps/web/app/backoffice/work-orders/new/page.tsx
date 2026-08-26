@@ -834,16 +834,16 @@ export default function NewWorkOrderPage() {
                                     {m.itemName}
                                   </TableCell>
                                   <TableCell className="text-right">
-                                    {m.plannedQty.toLocaleString()} {m.uomCode} (
+                                    {m.plannedQty.toLocaleString('id-ID')} {m.uomCode} (
                                     {m.wastePercent}%)
                                   </TableCell>
                                   <TableCell className="text-right">
-                                    {m.availableStock.toLocaleString()} {m.uomCode}
+                                    {m.availableStock.toLocaleString('id-ID')} {m.uomCode}
                                   </TableCell>
                                   <TableCell className="text-right">
                                     {m.shortage > 0 ? (
                                       <span className="text-destructive font-medium">
-                                        -{m.shortage.toLocaleString()} {m.uomCode}
+                                        -{m.shortage.toLocaleString('id-ID')} {m.uomCode}
                                       </span>
                                     ) : (
                                       <span className="text-muted-foreground">-</span>
@@ -911,7 +911,7 @@ export default function NewWorkOrderPage() {
                               .filter((r) => !rollBreakdown.some((b) => b.rollRef === r.rollCode || b.rollRef === r.rollRef))
                               .map((r) => ({
                                 value: r.rollId,
-                                label: `${r.rollCode} — ${r.remainingLength.toLocaleString()} remaining`,
+                                label: `${r.rollCode} — ${r.remainingLength.toLocaleString('id-ID')} remaining`,
                               }))}
                             value={addRollValue}
                             onValueChange={(value) => {

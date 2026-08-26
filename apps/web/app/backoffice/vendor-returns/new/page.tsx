@@ -202,7 +202,7 @@ export default function NewVendorReturnPage() {
         ...prev,
         [itemId]: rolls.map((r) => ({
           value: r.id,
-          label: `${r.rollRef} (${r.remainingLength.toLocaleString()} MTR)`,
+          label: `${r.rollRef} (${r.remainingLength.toLocaleString('id-ID')} MTR)`,
           qty: r.remainingLength,
         })),
       }));

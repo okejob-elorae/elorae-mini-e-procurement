@@ -389,7 +389,7 @@ export function ForecastImportPageClient() {
                     {row.periodMonth}/{row.periodYear}
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate">{row.fileName}</TableCell>
-                  <TableCell className="text-right">{row.importedRows.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">{row.importedRows.toLocaleString('id-ID')}</TableCell>
                   <TableCell className="text-right">
                     <span
                       className={
@@ -398,7 +398,7 @@ export function ForecastImportPageClient() {
                           : "tabular-nums text-muted-foreground"
                       }
                     >
-                      {row.unmappedSkuCount.toLocaleString()}
+                      {row.unmappedSkuCount.toLocaleString('id-ID')}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
@@ -409,7 +409,7 @@ export function ForecastImportPageClient() {
                         className="min-w-10 tabular-nums"
                         onClick={() => handleViewSkipped(row)}
                       >
-                        {row.skippedRows.toLocaleString()}
+                        {row.skippedRows.toLocaleString('id-ID')}
                       </Button>
                     ) : (
                       <span className="tabular-nums text-muted-foreground">0</span>

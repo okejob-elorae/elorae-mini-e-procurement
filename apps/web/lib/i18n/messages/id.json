@@ -895,7 +895,14 @@
       "errBAD_STATE": "Receipt tidak bisa diposting.",
       "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
       "errUnexpected": "Terjadi kesalahan saat memposting jurnal."
-    }
+    },
+    "pageTitle": "Perintah Kerja",
+    "pageDescription": "Perintah produksi ke penjahit atau CMT. Dari sini bahan dikeluarkan, hasil jadi diterima, dan HPP terbentuk.",
+    "newWO": "Buat WO",
+    "searchPlaceholder": "Cari nomor WO atau vendor...",
+    "allStatus": "Semua status",
+    "emptyTitle": "Belum ada perintah kerja",
+    "emptyDescription": "WO dibuat saat produksi dimulai. Pengeluaran bahan dan penerimaan barang jadi dicatat terhadap dokumen ini."
   },
   "supplierTypes": {
     "cardDescription": "Tambah, edit, atau hapus tipe pemasok. Tipe yang masih dipakai tidak dapat dihapus."
@@ -3474,5 +3481,26 @@
     "next": "Berikutnya",
     "previousAria": "Halaman sebelumnya",
     "nextAria": "Halaman berikutnya"
+  },
+  "tableHeaders": {
+    "name": "Nama",
+    "type": "Jenis",
+    "uom": "Satuan",
+    "stock": "Stok",
+    "available": "Tersedia",
+    "avgCost": "Harga Rata-rata",
+    "value": "Nilai",
+    "sellingPrice": "Harga Jual",
+    "date": "Tanggal",
+    "supplier": "Pemasok",
+    "amount": "Jumlah",
+    "overReceive": "Lebih Terima",
+    "rollCode": "Kode Roll",
+    "ref": "Referensi",
+    "item": "Barang",
+    "initial": "Awal",
+    "remaining": "Sisa",
+    "status": "Status",
+    "sku": "SKU"
   }
 }

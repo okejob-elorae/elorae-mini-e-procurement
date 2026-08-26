@@ -46,7 +46,7 @@ export function StockVariantMatrix({ variants, wide = false }: Props) {
               v.available === 0 && "text-muted-foreground",
             )}
           >
-            {Number(v.available).toLocaleString()}
+            {Number(v.available).toLocaleString('id-ID')}
           </div>
         </div>
       ))}

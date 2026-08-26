@@ -114,7 +114,7 @@ export default function RejectedGoodsPage() {
                           ) : null}
                         </TableCell>
                         <TableCell className="text-right">
-                          {row.qty.toLocaleString()}
+                          {row.qty.toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell>{row.woId ?? '—'}</TableCell>
                         <TableCell className="max-w-[200px] truncate text-muted-foreground">

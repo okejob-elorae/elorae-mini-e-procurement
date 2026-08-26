@@ -175,13 +175,13 @@ export default function WorkOrderReconciliationPage() {
               {String(
                 Number(wo.actualQty ?? 0) < Number(wo.plannedQty)
                   ? t('setoranSummary', {
-                      target: Number(wo.plannedQty).toLocaleString(),
-                      actual: Number(wo.actualQty ?? 0).toLocaleString(),
-                      shortfall: (Number(wo.plannedQty) - Number(wo.actualQty ?? 0)).toLocaleString(),
+                      target: Number(wo.plannedQty).toLocaleString('id-ID'),
+                      actual: Number(wo.actualQty ?? 0).toLocaleString('id-ID'),
+                      shortfall: (Number(wo.plannedQty) - Number(wo.actualQty ?? 0)).toLocaleString('id-ID'),
                     })
                   : t('setoranSummaryExact', {
-                      target: Number(wo.plannedQty).toLocaleString(),
-                      actual: Number(wo.actualQty ?? 0).toLocaleString(),
+                      target: Number(wo.plannedQty).toLocaleString('id-ID'),
+                      actual: Number(wo.actualQty ?? 0).toLocaleString('id-ID'),
                     })
               )}
             </p>
@@ -293,23 +293,23 @@ export default function WorkOrderReconciliationPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {line.plannedQty.toLocaleString()} {line.uomCode}
+                      {line.plannedQty.toLocaleString('id-ID')} {line.uomCode}
                     </TableCell>
                     <TableCell className="text-right">
-                      {line.issuedQty.toLocaleString()} {line.uomCode}
+                      {line.issuedQty.toLocaleString('id-ID')} {line.uomCode}
                     </TableCell>
                     <TableCell className="text-right">
-                      {line.returnedQty.toLocaleString()} {line.uomCode}
+                      {line.returnedQty.toLocaleString('id-ID')} {line.uomCode}
                     </TableCell>
                     <TableCell className="text-right">
-                      {line.actualUsed.toLocaleString()} {line.uomCode}
+                      {line.actualUsed.toLocaleString('id-ID')} {line.uomCode}
                     </TableCell>
                     <TableCell className="text-right">
-                      {line.theoreticalUsage.toLocaleString()} {line.uomCode}
+                      {line.theoreticalUsage.toLocaleString('id-ID')} {line.uomCode}
                     </TableCell>
                     <TableCell className="text-right">
                       {line.variance >= 0 ? '+' : ''}
-                      {line.variance.toLocaleString()} {line.uomCode}
+                      {line.variance.toLocaleString('id-ID')} {line.uomCode}
                     </TableCell>
                     <TableCell className="text-right">
                       {line.variancePercent >= 0 ? '+' : ''}

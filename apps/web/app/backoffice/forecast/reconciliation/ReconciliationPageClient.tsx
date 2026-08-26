@@ -173,7 +173,7 @@ export function ReconciliationPageClient({
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold">
-                  {report.excelTotal.toLocaleString()}
+                  {report.excelTotal.toLocaleString('id-ID')}
                 </p>
               </CardContent>
             </Card>
@@ -185,7 +185,7 @@ export function ReconciliationPageClient({
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-bold">
-                  {report.jubelioTotal.toLocaleString()}
+                  {report.jubelioTotal.toLocaleString('id-ID')}
                 </p>
               </CardContent>
             </Card>
@@ -198,7 +198,7 @@ export function ReconciliationPageClient({
               <CardContent>
                 <p className="text-2xl font-bold">
                   {report.delta > 0 ? "+" : ""}
-                  {report.delta.toLocaleString()}
+                  {report.delta.toLocaleString('id-ID')}
                 </p>
               </CardContent>
             </Card>
@@ -228,14 +228,14 @@ export function ReconciliationPageClient({
                       </TableCell>
                       <TableCell>{row.productName}</TableCell>
                       <TableCell className="text-right">
-                        {row.excelQty.toLocaleString()}
+                        {row.excelQty.toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell className="text-right">
-                        {row.jubelioQty.toLocaleString()}
+                        {row.jubelioQty.toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell className="text-right">
                         {row.delta > 0 ? "+" : ""}
-                        {row.delta.toLocaleString()}
+                        {row.delta.toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell>
                         <Badge className={statusBadgeClass(row.status)}>

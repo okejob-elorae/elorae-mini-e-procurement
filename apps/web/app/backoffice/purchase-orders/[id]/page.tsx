@@ -631,7 +631,7 @@ export default function PODetailPage() {
                       <TableCell className="text-sm text-muted-foreground">
                         {item.variantSku ?? '—'}
                       </TableCell>
-                      <TableCell>{Number(item.qty).toLocaleString()}</TableCell>
+                      <TableCell>{Number(item.qty).toLocaleString('id-ID')}</TableCell>
                       <TableCell>{item.item.uom.code}</TableCell>
                       <TableCell className="text-right">
                         Rp {Number(item.price).toLocaleString('id-ID')}
@@ -640,7 +640,7 @@ export default function PODetailPage() {
                         Rp {(Number(item.qty) * Number(item.price)).toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell>
-                        {Number(item.receivedQty).toLocaleString()} / {Number(item.qty).toLocaleString()}
+                        {Number(item.receivedQty).toLocaleString('id-ID')} / {Number(item.qty).toLocaleString('id-ID')}
                       </TableCell>
                     </TableRow>
                   ))}

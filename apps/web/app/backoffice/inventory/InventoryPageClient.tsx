@@ -159,6 +159,7 @@ export function InventoryPageClient({
   initialAdjTotalCount,
   initialAdjustmentItemList,
 }: InventoryPageClientProps) {
+  const tTable = useTranslations('tableHeaders');
   const t = useTranslations("inventory");
   const tWall = useTranslations("inventory.wallboard");
   const { data: session } = useSession();
@@ -655,11 +656,11 @@ export function InventoryPageClient({
                     <TableRow>
                       <TableHead className="w-10" />
                       <TableHead>GRN Number</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Supplier</TableHead>
+                      <TableHead>{tTable('date')}</TableHead>
+                      <TableHead>{tTable('supplier')}</TableHead>
                       <TableHead>PO Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="min-w-[200px]">Over-receive</TableHead>
+                      <TableHead className="text-right">{tTable('amount')}</TableHead>
+                      <TableHead className="min-w-[200px]">{tTable('overReceive')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -689,7 +690,7 @@ export function InventoryPageClient({
                           <TableCell>{grn.supplier.name}</TableCell>
                           <TableCell>{grn.po?.docNumber || '-'}</TableCell>
                           <TableCell className="text-right">
-                            Rp {Number(grn.totalAmount).toLocaleString()}
+                            Rp {Number(grn.totalAmount).toLocaleString('id-ID')}
                           </TableCell>
                           <TableCell>
                             {grn.ownerDeclinedAt ? (
@@ -777,11 +778,11 @@ export function InventoryPageClient({
                                 <Table>
                                   <TableHeader>
                                     <TableRow>
-                                      <TableHead>Roll code</TableHead>
-                                      <TableHead>Ref</TableHead>
-                                      <TableHead>Item</TableHead>
-                                      <TableHead className="text-right">Initial</TableHead>
-                                      <TableHead className="text-right">Remaining</TableHead>
+                                      <TableHead>{tTable('rollCode')}</TableHead>
+                                      <TableHead>{tTable('ref')}</TableHead>
+                                      <TableHead>{tTable('item')}</TableHead>
+                                      <TableHead className="text-right">{tTable('initial')}</TableHead>
+                                      <TableHead className="text-right">{tTable('remaining')}</TableHead>
                                       <TableHead>UOM</TableHead>
                                       <TableHead>Status</TableHead>
                                     </TableRow>
@@ -792,8 +793,8 @@ export function InventoryPageClient({
                                         <TableCell className="font-mono text-sm">{r.rollCode}</TableCell>
                                         <TableCell>{r.rollRef}</TableCell>
                                         <TableCell>{r.item.sku} – {r.item.nameId}</TableCell>
-                                        <TableCell className="text-right">{r.initialLength.toLocaleString()}</TableCell>
-                                        <TableCell className="text-right">{r.remainingLength.toLocaleString()}</TableCell>
+                                        <TableCell className="text-right">{r.initialLength.toLocaleString('id-ID')}</TableCell>
+                                        <TableCell className="text-right">{r.remainingLength.toLocaleString('id-ID')}</TableCell>
                                         <TableCell>{r.uom.code}</TableCell>
                                         <TableCell>{r.isClosed ? <Badge variant="secondary">Closed</Badge> : <Badge variant="default">Open</Badge>}</TableCell>
                                       </TableRow>
@@ -917,11 +918,11 @@ export function InventoryPageClient({
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Roll code</TableHead>
-                          <TableHead>Ref</TableHead>
-                          <TableHead>Item</TableHead>
-                          <TableHead className="text-right">Initial</TableHead>
-                          <TableHead className="text-right">Remaining</TableHead>
+                          <TableHead>{tTable('rollCode')}</TableHead>
+                          <TableHead>{tTable('ref')}</TableHead>
+                          <TableHead>{tTable('item')}</TableHead>
+                          <TableHead className="text-right">{tTable('initial')}</TableHead>
+                          <TableHead className="text-right">{tTable('remaining')}</TableHead>
                           <TableHead>UOM</TableHead>
                           <TableHead>GRN</TableHead>
                           <TableHead>Status</TableHead>
@@ -941,10 +942,10 @@ export function InventoryPageClient({
                               <TableCell>{r.rollRef}</TableCell>
                               <TableCell>{r.item.sku} – {r.item.nameId}</TableCell>
                               <TableCell className="text-right">
-                                {(r.initialLength ?? 0).toLocaleString()}
+                                {(r.initialLength ?? 0).toLocaleString('id-ID')}
                               </TableCell>
                               <TableCell className="text-right">
-                                {(r.remainingLength ?? 0).toLocaleString()}
+                                {(r.remainingLength ?? 0).toLocaleString('id-ID')}
                               </TableCell>
                               <TableCell>{r.uom.code}</TableCell>
                               <TableCell>{r.grn ? `${r.grn.docNumber} (${new Date(r.grn.grnDate).toLocaleDateString('id-ID')})` : '-'}</TableCell>
@@ -1007,9 +1008,9 @@ export function InventoryPageClient({
                     <TableRow>
                       <TableHead className="w-10" />
                       <TableHead>Doc Number</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead>{tTable('date')}</TableHead>
+                      <TableHead>{tTable('item')}</TableHead>
+                      <TableHead>{tTable('type')}</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
                       <TableHead>Reason</TableHead>
                       <TableHead>Created by</TableHead>
@@ -1052,7 +1053,7 @@ export function InventoryPageClient({
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            {Number(adj.qtyChange).toLocaleString()}
+                            {Number(adj.qtyChange).toLocaleString('id-ID')}
                           </TableCell>
                           <TableCell>{adj.reason}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">

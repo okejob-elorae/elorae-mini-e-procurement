@@ -682,7 +682,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                           />
                         </TableCell>
                         <TableCell>
-                          {((row.qty || 0) * (row.unitCost || 0)).toLocaleString()}
+                          {((row.qty || 0) * (row.unitCost || 0)).toLocaleString('id-ID')}
                         </TableCell>
                         <TableCell>
                           <Button
@@ -709,12 +709,12 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                                 {invalidCount > 0 && (
                                   <span className="text-destructive"> ({invalidCount} invalid)</span>
                                 )}{' '}
-                                · {totalLength.toLocaleString()} {row.uomCode || 'MTR'}
+                                · {totalLength.toLocaleString('id-ID')} {row.uomCode || 'MTR'}
                                 {row.poOrderedQty != null && Number.isFinite(row.poOrderedQty) && (
                                   <span className="ml-1">
-                                    (Received {totalLength.toLocaleString()} / {Number(row.poOrderedQty).toLocaleString()} {row.uomCode || 'MTR'}
+                                    (Received {totalLength.toLocaleString('id-ID')} / {Number(row.poOrderedQty).toLocaleString('id-ID')} {row.uomCode || 'MTR'}
                                     {(row.poAlreadyReceivedQty != null && Number(row.poAlreadyReceivedQty) > 0) || poGrnCount > 0
-                                      ? ` · Already received: ${Number(row.poAlreadyReceivedQty ?? 0).toLocaleString()} ${row.uomCode || 'MTR'} in ${poGrnCount} GRN${poGrnCount !== 1 ? 's' : ''}`
+                                      ? ` · Already received: ${Number(row.poAlreadyReceivedQty ?? 0).toLocaleString('id-ID')} ${row.uomCode || 'MTR'} in ${poGrnCount} GRN${poGrnCount !== 1 ? 's' : ''}`
                                       : ''}
                                     )
                                   </span>
@@ -740,7 +740,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                 </TableBody>
               </Table>
             </div>
-            <p className="text-sm font-medium">Running total: Rp {runningTotal.toLocaleString()}</p>
+            <p className="text-sm font-medium">Running total: Rp {runningTotal.toLocaleString('id-ID')}</p>
           </div>
 
           <div className="space-y-2">

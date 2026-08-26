@@ -384,7 +384,7 @@ export function PurchaseOrdersPageClient({
                                 'text-xs tabular-nums',
                                 overReceived ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'
                               )}>
-                                {totalReceived.toLocaleString()} / {totalOrdered.toLocaleString()}
+                                {totalReceived.toLocaleString('id-ID')} / {totalOrdered.toLocaleString('id-ID')}
                                 {overReceived && <span className="ml-1">(over)</span>}
                               </p>
                             </div>
@@ -392,7 +392,7 @@ export function PurchaseOrdersPageClient({
                         })()}
                       </TableCell>
                       <TableCell className="text-right">
-                        {getPendingQty(po).toLocaleString()}
+                        {getPendingQty(po).toLocaleString('id-ID')}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">

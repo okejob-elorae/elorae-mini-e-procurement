@@ -344,16 +344,16 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground">
                       {s.categoryForecastTotal != null ?
-                        s.categoryForecastTotal.toLocaleString()
+                        s.categoryForecastTotal.toLocaleString('id-ID')
                       : "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       {s.existingPlanTarget != null ?
-                        s.existingPlanTarget.toLocaleString()
+                        s.existingPlanTarget.toLocaleString('id-ID')
                       : "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      {(s.adjustedQty - (s.existingPlanTarget ?? 0)).toLocaleString()}
+                      {(s.adjustedQty - (s.existingPlanTarget ?? 0)).toLocaleString('id-ID')}
                     </TableCell>
                     <TableCell>
                       {actionBadge(s.action)}

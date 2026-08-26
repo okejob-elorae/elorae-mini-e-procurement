@@ -995,9 +995,9 @@ export function DashboardPageClient({
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-medium">Rp {Number(po.grandTotal).toLocaleString()}</p>
+                        <p className="font-medium">Rp {Number(po.grandTotal).toLocaleString('id-ID')}</p>
                         <p className="text-sm text-muted-foreground">
-                          {po.pendingQty?.toLocaleString() ?? 0} units pending
+                          {po.pendingQty?.toLocaleString('id-ID') ?? 0} units pending
                         </p>
                       </div>
                     </div>
@@ -1100,7 +1100,7 @@ export function DashboardPageClient({
               {rp1Data && (
                 <>
                   <p className="text-sm text-muted-foreground">
-                    Total outstanding: Rp {rp1Data.summary.totalOutstanding.toLocaleString()} · Overdue: {rp1Data.summary.overdueCount} · Due soon: {rp1Data.summary.dueSoonCount}
+                    Total outstanding: Rp {rp1Data.summary.totalOutstanding.toLocaleString('id-ID')} · Overdue: {rp1Data.summary.overdueCount} · Due soon: {rp1Data.summary.dueSoonCount}
                   </p>
                   <div className="border rounded-md overflow-auto max-h-[400px]">
                     <Table>
@@ -1139,7 +1139,7 @@ export function DashboardPageClient({
                             </TableCell>
                             <TableCell className="text-right">{r.outstandingQty}</TableCell>
                             <TableCell className="text-right">
-                              Rp {r.outstandingValue.toLocaleString()}
+                              Rp {r.outstandingValue.toLocaleString('id-ID')}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1235,8 +1235,8 @@ export function DashboardPageClient({
                           <TableCell className="text-right">{r.plannedQty}</TableCell>
                           <TableCell className="text-right">{r.actualQty}</TableCell>
                           <TableCell className="text-right">{r.efficiency}</TableCell>
-                          <TableCell className="text-right">Rp {r.materialCost.toLocaleString()}</TableCell>
-                          <TableCell className="text-right">Rp {r.returnValue.toLocaleString()}</TableCell>
+                          <TableCell className="text-right">Rp {r.materialCost.toLocaleString('id-ID')}</TableCell>
+                          <TableCell className="text-right">Rp {r.returnValue.toLocaleString('id-ID')}</TableCell>
                           <TableCell>{r.status}</TableCell>
                           <TableCell className="text-right">{r.completionTimeDays ?? '-'}</TableCell>
                         </TableRow>
@@ -1302,7 +1302,7 @@ export function DashboardPageClient({
                         <CardTitle className="text-sm">Total Quantity</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-bold">{rp3Data.summary.totalQuantity.toLocaleString()}</div>
+                        <div className="text-2xl font-bold">{rp3Data.summary.totalQuantity.toLocaleString('id-ID')}</div>
                       </CardContent>
                     </Card>
                     <Card>
@@ -1311,7 +1311,7 @@ export function DashboardPageClient({
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
-                          Rp {rp3Data.summary.totalValue.toLocaleString()}
+                          Rp {rp3Data.summary.totalValue.toLocaleString('id-ID')}
                         </div>
                       </CardContent>
                     </Card>
@@ -1321,7 +1321,7 @@ export function DashboardPageClient({
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold">
-                          Rp {Math.round(rp3Data.summary.avgValuePerItem).toLocaleString()}
+                          Rp {Math.round(rp3Data.summary.avgValuePerItem).toLocaleString('id-ID')}
                         </div>
                       </CardContent>
                     </Card>
@@ -1351,7 +1351,7 @@ export function DashboardPageClient({
                               />
                             </div>
                             <span className="text-sm tabular-nums w-28">
-                              Rp {totalValue.toLocaleString()} ({pct.toFixed(1)}%)
+                              Rp {totalValue.toLocaleString('id-ID')} ({pct.toFixed(1)}%)
                             </span>
                             <span className="text-muted-foreground text-sm">{count} items</span>
                           </div>
@@ -1393,7 +1393,7 @@ export function DashboardPageClient({
                             <TableCell>{d.name}</TableCell>
                             <TableCell>{d.type}</TableCell>
                             <TableCell className="text-right">{d.qtyOnHand}</TableCell>
-                            <TableCell className="text-right">Rp {d.totalValue.toLocaleString()}</TableCell>
+                            <TableCell className="text-right">Rp {d.totalValue.toLocaleString('id-ID')}</TableCell>
                             <TableCell className="text-right">{d.percentageOfTotal.toFixed(2)}%</TableCell>
                           </TableRow>
                         ))}

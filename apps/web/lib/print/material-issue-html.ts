@@ -73,7 +73,7 @@ export function buildMaterialIssuePrintHtml(
         : '';
       return `<tr>
         <td class="col-desc"><div class="line-name">${esc(line.itemName)}</div>${sub}</td>
-        <td class="right">${Number(line.qty).toLocaleString()}</td>
+        <td class="right">${Number(line.qty).toLocaleString('id-ID')}</td>
         <td class="uom">${esc(line.uomCode)}</td>${priceCells}
       </tr>`;
     })

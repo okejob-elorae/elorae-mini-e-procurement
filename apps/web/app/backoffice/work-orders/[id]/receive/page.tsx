@@ -191,7 +191,7 @@ export default function WorkOrderReceivePage() {
                 <Input
                   type="text"
                   readOnly
-                  value={accepted.toLocaleString()}
+                  value={accepted.toLocaleString('id-ID')}
                   className="bg-muted"
                 />
               </div>
@@ -199,7 +199,7 @@ export default function WorkOrderReceivePage() {
             <div className="rounded-lg border bg-muted/50 p-4">
               <p className="text-sm font-medium">Cost allocation</p>
               <p className="text-muted-foreground">
-                Total material cost: {totalMaterialCost.toLocaleString()} →{' '}
+                Total material cost: {totalMaterialCost.toLocaleString('id-ID')} →{' '}
                 {accepted > 0
                   ? `${costPerUnit.toFixed(2)} per unit (${accepted} accepted)`
                   : 'N/A'}
@@ -227,7 +227,7 @@ export default function WorkOrderReceivePage() {
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground">
-                    Sum: {variantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString()} / {accepted.toLocaleString()} accepted
+                    Sum: {variantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString('id-ID')} / {accepted.toLocaleString('id-ID')} accepted
                   </p>
                 </div>
                 {rejected > 0 && (
@@ -253,7 +253,7 @@ export default function WorkOrderReceivePage() {
                       </div>
                     ))}
                     <p className="text-xs text-muted-foreground">
-                      Sum: {rejectedVariantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString()} / {rejected.toLocaleString()} rejected
+                      Sum: {rejectedVariantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString('id-ID')} / {rejected.toLocaleString('id-ID')} rejected
                     </p>
                   </div>
                 )}
