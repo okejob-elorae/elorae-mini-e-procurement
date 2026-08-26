@@ -266,11 +266,16 @@ export class PartialConsumeError extends Error {
 
 export type PartialConsumeLine = { fieldSalesLineId: string; itemId: string; variantSku: string; qty: number };
 
+export type PartialConsumeResult = {
+  consumed: number;
+  lines: Array<{ fieldSalesLineId: string; qty: number; avgCost: number }>;
+};
+
 export async function consumeFieldSalesOrderPartial(
   client: AnyClient,
   input: { orderNo: string; deliveryId: string; lines: PartialConsumeLine[] },
-): Promise<ConsumeOrderResult> {
-  const run = async (tx: Prisma.TransactionClient): Promise<ConsumeOrderResult> => {
+): Promise<PartialConsumeResult> {
+  const run = async (tx: Prisma.TransactionClient): Promise<PartialConsumeResult> => {
     const shortLines: PartialConsumeShortLine[] = [];
     const prepared: Array<{ line: PartialConsumeLine; invId: string; avgCost: number; fullyConsumed: boolean }> = [];
 
@@ -302,6 +307,7 @@ export async function consumeFieldSalesOrderPartial(
     }
 
     let consumed = 0;
+    const consumedLines: Array<{ fieldSalesLineId: string; qty: number; avgCost: number }> = [];
     for (const p of prepared) {
       const qty = p.line.qty;
       /**
@@ -353,9 +359,10 @@ export async function consumeFieldSalesOrderPartial(
         },
       });
       consumed += 1;
+      consumedLines.push({ fieldSalesLineId: p.line.fieldSalesLineId, qty, avgCost: p.avgCost });
     }
     if (shortLines.length > 0) throw new PartialConsumeError("INSUFFICIENT_STOCK", shortLines);
-    return { consumed };
+    return { consumed, lines: consumedLines };
   };
   return hasTx(client) ? client.$transaction(run) : run(client);
 }

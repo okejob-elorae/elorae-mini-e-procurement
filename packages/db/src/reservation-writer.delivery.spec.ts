@@ -125,4 +125,15 @@ d("consumeFieldSalesOrderPartial (test bed only)", () => {
     expect(Number(adj[0].qtyChange)).toBe(-4);
     expect(adj[0].idempotencyKey).toBe(`fieldsales-PUTUS/2026/9001-delivery-dlv-1-line-${lineId}`);
   });
+
+  it("returns the per-line avgCost the consume actually used", async () => {
+    const res = await consumeFieldSalesOrderPartial(prisma, {
+      orderNo: "PUTUS/2026/9001",
+      deliveryId: "dlv-1",
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+    });
+
+    expect(res.consumed).toBe(1);
+    expect(res.lines).toEqual([{ fieldSalesLineId: lineId, qty: 4, avgCost: 1000 }]);
+  });
 });
