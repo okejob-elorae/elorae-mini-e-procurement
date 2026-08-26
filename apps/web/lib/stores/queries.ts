@@ -68,7 +68,11 @@ export class KonsiPriceDiscountNotAllowedError extends Error {
 
 function assertValidPriceDiscount(input: Pick<StoreFields, "termsType" | "priceDiscountPercent">): void {
   if (input.priceDiscountPercent === null) return;
-  if (input.priceDiscountPercent < 0 || input.priceDiscountPercent >= 100) {
+  // Validate what `toDecimalOrNull` will actually persist (Decimal(5,2)), not the raw JS number —
+  // e.g. 99.999 passes a raw `< 100` check but rounds to 100.00 in the column, which
+  // computeStorePrice then flags and prices at full list.
+  const stored = Math.round(input.priceDiscountPercent * 100) / 100;
+  if (stored < 0 || stored >= 100) {
     throw new InvalidPriceDiscountPercentError(input.priceDiscountPercent);
   }
   if (input.termsType === "KONSI") {

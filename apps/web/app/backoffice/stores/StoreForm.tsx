@@ -158,11 +158,16 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // Mirrors the termsType onValueChange handler below: a store that was already KONSI when
+    // this form loaded (so the handler never fired) can still carry a stored priceDiscountPercent
+    // — the field the KONSI branch hides is the only control that could clear it, so submit must
+    // normalise it itself or the writer's assertValidPriceDiscount rejects an unrelated edit.
+    const payload: StoreFields = { ...form, priceDiscountPercent: form.termsType === "KONSI" ? null : form.priceDiscountPercent };
     startTransition(async () => {
       const result =
         mode === "create"
-          ? await createStoreAction(form)
-          : await updateStoreAction(storeId!, form);
+          ? await createStoreAction(payload)
+          : await updateStoreAction(storeId!, payload);
       if (!result.ok) {
         if (result.code === "code_unique") setError(tErr("codeUnique"));
         else if (result.code === "forbidden") setError(tErr("forbidden"));
