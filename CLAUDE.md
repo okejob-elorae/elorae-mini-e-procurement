@@ -304,10 +304,32 @@ bercabang.
 **Migrasi hanya ada di sisi PostgreSQL** (`packages/db/prisma/postgres/migrations/`).
 Model ada di kedua schema, tapi belum ada migrasi MariaDB untuk modul ini.
 
-**Belum dikerjakan:** master data khusus modul ini, tujuh peran brief (admin
-penjualan & admin pajak belum ada di Elorae — aksi konsinyasi sementara memakai
-`receivables:manage`), penyempitan menu per peran, OCR luring, antrean luring
-untuk laporan lapangan.
+**Setiap keputusan yang bisa dibalik meninggalkan jejak.** `lib/receivables/jejak.ts`
+— nama tindakan terkumpul di `JEJAK`, ditulis DI DALAM transaksinya, membawa
+pasangan sebelum/sesudah. Barisnya hanya menyimpan keadaan terakhir; keputusan
+yang tergantikan hanya hidup di jejaknya. Jangan menulis nama tindakan sebagai
+string bebas, dan jangan memakai nama yang artinya lain — keduanya membuat jejak
+tidak bisa dicari, yang sama saja dengan tidak ada.
+
+**Kueri punya tesnya sendiri** (`queries.test.ts`, `dashboard-queries.test.ts`,
+`konsinyasi/queries.test.ts`), terhadap basis data sungguhan, teardown lewat
+`seededId()`. Ada karena dua kesalahan nyata hidup di kueri, bukan di aturan, dan
+keduanya lolos type-check serta seluruh tes murni. Fixture piutang sengaja
+menyeed kolom `outstanding` dengan angka SALAH: kalau kuerinya membaca kolom itu
+alih-alih menghitung ulang, tesnya gagal.
+
+**Potongan dipilih dari master `DeductionType`, bukan diketik.** Jenis
+`DARI_RETUR` MEMAKSA potongan ditautkan ke nota retur — sebelumnya penautan
+sepenuhnya bergantung ingatan orang yang mengetik, dan yang lupa ditautkan lolos
+sebagai pengurang biasa yang tidak pernah ditahan. Jenis dinonaktifkan, tidak
+pernah dihapus: yang pernah dipakai menempel pada BKM lama.
+
+**Belum dikerjakan:** tujuh peran brief (admin penjualan & admin pajak belum ada
+di Elorae — aksi konsinyasi sementara memakai `receivables:manage`), penyempitan
+menu per peran, OCR luring, antrean luring untuk laporan lapangan, pembatalan
+impor (id yang dibuat sudah disimpan di metadata jejaknya — itu bahan yang
+dibutuhkan), penomoran atomik (sekarang `findFirst`+1 dengan `@unique` sebagai
+penjaga), dan penyambungan beban sales ke komisi konsinyasinya.
 
 **Terbuka untuk pemilik:** brief menutup dengan "tidak ada foto atau data yang
 keluar dari komputer ini". Elorae berjalan di Supabase. Modul ini jangan diisi
