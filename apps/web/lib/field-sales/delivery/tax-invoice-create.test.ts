@@ -80,6 +80,7 @@ d("recordFieldSalesDelivery creates its TaxInvoice (test bed only)", () => {
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });

@@ -634,6 +634,13 @@ d("recordFieldSalesDelivery — discount allocation across two deliveries (test 
     expect(Number(hist2!.unitPriceAfterDiscount)).toBe(900); /* (4000 - 400) / 4 */
     expect(Number(hist2!.lineTotal)).toBe(3600);
     expect(Number(hist2!.orderTotal)).toBe(3400); /* delivery 2's own total: 4000 - 400 - 200 */
+
+    const r1 = await prisma.receivable.findUniqueOrThrow({ where: { deliveryId: d1.deliveryId } });
+    const r2 = await prisma.receivable.findUniqueOrThrow({ where: { deliveryId: d2.deliveryId } });
+    expect(Number(r1.originalAmount)).toBe(5100);
+    expect(Number(r1.outstandingAmount)).toBe(5100);
+    expect(Number(r2.originalAmount)).toBe(3400);
+    expect(Number(r2.outstandingAmount)).toBe(3400);
   });
 });
 
