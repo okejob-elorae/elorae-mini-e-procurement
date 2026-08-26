@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { serializeCatalogItem, listCatalogForPwa } from "./queries";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 
 const store = { id: "s1", termsType: "KONSI" as const, marginPercent: 20, priceDiscountPercent: null };
 
@@ -250,5 +250,65 @@ d("listCatalogForPwa — effective min-qty (test bed only)", () => {
     const byId = new Map(payload!.items.map((i) => [i.itemId, i]));
     expect(byId.get(globalItemId)!.minOrderQty).toBe(6); // global default
     expect(byId.get(overrideItemId)!.minOrderQty).toBe(3); // item override
+  });
+});
+
+d("listCatalogForPwa — store price discount (test bed only)", () => {
+  const sku = `TEST-CQ-DISC-${Math.random().toString(36).slice(2, 10)}`;
+  let uomId = "";
+  let itemId = "";
+  let discountStoreId = "";
+  let plainStoreId = "";
+
+  beforeEach(async () => {
+    uomId = ""; itemId = ""; discountStoreId = ""; plainStoreId = "";
+
+    const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: { sku, nameId: "Disc Item", nameEn: "Disc Item", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 },
+    });
+    itemId = item.id;
+    await prisma.inventoryValue.create({ data: { itemId, variantSku: "", qtyOnHand: 10, reservedQty: 0, avgCost: 1000, totalValue: 10000 } });
+
+    const discountStore = await prisma.store.create({
+      data: { code: `S-${sku}-D`, name: "Toko Diskon Test", address: "T", termsType: "PUTUS", priceDiscountPercent: 20, isActive: true },
+    });
+    discountStoreId = discountStore.id;
+
+    const plainStore = await prisma.store.create({
+      data: { code: `S-${sku}-P`, name: "Toko Biasa Test", address: "T", termsType: "PUTUS", isActive: true },
+    });
+    plainStoreId = plainStore.id;
+  });
+
+  afterEach(async () => {
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.store.deleteMany({ where: { id: { in: [seededId(discountStoreId), seededId(plainStoreId)] } } });
+  });
+
+  /*
+   * Goes through the real query end to end — `listCatalogForPwa`'s own `select` (queries.ts
+   * ~line 96) and its Prisma.Decimal → number coercion (~line 104), not just the pure
+   * `serializeCatalogItem` mapper with a hand-built store object. Reverting either the select or
+   * the coercion (e.g. dropping `priceDiscountPercent` from the select, or passing the raw
+   * Decimal instead of `.toNumber()`) must fail this, not just the unit-level discount tests.
+   */
+  it("prices the catalog off the queried store's priceDiscountPercent", async () => {
+    const payload = await listCatalogForPwa(discountStoreId);
+    expect(payload).not.toBeNull();
+    const item = payload!.items.find((i) => i.itemId === itemId);
+    expect(item?.price).toBe(4000); // 5000 * (1 - 20/100)
+    expect(item?.priceLabel).toBe("Harga");
+  });
+
+  it("prices at list for a store with no discount", async () => {
+    const payload = await listCatalogForPwa(plainStoreId);
+    expect(payload).not.toBeNull();
+    const item = payload!.items.find((i) => i.itemId === itemId);
+    expect(item?.price).toBe(5000);
   });
 });
