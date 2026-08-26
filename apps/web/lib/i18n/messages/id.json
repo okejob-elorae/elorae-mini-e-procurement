@@ -1395,7 +1395,11 @@
     "bookPositionRow": "Baris",
     "bookPositionSaved": "Posisi buku disimpan",
     "bookPositionSaveError": "Gagal menyimpan posisi",
-    "bookGoToPage": "Buka di tampilan fan deck"
+    "bookGoToPage": "Buka di tampilan fan deck",
+    "moreFilters": "Filter lainnya",
+    "hideFilters": "Sembunyikan filter",
+    "activeFilters": "{count} filter aktif",
+    "removeFilter": "Hapus filter {name}"
   },
   "planning": {
     "title": "Plan Kerja",

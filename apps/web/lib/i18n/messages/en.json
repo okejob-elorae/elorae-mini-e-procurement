@@ -1395,7 +1395,11 @@
     "bookPositionRow": "Row",
     "bookPositionSaved": "Book position saved",
     "bookPositionSaveError": "Could not save book position",
-    "bookGoToPage": "Open in fan deck view"
+    "bookGoToPage": "Open in fan deck view",
+    "moreFilters": "More filters",
+    "hideFilters": "Hide filters",
+    "activeFilters": "{count} filters active",
+    "removeFilter": "Remove {name} filter"
   },
   "planning": {
     "title": "Production Plan",

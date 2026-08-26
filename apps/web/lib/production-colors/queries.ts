@@ -1,5 +1,5 @@
 import { Prisma } from '@elorae/db';
-import { prisma } from '@elorae/db';
+import { prisma, usePostgres } from '@elorae/db';
 import type { FilterTags } from "@elorae/db/pantone";
 import { DEFAULT_FILTER_OPTIONS, FILTER_DIMENSIONS } from "@elorae/db/pantone";
 import { COLOR_PAGE_SIZE } from '@/lib/production-colors/constants';
@@ -38,9 +38,16 @@ function buildTagWhere(filters: ListPantoneFilters): Prisma.PantoneColorWhereInp
     const values = filters[dim];
     if (!values?.length) continue;
     and.push({
+      /*
+       * Prisma's JSON `path` is dialect-specific and the two spellings are not
+       * interchangeable: MySQL takes a JSONPath string ("$.tone"), PostgreSQL
+       * takes an array of keys (["tone"]). Passing the MySQL form to Postgres
+       * fails at query time with PrismaClientValidationError, not at build, so
+       * it only surfaces the moment someone clicks the filter.
+       */
       OR: values.map((v) => ({
         filterTags: {
-          path: `$.${dim}`,
+          path: usePostgres() ? [dim] : `$.${dim}`,
           array_contains: v,
         },
       })),

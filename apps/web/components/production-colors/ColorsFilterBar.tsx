@@ -1,8 +1,8 @@
 'use client';
 
-import type { ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 import { useTranslations } from 'next-intl';
-import { Lightbulb, Search, X } from 'lucide-react';
+import { ChevronDown, Lightbulb, Search, SlidersHorizontal, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -107,6 +107,7 @@ export function ColorsFilterBar({
   onSearchSubmit,
 }: ColorsFilterBarProps) {
   const t = useTranslations('productionColors');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const toggleTag = (dim: FilterDimension, value: string) => {
     const current = filters[dim];
@@ -135,89 +136,139 @@ export function ColorsFilterBar({
   const optionLabel = (dim: FilterDimension, labelKey: string) =>
     t(`filterOption.${dim}.${labelKey}` as Parameters<typeof t>[0]);
 
-  const mainSections = FILTER_SECTIONS.filter((s) => !s.paired);
-  const pairedSections = FILTER_SECTIONS.filter((s) => s.paired);
+  /*
+   * Only search and hue stay on screen.
+   *
+   * All four dimensions used to be expanded at once — 25 chips and four
+   * headings, about 750px, so the colour grid the page exists for started
+   * below the fold. Hue earns its place because picking a colour by its family
+   * is how people actually browse a swatch library, and the chips carry the
+   * swatch itself. Tone, temperature and tint are refinements: useful, but not
+   * worth the first screen.
+   *
+   * Active refinements stay visible as removable chips whether the drawer is
+   * open or shut, so collapsing never hides state.
+   */
+  const hueSection = FILTER_SECTIONS.find((sec) => sec.key === 'hue');
+  const advancedSections = FILTER_SECTIONS.filter((sec) => sec.key !== 'hue');
+  const advancedCount =
+    filters.tone.length + filters.temperature.length + filters.tint.length;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <form
-        className="space-y-2"
+        className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           onSearchSubmit?.();
         }}
       >
-        <p className="text-xs font-medium text-muted-foreground">{t('searchLabel')}</p>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="h-9 pl-9 text-sm"
-              placeholder={t('searchPlaceholder')}
-              value={filters.search}
-              onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
-            />
-          </div>
-          <Button type="submit" variant="secondary" size="sm" className="h-9 shrink-0">
-            {t('searchButton')}
-          </Button>
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="h-9 pl-9 text-sm"
+            placeholder={t('searchPlaceholder')}
+            value={filters.search}
+            onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
+          />
         </div>
+        <Button type="submit" variant="secondary" size="sm" className="h-9 shrink-0">
+          {t('searchButton')}
+        </Button>
+        <Button
+          type="button"
+          variant={advancedCount > 0 ? 'default' : 'outline'}
+          size="sm"
+          className="h-9 shrink-0 gap-1.5"
+          aria-expanded={showAdvanced}
+          onClick={() => setShowAdvanced((v) => !v)}
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">
+            {showAdvanced ? t('hideFilters') : t('moreFilters')}
+          </span>
+          {advancedCount > 0 && (
+            <span className="rounded-full bg-background/25 px-1.5 text-[11px] font-semibold tabular-nums">
+              {advancedCount}
+            </span>
+          )}
+          <ChevronDown
+            className={cn('h-3.5 w-3.5 transition-transform', showAdvanced && 'rotate-180')}
+            aria-hidden
+          />
+        </Button>
       </form>
 
-      {mainSections.map((section) => (
-        <FilterSection
-          key={section.key}
-          letter={section.letter}
-          title={t(section.titleKey)}
-          subtitle={t(section.subtitleKey)}
-        >
-          {section.chips.map((chip) => (
+      {hueSection && (
+        <div className="flex flex-wrap gap-1.5">
+          {hueSection.chips.map((chip) => (
             <FilterChip
               key={chip.value}
-              label={optionLabel(section.key, chip.labelKey)}
-              count={facetCounts[section.key][chip.value] ?? 0}
-              active={filters[section.key].includes(chip.value)}
-              onClick={() => toggleTag(section.key, chip.value)}
+              label={optionLabel('hue', chip.labelKey)}
+              count={facetCounts.hue[chip.value] ?? 0}
+              active={filters.hue.includes(chip.value)}
+              onClick={() => toggleTag('hue', chip.value)}
               icon={chip.icon}
               hueSwatch={chip.hueSwatch}
               hueBorder={chip.hueBorder}
             />
           ))}
-        </FilterSection>
-      ))}
+        </div>
+      )}
 
-      <div className="grid grid-cols-2 gap-4">
-        {pairedSections.map((section) => (
-          <FilterSection
-            key={section.key}
-            letter={section.letter}
-            title={t(section.titleKey)}
-            subtitle={t(section.subtitleKey)}
-          >
-            {section.chips.map((chip) => (
-              <FilterChip
-                key={chip.value}
-                label={optionLabel(section.key, chip.labelKey)}
-                count={facetCounts[section.key][chip.value] ?? 0}
-                active={filters[section.key].includes(chip.value)}
-                onClick={() => toggleTag(section.key, chip.value)}
-                icon={chip.icon}
-              />
-            ))}
-          </FilterSection>
-        ))}
-      </div>
-
-      <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
-        <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-        <span>{t('filterLogicHint')}</span>
-      </p>
+      {showAdvanced && (
+        <div className="anim-fade space-y-4 rounded-lg border bg-muted/30 p-4">
+          {advancedSections.map((section) => (
+            <FilterSection
+              key={section.key}
+              letter={section.letter}
+              title={t(section.titleKey)}
+              subtitle={t(section.subtitleKey)}
+            >
+              {section.chips.map((chip) => (
+                <FilterChip
+                  key={chip.value}
+                  label={optionLabel(section.key, chip.labelKey)}
+                  count={facetCounts[section.key][chip.value] ?? 0}
+                  active={filters[section.key].includes(chip.value)}
+                  onClick={() => toggleTag(section.key, chip.value)}
+                  icon={chip.icon}
+                  hueSwatch={chip.hueSwatch}
+                  hueBorder={chip.hueBorder}
+                />
+              ))}
+            </FilterSection>
+          ))}
+          <p className="flex gap-2 text-[11px] leading-relaxed text-muted-foreground">
+            <Lightbulb className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>{t('filterLogicHint')}</span>
+          </p>
+        </div>
+      )}
 
       {hasFilters && (
-        <Button type="button" variant="ghost" size="sm" onClick={clearAll} className="h-8 gap-1 px-0">
-          <X className="h-3 w-3" />
-          {t('clearFilters')}
-        </Button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(['tone', 'hue', 'temperature', 'tint'] as FilterDimension[]).flatMap((dim) =>
+            filters[dim].map((value) => {
+              const label = optionLabel(dim, FILTER_OPTION_LABEL_KEYS[dim][value]);
+              return (
+                <button
+                  key={`${dim}-${value}`}
+                  type="button"
+                  onClick={() => toggleTag(dim, value)}
+                  aria-label={t('removeFilter', { name: label })}
+                  className="inline-flex items-center gap-1 rounded-full bg-primary/12 px-2 py-0.5 text-xs font-medium text-foreground ring-1 ring-inset ring-primary/25 transition-colors hover:bg-primary/20"
+                >
+                  {label}
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
+              );
+            }),
+          )}
+          <Button type="button" variant="ghost" size="sm" onClick={clearAll} className="h-6 px-2 text-xs">
+            {t('clearFilters')}
+          </Button>
+        </div>
       )}
     </div>
   );
