@@ -25,30 +25,35 @@ import { buildSmartRequestAction } from "./actions";
 
 const PACK_RATIO_KEY = "putus.packRatio";
 
-describe("buildSmartRequestAction (test bed only)", () => {
+/*
+ * `putus.packRatio` is a SHARED singleton read by every real smart-request in the dev DB — NOT a
+ * tag-scoped fixture. This spec must not write to it: a Ctrl-C between a snapshot and its
+ * restore would leave it stuck on a test value and silently mis-plan every real smart-request
+ * afterward (this exact class of bug already corrupted real rows on :3308 once, via
+ * JournalAccountMapping — see the hookTimeout comment in vitest.config.ts). It also must not
+ * conjure one into existence as a fallback on a bed that deliberately has none — a crash before
+ * teardown would leave behind a ratio nobody configured, the same problem, just quieter.
+ *
+ * So: read-only, and if there is none, SKIP the whole suite — same shape as the isProd guard
+ * used across this repo's specs (`const d = isProd ? describe.skip : describe`) — rather than
+ * fail the run or create one. The reason and the fix are folded into the describe title itself
+ * so they survive in every reporter's output, not just a console line that scrolls past.
+ */
+const packRatioSetting = await prisma.systemSetting.findUnique({ where: { key: PACK_RATIO_KEY }, select: { value: true } });
+const packRatio: Array<{ size: string; qty: number }> = packRatioSetting ? JSON.parse(packRatioSetting.value) : [];
+const hasPackRatio = packRatio.length > 0;
+const d = hasPackRatio ? describe : describe.skip;
+const suiteName = hasPackRatio
+  ? "buildSmartRequestAction (test bed only)"
+  : "buildSmartRequestAction (test bed only) — SKIPPED: no putus.packRatio configured on this DB; " +
+    "configure one at Settings → Pack Ratio on the test bed, then re-run, to cover this";
+
+d(suiteName, () => {
   const tag = `SMARTREQ-${Math.random().toString(36).slice(2, 10)}`;
   let uomId = ""; let itemId = ""; let categoryId = ""; let storeId = ""; let plainStoreId = "";
 
   beforeEach(async () => {
     uomId = ""; itemId = ""; categoryId = ""; storeId = ""; plainStoreId = "";
-
-    /*
-     * `putus.packRatio` is a SHARED singleton read by every real smart-request in the dev DB —
-     * NOT a tag-scoped fixture, and NOT something this spec is allowed to mutate: a Ctrl-C
-     * between a snapshot and its restore would leave it stuck on a test value and silently
-     * mis-plan every real smart-request afterward (this exact pattern already corrupted real
-     * rows on :3308 once, via JournalAccountMapping — see the hookTimeout comment in
-     * vitest.config.ts). So this reads the ratio that is ALREADY there and seeds a candidate
-     * item with a matching variant + sufficient stock for every size it names, instead.
-     */
-    const packRatioSetting = await prisma.systemSetting.findUnique({ where: { key: PACK_RATIO_KEY }, select: { value: true } });
-    const ratio: Array<{ size: string; qty: number }> = packRatioSetting ? JSON.parse(packRatioSetting.value) : [];
-    if (ratio.length === 0) {
-      throw new Error(
-        "No putus.packRatio configured on this DB — buildSmartRequestAction has nothing to plan against. " +
-        "Configure a pack ratio (Settings → Pack Ratio) on the :3308 test bed before running this spec.",
-      );
-    }
 
     const category = await prisma.itemCategory.create({ data: { name: `Cat ${tag}` } });
     categoryId = category.id;
@@ -56,10 +61,9 @@ describe("buildSmartRequestAction (test bed only)", () => {
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
 
-    const variants = ratio.map((row, i) => ({
-      sku: `${tag}-V${i}`,
-      size: row.size,
-    }));
+    // One variant per size the real ratio names, with stock that exactly satisfies that size's
+    // required qty — sufficient for expandPack to place one pack of this single candidate item.
+    const variants = packRatio.map((row, i) => ({ sku: `${tag}-V${i}`, size: row.size }));
     const item = await prisma.item.create({
       data: {
         sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true,
@@ -68,7 +72,7 @@ describe("buildSmartRequestAction (test bed only)", () => {
     });
     itemId = item.id;
     await prisma.inventoryValue.createMany({
-      data: variants.map((v, i) => ({ itemId, variantSku: v.sku, qtyOnHand: ratio[i].qty, reservedQty: 0 })),
+      data: variants.map((v, i) => ({ itemId, variantSku: v.sku, qtyOnHand: packRatio[i].qty, reservedQty: 0 })),
     });
 
     const store = await prisma.store.create({
