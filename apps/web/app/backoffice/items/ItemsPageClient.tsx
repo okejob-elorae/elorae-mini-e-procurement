@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { CategoryBadge } from '@/components/ui/category-badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -78,10 +79,16 @@ type ItemCounts = {
   active: number;
 };
 
-const itemTypeColors: Record<ItemType, string> = {
-  FABRIC: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  ACCESSORIES: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-  FINISHED_GOOD: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+/*
+ * Routed through the shared category palette instead of a local map. Two
+ * reasons: FINISHED_GOOD used green, which means "settled" on every status
+ * pill in the app, and a per-page map drifts from every other page's idea of
+ * what a fabric badge looks like.
+ */
+const ITEM_TYPE_CATEGORY: Record<ItemType, string> = {
+  FABRIC: 'fabric',
+  ACCESSORIES: 'accessories',
+  FINISHED_GOOD: 'finished good',
 };
 
 type ItemsPageClientProps = {
@@ -341,9 +348,9 @@ export function ItemsPageClient({
                           </p>
                         </TableCell>
                         <TableCell>
-                          <Badge className={itemTypeColors[item.type]}>
+                          <CategoryBadge label={ITEM_TYPE_CATEGORY[item.type]}>
                             {itemTypeLabels[item.type]}
-                          </Badge>
+                          </CategoryBadge>
                         </TableCell>
                         <TableCell>{item.uom.code}</TableCell>
                         <TableCell className="text-right">

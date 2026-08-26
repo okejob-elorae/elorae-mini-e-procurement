@@ -59,6 +59,7 @@ import { Badge } from '@/components/ui/badge';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
+import { CategoryBadge } from '@/components/ui/category-badge';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { toast } from 'sonner';
@@ -713,9 +714,7 @@ export default function SuppliersPage() {
                   </DropdownMenu>
                 </div>
                 <div className="flex flex-wrap gap-1.5 mt-1">
-                  <Badge variant={supplier.isActive ? 'default' : 'secondary'}>
-                    {supplier.type?.name ?? '—'}
-                  </Badge>
+                  <CategoryBadge label={supplier.type?.name} />
                   {supplier.status && (
                     <Badge
                       variant={
