@@ -3146,6 +3146,8 @@
     "searchStorePlaceholder": "Cari toko",
     "noStoreFound": "Toko tidak ditemukan.",
     "updatingPrices": "Memperbarui harga…",
+    "repriceFailed": "Gagal memperbarui harga. Harga yang tertampil mungkin sudah tidak berlaku.",
+    "retry": "Coba Lagi",
     "buyerNameLabel": "Nama pembeli",
     "buyerNamePlaceholder": "Nama pembeli (opsional)",
     "buyerPhoneLabel": "No. telepon",

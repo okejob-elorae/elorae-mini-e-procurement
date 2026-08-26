@@ -3146,6 +3146,8 @@
     "searchStorePlaceholder": "Search stores",
     "noStoreFound": "No stores found.",
     "updatingPrices": "Updating prices…",
+    "repriceFailed": "Couldn't refresh prices. Prices shown may be out of date.",
+    "retry": "Retry",
     "buyerNameLabel": "Buyer name",
     "buyerNamePlaceholder": "Buyer name (optional)",
     "buyerPhoneLabel": "Phone number",

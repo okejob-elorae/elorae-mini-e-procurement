@@ -74,6 +74,13 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
   // Guards against an in-flight fetch for a since-superseded selection resolving late and
   // clobbering a newer one — React gives no ordering guarantee across overlapping transitions.
   const repriceReqRef = useRef(0);
+  // The buyer key (storeId, or "" for walk-in) that `stock` was actually priced for. Compared
+  // against the CURRENT buyer key to gate submit — a selection change makes this stale until a
+  // reprice for the new key lands, independent of whether `repricing` has already flipped back
+  // to false (e.g. after a failed fetch).
+  const [pricedForKey, setPricedForKey] = useState("");
+  const [repriceError, setRepriceError] = useState<"UNAUTHORIZED" | "GENERIC" | null>(null);
+  const [repriceNonce, setRepriceNonce] = useState(0);
   useEffect(() => {
     if (skipFirstReprice.current) {
       skipFirstReprice.current = false;
@@ -82,11 +89,26 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
     const effectiveStoreId = buyerMode === "store" ? storeId || null : null;
     const reqId = ++repriceReqRef.current;
     startReprice(async () => {
-      const rows = await getVanStockForStoreAction(effectiveStoreId);
-      if (repriceReqRef.current === reqId) setStock(rows);
+      try {
+        const res = await getVanStockForStoreAction(effectiveStoreId);
+        if (repriceReqRef.current !== reqId) return;
+        if (!res.ok) {
+          setRepriceError(res.reason);
+          return;
+        }
+        setStock(res.rows);
+        setPricedForKey(effectiveStoreId ?? "");
+        setRepriceError(null);
+      } catch {
+        if (repriceReqRef.current === reqId) setRepriceError("GENERIC");
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buyerMode, storeId]);
+  }, [buyerMode, storeId, repriceNonce]);
+
+  function retryReprice() {
+    setRepriceNonce((n) => n + 1);
+  }
 
   /**
    * A cart entry snapshots `unitPrice` at add-time (see setQty). If the store selection
@@ -154,6 +176,21 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
     return Array.from(m.values());
   }, [stock]);
 
+  /**
+   * A variant sheet holds a snapshot of its `group` at open-time (see openSheet). If a reprice
+   * lands while the sheet is open, refresh that snapshot from the freshly re-priced `groups` so
+   * a subsequent tap in the sheet writes the current price into the cart, not the one the sheet
+   * opened with.
+   */
+  useEffect(() => {
+    if (!sheetOpen) return;
+    setSheetGroup((prev) => {
+      if (!prev) return prev;
+      return groups.find((g) => g.itemId === prev.itemId) ?? prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stock]);
+
   const filteredGroups = useMemo(() => {
     const needle = q.trim().toLowerCase();
     if (!needle) return groups;
@@ -169,7 +206,10 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
     return g.variants.reduce((s, v) => s + (cart.get(lineKey(v.itemId, v.variantSku))?.qty ?? 0), 0);
   }
 
-  const canSubmit = cartLines.length > 0 && total > 0 && paid >= total && !pending && !repricing;
+  const effectiveStoreId = buyerMode === "store" ? storeId || null : null;
+  const pricingStale = pricedForKey !== (effectiveStoreId ?? "");
+  const canSubmit =
+    cartLines.length > 0 && total > 0 && paid >= total && !pending && !repricing && !pricingStale && !repriceError;
 
   function onSubmit() {
     setShortLines([]);
@@ -256,7 +296,7 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
             variant={buyerMode === "store" ? "default" : "outline"}
             className="flex-1"
             onClick={() => setBuyerMode("store")}
-            disabled={pending}
+            disabled={pending || repricing}
           >
             {t("buyerStore")}
           </Button>
@@ -266,7 +306,7 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
             variant={buyerMode === "adhoc" ? "default" : "outline"}
             className="flex-1"
             onClick={() => setBuyerMode("adhoc")}
-            disabled={pending}
+            disabled={pending || repricing}
           >
             {t("buyerAdhoc")}
           </Button>
@@ -285,12 +325,6 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
               disabled={pending || repricing}
               triggerClassName="w-full"
             />
-            {repricing && (
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {t("updatingPrices")}
-              </p>
-            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -319,6 +353,23 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
               />
             </div>
           </div>
+        )}
+
+        {repricing && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t("updatingPrices")}
+          </p>
+        )}
+        {repriceError && (
+          <Alert variant="destructive">
+            <AlertDescription className="flex items-center justify-between gap-2">
+              <span>{repriceError === "UNAUTHORIZED" ? t("errUnauthorized") : t("repriceFailed")}</span>
+              <Button type="button" size="sm" variant="outline" onClick={retryReprice} disabled={repricing}>
+                {t("retry")}
+              </Button>
+            </AlertDescription>
+          </Alert>
         )}
       </Card>
 
@@ -390,14 +441,17 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
               key={g.itemId}
               role="button"
               tabIndex={0}
-              onClick={() => openSheet(g)}
+              aria-disabled={repricing}
+              onClick={() => {
+                if (!repricing) openSheet(g);
+              }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
+                if ((e.key === "Enter" || e.key === " ") && !repricing) {
                   e.preventDefault();
                   openSheet(g);
                 }
               }}
-              className="flex cursor-pointer flex-row items-center gap-3 p-3"
+              className={`flex flex-row items-center gap-3 p-3 ${repricing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{g.productName}</p>
@@ -462,7 +516,7 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
         </div>
       )}
 
-      <VanVariantSheet group={sheetGroup} cart={cart} setQty={setQty} open={sheetOpen} onOpenChange={setSheetOpen} />
+      <VanVariantSheet group={sheetGroup} cart={cart} setQty={setQty} open={sheetOpen} onOpenChange={setSheetOpen} disabled={repricing} />
     </div>
   );
 }
