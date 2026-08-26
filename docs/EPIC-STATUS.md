@@ -185,7 +185,7 @@ AR, Collection & Tax decomposition (GitHub issue #25). Six slices; the epic merg
 
 | Slice | Scope | Status |
 |-------|-------|--------|
-| **AB** | AR ledger + payment recording — `Receivable` (one per putus `FieldSalesDelivery`, aging in six buckets), `Payment` + `PaymentAllocation` (multi-receivable allocation, cash/transfer, proof upload), void with a reversing entry, four auto-journals (delivery revenue/COGS, payment receipt/void) via `postArJournalSafely`, backfill (`Receivable` only, no journals) for every pre-existing delivery | Implementation complete, in review — not yet merged |
+| **AB** | AR ledger + payment recording — `Receivable` (one per putus `FieldSalesDelivery`, aging in six buckets), `Payment` + `PaymentAllocation` (multi-receivable allocation, cash/transfer, proof upload), void with a reversing entry, four auto-journals (delivery revenue/COGS, payment receipt/void) via `postArJournalSafely`, backfill (`Receivable` only, no journals) for every pre-existing delivery | In review — PR #263 |
 | **C** | Credit limit — `Store.creditLimit`, order-create block, override approval | Not started |
 | **D** | Collection assignment — collector assignment, PWA queue, Assigned→Collected→Verified | Not started |
 | **E** | Overdue notification — cron, configurable thresholds, overdue export | Not started |
