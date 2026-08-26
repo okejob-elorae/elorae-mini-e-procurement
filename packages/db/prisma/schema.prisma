@@ -106,6 +106,7 @@ model User {
   warehouseReturnsCounted WarehouseReturn[] @relation("WarehouseReturnCounter")
   returnChargesBorne     ReturnCharge[]    @relation("ReturnChargeBearer")
   returnChargesDecided   ReturnCharge[]    @relation("ReturnChargeDecider")
+  fotoDiunggah           Foto[]            @relation("FotoUploader")
 }
 
 model VerificationToken {
@@ -2596,6 +2597,21 @@ model PaymentClaimReceivable {
 
   @@id([paymentClaimId, receivableId])
   @@index([receivableId])
+}
+
+model Foto {
+  id           String   @id @default(cuid())
+  mime         String
+  bytes        Bytes    @db.LongBlob
+  sizeBytes    Int
+  caption      String?
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  uploadedBy   User? @relation("FotoUploader", fields: [uploadedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([uploadedById])
+  @@index([createdAt])
 }
 
 enum ReturnDeliveryMethod {

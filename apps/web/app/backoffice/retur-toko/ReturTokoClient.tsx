@@ -50,6 +50,7 @@ import type {
 import type { LangkahRetur } from '@/lib/receivables/rules';
 import type { BarisBarang } from '@/lib/receivables/return-writer';
 import { NADA_LANGKAH, URUT_LANGKAH } from './langkah';
+import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { BarisBarangEditor, type PilihanBarang } from './BarisBarangEditor';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
@@ -105,6 +106,7 @@ export function ReturTokoClient({
   const [caraKirim, setCaraKirim] = useState<(typeof KIRIM)[number]>('SALES');
   const [nilaiKlaim, setNilaiKlaim] = useState('');
   const [barangKlaim, setBarangKlaim] = useState<BarisBarang[]>([]);
+  const [foto, setFoto] = useState<NilaiFoto>(null);
   const [catatan, setCatatan] = useState('');
 
   const [hitungBaris, setHitungBaris] = useState<BarisKerjaRetur | null>(null);
@@ -476,6 +478,15 @@ export function ReturTokoClient({
                 />
               </div>
             )}
+            <UnggahFoto
+              label={t('photoLabel')}
+              petunjuk={t('photoHint')}
+              nilai={foto}
+              onChange={setFoto}
+              wajib
+              disabled={pending}
+            />
+
             <div className="space-y-2">
               <Label htmlFor="nrt-catatan">{t('noteLabel')}</Label>
               <Textarea
@@ -488,10 +499,13 @@ export function ReturTokoClient({
           </div>
           <DialogFooter>
             <Button
+              /* Foto wajib: arsipnya terbuat dari foto-foto ini, dan nota tanpa
+                 foto hanya menyisakan angka yang tak bisa dibuktikan ke toko. */
               disabled={
                 pending ||
                 !noNrt.trim() ||
                 !storeId ||
+                !foto ||
                 (barangKlaim.length === 0
                   ? !(Number(nilaiKlaim) > 0)
                   : !barangKlaim.every((b) => b.itemName.trim() && b.qty > 0))
@@ -506,6 +520,7 @@ export function ReturTokoClient({
                       deliveryMethod: caraKirim,
                       claimedAmount: Number(nilaiKlaim),
                       items: barangKlaim,
+                      photoUrl: foto?.url ?? null,
                       note: catatan,
                     }),
                   t('okCreated'),
@@ -515,6 +530,7 @@ export function ReturTokoClient({
                     setStoreId('');
                     setNilaiKlaim('');
                     setBarangKlaim([]);
+                    setFoto(null);
                     setCatatan('');
                   },
                 )

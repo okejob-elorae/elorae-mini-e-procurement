@@ -51,6 +51,7 @@ export async function catatReturTokoAction(input: {
   deliveryMethod: 'SALES' | 'TOKO' | 'EKSPEDISI';
   claimedAmount?: number;
   items?: BarisBarang[];
+  photoUrl?: string | null;
   note?: string;
 }): Promise<HasilAksiRetur> {
   const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);

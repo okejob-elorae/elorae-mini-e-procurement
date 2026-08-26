@@ -4,6 +4,12 @@ import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { putuskanKlaim } from '@/lib/receivables/writer';
+import {
+  buatKlaimPembayaran,
+  type AlasanGagalKlaim,
+  type BarisPelunasan,
+  type BarisPotongan,
+} from '@/lib/receivables/claim-writer';
 
 export type HasilAksiKlaim =
   | { ok: true }
@@ -42,6 +48,64 @@ export async function verifikasiKlaimAction(
     return { ok: true };
   } catch (err) {
     console.error('verifikasiKlaim gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+export type KodeAksiKlaimBaru =
+  | 'TANPA_AKSES'
+  | 'TANGGAL_TIDAK_VALID'
+  | AlasanGagalKlaim
+  | 'GAGAL';
+
+export type HasilKlaimBaru = { ok: true; docNo: string } | { ok: false; kode: KodeAksiKlaimBaru };
+
+/** "YYYY-MM-DD" dibaca sebagai tengah malam WIB, bukan UTC. */
+function tanggalWib(teks: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(teks)) return null;
+  const d = new Date(`${teks}T00:00:00+07:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Catat klaim pembayaran (BKM).
+ *
+ * Dibatasi ke `receivables:manage`, bukan `journals:manage`. Melaporkan
+ * transfer adalah pekerjaan penagihan; MEMVERIFIKASINYA pekerjaan keuangan.
+ * Kalau keduanya satu izin, Aturan 1 runtuh — pelapor bisa mengesahkan
+ * laporannya sendiri.
+ */
+export async function buatKlaimAction(input: {
+  storeId: string;
+  claimedTransferAt: string;
+  method: string;
+  pelunasan: BarisPelunasan[];
+  potongan?: BarisPotongan[];
+  transferPhotoUrl?: string | null;
+  breakdownPhotoUrl?: string | null;
+}): Promise<HasilKlaimBaru> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)) {
+    return { ok: false, kode: 'TANPA_AKSES' };
+  }
+
+  const tanggal = tanggalWib(input.claimedTransferAt);
+  if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
+
+  try {
+    const hasil = await buatKlaimPembayaran({
+      ...input,
+      claimedTransferAt: tanggal,
+      salesmanId: session.user.id,
+      createdById: session.user.id,
+    });
+    if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    revalidatePath('/backoffice/pelunasan');
+    revalidatePath('/backoffice/piutang');
+    return { ok: true, docNo: hasil.docNo };
+  } catch (err) {
+    console.error('buatKlaim gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

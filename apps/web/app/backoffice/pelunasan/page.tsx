@@ -3,6 +3,7 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { returTertahan } from "@/lib/receivables/rules";
+import { PILIH_POTONGAN, potonganRetur } from "@/lib/receivables/deductions";
 import { PelunasanClient, type BarisKlaim } from "./PelunasanClient";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export default async function PelunasanPage() {
       verifyNote: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
-      deductions: { select: { amount: true, storeReturnId: true } },
+      deductions: { select: PILIH_POTONGAN },
     },
   });
 
@@ -40,13 +41,14 @@ export default async function PelunasanPage() {
     deductionCount: r.deductions.length,
     status: r.status,
     verifyNote: r.verifyNote,
-    // Dihitung dengan aturan yang sama dengan halaman piutang, bukan ditaksir
-    // ulang di sini — supaya dua layar tidak pernah menyebut angka berbeda.
-    nilaiTertahan: returTertahan(
-      r.deductions
-        .filter((d) => d.storeReturnId !== null)
-        .map((d) => ({ nilaiKlaim: Number(d.amount), nilaiFisik: null, bebanTerbuka: true })),
-    ),
+    /*
+     * Lewat penerjemah yang sama dengan halaman piutang dan halaman rinci.
+     * Sebelumnya baris ini menghitung sendiri dengan asumsi "gudang belum
+     * pernah menghitung" — benar saat tabel returnya belum ada, dan diam-diam
+     * salah begitu ia ada: daftar ini akan menyebut angka tertahan yang berbeda
+     * dari yang disebut halaman piutang untuk faktur yang sama.
+     */
+    nilaiTertahan: returTertahan(potonganRetur(r.deductions)),
   }));
 
   return (
@@ -55,6 +57,10 @@ export default async function PelunasanPage() {
       bolehMemutuskan={hasPermission(
         session.user.permissions ?? [],
         PERMISSIONS.JOURNALS_MANAGE,
+      )}
+      bolehMengelola={hasPermission(
+        session.user.permissions ?? [],
+        PERMISSIONS.RECEIVABLES_MANAGE,
       )}
     />
   );

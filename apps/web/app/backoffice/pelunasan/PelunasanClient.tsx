@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { BadgeCheck, Wallet } from 'lucide-react';
+import { BadgeCheck, Plus, Wallet } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -64,9 +65,11 @@ const NADA: Record<string, StatusTone> = {
 export function PelunasanClient({
   baris,
   bolehMemutuskan,
+  bolehMengelola,
 }: {
   baris: BarisKlaim[];
   bolehMemutuskan: boolean;
+  bolehMengelola: boolean;
 }) {
   const t = useTranslations('payments');
   const router = useRouter();
@@ -96,6 +99,16 @@ export function PelunasanClient({
         title={t('pageTitle')}
         description={t('pageDescription')}
         meta={t('summary', { count: baris.length, pending: menunggu })}
+        actions={
+          bolehMengelola ? (
+            <Button asChild>
+              <Link href="/backoffice/pelunasan/baru">
+                <Plus className="mr-1.5 h-4 w-4" />
+                {t('newClaim')}
+              </Link>
+            </Button>
+          ) : undefined
+        }
       />
 
       <Card>
@@ -124,7 +137,14 @@ export function PelunasanClient({
                          satu-satunya baris yang menuntut tindakan hari ini. */
                       className={cn(b.status === 'DIKIRIM' && 'bg-amber-500/[0.05]')}
                     >
-                      <TableCell className="font-medium">{b.docNo}</TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/backoffice/pelunasan/${b.id}`}
+                          className="font-medium text-primary underline-offset-2 hover:underline"
+                        >
+                          {b.docNo}
+                        </Link>
+                      </TableCell>
                       <TableCell>
                         {b.storeName}
                         {b.salesmanName && (
