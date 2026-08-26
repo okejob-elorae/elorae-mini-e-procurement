@@ -18,7 +18,6 @@ import { catatJejak, JEJAK } from './jejak';
 
 type Klien = Prisma.TransactionClient;
 
-const angka = (v: unknown): number => Number(v ?? 0);
 const D = (n: number) => new Prisma.Decimal(n);
 
 export type BarisPelunasan = { receivableId: string; nilai: number };
