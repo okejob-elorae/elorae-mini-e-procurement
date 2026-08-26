@@ -54,12 +54,12 @@ d("postArJournalSafely (test bed only)", () => {
     expect(await flaggedCount()).toBe(2);
   });
 
-  it("does not throw when the post itself throws", async () => {
+  it("does not throw when the post itself throws, and reports ERROR", async () => {
     await expect(
       postArJournalSafely("ar_payment", docId, async () => {
         throw new Error("boom");
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ ok: false, code: "ERROR" });
     expect(await flaggedCount()).toBe(1);
   });
 
@@ -68,5 +68,38 @@ d("postArJournalSafely (test bed only)", () => {
     await postArJournalSafely("field_delivery_revenue", docId, post);
     await postArJournalSafely("field_delivery_cogs", docId, post);
     expect(await flaggedCount()).toBe(2);
+  });
+
+  /*
+   * The four cases below pin the return CONTRACT itself: `postArJournalSafely` now returns the
+   * outcome it computes rather than `void`, because a caller (the field-delivery journal retry
+   * action) needs to tell "posted" from "attempted and flagged again" and cannot substitute a
+   * `isArJournalRetryable` re-check for that — the gate ignores `readAt` and nothing ever clears a
+   * `JOURNAL_PENDING` row, so a re-check after a genuinely successful retry still reads "pending".
+   */
+  it("returns the outcome unchanged when the post succeeds", async () => {
+    const outcome = await postArJournalSafely("ar_payment", docId, async () => ({
+      ok: true,
+      journalId: "j1",
+      created: true,
+    }));
+    expect(outcome).toEqual({ ok: true, journalId: "j1", created: true });
+  });
+
+  it("returns the NOTHING_TO_POST outcome unchanged", async () => {
+    const outcome = await postArJournalSafely("ar_payment", docId, async () => ({
+      ok: false,
+      code: "NOTHING_TO_POST",
+    }));
+    expect(outcome).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+  });
+
+  it("returns the UNMAPPED_ROLE outcome unchanged", async () => {
+    const outcome = await postArJournalSafely("ar_payment", docId, async () => ({
+      ok: false,
+      code: "UNMAPPED_ROLE",
+      role: "AR",
+    }));
+    expect(outcome).toEqual({ ok: false, code: "UNMAPPED_ROLE", role: "AR" });
   });
 });

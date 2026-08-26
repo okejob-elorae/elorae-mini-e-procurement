@@ -29,22 +29,33 @@ const RETRY_HINT: Record<ArJournalKind, string> = {
   ar_payment_void: 'open the payment and use the standing-payment warning\'s "Post reversal journal" action',
 };
 
+export type ArPostOutcome = GenerateAutoJournalResult | { ok: false; code: "ERROR" };
+
 /**
  * Posts an AR journal without ever failing the caller. Recording a delivery or collecting a payment
  * must not fail because a finance account is unmapped, so a problem becomes a JOURNAL_PENDING
  * notification instead of an error the operator cannot act on.
+ *
+ * Returns the outcome rather than `void`: never-throwing and never-reporting are different
+ * properties, and only the first is wanted here. A caller that needs to know whether THIS attempt
+ * actually posted cannot substitute a re-check of `isArJournalRetryable` for that — the gate matches
+ * any `JOURNAL_PENDING` notification for the (kind, docId) pair and deliberately ignores `readAt`,
+ * and nothing in production ever deletes or updates one of those rows, so once a kind has failed
+ * once the gate reads "still pending" forever, even immediately after a retry that just succeeded.
  */
 export async function postArJournalSafely(
   kind: ArJournalKind,
   docId: string,
   post: () => Promise<GenerateAutoJournalResult>,
-): Promise<void> {
+): Promise<ArPostOutcome> {
   try {
     const res = await post();
-    if (res.ok || res.code === "NOTHING_TO_POST") return;
+    if (res.ok || res.code === "NOTHING_TO_POST") return res;
     await notify(kind, docId, res.code, "role" in res ? (res.role ?? null) : null);
+    return res;
   } catch (e) {
     await notify(kind, docId, "ERROR", null, e instanceof Error ? e.message : "unknown");
+    return { ok: false, code: "ERROR" };
   }
 }
 

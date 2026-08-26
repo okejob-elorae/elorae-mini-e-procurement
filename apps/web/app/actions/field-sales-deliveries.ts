@@ -302,16 +302,17 @@ export type PostFieldDeliveryJournalsResult =
  * Retries the two delivery journals following the shape of `postVanSaleJournalAction`
  * (`apps/web/app/actions/van-sale.ts`).
  *
- * Gated on a JOURNAL_PENDING notification rather than on a missing Journal row: every backfilled
- * receivable has no journal by construction, and re-posting one of those would book revenue for a
- * delivery nobody ever attempted to post.
+ * The ENTRY gate — a kind is only attempted when `isArJournalRetryable` says it was flagged — stays
+ * on `isArJournalRetryable`. That is correct: every backfilled receivable has no journal by
+ * construction, and re-posting one of those would book revenue for a delivery nobody ever attempted
+ * to post.
  *
- * `postArJournalSafely` never throws and never surfaces its inner result — it exists precisely so a
- * failed post cannot fail the caller. That means this action cannot tell "posted" from "attempted
- * and flagged again" from its return value alone: re-checking `isArJournalRetryable` per kind AFTER
- * the attempt is what tells them apart — a kind still retryable after its own attempt did not post.
- * Without this, a still-unmapped role reports `{ ok: true }` to a caller that toasts success while
- * the journal still does not exist.
+ * The post-attempt success determination is NOT the same gate re-checked. `isArJournalRetryable`
+ * matches any `JOURNAL_PENDING` notification for the (kind, docId) pair and deliberately ignores
+ * `readAt`, and nothing in production ever deletes or updates one of those rows — so once a kind has
+ * failed once, re-checking the gate after a retry reads "still pending" forever, even immediately
+ * after a retry that just succeeded. `postArJournalSafely` now returns the outcome it already
+ * computes, so success is read from THAT instead.
  */
 export async function postFieldDeliveryJournalsAction(deliveryId: string): Promise<PostFieldDeliveryJournalsResult> {
   const g = await guard();
@@ -326,24 +327,16 @@ export async function postFieldDeliveryJournalsAction(deliveryId: string): Promi
   const stillPending: FieldDeliveryJournalKind[] = [];
 
   if (revenue) {
-    await postArJournalSafely("field_delivery_revenue", deliveryId, () =>
+    const outcome = await postArJournalSafely("field_delivery_revenue", deliveryId, () =>
       postFieldDeliveryRevenueJournal(deliveryId, g.userId),
     );
-    if (await isArJournalRetryable("field_delivery_revenue", deliveryId)) {
-      stillPending.push("field_delivery_revenue");
-    } else {
-      posted.push("field_delivery_revenue");
-    }
+    (outcome.ok ? posted : stillPending).push("field_delivery_revenue");
   }
   if (cogs) {
-    await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
+    const outcome = await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
       postFieldDeliveryCogsJournal(deliveryId, g.userId),
     );
-    if (await isArJournalRetryable("field_delivery_cogs", deliveryId)) {
-      stillPending.push("field_delivery_cogs");
-    } else {
-      posted.push("field_delivery_cogs");
-    }
+    (outcome.ok ? posted : stillPending).push("field_delivery_cogs");
   }
 
   /* Same paths `recordDeliveryAction` revalidates after a successful post — the delivery lives on
