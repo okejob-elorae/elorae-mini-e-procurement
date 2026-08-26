@@ -200,6 +200,9 @@ export const PERMISSIONS = {
   // Sales Orders
   SALES_ORDERS_VIEW: 'sales_orders:view',
   SALES_ORDERS_FULFILL: 'sales_orders:fulfill',
+  // Receivables & collections
+  RECEIVABLES_VIEW: 'receivables:view',
+  RECEIVABLES_MANAGE: 'receivables:manage',
   // Field Sales Orders
   FIELD_SALES_ORDERS_VIEW: 'field_sales_orders:view',
   FIELD_SALES_ORDERS_APPROVE: 'field_sales_orders:approve',

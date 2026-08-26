@@ -19,6 +19,7 @@ import {
 export type BarisPiutang = {
   id: string;
   invoiceNo: string;
+  storeId: string;
   storeName: string;
   salesmanName: string | null;
   invoiceDate: string;
@@ -59,6 +60,7 @@ export async function daftarPiutang(opts?: { salesmanId?: string }): Promise<Bar
       amount: true,
       outstanding: true,
       source: true,
+      storeId: true,
       store: { select: { name: true } },
       salesman: { select: { name: true } },
       claimLinks: {
@@ -133,6 +135,7 @@ export async function daftarPiutang(opts?: { salesmanId?: string }): Promise<Bar
     return {
       id: r.id,
       invoiceNo: r.invoiceNo,
+      storeId: r.storeId,
       storeName: r.store.name,
       salesmanName: r.salesman?.name ?? null,
       invoiceDate: r.invoiceDate.toISOString(),

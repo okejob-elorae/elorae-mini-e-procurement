@@ -1,5 +1,5 @@
 import { prisma, Prisma } from '@elorae/db';
-import { hitungSisaPiutang, returTertahan, type PotonganRetur } from './rules';
+import { hitungSisaPiutang, type PotonganRetur } from './rules';
 
 /**
  * Penulis piutang — satu-satunya tempat kolom `outstanding` boleh berubah.

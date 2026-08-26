@@ -23,6 +23,7 @@ import {
   Store,
   Wallet,
   BarChart2,
+  ClipboardList,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -323,6 +324,13 @@ const navItems: NavItem[] = [
     emoji: '🧾',
     href: '/backoffice/piutang',
     icon: FileText,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+  },
+  {
+    labelKey: 'collections',
+    emoji: '🧾',
+    href: '/backoffice/kontrabon',
+    icon: ClipboardList,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
   },
   {
