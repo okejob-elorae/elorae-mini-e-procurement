@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { postArJournalSafely } from "./post-ar-journal-safely";
 
@@ -10,10 +10,14 @@ d("postArJournalSafely (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
   const docId = `test-ar-doc-${token}`;
 
-  beforeEach(async () => {
-    await prisma.adminNotification.deleteMany({ where: { category: "JOURNAL_PENDING", title: { contains: token } } });
-  });
-
+  /**
+   * No pre-clean hook. The one that used to sit here filtered `title: { contains: token }`, but
+   * `title` is a fixed literal from `TITLE[kind]` and never contains the token, so it deleted
+   * nothing and bought no isolation — while being exactly the `contains` shape this repo forbids on
+   * a shared table: a `token` of `""` makes `contains: ""` match every row and wipe every
+   * JOURNAL_PENDING notification on the test bed. The `afterEach` below is the real isolation: it
+   * matches on `metadata.docId` in JS, and `docId` embeds the per-run token.
+   */
   afterEach(async () => {
     const rows = await prisma.adminNotification.findMany({
       where: { category: "JOURNAL_PENDING" },

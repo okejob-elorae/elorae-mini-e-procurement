@@ -88,14 +88,27 @@ export async function listReceivables(filters: ReceivableFilters): Promise<{
     select: { dueDate: true, outstandingAmount: true },
   });
 
+  /*
+   * `bucketTotals` and `grandOutstanding` deliberately disagree when a bucket filter is set, and the
+   * asymmetry is the point.
+   *
+   * The tiles are a numeric readout of WHERE the debt sits, so every one of them always folds the
+   * whole matching set — the bucket filter is never applied to them. Folding only the selected
+   * bucket made the other five tiles render `Rp 0`, which `AgingSummary` then greys out as an empty
+   * bucket: click the D1_30 tile on a book holding 5.000.000 in D1_30 and 50.000.000 in D120_PLUS
+   * and the strip claimed there was no debt over 120 days. A tile that hides 50M of exposure is
+   * worse than a strip that does not match the table beneath it.
+   *
+   * `grandOutstanding` stays filtered because it describes the CURRENT VIEW, and its label switches
+   * to say so when a bucket is selected.
+   */
   const bucketTotals = emptyBucketTotals();
   let grandOutstanding = 0;
   for (const r of allForTotals) {
     const bucket = agingBucket(r.dueDate, asOf);
-    /* The bucket filter is applied here too, so the strip always agrees with the table. */
-    if (filters.bucket && bucket !== filters.bucket) continue;
     const outstanding = Number(r.outstandingAmount);
     bucketTotals[bucket] += outstanding;
+    if (filters.bucket && bucket !== filters.bucket) continue;
     grandOutstanding += outstanding;
   }
 

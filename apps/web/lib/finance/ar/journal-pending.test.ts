@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { prisma } from "@elorae/db";
 import { isArJournalRetryable, findPostableArJournalDocIds } from "./journal-pending";
 
@@ -51,7 +51,23 @@ d("journal-pending gating (test bed only)", () => {
     expect(await isArJournalRetryable("field_delivery_cogs", flaggedDoc)).toBe(false);
   });
 
+  /**
+   * The "without querying" half is the part worth pinning, and only the spy can see it. Asserting
+   * the empty Set alone passes with the `docIds.length === 0` short-circuit DELETED — the findMany
+   * would run, `idSet` would be empty, `flagged` would stay empty and the assertion would still
+   * hold. Since that query is an unfiltered scan of every JOURNAL_PENDING row, a silently removed
+   * short-circuit is a real cost, so the call count is what actually guards it.
+   *
+   * The spy passes through to the real implementation rather than mocking it, so it only observes.
+   * Restored in a `finally` so a failed assertion cannot leak it into the rest of the file.
+   */
   it("returns an empty set for an empty id list without querying", async () => {
-    expect(await findPostableArJournalDocIds("ar_payment", [])).toEqual(new Set());
+    const spy = vi.spyOn(prisma.adminNotification, "findMany");
+    try {
+      expect(await findPostableArJournalDocIds("ar_payment", [])).toEqual(new Set());
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

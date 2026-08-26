@@ -17,8 +17,13 @@ type PageProps = {
  * (OUTSTANDING + PARTIAL) needs two calls merged rather than one. Each call is already scoped to
  * this one store, so it stays well clear of the "unpaginated fetch of the whole book" the payment
  * sheet must never do — `pageSize` is just a generous ceiling on one store's own open invoices,
- * not a page cursor. See task-14-report.md for the tradeoff against widening `listReceivables`
- * itself with a multi-status filter.
+ * not a page cursor.
+ *
+ * Two calls rather than widening `listReceivables` with a multi-status filter: that function feeds
+ * the aging list, where `status` is a single-select the operator drives, and a `status[]` parameter
+ * would have to thread through `whereFor`, the bucket fold and both pagination branches to serve
+ * one caller that does not paginate at all. Merging two scoped calls here keeps the widening local
+ * to the only place that needs it.
  */
 const CANDIDATE_PAGE_SIZE = 500;
 

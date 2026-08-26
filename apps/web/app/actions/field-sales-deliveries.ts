@@ -193,19 +193,6 @@ export async function updateDeliveryDatesAction(input: {
     if (!before) return { kind: "NOT_FOUND" };
 
     /**
-     * The read pair is part of the filter, so the write only lands on the row the audit entry is
-     * about to describe. A miss means someone else moved it in between; the transaction returns
-     * without writing anything, so a `CONFLICT` never leaves an audit row behind. The mariadb
-     * driver reports MATCHED rows rather than changed ones (`foundRows` defaults on), so
-     * re-submitting the same dates still counts as a hit.
-     */
-    const swapped = await tx.fieldSalesDelivery.updateMany({
-      where: { id: before.id, invoiceDate: before.invoiceDate, dueDate: before.dueDate },
-      data: { invoiceDate: parsedInvoiceDate, dueDate: parsedDueDate },
-    });
-    if (swapped.count === 0) return { kind: "CONFLICT" };
-
-    /**
      * REFUSE once live money has been applied. A payment posts its own DR Cash / CR AR journal dated
      * on `paidAt`, and that date is correct — the cash moved then, and no invoice correction changes
      * when it moved. Re-dating the revenue journal on a paid invoice therefore SPLITS the pair:
@@ -217,12 +204,32 @@ export async function updateDeliveryDatesAction(input: {
      * nothing recomputes a journal's date later. An operator who must re-date a paid invoice voids
      * the payment first — a deliberate, audited act — which restores `paidAmount` to 0 and reopens
      * the correction.
+     *
+     * Read and refused BEFORE the delivery CAS below, not after. `runSerializable` is a plain
+     * `prisma.$transaction`, which COMMITS on a normal return and rolls back only on a throw — so a
+     * refusal placed after the CAS would commit the very swap it reports as refused, moving the
+     * delivery's dates while the receivable and both journals kept the old ones. That is the exact
+     * three-way split this guard exists to prevent, and it would be permanent: the same call is
+     * refused thereafter, so nothing ever reconverges them.
      */
     const receivable = await tx.receivable.findUnique({
       where: { deliveryId: before.id },
       select: { paidAmount: true },
     });
     if (receivable && Number(receivable.paidAmount) > 0) return { kind: "HAS_PAYMENTS" };
+
+    /**
+     * The read pair is part of the filter, so the write only lands on the row the audit entry is
+     * about to describe. A miss means someone else moved it in between; the transaction returns
+     * without writing anything, so a `CONFLICT` never leaves an audit row behind. The mariadb
+     * driver reports MATCHED rows rather than changed ones (`foundRows` defaults on), so
+     * re-submitting the same dates still counts as a hit.
+     */
+    const swapped = await tx.fieldSalesDelivery.updateMany({
+      where: { id: before.id, invoiceDate: before.invoiceDate, dueDate: before.dueDate },
+      data: { invoiceDate: parsedInvoiceDate, dueDate: parsedDueDate },
+    });
+    if (swapped.count === 0) return { kind: "CONFLICT" };
 
     /**
      * The receivable denormalises these dates so the aging list and the overdue sweep read one

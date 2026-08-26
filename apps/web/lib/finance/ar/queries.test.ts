@@ -221,24 +221,37 @@ d("AR queries (test bed only)", () => {
 
   /*
    * GAP 2: exercises the fetch-all/filter-in-JS/slice branch that only runs when `bucket` is set.
-   * Rows, total, and bucketTotals must all agree that only `thirdRec` (D91_120) qualifies — a
-   * regression that filters rows but not totals, or slices before filtering, breaks one of these
-   * three without breaking the others.
+   * `rows`/`total`/`grandOutstanding` narrow to the selected bucket; `bucketTotals` deliberately
+   * does NOT — the tiles are a readout of where the whole book's debt sits, and zeroing the
+   * unselected ones made `AgingSummary` grey them out as empty, hiding real exposure. So the
+   * assertions pull in opposite directions on purpose: 300 for the selected bucket AND the other
+   * two seeded buckets still reporting their real money.
    */
-  it("filters by bucket, keeping rows/total/bucketTotals in agreement", async () => {
+  it("filters rows and grandOutstanding by bucket while every tile keeps its real total", async () => {
     const res = await listReceivables({ storeId, asOf, bucket: "D91_120" });
     expect(res.rows.map((r) => r.id)).toEqual([thirdRec]);
     expect(res.total).toBe(1);
-    expect(res.bucketTotals.D91_120).toBe(300);
-    expect(res.bucketTotals.CURRENT).toBe(0);
-    expect(res.bucketTotals.D31_60).toBe(0);
     expect(res.grandOutstanding).toBe(300);
+    expect(res.bucketTotals.D91_120).toBe(300);
+    expect(res.bucketTotals.CURRENT).toBe(1000);
+    expect(res.bucketTotals.D31_60).toBe(500);
   });
 
-  it("returns nothing for a bucket with no matching rows", async () => {
+  /*
+   * The sharpest version of the same rule: D1_30 holds nothing, so the table and
+   * `grandOutstanding` are legitimately empty — but 1.800.000 of debt still exists and every tile
+   * must keep saying so. A regression that re-applies the bucket filter to `bucketTotals` would
+   * report an empty aging strip for a book that is 1.800.000 in the red.
+   */
+  it("returns nothing for a bucket with no matching rows, without blanking the tiles", async () => {
     const res = await listReceivables({ storeId, asOf, bucket: "D1_30" });
     expect(res.rows).toEqual([]);
     expect(res.total).toBe(0);
+    expect(res.grandOutstanding).toBe(0);
+    expect(res.bucketTotals.D1_30).toBe(0);
+    expect(res.bucketTotals.CURRENT).toBe(1000);
+    expect(res.bucketTotals.D31_60).toBe(500);
+    expect(res.bucketTotals.D91_120).toBe(300);
   });
 
   /*

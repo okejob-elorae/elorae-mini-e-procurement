@@ -52,11 +52,27 @@ const STATUS_LABEL_KEY: Record<
   WRITTEN_OFF: "statusWrittenOff",
 };
 
-function formatRupiah(value: number): string {
+/**
+ * The money card shows sen, unlike the two AR LIST pages, which round to whole rupiah by house
+ * convention. The detail card is where an operator decides whether an invoice is settled, and a
+ * rounded readout invites a phantom receipt: an outstanding of 0,40 rendered as `Rp 0` beside a
+ * `PARTIAL` badge, with "Record payment" still enabled and the sheet prefilling 0,40, makes
+ * booking a `Rp 0,40` CASH payment nobody received the cheapest way to clear the badge — posting
+ * `DR Cash 0.40` against nothing. Original, Paid and every allocation-history row use it too, so
+ * the figures on the page visibly reconcile (`original − paid = outstanding`, and the history rows
+ * sum to Paid); rounding some of them and not the others would show arithmetic that does not add
+ * up. This is the only formatter on the card — there is no whole-rupiah variant left to reach for
+ * by accident.
+ *
+ * Same shape as the local helper in `RecordPaymentSheet` and `PaymentDetailClient`, which is where
+ * an allocation is entered against these figures.
+ */
+function formatRupiahExact(value: number): string {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
@@ -223,15 +239,15 @@ export function ReceivableDetailClient({
         <div className="grid grid-cols-3 gap-4">
           <div>
             <p className="text-xs text-muted-foreground">{t("colOriginal")}</p>
-            <p className="text-sm font-medium tabular-nums">{formatRupiah(r.originalAmount)}</p>
+            <p className="text-sm font-medium tabular-nums">{formatRupiahExact(r.originalAmount)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t("detail.paid")}</p>
-            <p className="text-sm font-medium tabular-nums">{formatRupiah(r.paidAmount)}</p>
+            <p className="text-sm font-medium tabular-nums">{formatRupiahExact(r.paidAmount)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t("colOutstanding")}</p>
-            <p className="text-xl font-bold tabular-nums text-primary">{formatRupiah(r.outstandingAmount)}</p>
+            <p className="text-xl font-bold tabular-nums text-primary">{formatRupiahExact(r.outstandingAmount)}</p>
           </div>
         </div>
       </Card>
@@ -287,7 +303,7 @@ export function ReceivableDetailClient({
                             voided && "text-muted-foreground line-through",
                           )}
                         >
-                          {formatRupiah(a.amount)}
+                          {formatRupiahExact(a.amount)}
                         </TableCell>
                         <TableCell>
                           {voided && <Badge variant="destructive">{t("detail.voidedBadge")}</Badge>}

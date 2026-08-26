@@ -345,12 +345,21 @@ export function PaymentDetailClient({ payment: p, receiptJournalRetryable, voidJ
           </AlertDialogHeader>
           <div className="space-y-1.5">
             <Label htmlFor="void-reason">{t("detail.voidReasonFieldLabel")}</Label>
+            {/*
+              `maxLength` matches the note field in `RecordPaymentSheet`. Without it a pasted
+              essay reaches the writer intact and MariaDB rejects the oversized `voidReason` with
+              1406, which `toResult` cannot recognise as a `PaymentError` and so collapses to the
+              generic `ERROR` — the operator is told the void failed with no hint that the reason
+              text was the problem. Capping in the field turns that into an input that simply
+              stops accepting characters.
+            */}
             <Textarea
               id="void-reason"
               value={voidReason}
               onChange={(e) => setVoidReason(e.target.value)}
               disabled={voiding}
               rows={3}
+              maxLength={500}
               placeholder={t("detail.voidReasonPlaceholder")}
               aria-invalid={voidReason.length > 0 && !reasonHasVisibleContent}
             />

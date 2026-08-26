@@ -12,21 +12,27 @@ const paidAt = new Date("2026-03-01T00:00:00.000+07:00");
 
 d("voidPayment (test bed only)", () => {
   /*
-   * Regenerated per test, not once per describe: Store.code / User.email / Receivable.deliveryId
-   * are all @unique on this token. A single leaked afterEach (fixture ids stay "" on a hook
-   * failure, so the teardown deletes nothing) would otherwise make every remaining test in this
-   * file fail with P2002 in beforeEach on the shared bed, for the rest of the run.
+   * Regenerated per test, not once per describe: Store.code / User.email / FieldSalesOrder.orderNo
+   * / FieldSalesDelivery.docNo / Receivable.deliveryId are all @unique on this token. A single
+   * leaked afterEach (fixture ids stay "" on a hook failure, so the teardown deletes nothing)
+   * would otherwise make every remaining test in this file fail with P2002 in beforeEach on the
+   * shared bed, for the rest of the run.
    */
   let token = "";
   let storeId = "";
   let userId = "";
+  let orderAId = "";
+  let orderBId = "";
+  let deliveryAId = "";
+  let deliveryBId = "";
   let recA = "";
   let recB = "";
   let paymentId = "";
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
-    storeId = ""; userId = ""; recA = ""; recB = ""; paymentId = "";
+    storeId = ""; userId = ""; orderAId = ""; orderBId = ""; deliveryAId = ""; deliveryBId = "";
+    recA = ""; recB = ""; paymentId = "";
 
     const store = await prisma.store.create({
       data: { code: `TEST-VOID-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -38,9 +44,32 @@ d("voidPayment (test bed only)", () => {
     });
     userId = user.id;
 
+    /*
+     * Receivable.delivery is a REQUIRED relation under relationMode="prisma" — a deliveryId that
+     * does not resolve to a real FieldSalesDelivery throws "Inconsistent query result" the moment a
+     * query selects through it (e.g. listReceivables's docNo / order.salesman.name). voidPayment
+     * itself never selects through delivery, but a fake string id here still leaves an orphan
+     * Receivable behind on the shared bed if the teardown is ever interrupted, so the chain is real
+     * rows, not a synthetic string.
+     */
+    const orderA = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `TEST-ARVW-ORDA-${token}`, storeId, salesmanId: userId, subtotal: 1000, total: 1000 },
+    });
+    orderAId = orderA.id;
+
+    const deliveryA = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-ARVW-DLVA-${token}`, orderId: orderAId,
+        deliveredAt: paidAt, deliveredById: userId,
+        invoiceDate: paidAt, dueDate: paidAt,
+        subtotal: 1000, total: 1000,
+      },
+    });
+    deliveryAId = deliveryA.id;
+
     const a = await prisma.receivable.create({
       data: {
-        deliveryId: `test-dlv-v-${token}`, storeId,
+        deliveryId: deliveryAId, storeId,
         invoiceDate: paidAt, dueDate: paidAt,
         originalAmount: 1000, outstandingAmount: 1000,
       },
@@ -63,6 +92,12 @@ d("voidPayment (test bed only)", () => {
     await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.receivable.deleteMany({
       where: { id: { in: [seededId(recA), seededId(recB)] } },
+    });
+    await prisma.fieldSalesDelivery.deleteMany({
+      where: { id: { in: [seededId(deliveryAId), seededId(deliveryBId)] } },
+    });
+    await prisma.fieldSalesOrder.deleteMany({
+      where: { id: { in: [seededId(orderAId), seededId(orderBId)] } },
     });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -166,9 +201,24 @@ d("voidPayment (test bed only)", () => {
   });
 
   it("restores both receivables when one payment is split across them", async () => {
+    const orderB = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `TEST-ARVW-ORDB-${token}`, storeId, salesmanId: userId, subtotal: 500, total: 500 },
+    });
+    orderBId = orderB.id;
+
+    const deliveryB = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-ARVW-DLVB-${token}`, orderId: orderBId,
+        deliveredAt: paidAt, deliveredById: userId,
+        invoiceDate: paidAt, dueDate: paidAt,
+        subtotal: 500, total: 500,
+      },
+    });
+    deliveryBId = deliveryB.id;
+
     const b = await prisma.receivable.create({
       data: {
-        deliveryId: `test-dlv-vb-${token}`, storeId,
+        deliveryId: deliveryBId, storeId,
         invoiceDate: paidAt, dueDate: paidAt,
         originalAmount: 500, outstandingAmount: 500,
       },
