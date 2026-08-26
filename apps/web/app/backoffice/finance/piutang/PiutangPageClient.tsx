@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AlertCircle, Search, Wallet } from "lucide-react";
@@ -47,6 +47,7 @@ type Props = {
   bucket: AgingBucket | undefined;
   dateFrom: string;
   dateTo: string;
+  search: string;
   page: number;
   pageSize: number;
   asOf: Date;
@@ -88,7 +89,7 @@ export function PiutangPageClient(props: Props) {
   const t = useTranslations("piutang");
   const [isPending, startTransition] = useTransition();
 
-  const [searchInput, setSearchInput] = useState("");
+  const [searchInput, setSearchInput] = useState(props.search);
 
   function pushParams(next: Record<string, string | undefined>): void {
     const params = new URLSearchParams(sp.toString());
@@ -99,6 +100,20 @@ export function PiutangPageClient(props: Props) {
     params.delete("page");
     startTransition(() => router.push(`${BASE_PATH}?${params.toString()}`));
   }
+
+  /*
+   * Debounced push, not a local filter: `listReceivables` now takes `search` as a real query
+   * param, so this has to reach the server and re-narrow the aging strip's totals along with the
+   * table — a client-side filter over just the current page would silently miss matches sitting
+   * on other pages.
+   */
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      if (searchInput.trim() !== props.search) pushParams({ search: searchInput.trim() || undefined });
+    }, 300);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce fires on searchInput only
+  }, [searchInput]);
 
   function reset(): void {
     setSearchInput("");
@@ -111,21 +126,7 @@ export function PiutangPageClient(props: Props) {
     startTransition(() => router.push(`${BASE_PATH}?${params.toString()}`));
   }
 
-  /**
-   * `listReceivables` has no free-text filter, so this narrows only the rows already on the
-   * current page — the same local-only search shape the canonical PO list reference uses.
-   */
-  const search = searchInput.trim().toLowerCase();
-  const visibleRows = search
-    ? props.rows.filter(
-        (r) =>
-          r.storeName.toLowerCase().includes(search) ||
-          r.docNo.toLowerCase().includes(search) ||
-          r.salesmanName.toLowerCase().includes(search),
-      )
-    : props.rows;
-
-  const hasActiveFilters =
+  const hasOtherFilters =
     !!props.storeId ||
     !!props.salesmanId ||
     props.status !== "ALL" ||
@@ -241,11 +242,15 @@ export function PiutangPageClient(props: Props) {
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
                 </div>
-              ) : visibleRows.length === 0 ? (
+              ) : props.rows.length === 0 ? (
                 <div className="text-center py-12">
                   <Wallet className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <p className="text-muted-foreground">
-                    {hasActiveFilters || search ? t("noResults") : t("empty")}
+                    {props.search
+                      ? t("noSearchResults", { search: props.search })
+                      : hasOtherFilters
+                        ? t("noResults")
+                        : t("empty")}
                   </p>
                 </div>
               ) : (
@@ -266,7 +271,7 @@ export function PiutangPageClient(props: Props) {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {visibleRows.map((row) => {
+                        {props.rows.map((row) => {
                           const overdue = isOverdue(row.dueDate, props.asOf);
                           const status = row.status as ReceivableStatusValue;
                           return (

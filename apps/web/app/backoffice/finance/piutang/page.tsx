@@ -19,6 +19,7 @@ type PageProps = {
     bucket?: string;
     from?: string;
     to?: string;
+    search?: string;
     page?: string;
   }>;
 };
@@ -55,6 +56,7 @@ export default async function PiutangPage({ searchParams }: PageProps) {
   const bucket = parseBucket(sp.bucket);
   const dateFrom = parseDateOnly(sp.from ?? "");
   const dateTo = parseDateOnlyEnd(sp.to ?? "");
+  const search = sp.search?.trim() || undefined;
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = DEFAULT_PAGE_SIZE;
   /**
@@ -66,7 +68,7 @@ export default async function PiutangPage({ searchParams }: PageProps) {
 
   try {
     const [{ rows, total, bucketTotals, grandOutstanding }, storeOptions, canvassers] = await Promise.all([
-      listReceivables({ storeId, salesmanId, status, bucket, dateFrom, dateTo, page, pageSize, asOf }),
+      listReceivables({ storeId, salesmanId, status, bucket, dateFrom, dateTo, search, page, pageSize, asOf }),
       listStoreOptions(),
       listCanvassers(),
     ]);
@@ -85,6 +87,7 @@ export default async function PiutangPage({ searchParams }: PageProps) {
         bucket={bucket}
         dateFrom={sp.from ?? ""}
         dateTo={sp.to ?? ""}
+        search={search ?? ""}
         page={page}
         pageSize={pageSize}
         asOf={asOf}
@@ -111,6 +114,7 @@ export default async function PiutangPage({ searchParams }: PageProps) {
         bucket={bucket}
         dateFrom={sp.from ?? ""}
         dateTo={sp.to ?? ""}
+        search={search ?? ""}
         page={page}
         pageSize={pageSize}
         asOf={asOf}

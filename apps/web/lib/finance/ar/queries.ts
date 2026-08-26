@@ -8,6 +8,7 @@ export type ReceivableFilters = {
   bucket?: AgingBucket;
   dateFrom?: Date;
   dateTo?: Date;
+  search?: string;
   page?: number;
   pageSize?: number;
   /** Injected so specs are deterministic; production leaves it out. */
@@ -42,6 +43,21 @@ function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
     where.invoiceDate = {};
     if (f.dateFrom) where.invoiceDate.gte = f.dateFrom;
     if (f.dateTo) where.invoiceDate.lte = f.dateTo;
+  }
+  const search = f.search?.trim();
+  if (search) {
+    /*
+     * AND-wrapped so this cannot collide with the `delivery` key the salesman filter already uses:
+     * two sibling `delivery` properties on the same object would overwrite each other.
+     */
+    where.AND = [
+      {
+        OR: [
+          { store: { name: { contains: search } } },
+          { delivery: { docNo: { contains: search } } },
+        ],
+      },
+    ];
   }
   return where;
 }

@@ -3943,6 +3943,7 @@
     "notYetDue": "—",
     "empty": "No receivables match this filter yet.",
     "noResults": "No receivables match the current filters.",
+    "noSearchResults": "No receivables match \"{search}\".",
     "loadErrorTitle": "Failed to load receivables",
     "loadErrorMessage": "Something went wrong while loading the data. Please try again.",
     "loadErrorRetry": "Reload",

@@ -242,6 +242,30 @@ d("AR queries (test bed only)", () => {
   });
 
   /*
+   * All three seeded rows share one store, so searching the store name would match all of them —
+   * a substring of overdueRec's nota number (deliveryB's docNo) is what actually narrows to one
+   * row. Lowercased against an all-uppercase docNo segment on purpose, to prove `contains` matches
+   * case-insensitively off the column's collation rather than needing Prisma's Postgres-only
+   * `mode: "insensitive"`. Asserting bucketTotals/grandOutstanding alongside rows/total is what
+   * proves `search` reached the totals query through the shared `whereFor`, not just the row query.
+   */
+  it("narrows rows and totals when searching by nota number, case-insensitively", async () => {
+    const res = await listReceivables({ storeId, asOf, search: `dlv2-${token}` });
+    expect(res.rows.map((r) => r.id)).toEqual([overdueRec]);
+    expect(res.total).toBe(1);
+    expect(res.bucketTotals.D31_60).toBe(500);
+    expect(res.bucketTotals.CURRENT).toBe(0);
+    expect(res.bucketTotals.D91_120).toBe(0);
+    expect(res.grandOutstanding).toBe(500);
+  });
+
+  it("treats a blank search as no search", async () => {
+    const res = await listReceivables({ storeId, asOf, search: "   " });
+    expect(res.rows.map((r) => r.id).sort()).toEqual([currentRec, overdueRec, thirdRec].sort());
+    expect(res.grandOutstanding).toBe(1800);
+  });
+
+  /*
    * GAP 3: getReceivable must not hide a VOIDED payment from the allocation history — dropping it
    * would make the balance math unexplainable. Goes through the real writers so the assertion is on
    * their actual output, not a hand-crafted row.
