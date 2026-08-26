@@ -281,8 +281,11 @@ d("field-sales lifecycle writers (test bed only)", () => {
   });
 
   it("putus create persists the store's discounted, rounded unitPrice onto the order line", async () => {
-    // 45678 * (1 - 10/100) = 41110.200000000004 unrounded — this is the case that
-    // actually discriminates whether roundCents ran (mirrors packages/db/src/pricing.spec.ts).
+    // 45678 * (1 - 10/100) = 41110.200000000004 unrounded, but unitPrice/lineTotal/subtotal are
+    // Decimal(15,2), so MariaDB rounds on persistence regardless of whether roundCents ran — this
+    // case does NOT discriminate that (packages/db/src/pricing.spec.ts is the actual guard for the
+    // round). What it guards is the discount itself: that computeStorePrice applied the store's
+    // 10% off 45678 and this writer persisted the discounted price onto the order line.
     await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 45678 } });
     await prisma.store.update({ where: { id: storeId }, data: { priceDiscountPercent: 10 } });
 
