@@ -185,7 +185,7 @@ export function PiutangPageClient(props: Props) {
               placeholder={t("allStores")}
               searchPlaceholder={t("storeSearchPlaceholder")}
               emptyMessage={t("storeSearchEmpty")}
-              triggerClassName="h-9 w-full sm:w-[200px]"
+              triggerClassName="h-10 w-full sm:w-[200px]"
             />
             <SearchableCombobox
               options={[
@@ -197,7 +197,7 @@ export function PiutangPageClient(props: Props) {
               placeholder={t("allSalesmen")}
               searchPlaceholder={t("salesmanSearchPlaceholder")}
               emptyMessage={t("salesmanSearchEmpty")}
-              triggerClassName="h-9 w-full sm:w-[180px]"
+              triggerClassName="h-10 w-full sm:w-[180px]"
             />
             <Select value={props.status} onValueChange={(v) => pushParams({ status: v === "ALL" ? undefined : v })}>
               <SelectTrigger className="w-full sm:w-[160px]">
@@ -215,17 +215,17 @@ export function PiutangPageClient(props: Props) {
               type="date"
               value={props.dateFrom}
               onChange={(e) => pushParams({ from: e.target.value || undefined })}
-              className="h-9 w-full sm:w-[150px]"
+              className="h-10 w-full sm:w-[150px]"
               aria-label={t("fromLabel")}
             />
             <Input
               type="date"
               value={props.dateTo}
               onChange={(e) => pushParams({ to: e.target.value || undefined })}
-              className="h-9 w-full sm:w-[150px]"
+              className="h-10 w-full sm:w-[150px]"
               aria-label={t("toLabel")}
             />
-            <Button variant="outline" className="h-9" onClick={reset}>
+            <Button variant="outline" className="h-10" onClick={reset}>
               {t("reset")}
             </Button>
           </div>

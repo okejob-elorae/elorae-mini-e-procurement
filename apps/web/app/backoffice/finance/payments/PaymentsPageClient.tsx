@@ -188,57 +188,57 @@ export function PaymentsPageClient(props: Props) {
                   <p className="text-muted-foreground">{hasFilters ? t("noResults") : t("empty")}</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{t("colDocNo")}</TableHead>
-                        <TableHead>{t("colStore")}</TableHead>
-                        <TableHead>{t("colDate")}</TableHead>
-                        <TableHead>{t("colMethod")}</TableHead>
-                        <TableHead className="text-right">{t("colAmount")}</TableHead>
-                        <TableHead className="text-right">{t("colAllocations")}</TableHead>
-                        <TableHead>{t("colStatus")}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {props.rows.map((row) => {
-                        const status = row.status as PaymentStatusValue;
-                        const voided = status === "VOIDED";
-                        return (
-                          <TableRow
-                            key={row.id}
-                            className={cn("cursor-pointer hover:bg-muted/50", voided && "text-muted-foreground")}
-                            onClick={() => startTransition(() => router.push(`${BASE_PATH}/${row.id}`))}
-                          >
-                            <TableCell className="whitespace-nowrap font-mono text-xs">{row.docNo}</TableCell>
-                            <TableCell className="max-w-[180px] truncate font-medium">{row.storeName}</TableCell>
-                            <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(row.paidAt)}</TableCell>
-                            <TableCell>{t(row.method === "CASH" ? "methodCash" : "methodTransfer")}</TableCell>
-                            <TableCell className="text-right whitespace-nowrap tabular-nums font-medium">
-                              {formatRupiah(row.amount)}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">{row.allocationCount}</TableCell>
-                            <TableCell>
-                              <Badge className={STATUS_BADGE_CLASS[status]}>
-                                {t(status === "POSTED" ? "statusPosted" : "statusVoided")}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-              {!isPending && (
-                <Pagination
-                  page={props.page}
-                  totalPages={Math.max(1, Math.ceil(props.total / props.pageSize))}
-                  onPageChange={goToPage}
-                  totalCount={props.total}
-                  pageSize={props.pageSize}
-                />
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t("colDocNo")}</TableHead>
+                          <TableHead>{t("colStore")}</TableHead>
+                          <TableHead>{t("colDate")}</TableHead>
+                          <TableHead>{t("colMethod")}</TableHead>
+                          <TableHead className="text-right">{t("colAmount")}</TableHead>
+                          <TableHead className="text-right">{t("colAllocations")}</TableHead>
+                          <TableHead>{t("colStatus")}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {props.rows.map((row) => {
+                          const status = row.status as PaymentStatusValue;
+                          const voided = status === "VOIDED";
+                          return (
+                            <TableRow
+                              key={row.id}
+                              className={cn("cursor-pointer hover:bg-muted/50", voided && "text-muted-foreground")}
+                              onClick={() => startTransition(() => router.push(`${BASE_PATH}/${row.id}`))}
+                            >
+                              <TableCell className="whitespace-nowrap font-mono text-xs">{row.docNo}</TableCell>
+                              <TableCell className="max-w-[180px] truncate font-medium">{row.storeName}</TableCell>
+                              <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(row.paidAt)}</TableCell>
+                              <TableCell>{t(row.method === "CASH" ? "methodCash" : "methodTransfer")}</TableCell>
+                              <TableCell className="text-right whitespace-nowrap tabular-nums font-medium">
+                                {formatRupiah(row.amount)}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">{row.allocationCount}</TableCell>
+                              <TableCell>
+                                <Badge className={STATUS_BADGE_CLASS[status]}>
+                                  {t(status === "POSTED" ? "statusPosted" : "statusVoided")}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <Pagination
+                    page={props.page}
+                    totalPages={Math.max(1, Math.ceil(props.total / props.pageSize))}
+                    onPageChange={goToPage}
+                    totalCount={props.total}
+                    pageSize={props.pageSize}
+                  />
+                </>
               )}
             </CardContent>
           </Card>
