@@ -2013,6 +2013,7 @@
         "terms": "Terms",
         "tempo": "Tempo",
         "margin": "Margin %",
+        "discount": "Diskon %",
         "address": "Alamat",
         "status": "Status",
         "active": "Aktif"
@@ -2030,6 +2031,8 @@
       "termsKonsi": "Konsi",
       "paymentTempo": "Tempo pembayaran (hari)",
       "marginPercent": "Margin (%)",
+      "priceDiscountPercent": "Diskon harga toko (%)",
+      "priceDiscountPercentKonsiNotice": "Diskon harga hanya berlaku untuk toko Putus. Toko Konsi memakai margin, bukan diskon harga, jadi kolom ini tidak tersedia di sini.",
       "coords": "Koordinat",
       "lat": "Latitude",
       "lng": "Longitude",
@@ -2072,7 +2075,9 @@
       "codeUnique": "Kode toko sudah dipakai.",
       "forbidden": "Akses ditolak.",
       "notFound": "Toko tidak ditemukan.",
-      "hasConsignmentStock": "Toko ini masih memiliki stok konsinyasi dan harus meretur atau mentransfernya sebelum beralih dari Konsi."
+      "hasConsignmentStock": "Toko ini masih memiliki stok konsinyasi dan harus meretur atau mentransfernya sebelum beralih dari Konsi.",
+      "invalidPriceDiscount": "Diskon harga harus antara 0 dan di bawah 100.",
+      "discountNotAllowedForKonsi": "Toko Konsi tidak boleh memiliki diskon harga."
     },
     "detail": {
       "infoTitle": "Detail toko",
@@ -3141,6 +3146,9 @@
     "selectStore": "Pilih toko",
     "searchStorePlaceholder": "Cari toko",
     "noStoreFound": "Toko tidak ditemukan.",
+    "updatingPrices": "Memperbarui harga…",
+    "repriceFailed": "Gagal memperbarui harga. Harga yang tertampil mungkin sudah tidak berlaku.",
+    "retry": "Coba Lagi",
     "buyerNameLabel": "Nama pembeli",
     "buyerNamePlaceholder": "Nama pembeli (opsional)",
     "buyerPhoneLabel": "No. telepon",
@@ -3158,7 +3166,9 @@
     "variantEmpty": "Tidak ada varian",
     "decrease": "Kurangi {name}",
     "increase": "Tambah {name}",
+    "subtotalLabel": "Subtotal",
     "totalLabel": "Total",
+    "roundingAdjustmentLabel": "Pembulatan tunai",
     "cashTenderedLabel": "Uang diterima",
     "cashTenderedPlaceholder": "0",
     "changeLabel": "Kembalian",
@@ -3246,7 +3256,9 @@
   "spgSale": {
     "back": "Kembali",
     "printButton": "Cetak",
+    "subtotalLabel": "Subtotal",
     "totalLabel": "Total",
+    "roundingAdjustmentLabel": "Pembulatan tunai",
     "cashTenderedLabel": "Uang diterima",
     "changeLabel": "Kembalian",
     "onCounterQty": "{qty} di toko",

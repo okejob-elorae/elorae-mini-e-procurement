@@ -14,9 +14,10 @@ d("getSellableCatalogForSpg (test bed only)", () => {
   let neverHeldItemId = "";
   let storeAId = "";
   let storeBId = "";
+  let discountStoreId = "";
 
   beforeEach(async () => {
-    uomId = ""; itemId = ""; shortItemId = ""; neverHeldItemId = ""; storeAId = ""; storeBId = "";
+    uomId = ""; itemId = ""; shortItemId = ""; neverHeldItemId = ""; storeAId = ""; storeBId = ""; discountStoreId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
 
@@ -45,6 +46,11 @@ d("getSellableCatalogForSpg (test bed only)", () => {
     });
     storeBId = storeB.id;
 
+    const discountStore = await prisma.store.create({
+      data: { code: `${tag}-DISC`, name: "Toko SPG Catalog Diskon", address: "Jl. Test C", termsType: "PUTUS", priceDiscountPercent: 25, isActive: true },
+    });
+    discountStoreId = discountStore.id;
+
     /* storeA holds 7 of itemId; storeB holds 3 of the same item — proves the figure is per-store. */
     await prisma.storeStock.create({ data: { storeId: storeAId, itemId, variantSku: "", qty: 7, avgCost: 0 } });
     await prisma.storeStock.create({ data: { storeId: storeBId, itemId, variantSku: "", qty: 3, avgCost: 0 } });
@@ -54,7 +60,7 @@ d("getSellableCatalogForSpg (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const storeIds = [seededId(storeAId), seededId(storeBId)];
+    const storeIds = [seededId(storeAId), seededId(storeBId), seededId(discountStoreId)];
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
     await prisma.store.deleteMany({ where: { id: { in: storeIds } } });
@@ -82,5 +88,15 @@ d("getSellableCatalogForSpg (test bed only)", () => {
     const row = rows.find((r) => r.itemId === neverHeldItemId);
     expect(row).toBeDefined();
     expect(row!.onCounterQty).toBe(0);
+  });
+
+  it("prices off the store's priceDiscountPercent, and at list for a store with none", async () => {
+    const discounted = await getSellableCatalogForSpg(seededId(discountStoreId));
+    const discountedRow = discounted.find((r) => r.itemId === itemId && r.variantSku === null)!;
+    expect(discountedRow.price).toBe(3750); // 5000 * (1 - 25/100)
+
+    const undiscounted = await getSellableCatalogForSpg(seededId(storeAId));
+    const undiscountedRow = undiscounted.find((r) => r.itemId === itemId && r.variantSku === null)!;
+    expect(undiscountedRow.price).toBe(5000);
   });
 });

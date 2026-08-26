@@ -1,5 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
-import { computeStorePrice } from "@elorae/db/pricing";
+import { computeStorePrice, roundToWholeRupiah } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -56,9 +56,10 @@ export async function recordSpgSale(input: {
       if (existing) return { ok: true, spgSaleId: existing.id, docNo: existing.docNo, changeGiven: Number(existing.changeGiven) };
     }
 
-    const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { marginPercent: true, termsType: true } });
+    const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { marginPercent: true, termsType: true, priceDiscountPercent: true } });
     if (!store) return { ok: false, code: "STORE_NOT_FOUND" };
     const marginPercent = store.marginPercent === null ? null : Number(store.marginPercent);
+    const priceDiscountPercent = store.priceDiscountPercent === null ? null : Number(store.priceDiscountPercent);
 
     // Load item price + meta for each line
     // (SPG sales are always retail/PUTUS to the end customer, regardless of the
@@ -78,7 +79,7 @@ export async function recordSpgSale(input: {
       const item = itemById.get(l.itemId);
       if (!item) return { ok: false, code: "NO_PRICE" };
       const sp = item.sellingPrice === null ? null : Number(item.sellingPrice);
-      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent });
+      const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent, priceDiscountPercent });
       if (price === null) return { ok: false, code: "NO_PRICE" };
       priced.push({ line: l, item, unitPrice: price });
     }
@@ -88,7 +89,10 @@ export async function recordSpgSale(input: {
       return label ? `${p.item.nameId} — ${label}` : p.item.nameId;
     };
 
-    const total = priced.reduce((s, p) => s + p.line.qty * p.unitPrice, 0);
+    // subtotal = exact 2dp sum of lines; total = the whole-rupiah CHARGED figure (cash boundary —
+    // sen do not exist as physical currency). Payment is compared against `total`, never `subtotal`.
+    const subtotal = priced.reduce((s, p) => s + p.line.qty * p.unitPrice, 0);
+    const total = roundToWholeRupiah(subtotal);
     const cashReceived = input.cashReceived ?? total;
     if (cashReceived < total) return { ok: false, code: "INSUFFICIENT_PAYMENT" };
     const changeGiven = cashReceived - total;
@@ -102,7 +106,7 @@ export async function recordSpgSale(input: {
         createdById: input.createdById ?? input.salesmanId,
         saleLat: input.saleLat == null ? null : new Prisma.Decimal(input.saleLat),
         saleLng: input.saleLng == null ? null : new Prisma.Decimal(input.saleLng),
-        subtotal: total,
+        subtotal,
         total,
         cashReceived,
         changeGiven,

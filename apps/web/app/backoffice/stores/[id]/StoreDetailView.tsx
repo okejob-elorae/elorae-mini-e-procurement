@@ -574,6 +574,9 @@ export function StoreDetailView({
               <DetailField label={tForm("marginPercent")}>
                 {store.marginPercent !== null ? `${store.marginPercent}%` : "—"}
               </DetailField>
+              <DetailField label={tForm("priceDiscountPercent")}>
+                {store.priceDiscountPercent !== null ? `${store.priceDiscountPercent}%` : "—"}
+              </DetailField>
             </dl>
           </section>
 

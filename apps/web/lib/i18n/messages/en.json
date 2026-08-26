@@ -2013,6 +2013,7 @@
         "terms": "Terms",
         "tempo": "Tempo",
         "margin": "Margin %",
+        "discount": "Discount %",
         "address": "Address",
         "status": "Status",
         "active": "Active"
@@ -2030,6 +2031,8 @@
       "termsKonsi": "Konsi",
       "paymentTempo": "Payment tempo (days)",
       "marginPercent": "Margin (%)",
+      "priceDiscountPercent": "Store price discount (%)",
+      "priceDiscountPercentKonsiNotice": "Price discount only applies to Putus stores. Konsi stores price off margin, not a discount, so this field isn't available here.",
       "coords": "Coordinates",
       "lat": "Latitude",
       "lng": "Longitude",
@@ -2072,7 +2075,9 @@
       "codeUnique": "Store code already exists.",
       "forbidden": "Permission denied.",
       "notFound": "Store not found.",
-      "hasConsignmentStock": "This store still holds consignment stock and must return or transfer it before switching off Konsi."
+      "hasConsignmentStock": "This store still holds consignment stock and must return or transfer it before switching off Konsi.",
+      "invalidPriceDiscount": "Price discount must be between 0 and under 100.",
+      "discountNotAllowedForKonsi": "A Konsi store cannot carry a price discount."
     },
     "detail": {
       "infoTitle": "Store details",
@@ -3141,6 +3146,9 @@
     "selectStore": "Select store",
     "searchStorePlaceholder": "Search stores",
     "noStoreFound": "No stores found.",
+    "updatingPrices": "Updating prices…",
+    "repriceFailed": "Couldn't refresh prices. Prices shown may be out of date.",
+    "retry": "Retry",
     "buyerNameLabel": "Buyer name",
     "buyerNamePlaceholder": "Buyer name (optional)",
     "buyerPhoneLabel": "Phone number",
@@ -3158,7 +3166,9 @@
     "variantEmpty": "No variants",
     "decrease": "Decrease {name}",
     "increase": "Increase {name}",
+    "subtotalLabel": "Subtotal",
     "totalLabel": "Total",
+    "roundingAdjustmentLabel": "Cash rounding",
     "cashTenderedLabel": "Cash tendered",
     "cashTenderedPlaceholder": "0",
     "changeLabel": "Change",
@@ -3246,7 +3256,9 @@
   "spgSale": {
     "back": "Back",
     "printButton": "Print",
+    "subtotalLabel": "Subtotal",
     "totalLabel": "Total",
+    "roundingAdjustmentLabel": "Cash rounding",
     "cashTenderedLabel": "Cash tendered",
     "changeLabel": "Change",
     "onCounterQty": "{qty} at the store",

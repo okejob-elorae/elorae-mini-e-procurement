@@ -14,9 +14,22 @@ export type VanSaleDetail = {
   journalId: string | null; hasPostableJournal: boolean;
 };
 
-export async function getSellableVanStock(salesmanId: string): Promise<SellableVanRow[]> {
+/**
+ * `storeId` is the buyer the salesman has selected in the van-sell shell (nullable — a
+ * walk-in/adhoc sale has no store, and prices at list). It is genuinely reachable at preview
+ * time (apps/web/app/pwa/van/VanSellShell.tsx holds the store picker), so this MUST reflect the
+ * same discount `recordVanSale` will charge — the shell prices its cart, sums the total, and
+ * derives change off this row's `price`; a preview that ignores the store's discount overstates
+ * the total and the change actually handed back, which is real cash, not just a display bug.
+ */
+export async function getSellableVanStock(salesmanId: string, storeId?: string | null): Promise<SellableVanRow[]> {
   // Van sale price = PUTUS = item sellingPrice (store margin only affects KONSI, which van sales never are),
-  // so pricing is buyer-independent.
+  // but priceDiscountPercent DOES apply — mirrors recordVanSale's own store lookup.
+  let priceDiscountPercent: number | null = null;
+  if (storeId) {
+    const store = await prisma.store.findUnique({ where: { id: storeId }, select: { priceDiscountPercent: true } });
+    priceDiscountPercent = store?.priceDiscountPercent == null ? null : Number(store.priceDiscountPercent);
+  }
   const rows = await prisma.vanStock.findMany({
     where: { userId: salesmanId, qty: { gt: 0 } },
     include: { item: { select: { sku: true, nameId: true, sellingPrice: true, variants: true } } },
@@ -24,7 +37,7 @@ export async function getSellableVanStock(salesmanId: string): Promise<SellableV
   });
   return rows.map((r) => {
     const sp = r.item.sellingPrice === null ? null : Number(r.item.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null });
+    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent });
     return {
       itemId: r.itemId, sku: r.item.sku, productName: r.item.nameId,
       variantSku: r.variantSku, variantLabel: variantDetailForSku(r.item.variants, r.variantSku),

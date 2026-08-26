@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -13,7 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
-import { recordVanSaleAction } from "@/app/actions/van-sale";
+import { recordVanSaleAction, getVanStockForStoreAction } from "@/app/actions/van-sale";
+import { roundToWholeRupiah, roundCents } from "@elorae/db/pricing";
 import { VanVariantSheet, type VanStockRow, type VanGroup } from "./VanVariantSheet";
 
 type StoreOption = { id: string; name: string };
@@ -22,6 +23,14 @@ type ShortLine = { itemId: string; variantSku: string | null; requested: number;
 type CartEntry = { itemId: string; variantSku: string | null; sku: string; productName: string; unitPrice: number; qty: number; qtyOnVan: number };
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+// Exact 2dp display — for the Subtotal row ONLY. `rupiah()` rounds for display, which would make
+// Subtotal look identical to the already-rounded Total whenever they differ by under Rp 1 — the
+// entire point of showing Subtotal is the fraction `rupiah()` would hide.
+const rupiahExact = (n: number) => `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Signed sub-rupiah delta display (Total - Subtotal) — the rounding itself is never sub-rupiah,
+// but the ADJUSTMENT it represents is, by construction (see roundToWholeRupiah in @elorae/db/pricing).
+const formatAdjustment = (n: number) =>
+  `${n >= 0 ? "+" : "-"}Rp ${Math.abs(n).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function lineKey(itemId: string, variantSku: string | null) {
   return `${itemId}::${variantSku ?? ""}`;
@@ -43,10 +52,12 @@ function getPositionBestEffort(): Promise<{ lat: number; lng: number } | null> {
   });
 }
 
-export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: StoreOption[] }) {
+export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockRow[]; stores: StoreOption[] }) {
   const t = useTranslations("vanSale");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [repricing, startReprice] = useTransition();
+  const [stock, setStock] = useState<VanStockRow[]>(initialStock);
   const [q, setQ] = useState("");
   const [cart, setCart] = useState<Map<string, CartEntry>>(new Map());
   const [buyerMode, setBuyerMode] = useState<"store" | "adhoc">("adhoc");
@@ -60,6 +71,76 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [sheetGroup, setSheetGroup] = useState<VanGroup | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  /**
+   * The store picker's selection is the pricing input — a walk-in (`buyerMode: "adhoc"`)
+   * prices at list (matches `initialStock`, which was fetched with no storeId), a chosen
+   * store re-prices with that store's `priceDiscountPercent`, mirroring what `recordVanSale`
+   * will actually charge. Skips the very first run: `initialStock` is already correct for
+   * the default "adhoc" mode, so mounting shouldn't fire a redundant refetch.
+   */
+  const skipFirstReprice = useRef(true);
+  // Guards against an in-flight fetch for a since-superseded selection resolving late and
+  // clobbering a newer one — React gives no ordering guarantee across overlapping transitions.
+  const repriceReqRef = useRef(0);
+  // The buyer key (storeId, or "" for walk-in) that `stock` was actually priced for. Compared
+  // against the CURRENT buyer key to gate submit — a selection change makes this stale until a
+  // reprice for the new key lands, independent of whether `repricing` has already flipped back
+  // to false (e.g. after a failed fetch).
+  const [pricedForKey, setPricedForKey] = useState("");
+  const [repriceError, setRepriceError] = useState<"UNAUTHORIZED" | "GENERIC" | null>(null);
+  const [repriceNonce, setRepriceNonce] = useState(0);
+  useEffect(() => {
+    if (skipFirstReprice.current) {
+      skipFirstReprice.current = false;
+      return;
+    }
+    const effectiveStoreId = buyerMode === "store" ? storeId || null : null;
+    const reqId = ++repriceReqRef.current;
+    startReprice(async () => {
+      try {
+        const res = await getVanStockForStoreAction(effectiveStoreId);
+        if (repriceReqRef.current !== reqId) return;
+        if (!res.ok) {
+          setRepriceError(res.reason);
+          return;
+        }
+        setStock(res.rows);
+        setPricedForKey(effectiveStoreId ?? "");
+        setRepriceError(null);
+      } catch {
+        if (repriceReqRef.current === reqId) setRepriceError("GENERIC");
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buyerMode, storeId, repriceNonce]);
+
+  function retryReprice() {
+    setRepriceNonce((n) => n + 1);
+  }
+
+  /**
+   * A cart entry snapshots `unitPrice` at add-time (see setQty). If the store selection
+   * changes AFTER items are already in the cart, that snapshot goes stale — this resyncs
+   * every cart line to the freshly re-priced `stock` the moment it lands, so `total`/`change`
+   * never settle on a price recordVanSale won't actually charge.
+   */
+  useEffect(() => {
+    setCart((prev) => {
+      if (prev.size === 0) return prev;
+      const priceByKey = new Map(stock.map((r) => [lineKey(r.itemId, r.variantSku), r.price]));
+      let changed = false;
+      const next = new Map(prev);
+      for (const [key, entry] of next) {
+        const freshPrice = priceByKey.get(key);
+        if (freshPrice !== undefined && freshPrice !== null && freshPrice !== entry.unitPrice) {
+          next.set(key, { ...entry, unitPrice: freshPrice });
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [stock]);
 
   function openSheet(g: VanGroup) {
     setSheetGroup(g);
@@ -86,7 +167,12 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
   }
 
   const cartLines = useMemo(() => Array.from(cart.values()), [cart]);
-  const total = useMemo(() => cartLines.reduce((s, l) => s + l.qty * l.unitPrice, 0), [cartLines]);
+  // subtotal = exact 2dp sum of lines; total = the whole-rupiah CHARGED figure recordVanSale
+  // actually persists and compares payment against — derived from the SAME shared helper the
+  // writer uses (@elorae/db/pricing), so this preview can never drift from what gets charged.
+  const subtotal = useMemo(() => cartLines.reduce((s, l) => s + l.qty * l.unitPrice, 0), [cartLines]);
+  const total = roundToWholeRupiah(subtotal);
+  const roundingAdjustment = roundCents(total - subtotal);
   const paid = Number(amountPaid) || 0;
   const change = paid - total;
 
@@ -104,6 +190,21 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
     return Array.from(m.values());
   }, [stock]);
 
+  /**
+   * A variant sheet holds a snapshot of its `group` at open-time (see openSheet). If a reprice
+   * lands while the sheet is open, refresh that snapshot from the freshly re-priced `groups` so
+   * a subsequent tap in the sheet writes the current price into the cart, not the one the sheet
+   * opened with.
+   */
+  useEffect(() => {
+    if (!sheetOpen) return;
+    setSheetGroup((prev) => {
+      if (!prev) return prev;
+      return groups.find((g) => g.itemId === prev.itemId) ?? prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stock]);
+
   const filteredGroups = useMemo(() => {
     const needle = q.trim().toLowerCase();
     if (!needle) return groups;
@@ -119,7 +220,24 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
     return g.variants.reduce((s, v) => s + (cart.get(lineKey(v.itemId, v.variantSku))?.qty ?? 0), 0);
   }
 
-  const canSubmit = cartLines.length > 0 && total > 0 && paid >= total && !pending;
+  const effectiveStoreId = buyerMode === "store" ? storeId || null : null;
+  const pricingStale = pricedForKey !== (effectiveStoreId ?? "");
+  // A failed reprice can leave `repricing` false while the on-screen prices are still stale
+  // (pricingStale) or explicitly unknown (repriceError) — every surface that would let a tap
+  // write a price into the cart must gate on all three, not just the transient `repricing` flag,
+  // or the salesman can quote a price the writer will not actually charge.
+  const stockGateActive = repricing || repriceError !== null || pricingStale;
+  const canSubmit = cartLines.length > 0 && total > 0 && paid >= total && !pending && !stockGateActive;
+  // One-line reason surfaced directly above the submit button — the Alert above is off-screen
+  // once the item list scrolls, but the sticky cash bar (and its disabled submit) is always
+  // visible, so the explanation has to live there too.
+  const submitBlockedReason = repriceError
+    ? repriceError === "UNAUTHORIZED"
+      ? t("errUnauthorized")
+      : t("repriceFailed")
+    : pricingStale || repricing
+      ? t("updatingPrices")
+      : null;
 
   function onSubmit() {
     setShortLines([]);
@@ -206,7 +324,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
             variant={buyerMode === "store" ? "default" : "outline"}
             className="flex-1"
             onClick={() => setBuyerMode("store")}
-            disabled={pending}
+            disabled={pending || repricing}
           >
             {t("buyerStore")}
           </Button>
@@ -216,7 +334,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
             variant={buyerMode === "adhoc" ? "default" : "outline"}
             className="flex-1"
             onClick={() => setBuyerMode("adhoc")}
-            disabled={pending}
+            disabled={pending || repricing}
           >
             {t("buyerAdhoc")}
           </Button>
@@ -232,7 +350,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
               placeholder={t("selectStore")}
               searchPlaceholder={t("searchStorePlaceholder")}
               emptyMessage={t("noStoreFound")}
-              disabled={pending}
+              disabled={pending || repricing}
               triggerClassName="w-full"
             />
           </div>
@@ -263,6 +381,23 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
               />
             </div>
           </div>
+        )}
+
+        {repricing && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t("updatingPrices")}
+          </p>
+        )}
+        {repriceError && (
+          <Alert variant="destructive">
+            <AlertDescription className="flex items-center justify-between gap-2">
+              <span>{repriceError === "UNAUTHORIZED" ? t("errUnauthorized") : t("repriceFailed")}</span>
+              <Button type="button" size="sm" variant="outline" onClick={retryReprice} disabled={repricing}>
+                {t("retry")}
+              </Button>
+            </AlertDescription>
+          </Alert>
         )}
       </Card>
 
@@ -303,7 +438,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
                         type="button"
                         variant="outline"
                         size="icon-lg"
-                        disabled={qty <= 0 || pending}
+                        disabled={qty <= 0 || pending || stockGateActive}
                         onClick={() => setQty(row, qty - 1)}
                         aria-label={t("decrease", { name: row.productName })}
                       >
@@ -314,7 +449,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
                         type="button"
                         variant="outline"
                         size="icon-lg"
-                        disabled={qty >= row.qtyOnVan || pending}
+                        disabled={qty >= row.qtyOnVan || pending || stockGateActive}
                         onClick={() => setQty(row, qty + 1)}
                         aria-label={t("increase", { name: row.productName })}
                       >
@@ -334,14 +469,17 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
               key={g.itemId}
               role="button"
               tabIndex={0}
-              onClick={() => openSheet(g)}
+              aria-disabled={stockGateActive}
+              onClick={() => {
+                if (!stockGateActive) openSheet(g);
+              }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
+                if ((e.key === "Enter" || e.key === " ") && !stockGateActive) {
                   e.preventDefault();
                   openSheet(g);
                 }
               }}
-              className="flex cursor-pointer flex-row items-center gap-3 p-3"
+              className={`flex flex-row items-center gap-3 p-3 ${stockGateActive ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{g.productName}</p>
@@ -369,10 +507,22 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
 
       {cartLines.length > 0 && (
         <div className="sticky bottom-0 -mx-4 -mb-4 space-y-2 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          {roundingAdjustment !== 0 && (
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{t("subtotalLabel")}</span>
+              <span className="tabular-nums">{rupiahExact(subtotal)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{t("totalLabel")}</span>
             <span className="font-semibold tabular-nums">{rupiah(total)}</span>
           </div>
+          {roundingAdjustment !== 0 && (
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{t("roundingAdjustmentLabel")}</span>
+              <span className="tabular-nums">{formatAdjustment(roundingAdjustment)}</span>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="van-cash-tendered" className="text-xs">
               {t("cashTenderedLabel")}
@@ -393,6 +543,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
             <span className={`font-semibold tabular-nums ${change < 0 ? "text-destructive" : ""}`}>{rupiah(change)}</span>
           </div>
           {paid > 0 && change < 0 && <p className="text-xs text-destructive">{t("changeInsufficient")}</p>}
+          {submitBlockedReason && <p className="text-xs text-destructive">{submitBlockedReason}</p>}
           <Button type="button" className="w-full" size="lg" onClick={onSubmit} disabled={!canSubmit}>
             {pending ? (
               <>
@@ -406,7 +557,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
         </div>
       )}
 
-      <VanVariantSheet group={sheetGroup} cart={cart} setQty={setQty} open={sheetOpen} onOpenChange={setSheetOpen} />
+      <VanVariantSheet group={sheetGroup} cart={cart} setQty={setQty} open={sheetOpen} onOpenChange={setSheetOpen} disabled={stockGateActive} />
     </div>
   );
 }

@@ -14,9 +14,12 @@ export type SpgCatalogRow = {
 
 /**
  * SPG record-sale catalog — active finished goods, priced PUTUS (retail),
- * mirroring the pricing recordSpgSale itself applies (store-independent:
- * PUTUS ignores marginPercent, so this never needs the store's own
- * consignment terms). The set stays UNRESTRICTED — every active finished good
+ * mirroring the pricing recordSpgSale itself applies (PUTUS ignores
+ * marginPercent, so this never needs the store's own consignment terms —
+ * but it DOES need the store's priceDiscountPercent, since that applies to
+ * every PUTUS-priced line regardless of the store's own consignment terms;
+ * looked up below so this preview matches what recordSpgSale actually
+ * charges). The set stays UNRESTRICTED — every active finished good
  * is offered, including one with no StoreStock row at all (reports 0).
  * recordSpgSale is no longer fully record-only — it decrements StoreStock at
  * a KONSI store (see its doc comment) — but this query still enforces NO
@@ -42,6 +45,9 @@ export type SpgCatalogRow = {
  * with a StoreStock row) since there is no stock check.
  */
 export async function getSellableCatalogForSpg(storeId: string): Promise<SpgCatalogRow[]> {
+  const store = await prisma.store.findUnique({ where: { id: storeId }, select: { priceDiscountPercent: true } });
+  const priceDiscountPercent = store?.priceDiscountPercent == null ? null : Number(store.priceDiscountPercent);
+
   const rows = await prisma.item.findMany({
     where: { isActive: true, type: "FINISHED_GOOD" },
     orderBy: { nameId: "asc" },
@@ -61,7 +67,7 @@ export async function getSellableCatalogForSpg(storeId: string): Promise<SpgCata
   const out: SpgCatalogRow[] = [];
   for (const r of rows) {
     const sp = r.sellingPrice === null ? null : Number(r.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null });
+    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent });
     const variantSkus = parseItemVariants(r.variants)
       .map((v) => (v.sku ?? "").trim())
       .filter(Boolean);

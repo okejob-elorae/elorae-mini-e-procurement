@@ -158,16 +158,23 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // Mirrors the termsType onValueChange handler below: a store that was already KONSI when
+    // this form loaded (so the handler never fired) can still carry a stored priceDiscountPercent
+    // — the field the KONSI branch hides is the only control that could clear it, so submit must
+    // normalise it itself or the writer's assertValidPriceDiscount rejects an unrelated edit.
+    const payload: StoreFields = { ...form, priceDiscountPercent: form.termsType === "KONSI" ? null : form.priceDiscountPercent };
     startTransition(async () => {
       const result =
         mode === "create"
-          ? await createStoreAction(form)
-          : await updateStoreAction(storeId!, form);
+          ? await createStoreAction(payload)
+          : await updateStoreAction(storeId!, payload);
       if (!result.ok) {
         if (result.code === "code_unique") setError(tErr("codeUnique"));
         else if (result.code === "forbidden") setError(tErr("forbidden"));
         else if (result.code === "not_found") setError(tErr("notFound"));
         else if (result.code === "has_consignment_stock") setError(tErr("hasConsignmentStock"));
+        else if (result.code === "invalid_price_discount") setError(tErr("invalidPriceDiscount"));
+        else if (result.code === "konsi_discount_not_allowed") setError(tErr("discountNotAllowedForKonsi"));
         else setError(result.message);
         return;
       }
@@ -461,7 +468,16 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               <Select
                 disabled={pending || readOnly}
                 value={form.termsType}
-                onValueChange={(v) => update("termsType", v as "PUTUS" | "KONSI")}
+                onValueChange={(v) => {
+                  const next = v as "PUTUS" | "KONSI";
+                  setForm((prev) => ({
+                    ...prev,
+                    termsType: next,
+                    /* A discount only applies to PUTUS pricing — drop any leftover value from
+                     * local state so a switch-then-save can never carry one into the writer. */
+                    priceDiscountPercent: next === "PUTUS" ? prev.priceDiscountPercent : null,
+                  }));
+                }}
               >
                 <SelectTrigger id="termsType" className="w-full">
                   <SelectValue />
@@ -498,6 +514,27 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               />
             </div>
           </div>
+
+          {form.termsType === "PUTUS" ? (
+            <div className="space-y-1.5 max-w-xs">
+              <Label htmlFor="priceDiscountPercent">{t("priceDiscountPercent")}</Label>
+              <Input
+                id="priceDiscountPercent"
+                disabled={pending || readOnly}
+                type="number"
+                step="0.01"
+                value={form.priceDiscountPercent ?? ""}
+                onChange={(e) =>
+                  update(
+                    "priceDiscountPercent",
+                    e.target.value === "" ? null : Number(e.target.value),
+                  )
+                }
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t("priceDiscountPercentKonsiNotice")}</p>
+          )}
         </section>
 
         <Separator />

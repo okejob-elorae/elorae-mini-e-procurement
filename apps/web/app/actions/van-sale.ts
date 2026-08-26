@@ -6,6 +6,7 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordVanSale } from "@/lib/canvassing/sale-writer";
+import { getSellableVanStock, type SellableVanRow } from "@/lib/canvassing/sale-queries";
 import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
 import { postVanSaleJournal } from "@/lib/canvassing/van-journal";
 import { isJournalRetryable } from "@/lib/canvassing/journal-pending";
@@ -14,6 +15,25 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 export type RecordVanSaleActionResult =
   | { ok: true; saleId: string; docNo: string; changeAmount: number }
   | { ok: false; reason: "UNAUTHORIZED" | "EMPTY" | "NO_PRICE" | "INSUFFICIENT_PAYMENT" | "INSUFFICIENT_VAN_STOCK" | "VALIDATION"; shortLines?: Array<{ itemId: string; variantSku: string | null; requested: number; available: number }> };
+
+export type VanStockFetchResult = { ok: true; rows: SellableVanRow[] } | { ok: false; reason: "UNAUTHORIZED" };
+
+/**
+ * Re-prices the van-sell shell's stock list for the buyer the salesman just picked (or cleared,
+ * for a walk-in sale) — called from VanSellShell whenever buyerMode/storeId changes, so the
+ * on-screen unit price, cart total, and change always match what recordVanSale will actually
+ * charge once a store's priceDiscountPercent is in play.
+ *
+ * Returns a discriminated result rather than `[]` on a missing session — the caller must be able
+ * to tell "session gone" apart from "genuinely no van stock" so it doesn't blank out a catalog
+ * that's still valid while the cart sits on stale prices.
+ */
+export async function getVanStockForStoreAction(storeId: string | null): Promise<VanStockFetchResult> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, reason: "UNAUTHORIZED" };
+  const rows = await getSellableVanStock(session.user.id, storeId);
+  return { ok: true, rows };
+}
 
 const schema = z.object({
   storeId: z.string().nullable(),

@@ -280,6 +280,31 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.subtotal)).toBe(6 * 35000);
   });
 
+  it("putus create persists the store's discounted, rounded unitPrice onto the order line", async () => {
+    // 45678 * (1 - 10/100) = 41110.200000000004 unrounded, but unitPrice/lineTotal/subtotal are
+    // Decimal(15,2), so MariaDB rounds on persistence regardless of whether roundCents ran — this
+    // case does NOT discriminate that (packages/db/src/pricing.spec.ts is the actual guard for the
+    // round). What it guards is the discount itself: that computeStorePrice applied the store's
+    // 10% off 45678 and this writer persisted the discounted price onto the order line.
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 45678 } });
+    await prisma.store.update({ where: { id: storeId }, data: { priceDiscountPercent: 10 } });
+
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      // client-sent unitPrice is ignored; the server recomputes off item.sellingPrice + the store's discount.
+      lines: [{ itemId, variantSku: "", productName: "T", qty: 6, unitPrice: 1 }],
+    });
+
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    expect(Number(order!.lines[0].unitPrice)).toBe(41110.2);
+    // NOT `6 * 41110.2` — that JS expression is 246661.19999999998, but lineTotal/subtotal are
+    // Decimal(15,2), so MariaDB stores/returns 246661.20 and Number(...) reads back 246661.2.
+    expect(Number(order!.lines[0].lineTotal)).toBe(246661.2);
+    expect(Number(order!.subtotal)).toBe(246661.2);
+  });
+
   it("putus create with no appeal stores null requestedUnitPrice/appealReason", async () => {
     const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
     const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });

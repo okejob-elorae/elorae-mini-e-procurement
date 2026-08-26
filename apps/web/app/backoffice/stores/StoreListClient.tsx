@@ -146,6 +146,7 @@ export function StoreListClient({
                     <TableHead>{tTable("terms")}</TableHead>
                     <TableHead className="text-right">{tTable("tempo")}</TableHead>
                     <TableHead className="text-right">{tTable("margin")}</TableHead>
+                    <TableHead className="text-right">{tTable("discount")}</TableHead>
                     <TableHead>{tTable("address")}</TableHead>
                     <TableHead>{tTable("status")}</TableHead>
                   </TableRow>
@@ -177,6 +178,7 @@ export function StoreListClient({
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{s.paymentTempo}d</TableCell>
                       <TableCell className="text-right tabular-nums">{s.marginPercent ?? "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{s.priceDiscountPercent ?? "—"}</TableCell>
                       <TableCell className="truncate max-w-[220px] text-muted-foreground" title={s.address}>
                         {s.address}
                       </TableCell>

@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { updateStore, StoreHasConsignmentStockError, type StoreFields } from "./queries";
+import {
+  createStore,
+  updateStore,
+  StoreHasConsignmentStockError,
+  InvalidPriceDiscountPercentError,
+  KonsiPriceDiscountNotAllowedError,
+  type StoreFields,
+} from "./queries";
 
 /* Store-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -27,6 +34,7 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     termsType: "PUTUS",
     paymentTempo: 0,
     marginPercent: 20,
+    priceDiscountPercent: null,
     lat: null,
     lng: null,
     checkinRadiusMeters: null,
@@ -85,5 +93,112 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     const result = await updateStore(laggingStoreId, konsiFields);
     expect(result.termsType).toBe("KONSI");
     expect(result.name).toBe("Renamed");
+  });
+});
+
+d("store price discount guard (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let createdIds: string[] = [];
+
+  const putusFields = (code: string, priceDiscountPercent: number | null): StoreFields => ({
+    code,
+    name: "Discount guard store",
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType: "PUTUS",
+    paymentTempo: 0,
+    marginPercent: null,
+    priceDiscountPercent,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+  });
+
+  const konsiFields = (code: string, priceDiscountPercent: number | null): StoreFields => ({
+    code,
+    name: "Discount guard konsi store",
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType: "KONSI",
+    paymentTempo: 0,
+    marginPercent: 20,
+    priceDiscountPercent,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+  });
+
+  beforeEach(() => {
+    createdIds = [];
+  });
+
+  afterEach(async () => {
+    await prisma.store.deleteMany({ where: { id: { in: createdIds.map((id) => seededId(id)) } } });
+  });
+
+  it("accepts a valid percent and stores it", async () => {
+    const created = await createStore(putusFields(`TEST-SQ-DISC-OK-${token}`, 15));
+    createdIds.push(created.id);
+    expect(created.priceDiscountPercent).toBe(15);
+  });
+
+  it("accepts null and stores it as null", async () => {
+    const created = await createStore(putusFields(`TEST-SQ-DISC-NULL-${token}`, null));
+    createdIds.push(created.id);
+    expect(created.priceDiscountPercent).toBeNull();
+  });
+
+  it("accepts 0 at the lower boundary (0 <= percent)", async () => {
+    const created = await createStore(putusFields(`TEST-SQ-DISC-ZERO-${token}`, 0));
+    createdIds.push(created.id);
+    expect(created.priceDiscountPercent).toBe(0);
+  });
+
+  it("refuses a negative percent", async () => {
+    await expect(
+      createStore(putusFields(`TEST-SQ-DISC-NEG-${token}`, -5)),
+    ).rejects.toBeInstanceOf(InvalidPriceDiscountPercentError);
+  });
+
+  it("refuses a percent of exactly 100", async () => {
+    await expect(
+      createStore(putusFields(`TEST-SQ-DISC-100-${token}`, 100)),
+    ).rejects.toBeInstanceOf(InvalidPriceDiscountPercentError);
+  });
+
+  it("refuses a percent above 100", async () => {
+    await expect(
+      createStore(putusFields(`TEST-SQ-DISC-150-${token}`, 150)),
+    ).rejects.toBeInstanceOf(InvalidPriceDiscountPercentError);
+  });
+
+  it("refuses a non-null percent on a KONSI store", async () => {
+    await expect(
+      createStore(konsiFields(`TEST-SQ-DISC-KONSI-${token}`, 10)),
+    ).rejects.toBeInstanceOf(KonsiPriceDiscountNotAllowedError);
+  });
+
+  it("allows a KONSI store as long as it carries no discount", async () => {
+    const created = await createStore(konsiFields(`TEST-SQ-DISC-KONSI-OK-${token}`, null));
+    createdIds.push(created.id);
+    expect(created.priceDiscountPercent).toBeNull();
+  });
+
+  it("also enforces the range guard on update", async () => {
+    const created = await createStore(putusFields(`TEST-SQ-DISC-UPD-${token}`, 10));
+    createdIds.push(created.id);
+    await expect(
+      updateStore(created.id, putusFields(`TEST-SQ-DISC-UPD-${token}`, 100)),
+    ).rejects.toBeInstanceOf(InvalidPriceDiscountPercentError);
+  });
+
+  it("also enforces the KONSI guard on update", async () => {
+    const created = await createStore(putusFields(`TEST-SQ-DISC-UPD2-${token}`, 10));
+    createdIds.push(created.id);
+    await expect(
+      updateStore(created.id, konsiFields(`TEST-SQ-DISC-UPD2-${token}`, 10)),
+    ).rejects.toBeInstanceOf(KonsiPriceDiscountNotAllowedError);
   });
 });
