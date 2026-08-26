@@ -47,9 +47,10 @@ export function VanVariantSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
-   * True while a reprice is in flight. The sheet's `group` is a snapshot taken at open-time
-   * (see VanSellShell's openSheet) — a stepper tap here would write that snapshot's price into
-   * the cart, which may no longer match what recordVanSale will charge once the reprice lands.
+   * True while a reprice is in flight, OR the on-screen prices are stale/unknown (a reprice that
+   * failed, or hasn't yet landed for the current buyer). The sheet's `group` is a snapshot taken
+   * at open-time (see VanSellShell's openSheet) — a stepper tap here would write that snapshot's
+   * price into the cart, which may not match what recordVanSale will actually charge.
    */
   disabled?: boolean;
 }) {

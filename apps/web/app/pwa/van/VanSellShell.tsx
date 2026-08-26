@@ -222,8 +222,22 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
 
   const effectiveStoreId = buyerMode === "store" ? storeId || null : null;
   const pricingStale = pricedForKey !== (effectiveStoreId ?? "");
-  const canSubmit =
-    cartLines.length > 0 && total > 0 && paid >= total && !pending && !repricing && !pricingStale && !repriceError;
+  // A failed reprice can leave `repricing` false while the on-screen prices are still stale
+  // (pricingStale) or explicitly unknown (repriceError) — every surface that would let a tap
+  // write a price into the cart must gate on all three, not just the transient `repricing` flag,
+  // or the salesman can quote a price the writer will not actually charge.
+  const stockGateActive = repricing || repriceError !== null || pricingStale;
+  const canSubmit = cartLines.length > 0 && total > 0 && paid >= total && !pending && !stockGateActive;
+  // One-line reason surfaced directly above the submit button — the Alert above is off-screen
+  // once the item list scrolls, but the sticky cash bar (and its disabled submit) is always
+  // visible, so the explanation has to live there too.
+  const submitBlockedReason = repriceError
+    ? repriceError === "UNAUTHORIZED"
+      ? t("errUnauthorized")
+      : t("repriceFailed")
+    : pricingStale || repricing
+      ? t("updatingPrices")
+      : null;
 
   function onSubmit() {
     setShortLines([]);
@@ -424,7 +438,7 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
                         type="button"
                         variant="outline"
                         size="icon-lg"
-                        disabled={qty <= 0 || pending || repricing}
+                        disabled={qty <= 0 || pending || stockGateActive}
                         onClick={() => setQty(row, qty - 1)}
                         aria-label={t("decrease", { name: row.productName })}
                       >
@@ -435,7 +449,7 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
                         type="button"
                         variant="outline"
                         size="icon-lg"
-                        disabled={qty >= row.qtyOnVan || pending || repricing}
+                        disabled={qty >= row.qtyOnVan || pending || stockGateActive}
                         onClick={() => setQty(row, qty + 1)}
                         aria-label={t("increase", { name: row.productName })}
                       >
@@ -455,17 +469,17 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
               key={g.itemId}
               role="button"
               tabIndex={0}
-              aria-disabled={repricing}
+              aria-disabled={stockGateActive}
               onClick={() => {
-                if (!repricing) openSheet(g);
+                if (!stockGateActive) openSheet(g);
               }}
               onKeyDown={(e) => {
-                if ((e.key === "Enter" || e.key === " ") && !repricing) {
+                if ((e.key === "Enter" || e.key === " ") && !stockGateActive) {
                   e.preventDefault();
                   openSheet(g);
                 }
               }}
-              className={`flex flex-row items-center gap-3 p-3 ${repricing ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+              className={`flex flex-row items-center gap-3 p-3 ${stockGateActive ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{g.productName}</p>
@@ -529,6 +543,7 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
             <span className={`font-semibold tabular-nums ${change < 0 ? "text-destructive" : ""}`}>{rupiah(change)}</span>
           </div>
           {paid > 0 && change < 0 && <p className="text-xs text-destructive">{t("changeInsufficient")}</p>}
+          {submitBlockedReason && <p className="text-xs text-destructive">{submitBlockedReason}</p>}
           <Button type="button" className="w-full" size="lg" onClick={onSubmit} disabled={!canSubmit}>
             {pending ? (
               <>
@@ -542,7 +557,7 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
         </div>
       )}
 
-      <VanVariantSheet group={sheetGroup} cart={cart} setQty={setQty} open={sheetOpen} onOpenChange={setSheetOpen} disabled={repricing} />
+      <VanVariantSheet group={sheetGroup} cart={cart} setQty={setQty} open={sheetOpen} onOpenChange={setSheetOpen} disabled={stockGateActive} />
     </div>
   );
 }
