@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import {
@@ -73,7 +74,12 @@ export default function VendorReturnsPage() {
   const [vendors, setVendors] = useState<SupplierOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('__all__');
-  const [vendorFilter, setVendorFilter] = useState<string>('__all__');
+  /* Seeded from ?vendorId so the archive folder lands on that vendor's returns
+     rather than the unfiltered list — the link was decorative before. */
+  const searchParams = useSearchParams();
+  const [vendorFilter, setVendorFilter] = useState<string>(
+    () => searchParams.get('vendorId') ?? '__all__',
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);

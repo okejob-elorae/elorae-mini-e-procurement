@@ -63,7 +63,7 @@ export async function getNotaTokoArchive(): Promise<{
       count: acc.count,
       pending: acc.pending,
       meta: acc.count > 0 ? `${acc.count} nota · ${rupiah(acc.value)}` : null,
-      href: `/backoffice/stores/${store.id}`,
+      href: `/backoffice/archive/toko/${store.id}`,
     } satisfies ArchiveFolder;
   });
 
@@ -178,5 +178,67 @@ export async function getWorkOrderArchive(): Promise<{
     folders,
     totalDocs: workOrders.length,
     totalPending: folders.reduce((sum, f) => sum + (f.pending ?? 0), 0),
+  };
+}
+
+export type StoreDeliveryRow = {
+  id: string;
+  docNo: string;
+  orderId: string;
+  orderNo: string;
+  deliveredAt: string;
+  dueDate: string;
+  total: number;
+  taxStatus: string | null;
+};
+
+/**
+ * The documents inside one store's folder.
+ *
+ * Rows link to the order that owns the delivery rather than re-implementing
+ * the print flow: DeliveriesCard on that page already builds both notes and
+ * stamps the first print. Duplicating ~150 lines of print builder here would
+ * mean two places to keep correct, and the second one would drift.
+ */
+export async function getStoreDeliveries(storeId: string): Promise<{
+  storeName: string | null;
+  rows: StoreDeliveryRow[];
+  totalValue: number;
+  pendingTax: number;
+}> {
+  const [store, deliveries] = await Promise.all([
+    prisma.store.findUnique({ where: { id: storeId }, select: { name: true } }),
+    prisma.fieldSalesDelivery.findMany({
+      where: { order: { storeId } },
+      orderBy: { deliveredAt: 'desc' },
+      select: {
+        id: true,
+        docNo: true,
+        deliveredAt: true,
+        dueDate: true,
+        total: true,
+        orderId: true,
+        order: { select: { orderNo: true } },
+        taxInvoice: { select: { status: true } },
+      },
+    }),
+  ]);
+
+  const rows = deliveries.map((d) => ({
+    id: d.id,
+    docNo: d.docNo,
+    orderId: d.orderId,
+    orderNo: d.order.orderNo,
+    deliveredAt: d.deliveredAt.toISOString(),
+    dueDate: d.dueDate.toISOString(),
+    total: Number(d.total),
+    taxStatus: d.taxInvoice?.status ?? null,
+  }));
+
+  return {
+    storeName: store?.name ?? null,
+    rows,
+    totalValue: rows.reduce((sum, r) => sum + r.total, 0),
+    pendingTax: rows.filter((r) => r.taxStatus === 'PENDING').length,
   };
 }

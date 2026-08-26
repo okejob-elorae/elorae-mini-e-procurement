@@ -3578,6 +3578,17 @@
     "hintNota": "For store notes, the billing note has been issued but its tax invoice number is still blank.",
     "hintRetur": "For vendor returns, the return is still a draft or has not been processed.",
     "hintWo": "For work orders, the WO has not finished on the production floor.",
-    "hintLink": "Work on it here"
+    "hintLink": "Work on it here",
+    "backToArchive": "Back to archive",
+    "storeFolderDescription": "Every delivery note for this store. Open one to view the document and print its warehouse or billing note.",
+    "storeFolderMeta": "{docs} notes · {value} · {pending} without a tax invoice",
+    "storeFolderEmptyTitle": "No notes for this store yet",
+    "storeFolderEmptyBody": "Notes appear here once a putus order is approved and the goods are delivered.",
+    "openStore": "Store profile",
+    "openDocument": "Open",
+    "docNo": "Note no.",
+    "deliveredAt": "Delivered",
+    "dueDate": "Due",
+    "taxInvoice": "Tax invoice"
   }
 }

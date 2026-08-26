@@ -3578,6 +3578,17 @@
     "hintNota": "Untuk nota toko, itu berarti nota tagihan sudah terbit tapi nomor faktur pajaknya belum diisi.",
     "hintRetur": "Untuk retur pemasok, itu berarti returnya masih draf atau belum diproses.",
     "hintWo": "Untuk perintah kerja, itu berarti WO-nya belum selesai di lantai produksi.",
-    "hintLink": "Kerjakan di sini"
+    "hintLink": "Kerjakan di sini",
+    "backToArchive": "Kembali ke Arsip",
+    "storeFolderDescription": "Semua nota pengiriman untuk toko ini. Klik Buka untuk melihat dokumennya dan mencetak nota gudang atau nota tagihan.",
+    "storeFolderMeta": "{docs} nota · {value} · {pending} belum berfaktur pajak",
+    "storeFolderEmptyTitle": "Belum ada nota untuk toko ini",
+    "storeFolderEmptyBody": "Nota muncul di sini setelah pesanan putus disetujui lalu barangnya dikirim.",
+    "openStore": "Profil toko",
+    "openDocument": "Buka",
+    "docNo": "No. Nota",
+    "deliveredAt": "Tanggal Kirim",
+    "dueDate": "Jatuh Tempo",
+    "taxInvoice": "Faktur Pajak"
   }
 }

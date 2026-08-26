@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { 
   Plus, 
@@ -106,6 +107,10 @@ export function WorkOrdersPageClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<WOStatus | ''>('');
+  /* listWorkOrders already filters by vendorId server-side; the page simply
+     never passed it, which left the archive folder link decorative. */
+  const searchParams = useSearchParams();
+  const vendorIdFilter = searchParams.get('vendorId') ?? undefined;
   const [page, setPage] = useState(1);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
@@ -117,7 +122,7 @@ export function WorkOrdersPageClient() {
     setIsLoading(true);
     try {
       const result = await getWorkOrders(
-        { status: statusFilter || undefined },
+        { status: statusFilter || undefined, vendorId: vendorIdFilter },
         { page, pageSize }
       );
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
@@ -142,7 +147,7 @@ export function WorkOrdersPageClient() {
   useEffect(() => {
     fetchWorkOrders();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchWorkOrders depends on filters
-  }, [statusFilter, page, pageSize]);
+  }, [statusFilter, vendorIdFilter, page, pageSize]);
 
   const handleIssue = async (id: string) => {
     try {
