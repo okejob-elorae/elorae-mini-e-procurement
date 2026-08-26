@@ -296,8 +296,10 @@ d("field-sales lifecycle writers (test bed only)", () => {
 
     const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
     expect(Number(order!.lines[0].unitPrice)).toBe(41110.2);
-    expect(Number(order!.lines[0].lineTotal)).toBe(6 * 41110.2);
-    expect(Number(order!.subtotal)).toBe(6 * 41110.2);
+    // NOT `6 * 41110.2` — that JS expression is 246661.19999999998, but lineTotal/subtotal are
+    // Decimal(15,2), so MariaDB stores/returns 246661.20 and Number(...) reads back 246661.2.
+    expect(Number(order!.lines[0].lineTotal)).toBe(246661.2);
+    expect(Number(order!.subtotal)).toBe(246661.2);
   });
 
   it("putus create with no appeal stores null requestedUnitPrice/appealReason", async () => {
