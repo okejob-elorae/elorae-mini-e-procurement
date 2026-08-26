@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { bolehMelapor } from '@/lib/receivables/izin';
 import { putuskanKlaim } from '@/lib/receivables/writer';
 import {
   buatKlaimPembayaran,
@@ -70,10 +71,10 @@ function tanggalWib(teks: string): Date | null {
 /**
  * Catat klaim pembayaran (BKM).
  *
- * Dibatasi ke `receivables:manage`, bukan `journals:manage`. Melaporkan
- * transfer adalah pekerjaan penagihan; MEMVERIFIKASINYA pekerjaan keuangan.
- * Kalau keduanya satu izin, Aturan 1 runtuh — pelapor bisa mengesahkan
- * laporannya sendiri.
+ * Boleh dilakukan sales lapangan, bukan hanya admin kantor: sales yang
+ * menyaksikan transfernya. Yang TIDAK boleh ia lakukan adalah memverifikasinya
+ * — itu jalur lain dengan izin lain. Kalau pelapor bisa mengesahkan laporannya
+ * sendiri, seluruh Aturan 1 runtuh.
  */
 export async function buatKlaimAction(input: {
   storeId: string;
@@ -86,9 +87,7 @@ export async function buatKlaimAction(input: {
 }): Promise<HasilKlaimBaru> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)) {
-    return { ok: false, kode: 'TANPA_AKSES' };
-  }
+  if (!bolehMelapor(session.user.permissions)) return { ok: false, kode: 'TANPA_AKSES' };
 
   const tanggal = tanggalWib(input.claimedTransferAt);
   if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };

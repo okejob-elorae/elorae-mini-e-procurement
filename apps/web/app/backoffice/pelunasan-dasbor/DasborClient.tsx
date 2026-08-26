@@ -10,6 +10,7 @@ import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import type { Dasbor, TindakanHariIni } from '@/lib/receivables/dashboard-queries';
 import type { KeadaanPiutang } from '@/lib/receivables/rules';
+import { dinamis } from '@/lib/i18n/dinamis';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const ringkas = (n: number) =>
@@ -41,6 +42,7 @@ const NADA_KEADAAN: Record<KeadaanPiutang, StatusTone> = {
 
 export function DasborClient({ data }: { data: Dasbor }) {
   const t = useTranslations('dasborPelunasan');
+  const td = dinamis(t);
 
   const puncakSales = Math.max(1, ...data.perSales.map((s) => s.nilai));
 
@@ -115,10 +117,10 @@ export function DasborClient({ data }: { data: Dasbor }) {
                   <span className="block text-xs text-muted-foreground">
                     {/* Kunci "hari ini" dipakai saat selisihnya nol — "0 hari
                         lalu" bukan bahasa Indonesia yang ditulis orang. */}
-                    {(t as (k: string, v?: Record<string, string | number>) => string)(
-                      a.konteks.hari === 0 ? `why_${a.jenis}_today` : `why_${a.jenis}`,
-                      { toko: a.konteks.toko ?? '—', hari: a.konteks.hari ?? 0 },
-                    )}
+                    {td(a.konteks.hari === 0 ? `why_${a.jenis}_today` : `why_${a.jenis}`, {
+                      toko: a.konteks.toko ?? '—',
+                      hari: a.konteks.hari ?? 0,
+                    })}
                   </span>
                 </span>
                 <span className="tabular-nums text-sm font-semibold">{rupiah(a.nilai)}</span>

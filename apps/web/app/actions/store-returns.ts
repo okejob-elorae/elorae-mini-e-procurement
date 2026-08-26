@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { bolehMelapor } from '@/lib/receivables/izin';
 import {
   batalkanRetur,
   catatHitunganGudang,
@@ -41,8 +42,9 @@ async function butuh(izin: string) {
 /**
  * Catat klaim retur dari toko (NRT).
  *
- * `receivables:manage` — mencatat klaim toko adalah pekerjaan penagihan, dan
- * nota yang salah menahan piutang sampai seseorang membetulkannya.
+ * Boleh dilakukan sales lapangan: dialah yang memegang notanya dan memotretnya.
+ * Menghitung fisiknya pekerjaan gudang, dan menetapkan bebannya pekerjaan
+ * keuangan — masing-masing izinnya sendiri.
  */
 export async function catatReturTokoAction(input: {
   noNrt: string;
@@ -54,8 +56,11 @@ export async function catatReturTokoAction(input: {
   photoUrl?: string | null;
   note?: string;
 }): Promise<HasilAksiRetur> {
-  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
-  if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+  const session = await auth();
+  if (!session?.user?.id || !bolehMelapor(session.user.permissions)) {
+    return { ok: false, kode: 'TANPA_AKSES' };
+  }
+  const userId = session.user.id;
 
   const tanggal = tanggalWib(input.claimDate);
   if (!tanggal) return { ok: false, kode: 'TANGGAL_TIDAK_VALID' };
