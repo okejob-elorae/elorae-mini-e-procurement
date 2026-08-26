@@ -268,6 +268,18 @@
       "pickerPrevious": "Previous",
       "pickerNext": "Next",
       "pickerPage": "Page {page} of {totalPages}"
+    },
+    "themePresets": {
+      "presetLabel": "Ready-made themes",
+      "presetHint": "Each theme is a real Pantone colour. Pick one, then Save theme.",
+      "custom": "Another colour",
+      "noteViolet": "SaaS violet — the most common accent in web apps today",
+      "noteBlue": "Corporate blue — reads as trustworthy, suits finance",
+      "noteTeal": "Teal — calm, easy on the eyes all day",
+      "noteBotanical": "Botanical green — muted, natural-material feel",
+      "noteRose": "Rose — warm and uncommon",
+      "noteWarm": "Warm ochre — fabric and earth tones",
+      "noteNeutral": "Neutral grey — colour reserved for status, not decoration"
     }
   },
   "tax": {

@@ -24,6 +24,8 @@ import {
   Users,
 } from 'lucide-react';
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
+import { THEME_PRESETS } from '@/lib/theme/theme-presets';
+import { cn } from '@/lib/utils';
 import {
   applyDefaultTheme,
   applyThemeFromPantoneSeed,
@@ -42,6 +44,7 @@ type ThemeDraft = {
 export default function SettingsPage() {
   const t = useTranslations('settings');
   const tTheme = useTranslations('settings.theme');
+  const tPreset = useTranslations('settings.themePresets');
   const tToasts = useTranslations('toasts');
   const { data: session, status } = useSession();
   const [saved, setSaved] = useState<ThemeDraft>({
@@ -149,6 +152,16 @@ export default function SettingsPage() {
     };
     setDraft(next);
     applyDraftToDocument(next);
+  };
+
+  const applyPreset = (preset: (typeof THEME_PRESETS)[number]) => {
+    // Routed through the same draft the full Pantone picker fills, so a preset
+    // and a hand-picked colour cannot end up meaning different things.
+    handlePantoneSelect({
+      tcx: preset.tcx,
+      name: preset.name,
+      hex: preset.hex,
+    } as PantoneThemeSelection);
   };
 
   const handleThemeSave = async () => {
@@ -266,6 +279,50 @@ export default function SettingsPage() {
               )}
               <p className="text-sm text-muted-foreground pt-1">{tTheme('hint')}</p>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <div>
+              <Label>{tPreset('presetLabel')}</Label>
+              <p className="text-sm text-muted-foreground">{tPreset('presetHint')}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              {THEME_PRESETS.map((preset) => {
+                const active = draft.pantoneTcx === preset.tcx;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => applyPreset(preset)}
+                    aria-pressed={active}
+                    className={cn(
+                      'flex items-center gap-2.5 rounded-lg border p-2 text-left transition-colors',
+                      active
+                        ? 'border-primary ring-1 ring-primary/40'
+                        : 'border-border hover:bg-muted/60',
+                    )}
+                  >
+                    <span
+                      className="h-9 w-9 shrink-0 rounded-md border"
+                      style={{ backgroundColor: preset.hex }}
+                      aria-hidden
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{preset.name}</span>
+                      <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                        {preset.tcx}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {tPreset(
+                (THEME_PRESETS.find((x) => x.tcx === draft.pantoneTcx)?.noteKey ??
+                  'presetHint') as never,
+              )}
+            </p>
           </div>
 
           {previewTokens && (
