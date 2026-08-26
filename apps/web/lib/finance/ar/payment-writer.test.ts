@@ -10,16 +10,24 @@ const d = isProd ? describe.skip : describe;
 const paidAt = new Date("2026-03-01T00:00:00.000+07:00");
 
 d("recordPayment (test bed only)", () => {
-  const token = Math.random().toString(36).slice(2, 10);
+  let token = "";
   let storeId = "";
   let otherStoreId = "";
   let userId = "";
   let recA = "";
   let recB = "";
   let otherRec = "";
+  let recResidual = "";
 
   beforeEach(async () => {
-    storeId = ""; otherStoreId = ""; userId = ""; recA = ""; recB = ""; otherRec = "";
+    /*
+     * Regenerated per test, not once per describe: Store.code / User.email / Receivable.deliveryId
+     * are all @unique on this token. A single leaked afterEach (fixture ids stay "" on a hook
+     * failure, so the teardown deletes nothing) would otherwise make every remaining test in this
+     * file fail with P2002 in beforeEach on the shared bed, for the rest of the run.
+     */
+    token = Math.random().toString(36).slice(2, 10);
+    storeId = ""; otherStoreId = ""; userId = ""; recA = ""; recB = ""; otherRec = ""; recResidual = "";
 
     const store = await prisma.store.create({
       data: { code: `TEST-AR-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -63,15 +71,25 @@ d("recordPayment (test bed only)", () => {
       },
     });
     otherRec = c.id;
+
+    /* Sub-rupiah residue, to prove PAID requires exactly zero outstanding, not "close enough". */
+    const residual = await prisma.receivable.create({
+      data: {
+        deliveryId: `test-dlv-res-${token}`, storeId,
+        invoiceDate: paidAt, dueDate: paidAt,
+        originalAmount: 1000.5, outstandingAmount: 1000.5,
+      },
+    });
+    recResidual = residual.id;
   });
 
   afterEach(async () => {
     await prisma.paymentAllocation.deleteMany({
-      where: { receivableId: { in: [seededId(recA), seededId(recB), seededId(otherRec)] } },
+      where: { receivableId: { in: [seededId(recA), seededId(recB), seededId(otherRec), seededId(recResidual)] } },
     });
     await prisma.payment.deleteMany({ where: { storeId: { in: [seededId(storeId), seededId(otherStoreId)] } } });
     await prisma.receivable.deleteMany({
-      where: { id: { in: [seededId(recA), seededId(recB), seededId(otherRec)] } },
+      where: { id: { in: [seededId(recA), seededId(recB), seededId(otherRec), seededId(recResidual)] } },
     });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(otherStoreId)] } } });
@@ -137,6 +155,44 @@ d("recordPayment (test bed only)", () => {
       ...base(), amount: 0, allocations: [{ receivableId: recA, amount: 0 }],
     }).catch((e) => e);
     expect(err.code).toBe("INVALID_AMOUNT");
+  });
+
+  it("rejects a negative amount", async () => {
+    const err = await recordPayment({
+      ...base(), amount: -100, allocations: [{ receivableId: recA, amount: -100 }],
+    }).catch((e) => e);
+    expect(err.code).toBe("INVALID_AMOUNT");
+  });
+
+  it("leaves a sub-rupiah residue at PARTIAL instead of rounding it into PAID", async () => {
+    await recordPayment({ ...base(), amount: 1000, allocations: [{ receivableId: recResidual, amount: 1000 }] });
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: recResidual } });
+    expect(Number(after.outstandingAmount)).toBe(0.5);
+    expect(after.status).toBe("PARTIAL");
+  });
+
+  it("rejects an allocation naming a receivable that does not exist", async () => {
+    const err = await recordPayment({
+      ...base(), amount: 100, allocations: [{ receivableId: `does-not-exist-${token}`, amount: 100 }],
+    }).catch((e) => e);
+    expect(err.code).toBe("NOT_FOUND");
+  });
+
+  it("rejects two allocations naming the same receivable", async () => {
+    const err = await recordPayment({
+      ...base(),
+      amount: 1200,
+      allocations: [{ receivableId: recA, amount: 600 }, { receivableId: recA, amount: 600 }],
+    }).catch((e) => e);
+    expect(err.code).toBe("DUPLICATE_ALLOCATION");
+  });
+
+  it("rejects a receivable that is WRITTEN_OFF", async () => {
+    await prisma.receivable.update({ where: { id: recB }, data: { status: "WRITTEN_OFF" } });
+    const err = await recordPayment({
+      ...base(), amount: 100, allocations: [{ receivableId: recB, amount: 100 }],
+    }).catch((e) => e);
+    expect(err.code).toBe("ALREADY_SETTLED");
   });
 
   it("rejects an empty allocation list", async () => {

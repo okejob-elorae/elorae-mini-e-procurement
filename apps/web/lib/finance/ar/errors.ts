@@ -6,6 +6,7 @@ export type PaymentErrorCode =
   | "WRONG_STORE"
   | "NOT_FOUND"
   | "ALREADY_SETTLED"
+  | "DUPLICATE_ALLOCATION"
   | "MISSING_REASON";
 
 export class PaymentError extends Error {
