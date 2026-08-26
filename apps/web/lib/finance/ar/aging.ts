@@ -22,15 +22,28 @@ export const AGING_BUCKET_LABELS: Record<AgingBucket, string> = {
 
 const MS_PER_DAY = 86_400_000;
 
+/** WIB (UTC+7). The business runs on Jakarta time and every date in this domain is a WIB calendar day. */
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
 /**
  * Whole days past `dueDate`, negative when not yet due.
  *
- * Both sides are floored to a UTC day boundary first, so the result depends on the calendar day
- * rather than the time of day the query happened to run — otherwise a receivable would change
- * bucket partway through its own due date.
+ * Both sides are floored to a WIB calendar-day boundary, so the result depends on the calendar day
+ * rather than the time of day the query happened to run — otherwise a receivable would change bucket
+ * partway through its own due date.
+ *
+ * The `+ WIB_OFFSET_MS` shift is the whole point and must not be dropped. Flooring raw epoch
+ * milliseconds floors to a UTC day, and WIB midnight is 17:00Z on the PREVIOUS day — so a due date of
+ * `2026-03-01T00:00:00+07:00` (= `2026-02-28T17:00:00Z`) files under Feb 28 and every comparison comes
+ * out exactly one day too high. Measured: the due date itself reported 1 day overdue, day 30 reported
+ * 31 and jumped a bucket, day 120 reported 121 and jumped a bucket.
+ *
+ * Deriving the day from `d.getFullYear()/getMonth()/getDate()` instead is NOT a fix — those read the
+ * host's local timezone, so the same code would be correct on a WIB laptop and wrong on a UTC server.
+ * The offset is hardcoded because it is a property of the business, not of the machine.
  */
 export function daysOverdue(dueDate: Date, asOf: Date): number {
-  const dayOf = (d: Date) => Math.floor(d.getTime() / MS_PER_DAY);
+  const dayOf = (d: Date) => Math.floor((d.getTime() + WIB_OFFSET_MS) / MS_PER_DAY);
   return dayOf(asOf) - dayOf(dueDate);
 }
 
