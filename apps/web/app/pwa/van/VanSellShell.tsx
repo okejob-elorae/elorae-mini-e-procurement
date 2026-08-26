@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
-import { recordVanSaleAction } from "@/app/actions/van-sale";
+import { recordVanSaleAction, getVanStockForStoreAction } from "@/app/actions/van-sale";
 import { VanVariantSheet, type VanStockRow, type VanGroup } from "./VanVariantSheet";
 
 type StoreOption = { id: string; name: string };
@@ -43,10 +43,12 @@ function getPositionBestEffort(): Promise<{ lat: number; lng: number } | null> {
   });
 }
 
-export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: StoreOption[] }) {
+export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockRow[]; stores: StoreOption[] }) {
   const t = useTranslations("vanSale");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [repricing, startReprice] = useTransition();
+  const [stock, setStock] = useState<VanStockRow[]>(initialStock);
   const [q, setQ] = useState("");
   const [cart, setCart] = useState<Map<string, CartEntry>>(new Map());
   const [buyerMode, setBuyerMode] = useState<"store" | "adhoc">("adhoc");
@@ -60,6 +62,54 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [sheetGroup, setSheetGroup] = useState<VanGroup | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  /**
+   * The store picker's selection is the pricing input — a walk-in (`buyerMode: "adhoc"`)
+   * prices at list (matches `initialStock`, which was fetched with no storeId), a chosen
+   * store re-prices with that store's `priceDiscountPercent`, mirroring what `recordVanSale`
+   * will actually charge. Skips the very first run: `initialStock` is already correct for
+   * the default "adhoc" mode, so mounting shouldn't fire a redundant refetch.
+   */
+  const skipFirstReprice = useRef(true);
+  // Guards against an in-flight fetch for a since-superseded selection resolving late and
+  // clobbering a newer one — React gives no ordering guarantee across overlapping transitions.
+  const repriceReqRef = useRef(0);
+  useEffect(() => {
+    if (skipFirstReprice.current) {
+      skipFirstReprice.current = false;
+      return;
+    }
+    const effectiveStoreId = buyerMode === "store" ? storeId || null : null;
+    const reqId = ++repriceReqRef.current;
+    startReprice(async () => {
+      const rows = await getVanStockForStoreAction(effectiveStoreId);
+      if (repriceReqRef.current === reqId) setStock(rows);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buyerMode, storeId]);
+
+  /**
+   * A cart entry snapshots `unitPrice` at add-time (see setQty). If the store selection
+   * changes AFTER items are already in the cart, that snapshot goes stale — this resyncs
+   * every cart line to the freshly re-priced `stock` the moment it lands, so `total`/`change`
+   * never settle on a price recordVanSale won't actually charge.
+   */
+  useEffect(() => {
+    setCart((prev) => {
+      if (prev.size === 0) return prev;
+      const priceByKey = new Map(stock.map((r) => [lineKey(r.itemId, r.variantSku), r.price]));
+      let changed = false;
+      const next = new Map(prev);
+      for (const [key, entry] of next) {
+        const freshPrice = priceByKey.get(key);
+        if (freshPrice !== undefined && freshPrice !== null && freshPrice !== entry.unitPrice) {
+          next.set(key, { ...entry, unitPrice: freshPrice });
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [stock]);
 
   function openSheet(g: VanGroup) {
     setSheetGroup(g);
@@ -119,7 +169,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
     return g.variants.reduce((s, v) => s + (cart.get(lineKey(v.itemId, v.variantSku))?.qty ?? 0), 0);
   }
 
-  const canSubmit = cartLines.length > 0 && total > 0 && paid >= total && !pending;
+  const canSubmit = cartLines.length > 0 && total > 0 && paid >= total && !pending && !repricing;
 
   function onSubmit() {
     setShortLines([]);
@@ -232,9 +282,15 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
               placeholder={t("selectStore")}
               searchPlaceholder={t("searchStorePlaceholder")}
               emptyMessage={t("noStoreFound")}
-              disabled={pending}
+              disabled={pending || repricing}
               triggerClassName="w-full"
             />
+            {repricing && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t("updatingPrices")}
+              </p>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -303,7 +359,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
                         type="button"
                         variant="outline"
                         size="icon-lg"
-                        disabled={qty <= 0 || pending}
+                        disabled={qty <= 0 || pending || repricing}
                         onClick={() => setQty(row, qty - 1)}
                         aria-label={t("decrease", { name: row.productName })}
                       >
@@ -314,7 +370,7 @@ export function VanSellShell({ stock, stores }: { stock: VanStockRow[]; stores: 
                         type="button"
                         variant="outline"
                         size="icon-lg"
-                        disabled={qty >= row.qtyOnVan || pending}
+                        disabled={qty >= row.qtyOnVan || pending || repricing}
                         onClick={() => setQty(row, qty + 1)}
                         aria-label={t("increase", { name: row.productName })}
                       >

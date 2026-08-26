@@ -3141,6 +3141,7 @@
     "selectStore": "Select store",
     "searchStorePlaceholder": "Search stores",
     "noStoreFound": "No stores found.",
+    "updatingPrices": "Updating prices…",
     "buyerNameLabel": "Buyer name",
     "buyerNamePlaceholder": "Buyer name (optional)",
     "buyerPhoneLabel": "Phone number",

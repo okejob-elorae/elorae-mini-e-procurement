@@ -3141,6 +3141,7 @@
     "selectStore": "Pilih toko",
     "searchStorePlaceholder": "Cari toko",
     "noStoreFound": "Toko tidak ditemukan.",
+    "updatingPrices": "Memperbarui harga…",
     "buyerNameLabel": "Nama pembeli",
     "buyerNamePlaceholder": "Nama pembeli (opsional)",
     "buyerPhoneLabel": "No. telepon",
