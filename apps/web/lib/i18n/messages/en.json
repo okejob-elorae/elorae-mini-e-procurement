@@ -4403,6 +4403,7 @@
     "errNOMOR_WAJIB": "Enter the number.",
     "errSUDAH_DIBAYAR": "This salary is already marked paid.",
     "errNOMOR_BENTROK": "The number clashed. Try again.",
-    "errGAGAL": "Could not save. Try again."
+    "errGAGAL": "Could not save. Try again.",
+    "print": "Print"
   }
 }

@@ -4,6 +4,7 @@ import { prisma } from '@elorae/db';
 import { auth } from '@/lib/auth';
 import { rincianRetur } from '@/lib/receivables/return-queries';
 import { rincianKlaim } from '@/lib/receivables/claim-queries';
+import { rincianSiklus } from '@/lib/konsinyasi/queries';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -24,6 +25,12 @@ export async function ambilCetakKlaim(id: string) {
   const session = await auth();
   if (!session?.user?.id) return null;
   return rincianKlaim(id);
+}
+
+export async function ambilCetakSiklus(id: string) {
+  const session = await auth();
+  if (!session?.user?.id) return null;
+  return rincianSiklus(id);
 }
 
 export type CetakFaktur = {

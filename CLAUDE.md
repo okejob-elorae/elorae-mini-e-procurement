@@ -233,6 +233,86 @@ EPIC-16 (Cash Flow) decomposition:
 
 **Dormant until the GL cutover is armed** (see the GL blocker in Finance follow-ups): with no journals posting, the statement renders honest and empty, and the reconciliation criterion cannot be verified against real numbers.
 
+## Piutang, Retur & Konsinyasi (port SSG Pelunasan)
+
+Modul terpisah yang di-port dari program "SSG Pelunasan" milik pemilik. Briefnya
+ada di `~/Desktop/PROGRAM PELUNASAN/BRIEF-BANGUN-ULANG.md` beserta 39 tangkapan
+layar — **baca itu sebelum mengubah apa pun di modul ini**, karena hampir setiap
+penolakan di sini menjawab satu kejadian nyata di lapangan.
+
+**Dua aturan uang yang tidak boleh dilonggarkan.** Keduanya murni di
+`apps/web/lib/receivables/rules.ts`:
+1. **Klaim bukan lunas.** Piutang hanya berkurang setelah admin keuangan
+   mencocokkan BKM dengan mutasi rekening. Status `DIKIRIM` mengakui nol.
+2. **Retur diakui sebesar fisik, bukan sebesar klaim.** Sebelum gudang menutup
+   hitungan, seluruh potongan ditahan; sesudahnya tinggal selisihnya sampai ada
+   yang ditetapkan menanggung.
+
+**Sisa piutang TIDAK PERNAH diketik dan tidak pernah dikurangi bertahap.**
+Setiap penulis memanggil `hitungUlangPiutang`, yang menghitung dari nol atas
+seluruh klaim yang menyentuh piutang itu. Kolom `outstanding` adalah cache untuk
+penyaringan, bukan kebenaran — `daftarPiutang` pun menghitung ulang.
+
+**Satu penerjemah, bukan tiga.** `lib/receivables/deductions.ts` adalah
+satu-satunya tempat bentuk Prisma bertemu aturan retur. Pernah ada tiga salinan
+(layar piutang, layar BKM, penulis) dan yang ketiga diam-diam salah begitu tabel
+retur ada. Jangan bikin salinan keempat.
+
+**Penunjuk retur menggantung ditahan penuh.** `relationMode = "prisma"` tidak
+memasang foreign key, jadi potongan bisa menunjuk nota retur yang tak ada.
+`PILIH_POTONGAN` **wajib** ikut memilih `storeReturnId` — tanpa itu kasus
+menggantung tidak bisa dibedakan dari "bukan retur", dan uangnya lepas diam-diam.
+
+**Retur adalah DUA dokumen.** `StoreReturn` (NRT) bernomor **milik toko**
+(`NRT-4471`, unik per toko — bukan nomor yang kita hasilkan), `WarehouseReturn`
+(NRI) bernomor milik kita, dan `storeReturnId`-nya **nullable**: barang datang
+lewat ekspedisi mendahului notanya. NRI `DRAFT` tidak melepas apa pun.
+
+**NRI menambah stok** (`STORE_RETURN_RECEIVE`, `POSITIVE`) — arah ini pernah
+salah dan dikoreksi pemilik. Hanya baris ber-`itemId` yang bergerak, dan harga
+rata-rata TIDAK digeser: retur bukan pembelian.
+
+**Toko konsinyasi tidak pernah muncul di piutang.** Disaring di `daftarPiutang`,
+bukan di layar. Baris uji `INV/KONSI/TES` di basis data dev adalah kenari.
+
+**Impor Excel:** `XLSX.read` WAJIB memakai `raw: true`. Tanpanya SheetJS membaca
+`"900.000"` sebagai sembilan ratus pada berkas CSV — hanya angka bertitik SATU
+yang kena, jadi kerusakannya tepat mengenai nilai di bawah sejuta. Dikunci tes
+di `impor/sheetjs.test.ts`. Kolom `sisa` berisi `0` berarti **lunas**, berbeda
+dari sel kosong dan dari kolom yang tidak ada.
+
+**Pemisahan tugas ada di `lib/receivables/izin.ts`**, bukan tersebar. Melapor =
+`pwa:access` (sales yang menyaksikan), memverifikasi = `journals:manage`,
+menghitung = `inventory_opname:count`, menetapkan beban = `receivables:manage`.
+Menyatukannya meruntuhkan kedua aturan uang.
+
+**Layar gudang ada di `/gudang-retur`, di luar `/pwa`.** Pohon `/pwa` digerbangi
+`pwa:access` milik sales; memberikannya ke gudang membuka semua layar sales.
+
+**Konsinyasi:** satu siklus = satu toko × satu bulan, dan **tiga nomor
+berdampingan** (konsi kita, nota admin penjualan, faktur pajak admin pajak).
+Tahap `bayar_spg` **dilewati** kalau toko tidak punya SPG. Mengunci butuh KEDUA
+laporan; membuka kunci **ditolak** begitu ada gaji dibayar. Tarif komisi
+disalin dari master barang saat mengunci. Stok titipan dihitung, tidak disimpan,
+dan sisa negatif dipertahankan.
+
+**Foto disimpan di database** (`Foto` + `/api/foto/[id]`), bukan R2 — mengikuti
+rancangan brief dan syaratnya bahwa foto tidak keluar dari mesin. Kolom
+`photoUrl`/`transferPhotoUrl` tetap bertipe URL, jadi pemanggilnya tidak
+bercabang.
+
+**Migrasi hanya ada di sisi PostgreSQL** (`packages/db/prisma/postgres/migrations/`).
+Model ada di kedua schema, tapi belum ada migrasi MariaDB untuk modul ini.
+
+**Belum dikerjakan:** master data khusus modul ini, tujuh peran brief (admin
+penjualan & admin pajak belum ada di Elorae — aksi konsinyasi sementara memakai
+`receivables:manage`), penyempitan menu per peran, OCR luring, antrean luring
+untuk laporan lapangan.
+
+**Terbuka untuk pemilik:** brief menutup dengan "tidak ada foto atau data yang
+keluar dari komputer ini". Elorae berjalan di Supabase. Modul ini jangan diisi
+data SSG asli sampai itu diputuskan.
+
 ## Follow-ups / tech debt (checklist)
 
 Canonical home for follow-ups + known debt. **New follow-ups go HERE** as `- [ ]` — not buried in PR bodies (they die on merge) or per-slice decomposition prose. When an item ships, flip it to `- [x]` and append the PR #. Feature names only (no EPIC labels — shared artifact). Cross-cutting code landmines also get a `memory/` note; this list is the actionable index.

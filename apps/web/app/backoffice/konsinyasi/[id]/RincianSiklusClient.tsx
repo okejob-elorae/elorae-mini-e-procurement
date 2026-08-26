@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, Lock, LockOpen, Plus, X } from 'lucide-react';
+import { ArrowLeft, Lock, LockOpen, Plus, Printer, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -145,7 +145,14 @@ export function RincianSiklusClient({
           </span>
         }
         actions={
-          bolehMengelola ? (
+          <span className="inline-flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <a href={`/print/konsi/${b.id}`} target="_blank" rel="noreferrer">
+                <Printer className="mr-1.5 h-4 w-4" />
+                {t('print')}
+              </a>
+            </Button>
+            {bolehMengelola ? (
             data.terkunci ? (
               <Button
                 variant="outline"
@@ -163,7 +170,8 @@ export function RincianSiklusClient({
                 {t('lock')}
               </Button>
             )
-          ) : undefined
+          ) : null}
+          </span>
         }
       />
 

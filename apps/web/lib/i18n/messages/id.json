@@ -4403,6 +4403,7 @@
     "errNOMOR_WAJIB": "Isi nomornya.",
     "errSUDAH_DIBAYAR": "Gaji ini sudah ditandai dibayar.",
     "errNOMOR_BENTROK": "Nomor bentrok. Coba simpan lagi.",
-    "errGAGAL": "Gagal menyimpan. Coba lagi."
+    "errGAGAL": "Gagal menyimpan. Coba lagi.",
+    "print": "Cetak"
   }
 }
