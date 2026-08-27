@@ -171,7 +171,13 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
   );
 }
 
-export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger }: Props) {
+export function CoaPageClient({
+  tree,
+  includeInactive,
+  canManage,
+  canViewLedger,
+  showBalances,
+}: Props) {
   const t = useTranslations("finance.coa");
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -350,6 +356,7 @@ export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger 
   }
 
   function formatBalance(node: CoaTreeNodeWithBalance): string {
+    if (!showBalances) return "—";
     const abs = absoluteBalance(node.balance);
     const side = balanceSide(node.type, node.balance);
     const sideLabel = side === "Dr" ? t("balance.dr") : t("balance.cr");
