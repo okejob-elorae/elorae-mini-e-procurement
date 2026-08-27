@@ -515,26 +515,44 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
             </div>
           </div>
 
-          {form.termsType === "PUTUS" ? (
-            <div className="space-y-1.5 max-w-xs">
-              <Label htmlFor="priceDiscountPercent">{t("priceDiscountPercent")}</Label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {form.termsType === "PUTUS" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="priceDiscountPercent">{t("priceDiscountPercent")}</Label>
+                <Input
+                  id="priceDiscountPercent"
+                  disabled={pending || readOnly}
+                  type="number"
+                  step="0.01"
+                  value={form.priceDiscountPercent ?? ""}
+                  onChange={(e) =>
+                    update(
+                      "priceDiscountPercent",
+                      e.target.value === "" ? null : Number(e.target.value),
+                    )
+                  }
+                />
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground self-end pb-2">{t("priceDiscountPercentKonsiNotice")}</p>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="creditLimit">{t("creditLimit")}</Label>
               <Input
-                id="priceDiscountPercent"
+                id="creditLimit"
                 disabled={pending || readOnly}
                 type="number"
-                step="0.01"
-                value={form.priceDiscountPercent ?? ""}
+                min={0}
+                step="1000"
+                value={form.creditLimit ?? ""}
                 onChange={(e) =>
-                  update(
-                    "priceDiscountPercent",
-                    e.target.value === "" ? null : Number(e.target.value),
-                  )
+                  update("creditLimit", e.target.value === "" ? null : Number(e.target.value))
                 }
+                placeholder={t("creditLimitPlaceholder")}
               />
+              <p className="text-xs text-muted-foreground">{t("creditLimitHint")}</p>
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">{t("priceDiscountPercentKonsiNotice")}</p>
-          )}
+          </div>
         </section>
 
         <Separator />
