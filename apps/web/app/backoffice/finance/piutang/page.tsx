@@ -5,6 +5,7 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listReceivables } from "@/lib/finance/ar/queries";
 import { listStoreOptions } from "@/lib/stores/queries";
 import { listCanvassers } from "@/lib/canvassing/queries";
+import { listCollectorCandidates } from "@/lib/finance/collections/queries";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { AGING_BUCKETS, type AgingBucket } from "@/lib/finance/ar/aging";
 import { PiutangPageClient } from "./PiutangPageClient";
@@ -15,6 +16,7 @@ type PageProps = {
   searchParams: Promise<{
     storeId?: string;
     salesmanId?: string;
+    collectorId?: string;
     status?: string;
     bucket?: string;
     from?: string;
@@ -48,10 +50,12 @@ export default async function PiutangPage({ searchParams }: PageProps) {
   if (!hasPermission(permissions, PERMISSIONS.RECEIVABLES_VIEW)) {
     redirect("/backoffice");
   }
+  const canManageCollections = hasPermission(permissions, PERMISSIONS.COLLECTIONS_MANAGE);
 
   const sp = await searchParams;
   const storeId = sp.storeId?.trim() || undefined;
   const salesmanId = sp.salesmanId?.trim() || undefined;
+  const collectorId = sp.collectorId?.trim() || undefined;
   const status = parseStatus(sp.status);
   const bucket = parseBucket(sp.bucket);
   const dateFrom = parseDateOnly(sp.from ?? "");
@@ -67,11 +71,13 @@ export default async function PiutangPage({ searchParams }: PageProps) {
   const asOf = new Date();
 
   try {
-    const [{ rows, total, bucketTotals, grandOutstanding }, storeOptions, canvassers] = await Promise.all([
-      listReceivables({ storeId, salesmanId, status, bucket, dateFrom, dateTo, search, page, pageSize, asOf }),
-      listStoreOptions(),
-      listCanvassers(),
-    ]);
+    const [{ rows, total, bucketTotals, grandOutstanding }, storeOptions, canvassers, collectorCandidates] =
+      await Promise.all([
+        listReceivables({ storeId, salesmanId, collectorId, status, bucket, dateFrom, dateTo, search, page, pageSize, asOf }),
+        listStoreOptions(),
+        listCanvassers(),
+        listCollectorCandidates(),
+      ]);
 
     return (
       <PiutangPageClient
@@ -81,8 +87,11 @@ export default async function PiutangPage({ searchParams }: PageProps) {
         grandOutstanding={grandOutstanding}
         storeOptions={storeOptions}
         salesmen={canvassers.map((c) => ({ id: c.id, name: c.name }))}
+        collectors={collectorCandidates}
+        canManageCollections={canManageCollections}
         storeId={storeId ?? ""}
         salesmanId={salesmanId ?? ""}
+        collectorId={collectorId ?? ""}
         status={status ?? "ALL"}
         bucket={bucket}
         dateFrom={sp.from ?? ""}
@@ -108,8 +117,11 @@ export default async function PiutangPage({ searchParams }: PageProps) {
         grandOutstanding={0}
         storeOptions={[]}
         salesmen={[]}
+        collectors={[]}
+        canManageCollections={canManageCollections}
         storeId={storeId ?? ""}
         salesmanId={salesmanId ?? ""}
+        collectorId={collectorId ?? ""}
         status={status ?? "ALL"}
         bucket={bucket}
         dateFrom={sp.from ?? ""}

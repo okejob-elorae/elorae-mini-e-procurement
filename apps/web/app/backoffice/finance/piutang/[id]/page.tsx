@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getReceivable, listReceivables } from "@/lib/finance/ar/queries";
 import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
+import { listCollectorCandidates } from "@/lib/finance/collections/queries";
 import { ReceivableDetailClient } from "./ReceivableDetailClient";
 import type { AllocationCandidate } from "./RecordPaymentSheet";
 
@@ -51,6 +52,7 @@ export default async function ReceivableDetailPage({ params }: PageProps) {
   if (!receivable) notFound();
 
   const canManagePayments = hasPermission(permissions, PERMISSIONS.PAYMENTS_MANAGE);
+  const canManageCollections = hasPermission(permissions, PERMISSIONS.COLLECTIONS_MANAGE);
 
   /**
    * Every backfilled receivable has no journal by construction, so "no journal exists" is never
@@ -58,18 +60,21 @@ export default async function ReceivableDetailPage({ params }: PageProps) {
    * button render at all. Resolved here, server-side, and passed down as a plain boolean: the
    * client never gets to decide this for itself.
    */
-  const [revenueRetryable, cogsRetryable, allocationCandidates] = await Promise.all([
+  const [revenueRetryable, cogsRetryable, allocationCandidates, collectorCandidates] = await Promise.all([
     isArJournalRetryable("field_delivery_revenue", receivable.deliveryId),
     isArJournalRetryable("field_delivery_cogs", receivable.deliveryId),
     canManagePayments ? loadAllocationCandidates(receivable.storeId) : Promise.resolve<AllocationCandidate[]>([]),
+    canManageCollections ? listCollectorCandidates() : Promise.resolve<{ id: string; name: string }[]>([]),
   ]);
 
   return (
     <ReceivableDetailClient
       receivable={receivable}
       canManagePayments={canManagePayments}
+      canManageCollections={canManageCollections}
       journalRetryable={revenueRetryable || cogsRetryable}
       allocationCandidates={allocationCandidates}
+      collectorCandidates={collectorCandidates}
     />
   );
 }

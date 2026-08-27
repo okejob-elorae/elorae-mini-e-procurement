@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { assignCollector } from "@/lib/finance/collections/assign-writer";
@@ -62,6 +63,37 @@ export async function assignCollectorAction(input: {
     const result = await assignCollector({
       receivableIds: input.receivableIds,
       collectorId: input.collectorId,
+      assignedById: g.userId,
+    });
+    revalidatePath("/backoffice/finance/piutang");
+    revalidatePath("/backoffice/finance/collections");
+    return { ok: true, assignedCount: result.assignedCount };
+  } catch (e) {
+    return toCollectionResult(e);
+  }
+}
+
+/**
+ * Bulk-assigns (or unassigns) a collector across a store's currently outstanding receivables.
+ * Reads the id list here and calls `assignCollector` directly rather than going through
+ * `assignCollectorAction`, to avoid double-guarding on `guardManage()`. `assignCollector` throws
+ * `EMPTY_TARGETS` itself when the store has no outstanding receivable — same handling as every
+ * other reason via `toCollectionResult`.
+ */
+export async function bulkAssignStoreAction(
+  storeId: string,
+  collectorId: string | null,
+): Promise<CollectionActionResult> {
+  const g = await guardManage();
+  if ("ok" in g) return g;
+  try {
+    const receivables = await prisma.receivable.findMany({
+      where: { storeId, status: { in: ["OUTSTANDING", "PARTIAL"] } },
+      select: { id: true },
+    });
+    const result = await assignCollector({
+      receivableIds: receivables.map((r) => r.id),
+      collectorId,
       assignedById: g.userId,
     });
     revalidatePath("/backoffice/finance/piutang");

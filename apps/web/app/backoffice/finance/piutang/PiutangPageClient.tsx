@@ -3,7 +3,8 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { AlertCircle, Search, Wallet } from "lucide-react";
+import { toast } from "sonner";
+import { AlertCircle, Search, Users, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -25,10 +26,21 @@ import {
 } from "@/components/ui/select";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Pagination } from "@/components/ui/pagination";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { isOverdue, type AgingBucket } from "@/lib/finance/ar/aging";
 import type { ReceivableRow } from "@/lib/finance/ar/queries";
+import { bulkAssignStoreAction, type CollectionActionReason } from "@/app/actions/collections";
 import { AgingSummary } from "./AgingSummary";
 
 type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF";
@@ -41,8 +53,11 @@ type Props = {
   grandOutstanding: number;
   storeOptions: { id: string; name: string }[];
   salesmen: { id: string; name: string }[];
+  collectors: { id: string; name: string }[];
+  canManageCollections: boolean;
   storeId: string;
   salesmanId: string;
+  collectorId: string;
   status: StatusFilter;
   bucket: AgingBucket | undefined;
   dateFrom: string;
@@ -57,6 +72,8 @@ type Props = {
 const BASE_PATH = "/backoffice/finance/piutang";
 const ALL_STORES = "__all__";
 const ALL_SALESMEN = "__all__";
+const ALL_COLLECTORS = "__all__";
+const UNASSIGNED_COLLECTOR = "__unassigned__";
 
 const STATUS_BADGE_CLASS: Record<ReceivableStatusValue, string> = {
   OUTSTANDING: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -75,6 +92,10 @@ const STATUS_LABEL_KEY: Record<
   WRITTEN_OFF: "statusWrittenOff",
 };
 
+function errKey(reason: CollectionActionReason): string {
+  return `err.${reason}`;
+}
+
 function formatRupiah(value: number): string {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
@@ -87,9 +108,14 @@ export function PiutangPageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("piutang");
+  const tCommon = useTranslations("common");
+  const tErr = useTranslations("financeCollections");
   const [isPending, startTransition] = useTransition();
+  const [isBulkAssignPending, startBulkAssignTransition] = useTransition();
 
   const [searchInput, setSearchInput] = useState(props.search);
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false);
+  const [bulkCollectorId, setBulkCollectorId] = useState<string>("");
 
   function pushParams(next: Record<string, string | undefined>): void {
     const params = new URLSearchParams(sp.toString());
@@ -126,13 +152,47 @@ export function PiutangPageClient(props: Props) {
     startTransition(() => router.push(`${BASE_PATH}?${params.toString()}`));
   }
 
+  function openBulkAssign(): void {
+    setBulkCollectorId("");
+    setBulkAssignOpen(true);
+  }
+
+  function closeBulkAssign(): void {
+    if (isBulkAssignPending) return;
+    setBulkAssignOpen(false);
+    setBulkCollectorId("");
+  }
+
+  function handleBulkAssign(): void {
+    if (!props.storeId || !bulkCollectorId) return;
+    const collectorId = bulkCollectorId === UNASSIGNED_COLLECTOR ? null : bulkCollectorId;
+    startBulkAssignTransition(async () => {
+      try {
+        const r = await bulkAssignStoreAction(props.storeId, collectorId);
+        if (r.ok) {
+          const count = typeof r.assignedCount === "number" ? r.assignedCount : 0;
+          toast.success(t("bulkAssignSuccessToast", { count }));
+          setBulkAssignOpen(false);
+          setBulkCollectorId("");
+          router.refresh();
+        } else {
+          toast.error(tErr(errKey(r.reason)));
+        }
+      } catch {
+        toast.error(tErr("err.ERROR"));
+      }
+    });
+  }
+
   const hasOtherFilters =
     !!props.storeId ||
     !!props.salesmanId ||
+    !!props.collectorId ||
     props.status !== "ALL" ||
     !!props.bucket ||
     !!props.dateFrom ||
     !!props.dateTo;
+  const selectedStoreName = props.storeOptions.find((s) => s.id === props.storeId)?.name ?? "";
 
   return (
     <div className="space-y-6">
@@ -199,6 +259,18 @@ export function PiutangPageClient(props: Props) {
               emptyMessage={t("salesmanSearchEmpty")}
               triggerClassName="h-10 w-full sm:w-[180px]"
             />
+            <SearchableCombobox
+              options={[
+                { value: ALL_COLLECTORS, label: t("allCollectors") },
+                ...props.collectors.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+              value={props.collectorId || ALL_COLLECTORS}
+              onValueChange={(v) => pushParams({ collectorId: v === ALL_COLLECTORS ? undefined : v })}
+              placeholder={t("allCollectors")}
+              searchPlaceholder={t("collectorSearchPlaceholder")}
+              emptyMessage={t("collectorSearchEmpty")}
+              triggerClassName="h-10 w-full sm:w-[180px]"
+            />
             <Select value={props.status} onValueChange={(v) => pushParams({ status: v === "ALL" ? undefined : v })}>
               <SelectTrigger className="w-full sm:w-[160px]">
                 <SelectValue placeholder={t("allStatus")} />
@@ -228,6 +300,12 @@ export function PiutangPageClient(props: Props) {
             <Button variant="outline" className="h-10" onClick={reset}>
               {t("reset")}
             </Button>
+            {props.canManageCollections && props.storeId && (
+              <Button variant="outline" className="h-10" onClick={openBulkAssign}>
+                <Users className="h-4 w-4 mr-2" />
+                {t("bulkAssignTitle")}
+              </Button>
+            )}
           </div>
 
           <Card>
@@ -262,6 +340,7 @@ export function PiutangPageClient(props: Props) {
                           <TableHead>{t("colStore")}</TableHead>
                           <TableHead>{t("colDocNo")}</TableHead>
                           <TableHead>{t("colSalesman")}</TableHead>
+                          <TableHead>{t("colCollector")}</TableHead>
                           <TableHead>{t("colInvoiceDate")}</TableHead>
                           <TableHead>{t("colDueDate")}</TableHead>
                           <TableHead className="text-right">{t("colDaysOverdue")}</TableHead>
@@ -288,6 +367,7 @@ export function PiutangPageClient(props: Props) {
                               <TableCell className="max-w-[180px] truncate font-medium">{row.storeName}</TableCell>
                               <TableCell className="whitespace-nowrap font-mono text-xs">{row.docNo}</TableCell>
                               <TableCell className="max-w-[140px] truncate">{row.salesmanName}</TableCell>
+                              <TableCell className="max-w-[140px] truncate">{row.collectorName ?? "—"}</TableCell>
                               <TableCell className="whitespace-nowrap">
                                 {formatDateOnlyJakarta(row.invoiceDate)}
                               </TableCell>
@@ -331,6 +411,37 @@ export function PiutangPageClient(props: Props) {
           </Card>
         </>
       )}
+
+      <AlertDialog open={bulkAssignOpen} onOpenChange={(open) => (open ? setBulkAssignOpen(true) : closeBulkAssign())}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("bulkAssignTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("bulkAssignConfirm")}
+              {selectedStoreName && <span className="block font-medium text-foreground mt-1">{selectedStoreName}</span>}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <SearchableCombobox
+            options={[
+              { value: UNASSIGNED_COLLECTOR, label: t("unassignedLabel") },
+              ...props.collectors.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+            value={bulkCollectorId}
+            onValueChange={setBulkCollectorId}
+            placeholder={t("selectCollectorPlaceholder")}
+            searchPlaceholder={t("collectorSearchPlaceholder")}
+            emptyMessage={t("collectorSearchEmpty")}
+            triggerClassName="h-10 w-full"
+            disabled={isBulkAssignPending}
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkAssignPending}>{tCommon("cancel")}</AlertDialogCancel>
+            <AlertDialogAction disabled={isBulkAssignPending || !bulkCollectorId} onClick={handleBulkAssign}>
+              {tCommon("confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

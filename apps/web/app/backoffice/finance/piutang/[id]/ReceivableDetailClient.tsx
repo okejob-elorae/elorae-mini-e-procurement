@@ -24,15 +24,34 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RecordPaymentSheet, type AllocationCandidate } from "./RecordPaymentSheet";
+import { AssignCollectorCard } from "./AssignCollectorCard";
 
 type ReceivableDetail = NonNullable<Awaited<ReturnType<typeof getReceivable>>>;
 type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF";
+type CollectionSubmissionStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
 type Props = {
   receivable: ReceivableDetail;
   canManagePayments: boolean;
+  canManageCollections: boolean;
   journalRetryable: boolean;
   allocationCandidates: AllocationCandidate[];
+  collectorCandidates: { id: string; name: string }[];
+};
+
+const SUBMISSION_STATUS_BADGE_CLASS: Record<CollectionSubmissionStatus, string> = {
+  PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  VERIFIED: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  REJECTED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+};
+
+const SUBMISSION_STATUS_LABEL_KEY: Record<
+  CollectionSubmissionStatus,
+  "submissionStatusPending" | "submissionStatusVerified" | "submissionStatusRejected"
+> = {
+  PENDING: "submissionStatusPending",
+  VERIFIED: "submissionStatusVerified",
+  REJECTED: "submissionStatusRejected",
 };
 
 const STATUS_BADGE_CLASS: Record<ReceivableStatusValue, string> = {
@@ -109,8 +128,10 @@ function journalErrorKey(reason: string): string {
 export function ReceivableDetailClient({
   receivable: r,
   canManagePayments,
+  canManageCollections,
   journalRetryable,
   allocationCandidates,
+  collectorCandidates,
 }: Props) {
   const t = useTranslations("piutang");
   const router = useRouter();
@@ -250,6 +271,69 @@ export function ReceivableDetailClient({
             <p className="text-xl font-bold tabular-nums text-primary">{formatRupiahExact(r.outstandingAmount)}</p>
           </div>
         </div>
+      </Card>
+
+      <AssignCollectorCard
+        receivableId={r.id}
+        collectorId={r.collectorId}
+        collectorName={r.collectorName}
+        collectors={collectorCandidates}
+        canManageCollections={canManageCollections}
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Receipt className="h-5 w-5" />
+            {t("submissionHistoryTitle")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {r.submissions.length === 0 ? (
+            <p className="text-center py-8 text-sm text-muted-foreground">{t("detail.submissionEmpty")}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("detail.colSubmissionAmount")}</TableHead>
+                    <TableHead>{t("detail.colMethod")}</TableHead>
+                    <TableHead>{t("detail.colPaidAt")}</TableHead>
+                    <TableHead>{t("detail.colSubmissionCollector")}</TableHead>
+                    <TableHead>{t("colStatus")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {r.submissions.map((s) => {
+                    const status = s.status as CollectionSubmissionStatus;
+                    return (
+                      <TableRow key={s.id}>
+                        <TableCell className="tabular-nums whitespace-nowrap">
+                          {formatRupiahExact(s.amount)}
+                        </TableCell>
+                        <TableCell>{t(s.method === "CASH" ? "methodCash" : "methodTransfer")}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(s.paidAt)}</TableCell>
+                        <TableCell className="max-w-[160px] truncate">{s.collectorName ?? "—"}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <Badge className={SUBMISSION_STATUS_BADGE_CLASS[status]}>
+                              {t(SUBMISSION_STATUS_LABEL_KEY[status])}
+                            </Badge>
+                            {status === "REJECTED" && s.rejectReason && (
+                              <span className="text-xs text-muted-foreground">
+                                {t("detail.submissionRejectReasonLabel")}: {s.rejectReason}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       <Card>

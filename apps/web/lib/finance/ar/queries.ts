@@ -186,6 +186,7 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
       paidAmount: true,
       outstandingAmount: true,
       status: true,
+      collectorId: true,
       store: { select: { name: true, code: true } },
       delivery: {
         select: {
@@ -206,6 +207,19 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
           },
         },
       },
+      collector: { select: { name: true } },
+      submissions: {
+        select: {
+          id: true,
+          amount: true,
+          method: true,
+          paidAt: true,
+          status: true,
+          rejectReason: true,
+          collector: { select: { name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
   if (!r) return null;
@@ -217,6 +231,12 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
     daysOverdue: daysOverdue(r.dueDate, asOf),
     bucket: agingBucket(r.dueDate, asOf),
     allocations: r.allocations.map((a) => ({ ...a, amount: Number(a.amount) })),
+    collectorName: r.collector?.name ?? null,
+    submissions: r.submissions.map((s) => ({
+      ...s,
+      amount: Number(s.amount),
+      collectorName: s.collector.name,
+    })),
   };
 }
 
