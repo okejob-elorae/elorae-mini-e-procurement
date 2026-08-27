@@ -8,6 +8,7 @@ import {
   InvalidOrderTransitionError,
   InsufficientStockError,
   InvalidAddedLineError,
+  CreditLimitExceededError,
   type InvalidAddedLineCode,
   type ShortLine,
 } from "@/lib/field-sales/errors";
@@ -22,11 +23,18 @@ export type ActionResult =
         | "INVALID_TRANSITION"
         | "INSUFFICIENT_STOCK"
         | "INVALID_FINAL_PRICE"
-        | "INVALID_ADDED_LINE";
+        | "INVALID_ADDED_LINE"
+        | "CREDIT_LIMIT_EXCEEDED";
       /* Only ever present on INSUFFICIENT_STOCK. Optional because rejectFieldSalesOrderAction shares this type. */
       shortLines?: ShortLine[];
       /* Only ever present on INVALID_ADDED_LINE. */
       addedLineCode?: InvalidAddedLineCode;
+      /* Only ever present on CREDIT_LIMIT_EXCEEDED. */
+      credit?: {
+        exposure: { receivableOutstanding: number; undeliveredOrderResidual: number; total: number };
+        creditLimit: number;
+        orderTotal: number;
+      };
     };
 
 function isValidFinalPrices(finalPrices: unknown): finalPrices is Array<{ lineId: string; finalUnitPrice: number }> {
@@ -72,14 +80,22 @@ export async function approveFieldSalesOrderAction(
   orderId: string,
   finalPrices?: Array<{ lineId: string; finalUnitPrice: number }>,
   addedLines?: Array<{ itemId: string; variantSku: string; qty: number }>,
+  creditOverrideReason?: string,
 ): Promise<ActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
   if (!isValidFinalPrices(finalPrices)) return { ok: false, reason: "INVALID_FINAL_PRICE" };
   if (!isValidAddedLines(addedLines)) return { ok: false, reason: "INVALID_ADDED_LINE" };
   try {
-    await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices, addedLines });
+    await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices, addedLines, creditOverrideReason });
   } catch (e) {
+    if (e instanceof CreditLimitExceededError) {
+      return {
+        ok: false,
+        reason: "CREDIT_LIMIT_EXCEEDED",
+        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal },
+      };
+    }
     if (e instanceof InsufficientStockError) {
       return { ok: false, reason: "INSUFFICIENT_STOCK", shortLines: e.shortLines };
     }

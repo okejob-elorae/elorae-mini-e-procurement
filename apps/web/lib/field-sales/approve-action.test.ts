@@ -150,4 +150,18 @@ d("field-sales order approve/reject actions (test bed only)", () => {
     );
     expect(result).toEqual({ ok: false, reason: "INVALID_FINAL_PRICE" });
   });
+
+  it("approve without a reason on an over-limit order returns CREDIT_LIMIT_EXCEEDED", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 100_000 } });
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const { orderId: overOrderId } = await (await import("./writer")).createFieldSalesOrder({
+      storeId, salesmanId, visitId, lines: [{ itemId, variantSku: "", productName: "T", qty: 6, unitPrice: 100_000 }],
+    });
+    const result = await approveFieldSalesOrderAction(overOrderId);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("CREDIT_LIMIT_EXCEEDED");
+      expect(result.credit?.creditLimit).toBe(100_000);
+    }
+  });
 });
