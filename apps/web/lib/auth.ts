@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import NextAuth from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
@@ -81,8 +82,8 @@ async function loadRolePayload(userId: string): Promise<RolePayload | null> {
 }
 
 /** Marker JWT for an invalidated session — proxy must treat as logged out and clear cookies. */
-function invalidatedToken() {
-  return { sessionInvalid: true as const };
+function invalidatedToken(): JWT {
+  return { sessionInvalid: true } as unknown as JWT;
 }
 
 export const {
