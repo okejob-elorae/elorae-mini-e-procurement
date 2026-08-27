@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
@@ -13,6 +14,11 @@ type RolePayload = {
   permissionsVersion: number | undefined;
   passwordFingerprint: string | null;
 };
+
+function fingerprintPassword(passwordHash: string | null | undefined): string | null {
+  if (!passwordHash) return null;
+  return createHash("sha256").update(passwordHash).digest("hex");
+}
 
 async function loadRolePayload(userId: string): Promise<RolePayload | null> {
   const user = await prisma.user.findUnique({
@@ -53,7 +59,7 @@ async function loadRolePayload(userId: string): Promise<RolePayload | null> {
     roleName,
     permissions,
     permissionsVersion,
-    passwordFingerprint: user.passwordHash ?? null,
+    passwordFingerprint: fingerprintPassword(user.passwordHash),
   };
 }
 
@@ -147,41 +153,63 @@ export const {
         return token;
       }
 
-      // Reload role + permissions every request so demotions / permission
-      // edits and password resets take effect without waiting for re-login.
-      if (token.id) {
+      if (!token.id) return token;
+
+      // Cheap probe: role identity + password fingerprint + permissionsVersion.
+      const probe = await prisma.user.findUnique({
+        where: { id: token.id as string },
+        select: {
+          role: true,
+          roleId: true,
+          passwordHash: true,
+          roleDefinition: {
+            select: { name: true, permissionsVersion: true },
+          },
+        },
+      });
+      if (!probe) return {};
+
+      const passwordFingerprint = fingerprintPassword(probe.passwordHash);
+      if (
+        passwordFingerprint !==
+        (token.passwordFingerprint as string | null | undefined)
+      ) {
+        return {};
+      }
+
+      const permissionsVersion = probe.roleDefinition?.permissionsVersion;
+      const roleChanged =
+        token.role !== probe.role ||
+        token.roleId !== probe.roleId ||
+        token.permissionsVersion !== permissionsVersion;
+
+      if (roleChanged) {
         const payload = await loadRolePayload(token.id as string);
-        if (!payload) {
-          return {};
-        }
-        if (
-          payload.passwordFingerprint !==
-          (token.passwordFingerprint as string | null | undefined)
-        ) {
-          // Password changed (e.g. admin reset) — drop the session.
-          return {};
-        }
+        if (!payload) return {};
         token.role = payload.role;
         token.roleId = payload.roleId;
         token.roleName = payload.roleName;
         token.permissions = payload.permissions;
         token.permissionsVersion = payload.permissionsVersion;
         token.passwordFingerprint = payload.passwordFingerprint;
+        return token;
       }
+
+      token.role = probe.role;
+      token.roleId = probe.roleId;
+      token.roleName = probe.roleDefinition?.name ?? probe.role;
+      token.passwordFingerprint = passwordFingerprint;
       return token;
     },
     async session({ session, token }) {
       if (!token?.id) {
-        // Empty token after invalidation — surface as unauthenticated.
-        return session;
+        return { expires: session.expires } as typeof session;
       }
-      if (token) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as Role;
-        session.user.roleId = token.roleId as string | null;
-        session.user.roleName = token.roleName as string;
-        session.user.permissions = (token.permissions || []) as string[];
-      }
+      session.user.id = token.id as string;
+      session.user.role = token.role as Role;
+      session.user.roleId = token.roleId as string | null;
+      session.user.roleName = token.roleName as string;
+      session.user.permissions = (token.permissions || []) as string[];
       return session;
     },
   },

@@ -16,13 +16,18 @@ const _updateRolePermissionsSchema = z.object({
 });
 void _updateRolePermissionsSchema;
 
+function requireAdminSession(session: Awaited<ReturnType<typeof auth>>) {
+  if (!session) throw new Error("Unauthorized");
+  if (session.user.role !== "ADMIN") throw new Error("Forbidden");
+}
+
 /**
  * Get all roles with their permissions and user counts
  */
 export async function getRoles() {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
 
   const roles = await prisma.roleDefinition.findMany({
     include: {
@@ -64,8 +69,8 @@ export async function getRoles() {
  */
 export async function getPermissions() {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
 
   const permissions = await prisma.permission.findMany({
     orderBy: [
@@ -94,8 +99,8 @@ export async function createRole(
   permissionIds: string[]
 ) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
 
   const validated = roleSchema.parse(data);
 
@@ -148,8 +153,8 @@ export async function updateRolePermissions(
   permissionIds: string[]
 ) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
 
   // Check if role exists and is not a system role
   const role = await prisma.roleDefinition.findUnique({
@@ -207,8 +212,8 @@ export async function updateRolePermissions(
  */
 export async function deleteRole(roleId: string) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
 
   const role = await prisma.roleDefinition.findUnique({
     where: { id: roleId },
@@ -244,8 +249,8 @@ export async function deleteRole(roleId: string) {
  */
 export async function getRole(roleId: string) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
 
   const role = await prisma.roleDefinition.findUnique({
     where: { id: roleId },
