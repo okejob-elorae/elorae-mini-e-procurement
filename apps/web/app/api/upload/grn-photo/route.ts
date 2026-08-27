@@ -26,8 +26,14 @@ function sanitiseFilename(name: string): string {
 export async function POST(request: NextRequest) {
   try {
     /*
-     * Authenticated callers only. This endpoint had NO auth check at all, so anyone on the internet
-     * could write 10 MB objects into the R2 bucket.
+     * Authenticated callers only — defence in depth, NOT the only thing standing here.
+     *
+     * This handler had no auth check of its own, which initially looked like an open door. It was not:
+     * `proxy.ts` matches every path except a short static allow-list (`/api/auth`, `/api/cron`,
+     * `/api/health`, `_next`, static assets) and redirects any tokenless request to `/login`, so an
+     * unauthenticated request never reached this code. The check below exists because a route should not
+     * depend solely on middleware for its own authorisation — one edit to that allow-list, or one route
+     * moved outside the matcher, and the handler is suddenly the last line rather than the second.
      *
      * The gate is authentication rather than a specific permission because four features share this
      * one endpoint — the GRN form, both stock-adjustment screens and vendor returns — and they do not
@@ -98,9 +104,10 @@ export async function POST(request: NextRequest) {
  * The DELETE handler that used to sit here was REMOVED, not gated.
  *
  * It took a public R2 URL, resolved it with `keyFromUrl` — which accepts ANY key under the bucket's
- * public prefix, not just this route's own uploads — and deleted it, with no authentication. So it was
- * an unauthenticated bucket-wide delete primitive: item images, visit photos, retur nota photos and
- * payment proofs were all reachable by anyone who knew or guessed a URL.
+ * public prefix, not just this route's own uploads — and deleted it, checking nothing beyond that. The
+ * edge gate in `proxy.ts` meant it was never reachable unauthenticated, so it was a bucket-wide delete
+ * primitive available to ANY AUTHENTICATED USER regardless of permissions: item images, visit photos,
+ * retur nota photos and payment proofs were all reachable by anyone with a session and a URL.
  *
  * Nothing called it. All four callers of this route use POST only (grep `api/upload/grn-photo`), so
  * deleting the handler removes the exposure without removing a capability anyone was using. If an

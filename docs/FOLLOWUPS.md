@@ -371,7 +371,11 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       check a permission (`item-image` → `items:manage`, `payment-proof` → `payments:manage`). Tightening
       means either an any-of check across the four features' permissions or splitting the endpoint per
       feature. Until then an authenticated user with no inventory permissions can still write objects into
-      the bucket. Raised while fixing the unauthenticated hole on that route.
+      the bucket. Raised while adding an auth check to that route — note the route was NOT reachable
+      unauthenticated: `proxy.ts` matches everything outside a short allow-list and redirects tokenless
+      requests to `/login`. The initial read of "no `auth()` in the handler, therefore open to the
+      internet" was wrong because it stopped at the file instead of following the request path. Worth
+      remembering before filing the next one: check the edge gate before scoring a route's exposure.
 - [ ] Uploaded object keys are not namespaced by feature. `grn-photo` writes to a generic `uploads/` prefix
       rather than something like `grn/`, so nothing about a key says which feature owns it. That is what made
       the removed DELETE handler dangerous — `keyFromUrl` accepts any key under the bucket's public prefix,
