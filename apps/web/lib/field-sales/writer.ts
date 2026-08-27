@@ -446,6 +446,7 @@ export async function approveFieldSalesOrder(input: {
     const creditLimit = order.store.creditLimit === null ? null : Number(order.store.creditLimit);
     let creditExposureAtApprove: number | null = null;
     let creditLimitAtApprove: number | null = null;
+    let overrideReason: string | null = null;
     if (creditLimit !== null) {
       const exposure = await computeStoreCreditExposure(tx, order.storeId);
       if (exposure.total + total > creditLimit) {
@@ -455,6 +456,7 @@ export async function approveFieldSalesOrder(input: {
         }
         creditExposureAtApprove = exposure.total;
         creditLimitAtApprove = creditLimit;
+        overrideReason = reason;
         await tx.auditLog.create({
           data: {
             userId: input.approvedById,
@@ -491,7 +493,7 @@ export async function approveFieldSalesOrder(input: {
           ? {
               creditExposureAtApprove,
               creditLimitAtApprove,
-              creditOverrideReason: input.creditOverrideReason!.trim(),
+              creditOverrideReason: overrideReason,
               creditOverrideById: input.approvedById,
               creditOverrideAt: new Date(),
             }

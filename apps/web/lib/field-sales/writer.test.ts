@@ -43,11 +43,24 @@ d("field-sales lifecycle writers (test bed only)", () => {
       await prisma.salesHistory.deleteMany({ where: { itemId: itemId2 } });
       await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: itemId2 } });
     }
-    // The over-limit-KONSI-approve test issues a real KonsiTransfer; clean it up before the
-    // FieldSalesOrder/Store deletes below, both of which it holds a required FK against.
+    /**
+     * The "a konsi order is never gated regardless of the store's limit" test issues a real
+     * KonsiTransfer; clean it up before the FieldSalesOrder/Store deletes below, both of which
+     * it holds a required FK against.
+     */
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.konsiTransfer.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
+    /**
+     * AuditLog has no FK/cascade back to FieldSalesOrder — it just carries entityId as a plain
+     * String — so the credit-override test's CREDIT_LIMIT_OVERRIDE row would otherwise leak into
+     * the shared :3308 bed once its order is deleted below. Scoped to this store's actual order
+     * ids, never to `action` alone, so it can't sweep unrelated rows on the shared bed.
+     */
+    const orderIds = (await prisma.fieldSalesOrder.findMany({ where: { storeId: seededId(storeId) }, select: { id: true } })).map((o) => o.id);
+    if (orderIds.length > 0) {
+      await prisma.auditLog.deleteMany({ where: { entityType: "FieldSalesOrder", entityId: { in: orderIds } } });
+    }
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
     await prisma.storeVisit.deleteMany({ where: { id: visitId } });
     await prisma.store.deleteMany({ where: { id: storeId } });
@@ -225,6 +238,10 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(order!.creditOverrideReason).toBe("Toko sudah komunikasi akan bayar minggu ini");
     expect(order!.creditOverrideById).toBe(salesmanId);
     expect(order!.creditOverrideAt).not.toBeNull();
+    // Number(null) is also 0 in this scenario (no receivables, no other approved orders) — assert
+    // non-null so this doesn't pass identically whether the column was actually written or left
+    // null.
+    expect(order!.creditExposureAtApprove).not.toBeNull();
     expect(Number(order!.creditExposureAtApprove)).toBe(0);
     expect(Number(order!.creditLimitAtApprove)).toBe(100_000);
     const auditLog = await prisma.auditLog.findFirst({ where: { action: "CREDIT_LIMIT_OVERRIDE", entityId: orderId } });
