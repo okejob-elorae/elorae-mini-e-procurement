@@ -15,28 +15,26 @@ type RolePayload = {
   passwordFingerprint: string | null;
 };
 
+type UserWithRole = {
+  id: string;
+  role: Role;
+  roleId: string | null;
+  passwordHash: string | null;
+  roleDefinition: {
+    id: string;
+    name: string;
+    isSystem: boolean;
+    permissionsVersion: number;
+    permissions: Array<{ permission: { code: string } }>;
+  } | null;
+};
+
 function fingerprintPassword(passwordHash: string | null | undefined): string | null {
   if (!passwordHash) return null;
   return createHash("sha256").update(passwordHash).digest("hex");
 }
 
-async function loadRolePayload(userId: string): Promise<RolePayload | null> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      roleDefinition: {
-        include: {
-          permissions: {
-            include: {
-              permission: true,
-            },
-          },
-        },
-      },
-    },
-  });
-  if (!user) return null;
-
+function rolePayloadFromUser(user: UserWithRole): RolePayload {
   let permissions: string[] = [];
   let roleId: string | null = null;
   let roleName: string = user.role;
@@ -61,6 +59,30 @@ async function loadRolePayload(userId: string): Promise<RolePayload | null> {
     permissionsVersion,
     passwordFingerprint: fingerprintPassword(user.passwordHash),
   };
+}
+
+async function loadRolePayload(userId: string): Promise<RolePayload | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      roleDefinition: {
+        include: {
+          permissions: {
+            include: {
+              permission: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!user) return null;
+  return rolePayloadFromUser(user as UserWithRole);
+}
+
+/** Marker JWT for an invalidated session — proxy must treat as logged out and clear cookies. */
+function invalidatedToken() {
+  return { sessionInvalid: true as const };
 }
 
 export const {
@@ -119,8 +141,7 @@ export const {
           return null;
         }
 
-        const payload = await loadRolePayload(user.id);
-        if (!payload) return null;
+        const payload = rolePayloadFromUser(user as UserWithRole);
 
         return {
           id: user.id,
@@ -150,7 +171,12 @@ export const {
         token.passwordFingerprint = (user as any).passwordFingerprint as
           | string
           | null;
+        delete (token as { sessionInvalid?: boolean }).sessionInvalid;
         return token;
+      }
+
+      if ((token as { sessionInvalid?: boolean }).sessionInvalid) {
+        return invalidatedToken();
       }
 
       if (!token.id) return token;
@@ -167,14 +193,19 @@ export const {
           },
         },
       });
-      if (!probe) return {};
+      if (!probe) return invalidatedToken();
 
       const passwordFingerprint = fingerprintPassword(probe.passwordHash);
-      if (
-        passwordFingerprint !==
-        (token.passwordFingerprint as string | null | undefined)
-      ) {
-        return {};
+      const priorFingerprint = token.passwordFingerprint as
+        | string
+        | null
+        | undefined;
+
+      // One-time migrate: existing JWTs lack passwordFingerprint — stamp, don't wipe.
+      if (priorFingerprint === undefined) {
+        token.passwordFingerprint = passwordFingerprint;
+      } else if (passwordFingerprint !== priorFingerprint) {
+        return invalidatedToken();
       }
 
       const permissionsVersion = probe.roleDefinition?.permissionsVersion;
@@ -185,7 +216,7 @@ export const {
 
       if (roleChanged) {
         const payload = await loadRolePayload(token.id as string);
-        if (!payload) return {};
+        if (!payload) return invalidatedToken();
         token.role = payload.role;
         token.roleId = payload.roleId;
         token.roleName = payload.roleName;
@@ -202,7 +233,10 @@ export const {
       return token;
     },
     async session({ session, token }) {
-      if (!token?.id) {
+      if (
+        !token?.id ||
+        (token as { sessionInvalid?: boolean }).sessionInvalid
+      ) {
         return { expires: session.expires } as typeof session;
       }
       session.user.id = token.id as string;
