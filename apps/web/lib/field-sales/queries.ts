@@ -44,6 +44,7 @@ export type FieldSalesOrderListItem = {
   status: FieldSalesOrderStatus;
   total: number;
   createdAt: Date;
+  creditHoldAtCreate: boolean;
 };
 
 export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
@@ -104,6 +105,7 @@ export function serializeListItem(row: {
   createdAt: Date;
   store: { name: string };
   salesman: { name: string | null };
+  creditHoldAtCreate: boolean;
 }): FieldSalesOrderListItem {
   return {
     id: row.id,
@@ -114,6 +116,7 @@ export function serializeListItem(row: {
     status: row.status,
     total: toNum(row.total),
     createdAt: row.createdAt,
+    creditHoldAtCreate: row.creditHoldAtCreate,
   };
 }
 
@@ -137,6 +140,7 @@ export async function listFieldSalesOrders(
       take: paging.pageSize,
       select: {
         id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true,
+        creditHoldAtCreate: true,
         store: { select: { name: true } },
         salesman: { select: { name: true } },
       },

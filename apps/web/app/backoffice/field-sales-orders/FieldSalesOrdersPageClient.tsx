@@ -215,6 +215,11 @@ export function FieldSalesOrdersPageClient(props: Props) {
                     <Badge variant={STATUS_BADGE_VARIANT[o.status]}>
                       {t(STATUS_LABEL_KEY[o.status])}
                     </Badge>
+                    {o.creditHoldAtCreate && (
+                      <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-700">
+                        {t("creditHoldBadge")}
+                      </Badge>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
