@@ -307,6 +307,7 @@ model Store {
   paymentTempo   Int            @default(0)
   marginPercent  Decimal?       @db.Decimal(5, 2)
   priceDiscountPercent Decimal? @db.Decimal(5, 2)
+  creditLimit    Decimal?       @db.Decimal(15, 2)
   lat            Decimal?       @db.Decimal(10, 7)
   lng            Decimal?       @db.Decimal(10, 7)
   checkinRadiusMeters Int?
@@ -422,6 +423,14 @@ model FieldSalesOrder {
   total         Decimal               @db.Decimal(15, 2)
   orderDiscountAmount Decimal         @default(0) @db.Decimal(15, 2)
   appliedOrderPromoId String?
+  creditHoldAtCreate      Boolean   @default(false)
+  creditExposureAtCreate  Decimal?  @db.Decimal(15, 2)
+  creditLimitAtCreate     Decimal?  @db.Decimal(15, 2)
+  creditExposureAtApprove Decimal?  @db.Decimal(15, 2)
+  creditLimitAtApprove    Decimal?  @db.Decimal(15, 2)
+  creditOverrideReason    String?   @db.Text
+  creditOverrideById      String?
+  creditOverrideAt        DateTime?
   note          String?               @db.Text
   approvedAt    DateTime?
   approvedById  String?
