@@ -134,7 +134,7 @@ One line per known trap: **the situation you are in — what bites — where the
 - Running a migration or any destructive query locally? The tunnel points at the SAME MariaDB the client demo uses. `pnpm -F @elorae/db migrate:deploy` only — never `migrate dev`.
 - Shipping a migration alongside app code? The deploy `migrate` job is gated on both image builds, and its `always()` is load-bearing — a legitimately SKIPPED build must not cascade-skip the migration.
 - Expecting the deploy to seed RBAC rows? It migrates but NEVER seeds — permission rows are hand-run surgical SQL, post-merge.
-- Running `mariadb` / `mariadb-dump` against prod? Needs `--skip-ssl`, and the failure is SILENT inside a `| gzip` pipe (a valid 123-byte empty archive) — verify size plus the `Dump completed on` trailer. Aggregates over `SalesOrder` need `SET SESSION max_statement_time`.
+- Running `mariadb` / `mariadb-dump` against prod? Needs SSL off — but the FLAG depends on which client is installed, and getting it wrong looks like a connection failure rather than a flag error: MariaDB's client takes `--skip-ssl`, while the MySQL 8 client (`mysql` on this machine, `mysql Ver 8.0.46`) rejects that outright and wants `--ssl-mode=DISABLED`. Check `mysql --version` before assuming. The failure is SILENT inside a `| gzip` pipe (a valid 123-byte empty archive) — verify size plus the `Dump completed on` trailer. Aggregates over `SalesOrder` need `SET SESSION max_statement_time`.
 
 **Jubelio integration**
 
