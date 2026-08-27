@@ -96,6 +96,8 @@
     "navJubelioCouriers": "Couriers",
     "settings": "Settings",
     "masterData": "Master Data",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
     "profileAccounts": "Profile Accounts"
   },
   "notifications": {
@@ -297,13 +299,20 @@
     "coa": {
       "title": "Chart of Accounts",
       "newAccount": "New Account",
+      "addChild": "Add Child",
       "viewLedger": "View Ledger",
       "expand": "Expand",
       "collapse": "Collapse",
+      "expandAll": "Expand All",
+      "collapseAll": "Collapse All",
       "searchPlaceholder": "Search by code or name…",
       "showInactive": "Show inactive",
       "hideInactive": "Hide inactive",
       "empty": "No accounts yet. Click \"New Account\" to add one.",
+      "balance": {
+        "dr": "Dr",
+        "cr": "Cr"
+      },
       "col": {
         "code": "Code",
         "name": "Name",

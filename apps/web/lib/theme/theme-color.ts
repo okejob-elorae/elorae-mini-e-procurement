@@ -53,30 +53,61 @@ function getForegroundFor(hex: string): string {
   return getRelativeLuminance(hex) > 0.5 ? '#111827' : '#f9fafb';
 }
 
+/** Mix hex toward white by `amount` (0–1). */
+function mixTowardWhite(hex: string, amount: number): string {
+  const { r, g, b } = toRgb(hex);
+  const t = Math.min(1, Math.max(0, amount));
+  const mix = (channel: number) => Math.round(channel + (255 - channel) * t);
+  const toHex = (n: number) => n.toString(16).padStart(2, "0");
+  return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
+}
+
+/**
+ * Dark brand hexes make `text-primary` invisible on dark cards.
+ * Lighten until relative luminance is readable as body text.
+ */
+function ensureReadablePrimaryOnDark(hex: string): string {
+  const MIN_LUM = 0.55;
+  if (getRelativeLuminance(hex) >= MIN_LUM) return hex;
+  let result = hex;
+  for (let i = 0; i < 10; i++) {
+    result = mixTowardWhite(result, 0.18);
+    if (getRelativeLuminance(result) >= MIN_LUM) break;
+  }
+  return result;
+}
+
 export function applyThemePrimaryColor(hex: string): string {
   const normalized = normalizeThemeHexColor(hex);
-  const foreground = getForegroundFor(normalized);
+  const dark = isDocumentDarkMode();
   const rootStyle = document.documentElement.style;
 
-  // Brand color lives on primary/ring/sidebar-primary only.
-  // Do not overwrite --accent: shadcn uses accent for soft hover/highlight
-  // surfaces; stomping it with a dark brand hex makes light-mode text unreadable.
-  rootStyle.setProperty('--primary', normalized);
-  rootStyle.setProperty('--ring', normalized);
-  rootStyle.setProperty('--sidebar-primary', normalized);
-  rootStyle.setProperty('--primary-foreground', foreground);
-  rootStyle.setProperty('--sidebar-primary-foreground', foreground);
+  // Brand surface stays on sidebar tokens (shell chrome uses bg-sidebar).
+  const brandFg = getForegroundFor(normalized);
+  rootStyle.setProperty("--sidebar", normalized);
+  rootStyle.setProperty("--sidebar-foreground", brandFg);
+  rootStyle.setProperty("--sidebar-primary", normalized);
+  rootStyle.setProperty("--sidebar-primary-foreground", brandFg);
+
+  // Interactive primary must stay readable as text (links, button variants).
+  const interactive = dark ? ensureReadablePrimaryOnDark(normalized) : normalized;
+  const interactiveFg = getForegroundFor(interactive);
+  rootStyle.setProperty("--primary", interactive);
+  rootStyle.setProperty("--ring", interactive);
+  rootStyle.setProperty("--primary-foreground", interactiveFg);
 
   return normalized;
 }
 
 export function clearThemePrimaryColor(): void {
   const rootStyle = document.documentElement.style;
-  rootStyle.removeProperty('--primary');
-  rootStyle.removeProperty('--ring');
-  rootStyle.removeProperty('--sidebar-primary');
-  rootStyle.removeProperty('--primary-foreground');
-  rootStyle.removeProperty('--sidebar-primary-foreground');
+  rootStyle.removeProperty("--primary");
+  rootStyle.removeProperty("--ring");
+  rootStyle.removeProperty("--primary-foreground");
+  rootStyle.removeProperty("--sidebar");
+  rootStyle.removeProperty("--sidebar-foreground");
+  rootStyle.removeProperty("--sidebar-primary");
+  rootStyle.removeProperty("--sidebar-primary-foreground");
 }
 
 export type BaseTokens = {

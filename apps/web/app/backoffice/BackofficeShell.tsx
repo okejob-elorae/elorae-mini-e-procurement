@@ -23,6 +23,8 @@ import {
   Store,
   Wallet,
   BarChart2,
+  PanelLeftClose,
+  PanelLeft,
   Users,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -36,6 +38,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
@@ -52,6 +60,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+
+const SIDEBAR_COLLAPSED_KEY = 'elorae.sidebar.collapsed';
 
 interface NavChild {
   labelKey: string;
@@ -366,11 +376,15 @@ function Sidebar({
   permissions,
   userRole,
   onClose,
+  collapsed = false,
+  onToggleCollapse,
 }: {
   className?: string;
   permissions: string[];
   userRole: Role;
   onClose?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
@@ -436,111 +450,210 @@ function Sidebar({
     return hasPermission(permissions, item.permission);
   });
 
+  function visibleChildrenOf(item: NavItem): NavChild[] {
+    return (item.children ?? []).filter(
+      (child) => !child.permission || hasPermission(permissions, child.permission)
+    );
+  }
+
+  function isChildActive(child: NavChild, siblings: NavChild[]): boolean {
+    const matching = siblings
+      .filter((c) => pathname === c.href || pathname.startsWith(`${c.href}/`))
+      .sort((a, b) => b.href.length - a.href.length);
+    return matching[0]?.href === child.href;
+  }
+
   return (
-    <div className={cn('flex flex-col h-full text-primary-foreground', className)}>
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-primary-foreground/20">
-        <div className="w-10 h-10 bg-primary-foreground rounded-lg flex items-center justify-center">
-          <span className="text-primary font-bold text-lg">E</span>
+    <TooltipProvider delayDuration={0}>
+      <div className={cn('flex flex-col h-full text-sidebar-foreground', className)}>
+        <div
+          className={cn(
+            'flex items-center border-b border-sidebar-foreground/20',
+            collapsed ? 'flex-col gap-2 px-2 py-3' : 'gap-3 px-4 py-4'
+          )}
+        >
+          <div className="w-10 h-10 bg-sidebar-foreground rounded-lg flex items-center justify-center shrink-0">
+            <span className="text-sidebar font-bold text-lg">E</span>
+          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <h1 className="font-bold text-lg truncate">Elorae ERP</h1>
+              <p className="text-xs text-sidebar-foreground/60">v1.0.0</p>
+            </div>
+          )}
+          {onToggleCollapse && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
+              onClick={onToggleCollapse}
+              aria-label={collapsed ? tNav('expandSidebar') : tNav('collapseSidebar')}
+              title={collapsed ? tNav('expandSidebar') : tNav('collapseSidebar')}
+            >
+              {collapsed ? (
+                <PanelLeft className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+            </Button>
+          )}
         </div>
-        <div>
-          <h1 className="font-bold text-lg">Elorae ERP</h1>
-          <p className="text-xs text-primary-foreground/60">v1.0.0</p>
-        </div>
-      </div>
 
-      <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-3 space-y-1">
-        {filteredItems.map((item) => {
-          const Icon = item.icon;
-          const hasChildren = item.children && item.children.length > 0;
-          const pathOpenKey = getOpenKeyFromPath(pathname);
-          const isParentActive = hasChildren
-            ? pathOpenKey === item.href
-            : pathname === item.href || pathname.startsWith(`${item.href}/`);
+        <nav
+          className={cn(
+            'flex-1 min-h-0 overflow-y-auto py-4 space-y-1',
+            collapsed ? 'px-2' : 'px-3'
+          )}
+        >
+          {filteredItems.map((item) => {
+            const Icon = item.icon;
+            const hasChildren = item.children && item.children.length > 0;
+            const pathOpenKey = getOpenKeyFromPath(pathname);
+            const isParentActive = hasChildren
+              ? pathOpenKey === item.href
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const label = tNav(item.labelKey as any);
 
-          if (hasChildren) {
-            return (
-              <Collapsible
-                key={item.href}
-                open={openNavKey === item.href}
-                onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
-                className="group/collapsible"
-              >
-                <CollapsibleTrigger
-                  className={cn(
-                    'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg:last-of-type]:rotate-90',
-                    isParentActive
-                      ? 'bg-primary-foreground text-primary'
-                      : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
-                  )}
-                >
-                  <Icon className="w-5 h-5 shrink-0" />
-                  <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
-                  <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="ml-4 mt-1 space-y-0.5 border-l border-primary-foreground/20 pl-3">
-                    {(() => {
-                      const visibleChildren = item.children!.filter(
-                        (child) =>
-                          !child.permission || hasPermission(permissions, child.permission)
-                      );
-                      return visibleChildren.map((child) => {
-                        // Prefer the longest matching child href so nested routes
-                        // (e.g. /work-orders/nota-register) don't also light up the parent list item.
-                        const matching = visibleChildren
-                          .filter(
-                            (c) =>
-                              pathname === c.href || pathname.startsWith(`${c.href}/`)
-                          )
-                          .sort((a, b) => b.href.length - a.href.length);
-                        const isChildActive = matching[0]?.href === child.href;
-                        return (
+            if (hasChildren) {
+              const children = visibleChildrenOf(item);
+
+              if (collapsed) {
+                return (
+                  <DropdownMenu key={item.href}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          'w-full h-10 text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground',
+                          isParentActive && 'bg-sidebar-foreground text-sidebar hover:bg-sidebar-foreground hover:text-sidebar'
+                        )}
+                        aria-label={label}
+                      >
+                        <Icon className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="right" align="start" className="w-56">
+                      <DropdownMenuLabel>{label}</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {children.map((child) => (
+                        <DropdownMenuItem key={child.href} asChild>
                           <Link
-                            key={child.href}
                             href={child.href}
                             onClick={onClose}
                             className={cn(
-                              'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-                              isChildActive
-                                ? 'font-medium text-primary-foreground'
-                                : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
+                              isChildActive(child, children) && 'font-medium'
                             )}
                           >
                             {tNav(child.labelKey as any)}
                           </Link>
-                        );
-                      });
-                    })()}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              }
+
+              return (
+                <Collapsible
+                  key={item.href}
+                  open={openNavKey === item.href}
+                  onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
+                  className="group/collapsible"
+                >
+                  <CollapsibleTrigger
+                    className={cn(
+                      'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg:last-of-type]:rotate-90',
+                      isParentActive
+                        ? 'bg-sidebar-foreground text-sidebar'
+                        : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
+                    )}
+                  >
+                    <Icon className="w-5 h-5 shrink-0" />
+                    <span className="flex-1 text-left">{label}</span>
+                    <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-foreground/20 pl-3">
+                      {children.map((child) => (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={onClose}
+                          className={cn(
+                            'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+                            isChildActive(child, children)
+                              ? 'font-medium text-sidebar-foreground'
+                              : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
+                          )}
+                        >
+                          {tNav(child.labelKey as any)}
+                        </Link>
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            }
+
+            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+            if (collapsed) {
+              return (
+                <Tooltip key={item.href}>
+                  <TooltipTrigger asChild>
+                    <Link
+                      href={item.href}
+                      onClick={onClose}
+                      aria-label={label}
+                      className={cn(
+                        'flex h-10 w-full items-center justify-center rounded-lg transition-colors',
+                        isActive
+                          ? 'bg-sidebar-foreground text-sidebar'
+                          : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
+                      )}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{label}</TooltipContent>
+                </Tooltip>
+              );
+            }
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-sidebar-foreground text-sidebar'
+                    : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
+                )}
+              >
+                <Icon className="w-5 h-5" />
+                {label}
+              </Link>
             );
-          }
+          })}
+        </nav>
 
-          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-primary-foreground text-primary'
-                  : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
-              )}
-            >
-              <Icon className="w-5 h-5" />
-              {tNav(item.labelKey as any)}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="p-4 border-t border-primary-foreground/20 [&_button]:text-primary-foreground [&_button]:hover:bg-primary-foreground/10 [&_button]:hover:text-primary-foreground">
-        <OfflineIndicator />
+        <div
+          className={cn(
+            'border-t border-sidebar-foreground/20 [&_button]:text-sidebar-foreground [&_button]:hover:bg-sidebar-foreground/10 [&_button]:hover:text-sidebar-foreground',
+            collapsed
+              ? 'p-2 [&_button]:justify-center [&_button_span]:hidden [&_button_svg:last-child]:hidden'
+              : 'p-4'
+          )}
+        >
+          <OfflineIndicator />
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
 
@@ -554,6 +667,28 @@ export function BackofficeShell({
   const { data: session, status } = useSession();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (stored === '1') setSidebarCollapsed(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -601,13 +736,23 @@ export function BackofficeShell({
   return (
     <div className="h-dvh flex overflow-hidden">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col w-64 shrink-0 border-r border-primary-foreground/10 bg-primary min-h-0">
-        <Sidebar permissions={session.user.permissions} userRole={userRole} />
+      <aside
+        className={cn(
+          'hidden lg:flex lg:flex-col shrink-0 border-r border-sidebar-border bg-sidebar min-h-0 transition-[width] duration-200 ease-in-out',
+          sidebarCollapsed ? 'w-[4.25rem]' : 'w-64'
+        )}
+      >
+        <Sidebar
+          permissions={session.user.permissions}
+          userRole={userRole}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapsed}
+        />
       </aside>
 
       {/* Mobile Sidebar */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="p-0 w-64 bg-primary border-primary-foreground/10">
+        <SheetContent side="left" className="p-0 w-64 bg-sidebar border-sidebar-border">
           <Sidebar
             permissions={session.user.permissions}
             userRole={userRole}
@@ -627,7 +772,7 @@ export function BackofficeShell({
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64 bg-primary border-primary-foreground/10">
+              <SheetContent side="left" className="p-0 w-64 bg-sidebar border-sidebar-border">
                 <Sidebar
                   permissions={session.user.permissions}
                   userRole={userRole}
