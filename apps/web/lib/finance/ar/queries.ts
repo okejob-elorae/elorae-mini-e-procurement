@@ -4,6 +4,7 @@ import { agingBucket, AGING_BUCKETS, daysOverdue, type AgingBucket } from "./agi
 export type ReceivableFilters = {
   storeId?: string;
   salesmanId?: string;
+  collectorId?: string;
   status?: "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF";
   bucket?: AgingBucket;
   dateFrom?: Date;
@@ -29,6 +30,7 @@ export type ReceivableRow = {
   status: string;
   daysOverdue: number;
   bucket: AgingBucket;
+  collectorName: string | null;
 };
 
 const emptyBucketTotals = (): Record<AgingBucket, number> =>
@@ -37,6 +39,7 @@ const emptyBucketTotals = (): Record<AgingBucket, number> =>
 function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
   const where: Prisma.ReceivableWhereInput = {};
   if (f.storeId) where.storeId = f.storeId;
+  if (f.collectorId) where.collectorId = f.collectorId;
   if (f.status) where.status = f.status;
   if (f.salesmanId) where.delivery = { order: { salesmanId: f.salesmanId } };
   if (f.dateFrom || f.dateTo) {
@@ -135,6 +138,7 @@ export async function listReceivables(filters: ReceivableFilters): Promise<{
       delivery: {
         select: { docNo: true, order: { select: { salesman: { select: { name: true } } } } },
       },
+      collector: { select: { name: true } },
     },
   });
 
@@ -152,6 +156,7 @@ export async function listReceivables(filters: ReceivableFilters): Promise<{
     status: r.status,
     daysOverdue: daysOverdue(r.dueDate, asOf),
     bucket: agingBucket(r.dueDate, asOf),
+    collectorName: r.collector?.name ?? null,
   }));
 
   if (filters.bucket === undefined) {
