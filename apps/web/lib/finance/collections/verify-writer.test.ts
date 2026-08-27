@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { submitCollection } from "./submit-writer";
 import { verifyCollection } from "./verify-writer";
-import { CollectionError } from "./errors";
+import * as paymentWriter from "@/lib/finance/ar/payment-writer";
+import { PaymentError } from "@/lib/finance/ar/errors";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
@@ -82,15 +83,32 @@ d("verifyCollection (test bed only)", () => {
   });
 
   it("an already-VERIFIED submission is a no-op (no second payment)", async () => {
+    const spy = vi.spyOn(paymentWriter, "recordPayment");
     await verifyCollection({ submissionId, verifiedById: adminId });
-    await verifyCollection({ submissionId, verifiedById: adminId });
+    const second = await verifyCollection({ submissionId, verifiedById: adminId });
+    // Asserts the short-circuit itself, not just its downstream effect: the second call must
+    // report alreadyVerified and must NOT have called recordPayment a second time (recordPayment's
+    // own idempotency check is a separate safety net covered by the replay test above).
+    expect(second).toEqual({ ok: true, alreadyVerified: true });
+    expect(spy).toHaveBeenCalledTimes(1);
     const allocations = await prisma.paymentAllocation.findMany({ where: { receivableId } });
     expect(allocations).toHaveLength(1);
+    spy.mockRestore();
   });
 
   it("a receivable settled elsewhere surfaces its own reason and leaves the submission PENDING", async () => {
     await prisma.receivable.update({ where: { id: receivableId }, data: { status: "PAID", outstandingAmount: 0 } });
-    await expect(verifyCollection({ submissionId, verifiedById: adminId })).rejects.toThrow();
+    let caught: unknown;
+    try {
+      await verifyCollection({ submissionId, verifiedById: adminId });
+    } catch (e) {
+      caught = e;
+    }
+    // Specifically the ALREADY_SETTLED guard inside recordPayment, not just "something threw" —
+    // a future change that swallowed the real error and threw something generic would pass a
+    // bare rejects.toThrow() but must fail this.
+    expect(caught).toBeInstanceOf(PaymentError);
+    expect((caught as PaymentError).code).toBe("ALREADY_SETTLED");
     const sub = await prisma.collectionSubmission.findUnique({ where: { id: submissionId } });
     expect(sub!.status).toBe("PENDING");
   });

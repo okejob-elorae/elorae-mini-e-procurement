@@ -17,8 +17,11 @@ import { CollectionError } from "./errors";
  * for the same submission races harmlessly: both may call `recordPayment` with the SAME
  * deterministic key, and `recordPayment`'s own idempotency check (inside ITS transaction)
  * ensures only one payment is ever created — the loser gets the winner's row back. Whichever
- * caller's CAS runs first flips the row; the other's `updateMany` matches zero rows and
- * returns `alreadyVerified` rather than erroring.
+ * caller's CAS runs first flips the row; the other's `updateMany` matches zero rows, and only
+ * THEN does it re-read to decide: the row landed on VERIFIED with our payment id (the safe
+ * race, reported as `alreadyVerified`), or it landed somewhere else — e.g. REJECTED by a
+ * concurrent reject — in which case the payment above is real but orphaned, and this throws
+ * loudly instead of lying about success.
  */
 export async function verifyCollection(input: {
   submissionId: string;
@@ -44,7 +47,7 @@ export async function verifyCollection(input: {
   const { paymentId } = await recordPayment({
     storeId: receivable.storeId,
     paidAt: submission.paidAt,
-    method: submission.method as "CASH" | "TRANSFER",
+    method: submission.method,
     amount: Number(submission.amount),
     recordedById: input.verifiedById,
     allocations: [{ receivableId: submission.receivableId, amount: Number(submission.amount) }],
@@ -57,7 +60,26 @@ export async function verifyCollection(input: {
     where: { id: submission.id, status: "PENDING" },
     data: { status: "VERIFIED", paymentId, verifiedById: input.verifiedById, verifiedAt: new Date() },
   });
-  if (flipped.count === 0) return { ok: true, alreadyVerified: true };
+  if (flipped.count === 0) {
+    /*
+     * Zero rows matched does NOT always mean "a concurrent verify already flipped this to
+     * VERIFIED" — CollectionSubmissionStatus also has REJECTED, and a concurrent reject
+     * between our initial read and this CAS produces the exact same zero-count result. By
+     * this point `recordPayment` above has already committed a real Payment/PaymentAllocation
+     * and decremented outstandingAmount, so silently reporting alreadyVerified here would hide
+     * a payment now orphaned from a rejected submission. Re-read and only treat this as the
+     * safe race (report success) when the row genuinely landed on VERIFIED with OUR payment id
+     * — anything else throws loudly so it surfaces for human reconciliation instead of lying.
+     */
+    const current = await prisma.collectionSubmission.findUnique({
+      where: { id: submission.id },
+      select: { status: true, paymentId: true },
+    });
+    if (current?.status === "VERIFIED" && current.paymentId === paymentId) {
+      return { ok: true, alreadyVerified: true };
+    }
+    throw new CollectionError("NOT_PENDING");
+  }
 
   return { ok: true, paymentId };
 }
