@@ -127,6 +127,11 @@ One line per known trap: **the situation you are in — what bites — where the
 - Reading `computeStoreCreditExposure`'s output? Exposure = outstanding receivables + approved-undelivered residual, floored per order — a receivables-only reading looks correct and silently lets every undelivered order through. See `docs/ARCHITECTURE-NOTES.md`.
 - Wondering why konsi orders never trip the credit limit? Exempt by construction (zero order value at create, no `Receivable` ever) — do not add a konsi check without konsi sell-through AR existing first. See `docs/ARCHITECTURE-NOTES.md`.
 - Adding a new `AdminNotification` category anywhere? It is delivered to nobody until added to `admin-fanout.ts`'s `CATEGORY_PERMISSION` map — silent, no thrown error. See `docs/ARCHITECTURE-NOTES.md`.
+- Touching a `CollectionSubmission`? It moves no money — `outstandingAmount` stays untouched until `verifyCollection` runs, and credit exposure deliberately ignores pending submissions. See `docs/ARCHITECTURE-NOTES.md`.
+- Writing `submitCollection`? The over-collection guard must net `PENDING` submissions inside the transaction, not just read `outstandingAmount` — a stale read lets two submissions together over-collect an invoice. See `docs/ARCHITECTURE-NOTES.md`.
+- Editing `verifyCollection`? It posts the payment BEFORE flipping the submission, with a deterministic `collection-<submissionId>` idempotency key — reordering or randomising the key strands a `VERIFIED` submission with no payment. See `docs/ARCHITECTURE-NOTES.md`.
+- Adding a collection-adjacent `AdminNotification` category? Same trap as the entry above — missing from `CATEGORY_PERMISSION` means delivered to nobody, silently. See `docs/ARCHITECTURE-NOTES.md`.
+- Wondering why `Receivable.collectorId` stays stamped after an invoice settles through another channel? It's a workflow column, not an entity — the collection queue filters on `status`, so nothing clears it and nothing should. See `docs/ARCHITECTURE-NOTES.md`.
 
 **Data ownership + auth**
 

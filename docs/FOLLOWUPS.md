@@ -196,6 +196,22 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       order approved Monday and delivered Friday still delivers even if the store's other activity blew
       past the limit in between. A delivery-time re-check was considered and rejected — see
       `docs/superpowers/specs/2026-08-27-credit-limit-enforcement-design.md` § 9 for the reasoning.
+- [ ] Collection submission is online-only. Van sales and field-sales orders have an offline
+      write queue; retur does not, and this matches retur. A collector in a dead zone cannot
+      submit, which is a plausible field condition worth revisiting.
+- [ ] No collector-performance reporting — how much each collector brought in, and which
+      assigned invoices have gone untouched for how long. The data supports it (submissions
+      carry collector, amount and timestamps); nothing surfaces it.
+- [ ] A collector is not told they have been assigned anything. There is no in-PWA notification
+      surface at all, and no push is sent, so discovery depends on opening the queue.
+- [ ] Verification latency directly delays credit-limit relief. A store that has paid stays
+      blocked until someone verifies. Operational today; if verification proves slow in
+      practice, the answer is a faster verification path, not netting unverified claims off
+      exposure.
+- [ ] Bulk assignment does not apply to future invoices. New invoices at an already-assigned
+      store arrive unassigned and need a re-run. If this proves to be real recurring toil, the
+      standing per-store default is the fix, and it belongs in the delivery writer with its own
+      design.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
