@@ -24,7 +24,23 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] `postJournal`'s findUnique-then-create means two concurrent posts for the same source can file a `JOURNAL_PENDING` with `reason: "ERROR"` on a P2002 even though the journal did post — a false alarm, no duplicate and no double-count.
 - [ ] Van "Post journal" retry visibility (`lib/canvassing/journal-pending.ts`) reads every `JOURNAL_PENDING` row and matches `metadata.docId`/`kind` in JS, because JSON-path filtering is unreliable on this adapter. Uncapped by choice — a `take` window would hide a genuinely failed older post — and cheap today (6 such rows on dev). Revisit if `AdminNotification` grows, since nothing prunes it.
 - [ ] Van journal retry is gated on a `JOURNAL_PENDING` notification existing (`hasPostableJournal`), but `postVanJournalSafely`'s own `notify` write is itself best-effort — if the journal post fails AND the notification write also fails (or the process dies after the stock transaction commits but before `notify` runs), the document has no journal, no notification, and no retry button: permanently unpostable except by hand. We can't add a durable attempt marker without a migration, so the real fix is a van equivalent of `lib/finance/sales/sweep.ts`'s `postPendingSalesJournals` — a sweep over van load/sale/reconcile documents that have no journal, independent of whether a notification was ever written. Must be scoped to specific document ids or a date window, per this file's own rule that a test-bed spec must never invoke a DB-wide sweep (see "What NOT to do").
-- [ ] Seed CoA detail postable leaves — Persediaan, Piutang, Selisih Persediaan, Marketplace Fee (Bank `1102` already seeded) so posting-role mappings are wireable out-of-box. Seed is a 10-account SAK-EMKM skeleton (`coa-sak-emkm.json`).
+- [ ] Seed CoA detail postable leaves — Persediaan, Piutang, Selisih Persediaan, Marketplace Fee (Bank `1102`
+      already seeded) so posting-role mappings are wireable out-of-box. Seed is still the 10-account SAK-EMKM
+      skeleton (`coa-sak-emkm.json`). **Prod was fixed by hand on 2026-08-26, the seed was NOT** — 15 leaves
+      were inserted directly (`1103` Piutang Usaha, `1104` Persediaan, `1105` Persediaan Barang Jadi, `1106`
+      Persediaan Van, `2101` Utang Usaha, `2102` Utang Pajak, `4101` Penjualan, `5101` Harga Pokok Penjualan,
+      `6101` Selisih Persediaan, `6201`-`6206` the marketplace fees) and all 17 posting roles mapped, so prod
+      posts journals again. A FRESH environment still starts with every role unmapped and every journal
+      flagging `JOURNAL_PENDING`, which is the actual point of this item. Fold those 15 into
+      `coa-sak-emkm.json` to close it. Two of the hand choices are worth reviewing when that happens: each
+      marketplace-fee role got its OWN expense leaf rather than one shared account (the roles are split by fee
+      type so Laba Rugi can break them out), and `TAX` was mapped to a liability (`Utang Pajak`) rather than an
+      expense — the role permits either. Codes and names are safe to change later; journals reference
+      `ChartAccount.id`, never `code`. Re-pointing a ROLE to a different account is the unsafe edit, since
+      historical journals stay on the old one.
+- [ ] `cashFlowSection` is null on all 25 prod chart accounts, the original ten included, so nothing is
+      classified in the Arus Kas report until someone sets it in Settings → Klasifikasi Arus Kas. Predates the
+      AR slice; the 15 leaves added on 2026-08-26 inherited the same gap.
 - [ ] `postJournal` integrity-check query — surface any unbalanced or dangling journals.
 - [ ] Settlement journal `UNBALANCED` when the excel summary itself doesn't satisfy `Dilepas + Pengeluaran = Pendapatan`. The `MARKETPLACE_FEE_OTHER` residual absorbs fee-level gaps but is computed from `totalPengeluaran`, so it cannot absorb a summary-level mismatch (`settlement/journal.ts`) (PR #157, #17).
 - [ ] Settlement `SP-`+orderNo match coverage is low for pre-2026-06-14 settlements — revisit if old-period reconciliation matters.
