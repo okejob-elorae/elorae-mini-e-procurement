@@ -95,6 +95,9 @@ model User {
   konsiTransfers KonsiTransfer[] @relation("KonsiTransferUser")
   paymentsRecorded Payment[] @relation("PaymentRecordedBy")
   paymentsVoided   Payment[] @relation("PaymentVoidedBy")
+  receivablesToCollect  Receivable[]           @relation("ReceivableCollector")
+  collectionsSubmitted  CollectionSubmission[] @relation("CollectionSubmittedBy")
+  collectionsVerified   CollectionSubmission[] @relation("CollectionVerifiedBy")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -548,15 +551,19 @@ model Receivable {
   paidAmount        Decimal            @default(0) @db.Decimal(15, 2)
   outstandingAmount Decimal            @db.Decimal(15, 2)
   status            ReceivableStatus   @default(OUTSTANDING)
+  collectorId       String?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   delivery          FieldSalesDelivery @relation(fields: [deliveryId], references: [id])
   store             Store              @relation(fields: [storeId], references: [id])
+  collector          User?                  @relation("ReceivableCollector", fields: [collectorId], references: [id])
+  submissions        CollectionSubmission[]
   allocations       PaymentAllocation[]
 
   @@index([storeId, status])
   @@index([status, dueDate])
   @@index([dueDate])
+  @@index([collectorId, status])
 }
 
 enum ReceivableStatus {
@@ -589,6 +596,7 @@ model Payment {
   recordedBy     User                @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
   voidedBy       User?               @relation("PaymentVoidedBy", fields: [voidedById], references: [id])
   allocations    PaymentAllocation[]
+  collectionSubmission CollectionSubmission?
 
   @@index([storeId, paidAt])
   @@index([status, paidAt])
@@ -614,6 +622,41 @@ model PaymentAllocation {
 
   @@unique([paymentId, receivableId])
   @@index([receivableId])
+}
+
+model CollectionSubmission {
+  id             String                     @id @default(cuid())
+  receivableId   String
+  collectorId    String
+  amount         Decimal                    @db.Decimal(15, 2)
+  method         PaymentMethod
+  paidAt         DateTime
+  note           String?                    @db.Text
+  proofUrl       String?
+  proofR2Key     String?
+  status         CollectionSubmissionStatus @default(PENDING)
+  paymentId      String?                    @unique
+  verifiedById   String?
+  verifiedAt     DateTime?
+  rejectReason   String?                    @db.Text
+  idempotencyKey String?                    @unique
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  receivable     Receivable @relation(fields: [receivableId], references: [id])
+  collector      User       @relation("CollectionSubmittedBy", fields: [collectorId], references: [id])
+  verifiedBy     User?      @relation("CollectionVerifiedBy", fields: [verifiedById], references: [id])
+  payment        Payment?   @relation(fields: [paymentId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([receivableId])
+  @@index([collectorId, status])
+}
+
+enum CollectionSubmissionStatus {
+  PENDING
+  VERIFIED
+  REJECTED
 }
 
 enum FieldSalesOrderStatus {
