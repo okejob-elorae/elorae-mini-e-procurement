@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { createFieldSalesOrder } from "./writer";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -52,6 +52,26 @@ d("field-sales order approve/reject actions (test bed only)", () => {
   afterEach(async () => {
     await prisma.salesHistory.deleteMany({ where: { itemId } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
+    /**
+     * createFieldSalesOrder writes one AdminNotification (PENDING_ORDER_APPROVAL, always) and
+     * one more (CREDIT_LIMIT_HOLD, on the over-limit test) INSIDE its transaction — mocking
+     * fanOutAdminNotification above only suppresses the FCM push, not the row. Neither carries an
+     * FK back to FieldSalesOrder (just a Json metadata blob), so they'd leak into the shared
+     * :3308 bed once the orders below are deleted. Prisma's JSON path filtering is unreliable on
+     * this MariaDB adapter, so read the candidate rows and match orderId in JS against our own
+     * seeded ids, same pattern as konsi-transfer/writer.test.ts.
+     */
+    const orderIds = (await prisma.fieldSalesOrder.findMany({ where: { storeId: seededId(storeId) }, select: { id: true } })).map((o) => o.id);
+    if (orderIds.length > 0) {
+      const candidateNotifs = await prisma.adminNotification.findMany({
+        where: { category: { in: ["PENDING_ORDER_APPROVAL", "CREDIT_LIMIT_HOLD"] } },
+        select: { id: true, metadata: true },
+      });
+      const leakedNotifIds = candidateNotifs
+        .filter((n) => orderIds.includes((n.metadata as { orderId?: string } | null)?.orderId ?? ""))
+        .map((n) => n.id);
+      if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds } } });
+    }
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
     await prisma.storeVisit.deleteMany({ where: { id: visitId } });
     await prisma.store.deleteMany({ where: { id: storeId } });

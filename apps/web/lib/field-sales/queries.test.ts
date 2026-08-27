@@ -14,6 +14,7 @@ describe("serializeListItem", () => {
       createdAt: new Date("2026-07-04T00:00:00Z"),
       store: { name: "Toko A" },
       salesman: { name: "Budi" },
+      creditHoldAtCreate: false,
     };
     expect(serializeListItem(row)).toEqual({
       id: "o1",
@@ -24,6 +25,7 @@ describe("serializeListItem", () => {
       status: "PENDING_APPROVAL",
       total: 210000,
       createdAt: new Date("2026-07-04T00:00:00Z"),
+      creditHoldAtCreate: false,
     });
   });
   it("falls back when salesman name is null", () => {
@@ -31,6 +33,7 @@ describe("serializeListItem", () => {
       id: "o2", orderNo: "PUTUS/2026/0002", orderType: "PUTUS" as const, status: "APPROVED" as const,
       total: new Prisma.Decimal("0"), createdAt: new Date("2026-07-04T00:00:00Z"),
       store: { name: "Toko B" }, salesman: { name: null },
+      creditHoldAtCreate: false,
     };
     expect(serializeListItem(row).salesmanName).toBe("—");
   });
@@ -39,6 +42,7 @@ describe("serializeListItem", () => {
       id: "o3", orderNo: "KONSI/2026/0001", orderType: "KONSI" as const, status: "PENDING_APPROVAL" as const,
       total: new Prisma.Decimal("0"), createdAt: new Date("2026-07-04T00:00:00Z"),
       store: { name: "Toko C" }, salesman: { name: "Budi" },
+      creditHoldAtCreate: false,
     };
     expect(serializeListItem(row).orderType).toBe("KONSI");
   });

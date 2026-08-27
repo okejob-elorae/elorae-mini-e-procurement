@@ -111,7 +111,7 @@ function serializeStore(s: {
     paymentTempo: s.paymentTempo,
     marginPercent: s.marginPercent ? s.marginPercent.toNumber() : null,
     priceDiscountPercent: s.priceDiscountPercent ? s.priceDiscountPercent.toNumber() : null,
-    creditLimit: s.creditLimit ? s.creditLimit.toNumber() : null,
+    creditLimit: s.creditLimit !== null ? s.creditLimit.toNumber() : null,
     lat: s.lat ? s.lat.toNumber() : null,
     lng: s.lng ? s.lng.toNumber() : null,
     checkinRadiusMeters: s.checkinRadiusMeters,

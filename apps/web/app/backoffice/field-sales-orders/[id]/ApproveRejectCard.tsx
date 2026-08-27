@@ -93,6 +93,13 @@ export function ApproveRejectCard({
   const [rejectReason, setRejectReason] = useState("");
   const [finalPriceInputs, setFinalPriceInputs] = useState<Record<string, string>>({});
   const [creditReason, setCreditReason] = useState("");
+  /**
+   * Set from the WRITER's own live figures when a CREDIT_LIMIT_EXCEEDED refusal arrives —
+   * authoritative, and the only way to recover when the page-load `creditCheck` preview is stale
+   * (e.g. an appealed-line final price pushed the order over limit after the preview was
+   * computed) or absent.
+   */
+  const [serverCreditRefusal, setServerCreditRefusal] = useState<{ exposure: number; limit: number } | null>(null);
 
   if (!canApprove || status !== "PENDING_APPROVAL") return null;
 
@@ -136,6 +143,7 @@ export function ApproveRejectCard({
       setRejectDialogOpen(false);
       setRejectReason("");
       setCreditReason("");
+      setServerCreditRefusal(null);
       onStagedAdditionsChange([]);
     } else if (r.reason === "FORBIDDEN") {
       toast.error(t("errForbidden"));
@@ -184,6 +192,7 @@ export function ApproveRejectCard({
     } else if (r.reason === "INVALID_FINAL_PRICE") {
       toast.error(t("errInvalidFinalPrice"));
     } else if (r.reason === "CREDIT_LIMIT_EXCEEDED") {
+      setServerCreditRefusal({ exposure: r.credit?.exposure.total ?? 0, limit: r.credit?.creditLimit ?? 0 });
       toast.error(t("creditLimitExceeded", { exposure: formatRupiah(r.credit?.exposure.total ?? 0), limit: formatRupiah(r.credit?.creditLimit ?? 0) }));
     } else {
       toast.error(t("errNotFound"));
@@ -241,7 +250,10 @@ export function ApproveRejectCard({
         open={approveDialogOpen}
         onOpenChange={(open) => {
           setApproveDialogOpen(open);
-          if (!open) setCreditReason("");
+          if (!open) {
+            setCreditReason("");
+            setServerCreditRefusal(null);
+          }
         }}
       >
         <AlertDialogContent>
@@ -310,11 +322,14 @@ export function ApproveRejectCard({
             </p>
           )}
 
-          {creditCheck?.overLimit && (
+          {(creditCheck?.overLimit || serverCreditRefusal) && (
             <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
               <p className="text-sm font-medium text-destructive">{t("creditOverLimitTitle")}</p>
               <p className="text-xs text-muted-foreground">
-                {t("creditOverLimitDetail", { exposure: formatRupiah(creditCheck.exposure), limit: formatRupiah(creditCheck.limit) })}
+                {t("creditOverLimitDetail", {
+                  exposure: formatRupiah(serverCreditRefusal?.exposure ?? creditCheck?.exposure ?? 0),
+                  limit: formatRupiah(serverCreditRefusal?.limit ?? creditCheck?.limit ?? 0),
+                })}
               </p>
               <div className="space-y-1">
                 <Label htmlFor="credit-override-reason" className="text-xs">{t("creditOverrideReasonLabel")}</Label>
@@ -337,7 +352,7 @@ export function ApproveRejectCard({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              disabled={isPending || (hasAppeals && !finalPricesValid) || (!!creditCheck?.overLimit && !creditReason.trim())}
+              disabled={isPending || (hasAppeals && !finalPricesValid) || ((!!creditCheck?.overLimit || !!serverCreditRefusal) && !creditReason.trim())}
               onClick={callApprove}
             >
               {t("approve")}

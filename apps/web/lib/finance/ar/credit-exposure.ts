@@ -30,7 +30,7 @@ export async function computeStoreCreditExposure(
   const receivableOutstanding = receivables.reduce((sum, r) => sum + Number(r.outstandingAmount), 0);
 
   const approvedOrders = await client.fieldSalesOrder.findMany({
-    where: { storeId, status: "APPROVED", orderType: "PUTUS" },
+    where: { storeId, status: "APPROVED", orderType: "PUTUS", deliveryStatus: { not: "CLOSED" } },
     select: {
       total: true,
       deliveries: { select: { total: true } },
