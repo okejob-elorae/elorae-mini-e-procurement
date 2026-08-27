@@ -343,7 +343,7 @@ export function ApproveRejectCard({
               </div>
             </div>
           )}
-          {!creditCheck?.overLimit && creditHoldAtCreate && (
+          {!creditCheck?.overLimit && !serverCreditRefusal && creditHoldAtCreate && (
             <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
               {t("creditWasOverLimitNote")}
             </p>
