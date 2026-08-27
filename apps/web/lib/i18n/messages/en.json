@@ -2405,6 +2405,7 @@
       "remove": "Remove",
       "emptyResult": "No matching products.",
       "sentSuccess": "Order {orderNo} sent",
+      "creditHoldNote": "Order {orderNo} sent — store is over its credit limit, awaiting admin review.",
       "errorGeneric": "Failed to send order. Try again.",
       "errorNoActiveVisit": "Check in first to order.",
       "errorUnauthorized": "Session expired. Log in again.",

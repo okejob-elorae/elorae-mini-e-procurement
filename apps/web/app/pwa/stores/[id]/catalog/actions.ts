@@ -26,7 +26,7 @@ const schema = z.object({
 });
 
 export type SubmitResult =
-  | { ok: true; orderNo: string }
+  | { ok: true; orderNo: string; creditHold: boolean }
   | { ok: false; code: "UNAUTHORIZED" | "EMPTY" | "NO_ACTIVE_VISIT" }
   | { ok: false; code: "MIN_QTY"; violations: Array<{ itemId: string; requiredMin: number; actualQty: number }> };
 
@@ -52,7 +52,7 @@ export async function submitFieldSalesOrder(input: {
   if (!parsed.success) return { ok: false, code: "EMPTY" };
 
   try {
-    const { orderNo } = await createFieldSalesOrder({
+    const { orderNo, creditHold } = await createFieldSalesOrder({
       storeId: parsed.data.storeId,
       salesmanId: session.user.id,
       visitId: parsed.data.visitId,
@@ -61,7 +61,7 @@ export async function submitFieldSalesOrder(input: {
       idempotencyKey: parsed.data.idempotencyKey,
     });
     revalidatePath(`/pwa/stores/${parsed.data.storeId}`);
-    return { ok: true, orderNo };
+    return { ok: true, orderNo, creditHold };
   } catch (e) {
     if (e instanceof NoActiveVisitError) return { ok: false, code: "NO_ACTIVE_VISIT" };
     if (e instanceof MinQtyViolationError) return { ok: false, code: "MIN_QTY", violations: e.violations };

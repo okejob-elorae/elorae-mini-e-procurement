@@ -2405,6 +2405,7 @@
       "remove": "Hapus",
       "emptyResult": "Tidak ada produk yang cocok.",
       "sentSuccess": "Pesanan {orderNo} terkirim",
+      "creditHoldNote": "Pesanan {orderNo} terkirim — toko melebihi limit kredit, menunggu review admin.",
       "errorGeneric": "Gagal mengirim pesanan. Coba lagi.",
       "errorNoActiveVisit": "Check in dulu untuk memesan.",
       "errorUnauthorized": "Sesi berakhir. Masuk lagi.",
