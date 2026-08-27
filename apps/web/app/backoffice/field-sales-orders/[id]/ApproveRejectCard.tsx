@@ -57,6 +57,8 @@ type Props = {
   orderLines: LineRef[];
   stagedAdditions: StagedAddition[];
   onStagedAdditionsChange: (staged: StagedAddition[]) => void;
+  creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
+  creditHoldAtCreate: boolean;
 };
 
 function formatRupiah(value: number): string {
@@ -80,6 +82,8 @@ export function ApproveRejectCard({
   orderLines,
   stagedAdditions,
   onStagedAdditionsChange,
+  creditCheck,
+  creditHoldAtCreate,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
@@ -88,6 +92,7 @@ export function ApproveRejectCard({
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [finalPriceInputs, setFinalPriceInputs] = useState<Record<string, string>>({});
+  const [creditReason, setCreditReason] = useState("");
 
   if (!canApprove || status !== "PENDING_APPROVAL") return null;
 
@@ -130,6 +135,7 @@ export function ApproveRejectCard({
       setApproveDialogOpen(false);
       setRejectDialogOpen(false);
       setRejectReason("");
+      setCreditReason("");
       onStagedAdditionsChange([]);
     } else if (r.reason === "FORBIDDEN") {
       toast.error(t("errForbidden"));
@@ -177,6 +183,8 @@ export function ApproveRejectCard({
       }
     } else if (r.reason === "INVALID_FINAL_PRICE") {
       toast.error(t("errInvalidFinalPrice"));
+    } else if (r.reason === "CREDIT_LIMIT_EXCEEDED") {
+      toast.error(t("creditLimitExceeded", { exposure: formatRupiah(r.credit?.exposure.total ?? 0), limit: formatRupiah(r.credit?.creditLimit ?? 0) }));
     } else {
       toast.error(t("errNotFound"));
     }
@@ -193,7 +201,7 @@ export function ApproveRejectCard({
         : undefined;
     startTransition(async () => {
       try {
-        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines);
+        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines, creditReason.trim() || undefined);
         handleResult(r, t("approved"));
       } catch {
         toast.error(t("errGeneric"));
@@ -229,7 +237,13 @@ export function ApproveRejectCard({
         </Button>
       </div>
 
-      <AlertDialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
+      <AlertDialog
+        open={approveDialogOpen}
+        onOpenChange={(open) => {
+          setApproveDialogOpen(open);
+          if (!open) setCreditReason("");
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("approve")}</AlertDialogTitle>
@@ -296,9 +310,36 @@ export function ApproveRejectCard({
             </p>
           )}
 
+          {creditCheck?.overLimit && (
+            <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+              <p className="text-sm font-medium text-destructive">{t("creditOverLimitTitle")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t("creditOverLimitDetail", { exposure: formatRupiah(creditCheck.exposure), limit: formatRupiah(creditCheck.limit) })}
+              </p>
+              <div className="space-y-1">
+                <Label htmlFor="credit-override-reason" className="text-xs">{t("creditOverrideReasonLabel")}</Label>
+                <Textarea
+                  id="credit-override-reason"
+                  value={creditReason}
+                  onChange={(e) => setCreditReason(e.target.value)}
+                  disabled={isPending}
+                  rows={2}
+                />
+              </div>
+            </div>
+          )}
+          {!creditCheck?.overLimit && creditHoldAtCreate && (
+            <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
+              {t("creditWasOverLimitNote")}
+            </p>
+          )}
+
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
-            <AlertDialogAction disabled={isPending || (hasAppeals && !finalPricesValid)} onClick={callApprove}>
+            <AlertDialogAction
+              disabled={isPending || (hasAppeals && !finalPricesValid) || (!!creditCheck?.overLimit && !creditReason.trim())}
+              onClick={callApprove}
+            >
               {t("approve")}
             </AlertDialogAction>
           </AlertDialogFooter>

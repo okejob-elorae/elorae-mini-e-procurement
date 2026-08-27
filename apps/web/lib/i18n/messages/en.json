@@ -2483,6 +2483,11 @@
     "appealSetFinalPriceHint": "This order has requested price appeals. Set the final price for each appealed line before approving.",
     "appealFinalPriceInvalid": "Enter a valid final price (0 or more) for every appealed line.",
     "errInvalidFinalPrice": "Invalid final price for one or more lines.",
+    "creditOverLimitTitle": "Store is over its credit limit",
+    "creditOverLimitDetail": "Current exposure {exposure}, limit {limit}. Approve with a reason to proceed.",
+    "creditOverrideReasonLabel": "Credit limit override reason",
+    "creditWasOverLimitNote": "Was over limit when raised — since settled.",
+    "creditLimitExceeded": "Store is over its credit limit (exposure {exposure}, limit {limit}). Provide a reason to override.",
     "delivery": {
       "title": "Deliveries",
       "empty": "No deliveries recorded for this order yet.",

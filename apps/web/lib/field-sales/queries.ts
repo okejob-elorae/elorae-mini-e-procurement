@@ -49,6 +49,7 @@ export type FieldSalesOrderListItem = {
 export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   note: string | null;
   subtotal: number;
+  creditHoldAtCreate: boolean;
   approvedAt: Date | null;
   rejectedAt: Date | null;
   rejectReason: string | null;
@@ -150,6 +151,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     where: { id },
     select: {
       id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
+      creditHoldAtCreate: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
       closedAt: true, closeReason: true,
       orderDiscountAmount: true, appliedOrderPromoId: true, deliveryStatus: true,
@@ -227,6 +229,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     ...serializeListItem(row),
     note: row.note,
     subtotal: toNum(row.subtotal),
+    creditHoldAtCreate: row.creditHoldAtCreate,
     approvedAt: row.approvedAt,
     rejectedAt: row.rejectedAt,
     rejectReason: row.rejectReason,

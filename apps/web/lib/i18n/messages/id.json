@@ -2483,6 +2483,11 @@
     "appealSetFinalPriceHint": "Pesanan ini punya pengajuan harga. Tentukan harga final untuk setiap baris yang diajukan sebelum menyetujui.",
     "appealFinalPriceInvalid": "Isi harga final yang valid (0 atau lebih) untuk setiap baris yang diajukan.",
     "errInvalidFinalPrice": "Harga final tidak valid untuk satu atau lebih baris.",
+    "creditOverLimitTitle": "Toko melebihi limit kredit",
+    "creditOverLimitDetail": "Eksposur saat ini {exposure}, limit {limit}. Setujui dengan alasan untuk melanjutkan.",
+    "creditOverrideReasonLabel": "Alasan override limit kredit",
+    "creditWasOverLimitNote": "Melebihi limit saat dibuat — sudah kembali normal.",
+    "creditLimitExceeded": "Toko melebihi limit kredit (eksposur {exposure}, limit {limit}). Berikan alasan untuk override.",
     "delivery": {
       "title": "Pengiriman",
       "empty": "Belum ada pengiriman untuk pesanan ini.",

@@ -34,6 +34,7 @@ type Props = {
   canDeliver: boolean;
   konsiSuggestions: KonsiSuggestion[];
   konsiAssortmentGaps: KonsiAssortmentGapSuggestion[];
+  creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldSalesOrderStatus, "secondary" | "default" | "destructive"> = {
@@ -75,6 +76,7 @@ export function FieldSalesOrderDetailClient({
   canDeliver,
   konsiSuggestions,
   konsiAssortmentGaps,
+  creditCheck,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const locale = useLocale();
@@ -222,6 +224,8 @@ export function FieldSalesOrderDetailClient({
           orderLines={orderLineRefs}
           stagedAdditions={stagedAdditions}
           onStagedAdditionsChange={setStagedAdditions}
+          creditCheck={creditCheck}
+          creditHoldAtCreate={order.creditHoldAtCreate}
         />
       )}
 
