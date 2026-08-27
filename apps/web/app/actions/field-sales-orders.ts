@@ -86,6 +86,12 @@ export async function approveFieldSalesOrderAction(
   if ("ok" in g) return g;
   if (!isValidFinalPrices(finalPrices)) return { ok: false, reason: "INVALID_FINAL_PRICE" };
   if (!isValidAddedLines(addedLines)) return { ok: false, reason: "INVALID_ADDED_LINE" };
+  if (creditOverrideReason && creditOverrideReason.trim()) {
+    const session = await auth();
+    if (!hasPermission(session?.user?.permissions ?? [], PERMISSIONS.FIELD_SALES_ORDERS_CREDIT_OVERRIDE)) {
+      return { ok: false, reason: "FORBIDDEN" };
+    }
+  }
   try {
     await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices, addedLines, creditOverrideReason });
   } catch (e) {

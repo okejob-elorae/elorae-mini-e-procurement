@@ -161,4 +161,11 @@ describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
       expect.objectContaining({ orderId: "order-1", creditOverrideReason: "toko sudah janji bayar" }),
     );
   });
+
+  it("supplying creditOverrideReason without the credit_override permission returns FORBIDDEN and never calls the writer", async () => {
+    mockHasPermission.mockImplementation((_perms: string[], perm: string) => perm !== "field_sales_orders:credit_override");
+    const result = await approveFieldSalesOrderAction("order-1", undefined, undefined, "toko sudah janji bayar");
+    expect(result).toEqual({ ok: false, reason: "FORBIDDEN" });
+    expect(mockApprove).not.toHaveBeenCalled();
+  });
 });
