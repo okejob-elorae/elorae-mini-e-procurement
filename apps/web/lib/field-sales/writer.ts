@@ -255,12 +255,13 @@ export async function approveFieldSalesOrder(input: {
   approvedById: string;
   finalPrices?: Array<{ lineId: string; finalUnitPrice: number }>;
   addedLines?: Array<{ itemId: string; variantSku: string; qty: number }>;
+  creditOverrideReason?: string;
 }): Promise<{ ok: true }> {
   return runSerializable(async (tx) => {
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
       include: {
-        store: { select: { marginPercent: true, priceDiscountPercent: true } },
+        store: { select: { marginPercent: true, priceDiscountPercent: true, creditLimit: true } },
         lines: { include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } } },
       },
     });
@@ -415,23 +416,63 @@ export async function approveFieldSalesOrder(input: {
      */
     const finalPriceByLineId = new Map((input.finalPrices ?? []).map((f) => [f.lineId, f.finalUnitPrice]));
     let subtotal = 0;
-    const finalLines: Array<
-      Omit<(typeof order.lines)[number], "unitPrice" | "lineTotal"> & { unitPrice: number; lineTotal: number }
-    > = [];
+    const finalLines: Array<{ id: string; unitPrice: number; lineTotal: number; discountAmount: Prisma.Decimal; changed: boolean }> = [];
     for (const l of order.lines) {
       let unitPrice = Number(l.unitPrice);
       let lineTotal = Number(l.lineTotal);
+      let changed = false;
       // Only an appealed line (requestedUnitPrice set) may be repriced; ignore stray entries.
       if (l.requestedUnitPrice !== null && finalPriceByLineId.has(l.id)) {
         unitPrice = finalPriceByLineId.get(l.id)!;
         lineTotal = l.qty * unitPrice;
-        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { unitPrice, lineTotal } });
+        changed = true;
       }
       subtotal += lineTotal;
-      finalLines.push({ ...l, unitPrice, lineTotal });
+      finalLines.push({ id: l.id, unitPrice, lineTotal, discountAmount: l.discountAmount, changed });
     }
     const discountTotal = finalLines.reduce((s, l) => s + Number(l.discountAmount), 0);
     const total = subtotal - discountTotal - Number(order.orderDiscountAmount);
+
+    /**
+     * Credit gate — computed and enforced BEFORE any write below, including the per-line
+     * unitPrice/lineTotal updates the finalPrices loop used to fire first. `runSerializable` is a
+     * plain `prisma.$transaction`: it commits on a normal return and rolls back only on a throw,
+     * so a refusal placed after any write would commit that write while reporting a block. See
+     * docs/superpowers/specs/2026-08-27-credit-limit-enforcement-design.md § 4.
+     *
+     * The order being approved is still PENDING_APPROVAL here — computeStoreCreditExposure only
+     * counts APPROVED orders in its residual term, so this order is not counted against itself.
+     */
+    const creditLimit = order.store.creditLimit === null ? null : Number(order.store.creditLimit);
+    let creditExposureAtApprove: number | null = null;
+    let creditLimitAtApprove: number | null = null;
+    if (creditLimit !== null) {
+      const exposure = await computeStoreCreditExposure(tx, order.storeId);
+      if (exposure.total + total > creditLimit) {
+        const reason = input.creditOverrideReason?.trim();
+        if (!reason) {
+          throw new CreditLimitExceededError(exposure, creditLimit, total);
+        }
+        creditExposureAtApprove = exposure.total;
+        creditLimitAtApprove = creditLimit;
+        await tx.auditLog.create({
+          data: {
+            userId: input.approvedById,
+            action: "CREDIT_LIMIT_OVERRIDE",
+            entityType: "FieldSalesOrder",
+            entityId: order.id,
+            reason,
+            metadata: { exposure, creditLimit, orderTotal: total },
+          },
+        });
+      }
+    }
+
+    for (const l of finalLines) {
+      if (l.changed) {
+        await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { unitPrice: l.unitPrice, lineTotal: l.lineTotal } });
+      }
+    }
 
     /**
      * Stock consumption and SalesHistory no longer happen here — a putus order ships in one or
@@ -440,7 +481,22 @@ export async function approveFieldSalesOrder(input: {
      */
     await tx.fieldSalesOrder.update({
       where: { id: order.id },
-      data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal, total },
+      data: {
+        status: "APPROVED",
+        approvedAt: new Date(),
+        approvedById: input.approvedById,
+        subtotal,
+        total,
+        ...(creditExposureAtApprove !== null
+          ? {
+              creditExposureAtApprove,
+              creditLimitAtApprove,
+              creditOverrideReason: input.creditOverrideReason!.trim(),
+              creditOverrideById: input.approvedById,
+              creditOverrideAt: new Date(),
+            }
+          : {}),
+      },
     });
     return { ok: true };
   });
