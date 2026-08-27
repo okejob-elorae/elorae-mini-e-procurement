@@ -32,10 +32,12 @@ export async function createFieldSalesOrder(input: {
 }): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[]; creditHold: boolean }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
   let notification: AdminNotification | undefined;
+  let creditNotification: AdminNotification | undefined;
   let creditHold = false;
   const result = await runSerializable(async (tx) => {
     /* Retry re-runs this whole callback; reset so a rolled-back attempt's row never survives into the next one. */
     notification = undefined;
+    creditNotification = undefined;
     creditHold = false;
     if (input.idempotencyKey) {
       const existing = await tx.fieldSalesOrder.findUnique({
@@ -200,6 +202,18 @@ export async function createFieldSalesOrder(input: {
       },
     });
 
+    if (creditHold) {
+      creditNotification = await tx.adminNotification.create({
+        data: {
+          category: "CREDIT_LIMIT_HOLD",
+          severity: "WARNING",
+          title: `Order ${orderNo} exceeds store's credit limit`,
+          message: `Putus order ${orderNo} (total ${finalTotal}) puts the store over its credit limit and needs an override to approve.`,
+          metadata: { orderId: order.id, orderNo, storeId: input.storeId, salesmanId: input.salesmanId, total: finalTotal },
+        },
+      });
+    }
+
     return { orderId: order.id, orderNo, oversell, creditHold };
   });
 
@@ -210,6 +224,7 @@ export async function createFieldSalesOrder(input: {
    * seam swallows its own failures, so there is no outcome here for this function to report.
    */
   if (notification) void fanOutAdminNotification(notification);
+  if (creditNotification) void fanOutAdminNotification(creditNotification);
   return result;
 }
 

@@ -76,6 +76,14 @@ describe("fanOutAdminNotification", () => {
 
     await fanOutAdminNotification({ ...BASE, category: "FIELD_RETURN_MISMATCH" });
     expect(mockGetUsers).toHaveBeenCalledWith("field_returns:manage");
+
+    // Isolated from the calls above: CREDIT_LIMIT_HOLD maps to the same permission as
+    // PENDING_ORDER_APPROVAL, so a stale toHaveBeenCalledWith would pass even if the map were
+    // still missing this category — clear and assert the actual last call instead.
+    mockGetUsers.mockClear();
+    await fanOutAdminNotification({ ...BASE, category: "CREDIT_LIMIT_HOLD" });
+    expect(mockGetUsers).toHaveBeenCalledWith("field_sales_orders:approve");
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("no permission mapped for category CREDIT_LIMIT_HOLD"));
   });
 
   it("sends the category as the type and carries the source id in data", async () => {

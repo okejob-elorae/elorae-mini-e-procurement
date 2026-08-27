@@ -184,6 +184,26 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.creditLimitAtCreate)).toBe(100_000);
   });
 
+  it("create over the store's credit limit writes both PENDING_ORDER_APPROVAL and CREDIT_LIMIT_HOLD notifications", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 35000 }] });
+    expect(res.creditHold).toBe(true);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    const notifs = await prisma.adminNotification.findMany({ where: { message: { contains: order!.orderNo } } });
+    expect(notifs.find((n) => n.category === "PENDING_ORDER_APPROVAL")).toBeTruthy();
+    expect(notifs.find((n) => n.category === "CREDIT_LIMIT_HOLD")).toBeTruthy();
+  });
+
+  it("create within the store's credit limit writes only PENDING_ORDER_APPROVAL, no CREDIT_LIMIT_HOLD", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 1_000_000 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    expect(res.creditHold).toBe(false);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    const notifs = await prisma.adminNotification.findMany({ where: { message: { contains: order!.orderNo } } });
+    expect(notifs.find((n) => n.category === "PENDING_ORDER_APPROVAL")).toBeTruthy();
+    expect(notifs.find((n) => n.category === "CREDIT_LIMIT_HOLD")).toBeUndefined();
+  });
+
   it("create with a null creditLimit skips the check entirely", async () => {
     const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
     expect(res.creditHold).toBe(false);
