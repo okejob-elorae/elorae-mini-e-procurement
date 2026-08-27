@@ -145,7 +145,12 @@ function filterTree(
       .map(filterNode)
       .filter((c): c is CoaTreeNodeWithBalance => c !== null);
     if (matches(node) || filteredChildren.length > 0) {
-      return { ...node, children: filteredChildren };
+      // Re-sum from visible children so parent totals match the filtered subtree.
+      const balance =
+        filteredChildren.length > 0
+          ? filteredChildren.reduce((sum, c) => sum + c.balance, 0)
+          : node.balance;
+      return { ...node, children: filteredChildren, balance };
     }
     return null;
   }
@@ -345,7 +350,7 @@ export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger 
 
     function walk(list: CoaTreeNodeWithBalance[]) {
       for (const node of list) {
-        const isOpen = openSet.has(node.id);
+        const isOpen = Boolean(search.trim()) || openSet.has(node.id);
         const showActions = canManage || (canViewLedger && node.isLeaf);
         const indent = Math.max(0, node.depth - 1);
 

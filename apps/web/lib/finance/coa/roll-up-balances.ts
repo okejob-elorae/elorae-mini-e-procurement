@@ -28,6 +28,27 @@ export function attachRolledUpBalances(
 }
 
 /**
+ * Drop inactive nodes for display after roll-up on the full tree.
+ * Keeps each remaining node's precomputed `balance` (includes inactive descendants).
+ * Inactive parents with visible descendants are kept so hierarchy stays intact.
+ */
+export function pruneInactiveForDisplay(
+  nodes: CoaTreeNodeWithBalance[],
+): CoaTreeNodeWithBalance[] {
+  const out: CoaTreeNodeWithBalance[] = [];
+  for (const n of nodes) {
+    const children = pruneInactiveForDisplay(n.children);
+    if (!n.isActive) {
+      if (children.length === 0) continue;
+      out.push({ ...n, children, isLeaf: false });
+      continue;
+    }
+    out.push({ ...n, children, isLeaf: children.length === 0 });
+  }
+  return out;
+}
+
+/**
  * Absolute amount + Dr/Cr from the account's normal side and signed balance.
  * Debit-normal: balance >= 0 → Dr, else Cr.
  * Credit-normal: balance >= 0 → Cr, else Dr.

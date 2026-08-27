@@ -508,25 +508,20 @@ function Sidebar({
               if (collapsed) {
                 return (
                   <DropdownMenu key={item.href}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className={cn(
-                              'w-full h-10 text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground',
-                              isParentActive && 'bg-sidebar-foreground text-sidebar hover:bg-sidebar-foreground hover:text-sidebar'
-                            )}
-                            aria-label={label}
-                          >
-                            <Icon className="w-5 h-5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">{label}</TooltipContent>
-                    </Tooltip>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          'w-full h-10 text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground',
+                          isParentActive && 'bg-sidebar-foreground text-sidebar hover:bg-sidebar-foreground hover:text-sidebar'
+                        )}
+                        aria-label={label}
+                      >
+                        <Icon className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
                     <DropdownMenuContent side="right" align="start" className="w-56">
                       <DropdownMenuLabel>{label}</DropdownMenuLabel>
                       <DropdownMenuSeparator />

@@ -4,6 +4,7 @@ import {
   absoluteBalance,
   attachRolledUpBalances,
   balanceSide,
+  pruneInactiveForDisplay,
 } from "./roll-up-balances";
 
 const rows = [
@@ -13,6 +14,11 @@ const rows = [
   { id: "d", code: "1102", name: "Bank", type: "ASET" as const, depth: 3, isActive: true, parentId: "b" },
   { id: "e", code: "2", name: "Liabilitas", type: "LIABILITAS" as const, depth: 1, isActive: true, parentId: null },
   { id: "f", code: "21", name: "Hutang", type: "LIABILITAS" as const, depth: 2, isActive: true, parentId: "e" },
+];
+
+const rowsWithInactive = [
+  ...rows,
+  { id: "g", code: "1103", name: "Old Kas", type: "ASET" as const, depth: 3, isActive: false, parentId: "b" },
 ];
 
 describe("attachRolledUpBalances", () => {
@@ -38,6 +44,22 @@ describe("attachRolledUpBalances", () => {
     const withBal = attachRolledUpBalances(tree, { c: 10 });
     expect(withBal[0].children[0].children[1].balance).toBe(0);
     expect(withBal[0].balance).toBe(10);
+  });
+});
+
+describe("pruneInactiveForDisplay", () => {
+  it("keeps parent rolled-up balance after hiding inactive leaves", () => {
+    const tree = buildTree(rowsWithInactive);
+    const withBal = attachRolledUpBalances(tree, {
+      c: 100_000,
+      d: 50_000,
+      g: 25_000,
+    });
+    expect(withBal[0].children[0].balance).toBe(175_000);
+    const pruned = pruneInactiveForDisplay(withBal);
+    const lancar = pruned[0].children[0];
+    expect(lancar.children.map((c) => c.id).sort()).toEqual(["c", "d"]);
+    expect(lancar.balance).toBe(175_000);
   });
 });
 
