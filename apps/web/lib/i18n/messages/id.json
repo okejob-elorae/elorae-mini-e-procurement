@@ -101,7 +101,16 @@
     "dasborPelunasan": "Beranda Piutang",
     "bebanSelisih": "Beban Selisih",
     "konsinyasi": "Konsinyasi",
-    "jenisPotongan": "Jenis Potongan"
+    "jenisPotongan": "Jenis Potongan",
+    "secOperations": "Operasional",
+    "secReceivables": "Piutang & Konsinyasi",
+    "secFinance": "Keuangan",
+    "secSystem": "Sistem",
+    "navGroupMasterData": "Data Master",
+    "navGroupReceivables": "Piutang & Pelunasan",
+    "navGroupLedger": "Buku Besar",
+    "navGroupReports": "Laporan",
+    "navGroupArchive": "Arsip & Jejak"
   },
   "notifications": {
     "title": "Notifikasi",

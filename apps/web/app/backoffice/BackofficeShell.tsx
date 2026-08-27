@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -23,11 +23,8 @@ import {
   Store,
   Wallet,
   BarChart2,
-  ClipboardList,
-  PackageOpen,
   FolderArchive,
   Handshake,
-  Scale,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -101,9 +98,33 @@ interface NavItem {
   /** Sidebar glyph. Emoji reads faster than a line icon in a scanned list. */
   emoji: string;
   permission: string; // Permission code required to view this nav item
+  /**
+   * Judul pemisah di atas entri ini. Ditulis pada entri PERTAMA tiap bagian;
+   * yang berikutnya membiarkannya kosong dan ikut bagian di atasnya.
+   */
+  section?: string;
   children?: NavChild[];
 }
 
+/**
+ * Susunan menu samping.
+ *
+ * DIKELOMPOKKAN MENURUT LINGKUP PEKERJAAN, dan itu bukan soal kerapian.
+ * Sebelumnya modul piutang menambahkan delapan entri DATAR di tingkat atas —
+ * piutang, kontrabon, pelunasan, retur toko, beban, arsip, dasbor, konsinyasi —
+ * sehingga daftarnya jadi dua puluh baris tanpa hierarki. Daftar sepanjang itu
+ * berhenti dibaca; orang menghafal posisi, lalu tersesat begitu ada yang
+ * bergeser.
+ *
+ * `section` memberi judul pemisah. Satu bagian dibiarkan tanpa judul (Beranda)
+ * karena ia bukan kelompok, melainkan titik berangkat.
+ *
+ * SETIAP ANAK WAJIB PUNYA `permission` SENDIRI. Anak tanpa izin terlihat oleh
+ * siapa pun yang lolos izin INDUKNYA, jadi memindahkannya ke induk lain diam-
+ * diam mengubah siapa yang bisa melihatnya. Izin yang tertulis di sini persis
+ * izin induk lamanya, supaya pengelompokan ulang ini tidak menggeser satu pun
+ * hak akses.
+ */
 const navItems: NavItem[] = [
   {
     labelKey: 'dashboard',
@@ -112,288 +133,142 @@ const navItems: NavItem[] = [
     icon: LayoutDashboard,
     permission: PERMISSIONS.DASHBOARD_VIEW,
   },
+
+  // ── Operasional ────────────────────────────────────────────────────────────
   {
-    labelKey: 'suppliers',
+    section: 'secOperations',
+    labelKey: 'navGroupMasterData',
     href: '/backoffice/suppliers',
-    emoji: '🤝',
+    emoji: '🗂️',
     icon: Building2,
     permission: PERMISSIONS.SUPPLIERS_VIEW,
     children: [
-      {
-        labelKey: 'masterSuppliers',
-        href: '/backoffice/suppliers',
-        permission: PERMISSIONS.SUPPLIERS_VIEW,
-      },
-      {
-        labelKey: 'supplierType',
-        href: '/backoffice/suppliers/types',
-        permission: PERMISSIONS.SUPPLIER_TYPES_VIEW,
-      },
-      {
-        labelKey: 'masterStores',
-        href: '/backoffice/stores',
-        permission: PERMISSIONS.STORES_VIEW,
-      },
-      {
-        labelKey: 'leadTime',
-        href: '/backoffice/lead-time',
-        permission: PERMISSIONS.LEAD_TIME_VIEW,
-      },
+      { labelKey: 'masterSuppliers', href: '/backoffice/suppliers', permission: PERMISSIONS.SUPPLIERS_VIEW },
+      { labelKey: 'supplierType', href: '/backoffice/suppliers/types', permission: PERMISSIONS.SUPPLIER_TYPES_VIEW },
+      { labelKey: 'masterStores', href: '/backoffice/stores', permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: 'navItemsAll', href: '/backoffice/items', permission: PERMISSIONS.ITEMS_VIEW },
+      { labelKey: 'navItemsCategory', href: '/backoffice/items/categories', permission: PERMISSIONS.ITEMS_VIEW },
+      { labelKey: 'leadTime', href: '/backoffice/lead-time', permission: PERMISSIONS.LEAD_TIME_VIEW },
     ],
   },
   {
-    labelKey: 'items',
-    href: '/backoffice/items',
-    emoji: '👕',
-    icon: Package,
-    permission: PERMISSIONS.ITEMS_VIEW,
-    children: [
-      { labelKey: 'navItemsAll', href: '/backoffice/items' },
-      { labelKey: 'navItemsCategory', href: '/backoffice/items/categories' },
-    ],
-  },
-  {
+    section: 'secOperations',
     labelKey: 'inventory',
     href: '/backoffice/inventory',
     emoji: '📦',
     icon: Package,
     permission: PERMISSIONS.INVENTORY_VIEW,
     children: [
-      { labelKey: 'inventory', href: '/backoffice/inventory' },
-      {
-        labelKey: 'navStockOpname',
-        href: '/backoffice/inventory/stock-opname',
-        permission: PERMISSIONS.INVENTORY_OPNAME_VIEW,
-      },
-      {
-        labelKey: 'navStockReconciliation',
-        href: '/backoffice/inventory/reconciliation',
-        permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW,
-      },
+      { labelKey: 'inventory', href: '/backoffice/inventory', permission: PERMISSIONS.INVENTORY_VIEW },
+      { labelKey: 'navStockOpname', href: '/backoffice/inventory/stock-opname', permission: PERMISSIONS.INVENTORY_OPNAME_VIEW },
+      { labelKey: 'navStockReconciliation', href: '/backoffice/inventory/reconciliation', permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW },
     ],
   },
   {
+    section: 'secOperations',
     labelKey: 'sales',
     href: '/backoffice/sales-orders',
     emoji: '🛒',
     icon: Store,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
     children: [
-      { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
-      { labelKey: 'navFulfillment', href: '/backoffice/fulfillment' },
-      { labelKey: 'navSalesReturns', href: '/backoffice/returns' },
-      {
-        labelKey: 'navFieldSalesOrders',
-        href: '/backoffice/field-sales-orders',
-        permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
-      },
-      {
-        labelKey: 'navCanvassing',
-        href: '/backoffice/canvassing',
-        permission: PERMISSIONS.CANVASSING_MANAGE,
-      },
-      {
-        labelKey: 'navVanSales',
-        href: '/backoffice/van-sales',
-        permission: PERMISSIONS.CANVASSING_MANAGE,
-      },
-      {
-        labelKey: 'navSpgSales',
-        href: '/backoffice/spg-sales',
-        permission: PERMISSIONS.SPG_SALES_VIEW,
-      },
-      {
-        labelKey: 'promos',
-        href: '/backoffice/promos',
-        permission: PERMISSIONS.PROMOS_VIEW,
-      },
+      { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders', permission: PERMISSIONS.SALES_ORDERS_VIEW },
+      { labelKey: 'navFulfillment', href: '/backoffice/fulfillment', permission: PERMISSIONS.SALES_ORDERS_VIEW },
+      { labelKey: 'navSalesReturns', href: '/backoffice/returns', permission: PERMISSIONS.SALES_ORDERS_VIEW },
+      { labelKey: 'navFieldSalesOrders', href: '/backoffice/field-sales-orders', permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: 'navCanvassing', href: '/backoffice/canvassing', permission: PERMISSIONS.CANVASSING_MANAGE },
+      { labelKey: 'navVanSales', href: '/backoffice/van-sales', permission: PERMISSIONS.CANVASSING_MANAGE },
+      { labelKey: 'navSpgSales', href: '/backoffice/spg-sales', permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: 'promos', href: '/backoffice/promos', permission: PERMISSIONS.PROMOS_VIEW },
     ],
   },
   {
-    labelKey: 'finance',
-    href: '#',
-    emoji: '💰',
-    icon: Wallet,
-    permission: PERMISSIONS.COA_VIEW,
-    children: [
-      { labelKey: 'navCoa', href: '/backoffice/finance/coa', permission: PERMISSIONS.COA_VIEW },
-      {
-        labelKey: 'navFinanceSettlements',
-        href: '/backoffice/finance/settlements',
-        permission: PERMISSIONS.SETTLEMENTS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceJournals',
-        href: '/backoffice/finance/journals',
-        permission: PERMISSIONS.JOURNALS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceAccountMapping',
-        href: '/backoffice/finance/account-mapping',
-        permission: PERMISSIONS.JOURNALS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceTrialBalance',
-        href: '/backoffice/finance/reports/trial-balance',
-        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceIncomeStatement',
-        href: '/backoffice/finance/reports/income-statement',
-        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceBalanceSheet',
-        href: '/backoffice/finance/reports/balance-sheet',
-        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceCashFlow',
-        href: '/backoffice/finance/reports/cash-flow',
-        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceCashFlowSections',
-        href: '/backoffice/finance/cash-flow-sections',
-        permission: PERMISSIONS.JOURNALS_VIEW,
-      },
-      {
-        labelKey: 'navFakturPajak',
-        href: '/backoffice/finance/faktur-pajak',
-        permission: PERMISSIONS.TAX_INVOICES_VIEW,
-      },
-    ],
-  },
-  {
+    section: 'secOperations',
     labelKey: 'production',
     href: '/backoffice/production/planning',
     emoji: '🏭',
     icon: CalendarDays,
     permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
     children: [
-      {
-        labelKey: 'navForecast',
-        href: '/backoffice/forecast',
-        permission: PERMISSIONS.FORECAST_VIEW,
-      },
-      {
-        labelKey: 'navProductionPlanning',
-        href: '/backoffice/production/planning',
-        permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
-      },
-      {
-        labelKey: 'navProductionColors',
-        href: '/backoffice/production/colors',
-        permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
-      },
-      {
-        labelKey: 'purchaseOrders',
-        href: '/backoffice/purchase-orders',
-        permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-      },
-      {
-        labelKey: 'supplierPayment',
-        href: '/backoffice/supplier-payments',
-        permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
-      },
-      {
-        labelKey: 'navWorkOrdersList',
-        href: '/backoffice/work-orders',
-        permission: PERMISSIONS.WORK_ORDERS_VIEW,
-      },
-      {
-        labelKey: 'registerNotaCmt',
-        href: '/backoffice/work-orders/nota-register',
-        permission: PERMISSIONS.NOTA_REGISTER_VIEW,
-      },
-      {
-        labelKey: 'vendorReturns',
-        href: '/backoffice/vendor-returns',
-        permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
-      },
+      { labelKey: 'navForecast', href: '/backoffice/forecast', permission: PERMISSIONS.FORECAST_VIEW },
+      { labelKey: 'navProductionPlanning', href: '/backoffice/production/planning', permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
+      { labelKey: 'navProductionColors', href: '/backoffice/production/colors', permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
+      { labelKey: 'purchaseOrders', href: '/backoffice/purchase-orders', permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
+      { labelKey: 'supplierPayment', href: '/backoffice/supplier-payments', permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
+      { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders', permission: PERMISSIONS.WORK_ORDERS_VIEW },
+      { labelKey: 'registerNotaCmt', href: '/backoffice/work-orders/nota-register', permission: PERMISSIONS.NOTA_REGISTER_VIEW },
+      { labelKey: 'vendorReturns', href: '/backoffice/vendor-returns', permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
     ],
   },
+
+  // ── Piutang & konsinyasi ───────────────────────────────────────────────────
+  // Berdiri sebagai bagiannya sendiri, bukan diselipkan ke Keuangan: orang yang
+  // mengerjakannya berbeda (sales melapor, admin keuangan memverifikasi, gudang
+  // menghitung), dan izinnya pun terpisah.
   {
-    labelKey: 'reports',
-    href: '/backoffice/reports/hpp',
-    emoji: '📈',
-    icon: BarChart2,
-    permission: PERMISSIONS.REPORTS_HPP_VIEW,
-    children: [
-      { labelKey: 'hppReport', href: '/backoffice/reports/hpp' },
-    ],
-  },
-  {
-    labelKey: 'dasborPelunasan',
-    emoji: '📈',
+    section: 'secReceivables',
+    labelKey: 'navGroupReceivables',
     href: '/backoffice/pelunasan-dasbor',
-    icon: LayoutDashboard,
-    permission: PERMISSIONS.RECEIVABLES_VIEW,
-  },
-  {
-    labelKey: 'receivables',
     emoji: '🧾',
-    href: '/backoffice/piutang',
     icon: FileText,
     permission: PERMISSIONS.RECEIVABLES_VIEW,
+    children: [
+      { labelKey: 'dasborPelunasan', href: '/backoffice/pelunasan-dasbor', permission: PERMISSIONS.RECEIVABLES_VIEW },
+      { labelKey: 'receivables', href: '/backoffice/piutang', permission: PERMISSIONS.RECEIVABLES_VIEW },
+      { labelKey: 'collections', href: '/backoffice/kontrabon', permission: PERMISSIONS.RECEIVABLES_VIEW },
+      { labelKey: 'payments', href: '/backoffice/pelunasan', permission: PERMISSIONS.RECEIVABLES_VIEW },
+      { labelKey: 'storeReturns', href: '/backoffice/retur-toko', permission: PERMISSIONS.RECEIVABLES_VIEW },
+      { labelKey: 'bebanSelisih', href: '/backoffice/beban-selisih', permission: PERMISSIONS.RECEIVABLES_VIEW },
+      { labelKey: 'arsipRetur', href: '/backoffice/arsip-retur', permission: PERMISSIONS.RECEIVABLES_VIEW },
+    ],
   },
   {
-    labelKey: 'storeReturns',
-    emoji: '📦',
-    href: '/backoffice/retur-toko',
-    icon: PackageOpen,
-    permission: PERMISSIONS.RECEIVABLES_VIEW,
-  },
-  {
-    labelKey: 'bebanSelisih',
-    emoji: '⚖️',
-    href: '/backoffice/beban-selisih',
-    icon: Scale,
-    permission: PERMISSIONS.RECEIVABLES_VIEW,
-  },
-  {
+    section: 'secReceivables',
     labelKey: 'konsinyasi',
-    emoji: '🤝',
     href: '/backoffice/konsinyasi',
+    emoji: '🤝',
     icon: Handshake,
     permission: PERMISSIONS.CONSIGNMENT_VIEW,
   },
+
+  // ── Keuangan ───────────────────────────────────────────────────────────────
+  // Dipecah dua: yang MENCATAT dan yang MEMBACA. Sebelas anak dalam satu daftar
+  // tidak lagi bisa dipindai, dan keduanya memang pekerjaan yang berbeda.
   {
-    labelKey: 'arsipRetur',
-    emoji: '🗃️',
-    href: '/backoffice/arsip-retur',
-    icon: FolderArchive,
-    permission: PERMISSIONS.RECEIVABLES_VIEW,
-  },
-  {
-    labelKey: 'collections',
-    emoji: '🧾',
-    href: '/backoffice/kontrabon',
-    icon: ClipboardList,
-    permission: PERMISSIONS.RECEIVABLES_VIEW,
-  },
-  {
-    labelKey: 'payments',
-    emoji: '💵',
-    href: '/backoffice/pelunasan',
+    section: 'secFinance',
+    labelKey: 'navGroupLedger',
+    href: '/backoffice/finance/journals',
+    emoji: '📒',
     icon: Wallet,
-    permission: PERMISSIONS.RECEIVABLES_VIEW,
+    permission: PERMISSIONS.JOURNALS_VIEW,
+    children: [
+      { labelKey: 'navFinanceJournals', href: '/backoffice/finance/journals', permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: 'navCoa', href: '/backoffice/finance/coa', permission: PERMISSIONS.COA_VIEW },
+      { labelKey: 'navFinanceAccountMapping', href: '/backoffice/finance/account-mapping', permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: 'navFinanceCashFlowSections', href: '/backoffice/finance/cash-flow-sections', permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: 'navFinanceSettlements', href: '/backoffice/finance/settlements', permission: PERMISSIONS.SETTLEMENTS_VIEW },
+      { labelKey: 'navFakturPajak', href: '/backoffice/finance/faktur-pajak', permission: PERMISSIONS.TAX_INVOICES_VIEW },
+    ],
   },
   {
-    labelKey: 'archive',
-    emoji: '🗂️',
-    href: '/backoffice/archive',
-    icon: FileText,
-    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+    section: 'secFinance',
+    labelKey: 'navGroupReports',
+    href: '/backoffice/finance/reports/trial-balance',
+    emoji: '📈',
+    icon: BarChart2,
+    permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
+    children: [
+      { labelKey: 'navFinanceTrialBalance', href: '/backoffice/finance/reports/trial-balance', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
+      { labelKey: 'navFinanceIncomeStatement', href: '/backoffice/finance/reports/income-statement', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
+      { labelKey: 'navFinanceBalanceSheet', href: '/backoffice/finance/reports/balance-sheet', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
+      { labelKey: 'navFinanceCashFlow', href: '/backoffice/finance/reports/cash-flow', permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
+      { labelKey: 'hppReport', href: '/backoffice/reports/hpp', permission: PERMISSIONS.REPORTS_HPP_VIEW },
+    ],
   },
+
+  // ── Sistem ─────────────────────────────────────────────────────────────────
   {
-    labelKey: 'auditTrail',
-    href: '/backoffice/audit-trail',
-    emoji: '📋',
-    icon: FileText,
-    permission: PERMISSIONS.AUDIT_TRAIL_VIEW,
-  },
-  {
+    section: 'secSystem',
     labelKey: 'jubelio',
     href: '/backoffice/jubelio/admin',
     emoji: '🔌',
@@ -408,13 +283,51 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    section: 'secSystem',
+    labelKey: 'navGroupArchive',
+    href: '/backoffice/archive',
+    emoji: '🗄️',
+    icon: FolderArchive,
+    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+    children: [
+      { labelKey: 'archive', href: '/backoffice/archive', permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
+      { labelKey: 'auditTrail', href: '/backoffice/audit-trail', permission: PERMISSIONS.AUDIT_TRAIL_VIEW },
+    ],
+  },
+  {
+    section: 'secSystem',
     labelKey: 'settings',
     href: '/backoffice/settings',
     emoji: '⚙️',
     icon: Settings,
-    permission: PERMISSIONS.SETTINGS_SECURITY_VIEW, // Settings hub - check any settings permission
+    permission: PERMISSIONS.SETTINGS_SECURITY_VIEW,
   },
 ];
+
+/**
+ * Grup mana yang harus terbuka untuk sebuah rute — DITURUNKAN dari `navItems`.
+ *
+ * Dulu ini daftar `startsWith` yang ditulis tangan, salinan kedua dari pohon
+ * menu yang harus diperbarui setiap kali ada rute baru. Yang lupa diperbarui
+ * tidak pernah gagal dengan berisik: grupnya cuma tidak terbuka, dan orang
+ * mengira menunya hilang.
+ *
+ * Kecocokan TERPANJANG menang, supaya `/backoffice/items/categories` menunjuk
+ * anaknya sendiri dan bukan induk yang kebetulan berawalan sama.
+ */
+function petaBuka(path: string): string | null {
+  let terbaik: { panjang: number; induk: string } | null = null;
+  for (const item of navItems) {
+    if (!item.children?.length) continue;
+    for (const anak of item.children) {
+      if (path !== anak.href && !path.startsWith(`${anak.href}/`)) continue;
+      if (!terbaik || anak.href.length > terbaik.panjang) {
+        terbaik = { panjang: anak.href.length, induk: item.href };
+      }
+    }
+  }
+  return terbaik?.induk ?? null;
+}
 
 /**
  * Title of the page actually open.
@@ -481,43 +394,8 @@ function Sidebar({
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
   const navCounts = useNavCounts();
-  const getOpenKeyFromPath = (path: string) => {
-    if (
-      path.startsWith('/backoffice/suppliers') ||
-      path.startsWith('/backoffice/lead-time') ||
-      path.startsWith('/backoffice/stores')
-    ) {
-      return '/backoffice/suppliers';
-    }
-    if (path.startsWith('/backoffice/items')) return '/backoffice/items';
-    if (path.startsWith('/backoffice/inventory')) return '/backoffice/inventory';
-    if (
-      path.startsWith('/backoffice/forecast') ||
-      path.startsWith('/backoffice/production') ||
-      path.startsWith('/backoffice/purchase-orders') ||
-      path.startsWith('/backoffice/supplier-payments') ||
-      path.startsWith('/backoffice/work-orders') ||
-      path.startsWith('/backoffice/vendor-returns')
-    ) {
-      return '/backoffice/production/planning';
-    }
-    if (path.startsWith('/backoffice/jubelio')) return '/backoffice/jubelio/admin';
-    if (path.startsWith('/backoffice/finance')) return '#';
-    if (path.startsWith('/backoffice/reports')) return '/backoffice/reports/hpp';
-    if (
-      path.startsWith('/backoffice/sales-orders') ||
-      path.startsWith('/backoffice/fulfillment') ||
-      path.startsWith('/backoffice/returns') ||
-      path.startsWith('/backoffice/field-sales-orders') ||
-      path.startsWith('/backoffice/canvassing') ||
-      path.startsWith('/backoffice/van-sales') ||
-      path.startsWith('/backoffice/spg-sales') ||
-      path.startsWith('/backoffice/promos')
-    ) {
-      return '/backoffice/sales-orders';
-    }
-    return null;
-  };
+  const getOpenKeyFromPath = (path: string) => petaBuka(path);
+
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
 
   useEffect(() => {
@@ -560,17 +438,36 @@ function Sidebar({
         */}
       <div className="relative flex-1 min-h-0">
         <nav className="h-full overflow-y-auto py-4 px-3 space-y-1">
-        {filteredItems.map((item) => {
+        {filteredItems.map((item, i) => {
           const hasChildren = item.children && item.children.length > 0;
+          /*
+           * Judul bagian digambar dari entri PERTAMA yang benar-benar terlihat
+           * di bagian itu — bukan dari entri yang menuliskannya di data. Kalau
+           * yang menuliskannya kebetulan tersaring izin, judulnya akan hilang
+           * bersamanya dan sisa bagian itu menggantung di bawah judul bagian
+           * SEBELUMNYA, yang lebih menyesatkan daripada tanpa judul sama sekali.
+           */
+          const judulBagian =
+            item.section && item.section !== filteredItems[i - 1]?.section ? item.section : null;
           const pathOpenKey = getOpenKeyFromPath(pathname);
           const isParentActive = hasChildren
             ? pathOpenKey === item.href
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
+          const bagian = judulBagian ? (
+            <p
+              key={`sec-${judulBagian}`}
+              className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/45"
+            >
+              {tNav(judulBagian as never)}
+            </p>
+          ) : null;
+
           if (hasChildren) {
             return (
+              <Fragment key={item.href}>
+                {bagian}
               <Collapsible
-                key={item.href}
                 open={openNavKey === item.href}
                 onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
                 className="group/collapsible"
@@ -627,13 +524,15 @@ function Sidebar({
                   </div>
                 </CollapsibleContent>
               </Collapsible>
+              </Fragment>
             );
           }
 
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
+            <Fragment key={item.href}>
+              {bagian}
             <Link
-              key={item.href}
               href={item.href}
               onClick={onClose}
               className={cn(
@@ -649,6 +548,7 @@ function Sidebar({
               <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
               <NavCountBadge count={navCounts[item.href] ?? 0} />
             </Link>
+            </Fragment>
           );
         })}
         </nav>

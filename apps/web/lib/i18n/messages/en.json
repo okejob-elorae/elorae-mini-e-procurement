@@ -101,7 +101,16 @@
     "dasborPelunasan": "Receivables home",
     "bebanSelisih": "Return differences",
     "konsinyasi": "Consignment",
-    "jenisPotongan": "Deduction types"
+    "jenisPotongan": "Deduction types",
+    "secOperations": "Operations",
+    "secReceivables": "Receivables & Consignment",
+    "secFinance": "Finance",
+    "secSystem": "System",
+    "navGroupMasterData": "Master Data",
+    "navGroupReceivables": "Receivables & Collections",
+    "navGroupLedger": "General Ledger",
+    "navGroupReports": "Reports",
+    "navGroupArchive": "Archive & Audit"
   },
   "notifications": {
     "title": "Notifications",
