@@ -45,10 +45,14 @@ export async function submitCollection(input: SubmitCollectionInput): Promise<{ 
     if (receivable.collectorId !== input.collectorId) throw new CollectionError("NOT_ASSIGNED_COLLECTOR");
     if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF") throw new CollectionError("ALREADY_SETTLED");
 
-    /*
-     * Netted against PENDING submissions, computed inside this transaction — two concurrent
-     * submissions each reading a stale sum would both pass and together over-collect. See
-     * docs/superpowers/specs/2026-08-27-collector-assignment-design.md § submitCollection.
+    /**
+     * Netted against PENDING submissions, computed inside this transaction via `tx` (not the
+     * top-level `prisma` singleton, and not read before `runSerializable` opens). Two concurrent
+     * submissions each reading a stale sum outside the transaction would both individually pass
+     * the guard and together over-collect the receivable — the bug would not surface until the
+     * second one is verified, by which point one real payment has already posted. `Serializable`
+     * isolation plus this in-transaction read is what forces the second submission to either see
+     * the first's committed row or hit a serialization conflict and retry.
      */
     const pending = await tx.collectionSubmission.findMany({
       where: { receivableId: input.receivableId, status: "PENDING" },
