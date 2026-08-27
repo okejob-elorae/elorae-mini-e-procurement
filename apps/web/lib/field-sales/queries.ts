@@ -44,11 +44,13 @@ export type FieldSalesOrderListItem = {
   status: FieldSalesOrderStatus;
   total: number;
   createdAt: Date;
+  creditHoldAtCreate: boolean;
 };
 
 export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   note: string | null;
   subtotal: number;
+  creditHoldAtCreate: boolean;
   approvedAt: Date | null;
   rejectedAt: Date | null;
   rejectReason: string | null;
@@ -103,6 +105,7 @@ export function serializeListItem(row: {
   createdAt: Date;
   store: { name: string };
   salesman: { name: string | null };
+  creditHoldAtCreate: boolean;
 }): FieldSalesOrderListItem {
   return {
     id: row.id,
@@ -113,6 +116,7 @@ export function serializeListItem(row: {
     status: row.status,
     total: toNum(row.total),
     createdAt: row.createdAt,
+    creditHoldAtCreate: row.creditHoldAtCreate,
   };
 }
 
@@ -136,6 +140,7 @@ export async function listFieldSalesOrders(
       take: paging.pageSize,
       select: {
         id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true,
+        creditHoldAtCreate: true,
         store: { select: { name: true } },
         salesman: { select: { name: true } },
       },
@@ -150,6 +155,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     where: { id },
     select: {
       id: true, orderNo: true, orderType: true, status: true, total: true, subtotal: true, note: true,
+      creditHoldAtCreate: true,
       approvedAt: true, rejectedAt: true, rejectReason: true, createdAt: true,
       closedAt: true, closeReason: true,
       orderDiscountAmount: true, appliedOrderPromoId: true, deliveryStatus: true,
@@ -227,6 +233,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
     ...serializeListItem(row),
     note: row.note,
     subtotal: toNum(row.subtotal),
+    creditHoldAtCreate: row.creditHoldAtCreate,
     approvedAt: row.approvedAt,
     rejectedAt: row.rejectedAt,
     rejectReason: row.rejectReason,

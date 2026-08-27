@@ -179,6 +179,23 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       has to know both spellings.
 - [ ] Cosmetic: one JSX comment's continuation star sits at column 7 instead of 8 in
       `PaymentDetailClient.tsx:222-227` — every other multi-line comment in the branch aligns correctly.
+- [ ] Credit-limit exposure is aging-unaware — a flat total, so an overdue rupiah and a current
+      rupiah consume the limit identically. An aging-weighted limit (e.g. block on any invoice past
+      90 days regardless of total) is a plausible future refinement, not built in this slice.
+- [ ] No credit-limit history table — changing `Store.creditLimit` is an ordinary store edit with no
+      audit trail of its own. The per-order `creditLimitAtCreate`/`creditLimitAtApprove` snapshots on
+      `FieldSalesOrder` are the only record of what the limit was at a given moment; they do not answer
+      "what was the limit on 2026-09-01" for a store with no order raised that day.
+- [ ] A flagged over-limit order emits TWO `AdminNotification` bell rows (`PENDING_ORDER_APPROVAL` +
+      `CREDIT_LIMIT_HOLD`) rather than one — deliberate (suppressing the approval-queue category would
+      drop the order out of the queue operators work from), but it does mean two pings for one order.
+      Revisit if operators complain about notification noise.
+- [ ] The credit limit is enforced on order INTAKE (approve), not on goods MOVEMENT (delivery) —
+      deliberate, since an approved order's undelivered residual is already counted in exposure the
+      moment it's approved, so delivering it adds zero net exposure. Consequence stated plainly: an
+      order approved Monday and delivered Friday still delivers even if the store's other activity blew
+      past the limit in between. A delivery-time re-check was considered and rejected — see
+      `docs/superpowers/specs/2026-08-27-credit-limit-enforcement-design.md` § 9 for the reasoning.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.

@@ -43,6 +43,7 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
           paymentTempo: store.paymentTempo,
           marginPercent: store.marginPercent,
           priceDiscountPercent: store.priceDiscountPercent,
+          creditLimit: store.creditLimit,
           lat: store.lat,
           lng: store.lng,
           checkinRadiusMeters: store.checkinRadiusMeters,

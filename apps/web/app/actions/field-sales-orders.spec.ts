@@ -138,4 +138,34 @@ describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
       expect.objectContaining({ orderId: "o1", addedLines: undefined }),
     );
   });
+
+  it("maps CreditLimitExceededError to CREDIT_LIMIT_EXCEEDED with the exposure payload", async () => {
+    mockHasPermission.mockReturnValue(true);
+    const { CreditLimitExceededError } = await import("@/lib/field-sales/errors");
+    mockApprove.mockRejectedValue(
+      new CreditLimitExceededError({ receivableOutstanding: 100, undeliveredOrderResidual: 200, total: 300 }, 250, 400),
+    );
+    const result = await approveFieldSalesOrderAction("order-1");
+    expect(result).toEqual({
+      ok: false,
+      reason: "CREDIT_LIMIT_EXCEEDED",
+      credit: { exposure: { receivableOutstanding: 100, undeliveredOrderResidual: 200, total: 300 }, creditLimit: 250, orderTotal: 400 },
+    });
+  });
+
+  it("passes creditOverrideReason through to the writer", async () => {
+    mockHasPermission.mockReturnValue(true);
+    mockApprove.mockResolvedValue({ ok: true });
+    await approveFieldSalesOrderAction("order-1", undefined, undefined, "toko sudah janji bayar");
+    expect(mockApprove).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: "order-1", creditOverrideReason: "toko sudah janji bayar" }),
+    );
+  });
+
+  it("supplying creditOverrideReason without the credit_override permission returns FORBIDDEN and never calls the writer", async () => {
+    mockHasPermission.mockImplementation((_perms: string[], perm: string) => perm !== "field_sales_orders:credit_override");
+    const result = await approveFieldSalesOrderAction("order-1", undefined, undefined, "toko sudah janji bayar");
+    expect(result).toEqual({ ok: false, reason: "FORBIDDEN" });
+    expect(mockApprove).not.toHaveBeenCalled();
+  });
 });

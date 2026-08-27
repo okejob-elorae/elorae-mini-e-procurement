@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getStore, listVisitsForStore, listVisitPhotosForVisits } from "@/lib/stores/queries";
@@ -8,6 +9,7 @@ import { getStoreStockCard } from "@/lib/inventory/store-stock-card";
 import { listStoreStocktakes } from "@/lib/stores/stocktake/queries";
 import { getInTransitAdminReturnQty } from "@/lib/field-sales/retur/queries";
 import { listAssortmentGaps, listAssortmentLines } from "@/lib/stores/assortment/queries";
+import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { StoreDetailView } from "./StoreDetailView";
 
 const STOCKTAKE_HISTORY_PAGE_SIZE = 10;
@@ -25,6 +27,10 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
 
   const canEdit = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
   const canManageFieldReturns = hasPermission(perms, PERMISSIONS.FIELD_RETURNS_MANAGE);
+  const creditExposure =
+    store.creditLimit !== null
+      ? await computeStoreCreditExposure(prisma, store.id).then((e) => ({ exposure: e.total, headroom: store.creditLimit! - e.total }))
+      : null;
   const visits = await listVisitsForStore(store.id, 50);
   const photosByVisit = await listVisitPhotosForVisits(visits.map((v) => v.id));
   const pending = await getPendingStoreChangeRequest(store.id);
@@ -62,6 +68,7 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
       store={store}
       canEdit={canEdit}
       canManageFieldReturns={canManageFieldReturns}
+      creditExposure={creditExposure}
       pendingChange={pending ? { requestId: pending.id, requestedByLabel: pending.requestedByLabel, proposed: pending.proposed, old: pending.old } : null}
       orders={orders}
       sentItems={sentItems}

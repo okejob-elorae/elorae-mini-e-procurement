@@ -104,7 +104,7 @@ export async function submitSmartRequestOrder(input: unknown): Promise<SubmitRes
   const parsed = submitSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "EMPTY" };
   try {
-    const { orderNo } = await createFieldSalesOrder({
+    const { orderNo, creditHold } = await createFieldSalesOrder({
       storeId: parsed.data.storeId,
       salesmanId: session.user.id,
       visitId: parsed.data.visitId,
@@ -114,7 +114,7 @@ export async function submitSmartRequestOrder(input: unknown): Promise<SubmitRes
       skipMinQty: true,
     });
     revalidatePath(`/pwa/stores/${parsed.data.storeId}`);
-    return { ok: true, orderNo };
+    return { ok: true, orderNo, creditHold };
   } catch (e) {
     if (e instanceof NoActiveVisitError) return { ok: false, code: "NO_ACTIVE_VISIT" };
     if (e instanceof MinQtyViolationError) return { ok: false, code: "MIN_QTY", violations: e.violations };

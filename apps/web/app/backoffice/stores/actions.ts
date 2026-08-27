@@ -29,6 +29,7 @@ const storeInputSchema = z.object({
   paymentTempo: z.number().int().min(0).max(365),
   marginPercent: z.number().min(0).max(999.99).nullable(),
   priceDiscountPercent: z.number().nullable(),
+  creditLimit: z.number().min(0).nullable(),
   lat: z.number().min(-90).max(90).nullable(),
   lng: z.number().min(-180).max(180).nullable(),
   checkinRadiusMeters: z.number().int().min(0).max(100000).nullable(),

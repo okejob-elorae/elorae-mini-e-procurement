@@ -164,6 +164,7 @@ type Props = {
     proposed: PendingChangeFields;
     old: PendingChangeFields;
   } | null;
+  creditExposure: { exposure: number; headroom: number } | null;
 };
 
 const STOCKTAKE_STATUS_BADGE_VARIANT: Record<StoreStocktakeStatusValue, "secondary" | "destructive" | "default" | "outline"> = {
@@ -285,6 +286,7 @@ export function StoreDetailView({
   stocktakes,
   assortment,
   pendingChange,
+  creditExposure,
 }: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
@@ -577,6 +579,21 @@ export function StoreDetailView({
               <DetailField label={tForm("priceDiscountPercent")}>
                 {store.priceDiscountPercent !== null ? `${store.priceDiscountPercent}%` : "—"}
               </DetailField>
+              <DetailField label={tForm("creditLimit")}>
+                {store.creditLimit !== null ? formatRupiah(store.creditLimit) : tDetail("creditLimitUnlimited")}
+              </DetailField>
+              {creditExposure && (
+                <>
+                  <DetailField label={tDetail("creditExposureLabel")}>
+                    <span className="tabular-nums">{formatRupiah(creditExposure.exposure)}</span>
+                  </DetailField>
+                  <DetailField label={tDetail("creditHeadroomLabel")}>
+                    <span className={`tabular-nums ${creditExposure.headroom < 0 ? "text-destructive" : ""}`}>
+                      {formatRupiah(creditExposure.headroom)}
+                    </span>
+                  </DetailField>
+                </>
+              )}
             </dl>
           </section>
 

@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import {
   getFieldSalesOrderById,
@@ -7,6 +8,7 @@ import {
   type KonsiSuggestion,
   type KonsiAssortmentGapSuggestion,
 } from "@/lib/field-sales/queries";
+import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
 
@@ -65,6 +67,28 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     }
   }
 
+  /**
+   * Optional convenience read — a display preview only, never the authority (the writer
+   * re-checks at actual approve time per spec § 4). Degrades to null on failure, same pattern
+   * as konsiSuggestions/konsiAssortmentGaps above, so it never takes down Approve/Reject.
+   */
+  let creditCheck: { exposure: number; limit: number; overLimit: boolean } | null = null;
+  if (order.orderType === "PUTUS" && order.status === "PENDING_APPROVAL" && canApprove) {
+    try {
+      const orderRow = await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { storeId: true } });
+      if (orderRow) {
+        const store = await prisma.store.findUnique({ where: { id: orderRow.storeId }, select: { creditLimit: true } });
+        if (store?.creditLimit !== null && store?.creditLimit !== undefined) {
+          const limit = Number(store.creditLimit);
+          const exposure = await computeStoreCreditExposure(prisma, orderRow.storeId);
+          creditCheck = { exposure: exposure.total, limit, overLimit: exposure.total + order.total > limit };
+        }
+      }
+    } catch (error) {
+      console.error("[field-sales-orders] credit-limit check failed", { orderId: id, error });
+    }
+  }
+
   return (
     <FieldSalesOrderDetailClient
       order={order}
@@ -72,6 +96,7 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
       canDeliver={canDeliver}
       konsiSuggestions={konsiSuggestions}
       konsiAssortmentGaps={konsiAssortmentGaps}
+      creditCheck={creditCheck}
     />
   );
 }
