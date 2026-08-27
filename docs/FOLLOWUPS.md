@@ -212,6 +212,18 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       store arrive unassigned and need a re-run. If this proves to be real recurring toil, the
       standing per-store default is the fix, and it belongs in the delivery writer with its own
       design.
+- [ ] Assignment eligibility requires `collections:collect` AND `pwa:access` on a non-system role
+      (added post-review, since a wildcard/ADMIN role can hold `collections:collect` without ever
+      being able to reach the PWA queue that permission is meant to gate). A receivable already
+      assigned to a collector whose `pwa:access` is later revoked stays assigned in the DB, but
+      both the piutang detail page's `AssignCollectorCard` collector-picker and the piutang list's
+      collector filter combobox render that assignee as "Unassigned"/"All collectors" — the
+      combobox only recognizes options from the (now-filtered) eligible-candidate list, while the
+      surrounding read-only text (the detail card's "Current collector" row) still shows the real
+      name. Not a data-loss risk — the underlying `Receivable.collectorId` is untouched, Apply
+      stays disabled until a real change is made, and the fix (reassign to an eligible collector)
+      works normally — but it's a real, if rare, lifecycle event (someone leaves, has PWA access
+      revoked) worth a dedicated stale-assignee display state if it comes up in practice.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
