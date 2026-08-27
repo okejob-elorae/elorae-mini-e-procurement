@@ -12,6 +12,7 @@ import { CollectionError, type CollectionErrorCode } from "@/lib/finance/collect
 import { PaymentError, type PaymentErrorCode } from "@/lib/finance/ar/errors";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postPaymentReceiptJournal } from "@/lib/finance/ar/payment-journal";
+import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 
 export type CollectionActionReason =
   | "FORBIDDEN"
@@ -51,6 +52,20 @@ function toCollectionResult(e: unknown): { ok: false; reason: CollectionActionRe
   if (e instanceof CollectionError) return { ok: false, reason: e.code };
   if (e instanceof PaymentError) return { ok: false, reason: e.code };
   return { ok: false, reason: "INVALID_REQUEST" };
+}
+
+/**
+ * Anchors a "YYYY-MM-DD" calendar day to WIB midnight and rejects anything that doesn't
+ * round-trip exactly — same guard `recordPaymentAction` uses for the same `Payment.paidAt`
+ * field, so a collector's submitted date can't produce a different GL date than the backoffice
+ * payment-recording path would for the same string.
+ */
+function parseCalendarDay(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  const parsed = parseDateOnly(trimmed);
+  if (!parsed) return null;
+  return formatDateOnlyJakarta(parsed) === trimmed ? parsed : null;
 }
 
 export async function assignCollectorAction(input: {
@@ -116,8 +131,8 @@ export async function submitCollectionAction(input: {
 }): Promise<CollectionActionResult> {
   const g = await guardCollect();
   if ("ok" in g) return g;
-  const paidAt = new Date(input.paidAt);
-  if (Number.isNaN(paidAt.getTime())) return { ok: false, reason: "INVALID_REQUEST" };
+  const paidAt = parseCalendarDay(input.paidAt);
+  if (!paidAt) return { ok: false, reason: "INVALID_REQUEST" };
   try {
     const result = await submitCollection({
       receivableId: input.receivableId,
@@ -140,19 +155,26 @@ export async function submitCollectionAction(input: {
 export async function verifyCollectionAction(submissionId: string): Promise<CollectionActionResult> {
   const g = await guardVerify();
   if ("ok" in g) return g;
-  let paymentId: string | undefined;
+  let paymentId: string;
+  let alreadyVerified = false;
   try {
     const result = await verifyCollection({ submissionId, verifiedById: g.userId });
-    if ("paymentId" in result) paymentId = result.paymentId;
+    paymentId = result.paymentId;
+    alreadyVerified = result.alreadyVerified ?? false;
   } catch (e) {
     return toCollectionResult(e);
   }
-  if (paymentId) {
-    await postArJournalSafely("ar_payment", paymentId, () => postPaymentReceiptJournal(paymentId!, g.userId));
-  }
+  /*
+   * Posted unconditionally, including on the `alreadyVerified` short-circuit: `postJournal`
+   * underneath `postPaymentReceiptJournal` is idempotent on `Journal @@unique([sourceType, sourceId])`
+   * and simply returns `created: false` for an entry that already exists, so a repost is a safe
+   * no-op. That is what makes a crashed verify-then-retry converge — before this, the retry hit
+   * the short-circuit, carried no payment id, and left the payment forever un-journaled.
+   */
+  await postArJournalSafely("ar_payment", paymentId, () => postPaymentReceiptJournal(paymentId, g.userId));
   revalidatePath("/backoffice/finance/collections");
   revalidatePath("/backoffice/finance/piutang");
-  return { ok: true };
+  return { ok: true, alreadyVerified };
 }
 
 export async function rejectCollectionAction(submissionId: string, reason: string): Promise<CollectionActionResult> {

@@ -14,10 +14,25 @@ export async function assignCollector(input: {
 
   return runSerializable(async (tx) => {
     if (input.collectorId !== null) {
+      /*
+       * A `collections:collect` permission ROW is not enough — `pwaAccessGuard` (apps/web/lib/pwa/guard.ts)
+       * bounces any user whose role is `isSystem` (wildcard `*`) out of /pwa/* unconditionally,
+       * and ADMIN is granted every real Permission row explicitly (see seed-collections-permissions.sql's
+       * own comment), so a naive check here would happily mark ADMIN "eligible" to collect while
+       * pwaAccessGuard permanently refuses them the one screen collection actually happens on.
+       * Require pwa:access too, and exclude isSystem roles, matching pwaAccessGuard's real gate
+       * (!hasWildcard && hasPwaAccess) exactly instead of approximating it.
+       */
       const eligible = await tx.user.findFirst({
         where: {
           id: input.collectorId,
-          roleDefinition: { permissions: { some: { permission: { code: "collections:collect" } } } },
+          roleDefinition: {
+            isSystem: false,
+            AND: [
+              { permissions: { some: { permission: { code: "collections:collect" } } } },
+              { permissions: { some: { permission: { code: "pwa:access" } } } },
+            ],
+          },
         },
         select: { id: true },
       });

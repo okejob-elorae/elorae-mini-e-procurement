@@ -7,6 +7,22 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
+/**
+ * `COLLECTION_PENDING_VERIFICATION` rows scoped to one seeded receivable, matched in JS on
+ * `metadata.receivableId` — this MariaDB adapter's JSON-path filtering is unreliable, and this
+ * spec shares the dev DB with real notification rows, so a category-wide delete would take out
+ * rows this spec never created. `submitCollection` writes one inside its own transaction, so
+ * every seeded fixture here leaves one behind unless teardown removes it.
+ */
+async function notificationsFor(receivableId: string) {
+  const recent = await prisma.adminNotification.findMany({
+    where: { category: "COLLECTION_PENDING_VERIFICATION" },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+  return recent.filter((n) => (n.metadata as { receivableId?: string } | null)?.receivableId === receivableId);
+}
+
 d("listCollectionQueue (test bed only)", () => {
   let token = "";
   let storeId = "";
@@ -48,6 +64,12 @@ d("listCollectionQueue (test bed only)", () => {
   });
 
   afterEach(async () => {
+    const notifsA = await notificationsFor(receivableAId);
+    const notifsB = await notificationsFor(receivableBId);
+    const allNotifIds = [...notifsA, ...notifsB].map((n) => n.id);
+    if (allNotifIds.length > 0) {
+      await prisma.adminNotification.deleteMany({ where: { id: { in: allNotifIds } } });
+    }
     await prisma.collectionSubmission.deleteMany({ where: { receivableId: { in: [seededId(receivableAId), seededId(receivableBId)] } } });
     await prisma.receivable.deleteMany({ where: { id: { in: [seededId(receivableAId), seededId(receivableBId)] } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: [seededId(deliveryAId), seededId(deliveryBId)] } } });

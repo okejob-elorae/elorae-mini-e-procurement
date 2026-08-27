@@ -138,9 +138,22 @@ export async function getCollectionSubmission(id: string) {
   };
 }
 
+/**
+ * Deliberately the SAME eligibility shape `assignCollector` enforces in its own writer — see the
+ * comment there for why `pwa:access` and the `isSystem: false` exclusion are both load-bearing.
+ * This one only keeps the assign dialogs from OFFERING an ineligible user; the writer is the guard.
+ */
 export async function listCollectorCandidates(): Promise<Array<{ id: string; name: string }>> {
   const users = await prisma.user.findMany({
-    where: { roleDefinition: { permissions: { some: { permission: { code: "collections:collect" } } } } },
+    where: {
+      roleDefinition: {
+        isSystem: false,
+        AND: [
+          { permissions: { some: { permission: { code: "collections:collect" } } } },
+          { permissions: { some: { permission: { code: "pwa:access" } } } },
+        ],
+      },
+    },
     select: { id: true, name: true, email: true },
     orderBy: { name: "asc" },
   });

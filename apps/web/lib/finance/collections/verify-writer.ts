@@ -26,13 +26,16 @@ import { CollectionError } from "./errors";
 export async function verifyCollection(input: {
   submissionId: string;
   verifiedById: string;
-}): Promise<{ ok: true; paymentId: string } | { ok: true; alreadyVerified: true }> {
+}): Promise<{ ok: true; paymentId: string; alreadyVerified?: true }> {
   const submission = await prisma.collectionSubmission.findUnique({
     where: { id: input.submissionId },
-    select: { id: true, status: true, receivableId: true, amount: true, method: true, paidAt: true, proofUrl: true, proofR2Key: true },
+    select: { id: true, status: true, receivableId: true, amount: true, method: true, paidAt: true, proofUrl: true, proofR2Key: true, paymentId: true },
   });
   if (!submission) throw new CollectionError("NOT_FOUND");
-  if (submission.status === "VERIFIED") return { ok: true, alreadyVerified: true };
+  if (submission.status === "VERIFIED") {
+    if (!submission.paymentId) throw new CollectionError("NOT_PENDING");
+    return { ok: true, paymentId: submission.paymentId, alreadyVerified: true };
+  }
   if (submission.status !== "PENDING") throw new CollectionError("NOT_PENDING");
 
   const receivable = await prisma.receivable.findUnique({
@@ -76,8 +79,16 @@ export async function verifyCollection(input: {
       select: { status: true, paymentId: true },
     });
     if (current?.status === "VERIFIED" && current.paymentId === paymentId) {
-      return { ok: true, alreadyVerified: true };
+      return { ok: true, paymentId, alreadyVerified: true };
     }
+    /*
+     * The payment above is real and committed, but the submission landed somewhere else — most
+     * likely REJECTED by a concurrent reject. This is a genuine data anomaly (a payment posted
+     * against a rejected claim), not a routine race. Log it loudly so it surfaces for manual
+     * reconciliation instead of vanishing into a generic error toast — the comment on this
+     * function already promises this, this line is what keeps that promise.
+     */
+    console.error(`[verifyCollection] orphaned payment: submission ${submission.id} landed on status=${current?.status ?? "MISSING"} after payment ${paymentId} was posted (expected VERIFIED)`);
     throw new CollectionError("NOT_PENDING");
   }
 
