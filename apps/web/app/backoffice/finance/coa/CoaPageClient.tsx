@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useTransition } from "react";
+import React, { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -145,11 +145,14 @@ function filterTree(
       .map(filterNode)
       .filter((c): c is CoaTreeNodeWithBalance => c !== null);
     if (matches(node) || filteredChildren.length > 0) {
-      // Re-sum from visible children so parent totals match the filtered subtree.
+      // Re-sum from visible children. Matching group with no visible children → 0
+      // (not the full rolled-up total). Matching leaf keeps its own balance.
       const balance =
         filteredChildren.length > 0
           ? filteredChildren.reduce((sum, c) => sum + c.balance, 0)
-          : node.balance;
+          : node.isLeaf
+            ? node.balance
+            : 0;
       return { ...node, children: filteredChildren, balance };
     }
     return null;
@@ -223,6 +226,13 @@ export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger 
 
   const filtered = useMemo(() => filterTree(tree, search), [tree, search]);
   const allFlat = useMemo(() => flattenTree(tree), [tree]);
+  const searching = Boolean(search.trim());
+
+  // Auto-expand the filtered tree while searching so Collapse All / chevrons stay consistent.
+  useEffect(() => {
+    if (!searching) return;
+    setOpenSet(new Set(collectIds(filtered)));
+  }, [searching, filtered]);
 
   const parentCandidates = useMemo(
     () => allFlat.filter((n) => n.isActive && n.depth < 4),
@@ -350,7 +360,7 @@ export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger 
 
     function walk(list: CoaTreeNodeWithBalance[]) {
       for (const node of list) {
-        const isOpen = Boolean(search.trim()) || openSet.has(node.id);
+        const isOpen = openSet.has(node.id);
         const showActions = canManage || (canViewLedger && node.isLeaf);
         const indent = Math.max(0, node.depth - 1);
 
@@ -507,10 +517,22 @@ export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={collapseAll}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={collapseAll}
+            disabled={searching}
+          >
             {t("collapseAll")}
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={expandAll}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={expandAll}
+            disabled={searching}
+          >
             {t("expandAll")}
           </Button>
           {canManage && (

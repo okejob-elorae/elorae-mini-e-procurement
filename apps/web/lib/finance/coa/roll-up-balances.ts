@@ -40,10 +40,11 @@ export function pruneInactiveForDisplay(
     const children = pruneInactiveForDisplay(n.children);
     if (!n.isActive) {
       if (children.length === 0) continue;
-      out.push({ ...n, children, isLeaf: false });
+      // Keep structural isLeaf; only children list changes for display.
+      out.push({ ...n, children });
       continue;
     }
-    out.push({ ...n, children, isLeaf: children.length === 0 });
+    out.push({ ...n, children });
   }
   return out;
 }
