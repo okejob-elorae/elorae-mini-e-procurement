@@ -4536,5 +4536,26 @@
     "errSEDANG_DIPAKAI": "This type is in use.",
     "errGAGAL": "Could not save. Try again.",
     "ruleNoManual": "not typed manually"
+  },
+  "ocr": {
+    "title": "Read from photo",
+    "hint": "The lines are read from the note photo. These are proposals — check them before using.",
+    "readButton": "Read from photo",
+    "rereadButton": "Read again",
+    "reading": "Reading…",
+    "nothingRead": "Nothing readable in this photo. Type it in by hand.",
+    "lowConfidence": "The photo is unclear ({pct}% confident). If much of it is wrong, retake it brighter and straighter — that is faster than fixing line by line.",
+    "qtyDerived": "Qty derived",
+    "odd": "Needs a look",
+    "totalMatches": "Matches the note total: {total}",
+    "totalDiffers": "Note total {total}, selected {selected} — something was missed or misread.",
+    "skippedLabel": "Lines that could not be read:",
+    "apply": "Insert {count} lines",
+    "applyAppend": "Add {count} lines to the details",
+    "applyTotal": "Use total {total}",
+    "alreadyApplied": "Already inserted",
+    "errTANPA_AKSES": "You are not allowed to read this photo.",
+    "errFOTO_TIDAK_ADA": "The photo was not found.",
+    "errGAGAL": "Could not read the photo. Type it in by hand."
   }
 }

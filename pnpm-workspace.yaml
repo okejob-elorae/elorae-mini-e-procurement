@@ -14,4 +14,7 @@ allowBuilds:
   prisma: true
   protobufjs: false
   sharp: true
+  # Skrip pasangnya cuma `opencollective-postinstall` — spanduk donasi.
+  # Model bahasanya dibundel di apps/web/tessdata, bukan diunduh.
+  tesseract.js: false
   unrs-resolver: true

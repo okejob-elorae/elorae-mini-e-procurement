@@ -4536,5 +4536,26 @@
     "errSEDANG_DIPAKAI": "Jenis ini sedang dipakai.",
     "errGAGAL": "Gagal menyimpan. Coba lagi.",
     "ruleNoManual": "tidak boleh diketik manual"
+  },
+  "ocr": {
+    "title": "Baca dari foto",
+    "hint": "Rinciannya dibaca dari foto nota. Hasilnya usulan — periksa dulu sebelum dipakai.",
+    "readButton": "Baca dari foto",
+    "rereadButton": "Baca ulang",
+    "reading": "Membaca…",
+    "nothingRead": "Tidak ada rincian yang terbaca dari foto ini. Ketik manual saja.",
+    "lowConfidence": "Fotonya kurang jelas ({pct}% yakin). Kalau banyak yang salah, potret ulang lebih terang dan lurus — itu lebih cepat daripada membetulkan satu per satu.",
+    "qtyDerived": "Jumlah dihitung",
+    "odd": "Perlu dicek",
+    "totalMatches": "Cocok dengan total di nota: {total}",
+    "totalDiffers": "Total di nota {total}, yang dipilih {selected} — ada yang belum terbaca atau salah baca.",
+    "skippedLabel": "Baris yang tidak terbaca:",
+    "apply": "Masukkan {count} baris",
+    "applyAppend": "Tambahkan {count} baris ke rincian",
+    "applyTotal": "Pakai total {total}",
+    "alreadyApplied": "Sudah dimasukkan",
+    "errTANPA_AKSES": "Anda tidak berhak membaca foto ini.",
+    "errFOTO_TIDAK_ADA": "Fotonya tidak ditemukan.",
+    "errGAGAL": "Gagal membaca foto. Ketik manual saja."
   }
 }

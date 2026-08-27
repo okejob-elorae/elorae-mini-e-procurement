@@ -63,6 +63,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=builder /repo/apps/web/.next/standalone ./
 COPY --from=builder /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder /repo/apps/web/public ./apps/web/public
+# Model bahasa OCR. Dibundel supaya server TIDAK mengambilnya dari CDN saat
+# jalan — pembacaan nota tidak boleh bergantung jaringan keluar.
+COPY --from=builder /repo/apps/web/tessdata ./apps/web/tessdata
 # Non-root user
 RUN useradd --create-home --shell /bin/sh elorae \
   && chown -R elorae:elorae /app

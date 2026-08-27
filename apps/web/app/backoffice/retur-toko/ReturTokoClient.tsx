@@ -52,6 +52,7 @@ import type { BarisBarang } from '@/lib/receivables/return-writer';
 import { NADA_LANGKAH, URUT_LANGKAH } from './langkah';
 import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { BarisBarangEditor, type PilihanBarang } from './BarisBarangEditor';
+import { BacaNota } from '@/components/ocr/BacaNota';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string) =>
@@ -485,6 +486,18 @@ export function ReturTokoClient({
               onChange={setFoto}
               wajib
               disabled={pending}
+            />
+
+            {/* Membaca rincian dari fotonya. Nomor dan tanggal hanya diisikan
+                kalau kolomnya masih kosong — menimpa apa yang sudah diketik
+                orang adalah cara tercepat membuat fitur ini dimatikan. */}
+            <BacaNota
+              fotoUrl={foto?.url ?? null}
+              adaBarisTerisi={barangKlaim.length > 0}
+              disabled={pending}
+              onTerapkan={(baris) => setBarangKlaim((lama) => [...lama, ...baris])}
+              onNomor={(no) => setNoNrt((lama) => (lama.trim() === '' ? no : lama))}
+              onTanggal={(tgl) => setClaimDate((lama) => (lama === hariIniWib() ? tgl : lama))}
             />
 
             <div className="space-y-2">

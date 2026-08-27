@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
+import { BacaNota } from '@/components/ocr/BacaNota';
 import { catatReturTokoAction } from '@/app/actions/store-returns';
 import { dinamis } from '@/lib/i18n/dinamis';
 
@@ -90,6 +91,16 @@ export function ReturBaruClient({ toko }: { toko: { id: string; name: string }[]
             onChange={setFoto}
             wajib
             disabled={pending}
+          />
+
+          {/* Fotonya sudah diambil; membaca angkanya dari situ menghemat tiga
+              hal yang paling sering salah ketik di HP: nomor, tanggal, total. */}
+          <BacaNota
+            fotoUrl={foto?.url ?? null}
+            disabled={pending}
+            onTotal={(n) => setNilai(String(n))}
+            onNomor={(no) => setNoNrt((lama) => (lama.trim() === '' ? no : lama))}
+            onTanggal={(tgl) => setTanggal((lama) => (lama === hariIniWib() ? tgl : lama))}
           />
 
           <div className="space-y-2">

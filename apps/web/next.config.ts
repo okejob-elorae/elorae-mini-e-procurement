@@ -14,7 +14,16 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ["@prisma/client", "@prisma/adapter-mariadb", "mariadb", "@prisma/adapter-pg", "pg"],
+  /*
+   * `tesseract.js` DIBIARKAN EKSTERNAL, tidak ikut dibundel.
+   *
+   * Ia memuat inti WASM-nya lewat `require` biasa lalu menjalankannya di worker
+   * thread dengan jalur berkas. Sebuah bundler yang memindahkan berkas-berkas
+   * itu memutus keduanya, dan putusnya baru ketahuan saat berjalan — bukan saat
+   * dibangun. Model bahasanya sendiri ada di `apps/web/tessdata` dan harus ikut
+   * disalin ke image (lihat Dockerfile).
+   */
+  serverExternalPackages: ["@prisma/client", "@prisma/adapter-mariadb", "mariadb", "@prisma/adapter-pg", "pg", "tesseract.js"],
   async redirects() {
     return [
       { source: '/backoffice/reports', destination: '/backoffice/dashboard', permanent: false },
