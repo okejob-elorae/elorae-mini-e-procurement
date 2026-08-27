@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
-import { uploadToR2, deleteFromR2, keyFromUrl, isConfigured } from '@/lib/r2';
+import { auth } from '@/lib/auth';
+import { uploadToR2, isConfigured } from '@/lib/r2';
 export const dynamic = 'force-dynamic';
 
 
@@ -24,6 +25,22 @@ function sanitiseFilename(name: string): string {
  */
 export async function POST(request: NextRequest) {
   try {
+    /*
+     * Authenticated callers only. This endpoint had NO auth check at all, so anyone on the internet
+     * could write 10 MB objects into the R2 bucket.
+     *
+     * The gate is authentication rather than a specific permission because four features share this
+     * one endpoint — the GRN form, both stock-adjustment screens and vendor returns — and they do not
+     * share a permission, so gating on any single one would break the other three. Sibling routes that
+     * serve a SINGLE feature do check a permission (`item-image` takes `items:manage`, `payment-proof`
+     * takes `payments:manage`); the shared PWA `visit-photo` route is authentication-only, same as this.
+     * Tightening this to an any-of check, or splitting it per feature, is recorded in docs/FOLLOWUPS.md.
+     */
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     if (!isConfigured()) {
       return NextResponse.json(
         { error: 'R2 storage is not configured' },
@@ -77,42 +94,16 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * DELETE — remove a file from R2 by its public URL.
- * Accepts JSON body { url: string }.
+/*
+ * The DELETE handler that used to sit here was REMOVED, not gated.
+ *
+ * It took a public R2 URL, resolved it with `keyFromUrl` — which accepts ANY key under the bucket's
+ * public prefix, not just this route's own uploads — and deleted it, with no authentication. So it was
+ * an unauthenticated bucket-wide delete primitive: item images, visit photos, retur nota photos and
+ * payment proofs were all reachable by anyone who knew or guessed a URL.
+ *
+ * Nothing called it. All four callers of this route use POST only (grep `api/upload/grn-photo`), so
+ * deleting the handler removes the exposure without removing a capability anyone was using. If an
+ * orphan-cleanup path is ever wanted, it belongs behind both authentication and a permission, and it
+ * must constrain the key to a prefix this route actually owns rather than trusting `keyFromUrl`.
  */
-export async function DELETE(request: NextRequest) {
-  try {
-    if (!isConfigured()) {
-      return NextResponse.json(
-        { error: 'R2 storage is not configured' },
-        { status: 503 }
-      );
-    }
-
-    const { url } = (await request.json()) as { url?: string };
-    if (!url) {
-      return NextResponse.json(
-        { error: 'Missing "url" in request body' },
-        { status: 400 }
-      );
-    }
-
-    const key = keyFromUrl(url);
-    if (!key) {
-      return NextResponse.json(
-        { error: 'URL does not match configured R2 public URL' },
-        { status: 400 }
-      );
-    }
-
-    await deleteFromR2(key);
-    return NextResponse.json({ deleted: true });
-  } catch (err) {
-    console.error('File delete error:', err);
-    return NextResponse.json(
-      { error: 'Delete failed' },
-      { status: 500 }
-    );
-  }
-}

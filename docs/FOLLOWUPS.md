@@ -365,6 +365,18 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] The `KONSI → PUTUS` flip guard (`apps/web/lib/stores/queries.ts` `updateStore`) is a plain pre-check, not transaction-isolated against a konsi transfer landing between the check and the store update (feat/konsi-virtual-warehouse).
 
 ### Ops / infra
+- [ ] `/api/upload/grn-photo` is authentication-only, not permission-gated. Four features share the one
+      endpoint — the GRN form, both stock-adjustment screens and vendor returns — and they do not share a
+      permission, so gating on any single one would break the other three. Single-feature upload routes DO
+      check a permission (`item-image` → `items:manage`, `payment-proof` → `payments:manage`). Tightening
+      means either an any-of check across the four features' permissions or splitting the endpoint per
+      feature. Until then an authenticated user with no inventory permissions can still write objects into
+      the bucket. Raised while fixing the unauthenticated hole on that route.
+- [ ] Uploaded object keys are not namespaced by feature. `grn-photo` writes to a generic `uploads/` prefix
+      rather than something like `grn/`, so nothing about a key says which feature owns it. That is what made
+      the removed DELETE handler dangerous — `keyFromUrl` accepts any key under the bucket's public prefix,
+      so a delete could not be constrained to the caller's own uploads even in principle. Any future
+      cleanup or retention path needs per-feature prefixes first.
 - [ ] `packages/db/prisma/migrations/20260813120000_add_tax_invoice/migration.sql:18` points a reader at `CLAUDE.md` for text that now lives in `docs/ARCHITECTURE-NOTES.md`, and **it must not be corrected**: Prisma checksums every applied migration into `_prisma_migrations`, so editing the file — even a comment — makes `migrate deploy` fail with a checksum mismatch against prod, where this migration is already applied. A stale doc pointer is a papercut; a repo that cannot deploy is an outage. The same rule applies to EVERY already-applied migration file, so never sweep migrations for doc-pointer rot. If one ever genuinely needs correcting, the route is a new migration or a `prisma migrate resolve`, not an edit in place.
 - [x] DB backups — LIVE on prod since 2026-08-08. `scripts/backup-db.sh` installed on the VPS, cron 19:15 UTC (02:15 WIB), writing to the private `elorae-backups` R2 bucket. First run verified end-to-end: 91,471,524 bytes, decrypt-verified, upload size-confirmed, and the daily + monthly objects both exist. **Decryption with the off-site passphrase separately proven** — the password-manager copy (not the server's file) was tested against the live archive and decrypts it to a complete dump. AWS CLI is user-local at `~/.local/bin` because `awscli` is not apt-installable on this host, so the crontab MUST set `PATH` (PR #227).
 - [ ] Nothing has yet proven the CRON invocation works — every successful run so far was manual. A cron-only failure (PATH, environment, working directory) would surface only in `/home/elorae/backup.log`. Check it once, then this is genuinely closed.
