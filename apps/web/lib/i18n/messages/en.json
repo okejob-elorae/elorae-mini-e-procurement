@@ -4165,6 +4165,7 @@
       "roleRequired": "Role is required",
       "roleNotFound": "Role not found",
       "userNotFound": "User not found",
+      "lastAdmin": "Cannot demote the last admin account",
       "nameRequired": "Name is required"
     }
   }

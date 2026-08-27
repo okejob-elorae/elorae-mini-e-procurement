@@ -1,8 +1,9 @@
-'use server';
+"use server";
 
-import { prisma } from '@elorae/db';
-import bcrypt from 'bcryptjs';
-import { SENSITIVE_ACTIONS } from '@/app/actions/security/pin-constants';
+import { prisma } from "@elorae/db";
+import bcrypt from "bcryptjs";
+import { auth } from "@/lib/auth";
+import { SENSITIVE_ACTIONS } from "@/app/actions/security/pin-constants";
 
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_FAILED_ATTEMPTS = 3;
@@ -155,21 +156,17 @@ export async function getUsersForAdmin(
   return users;
 }
 
-/** Admin: clear PIN for another user (force reset). */
+/** Admin: clear PIN for another user (force reset). Uses session auth — never trust a client-supplied admin id. */
 export async function adminForcePinReset(
-  adminUserId: string,
   targetUserId: string
 ): Promise<PinAuthResult> {
-  const admin = await prisma.user.findUnique({
-    where: { id: adminUserId },
-    select: { role: true },
-  });
-  if (!admin || admin.role !== 'ADMIN') {
-    return { success: false, messageKey: 'adminOnlyReset' };
+  const session = await auth();
+  if (!session?.user?.id || session.user.role !== "ADMIN") {
+    return { success: false, messageKey: "adminOnlyReset" };
   }
   await prisma.user.update({
     where: { id: targetUserId },
     data: { pinHash: null },
   });
-  return { success: true, messageKey: 'userPinReset' };
+  return { success: true, messageKey: "userPinReset" };
 }

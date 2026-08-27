@@ -4165,6 +4165,7 @@
       "roleRequired": "Peran wajib dipilih",
       "roleNotFound": "Peran tidak ditemukan",
       "userNotFound": "Pengguna tidak ditemukan",
+      "lastAdmin": "Tidak dapat menurunkan akun admin terakhir",
       "nameRequired": "Nama wajib diisi"
     }
   }

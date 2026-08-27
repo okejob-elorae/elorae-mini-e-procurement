@@ -190,12 +190,20 @@ export async function updateAccount(input: {
 
   const user = await prisma.user.findUnique({
     where: { id: input.userId },
-    select: { id: true },
+    select: { id: true, role: true },
   });
   if (!user) return { ok: false, code: "userNotFound" };
 
   const resolved = await resolveRole(input.roleId);
   if (!resolved.ok) return resolved;
+
+  // Refuse demoting the last legacy ADMIN (would lock out Profile Accounts).
+  if (user.role === "ADMIN" && resolved.legacyRole !== "ADMIN") {
+    const adminCount = await prisma.user.count({ where: { role: "ADMIN" } });
+    if (adminCount <= 1) {
+      return { ok: false, code: "lastAdmin" };
+    }
+  }
 
   await prisma.user.update({
     where: { id: input.userId },

@@ -1,9 +1,61 @@
-import NextAuth from 'next-auth';
-import { PrismaAdapter } from '@auth/prisma-adapter';
-import Credentials from 'next-auth/providers/credentials';
-import bcrypt from 'bcryptjs';
-import { prisma } from '@elorae/db';
-import { Role } from '@elorae/db';
+import NextAuth from "next-auth";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import Credentials from "next-auth/providers/credentials";
+import bcrypt from "bcryptjs";
+import { prisma } from "@elorae/db";
+import { Role } from "@elorae/db";
+
+type RolePayload = {
+  role: Role;
+  roleId: string | null;
+  roleName: string;
+  permissions: string[];
+  permissionsVersion: number | undefined;
+  passwordFingerprint: string | null;
+};
+
+async function loadRolePayload(userId: string): Promise<RolePayload | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      roleDefinition: {
+        include: {
+          permissions: {
+            include: {
+              permission: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!user) return null;
+
+  let permissions: string[] = [];
+  let roleId: string | null = null;
+  let roleName: string = user.role;
+  let permissionsVersion: number | undefined;
+
+  if (user.roleDefinition) {
+    roleId = user.roleDefinition.id;
+    roleName = user.roleDefinition.name;
+    permissionsVersion = user.roleDefinition.permissionsVersion;
+    if (user.roleDefinition.isSystem) {
+      permissions = ["*"];
+    } else {
+      permissions = user.roleDefinition.permissions.map((rp) => rp.permission.code);
+    }
+  }
+
+  return {
+    role: user.role,
+    roleId,
+    roleName,
+    permissions,
+    permissionsVersion,
+    passwordFingerprint: user.passwordHash ?? null,
+  };
+}
 
 export const {
   handlers: { GET, POST },
@@ -14,19 +66,19 @@ export const {
   trustHost: true,
   adapter: PrismaAdapter(prisma) as any,
   session: {
-    strategy: 'jwt',
+    strategy: "jwt",
     maxAge: 8 * 60 * 60, // 8 hours
   },
   pages: {
-    signIn: '/login',
-    error: '/login',
+    signIn: "/login",
+    error: "/login",
   },
   providers: [
     Credentials({
-      name: 'credentials',
+      name: "credentials",
       credentials: {
-        email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' },
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -52,81 +104,77 @@ export const {
           return null;
         }
 
-        const isValid = await bcrypt.compare(credentials.password as string, user.passwordHash);
+        const isValid = await bcrypt.compare(
+          credentials.password as string,
+          user.passwordHash,
+        );
 
         if (!isValid) {
           return null;
         }
 
-        // Get permissions from role
-        let permissions: string[] = [];
-        let roleId: string | null = null;
-        let roleName: string = user.role;
-
-        if (user.roleDefinition) {
-          roleId = user.roleDefinition.id;
-          roleName = user.roleDefinition.name;
-          // If system role (ADMIN), grant wildcard
-          if (user.roleDefinition.isSystem) {
-            permissions = ['*'];
-          } else {
-            permissions = user.roleDefinition.permissions.map(rp => rp.permission.code);
-          }
-        }
+        const payload = await loadRolePayload(user.id);
+        if (!payload) return null;
 
         return {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: user.role,
-          roleId,
-          roleName,
-          permissions,
+          role: payload.role,
+          roleId: payload.roleId,
+          roleName: payload.roleName,
+          permissions: payload.permissions,
+          permissionsVersion: payload.permissionsVersion,
+          passwordFingerprint: payload.passwordFingerprint,
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
         token.role = (user as any).role as Role;
         token.roleId = (user as any).roleId as string | null;
         token.roleName = (user as any).roleName as string;
         token.permissions = (user as any).permissions as string[];
-        token.permissionsVersion = (user as any).permissionsVersion as number | undefined;
+        token.permissionsVersion = (user as any).permissionsVersion as
+          | number
+          | undefined;
+        token.passwordFingerprint = (user as any).passwordFingerprint as
+          | string
+          | null;
+        return token;
       }
-      // Refresh permissions if permissionsVersion changed (triggered by session update)
-      if (trigger === 'update' && token.id) {
-        const user = await prisma.user.findUnique({
-          where: { id: token.id as string },
-          include: {
-            roleDefinition: {
-              include: {
-                permissions: {
-                  include: {
-                    permission: true,
-                  },
-                },
-              },
-            },
-          },
-        });
-        if (user?.roleDefinition) {
-          const currentVersion = user.roleDefinition.permissionsVersion;
-          if (token.permissionsVersion !== currentVersion) {
-            if (user.roleDefinition.isSystem) {
-              token.permissions = ['*'];
-            } else {
-              token.permissions = user.roleDefinition.permissions.map(rp => rp.permission.code);
-            }
-            token.permissionsVersion = currentVersion;
-          }
+
+      // Reload role + permissions every request so demotions / permission
+      // edits and password resets take effect without waiting for re-login.
+      if (token.id) {
+        const payload = await loadRolePayload(token.id as string);
+        if (!payload) {
+          return {};
         }
+        if (
+          payload.passwordFingerprint !==
+          (token.passwordFingerprint as string | null | undefined)
+        ) {
+          // Password changed (e.g. admin reset) — drop the session.
+          return {};
+        }
+        token.role = payload.role;
+        token.roleId = payload.roleId;
+        token.roleName = payload.roleName;
+        token.permissions = payload.permissions;
+        token.permissionsVersion = payload.permissionsVersion;
+        token.passwordFingerprint = payload.passwordFingerprint;
       }
       return token;
     },
     async session({ session, token }) {
+      if (!token?.id) {
+        // Empty token after invalidation — surface as unauthenticated.
+        return session;
+      }
       if (token) {
         session.user.id = token.id as string;
         session.user.role = token.role as Role;

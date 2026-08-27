@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
@@ -101,7 +100,6 @@ export function ProfileAccountsPageClient({
 }: Props) {
   const t = useTranslations("profileAccounts");
   const router = useRouter();
-  const { data: session } = useSession();
   const [pending, startTransition] = useTransition();
 
   const [tab, setTab] = useState(initialTab);
@@ -210,9 +208,9 @@ export function ProfileAccountsPageClient({
   }
 
   function handleResetPin() {
-    if (!pinTarget || !session?.user?.id) return;
+    if (!pinTarget) return;
     startTransition(async () => {
-      const result = await adminForcePinReset(session.user.id, pinTarget.id);
+      const result = await adminForcePinReset(pinTarget.id);
       if (!result.success) {
         toast.error(t("pinResetFailed"));
         return;

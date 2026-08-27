@@ -5,6 +5,7 @@ const {
   mockUserFindUnique,
   mockUserCreate,
   mockUserUpdate,
+  mockUserCount,
   mockRoleFindUnique,
   mockRevalidatePath,
   mockBcryptHash,
@@ -13,6 +14,7 @@ const {
   mockUserFindUnique: vi.fn(),
   mockUserCreate: vi.fn(),
   mockUserUpdate: vi.fn(),
+  mockUserCount: vi.fn(),
   mockRoleFindUnique: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockBcryptHash: vi.fn(),
@@ -33,6 +35,7 @@ vi.mock("@elorae/db", () => ({
       findMany: vi.fn(),
       create: mockUserCreate,
       update: mockUserUpdate,
+      count: mockUserCount,
     },
     roleDefinition: {
       findUnique: mockRoleFindUnique,
@@ -132,8 +135,8 @@ describe("updateAccount", () => {
     expect(r).toEqual({ ok: false, code: "forbidden" });
   });
 
-  it("updates name and role without touching assignedStoreId", async () => {
-    mockUserFindUnique.mockResolvedValue({ id: "u-1" });
+  it("updates name and role for a non-admin user", async () => {
+    mockUserFindUnique.mockResolvedValue({ id: "u-1", role: "USER" });
     mockRoleFindUnique.mockResolvedValue({
       id: "role-sales",
       name: "SALESMAN",
@@ -155,6 +158,23 @@ describe("updateAccount", () => {
         roleId: "role-sales",
       },
     });
+  });
+
+  it("refuses demoting the last ADMIN", async () => {
+    mockUserFindUnique.mockResolvedValue({ id: "u-1", role: "ADMIN" });
+    mockRoleFindUnique.mockResolvedValue({
+      id: "role-sales",
+      name: "SALESMAN",
+    });
+    mockUserCount.mockResolvedValue(1);
+
+    const r = await updateAccount({
+      userId: "u-1",
+      name: "Only Admin",
+      roleId: "role-sales",
+    });
+    expect(r).toEqual({ ok: false, code: "lastAdmin" });
+    expect(mockUserUpdate).not.toHaveBeenCalled();
   });
 });
 
