@@ -100,6 +100,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
   '/backoffice/finance/piutang': 'receivables:view',
   '/backoffice/finance/payments': 'payments:manage',
+  '/backoffice/finance/collections': 'collections:manage',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
@@ -304,4 +305,7 @@ export const PERMISSIONS = {
   // Finance — AR (Piutang) + Payments
   RECEIVABLES_VIEW: "receivables:view",
   PAYMENTS_MANAGE: "payments:manage",
+  // Finance — Collections
+  COLLECTIONS_COLLECT: "collections:collect",
+  COLLECTIONS_MANAGE: "collections:manage",
 } as const;
