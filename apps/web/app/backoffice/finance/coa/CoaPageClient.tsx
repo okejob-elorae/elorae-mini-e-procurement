@@ -68,6 +68,7 @@ type Props = {
   includeInactive: boolean;
   canManage: boolean;
   canViewLedger: boolean;
+  showBalances: boolean;
 };
 
 type CreateDialogState = {
