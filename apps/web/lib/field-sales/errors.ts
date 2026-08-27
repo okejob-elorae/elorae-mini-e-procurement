@@ -83,3 +83,14 @@ export class KonsiTransferReservationMismatchError extends Error {
     this.name = "KonsiTransferReservationMismatchError";
   }
 }
+
+export class CreditLimitExceededError extends Error {
+  constructor(
+    public exposure: { receivableOutstanding: number; undeliveredOrderResidual: number; total: number },
+    public creditLimit: number,
+    public orderTotal: number,
+  ) {
+    super("CREDIT_LIMIT_EXCEEDED");
+    this.name = "CreditLimitExceededError";
+  }
+}

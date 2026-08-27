@@ -7,7 +7,8 @@ import { fetchActivePromosForStore } from "@/lib/promos/queries";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
-import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError } from "./errors";
+import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
+import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError, CreditLimitExceededError } from "./errors";
 import { sentItemIds } from "./queries";
 
 type CreateLine = {
@@ -28,15 +29,20 @@ export async function createFieldSalesOrder(input: {
   note?: string;
   idempotencyKey?: string;
   skipMinQty?: boolean;
-}): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[] }> {
+}): Promise<{ orderId: string; orderNo: string; oversell: OversellAlert[]; creditHold: boolean }> {
   if (input.lines.length === 0) throw new MinQtyViolationError([]);
   let notification: AdminNotification | undefined;
+  let creditHold = false;
   const result = await runSerializable(async (tx) => {
     /* Retry re-runs this whole callback; reset so a rolled-back attempt's row never survives into the next one. */
     notification = undefined;
+    creditHold = false;
     if (input.idempotencyKey) {
-      const existing = await tx.fieldSalesOrder.findUnique({ where: { idempotencyKey: input.idempotencyKey }, select: { id: true, orderNo: true } });
-      if (existing) return { orderId: existing.id, orderNo: existing.orderNo, oversell: [] as OversellAlert[] };
+      const existing = await tx.fieldSalesOrder.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        select: { id: true, orderNo: true, creditHoldAtCreate: true },
+      });
+      if (existing) return { orderId: existing.id, orderNo: existing.orderNo, oversell: [] as OversellAlert[], creditHold: existing.creditHoldAtCreate };
     }
 
     let visitId: string;
@@ -58,7 +64,7 @@ export async function createFieldSalesOrder(input: {
 
     const store = await tx.store.findUniqueOrThrow({
       where: { id: input.storeId },
-      select: { termsType: true, marginPercent: true, priceDiscountPercent: true },
+      select: { termsType: true, marginPercent: true, priceDiscountPercent: true, creditLimit: true },
     });
     const isKonsi = store.termsType === "KONSI";
     const margin = store.marginPercent === null ? null : Number(store.marginPercent);
@@ -156,9 +162,28 @@ export async function createFieldSalesOrder(input: {
         await tx.fieldSalesOrderLine.update({ where: { id: l.id }, data: { discountAmount: applied.lineDiscounts[i], appliedPromoId: applied.lineAppliedPromoId[i] } });
       }
       netTotal -= applied.orderDiscountAmount;
+
+      creditHold = false;
+      let creditExposureAtCreate: number | null = null;
+      let creditLimitAtCreate: number | null = null;
+      const creditLimit = store.creditLimit === null ? null : Number(store.creditLimit);
+      if (creditLimit !== null) {
+        const exposure = await computeStoreCreditExposure(tx, input.storeId);
+        creditHold = exposure.total + netTotal > creditLimit;
+        creditExposureAtCreate = exposure.total;
+        creditLimitAtCreate = creditLimit;
+      }
+
       await tx.fieldSalesOrder.update({
         where: { id: order.id },
-        data: { total: netTotal, orderDiscountAmount: applied.orderDiscountAmount, appliedOrderPromoId: applied.appliedOrderPromoId },
+        data: {
+          total: netTotal,
+          orderDiscountAmount: applied.orderDiscountAmount,
+          appliedOrderPromoId: applied.appliedOrderPromoId,
+          creditHoldAtCreate: creditHold,
+          creditExposureAtCreate,
+          creditLimitAtCreate,
+        },
       });
       finalTotal = netTotal;
     }
@@ -175,7 +200,7 @@ export async function createFieldSalesOrder(input: {
       },
     });
 
-    return { orderId: order.id, orderNo, oversell };
+    return { orderId: order.id, orderNo, oversell, creditHold };
   });
 
   /**

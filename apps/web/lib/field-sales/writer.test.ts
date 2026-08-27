@@ -155,6 +155,53 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.total)).toBe(180);
   });
 
+  it("create stamps creditHoldAtCreate and snapshots when the order pushes the store over its limit", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 35000 }] });
+    // 6 * 35000 = 210000, over the 100000 limit, no prior exposure.
+    expect(res.creditHold).toBe(true);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    expect(order!.creditHoldAtCreate).toBe(true);
+    expect(Number(order!.creditExposureAtCreate)).toBe(0);
+    expect(Number(order!.creditLimitAtCreate)).toBe(100_000);
+  });
+
+  it("create with a null creditLimit skips the check entirely", async () => {
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    expect(res.creditHold).toBe(false);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    expect(order!.creditHoldAtCreate).toBe(false);
+    expect(order!.creditExposureAtCreate).toBeNull();
+    expect(order!.creditLimitAtCreate).toBeNull();
+  });
+
+  it("create still writes the order and reserves stock even when over limit — no over-limit branch", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 1 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    expect(order!.status).toBe("PENDING_APPROVAL");
+    const inv = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku: "" } } });
+    expect(Number(inv!.reservedQty)).toBe(6);
+  });
+
+  it("a konsi order is never flagged even when the store is over its limit", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI", creditLimit: 1 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    expect(res.creditHold).toBe(false);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    expect(order!.creditHoldAtCreate).toBe(false);
+  });
+
+  it("the flag is computed on the post-promo total, not the pre-discount subtotal", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100_000 } });
+    // Store price discount brings the true total under the limit even though qty*price alone would exceed it.
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 50_000, priceDiscountPercent: 50 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 1, unitPrice: 100_000 }] });
+    // Server-priced at create: unitPrice is server-computed from sellingPrice + discount, so the
+    // salesman-supplied unitPrice above is ignored — net total should land at 50000, not over the limit.
+    expect(res.creditHold).toBe(false);
+  });
+
   it("putus approve carries the create-time line discount through to APPROVED without writing SalesHistory", async () => {
     await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100 } });
     const promo = await prisma.promo.create({
