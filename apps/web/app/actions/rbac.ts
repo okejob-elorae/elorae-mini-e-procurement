@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import type { Session } from 'next-auth';
 import { prisma } from '@elorae/db';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
@@ -16,7 +17,7 @@ const _updateRolePermissionsSchema = z.object({
 });
 void _updateRolePermissionsSchema;
 
-function requireAdminSession(session: Awaited<ReturnType<typeof auth>>) {
+function requireAdminSession(session: Session | null) {
   if (!session) throw new Error("Unauthorized");
   if (session.user.role !== "ADMIN") throw new Error("Forbidden");
 }
