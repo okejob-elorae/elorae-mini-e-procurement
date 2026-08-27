@@ -12,7 +12,13 @@ const SESSION_COOKIE_NAMES = [
 
 function clearSessionCookies(response: NextResponse) {
   for (const name of SESSION_COOKIE_NAMES) {
-    response.cookies.set(name, "", { httpOnly: true, path: "/", maxAge: 0 });
+    const secure = name.startsWith("__Secure-");
+    response.cookies.set(name, "", {
+      httpOnly: true,
+      path: "/",
+      maxAge: 0,
+      ...(secure ? { secure: true } : {}),
+    });
   }
   return response;
 }

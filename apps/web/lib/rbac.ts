@@ -141,8 +141,9 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/settings/tax',
   '/backoffice/settings/uom',
   '/backoffice/settings/security',
-  '/backoffice/settings/rbac',
-  '/backoffice/profile-accounts',
+  // Profile Accounts / legacy RBAC are ADMIN-gated in the page — omit from
+  // first-allowed so a non-ADMIN with settings_rbac:view cannot loop
+  // /backoffice → settings/rbac → profile-accounts → /backoffice.
 ];
 
 /**
