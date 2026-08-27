@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { endOfTodayJakarta } from "@/lib/date-only";
 import { getCoaTree } from "@/lib/finance/coa/queries";
 import {
   attachRolledUpBalances,
@@ -25,15 +26,17 @@ export default async function CoaPage({
 
   const params = await searchParams;
   const includeInactive = params.inactive === "1";
+  const canViewBalances = hasPermission(perms, PERMISSIONS.FINANCE_REPORTS_VIEW);
+
   // Always roll up on the full tree so hidden inactive leaves still contribute
   // to parent balances; prune only for display when inactive are hidden.
-  const [fullTree, balanceRows] = await Promise.all([
-    getCoaTree({ includeInactive: true }),
-    getAccountBalances({ to: new Date() }),
-  ]);
+  const fullTree = await getCoaTree({ includeInactive: true });
   const balanceById: Record<string, number> = {};
-  for (const row of balanceRows) {
-    balanceById[row.accountId] = row.signed;
+  if (canViewBalances) {
+    const balanceRows = await getAccountBalances({ to: endOfTodayJakarta() });
+    for (const row of balanceRows) {
+      balanceById[row.accountId] = row.signed;
+    }
   }
   const rolled = attachRolledUpBalances(fullTree, balanceById);
   const treeWithBalances = includeInactive
@@ -48,6 +51,7 @@ export default async function CoaPage({
       includeInactive={includeInactive}
       canManage={canManage}
       canViewLedger={canViewLedger}
+      showBalances={canViewBalances}
     />
   );
 }
