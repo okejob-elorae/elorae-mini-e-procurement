@@ -95,7 +95,9 @@
     "navJubelioMigration": "Migrasi",
     "navJubelioCouriers": "Kurir",
     "settings": "Pengaturan",
-    "masterData": "Data Master"
+    "masterData": "Data Master",
+    "collapseSidebar": "Ciutkan sidebar",
+    "expandSidebar": "Perluas sidebar"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -296,13 +298,20 @@
     "coa": {
       "title": "Bagan Akun",
       "newAccount": "Akun Baru",
+      "addChild": "Tambah Anak",
       "viewLedger": "Lihat Buku Besar",
       "expand": "Perluas",
       "collapse": "Ciutkan",
+      "expandAll": "Perluas Semua",
+      "collapseAll": "Ciutkan Semua",
       "searchPlaceholder": "Cari berdasarkan kode atau nama…",
       "showInactive": "Tampilkan tidak aktif",
       "hideInactive": "Sembunyikan tidak aktif",
       "empty": "Belum ada akun. Klik \"Akun Baru\" untuk menambahkan.",
+      "balance": {
+        "dr": "Dr",
+        "cr": "Cr"
+      },
       "col": {
         "code": "Kode",
         "name": "Nama",

@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getCoaTree } from "@/lib/finance/coa/queries";
+import { attachRolledUpBalances } from "@/lib/finance/coa/roll-up-balances";
+import { getAccountBalances } from "@/lib/finance/reports/balances";
 import { CoaPageClient } from "./CoaPageClient";
 
 export const dynamic = "force-dynamic";
@@ -20,13 +22,21 @@ export default async function CoaPage({
 
   const params = await searchParams;
   const includeInactive = params.inactive === "1";
-  const tree = await getCoaTree({ includeInactive });
+  const [tree, balanceRows] = await Promise.all([
+    getCoaTree({ includeInactive }),
+    getAccountBalances({ to: new Date() }),
+  ]);
+  const balanceById: Record<string, number> = {};
+  for (const row of balanceRows) {
+    balanceById[row.accountId] = row.signed;
+  }
+  const treeWithBalances = attachRolledUpBalances(tree, balanceById);
   const canManage = hasPermission(perms, PERMISSIONS.COA_MANAGE);
   const canViewLedger = hasPermission(perms, PERMISSIONS.JOURNALS_VIEW);
 
   return (
     <CoaPageClient
-      tree={tree}
+      tree={treeWithBalances}
       includeInactive={includeInactive}
       canManage={canManage}
       canViewLedger={canViewLedger}
