@@ -25,6 +25,7 @@ import {
   BarChart2,
   PanelLeftClose,
   PanelLeft,
+  Users,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -74,6 +75,8 @@ interface NavItem {
   icon: React.ElementType;
   permission: string; // Permission code required to view this nav item
   children?: NavChild[];
+  /** When true, only users with legacy User.role ADMIN see this item */
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -327,6 +330,13 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    labelKey: 'profileAccounts',
+    href: '/backoffice/profile-accounts',
+    icon: Users,
+    permission: PERMISSIONS.SETTINGS_RBAC_VIEW,
+    adminOnly: true,
+  },
+  {
     labelKey: 'settings',
     href: '/backoffice/settings',
     icon: Settings,
@@ -364,12 +374,14 @@ function ThemeDropdownItems() {
 function Sidebar({
   className,
   permissions,
+  userRole,
   onClose,
   collapsed = false,
   onToggleCollapse,
 }: {
   className?: string;
   permissions: string[];
+  userRole: Role;
   onClose?: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -424,6 +436,7 @@ function Sidebar({
   }, [pathname]);
 
   const filteredItems = navItems.filter((item) => {
+    if (item.adminOnly && userRole !== Role.ADMIN) return false;
     if (item.children?.length) {
       const visibleChildren = item.children.filter(
         (child) => !child.permission || hasPermission(permissions, child.permission)
@@ -731,6 +744,7 @@ export function BackofficeShell({
       >
         <Sidebar
           permissions={session.user.permissions}
+          userRole={userRole}
           collapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapsed}
         />
@@ -741,6 +755,7 @@ export function BackofficeShell({
         <SheetContent side="left" className="p-0 w-64 bg-sidebar border-sidebar-border">
           <Sidebar
             permissions={session.user.permissions}
+            userRole={userRole}
             onClose={() => setMobileMenuOpen(false)}
           />
         </SheetContent>
@@ -760,6 +775,7 @@ export function BackofficeShell({
               <SheetContent side="left" className="p-0 w-64 bg-sidebar border-sidebar-border">
                 <Sidebar
                   permissions={session.user.permissions}
+                  userRole={userRole}
                   onClose={() => setMobileMenuOpen(false)}
                 />
               </SheetContent>
