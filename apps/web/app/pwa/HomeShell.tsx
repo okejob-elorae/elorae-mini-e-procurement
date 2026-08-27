@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck } from "lucide-react";
+import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck, Wallet } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { listPendingOrders } from "@/lib/pwa/offline/queue";
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
@@ -25,15 +25,17 @@ type Props = {
   } | null;
   stores: StoreWithCoords[];
   recentStores: Array<{ storeId: string; storeName: string }>;
+  canCollect: boolean;
   onLogout: () => Promise<void>;
 };
 
-export function HomeShell({ userName, activeVisit, stores, recentStores, onLogout }: Props) {
+export function HomeShell({ userName, activeVisit, stores, recentStores, canCollect, onLogout }: Props) {
   const t = useTranslations("pwa.nearest");
   const tAuth = useTranslations("auth");
   const tOffline = useTranslations("pwa.offline");
   const tVanSale = useTranslations("vanSale");
   const tSmartRequest = useTranslations("pwa.smartRequest");
+  const tCollections = useTranslations("pwa.collections");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [fetchingOrigin, setFetchingOrigin] = useState(false);
@@ -109,6 +111,15 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
     </Button>
   );
 
+  const collectionsCta = canCollect ? (
+    <Button asChild variant="outline" className="w-full">
+      <Link href="/pwa/collections">
+        <Wallet className="h-4 w-4" />
+        {tCollections("homeCta")}
+      </Link>
+    </Button>
+  ) : null;
+
   const pendingChip = pendingCount > 0 ? (
     <Link
       href="/pwa/orders/pending"
@@ -162,6 +173,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
           )}
         </div>
         {vanSaleCta}
+        {collectionsCta}
         <CheckOutButton visitId={activeVisit.id} />
       </div>
     );
@@ -174,6 +186,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
       {header}
       {pendingChip}
       {vanSaleCta}
+      {collectionsCta}
 
       <Card>
         <CardContent className="p-4 flex items-start gap-3">
