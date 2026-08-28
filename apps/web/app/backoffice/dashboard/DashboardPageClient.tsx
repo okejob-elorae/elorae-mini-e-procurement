@@ -75,7 +75,7 @@ import {
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { PeringkatBar, PipelineBar } from '@/components/dashboard/PipelineBar';
+import { PipelineBar } from '@/components/dashboard/PipelineBar';
 import { KpiRow } from '@/components/dashboard/KpiRow';
 import type { RingkasPiutangBeranda } from '@/lib/dashboard/piutang-ringkas';
 import '@/components/dashboard/viz-tokens.css';
@@ -842,28 +842,7 @@ export function DashboardPageClient({
               tidak dihitung.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {/*
-              Peringkat lebih dulu, tabel di bawahnya. Tabel menjawab "berapa
-              persisnya"; ia tidak menjawab "siapa yang paling jauh di depan"
-              tanpa mata membandingkan angka baris demi baris. Keduanya
-              dipertahankan — bukan tabelnya diganti — karena tabel juga yang
-              memenuhi syarat kontras palet: angkanya selalu terbaca sebagai
-              teks, bukan hanya sebagai panjang batang.
-            */}
-            {salesmenSales.rows.length > 0 && (
-              <PeringkatBar
-                baris={[...salesmenSales.rows]
-                  .sort((a, b) => b.realised.amount - a.realised.amount)
-                  .slice(0, 8)
-                  .map((r) => ({
-                    id: r.salesmanId,
-                    nama: r.salesmanName,
-                    nilai: r.realised.amount,
-                  }))}
-                format={formatIdr}
-              />
-            )}
+          <CardContent>
             {salesmenSales.rows.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">Belum ada data penjualan salesman.</p>
             ) : (
@@ -871,14 +850,46 @@ export function DashboardPageClient({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Salesman</TableHead>
+                    {/* Kolom batang, tanpa judul: yang diukurnya sudah disebut
+                        kolom Realised di sebelahnya, dan judul kedua untuk
+                        ukuran yang sama justru membingungkan. */}
+                    <TableHead className="w-[38%]" aria-hidden />
                     <TableHead className="text-right">Realised</TableHead>
                     <TableHead className="text-right">Outstanding</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {salesmenSales.rows.map((row) => (
+                  {(() => {
+                    /*
+                     * Batangnya SEKARANG DI DALAM tabel, bukan blok terpisah di
+                     * atasnya. Sebelumnya dua kisi bertumpuk dengan kolom yang
+                     * tidak sejajar sama sekali — dan dua kisi yang berselisih
+                     * terbaca sebagai berantakan sebelum sempat terbaca sebagai
+                     * data. Satu tabel, satu kisi.
+                     *
+                     * Diurutkan dari yang terbesar: tabel yang mau menjawab
+                     * "siapa paling depan" harus sudah terurut, kalau tidak
+                     * batangnya cuma hiasan.
+                     */
+                    const urut = [...salesmenSales.rows].sort(
+                      (a, b) => b.realised.amount - a.realised.amount,
+                    );
+                    const puncak = Math.max(1, ...urut.map((r) => r.realised.amount));
+                    return urut.map((row) => (
                     <TableRow key={row.salesmanId}>
                       <TableCell className="font-medium">{row.salesmanName}</TableCell>
+                      <TableCell>
+                        {/* `block`, bukan span polos — span inline mengabaikan
+                            tinggi dan lebarnya, dan batangnya hilang. */}
+                        <span className="block h-2 overflow-hidden rounded-full bg-muted">
+                          <span
+                            className="block h-full rounded-full bg-primary"
+                            style={{
+                              width: `${Math.max(2, (row.realised.amount / puncak) * 100)}%`,
+                            }}
+                          />
+                        </span>
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">
                         <div className="font-medium text-emerald-600 dark:text-emerald-400">
                           {formatIdr(row.realised.amount)}
@@ -896,7 +907,8 @@ export function DashboardPageClient({
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    ));
+                  })()}
                 </TableBody>
               </Table>
             )}

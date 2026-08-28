@@ -1,7 +1,6 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { cn } from '@/lib/utils';
 
 /**
  * Komposisi perintah kerja sebagai SATU batang.
@@ -71,56 +70,6 @@ export function PipelineBar({ baris }: { baris: BarisPipeline[] }) {
           </span>
         ))}
       </div>
-    </div>
-  );
-}
-
-/**
- * Peringkat sederhana: satu ukuran, banyak nama.
- *
- * SATU rona, bukan pelangi. Warna di sini tidak membawa identitas — namanya
- * sudah tertulis di sebelah batangnya — jadi memberi tiap batang rona berbeda
- * menyiratkan pengelompokan yang tidak ada.
- *
- * Batang mendatar karena namanya panjang; batang tegak memaksa namanya dimiringkan
- * atau dipotong, dan nama yang dipotong tidak bisa dibaca siapa pun.
- */
-export function PeringkatBar({
-  baris,
-  format,
-}: {
-  baris: { id: string; nama: string; nilai: number }[];
-  format: (n: number) => string;
-}) {
-  const t = useTranslations('dashboard');
-  const puncak = Math.max(1, ...baris.map((b) => b.nilai));
-
-  if (baris.length === 0) {
-    return <p className="py-6 text-center text-sm text-muted-foreground">{t('vizEmpty')}</p>;
-  }
-
-  return (
-    <div className="space-y-2.5">
-      {baris.map((b) => (
-        <div key={b.id} className="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-3">
-          <span className="truncate text-sm" title={b.nama}>
-            {b.nama}
-          </span>
-          {/*
-            `block`, BUKAN span polos. Span bawaannya inline, jadi tinggi dan
-            lebarnya diabaikan sama sekali dan batangnya tidak muncul — itu
-            benar-benar terjadi di versi pertama, lolos type-check dan lolos
-            lint, dan hanya ketahuan karena grafiknya dilihat.
-          */}
-          <span className="block h-2.5 overflow-hidden rounded-full bg-muted">
-            <span
-              className={cn('block h-full rounded-full bg-primary')}
-              style={{ width: `${Math.max(2, (b.nilai / puncak) * 100)}%` }}
-            />
-          </span>
-          <span className="text-sm font-medium tabular-nums">{format(b.nilai)}</span>
-        </div>
-      ))}
     </div>
   );
 }
