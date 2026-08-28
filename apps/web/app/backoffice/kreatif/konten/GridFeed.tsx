@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { useFlip } from '@/lib/ui/use-flip';
 import Image from 'next/image';
 import { useLocale, useTranslations } from 'next-intl';
-import { ImagePlus, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Check, ImagePlus, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { KOLOM_FEED, labelTanggal, susunFeed } from '@/lib/creative/feed';
 import type { BarisKonten } from '@/lib/creative/queries';
@@ -39,6 +39,8 @@ export function GridFeed({
   onSunting,
   onHapus,
   onTukar,
+  terpilih,
+  onPilih,
 }: {
   konten: BarisKonten[];
   bolehMengelola: boolean;
@@ -48,6 +50,9 @@ export function GridFeed({
   onHapus: (konten: BarisKonten) => void;
   /** Menukar posisi dua ubin — yang berarti menukar jadwalnya. */
   onTukar: (idSeret: string, idTujuan: string) => Promise<void>;
+  /** Non-null berarti mode pilih menyala. */
+  terpilih: Set<string> | null;
+  onPilih: (id: string) => void;
 }) {
   const t = useTranslations('creative');
   const locale = useLocale();
@@ -131,6 +136,8 @@ export function GridFeed({
                 onTukar={onTukar}
                 sedangSeret={sedangSeret}
                 setSedangSeret={setSedangSeret}
+                terpilih={terpilih}
+                onPilih={onPilih}
               />
             ),
           ),
@@ -156,6 +163,8 @@ function Ubin({
   onTukar,
   sedangSeret,
   setSedangSeret,
+  terpilih,
+  onPilih,
 }: {
   konten: BarisKonten;
   tanggal: string | null;
@@ -167,6 +176,8 @@ function Ubin({
   onTukar: (idSeret: string, idTujuan: string) => Promise<void>;
   sedangSeret: string | null;
   setSedangSeret: (id: string | null) => void;
+  terpilih: Set<string> | null;
+  onPilih: (id: string) => void;
 }) {
   const t = useTranslations('creative');
   const adaGambar = Boolean(konten.imageUrl);
@@ -181,7 +192,11 @@ function Ubin({
    */
   const seretUbin = (e: React.DragEvent) => e.dataTransfer.types.includes(SERET_UBIN);
 
-  const dnd = bolehMengelola
+  const modePilih = terpilih !== null;
+  const dipilih = terpilih?.has(konten.id) ?? false;
+
+  /* Seret dimatikan saat memilih: satu gerakan tidak boleh berarti dua hal. */
+  const dnd = bolehMengelola && !modePilih
     ? {
         draggable: true,
         onDragStart: (e: React.DragEvent) => {
@@ -219,6 +234,7 @@ function Ubin({
         // Yang sedang diangkat mengecil dan memudar: tangan Anda memegangnya,
         // jadi ia harus terlihat lepas dari kisi.
         sedangSeret === konten.id && 'scale-[0.94] opacity-40',
+        dipilih && 'ring-2 ring-primary ring-offset-2',
         // Yang akan ditukari sedikit membesar — memberi tahu ke mana ubinnya
         // akan mendarat SEBELUM dilepas, bukan sesudahnya.
         tujuanSeret && 'z-10 scale-[1.04] shadow-lg ring-2 ring-primary ring-offset-2',
@@ -237,6 +253,29 @@ function Ubin({
 
       {adaGambar ? (
         <div className="group relative aspect-square w-full overflow-hidden bg-muted">
+          {modePilih && (
+            <button
+              type="button"
+              onClick={() => onPilih(konten.id)}
+              aria-pressed={dipilih}
+              aria-label={konten.title}
+              className={cn(
+                'absolute inset-0 z-20 flex items-start justify-end p-1.5 transition-colors',
+                dipilih ? 'bg-primary/25' : 'hover:bg-foreground/10',
+              )}
+            >
+              <span
+                className={cn(
+                  'flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors',
+                  dipilih
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-white/90 bg-black/25',
+                )}
+              >
+                {dipilih && <Check className="h-3 w-3" />}
+              </span>
+            </button>
+          )}
           <Image
             src={konten.imageUrl!}
             alt={konten.title}
@@ -254,7 +293,7 @@ function Ubin({
           <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <p className="line-clamp-1 text-[11px] text-white">{konten.title}</p>
           </div>
-          {bolehMengelola && (
+          {bolehMengelola && !modePilih && (
             <div className="absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
               <SlotUnggah kecil label={t('replaceImage')} sibuk={sibuk} onFile={onFile} ikon={ImagePlus} />
               <button
@@ -284,9 +323,9 @@ function Ubin({
           sibuk={sibuk}
           onFile={onFile}
           ikon={ImagePlus}
-          onSunting={bolehMengelola ? onSunting : undefined}
-          onHapus={bolehMengelola ? onHapus : undefined}
-          mati={!bolehMengelola}
+          onSunting={bolehMengelola && !modePilih ? onSunting : undefined}
+          onHapus={bolehMengelola && !modePilih ? onHapus : undefined}
+          mati={!bolehMengelola || modePilih}
         />
       )}
     </div>

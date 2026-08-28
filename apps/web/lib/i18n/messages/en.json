@@ -4737,6 +4737,14 @@
     "deleteBody": "“{judul}” will be deleted. Its image is swept a few hours later unless another post uses it.",
     "okDeleted": "Content deleted.",
     "okSwapped": "Swapped the schedules of “{a}” and “{b}”.",
-    "errTIDAK_VALID": "Nothing changed."
+    "errTIDAK_VALID": "Nothing changed.",
+    "select": "Select",
+    "selectDone": "Done",
+    "selectAll": "Select all",
+    "selectNone": "Clear",
+    "selected": "{count} selected",
+    "deleteManyTitle": "Delete {count} posts?",
+    "deleteManyBody": "All of them go at once. Their images are swept a few hours later unless another post uses them.",
+    "okDeletedMany": "{count} posts deleted."
   }
 }

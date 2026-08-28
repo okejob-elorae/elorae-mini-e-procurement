@@ -6,6 +6,7 @@ import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import {
   buatBrief,
   gantiGambarKonten,
+  hapusBanyakKonten,
   hapusKonten,
   tukarJadwalKonten,
   pindahStatusBrief,
@@ -212,6 +213,23 @@ export async function tukarJadwalKontenAction(
     return { ok: true, id: r.id };
   } catch (err) {
     console.error('tukarJadwalKonten gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/** Hapus beberapa konten sekaligus. */
+export async function hapusBanyakKontenAction(
+  ids: string[],
+): Promise<HasilAksiKreatif & { dihapus?: number }> {
+  const oleh = await penulis();
+  if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
+  try {
+    const r = await hapusBanyakKonten({ ids, olehUserId: oleh });
+    if (!r.ok) return { ok: false, kode: r.alasan, detail: r.detail };
+    segarkan();
+    return { ok: true, id: r.id, dihapus: r.dihapus };
+  } catch (err) {
+    console.error('hapusBanyakKonten gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

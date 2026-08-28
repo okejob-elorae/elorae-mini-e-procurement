@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { CalendarRange, LayoutGrid, List, Plus } from 'lucide-react';
+import { CalendarRange, CheckSquare, LayoutGrid, List, Plus, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +40,7 @@ import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { unggahFoto } from '@/lib/foto/unggah';
 import {
   gantiGambarKontenAction,
+  hapusBanyakKontenAction,
   hapusKontenAction,
   simpanKontenAction,
   tukarJadwalKontenAction,
@@ -131,6 +132,21 @@ export function KontenClient({
   const [tampilan, setTampilan] = useState<'grid' | 'daftar'>('grid');
   const [foto, setFoto] = useState<NilaiFoto>(null);
   const [hapus, setHapus] = useState<BarisKonten | null>(null);
+  /** Non-null berarti mode pilih menyala. Kosong berarti menyala tanpa pilihan. */
+  const [terpilih, setTerpilih] = useState<Set<string> | null>(null);
+  const [hapusBanyak, setHapusBanyak] = useState(false);
+
+  const pilihUbin = (id: string) => {
+    setTerpilih((lama) => {
+      if (!lama) return new Set([id]);
+      const baru = new Set(lama);
+      // Set diubah di tempat akan melewati perbandingan state React dan
+      // ubinnya tidak digambar ulang.
+      if (baru.has(id)) baru.delete(id);
+      else baru.add(id);
+      return baru;
+    });
+  };
   /**
    * Penukaran yang sudah terlihat di layar tapi belum tentu tersimpan.
    *
@@ -336,6 +352,17 @@ export function KontenClient({
             </Button>
           ))}
         </div>
+        {bolehMengelola && tampilan === 'grid' && (
+          <Button
+            size="sm"
+            variant={terpilih ? 'secondary' : 'ghost'}
+            className="h-7 gap-1.5 px-2.5"
+            onClick={() => setTerpilih(terpilih ? null : new Set())}
+          >
+            <CheckSquare className="h-3.5 w-3.5" />
+            {terpilih ? t('selectDone') : t('select')}
+          </Button>
+        )}
         <Select value={saring} onValueChange={setSaring}>
           <SelectTrigger className="w-48">
             <SelectValue />
@@ -350,6 +377,29 @@ export function KontenClient({
           </SelectContent>
         </Select>
       </div>
+
+      {terpilih && terpilih.size > 0 && (
+        /* Bilah aksi menempel di atas kisi, bukan melayang di sudut layar:
+           yang dipilih ada di sini, dan tombol hapusnya harus ada di dekatnya. */
+        <div className="sticky top-2 z-30 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2 shadow-sm">
+          <span className="text-sm font-medium">{t('selected', { count: terpilih.size })}</span>
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setTerpilih(new Set(terlihat.map((k) => k.id)))}
+          >
+            {t('selectAll')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setTerpilih(new Set())}>
+            {t('selectNone')}
+          </Button>
+          <Button size="sm" variant="destructive" onClick={() => setHapusBanyak(true)}>
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            {t('delete')}
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardContent
@@ -371,6 +421,8 @@ export function KontenClient({
               onSunting={sunting}
               onHapus={(k) => setHapus(k)}
               onTukar={tukar}
+              terpilih={terpilih}
+              onPilih={pilihUbin}
             />
           ) : (
             <div className="overflow-x-auto">
@@ -428,6 +480,40 @@ export function KontenClient({
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={hapusBanyak} onOpenChange={(o) => !o && setHapusBanyak(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('deleteManyTitle', { count: terpilih?.size ?? 0 })}</AlertDialogTitle>
+            <AlertDialogDescription>{t('deleteManyBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={() => {
+                const ids = [...(terpilih ?? [])];
+                if (ids.length === 0) return;
+                startTransition(async () => {
+                  const h = await hapusBanyakKontenAction(ids);
+                  if (h.ok) {
+                    toast.success(t('okDeletedMany', { count: h.dihapus ?? ids.length }));
+                    setHapusBanyak(false);
+                    // Mode pilih ikut dimatikan: yang dipilih sudah tidak ada,
+                    // dan membiarkannya menyala menyisakan bilah aksi kosong.
+                    setTerpilih(null);
+                    router.refresh();
+                  } else {
+                    toast.error(t(`err${h.kode}` as never));
+                  }
+                });
+              }}
+            >
+              {t('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={hapus !== null} onOpenChange={(o) => !o && setHapus(null)}>
         <AlertDialogContent>

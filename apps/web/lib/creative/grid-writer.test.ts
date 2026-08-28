@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma, seededIds } from '@elorae/db';
-import { hapusKonten, simpanKonten, tukarJadwalKonten } from './writer';
+import { hapusBanyakKonten, hapusKonten, simpanKonten, tukarJadwalKonten } from './writer';
 import { daftarKonten } from './queries';
 import { susunFeed } from './feed';
 
@@ -149,5 +149,67 @@ describe('tukarJadwalKonten', () => {
       select: { metadata: true },
     });
     expect((j!.metadata as { pasanganId: string }).pasanganId).toBe(b);
+  });
+});
+
+describe('hapusBanyakKonten', () => {
+  it('menghapus semua yang diminta dan tidak menyentuh yang lain', async () => {
+    const a = await buat('a', '2026-09-01');
+    const b = await buat('b', '2026-09-02');
+    const c = await buat('c', '2026-09-03');
+
+    const h = await hapusBanyakKonten({ ids: [a, c], olehUserId: userId });
+    expect(h).toMatchObject({ ok: true, dihapus: 2 });
+
+    const sisa = (await daftarKonten()).filter((k) => k.title.startsWith(tag));
+    expect(sisa.map((k) => k.id)).toEqual([b]);
+  });
+
+  it('menulis SATU jejak per konten, bukan satu untuk seluruh kumpulan', async () => {
+    /*
+     * Barisnya benar-benar hilang, jadi jejak satu-satunya tempat isinya masih
+     * bisa dibaca — dan mencarinya nanti dilakukan per konten, bukan per
+     * penghapusan massal yang nomornya tidak diingat siapa pun.
+     */
+    const a = await buat('a', '2026-09-01');
+    const b = await buat('b', '2026-09-02');
+    await hapusBanyakKonten({ ids: [a, b], olehUserId: userId });
+
+    const jejak = await prisma.auditLog.findMany({
+      where: { entityId: { in: seededIds([a, b]) }, action: 'CONTENT_PLAN_DELETED' },
+      select: { entityId: true, metadata: true },
+    });
+    expect(jejak).toHaveLength(2);
+    expect((jejak[0].metadata as { sekaligus: number }).sekaligus).toBe(2);
+  });
+
+  it('membuang id kembar, tidak menghitungnya dua kali', async () => {
+    const a = await buat('a', '2026-09-01');
+    const h = await hapusBanyakKonten({ ids: [a, a, a], olehUserId: userId });
+    expect(h).toMatchObject({ ok: true, dihapus: 1 });
+  });
+
+  it('menolak daftar kosong, bukan diam-diam berhasil', async () => {
+    // `deleteMany` dengan daftar kosong berhasil tanpa menghapus apa pun, dan
+    // pemanggilnya diberi tahu bahwa penghapusannya jadi.
+    expect(await hapusBanyakKonten({ ids: [], olehUserId: userId })).toEqual({
+      ok: false,
+      alasan: 'TIDAK_VALID',
+    });
+  });
+
+  it('menolak kalau tidak ada satu pun yang benar-benar ada', async () => {
+    expect(await hapusBanyakKonten({ ids: ['hilang'], olehUserId: userId })).toEqual({
+      ok: false,
+      alasan: 'TIDAK_DITEMUKAN',
+    });
+  });
+
+  it('menghapus yang ada dan mengabaikan yang tidak, tanpa gagal seluruhnya', async () => {
+    // Sebuah ubin bisa dihapus orang lain di antara pilih dan tekan hapus.
+    // Menggagalkan seluruhnya karena itu membuat pekerjaan orang hilang.
+    const a = await buat('a', '2026-09-01');
+    const h = await hapusBanyakKonten({ ids: [a, 'hilang'], olehUserId: userId });
+    expect(h).toMatchObject({ ok: true, dihapus: 1 });
   });
 });

@@ -4737,6 +4737,14 @@
     "deleteBody": "“{judul}” akan dihapus. Gambarnya ikut terhapus otomatis beberapa jam kemudian kalau tidak dipakai konten lain.",
     "okDeleted": "Konten dihapus.",
     "okSwapped": "Jadwal “{a}” dan “{b}” ditukar.",
-    "errTIDAK_VALID": "Tidak ada yang berubah."
+    "errTIDAK_VALID": "Tidak ada yang berubah.",
+    "select": "Pilih",
+    "selectDone": "Selesai",
+    "selectAll": "Pilih semua",
+    "selectNone": "Kosongkan",
+    "selected": "{count} dipilih",
+    "deleteManyTitle": "Hapus {count} konten?",
+    "deleteManyBody": "Semuanya akan dihapus sekaligus. Gambarnya ikut terhapus otomatis beberapa jam kemudian kalau tidak dipakai konten lain.",
+    "okDeletedMany": "{count} konten dihapus."
   }
 }

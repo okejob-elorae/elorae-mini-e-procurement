@@ -473,6 +473,59 @@ export async function hapusKonten(input: {
 }
 
 /**
+ * Hapus beberapa konten sekaligus.
+ *
+ * Menyusun feed berarti membuang beberapa percobaan yang tidak jadi dipakai,
+ * dan menghapusnya satu per satu — konfirmasi, tunggu, ulangi — membuat
+ * pekerjaan yang seharusnya satu gerakan jadi sepuluh.
+ *
+ * SATU transaksi. Kalau salah satu gagal, tidak ada yang terhapus: setengah
+ * terhapus adalah keadaan yang tidak bisa dijelaskan siapa pun, dan orang tidak
+ * tahu harus mengulang yang mana.
+ */
+export async function hapusBanyakKonten(input: {
+  ids: string[];
+  olehUserId: string;
+}): Promise<HasilKreatif<{ id: string; dihapus: number }>> {
+  const ids = [...new Set(input.ids)].filter(Boolean);
+  if (ids.length === 0) return { ok: false, alasan: 'TIDAK_VALID' };
+
+  return runSerializable(async (tx) => {
+    const lama = await tx.contentPlan.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, title: true, status: true, scheduledAt: true, imageUrl: true },
+    });
+    if (lama.length === 0) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+
+    await tx.contentPlan.deleteMany({ where: { id: { in: lama.map((k) => k.id) } } });
+
+    /*
+     * Satu baris jejak per konten, bukan satu untuk seluruh kumpulan. Barisnya
+     * benar-benar hilang, jadi jejak adalah satu-satunya tempat isinya masih
+     * bisa dibaca — dan mencarinya nanti dilakukan per konten, bukan per
+     * penghapusan massal yang nomornya tidak diingat siapa pun.
+     */
+    for (const k of lama) {
+      await catatJejak(tx, {
+        userId: input.olehUserId,
+        action: JEJAK.KONTEN_DIHAPUS,
+        entityType: 'ContentPlan',
+        entityId: k.id,
+        changes: { before: { title: k.title, status: k.status }, after: null },
+        metadata: {
+          title: k.title,
+          scheduledAt: k.scheduledAt?.toISOString() ?? null,
+          imageUrl: k.imageUrl,
+          sekaligus: lama.length,
+        },
+      });
+    }
+
+    return { ok: true as const, id: lama[0].id, dihapus: lama.length };
+  });
+}
+
+/**
  * Tukar posisi dua ubin di grid feed.
  *
  * Urutan grid MURNI berasal dari `scheduledAt` — itu bukan kebetulan, itu yang
