@@ -1,7 +1,7 @@
 import type { Prisma } from '@elorae/db';
 
 /**
- * Jejak keputusan untuk modul piutang, retur, dan konsinyasi.
+ * Jejak keputusan untuk modul piutang, retur, konsinyasi, dan creative marketing.
  *
  * Modul ini penuh keputusan uang yang BISA DIBALIK: klaim ditolak lalu
  * diverifikasi, pasangan retur dilepas, kunci konsinyasi dibuka. Tanpa jejak,
@@ -54,6 +54,21 @@ export const JEJAK = {
 
   JENIS_POTONGAN_DIBUAT: 'DEDUCTION_TYPE_CREATED',
   JENIS_POTONGAN_DIUBAH: 'DEDUCTION_TYPE_UPDATED',
+
+  /*
+   * Creative marketing. Ikut di sini, bukan di daftarnya sendiri, karena
+   * `catatJejak` menuntut `action` bertipe `NamaJejak` — daftar kedua akan
+   * memaksa sebuah cast di setiap pemanggilan, dan cast semacam itu sudah
+   * pernah dibuang dari berkas ini sekali.
+   */
+  KOL_DIBUAT: 'KOL_CREATED',
+  KOL_DIUBAH: 'KOL_UPDATED',
+  BRIEF_DIBUAT: 'KOL_BRIEF_CREATED',
+  BRIEF_DIKIRIM: 'KOL_BRIEF_SENT',
+  BRIEF_PINDAH_STATUS: 'KOL_BRIEF_STATUS_CHANGED',
+  BRIEF_DIBATALKAN: 'KOL_BRIEF_CANCELLED',
+  KONTEN_DIBUAT: 'CONTENT_PLAN_CREATED',
+  KONTEN_DIUBAH: 'CONTENT_PLAN_UPDATED',
 } as const;
 
 export type NamaJejak = (typeof JEJAK)[keyof typeof JEJAK];

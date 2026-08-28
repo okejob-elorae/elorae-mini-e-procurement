@@ -111,6 +111,10 @@ model User {
   konsiDilaporkan        ConsignmentReport[] @relation("KonsiReporter")
   konsiKomisiSaya        ConsignmentCommission[] @relation("KonsiSpg")
   konsiKomisiDibayar     ConsignmentCommission[] @relation("KonsiPayer")
+  kolsCreated       Kol[]         @relation("KolCreator")
+  kolBriefsCreated  KolBrief[]    @relation("KolBriefCreator")
+  contentsAssigned  ContentPlan[] @relation("ContentAssignee")
+  contentsCreated   ContentPlan[] @relation("ContentCreator")
 }
 
 model VerificationToken {
@@ -686,6 +690,8 @@ model Item {
   @@index([categoryId])
   commissionPerPcs Decimal @default(0) @db.Decimal(15, 2)
 
+  kolBriefItems     KolBriefItem[]
+  contentPlans      ContentPlan[]
 }
 
 model ItemImage {
@@ -2959,4 +2965,165 @@ model PaymentClaimDeduction {
 
   @@index([paymentClaimId])
   @@index([storeReturnId])
+}
+
+enum KolPlatform {
+  INSTAGRAM
+  TIKTOK
+  YOUTUBE
+  LAINNYA
+}
+
+enum KolBriefStatus {
+  DRAFT
+  DIKIRIM
+  DISETUJUI
+  KONTEN_DITERIMA
+  TAYANG
+  SELESAI
+  BATAL
+}
+
+enum ContentFormat {
+  FEED
+  REELS
+  STORY
+  VIDEO
+  LIVE
+  CAROUSEL
+}
+
+enum ContentStatus {
+  IDE
+  DRAFT
+  REVIEW
+  DIJADWALKAN
+  TAYANG
+  BATAL
+}
+
+model Kol {
+  id          String   @id @default(cuid())
+  name        String
+  niche       String?
+  city        String?
+  phone       String?
+  email       String?
+  rateCard    Decimal? @db.Decimal(15, 2)
+  rateNote    String?  @db.Text
+  note        String?  @db.Text
+  isActive    Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   User?    @relation("KolCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  accounts    KolAccount[]
+  briefs      KolBrief[]
+
+  @@index([isActive, name])
+  @@index([createdById])
+}
+
+model KolAccount {
+  id        String      @id @default(cuid())
+  kolId     String
+  platform  KolPlatform
+  handle    String
+  followers Int         @default(0)
+  url       String?
+
+  kol       Kol @relation(fields: [kolId], references: [id], onDelete: Cascade)
+
+  @@unique([kolId, platform, handle])
+  @@index([kolId])
+}
+
+model KolBrief {
+  id           String         @id @default(cuid())
+  docNo        String         @unique
+  kolId        String
+  campaign     String
+  status       KolBriefStatus @default(DRAFT)
+  fee          Decimal        @default(0) @db.Decimal(15, 2)
+  briefText    String?        @db.Text
+  doList       String?        @db.Text
+  dontList     String?        @db.Text
+  startDate    DateTime?
+  dueDate      DateTime?
+  sentAt       DateTime?
+  liveAt       DateTime?
+  stockIssuedAt DateTime?
+  cancelReason String?        @db.Text
+  createdById  String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  kol          Kol   @relation(fields: [kolId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy    User? @relation("KolBriefCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  deliverables KolBriefDeliverable[]
+  items        KolBriefItem[]
+  contents     ContentPlan[]
+
+  @@index([kolId])
+  @@index([status])
+  @@index([createdById])
+}
+
+model KolBriefDeliverable {
+  id       String        @id @default(cuid())
+  briefId  String
+  platform KolPlatform
+  format   ContentFormat
+  qty      Int           @default(1)
+  dueDate  DateTime?
+
+  brief    KolBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+
+  @@index([briefId])
+}
+
+model KolBriefItem {
+  id        String  @id @default(cuid())
+  briefId   String
+  itemId    String
+  itemName  String
+  variantSku String?
+  qty       Int     @default(1)
+
+  brief     KolBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([briefId])
+  @@index([itemId])
+}
+
+model ContentPlan {
+  id          String        @id @default(cuid())
+  title       String
+  platform    KolPlatform
+  format      ContentFormat
+  status      ContentStatus @default(IDE)
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  postUrl     String?
+  caption     String?       @db.Text
+  note        String?       @db.Text
+  itemId      String?
+  assigneeId  String?
+  briefId     String?
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  item        Item?     @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  assignee    User?     @relation("ContentAssignee", fields: [assigneeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy   User?     @relation("ContentCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  brief       KolBrief? @relation(fields: [briefId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([status, scheduledAt])
+  @@index([briefId])
+  @@index([itemId])
+  @@index([assigneeId])
+  @@index([createdById])
 }

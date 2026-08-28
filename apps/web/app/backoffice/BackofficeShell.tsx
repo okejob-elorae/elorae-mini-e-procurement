@@ -5,6 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
+  Megaphone,
   LayoutDashboard,
   Building2,
   Package,
@@ -229,6 +230,25 @@ const navItems: NavItem[] = [
     emoji: '🤝',
     icon: Handshake,
     permission: PERMISSIONS.CONSIGNMENT_VIEW,
+  },
+
+  // ── Kreatif ────────────────────────────────────────────────────────────────
+  // Bagiannya sendiri, bukan anak Penjualan: orang yang merencanakan konten
+  // Instagram bukan orang yang menyetujui pesanan lapangan, dan tidak satu pun
+  // dari mereka boleh mewarisi layar yang lain hanya karena keduanya menyentuh
+  // kata "marketing". Izinnya pun terpisah.
+  {
+    section: 'secCreative',
+    labelKey: 'navGroupCreative',
+    href: '/backoffice/kreatif/konten',
+    emoji: '🎬',
+    icon: Megaphone,
+    permission: PERMISSIONS.CREATIVE_VIEW,
+    children: [
+      { labelKey: 'navContentCalendar', href: '/backoffice/kreatif/konten', permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: 'navKolBrief', href: '/backoffice/kreatif/brief', permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: 'navKolDirectory', href: '/backoffice/kreatif/kol', permission: PERMISSIONS.CREATIVE_VIEW },
+    ],
   },
 
   // ── Keuangan ───────────────────────────────────────────────────────────────

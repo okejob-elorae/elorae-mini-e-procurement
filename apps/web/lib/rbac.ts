@@ -203,6 +203,12 @@ export const PERMISSIONS = {
   // Receivables & collections
   RECEIVABLES_VIEW: 'receivables:view',
   RECEIVABLES_MANAGE: 'receivables:manage',
+  // Creative marketing — content calendar, KOL briefs, KOL master.
+  // Held apart from sales: the people who plan an Instagram post are not the
+  // people who approve a field-sales order, and neither should inherit the
+  // other's screens just because both touch "marketing".
+  CREATIVE_VIEW: 'creative:view',
+  CREATIVE_MANAGE: 'creative:manage',
   // Consignment — held separately so a sales-admin or tax-admin role can be
   // given the consignment cycle WITHOUT being handed the receivables archive,
   // which carries photographed store documents.
