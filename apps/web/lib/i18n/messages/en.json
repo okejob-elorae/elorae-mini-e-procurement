@@ -119,7 +119,14 @@
     "navGroupCreative": "Creative Marketing",
     "navContentCalendar": "Content Calendar",
     "navKolBrief": "KOL Briefs",
-    "navKolDirectory": "KOL Directory"
+    "navKolDirectory": "KOL Directory",
+    "cariMenu": "Search menu…",
+    "bersihkanCari": "Clear search",
+    "cariKosong": "No menu matches “{kueri}”.",
+    "favorit": "Pinned",
+    "sematkan": "Pin to top",
+    "lepasSematan": "Unpin",
+    "favoritPenuh": "Pinned list is full — {batas} maximum. Unpin one first."
   },
   "notifications": {
     "title": "Notifications",

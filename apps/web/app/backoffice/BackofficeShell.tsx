@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { Fragment, useState, useEffect } from 'react';
+import { Fragment, useMemo, useRef, useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -26,6 +26,9 @@ import {
   BarChart2,
   FolderArchive,
   Handshake,
+  Search,
+  Star,
+  X,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -42,6 +45,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { saringNav, type ItemTerlabel } from '@/lib/nav/saring';
+import { bacaFavorit, tulisFavorit, ubahFavorit, BATAS_FAVORIT } from '@/lib/nav/favorit';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { FcmRegistration } from '@/components/notifications/FcmRegistration';
@@ -49,6 +54,7 @@ import { NotificationIcon } from '@/components/notifications/NotificationIcon';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import {
   Collapsible,
   CollapsibleContent,
@@ -417,6 +423,31 @@ function Sidebar({
   const getOpenKeyFromPath = (path: string) => petaBuka(path);
 
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
+  const [cari, setCari] = useState('');
+  const [favorit, setFavorit] = useState<string[]>([]);
+  const kotakCari = useRef<HTMLInputElement>(null);
+
+  /*
+   * Sematan dibaca SETELAH terpasang, bukan saat state dibuat.
+   *
+   * `localStorage` tidak ada di server, jadi membacanya sebagai nilai awal
+   * `useState` membuat gambaran server dan klien berbeda — React mengeluh
+   * ketidakcocokan hidrasi dan membuang seluruh hasil server.
+   */
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage hanya ada di klien
+    setFavorit(bacaFavorit());
+  }, []);
+
+  const sematkan = (href: string) => {
+    const { daftar, hasil } = ubahFavorit(favorit, href);
+    if (hasil === 'penuh') {
+      toast.error(tNav('favoritPenuh', { batas: BATAS_FAVORIT }));
+      return;
+    }
+    setFavorit(daftar);
+    tulisFavorit(daftar);
+  };
 
   useEffect(() => {
     const key = getOpenKeyFromPath(pathname);
@@ -424,19 +455,76 @@ function Sidebar({
     if (key) setOpenNavKey(key);
   }, [pathname]);
 
-  const filteredItems = navItems.filter((item) => {
-    if (item.children?.length) {
-      const visibleChildren = item.children.filter(
-        (child) => !child.permission || hasPermission(permissions, child.permission)
-      );
-      if (visibleChildren.length === 0) return false;
-      if (hasPermission(permissions, item.permission)) return true;
-      return visibleChildren.some(
-        (child) => child.permission && hasPermission(permissions, child.permission)
-      );
+  /** Yang boleh dilihat pengguna ini. Penyaringan izin selalu lebih dulu. */
+  const terizinkan = useMemo(
+    () =>
+      navItems.filter((item) => {
+        if (item.children?.length) {
+          const anakTerlihat = item.children.filter(
+            (child) => !child.permission || hasPermission(permissions, child.permission),
+          );
+          if (anakTerlihat.length === 0) return false;
+          if (hasPermission(permissions, item.permission)) return true;
+          return anakTerlihat.some(
+            (child) => child.permission && hasPermission(permissions, child.permission),
+          );
+        }
+        return hasPermission(permissions, item.permission);
+      }),
+    [permissions],
+  );
+
+  /*
+   * Label yang SUDAH diterjemahkan diserahkan ke penyaring, bukan kunci i18n.
+   * Orang mencari pada teks yang mereka baca — "Piutang", bukan "receivables".
+   */
+  const berlabel: ItemTerlabel[] = useMemo(
+    () =>
+      terizinkan.map((item) => ({
+        href: item.href,
+        label: tNav(item.labelKey as never),
+        anak: (item.children ?? [])
+          .filter((c) => !c.permission || hasPermission(permissions, c.permission))
+          .map((c) => ({ href: c.href, label: tNav(c.labelKey as never) })),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tNav stabil per locale
+    [terizinkan, permissions],
+  );
+
+  const sedangMencari = cari.trim().length > 0;
+  const hasilCari = useMemo(() => saringNav(berlabel, cari), [berlabel, cari]);
+
+  /** href → hasil saringnya, supaya render tidak menyaring ulang tiap baris. */
+  const lolos = useMemo(() => new Map(hasilCari.map((h) => [h.item.href, h])), [hasilCari]);
+
+  const filteredItems = useMemo(
+    () => terizinkan.filter((i) => lolos.has(i.href)),
+    [terizinkan, lolos],
+  );
+
+  /**
+   * Halaman yang disematkan, dalam bentuk siap gambar.
+   *
+   * Dicari di seluruh pohon — induk maupun anak — karena orang menyematkan
+   * halaman, dan halaman bisa berada di kedua tingkat. Sematan yang menunjuk
+   * rute yang sudah tidak ada, atau yang izinnya dicabut, hilang sendiri di
+   * sini alih-alih jadi tautan mati.
+   */
+  const barisFavorit = useMemo(() => {
+    if (favorit.length === 0 || sedangMencari) return [];
+    const semua: { href: string; label: string; emoji: string }[] = [];
+    for (const item of terizinkan) {
+      semua.push({ href: item.href, label: tNav(item.labelKey as never), emoji: item.emoji });
+      for (const c of item.children ?? []) {
+        if (c.permission && !hasPermission(permissions, c.permission)) continue;
+        semua.push({ href: c.href, label: tNav(c.labelKey as never), emoji: item.emoji });
+      }
     }
-    return hasPermission(permissions, item.permission);
-  });
+    return favorit
+      .map((h) => semua.find((x) => x.href === h))
+      .filter((x): x is { href: string; label: string; emoji: string } => Boolean(x));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tNav stabil per locale
+  }, [favorit, terizinkan, permissions, sedangMencari]);
 
   return (
     <div className={cn('flex flex-col h-full text-primary-foreground', className)}>
@@ -456,8 +544,82 @@ function Sidebar({
         * wrapper fades the bottom edge — the scroll itself was never broken,
         * only invisible.
         */}
+      {/* Kotak cari. Menu ini berisi 53 tautan dalam 11 grup yang sebagian
+          besar tertutup — menemukan sesuatu berarti menebak grupnya, dan
+          tebakan itu salah separuh waktu. */}
+      <div className="px-3 pt-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-primary-foreground/50" />
+          <input
+            ref={kotakCari}
+            value={cari}
+            onChange={(e) => setCari(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && setCari('')}
+            placeholder={tNav('cariMenu')}
+            aria-label={tNav('cariMenu')}
+            className="w-full rounded-lg bg-primary-foreground/10 py-2 pl-8 pr-8 text-sm text-primary-foreground outline-none transition-colors placeholder:text-primary-foreground/40 focus:bg-primary-foreground/[0.16]"
+          />
+          {cari && (
+            <button
+              type="button"
+              onClick={() => {
+                setCari('');
+                kotakCari.current?.focus();
+              }}
+              aria-label={tNav('bersihkanCari')}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-primary-foreground/60 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="relative flex-1 min-h-0">
         <nav className="h-full overflow-y-auto py-4 px-3 space-y-1">
+        {/* Sematan. Seseorang membuka tiga halaman yang sama sepanjang hari
+            dan tiap kali harus membuka grupnya lagi. */}
+        {barisFavorit.length > 0 && (
+          <div className="mb-3 space-y-0.5">
+            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/45">
+              {tNav('favorit')}
+            </p>
+            {barisFavorit.map((f) => (
+              <div key={`fav-${f.href}`} className="group/fav relative">
+                <Link
+                  href={f.href}
+                  onClick={onClose}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg py-2 pl-3 pr-9 text-sm transition-colors',
+                    pathname === f.href
+                      ? 'bg-primary-foreground text-primary'
+                      : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground',
+                  )}
+                >
+                  <span aria-hidden className="w-5 shrink-0 text-center text-base leading-none">
+                    {f.emoji}
+                  </span>
+                  <span className="flex-1 truncate text-left">{f.label}</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => sematkan(f.href)}
+                  aria-label={tNav('lepasSematan')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-foreground/60 opacity-0 transition-opacity hover:text-primary-foreground group-hover/fav:opacity-100 focus-visible:opacity-100"
+                >
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                </button>
+              </div>
+            ))}
+            <div className="!mt-3 border-t border-primary-foreground/15" />
+          </div>
+        )}
+
+        {sedangMencari && filteredItems.length === 0 && (
+          <p className="px-3 py-6 text-center text-sm text-primary-foreground/50">
+            {tNav('cariKosong', { kueri: cari.trim() })}
+          </p>
+        )}
         {filteredItems.map((item, i) => {
           const hasChildren = item.children && item.children.length > 0;
           /*
@@ -510,10 +672,18 @@ function Sidebar({
                 <CollapsibleContent>
                   <div className="ml-4 mt-1 space-y-0.5 border-l border-primary-foreground/20 pl-3">
                     {(() => {
-                      const visibleChildren = item.children!.filter(
-                        (child) =>
-                          !child.permission || hasPermission(permissions, child.permission)
-                      );
+                      /*
+                       * Saat mencari, hanya anak yang cocok yang digambar.
+                       * Menampilkan seluruh isi grup yang kebetulan punya satu
+                       * anak cocok memaksa orang mencari lagi dengan mata.
+                       */
+                      const lolosAnak = lolos.get(item.href)?.anak;
+                      const visibleChildren = sedangMencari
+                        ? item.children!.filter((c) => lolosAnak?.some((a) => a.href === c.href))
+                        : item.children!.filter(
+                            (child) =>
+                              !child.permission || hasPermission(permissions, child.permission),
+                          );
                       return visibleChildren.map((child) => {
                         // Prefer the longest matching child href so nested routes
                         // (e.g. /work-orders/nota-register) don't also light up the parent list item.
@@ -525,23 +695,46 @@ function Sidebar({
                           .sort((a, b) => b.href.length - a.href.length);
                         const isChildActive = matching[0]?.href === child.href;
                         return (
-                          <Link
-                            key={child.href}
-                            href={child.href}
-                            onClick={onClose}
-                            className={cn(
-                              'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-                              isChildActive
-                                ? 'font-medium text-primary-foreground'
-                                : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
-                            )}
-                          >
-                            <span className="flex-1">{tNav(child.labelKey as any)}</span>
-                            {/* Lencana ikut turun ke anaknya. Angka di induk saja
-                                menyebut ADA pekerjaan tanpa menyebut DI MANA, dan
-                                orang harus membuka delapan anak untuk mencarinya. */}
-                            <NavCountBadge count={navCounts[child.href] ?? 0} />
-                          </Link>
+                          <div key={child.href} className="group/anak relative">
+                            <Link
+                              href={child.href}
+                              onClick={onClose}
+                              className={cn(
+                                'flex items-center gap-2 rounded-md py-1.5 pl-2 pr-7 text-sm transition-colors',
+                                isChildActive
+                                  ? 'font-medium text-primary-foreground'
+                                  : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
+                              )}
+                            >
+                              <span className="flex-1 truncate">{tNav(child.labelKey as any)}</span>
+                              {/* Lencana ikut turun ke anaknya. Angka di induk saja
+                                  menyebut ADA pekerjaan tanpa menyebut DI MANA, dan
+                                  orang harus membuka delapan anak untuk mencarinya. */}
+                              <NavCountBadge count={navCounts[child.href] ?? 0} />
+                            </Link>
+                            {/* Muncul saat disentuh saja — tombol bintang di 53
+                                baris sekaligus membuat menunya jadi papan tombol. */}
+                            <button
+                              type="button"
+                              onClick={() => sematkan(child.href)}
+                              aria-label={tNav(
+                                favorit.includes(child.href) ? 'lepasSematan' : 'sematkan',
+                              )}
+                              className={cn(
+                                'absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-primary-foreground/50 transition-opacity hover:text-primary-foreground',
+                                favorit.includes(child.href)
+                                  ? 'opacity-100'
+                                  : 'opacity-0 group-hover/anak:opacity-100 focus-visible:opacity-100',
+                              )}
+                            >
+                              <Star
+                                className={cn(
+                                  'h-3 w-3',
+                                  favorit.includes(child.href) && 'fill-current',
+                                )}
+                              />
+                            </button>
+                          </div>
                         );
                       });
                     })()}

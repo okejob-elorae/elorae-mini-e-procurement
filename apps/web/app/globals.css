@@ -634,3 +634,54 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
     animation: none;
   }
 }
+
+/*
+ * Buka-tutup grup menu samping.
+ *
+ * Radix menyediakan tingginya lewat `--radix-collapsible-content-height`, tapi
+ * TIDAK menganimasikan apa pun sendiri — tanpa dua keyframe ini grupnya
+ * meloncat terbuka, dan meloncat adalah yang membuat menu terasa kasar.
+ */
+@keyframes collapsible-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+[data-slot='collapsible-content'] {
+  overflow: hidden;
+}
+
+[data-slot='collapsible-content'][data-state='open'] {
+  animation: collapsible-down 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-slot='collapsible-content'][data-state='closed'] {
+  animation: collapsible-up 180ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Menutup sedikit lebih cepat daripada membuka: menutup adalah membereskan,
+   dan orang tidak menunggu pembereskan. */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='collapsible-content'][data-state='open'],
+  [data-slot='collapsible-content'][data-state='closed'] {
+    animation: none;
+  }
+}

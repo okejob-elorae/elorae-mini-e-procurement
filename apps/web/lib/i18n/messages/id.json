@@ -119,7 +119,14 @@
     "navGroupCreative": "Creative Marketing",
     "navContentCalendar": "Kalender Konten",
     "navKolBrief": "Brief KOL",
-    "navKolDirectory": "Daftar KOL"
+    "navKolDirectory": "Daftar KOL",
+    "cariMenu": "Cari menu…",
+    "bersihkanCari": "Bersihkan pencarian",
+    "cariKosong": "Tidak ada menu yang cocok dengan “{kueri}”.",
+    "favorit": "Sematan",
+    "sematkan": "Sematkan ke atas",
+    "lepasSematan": "Lepas sematan",
+    "favoritPenuh": "Sematan penuh — maksimal {batas}. Lepas salah satu dulu."
   },
   "notifications": {
     "title": "Notifikasi",
