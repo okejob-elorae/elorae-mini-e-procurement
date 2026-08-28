@@ -76,6 +76,8 @@ import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { PeringkatBar, PipelineBar } from '@/components/dashboard/PipelineBar';
+import { KpiRow } from '@/components/dashboard/KpiRow';
+import type { RingkasPiutangBeranda } from '@/lib/dashboard/piutang-ringkas';
 import '@/components/dashboard/viz-tokens.css';
 
 const DASHBOARD_TABS = [
@@ -186,12 +188,14 @@ type DashboardPageClientProps = {
   initialWoStatusCounts: WorkOrderStatusCount[];
   marketplaceKpi: MarketplaceKpi;
   actionItems: ActionItem[];
+  piutang: RingkasPiutangBeranda;
   initialOversoldInventory: OversoldInventoryRow[];
   initialSalesmenSales: SalesmenSalesSummary;
 };
 
 export function DashboardPageClient({
   actionItems,
+  piutang,
   initialStats,
   initialOverduePOs,
   initialSuppliers,
@@ -540,6 +544,124 @@ export function DashboardPageClient({
       {/* What is waiting for me — before the how-are-we-doing numbers below. */}
       <div className="anim-rise">
         <ActionNeededPanel items={actionItems} />
+      </div>
+
+      {/*
+        Empat baris KPI, di area yang SELALU terlihat.
+        Sebelumnya lima kartu di sini semuanya soal uang dan stok — tidak satu
+        pun tentang produksi atau marketplace, padahal `stats.workOrders`,
+        `stats.po`, dan `marketplaceKpi` sudah dimuat halaman ini dan cuma
+        dipakai jauh di dalam tab. Piutang satu-satunya yang benar-benar baru.
+
+        Tiap ubin menaut ke halaman kerjanya: angka yang tidak bisa diklik
+        memaksa orang mengingat sendiri menu mana yang memuatnya.
+      */}
+      <div className="anim-rise space-y-4">
+        <KpiRow
+          judul={tDashboard('kpiSales')}
+          kpi={[
+            {
+              label: tDashboard('totalRealised'),
+              nilai: formatIdr(salesmenSales.totals.realised.amount),
+              konteks: tDashboard('kpiRealisedCtx', {
+                count: formatNumber(salesmenSales.totals.realised.count),
+              }),
+              href: '/backoffice/field-sales-orders',
+            },
+            {
+              label: tDashboard('kpiReceivable'),
+              nilai: formatIdr(piutang.total),
+              konteks: tDashboard('kpiReceivableCtx', { count: formatNumber(piutang.jumlah) }),
+              href: '/backoffice/piutang',
+            },
+            {
+              label: tDashboard('kpiOverdueReceivable'),
+              nilai: formatIdr(piutang.lewatNilai),
+              konteks: tDashboard('kpiOverdueReceivableCtx', {
+                count: formatNumber(piutang.lewatJumlah),
+              }),
+              href: '/backoffice/piutang',
+              nada: piutang.lewatJumlah > 0 ? 'buruk' : 'netral',
+            },
+            {
+              label: tDashboard('kpiHeld'),
+              nilai: formatIdr(piutang.tertahanNilai),
+              konteks: tDashboard('kpiHeldCtx'),
+              href: '/backoffice/retur-toko',
+              nada: piutang.tertahanNilai > 0 ? 'perhatian' : 'netral',
+            },
+          ]}
+        />
+
+        <KpiRow
+          judul={tDashboard('kpiProduction')}
+          kpi={[
+            {
+              label: tDashboard('kpiWoRunning'),
+              nilai: formatNumber(s.workOrders.inProduction),
+              konteks: tDashboard('kpiWoDoneToday', {
+                count: formatNumber(s.workOrders.completedToday),
+              }),
+              href: '/backoffice/work-orders',
+            },
+            {
+              label: tDashboard('kpiPoOverdue'),
+              nilai: formatNumber(overduePOs.length),
+              konteks: tDashboard('kpiPoOverdueCtx'),
+              href: '/backoffice/purchase-orders?status=overdue',
+              nada: overduePOs.length > 0 ? 'buruk' : 'netral',
+            },
+            {
+              label: tDashboard('kpiPoWaiting'),
+              nilai: formatNumber(s.po.submitted),
+              konteks: tDashboard('kpiPoWaitingCtx'),
+              href: '/backoffice/purchase-orders?status=SUBMITTED',
+              nada: s.po.submitted > 0 ? 'perhatian' : 'netral',
+            },
+            {
+              label: tDashboard('kpiShortage'),
+              nilai: formatNumber(rawMaterialShortage.length),
+              konteks: tDashboard('kpiShortageCtx'),
+              href: '/backoffice/production/planning',
+              nada: rawMaterialShortage.length > 0 ? 'perhatian' : 'netral',
+            },
+          ]}
+        />
+
+        <KpiRow
+          judul={tDashboard('kpiStock')}
+          kpi={[
+            {
+              label: tDashboard('inventoryValue'),
+              nilai: formatIdr(Number(s.inventory.totalValue)),
+              konteks: tDashboard('kpiActiveItems', {
+                count: formatNumber(s.items.activeCount),
+              }),
+              href: '/backoffice/inventory',
+            },
+            {
+              label: tDashboard('oversoldTitle'),
+              nilai: formatNumber(oversoldInventory.length),
+              konteks: tDashboard('kpiOversoldCtx'),
+              href: '/backoffice/inventory?tab=stock&oversold=1',
+              nada: oversoldInventory.length > 0 ? 'buruk' : 'netral',
+            },
+            {
+              label: tDashboard('kpiLowStock'),
+              nilai: formatNumber(s.items.lowStockCount),
+              konteks: tDashboard('kpiLowStockCtx'),
+              href: '/backoffice/inventory',
+              nada: s.items.lowStockCount > 0 ? 'perhatian' : 'netral',
+            },
+            {
+              label: tDashboard('kpiUnshipped'),
+              nilai: formatNumber(marketplaceKpi.pendingFulfillmentCount),
+              konteks: tDashboard('kpiUnshippedCtx'),
+              href: '/backoffice/fulfillment',
+              nada: marketplaceKpi.pendingFulfillmentCount > 0 ? 'perhatian' : 'netral',
+            },
+          ]}
+        />
       </div>
 
       {/* Marketplace Section */}

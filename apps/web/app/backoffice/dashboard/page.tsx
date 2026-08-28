@@ -12,6 +12,7 @@ import {
 } from "@/lib/dashboard/queries";
 import { getOverduePOs } from "@/lib/purchase-orders/queries";
 import { getMarketplaceKpi } from "@/lib/sales-orders/queries";
+import { ringkasPiutangBeranda } from "@/lib/dashboard/piutang-ringkas";
 import { serializeDashboardStats, toIso } from "@/lib/dashboard/serialize";
 import { buildActionItems, getActionItemCounts } from "@/lib/dashboard/action-items";
 import { DashboardPageClient } from "./DashboardPageClient";
@@ -33,6 +34,7 @@ export default async function DashboardPage() {
     oversoldInventory,
     salesmenSales,
     actionCounts,
+    piutang,
   ] = await Promise.all([
     getDashboardStats(),
     getOverduePOs(),
@@ -44,6 +46,7 @@ export default async function DashboardPage() {
     getOversoldInventory(),
     getSalesmenSalesSummary(),
     getActionItemCounts(),
+    ringkasPiutangBeranda(),
   ]);
 
   /*
@@ -74,6 +77,7 @@ export default async function DashboardPage() {
         marketplaceKpi={marketplaceKpi}
         initialOversoldInventory={oversoldInventory}
         initialSalesmenSales={salesmenSales}
+        piutang={piutang}
       />
     </Suspense>
   );
