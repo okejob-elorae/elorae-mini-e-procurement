@@ -703,11 +703,11 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
  * tepinya — siluet bergaris tepi kelihatan di atas latar seterang apa pun.
  */
 :root {
-  --folder-kilau: color-mix(in oklab, var(--primary) 55%, white);
-  --folder-terang: color-mix(in oklab, var(--primary) 88%, white);
-  --folder-pekat: color-mix(in oklab, var(--primary) 86%, black);
-  --folder-gelap: color-mix(in oklab, var(--primary) 72%, black);
-  --folder-garis: color-mix(in oklab, var(--primary) 58%, black);
+  --folder-kilau: color-mix(in oklab, var(--primary) 62%, white);
+  --folder-terang: color-mix(in oklab, var(--primary) 90%, white);
+  --folder-pekat: color-mix(in oklab, var(--primary) 90%, black);
+  --folder-gelap: color-mix(in oklab, var(--primary) 76%, black);
+  --folder-garis: color-mix(in oklab, var(--primary) 66%, black);
   --folder-kosong: color-mix(in oklab, var(--muted-foreground) 26%, transparent);
   --folder-kosong-gelap: color-mix(in oklab, var(--muted-foreground) 42%, transparent);
 }
@@ -717,9 +717,9 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
  * pekat. Cahaya tetap datang dari atas — hanya jarak nadanya yang digeser.
  */
 .dark {
-  --folder-kilau: color-mix(in oklab, var(--primary) 45%, white);
-  --folder-terang: color-mix(in oklab, var(--primary) 92%, white);
-  --folder-pekat: color-mix(in oklab, var(--primary) 88%, black);
-  --folder-gelap: color-mix(in oklab, var(--primary) 76%, black);
-  --folder-garis: color-mix(in oklab, var(--primary) 62%, white);
+  --folder-kilau: color-mix(in oklab, var(--primary) 58%, white);
+  --folder-terang: color-mix(in oklab, var(--primary) 86%, white);
+  --folder-pekat: color-mix(in oklab, var(--primary) 92%, black);
+  --folder-gelap: color-mix(in oklab, var(--primary) 80%, black);
+  --folder-garis: color-mix(in oklab, var(--primary) 78%, white);
 }

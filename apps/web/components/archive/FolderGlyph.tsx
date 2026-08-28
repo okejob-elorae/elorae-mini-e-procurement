@@ -6,10 +6,26 @@ import { cn } from '@/lib/utils';
 /**
  * Satu folder arsip.
  *
+ * Siluetnya meniru folder macOS, dan yang membuatnya terbaca sebagai BENDA
+ * bukan warnanya melainkan bentuknya: satu bidang belakang yang lidahnya
+ * MENYATU — naik di kiri lalu turun miring ke tepi atas — dan satu panel depan
+ * yang menutupinya, menyisakan segaris bidang belakang di atas. Versi
+ * sebelumnya menempelkan lidah sebagai kotak terpisah, dan itu terbaca sebagai
+ * dua persegi bertumpuk, bukan map kertas.
+ *
  * Dipakai DUA layar — arsip dokumen dan arsip nota retur. Sebelumnya keduanya
  * menggambar foldernya sendiri, satu digambar tangan dan satu memakai ikon
- * garis lucide, jadi dua layar dengan metafora yang sama terlihat berbeda.
+ * garis lucide, jadi metafora yang sama terlihat berbeda di dua tempat.
  */
+
+/** Bidang belakang, berlidah. Lidahnya bagian dari siluet, bukan tempelan. */
+const BELAKANG =
+  'M3 9a3.4 3.4 0 0 1 3.4-3.4h11.4a3.4 3.4 0 0 1 2.4 1l2.5 2.5a3.4 3.4 0 0 0 2.4 1h16.5A3.4 3.4 0 0 1 45 13.5V33a3.4 3.4 0 0 1-3.4 3.4H6.4A3.4 3.4 0 0 1 3 33Z';
+
+/** Panel depan. Mulai lebih rendah, jadi bidang belakangnya menyembul. */
+const DEPAN =
+  'M3 15.4a2.6 2.6 0 0 1 2.6-2.6h36.8a2.6 2.6 0 0 1 2.6 2.6V33a3.4 3.4 0 0 1-3.4 3.4H6.4A3.4 3.4 0 0 1 3 33Z';
+
 export function FolderGlyph({
   empty,
   pending,
@@ -22,84 +38,62 @@ export function FolderGlyph({
 }) {
   /*
    * Id unik per folder. Gradien SVG dirujuk lewat id, dan id kembar membuat
-   * seluruh folder di kisi memakai gradien milik folder pertama — yang baru
-   * terlihat salah kalau ada dua tema di satu halaman, tapi tetap salah.
+   * seluruh folder di kisi memakai gradien milik folder pertama.
    */
   const uid = useId().replace(/:/g, '');
 
   return (
     <span className="relative inline-flex">
       {/*
-       * Digambar sendiri, bukan ikon huruf, supaya lidah foldernya terbaca pada
-       * ukuran ini — dan supaya keadaan kosong bisa jadi folder yang benar-benar
-       * lebih pucat, bukan ikon yang diabu-abukan.
-       *
-       * WARNANYA PENUH, bukan `fill-primary/45` seperti sebelumnya. Opasitas
-       * mencampur warna tema dengan latar, jadi tema pucat — lime, kuning —
-       * menghilang begitu saja di atas krem. Yang membuatnya terbaca sekarang
-       * tiga hal: gradien (terang di atas, pekat di bawah, seolah cahaya jatuh
-       * dari atas), lidah yang lebih gelap sehingga folder terbaca sebagai dua
-       * bidang bertumpuk, dan GARIS TEPI yang lebih gelap lagi — garis tepi
-       * itulah yang menjamin siluetnya kelihatan di atas latar seterang apa pun.
-       *
-       * Semua nadanya diracik dari `--primary` dengan `color-mix`, jadi ia ikut
-       * tema apa pun tanpa satu pun warna ditulis tangan di sini.
+       * Nadanya diracik dari `--primary` — lihat `globals.css`. Warnanya PENUH,
+       * bukan opasitas: opasitas mencampur warna tema dengan latar, jadi tema
+       * pucat menghilang begitu saja di atas krem.
        */}
       <svg
-        viewBox="0 0 48 42"
-        className={cn('h-11 w-[3.3rem] overflow-visible', empty && 'opacity-60', className)}
+        viewBox="0 0 48 40"
+        className={cn('h-11 w-[3.3rem] overflow-visible', empty && 'opacity-55', className)}
         aria-hidden
       >
         <defs>
-          <linearGradient id={`badan-${uid}`} x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={`depan-${uid}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--folder-terang)" />
             <stop offset="100%" stopColor="var(--folder-pekat)" />
           </linearGradient>
-          <linearGradient id={`lidah-${uid}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--folder-pekat)" />
-            <stop offset="100%" stopColor="var(--folder-gelap)" />
-          </linearGradient>
         </defs>
 
-        {/* Bayangan lembut di bawahnya — mengangkat folder dari kertas. */}
+        {/* Bayangan lembut — mengangkat folder dari kertas. */}
         <ellipse
           cx="24"
-          cy="39.5"
-          rx="17"
-          ry="2.2"
-          className="fill-foreground/[0.13]"
-          style={{ filter: 'blur(1.5px)' }}
+          cy="37.6"
+          rx="16"
+          ry="1.9"
+          className="fill-foreground/[0.18]"
+          style={{ filter: 'blur(1.6px)' }}
         />
 
-        {/* Lidah, di belakang badan dan lebih gelap: dua bidang bertumpuk. */}
         <path
-          d="M2 9a4 4 0 0 1 4-4h11.2a4 4 0 0 1 2.83 1.17L24 9.5H2Z"
-          fill={empty ? 'var(--folder-kosong-gelap)' : `url(#lidah-${uid})`}
+          d={BELAKANG}
+          fill={empty ? 'var(--folder-kosong-gelap)' : 'var(--folder-gelap)'}
           stroke="var(--folder-garis)"
-          strokeWidth="0.9"
+          strokeWidth="0.7"
+          strokeLinejoin="round"
+        />
+        <path
+          d={DEPAN}
+          fill={empty ? 'var(--folder-kosong)' : `url(#depan-${uid})`}
+          stroke="var(--folder-garis)"
+          strokeWidth="0.7"
           strokeLinejoin="round"
         />
 
-        {/* Badan depan. */}
-        <rect
-          x="1.5"
-          y="8"
-          width="45"
-          height="29"
-          rx="4"
-          fill={empty ? 'var(--folder-kosong)' : `url(#badan-${uid})`}
-          stroke="var(--folder-garis)"
-          strokeWidth="1"
-        />
-
-        {/* Bibir atas yang menangkap cahaya. Tipis, satu piksel — ini yang
-            membuat bidangnya terbaca punya ketebalan, bukan sekadar berwarna. */}
+        {/* Bibir atas yang menangkap cahaya. Setipis satu piksel — ini yang
+            membuat panelnya terbaca punya ketebalan, bukan sekadar berwarna. */}
         <path
-          d="M4.5 9.2h39"
+          d="M6 14.2h36"
           stroke="var(--folder-kilau)"
-          strokeWidth="1.4"
+          strokeWidth="1.1"
           strokeLinecap="round"
-          opacity={empty ? 0.35 : 0.85}
+          opacity={empty ? 0.3 : 0.8}
         />
       </svg>
       {pending > 0 && (
