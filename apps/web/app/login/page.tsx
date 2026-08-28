@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -8,6 +8,7 @@ import * as z from 'zod';
 import { useTranslations } from 'next-intl';
 import { ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { tulisanDiAtas, warnaMerekDiGelap } from '@/lib/theme/warna-merek';
 
 /**
  * Pintu depan.
@@ -18,11 +19,14 @@ import { cn } from '@/lib/utils';
  * yang menyusun feed Instagram, dan pabrik bukan bahasanya. Aplikasinya sendiri
  * juga sudah jauh melampaui pengadaan: penjualan, piutang, konsinyasi, kreatif.
  *
- * PUNYA WARNANYA SENDIRI, tidak mengikuti tema pengguna. Tema disimpan per
- * orang dan bisa apa saja; halaman masuk adalah wajah mereknya, dan wajah yang
- * berubah-ubah tergantung siapa yang terakhir memilih tema bukan wajah. Semua
- * warnanya ditulis di sini, jadi ia sama untuk semua orang dan tidak bisa
- * pecah karena setelan orang lain.
+ * MENGIKUTI WARNA TEMA. Ganti temanya jadi kuning, pintu depannya ikut kuning.
+ * Yang TIDAK diikuti hanya panel tinta dan krem-nya: keduanya panggung tempat
+ * warna itu berdiri, dan panggung yang ikut berganti warna membuat tidak ada
+ * lagi yang bisa dikontraskan.
+ *
+ * Warnanya dinaikkan terangnya kalau perlu — lihat `warnaMerekDiGelap`. Warna
+ * tema bebas, dan sebagian besar warna yang masuk akal untuk tombol tidak
+ * terbaca sebagai tulisan besar di atas panel hampir hitam.
  */
 
 /* Diambil dari fotografi mereka sendiri: hitam hangat studio, krem, dan aksen
@@ -30,8 +34,15 @@ import { cn } from '@/lib/utils';
 const INK = '#12120F';
 const PANEL = '#1B1B15';
 const BONE = '#F2F1E8';
-const LIME = '#C8F04A';
 const SMOKE = '#8E8E82';
+
+/**
+ * Dipakai sebelum tema pengguna terbaca, dan kalau tidak ada tema tersimpan.
+ *
+ * Lime yang memang sudah jadi warna Elorae — bukan abu-abu netral, supaya
+ * kedipan pertama pun sudah terasa merek ini dan bukan halaman yang belum jadi.
+ */
+const LIME_BAWAAN = '#C8F04A';
 
 /** Yang benar-benar dikerjakan di dalam, dipakai sebagai teks berjalan. */
 const LINGKUP = [
@@ -49,6 +60,26 @@ export default function LoginPage() {
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [merek, setMerek] = useState(LIME_BAWAAN);
+
+  /*
+   * Warna tema dipasang ke `--primary` oleh skrip tema sebelum React jalan, jadi
+   * ia sudah ada saat ini dibaca.
+   *
+   * `useLayoutEffect`, bukan `useEffect`: ia berjalan SEBELUM peramban melukis,
+   * jadi tidak ada satu bingkai pun yang menampakkan warna bawaan lalu berganti.
+   * Kedipan warna di layar pertama yang dilihat orang tiap pagi terlihat seperti
+   * aplikasi yang rusak.
+   */
+  useLayoutEffect(() => {
+    const nilai = getComputedStyle(document.documentElement)
+      .getPropertyValue('--primary')
+      .trim();
+    if (nilai) setMerek(nilai);
+  }, []);
+
+  const merekDiGelap = warnaMerekDiGelap(merek);
+  const tulisanTombol = tulisanDiAtas(merek, INK, BONE);
 
   const loginSchema = z.object({
     email: z.string().email(tValidation('email')),
@@ -98,7 +129,7 @@ export default function LoginPage() {
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-[0.07]"
           style={{
-            backgroundImage: `linear-gradient(${BONE} 1px, transparent 1px), linear-gradient(90deg, ${BONE} 1px, transparent 1px)`,
+            backgroundImage: `linear-gradient(${merekDiGelap} 1px, transparent 1px), linear-gradient(90deg, ${merekDiGelap} 1px, transparent 1px)`,
             backgroundSize: '96px 96px',
           }}
         />
@@ -122,9 +153,14 @@ export default function LoginPage() {
             pada 1440 ia jatuh di 112px dan huruf-hurufnya mengisi 68% lebar
             panel — cukup untuk berkuasa, masih jauh dari tepi.
           */}
-          <h1 className="select-none text-[clamp(2.75rem,8vw,7rem)] font-extrabold leading-[0.92] tracking-[0.12em]">
-            ELORA
-            <span style={{ color: LIME }}>É</span>
+          {/* SATU warna utuh. Sempat É-nya dibedakan sebagai aksen — dan itu
+              memecah wordmark jadi dua benda: sebuah kata, lalu sebuah huruf
+              yang tampak salah warna. */}
+          <h1
+            className="select-none text-[clamp(2.75rem,8vw,7rem)] font-extrabold leading-[0.92] tracking-[0.12em]"
+            style={{ color: merekDiGelap }}
+          >
+            ELORAÉ
           </h1>
           <p
             className="mt-5 max-w-sm text-base leading-relaxed lg:text-lg"
@@ -223,7 +259,7 @@ export default function LoginPage() {
               type="submit"
               disabled={isLoading}
               className="group flex h-12 w-full items-center justify-center gap-2 rounded-full text-[15px] font-semibold transition-transform active:scale-[0.985] disabled:opacity-70"
-              style={{ background: LIME, color: INK }}
+              style={{ background: merek, color: tulisanTombol }}
             >
               {isLoading ? (
                 <>
