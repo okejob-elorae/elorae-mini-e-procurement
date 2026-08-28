@@ -1025,7 +1025,17 @@
     "emptyDescription": "WO dibuat saat produksi dimulai. Pengeluaran bahan dan penerimaan barang jadi dicatat terhadap dokumen ini."
   },
   "supplierTypes": {
-    "cardDescription": "Tambah, edit, atau hapus tipe pemasok. Tipe yang masih dipakai tidak dapat dihapus."
+    "cardDescription": "Tambah, edit, atau hapus tipe pemasok. Tipe yang masih dipakai tidak dapat dihapus.",
+    "pageTitle": "Jenis Pemasok",
+    "pageDescription": "Kelola daftar jenis pemasok. Jenis ini dipakai saat menambah atau mengubah pemasok.",
+    "cardTitle": "Daftar jenis",
+    "newType": "Jenis baru",
+    "sortOrder": "Urutan tampil (opsional)",
+    "empty": "Belum ada jenis pemasok. Tambah satu untuk mulai.",
+    "openMenu": "Buka menu",
+    "deleteTitle": "Hapus jenis pemasok?",
+    "deleteBody": "Hanya bisa dihapus kalau tidak ada pemasok yang memakainya. Lanjutkan?",
+    "sort": "Urutan"
   },
   "notaRegister": {
     "pageSubtitle": "Daftar pengiriman material (nota) ke CMT",

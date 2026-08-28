@@ -759,3 +759,23 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
   --kpi-glow: color-mix(in oklab, var(--primary) 55%, transparent);
   --kpi-accent: color-mix(in oklab, var(--primary) 70%, white);
 }
+
+/*
+ * Keping kecil di samping kode master.
+ *
+ * Latarnya sangat tipis dan tulisannya pekat — keping penuh warna di setiap
+ * baris tabel membuat tabelnya jadi papan lampu, dan mata berhenti membaca
+ * teksnya. Warnanya datang dari `--kode-warna`, diturunkan dari teks kodenya
+ * sendiri di `lib/ui/warna-kode.ts`.
+ */
+.keping-kode {
+  background: color-mix(in oklab, var(--kode-warna) 14%, transparent);
+  color: color-mix(in oklab, var(--kode-warna) 78%, black);
+  border: 1px solid color-mix(in oklab, var(--kode-warna) 30%, transparent);
+}
+
+.dark .keping-kode {
+  background: color-mix(in oklab, var(--kode-warna-gelap) 20%, transparent);
+  color: color-mix(in oklab, var(--kode-warna-gelap) 72%, white);
+  border-color: color-mix(in oklab, var(--kode-warna-gelap) 38%, transparent);
+}

@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { gayaKeping } from '@/lib/ui/warna-kode';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -198,9 +199,9 @@ export default function SupplierTypesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Supplier Types</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{tSupplierTypes('pageTitle')}</h1>
         <p className="text-muted-foreground">
-          Manage supplier type master data. Types are used when creating or editing suppliers.
+          {tSupplierTypes('pageDescription')}
         </p>
       </div>
 
@@ -208,13 +209,13 @@ export default function SupplierTypesPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Types</CardTitle>
+              <CardTitle>{tSupplierTypes('cardTitle')}</CardTitle>
               <CardDescription>{tSupplierTypes('cardDescription')}</CardDescription>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <Button variant="outline" size="sm" onClick={openCreate}>
                 <Plus className="h-4 w-4 mr-2" />
-                New type
+                {tSupplierTypes('newType')}
               </Button>
               <DialogContent>
                 <DialogHeader>
@@ -252,7 +253,7 @@ export default function SupplierTypesPage() {
                     <Label htmlFor="isActive">{tUi('active')}</Label>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="sortOrder">Sort order (optional)</Label>
+                    <Label htmlFor="sortOrder">{tSupplierTypes('sortOrder')}</Label>
                     <Input
                       id="sortOrder"
                       type="number"
@@ -287,7 +288,7 @@ export default function SupplierTypesPage() {
               <TableRow>
                 <TableHead>{tUi('code')}</TableHead>
                 <TableHead>{tUi('name')}</TableHead>
-                <TableHead>Sort</TableHead>
+                <TableHead>{tSupplierTypes('sort')}</TableHead>
                 <TableHead>{tTable('status')}</TableHead>
                 <TableHead className="w-[80px]">{tUi('actions')}</TableHead>
               </TableRow>
@@ -296,18 +297,31 @@ export default function SupplierTypesPage() {
               {types.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    No supplier types yet. Add one to get started.
+                    {tSupplierTypes('empty')}
                   </TableCell>
                 </TableRow>
               ) : (
                 types.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="font-medium">{row.code}</TableCell>
+                    <TableCell>
+                      {/* Warna diturunkan dari teks kodenya sendiri, jadi kode
+                          yang sama selalu berwarna sama di layar mana pun —
+                          dan kodenya tetap tertulis, jadi warnanya penanda,
+                          bukan satu-satunya pembeda. */}
+                      <span
+                        className="keping-kode inline-flex rounded-md px-2 py-0.5 font-mono text-xs font-semibold"
+                        style={gayaKeping(row.code)}
+                      >
+                        {row.code}
+                      </span>
+                    </TableCell>
                     <TableCell>{row.name}</TableCell>
                     <TableCell>{row.sortOrder ?? '—'}</TableCell>
                     <TableCell>
                       {row.isActive ? (
-                        <Badge variant="secondary">{tUi('active')}</Badge>
+                        <Badge className="border-emerald-600/25 bg-emerald-600/10 text-emerald-700 hover:bg-emerald-600/15 dark:text-emerald-400">
+                          {tUi('active')}
+                        </Badge>
                       ) : (
                         <Badge variant="outline">{tUi('inactive')}</Badge>
                       )}
@@ -316,7 +330,7 @@ export default function SupplierTypesPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
-                            <span className="sr-only">Open menu</span>
+                            <span className="sr-only">{tSupplierTypes('openMenu')}</span>
                             <Pencil className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -351,9 +365,9 @@ export default function SupplierTypesPage() {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete supplier type?</AlertDialogTitle>
+            <AlertDialogTitle>{tSupplierTypes('deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              This type can only be deleted if no suppliers use it. Are you sure?
+              {tSupplierTypes('deleteBody')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1025,7 +1025,17 @@
     "emptyDescription": "A WO is raised when production starts. Material issues and finished-goods receipts are recorded against it."
   },
   "supplierTypes": {
-    "cardDescription": "Add, edit, or remove supplier types. Types in use cannot be deleted."
+    "cardDescription": "Add, edit, or remove supplier types. Types in use cannot be deleted.",
+    "pageTitle": "Supplier types",
+    "pageDescription": "Manage the list of supplier types. They are used when adding or editing a supplier.",
+    "cardTitle": "Type list",
+    "newType": "New type",
+    "sortOrder": "Display order (optional)",
+    "empty": "No supplier types yet. Add one to get started.",
+    "openMenu": "Open menu",
+    "deleteTitle": "Delete this supplier type?",
+    "deleteBody": "It can only be deleted if no supplier uses it. Continue?",
+    "sort": "Order"
   },
   "notaRegister": {
     "pageSubtitle": "List of material delivery (nota) to CMT",
