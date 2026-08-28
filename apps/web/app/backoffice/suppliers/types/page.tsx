@@ -283,14 +283,24 @@ export default function SupplierTypesPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
+          {/*
+            Lebarnya DIBATASI. Lima kolom pendek yang direntangkan sampai lebar
+            layar meninggalkan lubang besar di tengah — dan lubang itu yang
+            terbaca sebagai berantakan, bukan isinya. Tabel selebar isinya
+            terbaca sebagai satu blok yang rapi.
+          */}
+          <div className="max-w-4xl">
+            <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{tUi('code')}</TableHead>
+                {/* Lebar dipatok, kecuali Nama — kelebihan ruang memang
+                    tempatnya di kolom yang panjangnya paling bervariasi. */}
+                <TableHead className="w-[190px]">{tUi('code')}</TableHead>
                 <TableHead>{tUi('name')}</TableHead>
-                <TableHead>{tSupplierTypes('sort')}</TableHead>
-                <TableHead>{tTable('status')}</TableHead>
-                <TableHead className="w-[80px]">{tUi('actions')}</TableHead>
+                {/* Angka rata kanan supaya bisa dibandingkan sekilas. */}
+                <TableHead className="w-[90px] text-right">{tSupplierTypes('sort')}</TableHead>
+                <TableHead className="w-[110px]">{tTable('status')}</TableHead>
+                <TableHead className="w-[70px] text-right">{tUi('actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -316,7 +326,7 @@ export default function SupplierTypesPage() {
                       </span>
                     </TableCell>
                     <TableCell>{row.name}</TableCell>
-                    <TableCell>{row.sortOrder ?? '—'}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.sortOrder ?? '—'}</TableCell>
                     <TableCell>
                       {row.isActive ? (
                         <Badge className="border-emerald-600/25 bg-emerald-600/10 text-emerald-700 hover:bg-emerald-600/15 dark:text-emerald-400">
@@ -351,14 +361,19 @@ export default function SupplierTypesPage() {
                 ))
               )}
             </TableBody>
-          </Table>
-          <Pagination
-            page={page}
-            totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
-            onPageChange={setPage}
-            totalCount={totalCount}
-            pageSize={pageSize}
-          />
+            </Table>
+            {/* Paginasi IKUT di dalam pembatas lebarnya. Di luar, ia
+                merentang penuh sementara tabelnya tidak — dan baris kontrol
+                yang lebih lebar dari tabel yang dikontrolnya terlihat lebih
+                salah daripada tabel yang melar sejak awal. */}
+            <Pagination
+              page={page}
+              totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
+              onPageChange={setPage}
+              totalCount={totalCount}
+              pageSize={pageSize}
+            />
+          </div>
         </CardContent>
       </Card>
 
