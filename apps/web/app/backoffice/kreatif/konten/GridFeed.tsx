@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useFlip } from '@/lib/ui/use-flip';
 import Image from 'next/image';
 import { useLocale, useTranslations } from 'next-intl';
 import { ImagePlus, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -52,6 +53,15 @@ export function GridFeed({
   const locale = useLocale();
   const baris = susunFeed(konten);
   const [sibuk, setSibuk] = useState<string | null>(null);
+  const [sedangSeret, setSedangSeret] = useState<string | null>(null);
+  const wadah = useRef<HTMLDivElement>(null);
+
+  /*
+   * Kuncinya adalah urutan id-nya. Ia berubah tepat saat susunan grid berubah —
+   * tidak lebih sering (yang akan menganimasikan hal yang tidak bergerak), dan
+   * tidak lebih jarang (yang akan melewatkan perpindahan).
+   */
+  useFlip(wadah, baris.flatMap((b) => b.sel.map((s) => s.konten.id)).join('|'));
 
   const terima = async (k: BarisKonten | null, file: File | undefined) => {
     if (!file || !bolehMengelola) return;
@@ -63,64 +73,73 @@ export function GridFeed({
     }
   };
 
-  /**
-   * Ubin tambah, selalu ada di kiri atas.
-   *
-   * Ada BAHKAN saat feednya masih kosong — dan itu inti perbaikannya. Kalender
-   * yang belum berisi dulu menampilkan kartu "belum ada konten", jadi tidak ada
-   * kanvas untuk mulai menempel sama sekali.
+  /*
+   * Ubin tambah, selalu di kiri atas — ADA BAHKAN saat feednya masih kosong.
+   * Itu inti perbaikannya: kalender yang belum berisi dulu menampilkan kartu
+   * "belum ada konten", jadi tidak ada kanvas untuk mulai menempel sama sekali.
    */
-  const ubinTambah = bolehMengelola ? (
-    <SlotUnggah
-      key="tambah"
-      label={t('addTile')}
-      sibuk={sibuk === 'baru'}
-      onFile={(f) => terima(null, f)}
-      ikon={Plus}
-    />
-  ) : null;
-
   const semuaSel = [
-    ...(ubinTambah ? [{ tambah: true as const }] : []),
+    ...(bolehMengelola ? [{ tambah: true as const, sel: undefined }] : []),
     ...baris.flatMap((b) => b.sel.map((s) => ({ tambah: false as const, sel: s }))),
   ];
 
   return (
-    <div className="space-y-0.5">
-      {Array.from({ length: Math.ceil(semuaSel.length / KOLOM_FEED) }).map((_, r) => {
+    /*
+     * SATU wadah grid, bukan satu baris flex per baris feed.
+     *
+     * Bentuknya sama di layar, tapi bedanya menentukan: dengan pembungkus per
+     * baris, ubin yang berpindah baris masuk ke induk React yang berbeda, jadi
+     * ia DIBONGKAR lalu dibuat ulang — gambarnya berkedip dan animasi FLIP
+     * kehilangan simpul yang mau digerakkan. Dalam satu wadah datar, kuncinya
+     * tetap di induk yang sama, jadi React MEMINDAHKAN simpulnya.
+     *
+     * Kolom pertama `auto` untuk nomor baris; tiga sisanya sama lebar.
+     */
+    <div
+      ref={wadah}
+      className="grid gap-x-2 gap-y-0.5"
+      style={{ gridTemplateColumns: 'auto repeat(3, minmax(0, 1fr))' }}
+    >
+      {Array.from({ length: Math.ceil(semuaSel.length / KOLOM_FEED) }).flatMap((_, r) => {
         const potong = semuaSel.slice(r * KOLOM_FEED, (r + 1) * KOLOM_FEED);
-        return (
-          <div key={r} className="flex gap-2">
-            {/* Nomor baris, sama seperti kolom paling kiri di spreadsheet-nya. */}
-            <div className="w-6 shrink-0 pt-9 text-right text-sm font-medium tabular-nums text-muted-foreground">
-              {r + 1}
-            </div>
-            <div className="grid min-w-0 flex-1 grid-cols-3 gap-0.5">
-              {potong.map((c) =>
-                c.tambah ? (
-                  ubinTambah
-                ) : (
-                  <Ubin
-                    key={c.sel.konten.id}
-                    konten={c.sel.konten}
-                    tanggal={labelTanggal(c.sel.konten.scheduledAt, locale)}
-                    bolehMengelola={bolehMengelola}
-                    sibuk={sibuk === c.sel.konten.id}
-                    onFile={(f) => terima(c.sel.konten, f)}
-                    onSunting={() => onSunting(c.sel.konten)}
-                    onHapus={() => onHapus(c.sel.konten)}
-                    onTukar={onTukar}
-                  />
-                ),
-              )}
-              {/* Baris terakhir yang belum penuh dibiarkan berlubang, bukan
-                  direntangkan — supaya lebar ubinnya sama di semua baris. */}
-              {Array.from({ length: KOLOM_FEED - potong.length }).map((_, n) => (
-                <div key={`sisa-${n}`} aria-hidden />
-              ))}
-            </div>
-          </div>
-        );
+        return [
+          <div
+            key={`nomor-${r}`}
+            className="w-6 pt-9 text-right text-sm font-medium tabular-nums text-muted-foreground"
+          >
+            {r + 1}
+          </div>,
+          ...potong.map((c) =>
+            c.tambah ? (
+              <SlotUnggah
+                key="tambah"
+                label={t('addTile')}
+                sibuk={sibuk === 'baru'}
+                onFile={(f) => terima(null, f)}
+                ikon={Plus}
+              />
+            ) : (
+              <Ubin
+                key={c.sel.konten.id}
+                konten={c.sel.konten}
+                tanggal={labelTanggal(c.sel.konten.scheduledAt, locale)}
+                bolehMengelola={bolehMengelola}
+                sibuk={sibuk === c.sel.konten.id}
+                onFile={(f) => terima(c.sel.konten, f)}
+                onSunting={() => onSunting(c.sel.konten)}
+                onHapus={() => onHapus(c.sel.konten)}
+                onTukar={onTukar}
+                sedangSeret={sedangSeret}
+                setSedangSeret={setSedangSeret}
+              />
+            ),
+          ),
+          /* Baris terakhir yang belum penuh dibiarkan berlubang, bukan
+             direntangkan — supaya lebar ubinnya sama di semua baris. */
+          ...Array.from({ length: KOLOM_FEED - potong.length }, (_, n) => (
+            <div key={`sisa-${r}-${n}`} aria-hidden />
+          )),
+        ];
       })}
     </div>
   );
@@ -135,6 +154,8 @@ function Ubin({
   onSunting,
   onHapus,
   onTukar,
+  sedangSeret,
+  setSedangSeret,
 }: {
   konten: BarisKonten;
   tanggal: string | null;
@@ -144,6 +165,8 @@ function Ubin({
   onSunting: () => void;
   onHapus: () => void;
   onTukar: (idSeret: string, idTujuan: string) => Promise<void>;
+  sedangSeret: string | null;
+  setSedangSeret: (id: string | null) => void;
 }) {
   const t = useTranslations('creative');
   const adaGambar = Boolean(konten.imageUrl);
@@ -164,6 +187,11 @@ function Ubin({
         onDragStart: (e: React.DragEvent) => {
           e.dataTransfer.setData(SERET_UBIN, konten.id);
           e.dataTransfer.effectAllowed = 'move';
+          setSedangSeret(konten.id);
+        },
+        onDragEnd: () => {
+          setSedangSeret(null);
+          setTujuanSeret(false);
         },
         onDragOver: (e: React.DragEvent) => {
           if (!seretUbin(e)) return;
@@ -175,6 +203,7 @@ function Ubin({
           if (!seretUbin(e)) return;
           e.preventDefault();
           setTujuanSeret(false);
+          setSedangSeret(null);
           const asal = e.dataTransfer.getData(SERET_UBIN);
           if (asal && asal !== konten.id) void onTukar(asal, konten.id);
         },
@@ -184,7 +213,17 @@ function Ubin({
   return (
     <div
       {...dnd}
-      className={cn('min-w-0', tujuanSeret && 'ring-2 ring-primary ring-offset-1')}
+      data-flip={konten.id}
+      className={cn(
+        'ubin-masuk min-w-0 transition-[transform,opacity,box-shadow] duration-200 ease-out',
+        // Yang sedang diangkat mengecil dan memudar: tangan Anda memegangnya,
+        // jadi ia harus terlihat lepas dari kisi.
+        sedangSeret === konten.id && 'scale-[0.94] opacity-40',
+        // Yang akan ditukari sedikit membesar — memberi tahu ke mana ubinnya
+        // akan mendarat SEBELUM dilepas, bukan sesudahnya.
+        tujuanSeret && 'z-10 scale-[1.04] shadow-lg ring-2 ring-primary ring-offset-2',
+        bolehMengelola && 'cursor-grab active:cursor-grabbing',
+      )}
     >
       {/* Bilah tanggal di ATAS ubinnya, persis seperti sheet-nya. */}
       <div

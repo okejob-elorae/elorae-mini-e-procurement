@@ -569,3 +569,32 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+
+/*
+ * Ubin feed yang baru muncul.
+ *
+ * Perpindahan ubin lama ditangani FLIP lewat Web Animations API, tapi ubin yang
+ * BARU tidak punya posisi sebelumnya untuk digerakkan — tanpa ini ia muncul
+ * mendadak di tengah ubin lain yang sedang bergerak halus, dan justru kemunculan
+ * mendadak itu yang paling terlihat kasar.
+ */
+@keyframes ubin-masuk {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ubin-masuk {
+  animation: ubin-masuk 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ubin-masuk {
+    animation: none;
+  }
+}

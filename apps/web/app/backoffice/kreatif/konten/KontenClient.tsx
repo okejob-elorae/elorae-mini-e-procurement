@@ -131,6 +131,22 @@ export function KontenClient({
   const [tampilan, setTampilan] = useState<'grid' | 'daftar'>('grid');
   const [foto, setFoto] = useState<NilaiFoto>(null);
   const [hapus, setHapus] = useState<BarisKonten | null>(null);
+  /**
+   * Penukaran yang sudah terlihat di layar tapi belum tentu tersimpan.
+   *
+   * Tanpa ini ubinnya baru bergerak SETELAH server menjawab dan halaman
+   * digambar ulang — jeda yang di jaringan kantor terasa seperti seretan yang
+   * tidak jadi, sehingga orang menyeretnya lagi.
+   *
+   * `untuk` menyimpan potret `baris` saat timpaan dibuat. Begitu server
+   * mengirim data baru, identitas `baris` berubah dan timpaan ini otomatis
+   * tidak berlaku lagi — tanpa efek, tanpa pembersihan, tanpa jendela di mana
+   * keduanya berlaku bersamaan.
+   */
+  const [timpa, setTimpa] = useState<{
+    untuk: BarisKonten[];
+    jadwal: Record<string, string | null>;
+  } | null>(null);
 
   /**
    * Tukar posisi dua ubin.
@@ -140,18 +156,28 @@ export function KontenClient({
    * yang diam-diam menjadwal ulang dua postingan adalah kejutan yang mahal.
    */
   const tukar = async (idSeret: string, idTujuan: string) => {
-    const a = baris.find((k) => k.id === idSeret);
-    const b = baris.find((k) => k.id === idTujuan);
+    const a = efektif.find((k) => k.id === idSeret);
+    const b = efektif.find((k) => k.id === idTujuan);
+    if (!a || !b) return;
+
+    // Pindah lebih dulu, tanya server belakangan.
+    setTimpa({
+      untuk: baris,
+      jadwal: {
+        ...(timpa?.untuk === baris ? timpa.jadwal : {}),
+        [a.id]: b.scheduledAt,
+        [b.id]: a.scheduledAt,
+      },
+    });
+
     const hasil = await tukarJadwalKontenAction(idSeret, idTujuan);
     if (hasil.ok) {
-      toast.success(
-        t('okSwapped', {
-          a: a?.title ?? '',
-          b: b?.title ?? '',
-        }),
-      );
+      toast.success(t('okSwapped', { a: a.title, b: b.title }));
       router.refresh();
     } else {
+      // Dikembalikan ke tempatnya. Timpaan yang gagal dan dibiarkan adalah
+      // kebohongan yang bertahan sampai halaman dimuat ulang.
+      setTimpa(null);
       toast.error(t(`err${hasil.kode}` as never));
     }
   };
@@ -213,9 +239,20 @@ export function KontenClient({
     setBuka(true);
   };
 
+  /*
+   * Daftar yang benar-benar digambar: data server, ditimpa penukaran yang masih
+   * dalam perjalanan. Timpaan hanya berlaku selama `baris` belum berganti.
+   */
+  const efektif =
+    timpa && timpa.untuk === baris
+      ? baris.map((k) =>
+          k.id in timpa.jadwal ? { ...k, scheduledAt: timpa.jadwal[k.id] } : k,
+        )
+      : baris;
+
   const terlihat = useMemo(
-    () => (saring === 'SEMUA' ? baris : baris.filter((b) => b.status === saring)),
-    [baris, saring],
+    () => (saring === 'SEMUA' ? efektif : efektif.filter((b) => b.status === saring)),
+    [efektif, saring],
   );
 
   const simpan = () => {
