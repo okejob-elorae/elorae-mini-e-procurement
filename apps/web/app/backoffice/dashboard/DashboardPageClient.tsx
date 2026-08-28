@@ -75,6 +75,8 @@ import {
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import { PeringkatBar, PipelineBar } from '@/components/dashboard/PipelineBar';
+import '@/components/dashboard/viz-tokens.css';
 
 const DASHBOARD_TABS = [
   'overview',
@@ -718,7 +720,28 @@ export function DashboardPageClient({
               tidak dihitung.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
+            {/*
+              Peringkat lebih dulu, tabel di bawahnya. Tabel menjawab "berapa
+              persisnya"; ia tidak menjawab "siapa yang paling jauh di depan"
+              tanpa mata membandingkan angka baris demi baris. Keduanya
+              dipertahankan — bukan tabelnya diganti — karena tabel juga yang
+              memenuhi syarat kontras palet: angkanya selalu terbaca sebagai
+              teks, bukan hanya sebagai panjang batang.
+            */}
+            {salesmenSales.rows.length > 0 && (
+              <PeringkatBar
+                baris={[...salesmenSales.rows]
+                  .sort((a, b) => b.realised.amount - a.realised.amount)
+                  .slice(0, 8)
+                  .map((r) => ({
+                    id: r.salesmanId,
+                    nama: r.salesmanName,
+                    nilai: r.realised.amount,
+                  }))}
+                format={formatIdr}
+              />
+            )}
             {salesmenSales.rows.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">Belum ada data penjualan salesman.</p>
             ) : (
@@ -922,6 +945,31 @@ export function DashboardPageClient({
               <CardDescription>Count and total planned qty per status.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/*
+                Batang komposisi, DI ATAS kartu-kartu angkanya. Yang ditanya
+                orang bukan "berapa yang DRAFT" melainkan "di tahap mana
+                pekerjaan menumpuk" — itu pertanyaan tentang proporsi, dan
+                proporsi tidak terbaca dari enam angka yang harus dijumlah
+                sendiri di kepala. Kartu angkanya tetap ada di bawah: ia yang
+                menjawab pertanyaan berikutnya, "berapa persisnya".
+              */}
+              <PipelineBar
+                baris={woStatusCounts.map((row) => ({
+                  status: row.status,
+                  count: Number(row.count),
+                  label: WO_STATUS_LABEL_KEY[row.status]
+                    ? tWO(
+                        WO_STATUS_LABEL_KEY[row.status] as
+                          | 'draft'
+                          | 'issued'
+                          | 'inProduction'
+                          | 'partial'
+                          | 'completed'
+                          | 'cancelled',
+                      )
+                    : row.status,
+                }))}
+              />
               {(() => {
                 const totalPlanned = woStatusCounts.reduce((s, r) => s + Number(r.totalPlannedQty), 0);
                 const totalCount = woStatusCounts.reduce((s, r) => s + Number(r.count), 0);

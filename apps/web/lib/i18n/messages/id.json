@@ -634,7 +634,8 @@
     "lowStockAlerts": "Peringatan Stok Menipis",
     "valueDistribution": "Sebaran nilai per jenis",
     "percentOfTotal": "% dari Total",
-    "all": "Semua"
+    "all": "Semua",
+    "vizEmpty": "Belum ada data."
   },
   "production": {
     "targetCutting": "Target cutting",

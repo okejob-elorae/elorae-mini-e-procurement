@@ -634,7 +634,8 @@
     "lowStockAlerts": "Low stock alerts",
     "valueDistribution": "Value distribution by type",
     "percentOfTotal": "% of total",
-    "all": "All"
+    "all": "All",
+    "vizEmpty": "No data yet."
   },
   "production": {
     "targetCutting": "Target cutting",
