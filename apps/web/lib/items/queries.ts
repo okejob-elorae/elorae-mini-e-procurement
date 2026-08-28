@@ -78,6 +78,28 @@ function buildItemsWhere(filters?: ListItemsFilters): Prisma.ItemWhereInput {
   return where;
 }
 
+/**
+ * Kolom `Decimal` milik Item, dalam SATU daftar.
+ *
+ * Serializer di bawah menyebar sisanya dengan `...rest`, jadi kolom Decimal
+ * yang tidak disebut di sini LOLOS MENTAH ke komponen klien dan React menolak
+ * seluruh halamannya — "Decimal objects are not supported". Itu persis yang
+ * terjadi saat `commissionPerPcs` ditambahkan untuk komisi konsinyasi:
+ * type-check lolos, lint lolos, dan halamannya baru pecah saat dibuka.
+ *
+ * Ada tesnya (`serialize.test.ts`) yang membaca daftar kolom Decimal langsung
+ * dari skema Prisma dan gagal kalau ada yang tidak ada di sini — jadi kolom
+ * Decimal berikutnya tidak bisa lolos diam-diam lagi.
+ */
+export const KOLOM_DECIMAL_ITEM = [
+  'reorderPoint',
+  'overReceiveThreshold',
+  'sellingPrice',
+  'targetMarginPercent',
+  'additionalCost',
+  'commissionPerPcs',
+] as const;
+
 function serializeListItemForClient(item: {
   reorderPoint?: unknown;
   overReceiveThreshold?: unknown;
@@ -93,15 +115,14 @@ function serializeListItemForClient(item: {
   const { inventoryValues: _omit, fgConsumptions: _omitFg, ...rest } = item;
   void _omit;
   void _omitFg;
+  const angka: Record<string, number | null> = {};
+  for (const k of KOLOM_DECIMAL_ITEM) {
+    const v = (item as Record<string, unknown>)[k];
+    angka[k] = v != null ? toNum(v) : null;
+  }
   return {
     ...rest,
-    reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
-    overReceiveThreshold:
-      item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
-    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
-    targetMarginPercent:
-      item.targetMarginPercent != null ? toNum(item.targetMarginPercent) : null,
-    additionalCost: item.additionalCost != null ? toNum(item.additionalCost) : null,
+    ...angka,
     inventoryValue: inv,
   };
 }
@@ -153,15 +174,16 @@ export function serializeItemForClient(item: ItemWithRelations | null) {
   const inv = aggregateInventoryValues(item.inventoryValues);
   const { inventoryValues: _omitInv, ...itemRest } = item;
   void _omitInv;
+  /* Dari daftar yang sama dengan serializer di atas — dua salinan akan
+     menyimpang, dan yang menyimpang adalah yang lupa kolom baru. */
+  const angka: Record<string, number | null> = {};
+  for (const k of KOLOM_DECIMAL_ITEM) {
+    const v = (item as unknown as Record<string, unknown>)[k];
+    angka[k] = v != null ? toNum(v) : null;
+  }
   return {
     ...itemRest,
-    reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
-    overReceiveThreshold:
-      item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
-    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
-    targetMarginPercent:
-      item.targetMarginPercent != null ? toNum(item.targetMarginPercent) : null,
-    additionalCost: item.additionalCost != null ? toNum(item.additionalCost) : null,
+    ...angka,
     inventoryValue: inv,
     createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
     updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt,
