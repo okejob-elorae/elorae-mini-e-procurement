@@ -3,30 +3,35 @@
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Check, Type } from 'lucide-react';
+import { Type } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { DAFTAR_FONT, FONT_BAWAAN, type PilihanFont } from '@/lib/theme/fonts';
+import { DAFTAR_FONT, FONT_BAWAAN, cariFont, type PilihanFont } from '@/lib/theme/fonts';
 import { DEVICE_THEME_FONT_KEY } from '@/lib/theme/theme-storage';
 import { setUserFont } from '@/app/actions/settings/theme';
 
 /**
  * Pemilih huruf antarmuka.
  *
- * Tiap pilihan digambar DENGAN HURUFNYA SENDIRI, dan itu inti layar ini: tidak
- * ada yang bisa memilih huruf dari namanya. "Bricolage Grotesque" tidak
- * memberi tahu apa pun; melihat kalimatnya memberi tahu segalanya.
+ * Tiap pilihan digambar DENGAN HURUFNYA SENDIRI — itu inti layar ini; tidak ada
+ * yang bisa memilih huruf dari namanya. Tapi nama saja sudah cukup untuk itu:
+ * versi pertama memberi tiap pilihan contoh kalimat DAN keterangan sendiri,
+ * dua puluh kali, dan hasilnya kartu sepanjang satu setengah layar untuk satu
+ * setelan. Contoh dan keterangan sekarang hanya untuk yang sedang dipilih —
+ * satu-satunya yang sedang benar-benar dinilai orang.
  *
- * Pilihannya berlaku SEKETIKA, sebelum disimpan. Huruf adalah keputusan yang
- * hanya bisa diambil dengan melihat — memaksa orang menyimpan dulu, memuat
- * ulang, lalu menilai, membuat mencoba sepuluh pilihan jadi sepuluh perjalanan.
+ * Pilihannya berlaku SEKETIKA, sebelum disimpan. Huruf hanya bisa dinilai
+ * dengan melihat, dan memaksa simpan lalu muat ulang membuat mencoba sepuluh
+ * pilihan jadi sepuluh perjalanan.
  */
 export function FontPicker({ terpilihAwal }: { terpilihAwal: string }) {
   const t = useTranslations('settings.font');
   const [pending, startTransition] = useTransition();
   const [terpilih, setTerpilih] = useState(terpilihAwal);
   const [tersimpan, setTersimpan] = useState(terpilihAwal);
+
+  const aktif = cariFont(terpilih);
 
   /** Pasang di layar tanpa menyimpan — supaya bisa dicoba-coba. */
   const coba = (f: PilihanFont) => {
@@ -44,8 +49,7 @@ export function FontPicker({ terpilihAwal }: { terpilihAwal: string }) {
       /*
        * Ditulis ke localStorage juga, bukan hanya ke basis data. Skrip tema
        * membacanya sebelum halaman pertama dilukis; tanpa ini huruf pilihan
-       * baru muncul setelah React jalan, dan tiap pemuatan halaman berkedip
-       * ganti huruf.
+       * baru muncul setelah React jalan, dan tiap pemuatan halaman berkedip.
        */
       try {
         localStorage.setItem(DEVICE_THEME_FONT_KEY, terpilih);
@@ -56,11 +60,6 @@ export function FontPicker({ terpilihAwal }: { terpilihAwal: string }) {
       setTersimpan(terpilih);
       toast.success(t('ok'));
     });
-  };
-
-  const batal = () => {
-    const f = DAFTAR_FONT.find((x) => x.id === tersimpan) ?? DAFTAR_FONT[0];
-    coba(f);
   };
 
   const belumTersimpan = terpilih !== tersimpan;
@@ -74,60 +73,61 @@ export function FontPicker({ terpilihAwal }: { terpilihAwal: string }) {
         </CardTitle>
         <p className="text-sm text-muted-foreground">{t('description')}</p>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {DAFTAR_FONT.map((f) => {
-            const aktif = terpilih === f.id;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => coba(f)}
-                className={cn(
-                  'group rounded-lg border p-3 text-left transition-colors',
-                  aktif ? 'border-primary bg-primary/[0.04]' : 'hover:bg-muted/50',
-                )}
-                style={{ fontFamily: `var(${f.variabel})` }}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-[15px] font-semibold leading-tight">{f.nama}</span>
-                  {aktif && <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />}
-                </div>
-                {/* Contoh kalimat memakai huruf itu — termasuk angka, karena
-                    layar ini penuh angka dan sebagian huruf jelek angkanya. */}
-                <p className="mt-1.5 text-[13px] leading-snug">{t('sample')}</p>
-                <p
-                  className="mt-2 text-[11px] leading-snug text-muted-foreground"
-                  style={{ fontFamily: 'var(--font-jakarta)' }}
-                >
-                  {f.keterangan}
-                </p>
-              </button>
-            );
-          })}
+      <CardContent className="space-y-3">
+        {/* Satu baris per huruf, empat kolom. Dua puluh pilihan muat dalam lima
+            baris — sebelumnya sepuluh kartu tinggi. */}
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
+          {DAFTAR_FONT.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => coba(f)}
+              title={f.keterangan}
+              className={cn(
+                'truncate rounded-md border px-2.5 py-2 text-left text-[13px] transition-colors',
+                terpilih === f.id
+                  ? 'border-primary bg-primary/[0.06] font-medium'
+                  : 'hover:bg-muted/60',
+              )}
+              style={{ fontFamily: `var(${f.variabel})` }}
+            >
+              {f.nama}
+            </button>
+          ))}
+        </div>
+
+        {/* Contoh dan keterangan HANYA untuk yang sedang dipilih. Itu satu-
+            satunya yang sedang dinilai; dua puluh salinannya cuma panjang. */}
+        <div className="rounded-lg border bg-muted/30 px-3.5 py-3">
+          <p className="text-[17px] leading-snug" style={{ fontFamily: `var(${aktif.variabel})` }}>
+            {t('sample')}
+          </p>
+          <p className="mt-1.5 text-xs text-muted-foreground">{aktif.keterangan}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={simpan} disabled={pending || !belumTersimpan}>
+          <Button size="sm" onClick={simpan} disabled={pending || !belumTersimpan}>
             {t('save')}
           </Button>
           {belumTersimpan && (
-            <Button variant="outline" onClick={batal} disabled={pending}>
-              {t('cancel')}
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() => coba(cariFont(tersimpan))}
+              >
+                {t('cancel')}
+              </Button>
+              <span className="text-xs text-muted-foreground">{t('unsaved')}</span>
+            </>
           )}
-          {belumTersimpan && (
-            <span className="text-xs text-muted-foreground">{t('unsaved')}</span>
-          )}
-          {tersimpan !== FONT_BAWAAN && !belumTersimpan && (
+          {!belumTersimpan && tersimpan !== FONT_BAWAAN && (
             <Button
-              variant="ghost"
               size="sm"
+              variant="ghost"
               disabled={pending}
-              onClick={() => {
-                const b = DAFTAR_FONT.find((x) => x.id === FONT_BAWAAN)!;
-                coba(b);
-              }}
+              onClick={() => coba(cariFont(FONT_BAWAAN))}
             >
               {t('reset')}
             </Button>
