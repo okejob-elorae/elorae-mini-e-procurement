@@ -376,6 +376,7 @@ export type IsiKonten = {
   scheduledAt?: Date | null;
   publishedAt?: Date | null;
   postUrl?: string | null;
+  imageUrl?: string | null;
   caption?: string | null;
   note?: string | null;
   itemId?: string | null;
@@ -400,6 +401,7 @@ export async function simpanKonten(input: {
       scheduledAt: input.isi.scheduledAt ?? null,
       publishedAt: input.isi.publishedAt ?? null,
       postUrl: input.isi.postUrl?.trim() || null,
+      imageUrl: input.isi.imageUrl?.trim() || null,
       caption: input.isi.caption?.trim() || null,
       note: input.isi.note?.trim() || null,
       itemId: input.isi.itemId || null,

@@ -4696,6 +4696,12 @@
     "errSTOK_KURANG": "Stoknya tidak cukup untuk dikirim.",
     "errQTY_TIDAK_VALID": "Jumlahnya tidak valid.",
     "errTANPA_AKSES": "Anda tidak berhak melakukan ini.",
-    "errGAGAL": "Gagal menyimpan."
+    "errGAGAL": "Gagal menyimpan.",
+    "viewGrid": "Grid feed",
+    "viewList": "Daftar",
+    "editContent": "Ubah konten",
+    "colImage": "Gambar / mockup",
+    "imageHint": "Inilah yang muncul di grid. Boleh mockup dulu — belum harus aset final.",
+    "unscheduled": "Belum berjadwal"
   }
 }

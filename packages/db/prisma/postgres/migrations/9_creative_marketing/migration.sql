@@ -105,6 +105,7 @@ CREATE TABLE "ContentPlan" (
     "scheduledAt" TIMESTAMP(3),
     "publishedAt" TIMESTAMP(3),
     "postUrl" TEXT,
+    "imageUrl" TEXT,
     "caption" TEXT,
     "note" TEXT,
     "itemId" TEXT,

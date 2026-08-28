@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { CalendarRange, Plus } from 'lucide-react';
+import { CalendarRange, LayoutGrid, List, Plus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,7 +36,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { simpanKontenAction } from '@/app/actions/creative';
+import { GridFeed } from './GridFeed';
 import type { BarisKonten, RingkasanKreatif } from '@/lib/creative/queries';
 
 const PLATFORM = ['INSTAGRAM', 'TIKTOK', 'YOUTUBE', 'LAINNYA'] as const;
@@ -63,6 +65,7 @@ const tanggal = (iso: string | null) =>
     : '—';
 
 type Draf = {
+  id: string | null;
   title: string;
   platform: (typeof PLATFORM)[number];
   format: (typeof FORMAT)[number];
@@ -71,9 +74,11 @@ type Draf = {
   caption: string;
   note: string;
   briefId: string;
+  imageUrl: string;
 };
 
 const KOSONG: Draf = {
+  id: null,
   title: '',
   platform: 'INSTAGRAM',
   format: 'REELS',
@@ -82,6 +87,7 @@ const KOSONG: Draf = {
   caption: '',
   note: '',
   briefId: '',
+  imageUrl: '',
 };
 
 export function KontenClient({
@@ -101,6 +107,31 @@ export function KontenClient({
   const [buka, setBuka] = useState(false);
   const [draf, setDraf] = useState<Draf>(KOSONG);
   const [saring, setSaring] = useState<string>('SEMUA');
+  /*
+   * Grid dulu, bukan daftar. Inilah yang tim pakai sehari-hari — daftar berguna
+   * saat mencari satu baris, grid berguna saat menilai komposisi feed, dan yang
+   * kedua jauh lebih sering.
+   */
+  const [tampilan, setTampilan] = useState<'grid' | 'daftar'>('grid');
+  const [foto, setFoto] = useState<NilaiFoto>(null);
+
+  const sunting = (k: BarisKonten) => {
+    setDraf({
+      id: k.id,
+      title: k.title,
+      platform: k.platform as Draf['platform'],
+      format: k.format as Draf['format'],
+      status: k.status as Draf['status'],
+      // Input date hanya menerima YYYY-MM-DD.
+      scheduledAt: k.scheduledAt ? k.scheduledAt.slice(0, 10) : '',
+      caption: k.caption ?? '',
+      note: '',
+      briefId: k.briefId ?? '',
+      imageUrl: k.imageUrl ?? '',
+    });
+    setFoto(k.imageUrl ? { url: k.imageUrl, nama: k.title } : null);
+    setBuka(true);
+  };
 
   const terlihat = useMemo(
     () => (saring === 'SEMUA' ? baris : baris.filter((b) => b.status === saring)),
@@ -109,7 +140,7 @@ export function KontenClient({
 
   const simpan = () => {
     startTransition(async () => {
-      const hasil = await simpanKontenAction(null, {
+      const hasil = await simpanKontenAction(draf.id, {
         title: draf.title,
         platform: draf.platform,
         format: draf.format,
@@ -118,11 +149,13 @@ export function KontenClient({
         caption: draf.caption || null,
         note: draf.note || null,
         briefId: draf.briefId || null,
+        imageUrl: foto?.url ?? null,
       });
       if (hasil.ok) {
         toast.success(t('okSaved'));
         setBuka(false);
         setDraf(KOSONG);
+        setFoto(null);
         router.refresh();
       } else {
         toast.error(t(`err${hasil.kode}` as never));
@@ -142,7 +175,13 @@ export function KontenClient({
         })}
         actions={
           bolehMengelola ? (
-            <Button onClick={() => setBuka(true)}>
+            <Button
+              onClick={() => {
+                setDraf(KOSONG);
+                setFoto(null);
+                setBuka(true);
+              }}
+            >
               <Plus className="mr-1.5 h-4 w-4" />
               {t('newContent')}
             </Button>
@@ -166,6 +205,20 @@ export function KontenClient({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <div className="flex rounded-md border p-0.5">
+          {(['grid', 'daftar'] as const).map((v) => (
+            <Button
+              key={v}
+              size="sm"
+              variant={tampilan === v ? 'secondary' : 'ghost'}
+              className="h-7 gap-1.5 px-2.5"
+              onClick={() => setTampilan(v)}
+            >
+              {v === 'grid' ? <LayoutGrid className="h-3.5 w-3.5" /> : <List className="h-3.5 w-3.5" />}
+              {t(v === 'grid' ? 'viewGrid' : 'viewList')}
+            </Button>
+          ))}
+        </div>
         <Select value={saring} onValueChange={setSaring}>
           <SelectTrigger className="w-48">
             <SelectValue />
@@ -182,13 +235,17 @@ export function KontenClient({
       </div>
 
       <Card>
-        <CardContent className={terlihat.length === 0 ? 'p-0' : 'px-0'}>
+        <CardContent
+          className={terlihat.length === 0 ? 'p-0' : tampilan === 'grid' ? 'py-4' : 'px-0'}
+        >
           {terlihat.length === 0 ? (
             <EmptyState
               icon={CalendarRange}
               title={t('contentEmptyTitle')}
               description={t('contentEmptyBody')}
             />
+          ) : tampilan === 'grid' ? (
+            <GridFeed konten={terlihat} onPilih={(k) => (bolehMengelola ? sunting(k) : undefined)} />
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -203,7 +260,14 @@ export function KontenClient({
                 </TableHeader>
                 <TableBody>
                   {terlihat.map((k) => (
-                    <TableRow key={k.id} className={cn(k.terlambat && 'bg-destructive/[0.05]')}>
+                    <TableRow
+                      key={k.id}
+                      onClick={() => bolehMengelola && sunting(k)}
+                      className={cn(
+                        k.terlambat && 'bg-destructive/[0.05]',
+                        bolehMengelola && 'cursor-pointer',
+                      )}
+                    >
                       <TableCell>
                         <span className="font-medium">{k.title}</span>
                         {k.itemNama && (
@@ -242,9 +306,15 @@ export function KontenClient({
       <Dialog open={buka} onOpenChange={setBuka}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{t('newContent')}</DialogTitle>
+            <DialogTitle>{draf.id ? t('editContent') : t('newContent')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            <UnggahFoto
+              label={t('colImage')}
+              petunjuk={t('imageHint')}
+              nilai={foto}
+              onChange={setFoto}
+            />
             <div className="space-y-1.5">
               <Label htmlFor="judul">{t('colTitle')}</Label>
               <Input

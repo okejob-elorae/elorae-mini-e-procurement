@@ -101,6 +101,7 @@ CREATE TABLE `ContentPlan` (
     `scheduledAt` DATETIME(3) NULL,
     `publishedAt` DATETIME(3) NULL,
     `postUrl` VARCHAR(191) NULL,
+    `imageUrl` VARCHAR(191) NULL,
     `caption` TEXT NULL,
     `note` TEXT NULL,
     `itemId` VARCHAR(191) NULL,

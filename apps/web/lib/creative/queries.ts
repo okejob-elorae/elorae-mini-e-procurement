@@ -132,9 +132,12 @@ export type BarisKonten = {
   scheduledAt: string | null;
   publishedAt: string | null;
   postUrl: string | null;
+  imageUrl: string | null;
   itemNama: string | null;
   assigneeNama: string | null;
   briefDocNo: string | null;
+  briefId: string | null;
+  caption: string | null;
   terlambat: boolean;
 };
 
@@ -168,6 +171,9 @@ export async function daftarKonten(opts?: {
       scheduledAt: true,
       publishedAt: true,
       postUrl: true,
+      imageUrl: true,
+      caption: true,
+      briefId: true,
       item: { select: { nameId: true } },
       assignee: { select: { name: true } },
       brief: { select: { docNo: true } },
@@ -184,9 +190,12 @@ export async function daftarKonten(opts?: {
     scheduledAt: k.scheduledAt?.toISOString() ?? null,
     publishedAt: k.publishedAt?.toISOString() ?? null,
     postUrl: k.postUrl,
+    imageUrl: k.imageUrl,
     itemNama: k.item?.nameId ?? null,
     assigneeNama: k.assignee?.name ?? null,
     briefDocNo: k.brief?.docNo ?? null,
+    briefId: k.briefId,
+    caption: k.caption,
     terlambat: kontenTerlambat(k.status as StatusKonten, k.scheduledAt, sekarang),
   }));
 }

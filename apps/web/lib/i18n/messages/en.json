@@ -4696,6 +4696,12 @@
     "errSTOK_KURANG": "Not enough stock to send.",
     "errQTY_TIDAK_VALID": "That quantity is not valid.",
     "errTANPA_AKSES": "You are not allowed to do this.",
-    "errGAGAL": "Could not save."
+    "errGAGAL": "Could not save.",
+    "viewGrid": "Feed grid",
+    "viewList": "List",
+    "editContent": "Edit content",
+    "colImage": "Image / mockup",
+    "imageHint": "This is what shows in the grid. A mockup is fine — it need not be the final asset.",
+    "unscheduled": "Not scheduled"
   }
 }

@@ -3107,6 +3107,15 @@ model ContentPlan {
   scheduledAt DateTime?
   publishedAt DateTime?
   postUrl     String?
+  /**
+   * Mockup/aset kontennya — inilah yang membuat grid feed berguna.
+   *
+   * Bertipe URL, bukan id, supaya pemanggilnya tidak perlu tahu fotonya
+   * disimpan di mana. Hari ini `/api/foto/<id>` (bytes di basis data, tidak
+   * keluar dari mesin); kalau nanti pindah ke penyimpanan objek, kolomnya tidak
+   * ikut berubah.
+   */
+  imageUrl    String?
   caption     String?       @db.Text
   note        String?       @db.Text
   itemId      String?
