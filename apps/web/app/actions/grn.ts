@@ -504,11 +504,11 @@ export async function getFabricRolls(opts?: {
   const search = opts?.search?.trim();
   if (search && search.length > 0) {
     where.OR = [
-      { rollCode: { contains: search } },
-      { rollRef: { contains: search } },
-      { item: { sku: { contains: search } } },
-      { item: { nameId: { contains: search } } },
-      { grn: { docNumber: { contains: search } } },
+      { rollCode: { contains: search, mode: 'insensitive' as const } },
+      { rollRef: { contains: search, mode: 'insensitive' as const } },
+      { item: { sku: { contains: search, mode: 'insensitive' as const } } },
+      { item: { nameId: { contains: search, mode: 'insensitive' as const } } },
+      { grn: { docNumber: { contains: search, mode: 'insensitive' as const } } },
     ];
   }
 

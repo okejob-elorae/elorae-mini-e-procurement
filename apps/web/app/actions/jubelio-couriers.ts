@@ -62,7 +62,7 @@ export async function listJubelioCouriersPaged(opts: ListCouriersOpts = {}): Pro
 
   const where: Record<string, unknown> = {};
   if (opts.search && opts.search.trim().length > 0) {
-    where.name = { contains: opts.search.trim() };
+    where.name = { contains: opts.search.trim(), mode: 'insensitive' as const };
   }
 
   const [rows, totalCount] = await Promise.all([

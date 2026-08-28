@@ -114,7 +114,7 @@ export async function listFieldSalesOrders(
   if (filter.storeId) where.storeId = filter.storeId;
   if (filter.search && filter.search.trim()) {
     const s = filter.search.trim();
-    where.OR = [{ orderNo: { contains: s } }, { store: { name: { contains: s } } }];
+    where.OR = [{ orderNo: { contains: s, mode: 'insensitive' as const } }, { store: { name: { contains: s, mode: 'insensitive' as const } } }];
   }
   const [rows, totalCount] = await Promise.all([
     prisma.fieldSalesOrder.findMany({

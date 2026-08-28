@@ -69,9 +69,9 @@ function buildItemsWhere(filters?: ListItemsFilters): Prisma.ItemWhereInput {
 
   if (filters?.search) {
     where.OR = [
-      { sku: { contains: filters.search } },
-      { nameId: { contains: filters.search } },
-      { nameEn: { contains: filters.search } },
+      { sku: { contains: filters.search, mode: 'insensitive' as const } },
+      { nameId: { contains: filters.search, mode: 'insensitive' as const } },
+      { nameEn: { contains: filters.search, mode: 'insensitive' as const } },
     ];
   }
 
@@ -311,9 +311,9 @@ export async function listItemsForSync(filters?: {
   if (filters?.isActive !== undefined) where.isActive = filters.isActive;
   if (filters?.search) {
     where.OR = [
-      { sku: { contains: filters.search } },
-      { nameId: { contains: filters.search } },
-      { nameEn: { contains: filters.search } },
+      { sku: { contains: filters.search, mode: 'insensitive' as const } },
+      { nameId: { contains: filters.search, mode: 'insensitive' as const } },
+      { nameEn: { contains: filters.search, mode: 'insensitive' as const } },
     ];
   }
 

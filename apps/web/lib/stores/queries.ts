@@ -79,8 +79,8 @@ export async function listStores(
   if (opts.activeOnly) where.isActive = true;
   if (opts.search && opts.search.trim()) {
     where.OR = [
-      { name: { contains: opts.search.trim() } },
-      { code: { contains: opts.search.trim() } },
+      { name: { contains: opts.search.trim(), mode: 'insensitive' as const } },
+      { code: { contains: opts.search.trim(), mode: 'insensitive' as const } },
     ];
   }
   const [rows, totalCount] = await Promise.all([

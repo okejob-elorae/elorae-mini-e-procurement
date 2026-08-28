@@ -20,7 +20,7 @@ function buildWhere(filters?: ListSuppliersFilters): Prisma.SupplierWhereInput {
   if (filters?.status) where.status = filters.status;
   if (filters?.approvedOnly) where.status = 'ACTIVE';
   if (filters?.search) {
-    where.OR = [{ name: { contains: filters.search } }, { code: { contains: filters.search } }];
+    where.OR = [{ name: { contains: filters.search, mode: 'insensitive' as const } }, { code: { contains: filters.search, mode: 'insensitive' as const } }];
   }
   return where;
 }

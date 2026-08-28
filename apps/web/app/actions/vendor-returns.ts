@@ -633,9 +633,9 @@ export async function getVendorReturns(
   if (searchTrim) {
     andParts.push({
       OR: [
-        { docNumber: { contains: searchTrim } },
-        { vendor: { name: { contains: searchTrim } } },
-        { vendor: { code: { contains: searchTrim } } }
+        { docNumber: { contains: searchTrim, mode: 'insensitive' as const } },
+        { vendor: { name: { contains: searchTrim, mode: 'insensitive' as const } } },
+        { vendor: { code: { contains: searchTrim, mode: 'insensitive' as const } } }
       ]
     });
   }

@@ -37,7 +37,7 @@ export async function listJournals(
       : {}),
     ...(filter.sourceType ? { sourceType: filter.sourceType } : {}),
     ...(filter.manualOnly ? { isManual: true } : {}),
-    ...(filter.search ? { description: { contains: filter.search } } : {}),
+    ...(filter.search ? { description: { contains: filter.search, mode: 'insensitive' as const } } : {}),
   };
 
   const [rows, totalCount] = await Promise.all([

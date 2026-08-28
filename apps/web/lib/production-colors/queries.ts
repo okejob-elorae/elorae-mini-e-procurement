@@ -48,7 +48,7 @@ function buildTagWhere(filters: ListPantoneFilters): Prisma.PantoneColorWhereInp
       OR: values.map((v) => ({
         filterTags: {
           path: usePostgres() ? [dim] : `$.${dim}`,
-          array_contains: v,
+          array_contains: v, mode: 'insensitive' as const,
         },
       })),
     });
@@ -102,9 +102,9 @@ export async function listPantoneColors(
         ? [
             {
               OR: [
-                { name: { contains: search } },
-                { tcx: { contains: search } },
-                { hex: { contains: search.replace('#', '') } },
+                { name: { contains: search, mode: 'insensitive' as const } },
+                { tcx: { contains: search, mode: 'insensitive' as const } },
+                { hex: { contains: search.replace('#', ''), mode: 'insensitive' as const } },
               ],
             },
           ]
@@ -173,8 +173,8 @@ export async function listFavoriteColors(
         ? [
             {
               OR: [
-                { name: { contains: search } },
-                { tcx: { contains: search } },
+                { name: { contains: search, mode: 'insensitive' as const } },
+                { tcx: { contains: search, mode: 'insensitive' as const } },
               ],
             },
           ]

@@ -114,7 +114,7 @@ export async function getAuditLogs(
     if (dateTo) (where.createdAt as Record<string, Date>).lte = dateTo;
   }
   if (entitySearch?.trim()) {
-    where.entityId = { contains: entitySearch.trim() };
+    where.entityId = { contains: entitySearch.trim(), mode: 'insensitive' as const };
   }
 
   const [logs, total] = await Promise.all([

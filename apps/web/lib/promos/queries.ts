@@ -47,7 +47,7 @@ export async function listPromos(
   const where: Prisma.PromoWhereInput = {};
   if (filter.type === "PERCENT" || filter.type === "FIXED" || filter.type === "TIERED") where.type = filter.type;
   if (typeof filter.active === "boolean") where.isActive = filter.active;
-  if (filter.search && filter.search.trim()) where.name = { contains: filter.search.trim() };
+  if (filter.search && filter.search.trim()) where.name = { contains: filter.search.trim(), mode: 'insensitive' as const };
   const [rows, totalCount] = await Promise.all([
     prisma.promo.findMany({ where, orderBy: { createdAt: "desc" }, skip: (paging.page - 1) * paging.pageSize, take: paging.pageSize,
       select: { id: true, name: true, type: true, level: true, isActive: true, startsAt: true, endsAt: true } }),

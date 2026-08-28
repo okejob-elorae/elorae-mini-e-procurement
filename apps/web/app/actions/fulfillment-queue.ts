@@ -76,8 +76,8 @@ function buildWhere(opts: ListFulfillmentQueueOpts): Record<string, unknown> {
   if (opts.search && opts.search.trim().length > 0) {
     const s = opts.search.trim();
     where.OR = [
-      { salesorderNo: { contains: s } },
-      { customerName: { contains: s } },
+      { salesorderNo: { contains: s, mode: 'insensitive' as const } },
+      { customerName: { contains: s, mode: 'insensitive' as const } },
     ];
   }
   return where;

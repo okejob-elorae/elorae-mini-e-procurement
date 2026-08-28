@@ -105,8 +105,8 @@ function buildWhere(f: SalesOrderListFilter) {
   if (f.search && f.search.trim().length > 0) {
     const s = f.search.trim();
     where.OR = [
-      { salesorderNo: { contains: s } },
-      { customerName: { contains: s } },
+      { salesorderNo: { contains: s, mode: 'insensitive' as const } },
+      { customerName: { contains: s, mode: 'insensitive' as const } },
     ];
   }
   return where;

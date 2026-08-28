@@ -81,9 +81,9 @@ export async function listSalesReturns(
   if (filter.search && filter.search.trim()) {
     const q = filter.search.trim();
     where.OR = [
-      { jubelioReturnNo: { contains: q } },
-      { channelOrderNo: { contains: q } },
-      { buyerName: { contains: q } },
+      { jubelioReturnNo: { contains: q, mode: 'insensitive' as const } },
+      { channelOrderNo: { contains: q, mode: 'insensitive' as const } },
+      { buyerName: { contains: q, mode: 'insensitive' as const } },
     ];
   }
   if (filter.receivedFrom || filter.receivedTo) {

@@ -30,8 +30,8 @@ export async function listTaxInvoices(params: {
   const q = params.q?.trim();
   if (q) {
     baseWhere.OR = [
-      { invoiceNo: { contains: q } },
-      { delivery: { OR: [{ docNo: { contains: q } }, { order: { store: { name: { contains: q } } } }] } },
+      { invoiceNo: { contains: q, mode: 'insensitive' as const } },
+      { delivery: { OR: [{ docNo: { contains: q, mode: 'insensitive' as const } }, { order: { store: { name: { contains: q, mode: 'insensitive' as const } } } }] } },
     ];
   }
   const where: Prisma.TaxInvoiceWhereInput = params.status ? { ...baseWhere, status: params.status } : baseWhere;
