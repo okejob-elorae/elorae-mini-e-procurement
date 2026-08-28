@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { FolderGlyph } from './FolderGlyph';
 import { useTranslations } from 'next-intl';
 import { Info, Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -39,37 +40,8 @@ export type DocumentArchiveProps = {
   hint?: React.ReactNode;
 };
 
-function FolderGlyph({ empty, pending }: { empty: boolean; pending: number }) {
-  return (
-    <span className="relative inline-flex">
-      {/*
-       * Drawn rather than an icon-font folder so the tab reads at this size and
-       * the empty state can be a genuinely paler folder rather than a greyed
-       * icon — matching how a physical archive looks when a slot is unused.
-       */}
-      <svg viewBox="0 0 48 40" className={cn('h-11 w-[3.3rem]', empty && 'opacity-45')} aria-hidden>
-        <path
-          d="M2 8a4 4 0 0 1 4-4h11.2a4 4 0 0 1 2.83 1.17L23 8H2Z"
-          className={empty ? 'fill-muted-foreground/35' : 'fill-primary/70'}
-        />
-        <rect
-          x="1"
-          y="7"
-          width="46"
-          height="31"
-          rx="4"
-          className={empty ? 'fill-muted-foreground/20' : 'fill-primary/45'}
-        />
-      </svg>
-      {pending > 0 && (
-        <span
-          className="absolute -bottom-0.5 right-1 h-3 w-3 rounded-full bg-destructive ring-2 ring-card"
-          aria-hidden
-        />
-      )}
-    </span>
-  );
-}
+
+
 
 export function DocumentArchive({
   folders,

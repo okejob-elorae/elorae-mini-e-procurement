@@ -685,3 +685,41 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
     animation: none;
   }
 }
+
+/*
+ * Nada folder arsip.
+ *
+ * Diracik dari `--primary` dengan `color-mix`, jadi ia ikut tema apa pun tanpa
+ * satu warna pun ditulis tangan — dan tanpa membaca warna tema di JavaScript,
+ * yang berarti tidak ada kedipan saat halaman dimuat.
+ *
+ * `oklab`, bukan `srgb`: mencampur di sRGB membuat warna lewat abu-abu di
+ * tengah jalan, jadi lime yang digelapkan mendarat jadi zaitun kusam. Di oklab
+ * ronanya bertahan.
+ *
+ * Kenapa berlapis-lapis: warna tema BOLEH sepucat apa pun, dan yang pucat di
+ * atas kertas krem hilang kalau hanya diisi satu warna datar. Yang membuatnya
+ * tetap terbaca adalah gradiennya, lidah yang lebih gelap, dan terutama garis
+ * tepinya — siluet bergaris tepi kelihatan di atas latar seterang apa pun.
+ */
+:root {
+  --folder-kilau: color-mix(in oklab, var(--primary) 55%, white);
+  --folder-terang: color-mix(in oklab, var(--primary) 88%, white);
+  --folder-pekat: color-mix(in oklab, var(--primary) 86%, black);
+  --folder-gelap: color-mix(in oklab, var(--primary) 72%, black);
+  --folder-garis: color-mix(in oklab, var(--primary) 58%, black);
+  --folder-kosong: color-mix(in oklab, var(--muted-foreground) 26%, transparent);
+  --folder-kosong-gelap: color-mix(in oklab, var(--muted-foreground) 42%, transparent);
+}
+
+/*
+ * Di tema gelap arahnya dibalik: kertasnya gelap, jadi yang hilang justru nada
+ * pekat. Cahaya tetap datang dari atas — hanya jarak nadanya yang digeser.
+ */
+.dark {
+  --folder-kilau: color-mix(in oklab, var(--primary) 45%, white);
+  --folder-terang: color-mix(in oklab, var(--primary) 92%, white);
+  --folder-pekat: color-mix(in oklab, var(--primary) 88%, black);
+  --folder-gelap: color-mix(in oklab, var(--primary) 76%, black);
+  --folder-garis: color-mix(in oklab, var(--primary) 62%, white);
+}

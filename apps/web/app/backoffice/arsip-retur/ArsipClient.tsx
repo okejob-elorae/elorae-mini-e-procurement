@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ArrowLeft, Folder, FolderOpen, LayoutGrid, List, Search, Warehouse } from 'lucide-react';
+import { FolderGlyph } from '@/components/archive/FolderGlyph';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -174,11 +175,14 @@ export function ArsipClient({
                 {f.storeId === null ? (
                   <Warehouse className="h-14 w-14 text-amber-600 dark:text-amber-500" />
                 ) : (
-                  <Folder
-                    className={cn(
-                      'h-14 w-14 transition-transform group-hover:scale-105',
-                      f.jumlah > 0 ? 'text-primary' : 'text-muted-foreground/40',
-                    )}
+                  /* Folder yang sama dengan arsip dokumen. Sebelumnya di sini
+                     ikon garis lucide berwarna `text-primary` — garis tipis
+                     dalam warna tema pucat hampir tak terlihat di atas krem,
+                     masalah yang sama dengan folder terisi di layar sebelah. */
+                  <FolderGlyph
+                    empty={f.jumlah === 0}
+                    pending={0}
+                    className="h-14 w-[4.2rem] transition-transform group-hover:scale-105"
                   />
                 )}
                 {f.jumlah > 0 && (
