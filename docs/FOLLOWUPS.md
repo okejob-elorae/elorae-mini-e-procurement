@@ -242,6 +242,8 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] Add a `source:"JUBELIO"` filter to `consumeOrder`/`releaseOrder` (defense-in-depth; currently scoped only by `salesorderId`) (PR #98).
 - [ ] `buy_price` stays global (decision H3) — revisit if Jubelio's `buy_price` starts feeding marketplace reporting (PR #52).
 - [ ] Tokopedia settlement adapter (`TT-` prefix) unsupported — `match-key.ts` is Shopee-only (#19).
+- [ ] Pick/pack/ship outbox handlers' "already in state" skip path is dead code — `isAlreadyInStateError` checks `err.code === "ALREADY_IN_STATE"`, but nothing in production ever sets `.code` on a thrown Jubelio error (`JubelioError` only carries `status`/`cause`); only the handler specs construct that shape by hand. A genuine "already picked/packed/shipped" response from Jubelio today is treated as a normal failure and retried 5x before going `DEAD`, contradicting `docs/BOUNDARY.md` §4.2's documented contract. Needs confirming what `JubelioError` actually looks like for a real already-in-state response, then either mapping it to `.code` or matching on the real shape.
+- [ ] `docs/BOUNDARY.md` §2 service-responsibilities table still lists "WMS pick / pack / ship" as `⏳ planned`, contradicting the same doc's own §0 status snapshot and `docs/EPIC-STATUS.md` (EPIC-04 fully shipped, PR #47-50). Stale row from before EPIC-04 merged — fix the table.
 
 ### Settlement reconciliation (Jubelio salesorder resync)
 - [ ] Guard the raw `POST /jubelio/salesorders/resync` endpoint — the web action path is HMAC-signed (`internal-sign.guard`) but the controller has no guard, so the raw route is open. Add before the bulk backfill (PR #165).
