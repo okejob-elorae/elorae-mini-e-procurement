@@ -598,3 +598,28 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
     animation: none;
   }
 }
+
+/*
+ * Teks berjalan di panel merek halaman masuk.
+ *
+ * Daftarnya digandakan di markup, jadi bergeser 50% membuatnya menyambung tanpa
+ * jeda. Menggeser 100% akan menampakkan ujungnya sebelum berulang.
+ */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee {
+  animation: marquee 26s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    animation: none;
+  }
+}

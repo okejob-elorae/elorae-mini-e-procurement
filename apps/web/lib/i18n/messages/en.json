@@ -29,7 +29,11 @@
     "hidePassword": "Hide password",
     "emailPlaceholder": "name@company.com",
     "passwordPlaceholder": "••••••••",
-    "errorOccurred": "An error occurred. Please try again."
+    "errorOccurred": "An error occurred. Please try again.",
+    "brandEyebrow": "Internal workspace",
+    "brandLine": "From the shop rail to the Instagram grid — one place for everything the team runs.",
+    "welcomeTitle": "Sign in",
+    "welcomeBody": "Use your work account."
   },
   "navigation": {
     "dashboard": "Dashboard",

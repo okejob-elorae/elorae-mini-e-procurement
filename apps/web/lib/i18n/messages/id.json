@@ -29,7 +29,11 @@
     "hidePassword": "Sembunyikan kata sandi",
     "emailPlaceholder": "nama@perusahaan.com",
     "passwordPlaceholder": "••••••••",
-    "errorOccurred": "Terjadi kesalahan. Silakan coba lagi."
+    "errorOccurred": "Terjadi kesalahan. Silakan coba lagi.",
+    "brandEyebrow": "Ruang kerja internal",
+    "brandLine": "Dari rak toko sampai kisi Instagram — satu tempat untuk semua yang dikerjakan tim.",
+    "welcomeTitle": "Masuk",
+    "welcomeBody": "Pakai akun kantor Anda."
   },
   "navigation": {
     "dashboard": "Beranda",
