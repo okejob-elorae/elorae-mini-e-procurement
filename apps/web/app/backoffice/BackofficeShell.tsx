@@ -65,21 +65,32 @@ import {
  * Sidebar badge counts, fetched after mount so navigation never blocks on them.
  * A failure resolves to an empty map: the shell must survive a bad count.
  */
-function useNavCounts(): Record<string, number> {
-  const [counts, setCounts] = useState<Record<string, number>>({});
+/**
+ * Lencana menu: total per GRUP, dan total per HALAMAN.
+ *
+ * Dua peta, bukan satu. Sebagian induk berbagi href dengan salah satu anaknya
+ * sendiri — Produksi dan Plan Kerja dua-duanya `/backoffice/production/planning`
+ * — jadi satu peta membuat anak itu mewarisi total seluruh grupnya dan memakai
+ * lencana untuk pekerjaan yang ada di halaman lain.
+ */
+function useNavCounts(): { grup: Record<string, number>; halaman: Record<string, number> } {
+  const [data, setData] = useState<{
+    grup: Record<string, number>;
+    halaman: Record<string, number>;
+  }>({ grup: {}, halaman: {} });
   useEffect(() => {
     let cancelled = false;
     fetch('/api/backoffice/nav-counts')
-      .then((r) => (r.ok ? r.json() : { counts: {} }))
-      .then((data) => {
-        if (!cancelled) setCounts(data.counts ?? {});
+      .then((r) => (r.ok ? r.json() : { counts: {}, pages: {} }))
+      .then((d) => {
+        if (!cancelled) setData({ grup: d.counts ?? {}, halaman: d.pages ?? {} });
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
-  return counts;
+  return data;
 }
 
 function NavCountBadge({ count }: { count: number }) {
@@ -666,7 +677,7 @@ function Sidebar({
                     {item.emoji}
                   </span>
                   <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
-                  <NavCountBadge count={navCounts[item.href] ?? 0} />
+                  <NavCountBadge count={navCounts.grup[item.href] ?? 0} />
                   <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
                 </CollapsibleTrigger>
                 <CollapsibleContent>
@@ -710,7 +721,7 @@ function Sidebar({
                               {/* Lencana ikut turun ke anaknya. Angka di induk saja
                                   menyebut ADA pekerjaan tanpa menyebut DI MANA, dan
                                   orang harus membuka delapan anak untuk mencarinya. */}
-                              <NavCountBadge count={navCounts[child.href] ?? 0} />
+                              <NavCountBadge count={navCounts.halaman[child.href] ?? 0} />
                             </Link>
                             {/* Muncul saat disentuh saja — tombol bintang di 53
                                 baris sekaligus membuat menunya jadi papan tombol. */}
@@ -763,7 +774,7 @@ function Sidebar({
                 {item.emoji}
               </span>
               <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
-              <NavCountBadge count={navCounts[item.href] ?? 0} />
+              <NavCountBadge count={navCounts.grup[item.href] ?? 0} />
             </Link>
             </Fragment>
           );

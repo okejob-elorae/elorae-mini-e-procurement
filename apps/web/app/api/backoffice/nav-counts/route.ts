@@ -8,8 +8,10 @@ import {
 import { getOverduePOCount, getSubmittedPOCount } from "@/lib/purchase-orders/queries";
 import { countOversoldInventory } from "@/lib/dashboard/queries";
 import { getMarketplaceKpi } from "@/lib/sales-orders/queries";
+import { bagiLencana } from "@/lib/nav/lencana";
 
 export const dynamic = "force-dynamic";
+
 
 /**
  * Which nav group each waiting-work item belongs to, keyed by the top-level
@@ -65,29 +67,27 @@ export async function GET() {
      * Same permission filter the panel uses: a badge must never advertise work
      * behind a door this user cannot open.
      *
-     * Counted TWICE on purpose — once against the parent group, and once
-     * against the page the work actually lives on. A badge on the parent alone
-     * says "two things are waiting" and then makes you open eight children to
-     * find out which; the child badge is the half that answers "where". The
-     * item's own `href` already names that page, so nothing new is guessed
-     * here — the query string is stripped to match the nav entry.
+     * Counted twice on purpose — once against the parent group, and once
+     * against the page the work actually lives on. The parent badge says "two
+     * things are waiting"; the page badge is the half that answers "where".
+     *
+     * TWO SEPARATE MAPS, not one keyed by href. Some parents share their href
+     * with one of their own children — `production` and its Plan Kerja entry
+     * are both `/backoffice/production/planning` — so a single map made that
+     * child inherit the whole GROUP's total and wear a badge for work that
+     * lives on a different page entirely. Splitting them is the only fix that
+     * does not depend on every parent href being unique, which nothing
+     * enforces.
      */
-    const byGroup: Record<string, number> = {};
-    for (const item of items) {
-      if (item.permission && !hasPermission(permissions, item.permission)) continue;
-      const group = NAV_GROUP_BY_ITEM[item.key];
-      if (group) byGroup[group] = (byGroup[group] ?? 0) + item.count;
+    const terlihat = items.filter(
+      (item) => !item.permission || hasPermission(permissions, item.permission),
+    );
+    const { grup, halaman } = bagiLencana(terlihat, NAV_GROUP_BY_ITEM);
 
-      const halaman = item.href.split('?')[0];
-      if (halaman && halaman !== group) {
-        byGroup[halaman] = (byGroup[halaman] ?? 0) + item.count;
-      }
-    }
-
-    return NextResponse.json({ counts: byGroup });
+    return NextResponse.json({ counts: grup, pages: halaman });
   } catch (err) {
     // A failed badge fetch must never break the shell around it.
     console.error("nav-counts failed:", err);
-    return NextResponse.json({ counts: {} });
+    return NextResponse.json({ counts: {}, pages: {} });
   }
 }
