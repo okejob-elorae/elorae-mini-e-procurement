@@ -4707,6 +4707,14 @@
     "replaceImage": "Replace image",
     "uploading": "Uploading…",
     "dropHint": "click or drop an image",
-    "untitled": "Untitled"
+    "untitled": "Untitled",
+    "deleteContent": "Delete",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "deleteTitle": "Delete this content?",
+    "deleteBody": "“{judul}” will be deleted. Its image is swept a few hours later unless another post uses it.",
+    "okDeleted": "Content deleted.",
+    "okSwapped": "Swapped the schedules of “{a}” and “{b}”.",
+    "errTIDAK_VALID": "Nothing changed."
   }
 }

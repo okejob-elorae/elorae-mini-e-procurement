@@ -38,7 +38,22 @@ import {
 import { cn } from '@/lib/utils';
 import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { unggahFoto } from '@/lib/foto/unggah';
-import { gantiGambarKontenAction, simpanKontenAction } from '@/app/actions/creative';
+import {
+  gantiGambarKontenAction,
+  hapusKontenAction,
+  simpanKontenAction,
+  tukarJadwalKontenAction,
+} from '@/app/actions/creative';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { GridFeed } from './GridFeed';
 import type { BarisKonten, RingkasanKreatif } from '@/lib/creative/queries';
 
@@ -115,6 +130,31 @@ export function KontenClient({
    */
   const [tampilan, setTampilan] = useState<'grid' | 'daftar'>('grid');
   const [foto, setFoto] = useState<NilaiFoto>(null);
+  const [hapus, setHapus] = useState<BarisKonten | null>(null);
+
+  /**
+   * Tukar posisi dua ubin.
+   *
+   * Yang benar-benar terjadi adalah JADWALNYA yang ditukar — urutan grid murni
+   * berasal dari tanggal. Toast-nya menyebut itu apa adanya, karena seretan
+   * yang diam-diam menjadwal ulang dua postingan adalah kejutan yang mahal.
+   */
+  const tukar = async (idSeret: string, idTujuan: string) => {
+    const a = baris.find((k) => k.id === idSeret);
+    const b = baris.find((k) => k.id === idTujuan);
+    const hasil = await tukarJadwalKontenAction(idSeret, idTujuan);
+    if (hasil.ok) {
+      toast.success(
+        t('okSwapped', {
+          a: a?.title ?? '',
+          b: b?.title ?? '',
+        }),
+      );
+      router.refresh();
+    } else {
+      toast.error(t(`err${hasil.kode}` as never));
+    }
+  };
 
   /**
    * Unggah langsung dari ubin grid.
@@ -292,6 +332,8 @@ export function KontenClient({
               bolehMengelola={bolehMengelola}
               onUnggah={unggahDiUbin}
               onSunting={sunting}
+              onHapus={(k) => setHapus(k)}
+              onTukar={tukar}
             />
           ) : (
             <div className="overflow-x-auto">
@@ -349,6 +391,39 @@ export function KontenClient({
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={hapus !== null} onOpenChange={(o) => !o && setHapus(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('deleteBody', { judul: hapus?.title ?? '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={() => {
+                const target = hapus;
+                if (!target) return;
+                startTransition(async () => {
+                  const h = await hapusKontenAction(target.id);
+                  if (h.ok) {
+                    toast.success(t('okDeleted'));
+                    setHapus(null);
+                    router.refresh();
+                  } else {
+                    toast.error(t(`err${h.kode}` as never));
+                  }
+                });
+              }}
+            >
+              {t('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={buka} onOpenChange={setBuka}>
         <DialogContent className="max-w-lg">

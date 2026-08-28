@@ -6,6 +6,8 @@ import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import {
   buatBrief,
   gantiGambarKonten,
+  hapusKonten,
+  tukarJadwalKonten,
   pindahStatusBrief,
   simpanKol,
   simpanKonten,
@@ -172,6 +174,44 @@ export async function gantiGambarKontenAction(
     return { ok: true, id: r.id };
   } catch (err) {
     console.error('gantiGambarKonten gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/** Hapus satu rencana konten. */
+export async function hapusKontenAction(id: string): Promise<HasilAksiKreatif> {
+  const oleh = await penulis();
+  if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
+  try {
+    const r = await hapusKonten({ id, olehUserId: oleh });
+    if (!r.ok) return { ok: false, kode: r.alasan, detail: r.detail };
+    segarkan();
+    return { ok: true, id: r.id };
+  } catch (err) {
+    console.error('hapusKonten gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/**
+ * Tukar posisi dua ubin di grid — yang berarti menukar JADWALNYA.
+ *
+ * Urutan grid murni berasal dari tanggal, jadi tidak ada cara memindahkan ubin
+ * tanpa memindahkan jadwalnya. Pemanggil wajib memberi tahu penggunanya.
+ */
+export async function tukarJadwalKontenAction(
+  idA: string,
+  idB: string,
+): Promise<HasilAksiKreatif> {
+  const oleh = await penulis();
+  if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
+  try {
+    const r = await tukarJadwalKonten({ idA, idB, olehUserId: oleh });
+    if (!r.ok) return { ok: false, kode: r.alasan, detail: r.detail };
+    segarkan();
+    return { ok: true, id: r.id };
+  } catch (err) {
+    console.error('tukarJadwalKonten gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

@@ -4707,6 +4707,14 @@
     "replaceImage": "Ganti gambar",
     "uploading": "Mengunggah…",
     "dropHint": "klik atau seret gambar",
-    "untitled": "Tanpa judul"
+    "untitled": "Tanpa judul",
+    "deleteContent": "Hapus",
+    "delete": "Hapus",
+    "cancel": "Batal",
+    "deleteTitle": "Hapus konten ini?",
+    "deleteBody": "“{judul}” akan dihapus. Gambarnya ikut terhapus otomatis beberapa jam kemudian kalau tidak dipakai konten lain.",
+    "okDeleted": "Konten dihapus.",
+    "okSwapped": "Jadwal “{a}” dan “{b}” ditukar.",
+    "errTIDAK_VALID": "Tidak ada yang berubah."
   }
 }

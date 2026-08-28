@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import Image from 'next/image';
 import { useLocale, useTranslations } from 'next-intl';
-import { ImagePlus, Loader2, Pencil, Plus } from 'lucide-react';
+import { ImagePlus, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { KOLOM_FEED, labelTanggal, susunFeed } from '@/lib/creative/feed';
 import type { BarisKonten } from '@/lib/creative/queries';
@@ -22,17 +22,31 @@ import type { BarisKonten } from '@/lib/creative/queries';
  * kali sampai komposisinya enak, bukan mengisi formulir. Satu klik atau satu
  * seret, gambarnya masuk ke slot yang dituju.
  */
+/**
+ * Jenis data seretan internal.
+ *
+ * Harus huruf kecil semua: sebagian peramban menormalkan `dataTransfer.types`
+ * jadi huruf kecil, jadi mencocokkannya dengan huruf besar akan meleset diam-
+ * diam — seretan ubin lalu terbaca sebagai unggah berkas.
+ */
+const SERET_UBIN = 'application/x-elorae-konten';
+
 export function GridFeed({
   konten,
   bolehMengelola,
   onUnggah,
   onSunting,
+  onHapus,
+  onTukar,
 }: {
   konten: BarisKonten[];
   bolehMengelola: boolean;
   /** `konten` null berarti slot baru — pemanggil yang membuat barisnya. */
   onUnggah: (konten: BarisKonten | null, file: File) => Promise<void>;
   onSunting: (konten: BarisKonten) => void;
+  onHapus: (konten: BarisKonten) => void;
+  /** Menukar posisi dua ubin — yang berarti menukar jadwalnya. */
+  onTukar: (idSeret: string, idTujuan: string) => Promise<void>;
 }) {
   const t = useTranslations('creative');
   const locale = useLocale();
@@ -94,6 +108,8 @@ export function GridFeed({
                     sibuk={sibuk === c.sel.konten.id}
                     onFile={(f) => terima(c.sel.konten, f)}
                     onSunting={() => onSunting(c.sel.konten)}
+                    onHapus={() => onHapus(c.sel.konten)}
+                    onTukar={onTukar}
                   />
                 ),
               )}
@@ -117,6 +133,8 @@ function Ubin({
   sibuk,
   onFile,
   onSunting,
+  onHapus,
+  onTukar,
 }: {
   konten: BarisKonten;
   tanggal: string | null;
@@ -124,12 +142,50 @@ function Ubin({
   sibuk: boolean;
   onFile: (f: File | undefined) => void;
   onSunting: () => void;
+  onHapus: () => void;
+  onTukar: (idSeret: string, idTujuan: string) => Promise<void>;
 }) {
   const t = useTranslations('creative');
   const adaGambar = Boolean(konten.imageUrl);
+  const [tujuanSeret, setTujuanSeret] = useState(false);
+
+  /*
+   * Satu ubin menerima DUA macam seretan: berkas gambar dari luar, dan ubin
+   * lain dari grid ini sendiri. Dibedakan lewat `dataTransfer.types` — seretan
+   * internal membawa `SERET_UBIN`, seretan berkas membawa `Files`. Tanpa
+   * pembedaan itu, menyeret satu ubin ke ubin lain akan terbaca sebagai unggah
+   * berkas kosong.
+   */
+  const seretUbin = (e: React.DragEvent) => e.dataTransfer.types.includes(SERET_UBIN);
+
+  const dnd = bolehMengelola
+    ? {
+        draggable: true,
+        onDragStart: (e: React.DragEvent) => {
+          e.dataTransfer.setData(SERET_UBIN, konten.id);
+          e.dataTransfer.effectAllowed = 'move';
+        },
+        onDragOver: (e: React.DragEvent) => {
+          if (!seretUbin(e)) return;
+          e.preventDefault();
+          setTujuanSeret(true);
+        },
+        onDragLeave: () => setTujuanSeret(false),
+        onDrop: (e: React.DragEvent) => {
+          if (!seretUbin(e)) return;
+          e.preventDefault();
+          setTujuanSeret(false);
+          const asal = e.dataTransfer.getData(SERET_UBIN);
+          if (asal && asal !== konten.id) void onTukar(asal, konten.id);
+        },
+      }
+    : {};
 
   return (
-    <div className="min-w-0">
+    <div
+      {...dnd}
+      className={cn('min-w-0', tujuanSeret && 'ring-2 ring-primary ring-offset-1')}
+    >
       {/* Bilah tanggal di ATAS ubinnya, persis seperti sheet-nya. */}
       <div
         className={cn(
@@ -170,6 +226,14 @@ function Ubin({
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
+              <button
+                type="button"
+                onClick={onHapus}
+                title={t('deleteContent')}
+                className="rounded bg-background/90 p-1.5 text-destructive shadow-sm hover:bg-destructive hover:text-destructive-foreground"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
             </div>
           )}
         </div>
@@ -182,6 +246,7 @@ function Ubin({
           onFile={onFile}
           ikon={ImagePlus}
           onSunting={bolehMengelola ? onSunting : undefined}
+          onHapus={bolehMengelola ? onHapus : undefined}
           mati={!bolehMengelola}
         />
       )}
@@ -204,6 +269,7 @@ function SlotUnggah({
   kecil = false,
   mati = false,
   onSunting,
+  onHapus,
 }: {
   label: string;
   sibuk: boolean;
@@ -212,6 +278,7 @@ function SlotUnggah({
   kecil?: boolean;
   mati?: boolean;
   onSunting?: () => void;
+  onHapus?: () => void;
 }) {
   const t = useTranslations('creative');
   const input = useRef<HTMLInputElement>(null);
@@ -250,13 +317,15 @@ function SlotUnggah({
   return (
     <div
       onDragOver={(e) => {
-        if (mati) return;
+        // Seretan ubin ditangani pembungkusnya; kalau ikut ditangkap di sini,
+        // ia terbaca sebagai unggah berkas kosong.
+        if (mati || e.dataTransfer.types.includes(SERET_UBIN)) return;
         e.preventDefault();
         setDiatas(true);
       }}
       onDragLeave={() => setDiatas(false)}
       onDrop={(e) => {
-        if (mati) return;
+        if (mati || e.dataTransfer.types.includes(SERET_UBIN)) return;
         e.preventDefault();
         setDiatas(false);
         onFile(e.dataTransfer.files?.[0]);
@@ -287,15 +356,29 @@ function SlotUnggah({
           {t('dropHint')}
         </span>
       )}
-      {onSunting && !sibuk && (
-        <button
-          type="button"
-          onClick={onSunting}
-          title={t('editContent')}
-          className="absolute right-1 top-1 rounded bg-background/90 p-1 shadow-sm hover:bg-background"
-        >
-          <Pencil className="h-3 w-3" />
-        </button>
+      {!sibuk && (onSunting || onHapus) && (
+        <div className="absolute right-1 top-1 flex gap-1">
+          {onSunting && (
+            <button
+              type="button"
+              onClick={onSunting}
+              title={t('editContent')}
+              className="rounded bg-background/90 p-1 shadow-sm hover:bg-background"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
+          {onHapus && (
+            <button
+              type="button"
+              onClick={onHapus}
+              title={t('deleteContent')}
+              className="rounded bg-background/90 p-1 text-destructive shadow-sm hover:bg-destructive hover:text-destructive-foreground"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       )}
       {berkas}
     </div>

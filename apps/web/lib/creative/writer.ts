@@ -24,7 +24,9 @@ export type AlasanGagalKreatif =
   | 'TANPA_DELIVERABLE'
   | 'BARANG_TIDAK_DITEMUKAN'
   | 'STOK_KURANG'
-  | 'QTY_TIDAK_VALID';
+  | 'QTY_TIDAK_VALID'
+  /** Menukar sebuah ubin dengan dirinya sendiri — tidak ada yang berubah. */
+  | 'TIDAK_VALID';
 
 export type HasilKreatif<T = void> =
   | ({ ok: true } & (T extends void ? Record<string, never> : T))
@@ -419,6 +421,112 @@ export async function gantiGambarKonten(input: {
     });
 
     return { ok: true as const, id: input.id };
+  });
+}
+
+/**
+ * Hapus satu rencana konten.
+ *
+ * BENAR-BENAR dihapus, tidak diarsipkan. Berbeda dari klaim pembayaran atau
+ * nota retur yang barisnya dipertahankan karena menyangkut uang dan stok:
+ * rencana konten yang dibatalkan tidak pernah menggerakkan apa pun. Yang
+ * membatalkan tapi ingin jejaknya tinggal memindahkannya ke status `BATAL`.
+ *
+ * Fotonya TIDAK ikut dihapus di sini. Ia jadi yatim dan disapu penyapu foto
+ * beberapa jam kemudian — yang benar, karena foto yang sama bisa saja sedang
+ * dipakai konten lain, dan menghapusnya dari sini akan mengosongkan ubin orang
+ * lain tanpa ada yang meminta.
+ */
+export async function hapusKonten(input: {
+  id: string;
+  olehUserId: string;
+}): Promise<HasilKreatif<{ id: string }>> {
+  return runSerializable(async (tx) => {
+    const lama = await tx.contentPlan.findUnique({
+      where: { id: input.id },
+      select: { id: true, title: true, status: true, scheduledAt: true, imageUrl: true },
+    });
+    if (!lama) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+
+    await tx.contentPlan.delete({ where: { id: input.id } });
+
+    /*
+     * Jejaknya ditulis SESUDAH penghapusan tapi di dalam transaksi yang sama:
+     * kalau penghapusannya gagal, jejaknya ikut batal, jadi tidak pernah ada
+     * catatan penghapusan atas baris yang masih hidup.
+     */
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONTEN_DIHAPUS,
+      entityType: 'ContentPlan',
+      entityId: input.id,
+      changes: { before: { title: lama.title, status: lama.status }, after: null },
+      metadata: {
+        title: lama.title,
+        scheduledAt: lama.scheduledAt?.toISOString() ?? null,
+        imageUrl: lama.imageUrl,
+      },
+    });
+
+    return { ok: true as const, id: input.id };
+  });
+}
+
+/**
+ * Tukar posisi dua ubin di grid feed.
+ *
+ * Urutan grid MURNI berasal dari `scheduledAt` — itu bukan kebetulan, itu yang
+ * membuat grid ini kalender dan bukan papan gambar. Maka menukar posisi berarti
+ * menukar TANGGALNYA, dan dua postingan benar-benar berpindah jadwal.
+ *
+ * Sempat saya pertimbangkan kolom urutan tersendiri supaya posisi bisa digeser
+ * tanpa menyentuh jadwal. Ditolak: begitu urutan grid dan urutan tanggal boleh
+ * berbeda, pratinjau feednya berhenti memberitahu kapan sesuatu tayang — dan
+ * itulah satu-satunya hal yang tidak bisa dilakukan spreadsheet yang mereka
+ * pakai sekarang.
+ *
+ * Menukar, bukan menyisipkan. Menyisipkan menggeser tanggal SEMUA postingan di
+ * bawahnya; satu seretan yang salah akan menjadwal ulang sebulan penuh.
+ */
+export async function tukarJadwalKonten(input: {
+  idA: string;
+  idB: string;
+  olehUserId: string;
+}): Promise<HasilKreatif<{ id: string }>> {
+  if (input.idA === input.idB) return { ok: false, alasan: 'TIDAK_VALID' };
+
+  return runSerializable(async (tx) => {
+    const dua = await tx.contentPlan.findMany({
+      where: { id: { in: [input.idA, input.idB] } },
+      select: { id: true, title: true, scheduledAt: true },
+    });
+    if (dua.length !== 2) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+
+    const a = dua.find((x) => x.id === input.idA)!;
+    const b = dua.find((x) => x.id === input.idB)!;
+
+    await tx.contentPlan.update({ where: { id: a.id }, data: { scheduledAt: b.scheduledAt } });
+    await tx.contentPlan.update({ where: { id: b.id }, data: { scheduledAt: a.scheduledAt } });
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONTEN_DITUKAR,
+      entityType: 'ContentPlan',
+      entityId: a.id,
+      changes: {
+        before: { scheduledAt: a.scheduledAt?.toISOString() ?? null },
+        after: { scheduledAt: b.scheduledAt?.toISOString() ?? null },
+      },
+      metadata: {
+        // Pasangannya ikut dicatat: sebuah penukaran yang hanya tercatat di satu
+        // sisi tidak bisa ditelusuri balik dari sisi yang lain.
+        pasanganId: b.id,
+        pasanganJudul: b.title,
+        judul: a.title,
+      },
+    });
+
+    return { ok: true as const, id: a.id };
   });
 }
 
