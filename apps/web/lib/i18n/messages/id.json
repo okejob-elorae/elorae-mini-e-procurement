@@ -328,6 +328,17 @@
     "jenisPotongan": {
       "title": "Jenis Potongan",
       "description": "Daftar potongan yang boleh dipakai pada BKM, beserta aturan yang melekat padanya."
+    },
+    "font": {
+      "title": "Huruf antarmuka",
+      "description": "Berlaku untuk seluruh aplikasi, dan hanya untuk akun Anda — rekan setim tetap dengan pilihannya sendiri.",
+      "sample": "Piutang Rp 1.250.000 · 24 pesanan",
+      "save": "Simpan huruf",
+      "cancel": "Kembalikan",
+      "reset": "Pakai bawaan",
+      "unsaved": "Baru dicoba, belum disimpan.",
+      "ok": "Huruf disimpan.",
+      "errUnknown": "Huruf itu tidak dikenal."
     }
   },
   "tax": {

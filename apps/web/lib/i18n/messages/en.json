@@ -328,6 +328,17 @@
     "jenisPotongan": {
       "title": "Deduction types",
       "description": "The deductions allowed on a payment claim, and the rules attached to each."
+    },
+    "font": {
+      "title": "Interface font",
+      "description": "Applies across the whole app, and only to your account — teammates keep their own.",
+      "sample": "Receivables Rp 1,250,000 · 24 orders",
+      "save": "Save font",
+      "cancel": "Revert",
+      "reset": "Use the default",
+      "unsaved": "Previewing — not saved yet.",
+      "ok": "Font saved.",
+      "errUnknown": "That font is not recognised."
     }
   },
   "tax": {

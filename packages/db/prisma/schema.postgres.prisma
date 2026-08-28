@@ -50,6 +50,7 @@ model User {
   fcmToken      String?
   themePantoneTcx  String?
   themePrimaryHex  String    @default("#334155")
+  themeFontId      String?
   themePantone     PantoneColor? @relation(fields: [themePantoneTcx], references: [tcx], onDelete: SetNull, onUpdate: Restrict)
   emailVerified DateTime?
   image         String?

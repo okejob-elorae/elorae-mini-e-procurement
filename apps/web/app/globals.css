@@ -47,6 +47,17 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
+/*
+ * Huruf aplikasi — SATU saklar untuk seluruh antarmuka.
+ *
+ * `--font-sans` di Tailwind menunjuk ke sini, dan skrip tema menimpanya dengan
+ * variabel huruf yang dipilih pengguna sebelum halaman pertama dilukis. Kalau
+ * belum pernah memilih, ia jatuh ke Plus Jakarta Sans.
+ */
+:root {
+  --font-app-sans: var(--font-jakarta);
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.129 0.042 264.695);

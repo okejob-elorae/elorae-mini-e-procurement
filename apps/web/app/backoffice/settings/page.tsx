@@ -26,6 +26,9 @@ import {
 } from 'lucide-react';
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import { UIThemePicker } from '@/components/settings/UIThemePicker';
+import { FontPicker } from '@/components/settings/FontPicker';
+import { getUserFont } from '@/app/actions/settings/theme';
+import { FONT_BAWAAN } from '@/lib/theme/fonts';
 import { DEVELOPER_PALETTES } from '@/lib/theme/developer-palettes';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
@@ -106,6 +109,23 @@ export default function SettingsPage() {
     const palette = generatePaletteFromSeed(next.primaryHex);
     applyThemeFromPantoneSeed(next.primaryHex, palette);
   };
+
+  const [fontTersimpan, setFontTersimpan] = useState<string | null>(null);
+
+  useEffect(() => {
+    let batal = false;
+    void getUserFont()
+      .then((f) => {
+        if (!batal) setFontTersimpan(f);
+      })
+      // Gagal membaca huruf tidak boleh mengosongkan seluruh layar pengaturan.
+      .catch(() => {
+        if (!batal) setFontTersimpan(FONT_BAWAAN);
+      });
+    return () => {
+      batal = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (status !== 'authenticated' || !userId) {
@@ -273,6 +293,11 @@ export default function SettingsPage() {
           handlePantoneSelect({ tcx: seed.tcx, name: seed.name, hex: seed.hex } as PantoneThemeSelection)
         }
       />
+
+      {/* Dipasang setelah huruf tersimpannya terbaca. Merendernya lebih dulu
+          dengan bawaan lalu menggeser ke pilihan sebenarnya membuat kartunya
+          berkedip ganti huruf tiap kali halaman ini dibuka. */}
+      {fontTersimpan !== null && <FontPicker terpilihAwal={fontTersimpan} />}
 
       <Card>
         <CardHeader>

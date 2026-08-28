@@ -6,6 +6,7 @@ import { prisma } from '@elorae/db';
 import { listPantoneColors, type ListPantoneFilters } from '@/lib/production-colors/queries';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { DEFAULT_THEME_PRIMARY_COLOR } from '@/lib/theme/theme-presets';
+import { FONT_BAWAAN, fontDikenal } from '@/lib/theme/fonts';
 
 const HEX_COLOR_PATTERN = /^#?[0-9a-fA-F]{6}$/;
 
@@ -165,4 +166,41 @@ export async function setUserThemePreference(
     primaryHex: updated.themePrimaryHex,
     pantoneName: updated.themePantone?.name ?? pantone.name,
   };
+}
+
+/**
+ * Huruf pilihan pengguna.
+ *
+ * Terpisah dari `setUserThemePreference` dengan sengaja: mengganti huruf tidak
+ * boleh menuntut warna ikut dikirim ulang, dan sebaliknya. Keduanya memang
+ * "tema", tapi orang mengubahnya di saat yang berbeda.
+ */
+export async function setUserFont(fontId: string): Promise<{ ok: boolean; fontId: string }> {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error('Unauthorized');
+
+  /*
+   * Divalidasi terhadap daftar SEBELUM disimpan. Id yang tidak dikenal akan
+   * diam-diam jatuh ke bawaan setiap kali dibaca — pengguna memilih sesuatu,
+   * tampilannya tidak berubah, dan tidak ada yang menjelaskan kenapa.
+   */
+  if (!fontDikenal(fontId)) return { ok: false, fontId: FONT_BAWAAN };
+
+  await prisma.user.update({
+    where: { id: session.user.id },
+    data: { themeFontId: fontId },
+  });
+  revalidatePath('/backoffice/settings');
+  return { ok: true, fontId };
+}
+
+export async function getUserFont(): Promise<string> {
+  const session = await auth();
+  if (!session?.user?.id) return FONT_BAWAAN;
+  const u = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { themeFontId: true },
+  });
+  // Yang tersimpan tapi sudah tidak ada di daftar jatuh ke bawaan, bukan kosong.
+  return u?.themeFontId && fontDikenal(u.themeFontId) ? u.themeFontId : FONT_BAWAAN;
 }
