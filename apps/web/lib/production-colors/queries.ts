@@ -48,7 +48,7 @@ function buildTagWhere(filters: ListPantoneFilters): Prisma.PantoneColorWhereInp
       OR: values.map((v) => ({
         filterTags: {
           path: usePostgres() ? [dim] : `$.${dim}`,
-          array_contains: v, mode: 'insensitive' as const,
+          array_contains: v,
         },
       })),
     });
@@ -88,6 +88,21 @@ function buildBookOrder(): Prisma.PantoneColorOrderByWithRelationInput[] {
   ];
 }
 
+/**
+ * `mode: 'insensitive'` ADALAH KHUSUS POSTGRESQL di Prisma, dan itu disengaja.
+ *
+ * Tanpanya `contains` menjadi `LIKE`, yang di PostgreSQL peka huruf besar-kecil
+ * — mengetik "lime" tidak menemukan satu pun dari 23 warna bernama "Lime …".
+ * Kode ini ditulis untuk MariaDB, yang collation bawaannya abai huruf, jadi
+ * cacatnya tidak pernah terlihat di sana dan lolos type-check di sini.
+ *
+ * KONSEKUENSINYA: schema MariaDB di repo ini tidak memiliki `mode` pada tipe
+ * filternya. Siapa pun yang membangkitkan klien dari `schema.prisma` akan
+ * mendapat galat tipe di 39 tempat sekaligus. Itu bukan kelalaian — itu harga
+ * yang dipilih supaya pencarian benar-benar bekerja di dialek yang dipakai
+ * cabang ini. Kalau MariaDB dihidupkan lagi, jalan keluarnya satu pembungkus
+ * bersama yang bercabang per dialek, bukan mencabut `mode` satu per satu.
+ */
 export async function listPantoneColors(
   filters: ListPantoneFilters,
   opts: { page: number; pageSize: number }
