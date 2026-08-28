@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import {
   buatBrief,
+  gantiGambarKonten,
   pindahStatusBrief,
   simpanKol,
   simpanKonten,
@@ -148,6 +149,29 @@ export async function simpanKontenAction(
     return { ok: true, id: r.id };
   } catch (err) {
     console.error('simpanKonten gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+/**
+ * Ganti gambar satu konten — jalur ubin grid.
+ *
+ * Terpisah dari `simpanKontenAction` supaya menempel gambar tidak menuntut
+ * seluruh isi kontennya dikirim ulang.
+ */
+export async function gantiGambarKontenAction(
+  id: string,
+  imageUrl: string | null,
+): Promise<HasilAksiKreatif> {
+  const oleh = await penulis();
+  if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
+  try {
+    const r = await gantiGambarKonten({ id, imageUrl, olehUserId: oleh });
+    if (!r.ok) return { ok: false, kode: r.alasan, detail: r.detail };
+    segarkan();
+    return { ok: true, id: r.id };
+  } catch (err) {
+    console.error('gantiGambarKonten gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

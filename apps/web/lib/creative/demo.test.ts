@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prisma } from '@elorae/db';
+import { prisma, seededIds } from '@elorae/db';
 import { simpanKonten } from './writer';
 import { daftarKonten } from './queries';
 import { susunFeed, labelTanggal } from './feed';
@@ -53,7 +53,7 @@ describe('bentuk grid feed', () => {
     // Slot kosong dipertahankan pada posisinya.
     expect(feed[1].sel.map((s) => s.jenis)).toEqual(['kosong', 'konten', 'konten']);
 
-    await prisma.auditLog.deleteMany({ where: { entityId: { in: ids } } });
-    await prisma.contentPlan.deleteMany({ where: { id: { in: ids } } });
+    await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds(ids) } } });
+    await prisma.contentPlan.deleteMany({ where: { id: { in: seededIds(ids) } } });
   });
 });

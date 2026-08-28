@@ -113,7 +113,7 @@ export {
   type PartialConsumeLine,
   type PartialConsumeShortLine,
 } from "./reservation-writer";
-export { seededId } from "./spec-teardown";
+export { seededId, seededIds } from "./spec-teardown";
 export {
   classifyForBackfill,
   type BackfillDecision,

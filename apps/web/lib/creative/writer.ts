@@ -384,6 +384,44 @@ export type IsiKonten = {
   briefId?: string | null;
 };
 
+/**
+ * Ganti HANYA gambar sebuah konten.
+ *
+ * Ada terpisah dari `simpanKonten` karena menyusun feed adalah pekerjaan
+ * menempel gambar berkali-kali sampai komposisinya enak. Memaksa jalur itu
+ * lewat penyimpanan penuh menuntut pemanggilnya mengirim ulang SELURUH isi —
+ * dan yang lupa mengirim satu kolom akan menghapusnya tanpa ada yang meminta.
+ */
+export async function gantiGambarKonten(input: {
+  id: string;
+  imageUrl: string | null;
+  olehUserId: string;
+}): Promise<HasilKreatif<{ id: string }>> {
+  return runSerializable(async (tx) => {
+    const lama = await tx.contentPlan.findUnique({
+      where: { id: input.id },
+      select: { id: true, title: true, imageUrl: true },
+    });
+    if (!lama) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+
+    await tx.contentPlan.update({
+      where: { id: input.id },
+      data: { imageUrl: input.imageUrl },
+    });
+
+    await catatJejak(tx, {
+      userId: input.olehUserId,
+      action: JEJAK.KONTEN_DIUBAH,
+      entityType: 'ContentPlan',
+      entityId: input.id,
+      changes: { before: { imageUrl: lama.imageUrl }, after: { imageUrl: input.imageUrl } },
+      metadata: { title: lama.title },
+    });
+
+    return { ok: true as const, id: input.id };
+  });
+}
+
 export async function simpanKonten(input: {
   id?: string | null;
   isi: IsiKonten;

@@ -4702,6 +4702,11 @@
     "editContent": "Ubah konten",
     "colImage": "Gambar / mockup",
     "imageHint": "Inilah yang muncul di grid. Boleh mockup dulu — belum harus aset final.",
-    "unscheduled": "Belum berjadwal"
+    "unscheduled": "Belum berjadwal",
+    "addTile": "Tambah konten",
+    "replaceImage": "Ganti gambar",
+    "uploading": "Mengunggah…",
+    "dropHint": "klik atau seret gambar",
+    "untitled": "Tanpa judul"
   }
 }

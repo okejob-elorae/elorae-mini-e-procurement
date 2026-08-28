@@ -4702,6 +4702,11 @@
     "editContent": "Edit content",
     "colImage": "Image / mockup",
     "imageHint": "This is what shows in the grid. A mockup is fine — it need not be the final asset.",
-    "unscheduled": "Not scheduled"
+    "unscheduled": "Not scheduled",
+    "addTile": "Add content",
+    "replaceImage": "Replace image",
+    "uploading": "Uploading…",
+    "dropHint": "click or drop an image",
+    "untitled": "Untitled"
   }
 }

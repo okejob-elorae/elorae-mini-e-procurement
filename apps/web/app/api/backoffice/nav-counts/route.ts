@@ -61,14 +61,27 @@ export async function GET() {
       unshippedOrders: marketplaceKpi.pendingFulfillmentCount,
     });
 
-    // Same permission filter the panel uses: a badge must never advertise work
-    // behind a door this user cannot open.
+    /*
+     * Same permission filter the panel uses: a badge must never advertise work
+     * behind a door this user cannot open.
+     *
+     * Counted TWICE on purpose — once against the parent group, and once
+     * against the page the work actually lives on. A badge on the parent alone
+     * says "two things are waiting" and then makes you open eight children to
+     * find out which; the child badge is the half that answers "where". The
+     * item's own `href` already names that page, so nothing new is guessed
+     * here — the query string is stripped to match the nav entry.
+     */
     const byGroup: Record<string, number> = {};
     for (const item of items) {
       if (item.permission && !hasPermission(permissions, item.permission)) continue;
       const group = NAV_GROUP_BY_ITEM[item.key];
-      if (!group) continue;
-      byGroup[group] = (byGroup[group] ?? 0) + item.count;
+      if (group) byGroup[group] = (byGroup[group] ?? 0) + item.count;
+
+      const halaman = item.href.split('?')[0];
+      if (halaman && halaman !== group) {
+        byGroup[halaman] = (byGroup[halaman] ?? 0) + item.count;
+      }
     }
 
     return NextResponse.json({ counts: byGroup });

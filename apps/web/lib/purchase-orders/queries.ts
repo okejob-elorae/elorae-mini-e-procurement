@@ -294,11 +294,21 @@ export async function getOverduePOs() {
  * badge needs one integer, and paying that price on every navigation would be
  * a real cost for a decoration.
  */
+/**
+ * PO yang sudah lewat tanggal tiba dan barangnya belum lengkap.
+ *
+ * `DRAFT` DIKECUALIKAN. Draft belum pernah dikirim ke pemasok mana pun, jadi ia
+ * tidak bisa terlambat — tidak ada yang berjanji apa pun. Sebelum ini sebuah
+ * draft yang tanggal perkiraannya kebetulan sudah lewat ikut terhitung, dan itu
+ * muncul sebagai lencana merah di menu samping yang tidak menunjuk pekerjaan
+ * apa pun. Lencana yang salah sekali membuat orang berhenti mempercayai
+ * seluruh lencana.
+ */
 export async function getOverduePOCount(): Promise<number> {
   return prisma.purchaseOrder.count({
     where: {
       etaDate: { lt: new Date() },
-      status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] },
+      status: { notIn: ['DRAFT', 'CLOSED', 'OVER', 'CANCELLED'] },
     },
   });
 }

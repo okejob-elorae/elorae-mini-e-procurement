@@ -536,7 +536,11 @@ function Sidebar({
                                 : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
                             )}
                           >
-                            {tNav(child.labelKey as any)}
+                            <span className="flex-1">{tNav(child.labelKey as any)}</span>
+                            {/* Lencana ikut turun ke anaknya. Angka di induk saja
+                                menyebut ADA pekerjaan tanpa menyebut DI MANA, dan
+                                orang harus membuka delapan anak untuk mencarinya. */}
+                            <NavCountBadge count={navCounts[child.href] ?? 0} />
                           </Link>
                         );
                       });

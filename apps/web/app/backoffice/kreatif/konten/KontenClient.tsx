@@ -37,7 +37,8 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
-import { simpanKontenAction } from '@/app/actions/creative';
+import { unggahFoto } from '@/lib/foto/unggah';
+import { gantiGambarKontenAction, simpanKontenAction } from '@/app/actions/creative';
 import { GridFeed } from './GridFeed';
 import type { BarisKonten, RingkasanKreatif } from '@/lib/creative/queries';
 
@@ -114,6 +115,45 @@ export function KontenClient({
    */
   const [tampilan, setTampilan] = useState<'grid' | 'daftar'>('grid');
   const [foto, setFoto] = useState<NilaiFoto>(null);
+
+  /**
+   * Unggah langsung dari ubin grid.
+   *
+   * `konten` null berarti ubin "tambah": barisnya dibuat di sini, dengan
+   * tanggal SEHARI SESUDAH jadwal terbaru yang ada — supaya ia muncul di kiri
+   * atas, tempat postingan berikutnya memang berada di feed. Tanpa itu ia lahir
+   * tanpa jadwal dan terlempar ke dasar grid, jauh dari ubin yang barusan
+   * diklik.
+   */
+  const unggahDiUbin = async (k: BarisKonten | null, file: File) => {
+    try {
+      const imageUrl = await unggahFoto(file);
+      if (k) {
+        const h = await gantiGambarKontenAction(k.id, imageUrl);
+        if (!h.ok) throw new Error(h.kode);
+      } else {
+        const terbaru = baris
+          .map((x: BarisKonten) => x.scheduledAt)
+          .filter((x): x is string => Boolean(x))
+          .sort()
+          .at(-1);
+        const dasar = terbaru ? new Date(terbaru) : new Date();
+        dasar.setDate(dasar.getDate() + (terbaru ? 1 : 0));
+        const h = await simpanKontenAction(null, {
+          title: t('untitled'),
+          platform: 'INSTAGRAM',
+          format: 'FEED',
+          status: 'IDE',
+          scheduledAt: dasar.toISOString().slice(0, 10),
+          imageUrl,
+        });
+        if (!h.ok) throw new Error(h.kode);
+      }
+      router.refresh();
+    } catch (err) {
+      toast.error(t(`err${err instanceof Error ? err.message : 'GAGAL'}` as never));
+    }
+  };
 
   const sunting = (k: BarisKonten) => {
     setDraf({
@@ -236,16 +276,23 @@ export function KontenClient({
 
       <Card>
         <CardContent
-          className={terlihat.length === 0 ? 'p-0' : tampilan === 'grid' ? 'py-4' : 'px-0'}
+          className={
+            tampilan === 'grid' ? 'py-4' : terlihat.length === 0 ? 'p-0' : 'px-0'
+          }
         >
-          {terlihat.length === 0 ? (
+          {terlihat.length === 0 && tampilan === 'daftar' ? (
             <EmptyState
               icon={CalendarRange}
               title={t('contentEmptyTitle')}
               description={t('contentEmptyBody')}
             />
           ) : tampilan === 'grid' ? (
-            <GridFeed konten={terlihat} onPilih={(k) => (bolehMengelola ? sunting(k) : undefined)} />
+            <GridFeed
+              konten={terlihat}
+              bolehMengelola={bolehMengelola}
+              onUnggah={unggahDiUbin}
+              onSunting={sunting}
+            />
           ) : (
             <div className="overflow-x-auto">
               <Table>
