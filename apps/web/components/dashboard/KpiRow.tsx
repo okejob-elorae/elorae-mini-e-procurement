@@ -39,7 +39,16 @@ const NADA: Record<NonNullable<Kpi['nada']>, string> = {
 export function KpiRow({ judul, kpi }: { judul: string; kpi: Kpi[] }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {/* Penanda kecil berwarna tema. Judul bagian yang cuma teks abu terbaca
+          sebagai keterangan; satu batang warna membuatnya terbaca sebagai
+          kepala bagian — dan itu satu-satunya tempat warna tema muncul tanpa
+          bersaing dengan angkanya. */}
+      <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span
+          aria-hidden
+          className="h-3 w-[3px] shrink-0 rounded-full"
+          style={{ background: 'var(--kpi-accent)' }}
+        />
         {judul}
       </h3>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -69,15 +78,21 @@ export function KpiRow({ judul, kpi }: { judul: string; kpi: Kpi[] }) {
             </>
           );
           const kelas = cn(
-            'rounded-xl border bg-card px-3.5 py-3 transition-colors',
-            k.href && 'hover:bg-muted/60',
+            'rounded-xl border px-3.5 py-3 transition-shadow',
+            k.href && 'hover:shadow-[0_1px_2px_rgb(0_0_0/0.05),0_14px_34px_-14px_var(--kpi-glow)]',
           );
+          const gaya = {
+            background: 'var(--kpi-surface)',
+            borderColor: 'var(--kpi-ring)',
+            /* Halo di LUAR garis, dalam warna tema — inti perbaikannya. */
+            boxShadow: '0 1px 2px rgb(0 0 0 / 0.05), 0 12px 30px -14px var(--kpi-glow)',
+          };
           return k.href ? (
-            <Link key={k.label} href={k.href} className={kelas}>
+            <Link key={k.label} href={k.href} className={kelas} style={gaya}>
               {isi}
             </Link>
           ) : (
-            <div key={k.label} className={kelas}>
+            <div key={k.label} className={kelas} style={gaya}>
               {isi}
             </div>
           );

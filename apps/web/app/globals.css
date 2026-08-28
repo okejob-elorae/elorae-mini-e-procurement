@@ -723,3 +723,39 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
   --folder-gelap: color-mix(in oklab, var(--primary) 80%, black);
   --folder-garis: color-mix(in oklab, var(--primary) 78%, white);
 }
+
+/*
+ * Nada ubin KPI beranda.
+ *
+ * Sebelumnya kartu putih di atas krem dengan garis abu tipis — dan warna tema
+ * hanya hidup di menu samping, tidak pernah masuk ke area kerja. Hasilnya
+ * hambar: dua belas ubin yang semuanya terlihat sama dan tidak satu pun terasa
+ * milik merek ini.
+ *
+ * Tiga hal sekaligus, karena satu saja tidak cukup terlihat: permukaan yang
+ * bernada tema TIPIS (9% — cukup terasa, tidak sampai mengganggu keterbacaan
+ * angkanya), garis yang ikut bernada, dan HALO di luar garis dalam warna tema.
+ * Halonya yang paling menjawab: ia mengangkat ubin dari kertas tanpa menambah
+ * garis baru.
+ *
+ * Semuanya `color-mix` dari `--primary`, jadi ikut tema apa pun. `oklab` supaya
+ * rona bertahan saat dicampur — di sRGB lime yang digelapkan mendarat jadi
+ * zaitun kusam.
+ */
+:root {
+  --kpi-surface: color-mix(in oklab, var(--primary) 9%, var(--card));
+  --kpi-ring: color-mix(in oklab, var(--primary) 44%, var(--border));
+  --kpi-glow: color-mix(in oklab, var(--primary) 82%, transparent);
+  --kpi-accent: color-mix(in oklab, var(--primary) 66%, black);
+}
+
+/*
+ * Di tema gelap nadanya dikurangi. Permukaan gelap sudah kontras dengan
+ * kertasnya, jadi tint sebanyak mode terang justru membuat ubinnya menyala.
+ */
+.dark {
+  --kpi-surface: color-mix(in oklab, var(--primary) 6%, var(--card));
+  --kpi-ring: color-mix(in oklab, var(--primary) 28%, var(--border));
+  --kpi-glow: color-mix(in oklab, var(--primary) 55%, transparent);
+  --kpi-accent: color-mix(in oklab, var(--primary) 70%, white);
+}
