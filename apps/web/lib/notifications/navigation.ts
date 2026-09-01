@@ -3,7 +3,8 @@
  */
 export function getNotificationHref(
   type: string,
-  data: Record<string, unknown> | null
+  data: Record<string, unknown> | null,
+  context: 'backoffice' | 'pwa' = 'backoffice',
 ): string | null {
   if (!data || typeof data !== 'object') return null;
 
@@ -105,6 +106,14 @@ export function getNotificationHref(
         return `/backoffice/field-returns/${returnId}`;
       }
       return '/backoffice/field-returns';
+    }
+    case 'AR_OVERDUE': {
+      const receivableId = data.receivableId;
+      const base = context === 'pwa' ? '/pwa/collections' : '/backoffice/finance/piutang';
+      if (typeof receivableId === 'string') {
+        return `${base}/${receivableId}`;
+      }
+      return base;
     }
     default:
       return null;
