@@ -42,6 +42,7 @@ import { isOverdue, type AgingBucket } from "@/lib/finance/ar/aging";
 import type { ReceivableRow } from "@/lib/finance/ar/queries";
 import { bulkAssignStoreAction, type CollectionActionReason } from "@/app/actions/collections";
 import { AgingSummary } from "./AgingSummary";
+import { PiutangExportButtons } from "./PiutangExportButtons";
 
 type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF";
 type StatusFilter = ReceivableStatusValue | "ALL";
@@ -194,6 +195,17 @@ export function PiutangPageClient(props: Props) {
     !!props.dateTo;
   const selectedStoreName = props.storeOptions.find((s) => s.id === props.storeId)?.name ?? "";
 
+  const exportFilters = {
+    storeId: props.storeId || undefined,
+    salesmanId: props.salesmanId || undefined,
+    collectorId: props.collectorId || undefined,
+    status: props.status === "ALL" ? undefined : props.status,
+    bucket: props.bucket,
+    dateFrom: props.dateFrom ? new Date(props.dateFrom) : undefined,
+    dateTo: props.dateTo ? new Date(props.dateTo) : undefined,
+    search: props.search || undefined,
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -201,6 +213,7 @@ export function PiutangPageClient(props: Props) {
           <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
           <p className="text-muted-foreground">{t("subtitle")}</p>
         </div>
+        <PiutangExportButtons filters={exportFilters} />
       </div>
 
       {props.loadError ? (

@@ -4242,6 +4242,13 @@
       "noAllocations": "Alokasikan pembayaran ke minimal satu piutang.",
       "submitting": "Menyimpan...",
       "successToast": "Pembayaran {docNo} berhasil dicatat."
+    },
+    "export": {
+      "csv": "Ekspor CSV",
+      "excel": "Ekspor Excel",
+      "started": "Ekspor dimulai",
+      "failed": "Ekspor gagal",
+      "truncated": "Menampilkan 10.000 dari {total} baris — persempit filter untuk data lengkap"
     }
   },
   "profileAccounts": {
