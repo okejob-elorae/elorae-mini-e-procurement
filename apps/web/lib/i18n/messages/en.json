@@ -250,7 +250,7 @@
       "heading": "Overdue Notification Thresholds",
       "subtitle": "Comma-separated day list, counted from the due date, that triggers a notification",
       "fieldLabel": "Days (e.g. 0,7,30,60)",
-      "fieldHint": "One notification fires per crossed threshold per invoice",
+      "fieldHint": "Only the highest newly-crossed threshold fires per invoice, not one per threshold",
       "save": "Save",
       "loadError": "Failed to load settings",
       "errEmpty": "Enter at least one day",

@@ -6,7 +6,6 @@ import { auth } from "@/lib/auth";
 import { requirePermission, PERMISSIONS } from "@/lib/rbac";
 import {
   OVERDUE_THRESHOLD_SETTING_KEY,
-  DEFAULT_OVERDUE_THRESHOLDS,
   parseOverdueThresholds,
 } from "@/lib/finance/ar/overdue-thresholds";
 
@@ -41,5 +40,3 @@ export async function setOverdueThresholds(
   revalidatePath("/backoffice/settings/piutang");
   return { ok: true, thresholds: parseOverdueThresholds(trimmed) };
 }
-
-export { DEFAULT_OVERDUE_THRESHOLDS };

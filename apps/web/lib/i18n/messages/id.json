@@ -250,7 +250,7 @@
       "heading": "Ambang Batas Notifikasi Piutang Jatuh Tempo",
       "subtitle": "Daftar hari (dipisah koma) sejak jatuh tempo untuk memicu notifikasi",
       "fieldLabel": "Hari (contoh: 0,7,30,60)",
-      "fieldHint": "Notifikasi terkirim sekali per ambang batas yang dilewati per tagihan",
+      "fieldHint": "Hanya ambang batas tertinggi yang baru dilewati yang memicu notifikasi, bukan satu per ambang batas",
       "save": "Simpan",
       "loadError": "Gagal memuat pengaturan",
       "errEmpty": "Isi minimal satu hari",

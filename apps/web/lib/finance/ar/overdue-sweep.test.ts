@@ -32,10 +32,23 @@ d("runOverdueSweep (test bed only)", () => {
   let orderId = "";
   let deliveryId = "";
   let receivableId = "";
+  /**
+   * `ar.overdueThresholdDays` is a SHARED singleton row on the `:3308` bed, and the settings page
+   * this slice ships writes it in real dev use. Snapshot before any test touches it, restore after
+   * — an unconditional delete in teardown would silently revert an operator's configured schedule
+   * (`parseOverdueThresholds` fails OPEN, so nothing would ever surface the loss).
+   */
+  let settingSnapshot: string | null = null;
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; adminId = ""; collectorId = ""; orderId = ""; deliveryId = ""; receivableId = "";
+
+    const existingSetting = await prisma.systemSetting.findUnique({
+      where: { key: OVERDUE_THRESHOLD_SETTING_KEY },
+      select: { value: true },
+    });
+    settingSnapshot = existingSetting?.value ?? null;
 
     const store = await prisma.store.create({ data: { code: `TEST-OSW-${token}`, name: "test", address: "test", termsType: "PUTUS" } });
     storeId = store.id;
@@ -59,7 +72,15 @@ d("runOverdueSweep (test bed only)", () => {
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(adminId), seededId(collectorId)] } } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
-    await prisma.systemSetting.deleteMany({ where: { key: OVERDUE_THRESHOLD_SETTING_KEY } });
+    if (settingSnapshot === null) {
+      await prisma.systemSetting.deleteMany({ where: { key: OVERDUE_THRESHOLD_SETTING_KEY } });
+    } else {
+      await prisma.systemSetting.upsert({
+        where: { key: OVERDUE_THRESHOLD_SETTING_KEY },
+        create: { key: OVERDUE_THRESHOLD_SETTING_KEY, value: settingSnapshot },
+        update: { value: settingSnapshot },
+      });
+    }
   });
 
   it("a receivable 45 days overdue fires ONCE at threshold 30, not at 0/7/30", async () => {
@@ -130,7 +151,12 @@ d("runOverdueSweep (test bed only)", () => {
   });
 
   it("respects a custom threshold list from SystemSetting", async () => {
-    await prisma.systemSetting.create({ data: { key: OVERDUE_THRESHOLD_SETTING_KEY, value: "0,10" } });
+    /* upsert, not create: the bed may already hold an operator-configured row, which afterEach now restores instead of deleting. */
+    await prisma.systemSetting.upsert({
+      where: { key: OVERDUE_THRESHOLD_SETTING_KEY },
+      create: { key: OVERDUE_THRESHOLD_SETTING_KEY, value: "0,10" },
+      update: { value: "0,10" },
+    });
     const result = await runOverdueSweep({ receivableIds: [receivableId] });
     const notifs = await notificationsFor(receivableId);
     expect(result.announced).toBe(1);
@@ -143,5 +169,18 @@ d("runOverdueSweep (test bed only)", () => {
     expect(result.deferred).toBe(1);
     const notifs = await notificationsFor(receivableId);
     expect(notifs).toHaveLength(0);
+  });
+
+  /**
+   * Regression guard for `notifyCollectorOfOverdue`'s `if (process.env.VITEST) return;`. Every
+   * other assertion in this file passes identically with or without that line — `collectorNotified`
+   * counts intent, not delivery — so removing it would write permanent orphaned `NotificationQueue`
+   * rows on the shared bed with no test turning red. This one turns red.
+   */
+  it("does not write a real NotificationQueue row for the collector under VITEST", async () => {
+    const result = await runOverdueSweep({ receivableIds: [receivableId] });
+    expect(result.collectorNotified).toBe(1);
+    const queueRows = await prisma.notificationQueue.count({ where: { userId: collectorId } });
+    expect(queueRows).toBe(0);
   });
 });

@@ -37,7 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatDateOnlyJakarta, parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { isOverdue, type AgingBucket } from "@/lib/finance/ar/aging";
 import type { ReceivableRow } from "@/lib/finance/ar/queries";
 import { bulkAssignStoreAction, type CollectionActionReason } from "@/app/actions/collections";
@@ -201,9 +201,10 @@ export function PiutangPageClient(props: Props) {
     collectorId: props.collectorId || undefined,
     status: props.status === "ALL" ? undefined : props.status,
     bucket: props.bucket,
-    dateFrom: props.dateFrom ? new Date(props.dateFrom) : undefined,
-    dateTo: props.dateTo ? new Date(props.dateTo) : undefined,
+    dateFrom: props.dateFrom ? parseDateOnly(props.dateFrom) : undefined,
+    dateTo: props.dateTo ? parseDateOnlyEnd(props.dateTo) : undefined,
     search: props.search || undefined,
+    asOf: props.asOf,
   };
 
   return (

@@ -108,7 +108,6 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/api/items': 'items:view',
   '/api/uoms': 'settings_uom:view',
   '/api/production/colors': 'production_colors:view',
-  '/api/notifications': 'dashboard:view', // All authenticated users can view their notifications
 };
 
 /**

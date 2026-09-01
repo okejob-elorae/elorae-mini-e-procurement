@@ -260,6 +260,32 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       but the asymmetry means a failed single mark-read leaves the item showing read in the UI while
       the server still has it unread. Worth a deliberate decision (match the two, or document why
       they should stay different) if it ever causes a visible mismatch in practice.
+- [ ] Overdue-alert message bodies interpolate raw numbers (`sebesar ${outstandingAmount}` in
+      `overdue-sweep.ts`) instead of formatting as currency — every other collector-facing surface
+      (e.g. the PWA collections queue) runs the figure through
+      `Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" })`; this is the one path
+      that does not.
+- [ ] The piutang export's truncation toast always reads "Showing 10,000 of {total} rows", but with
+      a bucket filter active the actual visible row count can be far smaller than 10,000 even while
+      the flag correctly fires — the flag is a deliberate over-report against the pre-bucket-filter
+      total, per this slice's own documented tradeoff, so the toast's specific wording asserts a row
+      count the user did not necessarily receive.
+- [ ] An export matching zero rows downloads a header-only file and still shows the "Export started"
+      success toast, with no distinct empty-result signal.
+- [ ] Tapping an `AR_OVERDUE` PWA notification for a receivable that has since been reassigned to a
+      different collector dead-ends on a bare Next.js 404 — `/pwa/collections/[receivableId]` calls
+      `notFound()` on an ownership mismatch rather than rendering a PWA-styled "no longer assigned
+      to you" state.
+- [ ] `NotificationsList.tsx`'s relative timestamps (`formatDistanceToNow`) render in English with no
+      locale option, inconsistent with the otherwise all-Indonesian PWA surface. The backoffice
+      `NotificationIcon.tsx` has the same unlocalized usage, so this is a pre-existing pattern this
+      slice inherited rather than introduced.
+- [ ] `overdue-sweep.ts`'s per-receivable loop can abort partway through a run if
+      `prisma.notificationQueue.create` throws inside `sendNotificationToUsers` — only the FCM
+      `send` call itself is wrapped in try/catch there, not the queue-row creation. Self-healing on
+      the next scheduled run (dedup holds and receivables are processed oldest-due-first), but a
+      single bad row currently halts the rest of that run's announcements instead of logging and
+      continuing.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
