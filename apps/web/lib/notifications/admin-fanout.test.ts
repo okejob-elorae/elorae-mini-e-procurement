@@ -84,6 +84,10 @@ describe("fanOutAdminNotification", () => {
     await fanOutAdminNotification({ ...BASE, category: "CREDIT_LIMIT_HOLD" });
     expect(mockGetUsers).toHaveBeenCalledWith("field_sales_orders:approve");
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("no permission mapped for category CREDIT_LIMIT_HOLD"));
+
+    mockGetUsers.mockClear();
+    await fanOutAdminNotification({ ...BASE, category: "AR_OVERDUE" });
+    expect(mockGetUsers).toHaveBeenCalledWith("collections:manage");
   });
 
   it("sends the category as the type and carries the source id in data", async () => {

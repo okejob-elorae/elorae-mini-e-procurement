@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck, Wallet } from "lucide-react";
+import { ArrowRight, Bell, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck, Wallet } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { listPendingOrders } from "@/lib/pwa/offline/queue";
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
@@ -36,10 +36,12 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
   const tVanSale = useTranslations("vanSale");
   const tSmartRequest = useTranslations("pwa.smartRequest");
   const tCollections = useTranslations("pwa.collections");
+  const tNotifications = useTranslations("pwa.notifications");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [fetchingOrigin, setFetchingOrigin] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +55,22 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
     return () => {
       cancelled = true;
       cleanup();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/notifications")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { unreadCount: number } | null) => {
+        if (!cancelled && json) setUnreadCount(json.unreadCount);
+      })
+      .catch(() => {
+        // Best-effort badge — a failed fetch just means no badge shows this load, not an error state.
+        // The dedicated /pwa/notifications page (not this badge) is where a real offline state lives.
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -94,11 +112,27 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
         <p className="text-xs text-muted-foreground">{t("greeting")}</p>
         <p className="text-lg font-semibold">{userName}</p>
       </div>
-      <form action={onLogout}>
-        <Button type="submit" variant="ghost" size="icon" aria-label={tAuth("logout")}>
-          <LogOut className="h-5 w-5" />
+      <div className="flex items-center gap-1">
+        <Button asChild variant="ghost" size="icon" className="relative" aria-label={tNotifications("title")}>
+          <Link href="/pwa/notifications">
+            <Bell className="h-5 w-5" />
+            {unreadCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -right-1 -top-1 h-5 min-w-5 px-1 text-xs"
+                aria-label={`${unreadCount}`}
+              >
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Badge>
+            )}
+          </Link>
         </Button>
-      </form>
+        <form action={onLogout}>
+          <Button type="submit" variant="ghost" size="icon" aria-label={tAuth("logout")}>
+            <LogOut className="h-5 w-5" />
+          </Button>
+        </form>
+      </div>
     </header>
   );
 

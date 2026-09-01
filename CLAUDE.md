@@ -132,6 +132,12 @@ One line per known trap: **the situation you are in — what bites — where the
 - Editing `verifyCollection`? It posts the payment BEFORE flipping the submission, with a deterministic `collection-<submissionId>` idempotency key — reordering or randomising the key strands a `VERIFIED` submission with no payment. See `docs/ARCHITECTURE-NOTES.md`.
 - Adding a collection-adjacent `AdminNotification` category? Same trap as the entry above — missing from `CATEGORY_PERMISSION` means delivered to nobody, silently. See `docs/ARCHITECTURE-NOTES.md`.
 - Wondering why `Receivable.collectorId` stays stamped after an invoice settles through another channel? It's a workflow column, not an entity — the collection queue filters on `status`, so nothing clears it and nothing should. See `docs/ARCHITECTURE-NOTES.md`.
+- Adding an overdue-adjacent `AdminNotification` category? `AR_OVERDUE` is confirmed present in `CATEGORY_PERMISSION` (mapped to `collections:manage`) as of this slice — a new sibling category still needs its own entry or it's delivered to nobody, silently. See `docs/ARCHITECTURE-NOTES.md`.
+- Touching `runOverdueSweep`? It `await`s `fanOutAdminNotification`, the one deliberate exception to `void` in this codebase — a cron has no waiting user and unawaited fan-outs would stampede Firebase. Never copy the `await` into an interactive path. See `docs/ARCHITECTURE-NOTES.md`.
+- Touching the overdue dedup query? It reads EVERY `AR_OVERDUE` `AdminNotification` row with no `take` and no `createdAt` floor, on purpose — adding either bound re-announces old crossings forever. See `docs/ARCHITECTURE-NOTES.md`.
+- Wondering why an already-45-days-overdue receivable gets one alert, not three? Only the highest crossed threshold fires per sweep pass — lower thresholds already skipped past are never revisited by design. See `docs/ARCHITECTURE-NOTES.md`.
+- Touching `ar.overdueThresholdDays` parsing? `parseOverdueThresholds` fails OPEN to the defaults on malformed input, the opposite of `readGlCutover`'s fail-closed — silence is the failure this feature removes. See `docs/ARCHITECTURE-NOTES.md`.
+- Calling `sendNotificationToUsers` from a new site? It carries no `VITEST` guard, unlike `fanOutAdminNotification` — guard your own caller or a spec run pushes to real phones. See `docs/ARCHITECTURE-NOTES.md`.
 
 **Data ownership + auth**
 

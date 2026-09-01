@@ -101,13 +101,13 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/finance/piutang': 'receivables:view',
   '/backoffice/finance/payments': 'payments:manage',
   '/backoffice/finance/collections': 'collections:manage',
+  '/backoffice/settings/piutang': 'collections:manage',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
   '/api/items': 'items:view',
   '/api/uoms': 'settings_uom:view',
   '/api/production/colors': 'production_colors:view',
-  '/api/notifications': 'dashboard:view', // All authenticated users can view their notifications
 };
 
 /**

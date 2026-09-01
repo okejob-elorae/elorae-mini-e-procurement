@@ -244,6 +244,18 @@
       "errDupSize": "Sizes cannot repeat.",
       "errBadQty": "Qty must be a positive whole number."
     },
+    "overdueThresholds": {
+      "title": "Overdue Alert Thresholds",
+      "description": "Configure when overdue-receivable notifications are sent",
+      "heading": "Overdue Notification Thresholds",
+      "subtitle": "Comma-separated day list, counted from the due date, that triggers a notification",
+      "fieldLabel": "Days (e.g. 0,7,30,60)",
+      "fieldHint": "Only the highest newly-crossed threshold fires per invoice, not one per threshold",
+      "save": "Save",
+      "loadError": "Failed to load settings",
+      "errEmpty": "Enter at least one day",
+      "errInvalid": "Use comma-separated non-negative whole numbers"
+    },
     "theme": {
       "title": "Account theme",
       "description": "Pick one Pantone TCX color. It sets your accent and generates neutral surfaces for light and dark mode.",
@@ -2457,6 +2469,13 @@
       "errorUnauthorized": "Session expired. Log in again.",
       "errorEmpty": "No items.",
       "errorMinQty": "Quantity below the minimum."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "unreadCount": "{count} unread",
+      "markAllRead": "Mark all read",
+      "empty": "No notifications yet",
+      "offlineError": "Couldn't connect — check your connection and try again"
     }
   },
   "fieldSalesOrders": {
@@ -4230,6 +4249,13 @@
       "noAllocations": "Allocate the payment to at least one receivable.",
       "submitting": "Recording...",
       "successToast": "Payment {docNo} recorded."
+    },
+    "export": {
+      "csv": "Export CSV",
+      "excel": "Export Excel",
+      "started": "Export started",
+      "failed": "Export failed",
+      "truncated": "Showing 10,000 of {total} rows — narrow the filters for the complete set"
     }
   },
   "profileAccounts": {

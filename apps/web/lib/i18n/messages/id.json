@@ -244,6 +244,18 @@
       "errDupSize": "Ukuran tidak boleh sama.",
       "errBadQty": "Jumlah harus bilangan bulat positif."
     },
+    "overdueThresholds": {
+      "title": "Ambang Batas Jatuh Tempo",
+      "description": "Atur kapan notifikasi piutang jatuh tempo dikirim",
+      "heading": "Ambang Batas Notifikasi Piutang Jatuh Tempo",
+      "subtitle": "Daftar hari (dipisah koma) sejak jatuh tempo untuk memicu notifikasi",
+      "fieldLabel": "Hari (contoh: 0,7,30,60)",
+      "fieldHint": "Hanya ambang batas tertinggi yang baru dilewati yang memicu notifikasi, bukan satu per ambang batas",
+      "save": "Simpan",
+      "loadError": "Gagal memuat pengaturan",
+      "errEmpty": "Isi minimal satu hari",
+      "errInvalid": "Gunakan angka bulat non-negatif dipisah koma"
+    },
     "theme": {
       "title": "Tema akun",
       "description": "Pilih satu warna Pantone TCX. Warna ini mengatur aksen dan menghasilkan permukaan netral untuk mode terang dan gelap.",
@@ -2457,6 +2469,13 @@
       "errorUnauthorized": "Sesi berakhir. Masuk lagi.",
       "errorEmpty": "Tidak ada item.",
       "errorMinQty": "Jumlah di bawah minimum."
+    },
+    "notifications": {
+      "title": "Notifikasi",
+      "unreadCount": "{count} belum dibaca",
+      "markAllRead": "Tandai semua dibaca",
+      "empty": "Belum ada notifikasi",
+      "offlineError": "Gagal terhubung — periksa koneksi internet dan coba lagi"
     }
   },
   "fieldSalesOrders": {
@@ -4230,6 +4249,13 @@
       "noAllocations": "Alokasikan pembayaran ke minimal satu piutang.",
       "submitting": "Menyimpan...",
       "successToast": "Pembayaran {docNo} berhasil dicatat."
+    },
+    "export": {
+      "csv": "Ekspor CSV",
+      "excel": "Ekspor Excel",
+      "started": "Ekspor dimulai",
+      "failed": "Ekspor gagal",
+      "truncated": "Menampilkan 10.000 dari {total} baris — persempit filter untuk data lengkap"
     }
   },
   "profileAccounts": {
