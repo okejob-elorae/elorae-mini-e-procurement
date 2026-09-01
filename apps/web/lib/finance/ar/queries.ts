@@ -36,7 +36,7 @@ export type ReceivableRow = {
 const emptyBucketTotals = (): Record<AgingBucket, number> =>
   AGING_BUCKETS.reduce((acc, b) => ({ ...acc, [b]: 0 }), {} as Record<AgingBucket, number>);
 
-function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
+export function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
   const where: Prisma.ReceivableWhereInput = {};
   if (f.storeId) where.storeId = f.storeId;
   if (f.collectorId) where.collectorId = f.collectorId;
@@ -337,4 +337,91 @@ export async function getPayment(id: string) {
       outstandingAmount: Number(a.receivable.outstandingAmount),
     })),
   };
+}
+
+export type ReceivableExportRow = {
+  storeName: string;
+  docNo: string;
+  invoiceDate: Date;
+  dueDate: Date;
+  daysOverdue: number;
+  bucket: AgingBucket;
+  originalAmount: number;
+  paidAmount: number;
+  outstandingAmount: number;
+  status: string;
+  collectorName: string | null;
+  salesmanName: string;
+};
+
+/**
+ * Hard cap, not a page size — this is a full-book export, not a paginated list. Truncation is
+ * reported to the caller (`truncated`, `totalRows`) rather than applied silently: a silent cutoff
+ * on a finance export is how a number gets reported wrong. `listReceivables`'s own `pageSize: 25`
+ * default already carries a logged follow-up about a DIFFERENT silent-truncation shape — that
+ * mistake is not repeated here.
+ */
+export const EXPORT_ROW_CAP = 10_000;
+
+/**
+ * Shares `whereFor` with `listReceivables` so the export always matches exactly what the
+ * operator sees on `/backoffice/finance/piutang` with the same filters applied. Unpaginated
+ * (aside from the hard cap) — this produces the whole matching book in one call, unlike
+ * `listReceivables`'s page-at-a-time shape.
+ *
+ * When `filters.bucket` is set, the cap is applied BEFORE the JS bucket filter (bucket is
+ * derived from `dueDate`+`asOf`, never a stored column, so it cannot be a SQL `where`) — the same
+ * ordering constraint `listReceivables` has. `truncated` therefore reflects whether the
+ * PRE-bucket-filter matching set exceeded the cap, which can be true even when the final
+ * bucket-filtered row count is small. This is a deliberate over-report, not an under-report: it
+ * warns the operator whenever the underlying result set was already large, which is the safer
+ * direction to be wrong in on a finance export.
+ */
+export async function listReceivablesForExport(
+  filters: ReceivableFilters,
+  options?: { cap?: number },
+): Promise<{ rows: ReceivableExportRow[]; truncated: boolean; totalRows: number }> {
+  const asOf = filters.asOf ?? new Date();
+  const cap = options?.cap ?? EXPORT_ROW_CAP;
+  const where = whereFor(filters);
+
+  const totalRows = await prisma.receivable.count({ where });
+
+  const found = await prisma.receivable.findMany({
+    where,
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+    take: cap,
+    select: {
+      invoiceDate: true,
+      dueDate: true,
+      originalAmount: true,
+      paidAmount: true,
+      outstandingAmount: true,
+      status: true,
+      store: { select: { name: true } },
+      delivery: { select: { docNo: true, order: { select: { salesman: { select: { name: true } } } } } },
+      collector: { select: { name: true } },
+    },
+  });
+
+  let rows: ReceivableExportRow[] = found.map((r) => ({
+    storeName: r.store.name,
+    docNo: r.delivery.docNo,
+    invoiceDate: r.invoiceDate,
+    dueDate: r.dueDate,
+    daysOverdue: daysOverdue(r.dueDate, asOf),
+    bucket: agingBucket(r.dueDate, asOf),
+    originalAmount: Number(r.originalAmount),
+    paidAmount: Number(r.paidAmount),
+    outstandingAmount: Number(r.outstandingAmount),
+    status: r.status,
+    collectorName: r.collector?.name ?? null,
+    salesmanName: r.delivery.order.salesman.name ?? "",
+  }));
+
+  if (filters.bucket !== undefined) {
+    rows = rows.filter((r) => r.bucket === filters.bucket);
+  }
+
+  return { rows, truncated: totalRows > cap, totalRows };
 }
