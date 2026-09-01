@@ -2469,6 +2469,13 @@
       "errorUnauthorized": "Sesi berakhir. Masuk lagi.",
       "errorEmpty": "Tidak ada item.",
       "errorMinQty": "Jumlah di bawah minimum."
+    },
+    "notifications": {
+      "title": "Notifikasi",
+      "unreadCount": "{count} belum dibaca",
+      "markAllRead": "Tandai semua dibaca",
+      "empty": "Belum ada notifikasi",
+      "offlineError": "Gagal terhubung — periksa koneksi internet dan coba lagi"
     }
   },
   "fieldSalesOrders": {

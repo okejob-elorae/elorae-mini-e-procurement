@@ -2469,6 +2469,13 @@
       "errorUnauthorized": "Session expired. Log in again.",
       "errorEmpty": "No items.",
       "errorMinQty": "Quantity below the minimum."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "unreadCount": "{count} unread",
+      "markAllRead": "Mark all read",
+      "empty": "No notifications yet",
+      "offlineError": "Couldn't connect — check your connection and try again"
     }
   },
   "fieldSalesOrders": {
