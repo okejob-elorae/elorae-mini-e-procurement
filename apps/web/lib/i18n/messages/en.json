@@ -244,6 +244,18 @@
       "errDupSize": "Sizes cannot repeat.",
       "errBadQty": "Qty must be a positive whole number."
     },
+    "overdueThresholds": {
+      "title": "Overdue Alert Thresholds",
+      "description": "Configure when overdue-receivable notifications are sent",
+      "heading": "Overdue Notification Thresholds",
+      "subtitle": "Comma-separated day list, counted from the due date, that triggers a notification",
+      "fieldLabel": "Days (e.g. 0,7,30,60)",
+      "fieldHint": "One notification fires per crossed threshold per invoice",
+      "save": "Save",
+      "loadError": "Failed to load settings",
+      "errEmpty": "Enter at least one day",
+      "errInvalid": "Use comma-separated non-negative whole numbers"
+    },
     "theme": {
       "title": "Account theme",
       "description": "Pick one Pantone TCX color. It sets your accent and generates neutral surfaces for light and dark mode.",

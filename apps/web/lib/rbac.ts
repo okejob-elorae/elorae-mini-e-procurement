@@ -101,6 +101,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/finance/piutang': 'receivables:view',
   '/backoffice/finance/payments': 'payments:manage',
   '/backoffice/finance/collections': 'collections:manage',
+  '/backoffice/settings/piutang': 'collections:manage',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
