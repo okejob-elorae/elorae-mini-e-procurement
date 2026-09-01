@@ -224,6 +224,42 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       stays disabled until a real change is made, and the fix (reassign to an eligible collector)
       works normally — but it's a real, if rare, lifecycle event (someone leaves, has PWA access
       revoked) worth a dedicated stale-assignee display state if it comes up in practice.
+- [ ] Collectors get no push for an overdue alert, only an in-app list — no `fcmToken` is ever
+      minted for a PWA-only user, so `notifyCollectorOfOverdue` writes a `NotificationQueue` row
+      that only shows up on next open of `/pwa/notifications`. A real push needs a Firebase
+      messaging service worker coexisting with the PWA's Serwist SW, which does not exist yet.
+- [ ] A collector assigned to a receivable after a threshold crossing already fired is never told
+      about that specific crossing — the alert is a one-shot event at the moment of crossing, not
+      a standing reminder. The invoice is still visible in their collection queue regardless, so
+      nothing is lost, but there is no "catch-up" notification for a newly-assigned collector.
+- [ ] `sendNotificationToUsers` is unguarded against test runs. Fixed locally for this slice inside
+      the AR notify helper (`notifyCollectorOfOverdue`'s own `VITEST` check), but the shared helper
+      itself and the pre-existing PO-overdue cron path still carry the hole — a spec that reaches
+      either of those without guarding first pushes real `NotificationQueue` rows and real phone
+      notifications via the `FIREBASE_ADMIN_*` credentials `vitest.config.ts` loads.
+- [ ] The 200-per-run announcement cap (`MAX_ANNOUNCEMENTS_PER_RUN` in `overdue-sweep.ts`) is a
+      module constant, not configuration — an operator facing a large historical backlog has no way
+      to drain it faster than a day at a time short of a code change.
+- [ ] Overdue alerts do not escalate — a 60-day invoice notifies exactly the same recipients as a
+      0-day one. Severity-weighted routing (e.g. escalate to a manager past some threshold) is a
+      plausible future refinement, not built in this slice.
+- [ ] Threshold changes are not audited — `ar.overdueThresholdDays` is an ordinary `SystemSetting`
+      upsert with no `AuditLog` entry, so there is no record of who changed the schedule or when.
+- [ ] The piutang export has no scheduled or emailed delivery — the overdue book reaches anyone
+      outside the system only when someone remembers to open the page and download it themselves.
+- [ ] `AdminNotification` rows written by the overdue sweep are never pruned, same as
+      `NotificationQueue` — growth is bounded per-crossing (roughly one row per receivable per
+      threshold) but unbounded in time, since nothing ever deletes an old row.
+- [ ] `getNotificationHref`'s `switch` has no fallback case beyond `default: return null` — currently
+      unreachable for `AR_OVERDUE` since that category always carries a `receivableId`, but the next
+      notification type added to the queue without a matching `case` silently renders as a
+      non-clickable bell entry rather than surfacing a build-time or runtime signal that a case is
+      missing.
+- [ ] `NotificationsList.tsx`'s single-item `markRead` has no rollback on a failed request, while
+      its `handleMarkAllRead` does — both were spec'd this way deliberately, not implementer bugs,
+      but the asymmetry means a failed single mark-read leaves the item showing read in the UI while
+      the server still has it unread. Worth a deliberate decision (match the two, or document why
+      they should stay different) if it ever causes a visible mismatch in practice.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
