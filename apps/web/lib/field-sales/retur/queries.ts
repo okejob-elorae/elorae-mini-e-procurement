@@ -170,6 +170,7 @@ export type FieldReturnDetail = {
   id: string;
   docNo: string;
   status: FieldReturnStatus;
+  storeId: string;
   storeName: string;
   raisedByLabel: string;
   origin: FieldReturnOrigin;
@@ -183,6 +184,9 @@ export type FieldReturnDetail = {
   createdAt: Date;
   totalValue: number | null;
   valuationStatus: "PENDING" | "VALUED";
+  offsetStatus: FieldReturnOffsetStatus;
+  /** Non-null only while offsetStatus === "APPLIED". */
+  offsetPayment: { id: string; docNo: string } | null;
   lines: FieldReturnLineDetail[];
 };
 
@@ -207,6 +211,8 @@ export async function getFieldReturnById(
       storeId: true,
       totalValue: true,
       valuationStatus: true,
+      offsetStatus: true,
+      offsetPayment: { select: { id: true, docNo: true } },
       store: { select: { name: true } },
       lines: {
         select: {
@@ -294,6 +300,7 @@ export async function getFieldReturnById(
     id: r.id,
     docNo: r.docNo,
     status: r.status,
+    storeId: r.storeId,
     storeName: r.store.name,
     raisedByLabel: labelFor(r.raisedById),
     origin: r.origin,
@@ -305,6 +312,8 @@ export async function getFieldReturnById(
     createdAt: r.createdAt,
     totalValue: r.totalValue === null ? null : r.totalValue.toNumber(),
     valuationStatus: r.valuationStatus,
+    offsetStatus: r.offsetStatus,
+    offsetPayment: r.offsetPayment,
     lines: r.lines.map((l) => {
       const priceCandidates = candidatesByLineId.get(l.id);
       const priceState: FieldReturnPriceState = l.priceSource

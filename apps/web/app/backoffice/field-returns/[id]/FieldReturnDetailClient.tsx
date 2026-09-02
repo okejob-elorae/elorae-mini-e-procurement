@@ -36,14 +36,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { approveAction, previewKonsiReturStockImpactAction } from "@/app/actions/field-returns";
+import type { AllocationCandidate } from "@/lib/finance/ar/queries";
 import { ReceiveForm, fieldReturnErrorKey } from "./ReceiveForm";
 import { ResolutionControls } from "./ResolutionControls";
 import { LinePriceControls } from "./LinePriceControls";
+import { OffsetToPiutangSheet } from "./OffsetToPiutangSheet";
 
 type Props = {
   fieldReturn: FieldReturnDetail;
   canManage: boolean;
   canWriteOff: boolean;
+  canOffsetPayments: boolean;
+  allocationCandidates: AllocationCandidate[];
+  suggestedAllocations: Array<{ receivableId: string; amount: number }>;
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldReturnStatus, "secondary" | "destructive" | "default" | "outline"> = {
@@ -120,7 +125,9 @@ function formatMoney2(n: number): string {
   return `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff }: Props) {
+export function FieldReturnDetailClient({
+  fieldReturn: r, canManage, canWriteOff, canOffsetPayments, allocationCandidates, suggestedAllocations,
+}: Props) {
   const t = useTranslations("fieldReturns");
   const tReceiving = useTranslations("fieldReturnReceiving");
   const tCommon = useTranslations("common");
@@ -128,6 +135,7 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
   const [isPending, startTransition] = useTransition();
   const [previewPending, startPreviewTransition] = useTransition();
   const [approveOpen, setApproveOpen] = useState(false);
+  const [offsetSheetOpen, setOffsetSheetOpen] = useState(false);
   const [stockImpact, setStockImpact] = useState<
     | { status: "idle" }
     | { status: "loading" }
@@ -431,6 +439,48 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
         </CardContent>
       </Card>
 
+      {r.status === "APPROVED" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-5 w-5" />
+              {t("credit.cardTitle")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {r.valuationStatus !== "VALUED" || r.totalValue === null ? (
+              /* Terminal, not a transient state — post-approval repricing has no UI path, so an
+                 approved-but-incomplete valuation can never become offsettable. Say so plainly
+                 rather than rendering a control that would always refuse. */
+              <p className="text-sm text-muted-foreground">{t("credit.neverOffsettable")}</p>
+            ) : r.offsetStatus === "APPLIED" && r.offsetPayment ? (
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm text-muted-foreground">{t("credit.appliedBody")}</p>
+                <Link
+                  href={`/backoffice/finance/payments/${r.offsetPayment.id}`}
+                  className="inline-flex items-center gap-1 font-mono text-sm hover:underline"
+                >
+                  {r.offsetPayment.docNo}
+                </Link>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-2xl font-bold tabular-nums">{formatMoney2(r.totalValue)}</p>
+                  <p className="text-xs text-muted-foreground">{t("credit.availableBody")}</p>
+                </div>
+                {canOffsetPayments && (
+                  <Button className="h-10" onClick={() => setOffsetSheetOpen(true)}>
+                    <Wallet className="h-4 w-4 mr-2" />
+                    {t("credit.offsetAction")}
+                  </Button>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <AlertDialog
         open={approveOpen}
         onOpenChange={(open) => {
@@ -515,6 +565,21 @@ export function FieldReturnDetailClient({ fieldReturn: r, canManage, canWriteOff
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {canOffsetPayments && r.totalValue !== null && (
+        <OffsetToPiutangSheet
+          open={offsetSheetOpen}
+          onOpenChange={setOffsetSheetOpen}
+          returnId={r.id}
+          totalValue={r.totalValue}
+          candidates={allocationCandidates}
+          suggestedAllocations={suggestedAllocations}
+          onApplied={() => {
+            setOffsetSheetOpen(false);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

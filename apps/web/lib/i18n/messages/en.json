@@ -2787,6 +2787,26 @@
       "surplusBadge": "Surplus Credited",
       "surplusStats": "Claimed {claimed} · Received {received} · Credited {credited}",
       "cancelledBody": "This return was cancelled, so it was never valued."
+    },
+    "credit": {
+      "cardTitle": "Retur Credit",
+      "neverOffsettable": "This return's valuation was left incomplete at approval and can never be offset — values are frozen and there is no repricing path.",
+      "availableBody": "Available to apply against this store's outstanding balance.",
+      "appliedBody": "Applied to payment",
+      "offsetAction": "Offset ke Piutang",
+      "offsetSheetTitle": "Offset Return to Piutang",
+      "offsetSheetDescription": "Apply this return's frozen value ({amount}) against one or more of this store's outstanding receivables.",
+      "offsetSuccessToast": "Return value applied to payment.",
+      "insufficientOutstanding": "This store's outstanding total ({total}) is less than the return's value ({needed}) — it can't be offset until more invoices exist.",
+      "noCandidates": "This store has no outstanding receivables to apply this credit to.",
+      "colDueDate": "Due Date",
+      "colOutstanding": "Outstanding",
+      "colAllocation": "Allocation",
+      "allocateFull": "Full",
+      "negativeAmount": "Amount can't be negative.",
+      "overAllocated": "Exceeds this receivable's outstanding balance.",
+      "runningTotalLabel": "Allocated / Return Value",
+      "submitting": "Applying..."
     }
   },
   "fieldReturnReceiving": {

@@ -2787,6 +2787,26 @@
       "surplusBadge": "Kelebihan Dikreditkan",
       "surplusStats": "Klaim {claimed} · Diterima {received} · Dikreditkan {credited}",
       "cancelledBody": "Retur ini dibatalkan sehingga tidak pernah dinilai."
+    },
+    "credit": {
+      "cardTitle": "Kredit Retur",
+      "neverOffsettable": "Valuasi retur ini tidak lengkap saat disetujui dan tidak akan pernah bisa dioffset — nilai sudah dibekukan dan tidak ada jalur repricing.",
+      "availableBody": "Tersedia untuk diterapkan ke saldo piutang toko ini.",
+      "appliedBody": "Diterapkan ke pembayaran",
+      "offsetAction": "Offset ke Piutang",
+      "offsetSheetTitle": "Offset Retur ke Piutang",
+      "offsetSheetDescription": "Terapkan nilai beku retur ini ({amount}) ke satu atau lebih piutang toko ini.",
+      "offsetSuccessToast": "Nilai retur diterapkan ke pembayaran.",
+      "insufficientOutstanding": "Total piutang toko ini ({total}) lebih kecil dari nilai retur ({needed}) — belum bisa dioffset sampai ada faktur lain.",
+      "noCandidates": "Toko ini tidak punya piutang yang bisa dikenakan kredit ini.",
+      "colDueDate": "Jatuh Tempo",
+      "colOutstanding": "Piutang",
+      "colAllocation": "Alokasi",
+      "allocateFull": "Penuh",
+      "negativeAmount": "Jumlah tidak boleh negatif.",
+      "overAllocated": "Melebihi saldo piutang ini.",
+      "runningTotalLabel": "Dialokasikan / Nilai Retur",
+      "submitting": "Memproses..."
     }
   },
   "fieldReturnReceiving": {
