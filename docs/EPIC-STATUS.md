@@ -25,7 +25,7 @@ EPIC-04 (Sales Fulfillment) decomposition (independent of EPIC-01/02 sub-numberi
 
 | Sub | Scope | Status |
 |----|-------|--------|
-| **A** | Fulfillment backend (writer helper, server actions, status transitions, outbox enqueue on pick/pack/ship) | ✅ shipped (PR #47) |
+| **A** | Fulfillment backend (writer helper, server actions, status transitions, outbox enqueue on pick/pack/ship) | ✅ shipped (PR #47). **Caveat: the enqueue shipped, the pick PUSH did not work until PR #276 (2026-09-02).** The `salesorder_pick` handler posted `{ids, is_completed}` to `POST /wms/sales/picklists/`, which Jubelio rejects with a `picklist_no` validation error — so every marketplace pick push had been failing silently since this slice merged, and a wedge in the outbox poller kept the failed rows `PENDING` rather than `DEAD`, so nothing ever alerted. Read this row as "local fulfilment state transitions shipped", not "Jubelio agrees" — nothing reconciles the two even now. |
 | **B** | UI actions on order detail page + JubelioCourier sync | ✅ shipped (PR #48) |
 | **C** | Fulfillment Queue page + Jubelio webhook forward-sync to `SHIPPED` | ✅ shipped (PR #49) |
 | **D** | Print views (pick list + packing slip) | ✅ shipped (PR #50 merged 2026-06-14) |
