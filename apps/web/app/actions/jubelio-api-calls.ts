@@ -21,12 +21,31 @@ export async function getJubelioApiCalls(filters: JubelioApiCallFilters = {}) {
   const offset = filters.offset ?? 0;
   const where = filters.onlyErrors ? { ok: false } : {};
 
+  /**
+   * Explicit select. `requestBody`/`responseBody` hold raw Jubelio payloads and
+   * are never rendered — but this is a `"use server"` export read by a
+   * `"use client"` page, so an unselected `findMany` serialised every one of
+   * them into the browser response. Some Jubelio endpoints return contact
+   * details, so that was PII crossing to the client for no reason. The bodies
+   * remain in the table for debugging; they just stop leaving the server.
+   */
   const [calls, total] = await Promise.all([
     prisma.jubelioApiCall.findMany({
       where,
       orderBy: { createdAt: "desc" },
       take: limit,
       skip: offset,
+      select: {
+        id: true,
+        createdAt: true,
+        method: true,
+        path: true,
+        statusCode: true,
+        latencyMs: true,
+        ok: true,
+        rateLimited: true,
+        errorMessage: true,
+      },
     }),
     prisma.jubelioApiCall.count({ where }),
   ]);
