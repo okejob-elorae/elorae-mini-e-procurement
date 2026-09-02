@@ -4,16 +4,21 @@ export type TaxInvoiceRow = {
   id: string;
   status: string;
   invoiceNo: string | null;
+  buyerNpwp: string | null;
+  taxableAmount: number | null;
+  ppnAmount: number | null;
   notaPrintedAt: Date | null;
   docNo: string;
+  storeId: string;
   storeName: string;
+  storeNpwp: string | null;
   orderId: string;
   invoiceDate: Date;
   dueDate: Date;
   total: number;
 };
 
-export type TaxInvoiceStatusFilter = "PENDING" | "CREATED" | "NOT_REQUIRED";
+export type TaxInvoiceStatusFilter = "PENDING" | "CREATED" | "SENT_TO_STORE" | "NOT_REQUIRED";
 
 /**
  * `counts` deliberately drops the `status` term (kept applying `q`) so the queue's status tabs
@@ -46,6 +51,9 @@ export async function listTaxInvoices(params: {
         id: true,
         status: true,
         invoiceNo: true,
+        buyerNpwp: true,
+        taxableAmount: true,
+        ppnAmount: true,
         notaPrintedAt: true,
         delivery: {
           select: {
@@ -54,7 +62,7 @@ export async function listTaxInvoices(params: {
             dueDate: true,
             total: true,
             orderId: true,
-            order: { select: { store: { select: { name: true } } } },
+            order: { select: { store: { select: { id: true, name: true, npwp: true } } } },
           },
         },
       },
@@ -67,7 +75,7 @@ export async function listTaxInvoices(params: {
     }),
   ]);
 
-  const counts: Record<TaxInvoiceStatusFilter, number> = { PENDING: 0, CREATED: 0, NOT_REQUIRED: 0 };
+  const counts: Record<TaxInvoiceStatusFilter, number> = { PENDING: 0, CREATED: 0, SENT_TO_STORE: 0, NOT_REQUIRED: 0 };
   for (const c of countRows) {
     counts[c.status as TaxInvoiceStatusFilter] = c._count._all;
   }
@@ -87,9 +95,14 @@ export async function listTaxInvoices(params: {
       id: r.id,
       status: r.status,
       invoiceNo: r.invoiceNo,
+      buyerNpwp: r.buyerNpwp,
+      taxableAmount: r.taxableAmount !== null ? Number(r.taxableAmount) : null,
+      ppnAmount: r.ppnAmount !== null ? Number(r.ppnAmount) : null,
       notaPrintedAt: r.notaPrintedAt,
       docNo: delivery.docNo,
+      storeId: delivery.order.store.id,
       storeName: delivery.order.store.name,
+      storeNpwp: delivery.order.store.npwp,
       orderId: delivery.orderId,
       invoiceDate: delivery.invoiceDate,
       dueDate: delivery.dueDate,

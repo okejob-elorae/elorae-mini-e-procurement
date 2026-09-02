@@ -184,4 +184,14 @@ d("listTaxInvoices (test bed only)", () => {
     expect(rows[0].status).toBe("CREATED");
     expect(rows[0].invoiceNo).toBe(`010.000-26.${token}`);
   });
+
+  it("includes a zero SENT_TO_STORE bucket and the store's NPWP on each row", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { npwp: "01.234.567.8-901.000" } });
+    const { rows, counts } = await listTaxInvoices({ q: storeName, page: 1, perPage: 10 });
+    expect(counts.SENT_TO_STORE).toBe(0);
+    for (const row of rows) {
+      expect(row.storeId).toBe(storeId);
+      expect(row.storeNpwp).toBe("01.234.567.8-901.000");
+    }
+  });
 });
