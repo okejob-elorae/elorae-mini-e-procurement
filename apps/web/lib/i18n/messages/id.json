@@ -3863,6 +3863,7 @@
       "NOT_FOUND": "Setoran atau piutang tidak ditemukan.",
       "NOT_PENDING": "Setoran ini sudah diverifikasi atau ditolak sebelumnya.",
       "MISSING_REASON": "Alasan penolakan wajib diisi.",
+      "INVALID_METHOD": "Metode pembayaran ini tidak valid untuk penagihan lapangan.",
       "NO_ALLOCATIONS": "Tidak ada piutang yang dialokasikan untuk pembayaran ini.",
       "ALLOCATION_MISMATCH": "Jumlah alokasi tidak sesuai dengan jumlah pembayaran.",
       "OVER_ALLOCATED": "Jumlah melebihi sisa piutang ini.",

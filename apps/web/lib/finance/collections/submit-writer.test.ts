@@ -151,4 +151,11 @@ d("submitCollection (test bed only)", () => {
     const err = await submitAndCatch(base());
     expect(err.code).toBe("ALREADY_SETTLED");
   });
+
+  it("refuses RETUR_OFFSET even though the type system would normally block it", async () => {
+    const err = await submitAndCatch({ ...base(), method: "RETUR_OFFSET" as unknown as "CASH" });
+    expect(err.code).toBe("INVALID_METHOD");
+    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId } });
+    expect(subs).toHaveLength(0);
+  });
 });

@@ -131,6 +131,12 @@ export async function submitCollectionAction(input: {
 }): Promise<CollectionActionResult> {
   const g = await guardCollect();
   if ("ok" in g) return g;
+
+  /* Same reasoning as submitCollection's own guard — this boundary is reachable by a raw
+     request that never went through the TS parameter type at all. */
+  const method: unknown = input.method;
+  if (method !== "CASH" && method !== "TRANSFER") return { ok: false, reason: "INVALID_METHOD" };
+
   const paidAt = parseCalendarDay(input.paidAt);
   if (!paidAt) return { ok: false, reason: "INVALID_REQUEST" };
   try {

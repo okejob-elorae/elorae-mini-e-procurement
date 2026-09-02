@@ -57,6 +57,16 @@ describe("collections actions (unit — writers mocked)", () => {
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 
+  it("submitCollectionAction refuses RETUR_OFFSET before calling the writer", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["collections:collect"] } });
+    mockHasPermission.mockReturnValue(true);
+    const result = await submitCollectionAction({
+      receivableId: "r1", amount: 100, method: "RETUR_OFFSET" as unknown as "CASH", paidAt: "2026-01-01",
+    });
+    expect(result).toEqual({ ok: false, reason: "INVALID_METHOD" });
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
   it("verifyCollectionAction returns FORBIDDEN without payments:manage", async () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [] } });
     mockHasPermission.mockReturnValue(false);

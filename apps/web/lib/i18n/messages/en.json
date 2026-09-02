@@ -3863,6 +3863,7 @@
       "NOT_FOUND": "Submission or receivable not found.",
       "NOT_PENDING": "This submission was already verified or rejected.",
       "MISSING_REASON": "A reject reason is required.",
+      "INVALID_METHOD": "This payment method isn't valid for a field collection.",
       "NO_ALLOCATIONS": "No receivable was allocated for this payment.",
       "ALLOCATION_MISMATCH": "The allocated amount doesn't match the payment amount.",
       "OVER_ALLOCATED": "The amount exceeds this receivable's outstanding balance.",
