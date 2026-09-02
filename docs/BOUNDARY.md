@@ -360,12 +360,18 @@ Avoid otherwise. Prefer api owning its own data and web fetching from api.
 ### 4.5 Scheduled jobs — cron home rule
 
 When a scheduled job needs to read from Jubelio or call Jubelio, it lives in
-**apps/api**. Web cron (Vercel) does not have access to the Jubelio token
-cascade and must not be tempted to import the api's Jubelio HTTP client.
+**apps/api**. Web cron does not have access to the Jubelio token cascade and
+must not be tempted to import the api's Jubelio HTTP client.
 
 When a scheduled job is pure-ERP (no Jubelio touch — e.g. nightly settlement
 parser, AR aging recomputation, FCM cleanup), it lives in **apps/web** via
-Vercel cron, calling a server action.
+in-process **node-cron** (`apps/web/lib/cron/jobs.ts`, registered from
+`instrumentation.ts` on server boot), calling a server action. Vercel cron was
+the original home and is gone — Vercel was decommissioned 2026-06-18 and both
+services now run as long-lived processes on the VPS, which is what makes an
+in-process scheduler viable at all. Some jobs also keep a matching `/api/cron/*`
+route as a manual smoke-test trigger, but not all of them do, and such a route
+is never what fires the job in normal operation.
 
 Cross-service writes from scheduled jobs use the same `@elorae/db` helpers as
 on-demand writes. An api cron that writes a web-owned table goes through the

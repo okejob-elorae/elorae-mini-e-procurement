@@ -9,7 +9,7 @@ This README covers running the stack on your laptop and exposing `apps/api` publ
 ## Prereqs
 
 - Node `>=22`, pnpm `>=11` (declared in root `package.json` `engines`)
-- A MySQL/MariaDB-compatible database. Production runs **MariaDB 11.4** in the docker-compose stack on the VPS; local dev reaches the same DB through an SSH tunnel (see Local-dev DB access below).
+- A MySQL/MariaDB-compatible database. Production runs **MariaDB 11.4** in the docker-compose stack on the VPS. Local dev runs its own **MariaDB 11.4 container on port 3308** (`docker compose -f docker-compose.dev.yml up -d db`) — a test bed, not prod (see Local-dev DB access below).
 - ngrok account (free, no card) — only needed for client demos
 - Jubelio account credentials — only needed to test integration
 
@@ -101,7 +101,7 @@ pnpm --filter @elorae/api prod:start
 
 ## Client demo via ngrok
 
-Pattern: `apps/api` runs on your laptop and is exposed publicly via ngrok with a stable free domain so Jubelio can reach it. Same TiDB cluster as the VPS-deployed web.
+Pattern: `apps/api` runs on your laptop and is exposed publicly via ngrok with a stable free domain so Jubelio can reach it. Your laptop's api talks to the local 3308 test bed unless you deliberately point `DATABASE_URL` at the prod tunnel — a demo that must show the client's real data needs that override.
 
 ```bash
 # 1. start apps/api locally (dev or prod-mode)
@@ -120,26 +120,39 @@ Jubelio webhooks (optional): in the Jubelio dashboard set URL to `https://<your-
 ### Demo caveats
 
 - Laptop off = api down → web features that call `INTERNAL_API_URL` error out (local demo only; VPS is unaffected).
-- The VPS MariaDB is shared between local-dev (via SSH tunnel) and the VPS-deployed web. A local `prisma migrate dev` or destructive query hits the same data the client sees. Use a separate database (`CREATE DATABASE elorae_demo`) on the same MariaDB instance if you need isolation.
+- Local dev is isolated from prod by default (`DATABASE_URL` → 3308 test bed), so a local migration or destructive query does **not** reach the client's data. The risk is the inverse: if you have overridden `DATABASE_URL` to the 3307 prod tunnel for a demo, every subsequent command in that shell hits prod. Check what `DATABASE_URL` resolves to before any write.
 - ngrok free tier: 1 reserved domain, 40 connections/min, 20k req/month. Plenty for demos.
 
 ### Local-dev DB access
 
+Day to day you do not need prod at all — the default `DATABASE_URL` in `apps/web/.env` points at the local 3308 test bed:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d db
+# apps/web/.env (default)
+DATABASE_URL=mysql://elorae:elorae@127.0.0.1:3308/elorae
+```
+
+Reaching prod is a deliberate act. The tunnel uses local port **3307** so it can never be confused with the 3308 bed:
+
 ```bash
 # Persistent tunnel — leave running in the background.
-ssh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud
+ssh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud
 # or with autossh for auto-reconnect:
-autossh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud
-
-# apps/web/.env
-DATABASE_URL=mysql://elorae:<DB_PASSWORD>@127.0.0.1:3306/elorae
+autossh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud
 ```
+
+`apps/web/.env` carries `DATABASE_URL_PROD` (3307) as an inert bookmark — **no code reads it**. To actually target prod you must set `DATABASE_URL` yourself, or pass an explicit `SRC_DATABASE_URL`/`DEST_DATABASE_URL` to the scripts that clone prod data down. See `docs/local-db-testbed.md`.
 
 The MariaDB port is bound to `127.0.0.1` on the VPS — no public reach, tunnel is mandatory.
 
 ## Production deploy — Hostinger VPS
 
 Both `apps/web` and `apps/api` run on the same Hostinger VPS alongside MariaDB + Redis + Caddy, all via Docker Compose. Vercel is no longer used (decommissioned 2026-06-18). Public URLs: `https://elorae.cloud` (web) and `https://api.elorae.cloud` (api).
+
+**Deploys are automatic and the VPS never builds.** A push to `master` runs `.github/workflows/deploy.yml`: GitHub Actions builds both images, pushes them to `ghcr.io/okejob-elorae/elorae-{web,api}` (tagged with the commit SHA and `master`), then SSHes in and makes the VPS *pull* them. The `migrate` job is gated on both image builds, so a broken build blocks the migration rather than racing it. The manual commands below are for first-time setup and rollback — for a normal deploy you push and watch the workflow. A rollback to a known SHA can also be driven from Actions → Deploy to VPS → Run workflow with an `image_tag`.
+
+**A green workflow is not proof your code is running.** Check the `Deploy api` / `Deploy web` jobs specifically and the container's image tag — a skipped deploy job leaves prod on the previous image while the overall run still reads success.
 
 **Server side prereqs** (one-time per VPS):
 
@@ -175,7 +188,11 @@ nano .env.production.web   # fill: NEXTAUTH_*, ENCRYPTION_KEY, FIREBASE_*, R2_*,
 chmod 600 .env.production .env.production.web
 
 # 3. Bring the stack up. db starts first, api/web wait for db health.
-docker compose -f docker-compose.prod.yml up -d --build
+#    The VPS does NOT build — docker-compose.prod.yml declares `image:` only
+#    (ghcr.io/okejob-elorae/elorae-{api,web}), so pull first, then start with
+#    --no-build. `--build` here is a no-op: there is no build context.
+docker compose -f docker-compose.prod.yml pull api web
+docker compose -f docker-compose.prod.yml up -d --no-build
 docker compose -f docker-compose.prod.yml ps        # all should show "Up (healthy)"
 
 # 4. Apply Prisma migrations into the fresh MariaDB.
@@ -206,7 +223,8 @@ Caddy obtains a Let's Encrypt cert automatically on first HTTPS request to the d
 ssh elorae@api.elorae.cloud
 cd /srv/elorae
 # Ensure .env.production contains NEXTAUTH_SECRET, NEXTAUTH_URL, DATABASE_URL, INTERNAL_API_SECRET
-docker compose -f docker-compose.prod.yml up -d --build web
+docker compose -f docker-compose.prod.yml pull web
+docker compose -f docker-compose.prod.yml up -d --no-build web
 docker compose -f docker-compose.prod.yml ps        # web should show "Up"
 curl -fsS https://elorae.cloud/                     # 200 OK
 ```
@@ -216,20 +234,22 @@ curl -fsS https://elorae.cloud/                     # 200 OK
 ```bash
 ssh elorae@api.elorae.cloud
 cd /srv/elorae
-git pull
-docker compose -f docker-compose.prod.yml up -d --build web
+git pull                                                 # picks up compose/Caddy config changes only
+IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml pull web
+IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml up -d --no-build web
 docker compose -f docker-compose.prod.yml logs -f web    # tail for boot errors
 ```
 
-Both services share the same `docker compose -f docker-compose.prod.yml` workflow. To rebuild both in one pass: `docker compose -f docker-compose.prod.yml up -d --build api web`.
+Omit `IMAGE_TAG` to take `:master`, the tag CI moves on every push. Both services share the same workflow — to move both in one pass: `docker compose -f docker-compose.prod.yml pull api web && docker compose -f docker-compose.prod.yml up -d --no-build api web`.
 
 **Subsequent deploys** (after a merged PR):
 
 ```bash
 ssh elorae@api.elorae.cloud
 cd /srv/elorae
-git pull
-docker compose -f docker-compose.prod.yml up -d --build api
+git pull                                                 # picks up compose/Caddy config changes only
+IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml pull api
+IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml up -d --no-build api
 docker compose -f docker-compose.prod.yml logs -f api    # tail for boot errors
 ```
 

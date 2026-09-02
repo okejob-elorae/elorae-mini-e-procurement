@@ -2,7 +2,7 @@
 
 **Dates:** 2026-07-27 (initial), 2026-07-28 (gap + channel follow-up)  
 **Scope:** Can Elorae answer the reason-code breakdown of marketplace returns (and therefore the ROI of packing video evidence)?  
-**Sources:** Jubelio OpenAPI (`docs/jubelio_api_docs.yaml`), Elorae returns ingest/UI code, prod MariaDB (tunnel `:3307`), live Jubelio API (`api2.jubelio.com`).
+**Sources:** Jubelio OpenAPI (`reference/jubelio-openAPI.yaml`), Elorae returns ingest/UI code, prod MariaDB (tunnel `:3307`), live Jubelio API (`api2.jubelio.com`).
 
 ---
 
@@ -299,5 +299,5 @@ Colleague concern: client pain is **Shopee + TikTok Shop**, but Elorae shows a l
 | Jubelio SO types | `apps/api/src/jubelio/jubelio-http.client.ts` (`reject_return_reason`, `listReturnedOrders`) |
 | Decision writer | `packages/db/src/sales-return-writer.ts` |
 | UI list / detail | `apps/web/app/backoffice/returns/` |
-| OpenAPI | `docs/jubelio_api_docs.yaml` — `/sales/returns/items*`, `/inventory/items/*-return*` |
+| OpenAPI | `reference/jubelio-openAPI.yaml` — `/sales/returns/items*`, `/inventory/items/*-return*` |
 | Known debt | `evidenceUrls` never mirrored; `salesreturn_decision_push` unwired; sweeper not paginated (see `docs/FOLLOWUPS.md`) |

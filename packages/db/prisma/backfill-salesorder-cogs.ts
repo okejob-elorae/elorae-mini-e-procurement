@@ -39,7 +39,7 @@ type BackfillClient = {
  * otherwise stamps `cogs` onto any real line that happens to have a
  * `FULFILLMENT_CONSUME` adjustment. Teardown deletes only the spec's own rows,
  * so such a write is permanent, and the assertion that would notice runs after
- * it. Scoping is the remedy CLAUDE.md prescribes for exactly this shape.
+ * it. Scoping is the remedy AGENTS.md prescribes for exactly this shape.
  */
 export async function resolveBackfillCogs(
   client: BackfillClient,

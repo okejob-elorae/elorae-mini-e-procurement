@@ -5,15 +5,28 @@
 #   cp .env.production.example .env.production
 #   cp .env.production.web.example .env.production.web
 #   <fill in secrets — see DB_ROOT_PASSWORD + DB_PASSWORD>
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml pull api web
+#   docker compose -f docker-compose.prod.yml up -d --no-build
 #
-# Subsequent deploys:
-#   git pull
-#   docker compose -f docker-compose.prod.yml up -d --build api
+# This file declares `image:` only — there is NO build context, so `--build` is a
+# no-op here. The VPS does not build: GitHub Actions builds and pushes to
+# ghcr.io on every push to master, and the VPS pulls. Deploys are automatic;
+# the commands below are for rollback and first-time setup.
 #
-# Local dev access to this DB: SSH tunnel from laptop —
-#   ssh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud
-#   Then point apps/web/.env DATABASE_URL at mysql://elorae:<pw>@127.0.0.1:3306/elorae
+# Subsequent deploys (normally handled by CI — manual form for rollback):
+#   git pull                                   # compose/Caddy config changes only
+#   IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml pull api
+#   IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml up -d --no-build api
+#   (omit IMAGE_TAG to take :master)
+#
+# Local dev does NOT use this database. The default DATABASE_URL in apps/web/.env
+# points at the local 3308 test-bed container from docker-compose.dev.yml. Reaching
+# prod is a deliberate act, and the tunnel uses local port 3307 so it can never be
+# confused with the test bed:
+#   ssh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud
+# Do NOT point apps/web/.env DATABASE_URL at that tunnel — an ambient prod
+# DATABASE_URL makes every later command in the shell destructive with no signal.
+# See docs/local-db-testbed.md.
 #
 # Logs:
 #   docker compose -f docker-compose.prod.yml logs -f api
