@@ -154,6 +154,7 @@ export function DeliveriesCard({
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
+  const tFakturStatus = useTranslations("fakturPajakStatus");
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -421,7 +422,7 @@ export function DeliveriesCard({
                   <TableCell>
                     {delivery.taxInvoiceStatus ? (
                       <Badge variant={STATUS_BADGE_VARIANT[delivery.taxInvoiceStatus]}>
-                        {t(`fakturPajakStatus.${STATUS_LABEL_KEY[delivery.taxInvoiceStatus]}`)}
+                        {tFakturStatus(STATUS_LABEL_KEY[delivery.taxInvoiceStatus])}
                       </Badge>
                     ) : (
                       <span className="text-muted-foreground">—</span>
