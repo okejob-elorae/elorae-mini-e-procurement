@@ -4206,6 +4206,7 @@
     "recordPaymentAction": "Catat Pembayaran",
     "methodCash": "Tunai",
     "methodTransfer": "Transfer",
+    "methodReturOffset": "Offset Retur",
     "colCollector": "Kolektor",
     "allCollectors": "Semua Kolektor",
     "collectorSearchPlaceholder": "Cari kolektor...",
@@ -4292,7 +4293,9 @@
       "started": "Ekspor dimulai",
       "failed": "Ekspor gagal",
       "truncated": "Menampilkan 10.000 dari {total} baris — persempit filter untuk data lengkap"
-    }
+    },
+    "storeAvailableCreditTitle": "Kredit Retur Tersedia",
+    "storeAvailableCreditHint": "Retur yang disetujui dan belum diterapkan ke pembayaran mana pun untuk toko ini."
   },
   "profileAccounts": {
     "title": "Akun Profil",

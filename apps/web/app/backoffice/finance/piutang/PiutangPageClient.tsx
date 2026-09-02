@@ -56,6 +56,7 @@ type Props = {
   salesmen: { id: string; name: string }[];
   collectors: { id: string; name: string }[];
   canManageCollections: boolean;
+  storeAvailableCredit: number | null;
   storeId: string;
   salesmanId: string;
   collectorId: string;
@@ -238,6 +239,20 @@ export function PiutangPageClient(props: Props) {
             activeBucket={props.bucket}
             onSelectBucket={(bucket) => pushParams({ bucket })}
           />
+
+          {props.storeAvailableCredit !== null && props.storeAvailableCredit > 0 && (
+            <Card className="p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">{t("storeAvailableCreditTitle")}</p>
+                  <p className="text-xs text-muted-foreground">{t("storeAvailableCreditHint")}</p>
+                </div>
+                <p className="text-xl font-bold tabular-nums text-primary">
+                  {formatRupiah(props.storeAvailableCredit)}
+                </p>
+              </div>
+            </Card>
+          )}
 
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1 max-w-sm">

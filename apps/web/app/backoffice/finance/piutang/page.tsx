@@ -6,6 +6,7 @@ import { listReceivables } from "@/lib/finance/ar/queries";
 import { listStoreOptions } from "@/lib/stores/queries";
 import { listCanvassers } from "@/lib/canvassing/queries";
 import { listCollectorCandidates } from "@/lib/finance/collections/queries";
+import { getStoreAvailableCredit } from "@/lib/finance/ar/retur-offset-queries";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { AGING_BUCKETS, type AgingBucket } from "@/lib/finance/ar/aging";
 import { PiutangPageClient } from "./PiutangPageClient";
@@ -71,12 +72,13 @@ export default async function PiutangPage({ searchParams }: PageProps) {
   const asOf = new Date();
 
   try {
-    const [{ rows, total, bucketTotals, grandOutstanding }, storeOptions, canvassers, collectorCandidates] =
+    const [{ rows, total, bucketTotals, grandOutstanding }, storeOptions, canvassers, collectorCandidates, storeAvailableCredit] =
       await Promise.all([
         listReceivables({ storeId, salesmanId, collectorId, status, bucket, dateFrom, dateTo, search, page, pageSize, asOf }),
         listStoreOptions(),
         listCanvassers(),
         listCollectorCandidates(),
+        storeId ? getStoreAvailableCredit(storeId) : Promise.resolve(0),
       ]);
 
     return (
@@ -89,6 +91,7 @@ export default async function PiutangPage({ searchParams }: PageProps) {
         salesmen={canvassers.map((c) => ({ id: c.id, name: c.name }))}
         collectors={collectorCandidates}
         canManageCollections={canManageCollections}
+        storeAvailableCredit={storeId ? storeAvailableCredit : null}
         storeId={storeId ?? ""}
         salesmanId={salesmanId ?? ""}
         collectorId={collectorId ?? ""}
@@ -119,6 +122,7 @@ export default async function PiutangPage({ searchParams }: PageProps) {
         salesmen={[]}
         collectors={[]}
         canManageCollections={canManageCollections}
+        storeAvailableCredit={null}
         storeId={storeId ?? ""}
         salesmanId={salesmanId ?? ""}
         collectorId={collectorId ?? ""}

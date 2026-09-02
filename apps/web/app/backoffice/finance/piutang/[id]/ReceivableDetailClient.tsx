@@ -95,6 +95,12 @@ function formatRupiahExact(value: number): string {
   }).format(value);
 }
 
+function methodLabelKey(method: string): "methodCash" | "methodTransfer" | "methodReturOffset" {
+  if (method === "CASH") return "methodCash";
+  if (method === "TRANSFER") return "methodTransfer";
+  return "methodReturOffset";
+}
+
 function Field({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
   return (
@@ -379,7 +385,7 @@ export function ReceivableDetailClient({
                           {formatDateOnlyJakarta(a.payment.paidAt)}
                         </TableCell>
                         <TableCell className={cn(voided && "text-muted-foreground line-through")}>
-                          {t(a.payment.method === "CASH" ? "methodCash" : "methodTransfer")}
+                          {t(methodLabelKey(a.payment.method))}
                         </TableCell>
                         <TableCell
                           className={cn(
