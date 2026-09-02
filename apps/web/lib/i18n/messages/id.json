@@ -2765,6 +2765,12 @@
     },
     "colValue": "Nilai",
     "valuationIncomplete": "Belum Ternilai",
+    "colCredit": "Kredit",
+    "creditFilterLabel": "Status Kredit",
+    "creditFilterAll": "Semua",
+    "creditAvailable": "Tersedia",
+    "creditApplied": "Diterapkan",
+    "creditNotYet": "Belum Bisa Dioffset",
     "valuation": {
       "cardTitle": "Penilaian Retur",
       "notYetValuedBody": "Nilai retur akan dihitung otomatis saat retur ini disetujui.",

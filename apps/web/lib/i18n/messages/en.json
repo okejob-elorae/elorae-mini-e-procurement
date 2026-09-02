@@ -2765,6 +2765,12 @@
     },
     "colValue": "Value",
     "valuationIncomplete": "Not Fully Valued",
+    "colCredit": "Credit",
+    "creditFilterLabel": "Credit Status",
+    "creditFilterAll": "All",
+    "creditAvailable": "Available",
+    "creditApplied": "Applied",
+    "creditNotYet": "Not Yet Offsettable",
     "valuation": {
       "cardTitle": "Return Valuation",
       "notYetValuedBody": "The return's value will be computed automatically once this return is approved.",

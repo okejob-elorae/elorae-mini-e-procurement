@@ -18,6 +18,8 @@ export type FieldReturnTransport = "SELF_CARRY" | "EXPEDITION";
  */
 export type FieldReturnOrigin = "FIELD" | "ADMIN";
 
+export type FieldReturnOffsetStatus = "AVAILABLE" | "APPLIED";
+
 export type FieldReturnRow = {
   id: string;
   docNo: string;
@@ -30,11 +32,25 @@ export type FieldReturnRow = {
   createdAt: Date;
   totalValue: number | null;
   valuationStatus: "PENDING" | "VALUED";
+  /**
+   * The raw column — non-null on every retur, even one that isn't APPROVED+VALUED yet, because
+   * the schema default is AVAILABLE. A row's REAL offsettability is `status === "APPROVED" &&
+   * valuationStatus === "VALUED" && offsetStatus === "AVAILABLE"`; consumers must derive the
+   * displayed 3-way badge from all three fields together, never from this column alone.
+   */
+  offsetStatus: FieldReturnOffsetStatus;
 };
 
 export async function listFieldReturns(params: {
   q?: string;
   origin?: FieldReturnOrigin;
+  /**
+   * "AVAILABLE" means genuinely offsettable — APPROVED + VALUED + offsetStatus AVAILABLE — not
+   * merely `offsetStatus === "AVAILABLE"`, which every not-yet-approved retur also carries by
+   * default. "APPLIED" needs no such compound filter: only a return that was APPROVED + VALUED
+   * could ever have reached APPLIED in the first place.
+   */
+  creditFilter?: "AVAILABLE" | "APPLIED";
   page: number;
   perPage: number;
 }): Promise<{ rows: FieldReturnRow[]; total: number }> {
@@ -42,6 +58,11 @@ export async function listFieldReturns(params: {
   const where: Prisma.FieldReturnWhereInput = {
     ...(q ? { OR: [{ docNo: { contains: q } }, { store: { name: { contains: q } } }] } : {}),
     ...(params.origin ? { origin: params.origin } : {}),
+    ...(params.creditFilter === "AVAILABLE"
+      ? { status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE" }
+      : params.creditFilter === "APPLIED"
+        ? { offsetStatus: "APPLIED" }
+        : {}),
   };
 
   const [rows, total] = await Promise.all([
@@ -59,6 +80,7 @@ export async function listFieldReturns(params: {
         createdAt: true,
         totalValue: true,
         valuationStatus: true,
+        offsetStatus: true,
         store: { select: { name: true } },
         _count: { select: { lines: true } },
       },
@@ -78,6 +100,7 @@ export async function listFieldReturns(params: {
       createdAt: r.createdAt,
       totalValue: r.totalValue === null ? null : r.totalValue.toNumber(),
       valuationStatus: r.valuationStatus,
+      offsetStatus: r.offsetStatus,
     })),
     total,
   };

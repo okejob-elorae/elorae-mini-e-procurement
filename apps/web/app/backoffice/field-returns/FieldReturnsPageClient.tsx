@@ -30,14 +30,29 @@ import { Pager } from "@/components/Pager";
 const ROUTE = "/backoffice/field-returns";
 const ORIGIN_FILTER_ALL = "__all__";
 
+/**
+ * Derived from THREE fields, never from `offsetStatus` alone — a not-yet-approved retur also
+ * defaults to `offsetStatus: "AVAILABLE"`, but it is not genuinely offsettable yet. Mirrors the
+ * exact condition `applyReturnOffset` itself enforces and `listFieldReturns`'s own `creditFilter`
+ * uses server-side.
+ */
+function creditBadge(r: FieldReturnRow): { labelKey: "creditAvailable" | "creditApplied" | "creditNotYet"; variant: "default" | "secondary" | "outline" } {
+  if (r.offsetStatus === "APPLIED") return { labelKey: "creditApplied", variant: "secondary" };
+  if (r.status === "APPROVED" && r.valuationStatus === "VALUED") return { labelKey: "creditAvailable", variant: "default" };
+  return { labelKey: "creditNotYet", variant: "outline" };
+}
+
 type Props = {
   rows: FieldReturnRow[];
   total: number;
   q: string;
   origin: FieldReturnOrigin | "";
+  creditFilter: "AVAILABLE" | "APPLIED" | "";
   page: number;
   pageSize: number;
 };
+
+const CREDIT_FILTER_ALL = "__all__";
 
 const ORIGIN_BADGE_VARIANT: Record<FieldReturnOrigin, "secondary" | "outline"> = {
   FIELD: "secondary",
@@ -107,7 +122,7 @@ export function FieldReturnsPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
             <div className="relative">
@@ -133,6 +148,22 @@ export function FieldReturnsPageClient(props: Props) {
                 <SelectItem value={ORIGIN_FILTER_ALL}>{t("originFilterAll")}</SelectItem>
                 <SelectItem value="FIELD">{t("origin.FIELD")}</SelectItem>
                 <SelectItem value="ADMIN">{t("origin.ADMIN")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("creditFilterLabel")}</label>
+            <Select
+              value={props.creditFilter || CREDIT_FILTER_ALL}
+              onValueChange={(v) => pushParam("creditFilter", v === CREDIT_FILTER_ALL ? undefined : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={CREDIT_FILTER_ALL}>{t("creditFilterAll")}</SelectItem>
+                <SelectItem value="AVAILABLE">{t("creditAvailable")}</SelectItem>
+                <SelectItem value="APPLIED">{t("creditApplied")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -171,6 +202,7 @@ export function FieldReturnsPageClient(props: Props) {
                       <TableHead className="text-right">{t("colLineCount")}</TableHead>
                       <TableHead className="text-right">{t("colValue")}</TableHead>
                       <TableHead>{t("colStatus")}</TableHead>
+                      <TableHead>{t("colCredit")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -219,6 +251,9 @@ export function FieldReturnsPageClient(props: Props) {
                             >
                               {t(`status.${r.status}`)}
                             </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={creditBadge(r).variant}>{t(creditBadge(r).labelKey)}</Badge>
                           </TableCell>
                         </TableRow>
                       );
