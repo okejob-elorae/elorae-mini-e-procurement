@@ -11,6 +11,7 @@ export type StoreFields = {
   marginPercent: number | null;
   priceDiscountPercent: number | null;
   creditLimit: number | null;
+  npwp: string | null;
   lat: number | null;
   lng: number | null;
   checkinRadiusMeters: number | null;
@@ -93,6 +94,7 @@ function serializeStore(s: {
   marginPercent: Prisma.Decimal | null;
   priceDiscountPercent: Prisma.Decimal | null;
   creditLimit: Prisma.Decimal | null;
+  npwp: string | null;
   lat: Prisma.Decimal | null;
   lng: Prisma.Decimal | null;
   checkinRadiusMeters: number | null;
@@ -112,6 +114,7 @@ function serializeStore(s: {
     marginPercent: s.marginPercent ? s.marginPercent.toNumber() : null,
     priceDiscountPercent: s.priceDiscountPercent ? s.priceDiscountPercent.toNumber() : null,
     creditLimit: s.creditLimit !== null ? s.creditLimit.toNumber() : null,
+    npwp: s.npwp,
     lat: s.lat ? s.lat.toNumber() : null,
     lng: s.lng ? s.lng.toNumber() : null,
     checkinRadiusMeters: s.checkinRadiusMeters,
@@ -174,6 +177,7 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
       marginPercent: toDecimalOrNull(input.marginPercent),
       priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
       creditLimit: toDecimalOrNull(input.creditLimit),
+      npwp: input.npwp,
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,
@@ -209,6 +213,7 @@ export async function updateStore(id: string, input: StoreFields): Promise<Store
       marginPercent: toDecimalOrNull(input.marginPercent),
       priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
       creditLimit: toDecimalOrNull(input.creditLimit),
+      npwp: input.npwp,
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,

@@ -22,6 +22,7 @@ export default async function NewStorePage() {
         marginPercent: null,
         priceDiscountPercent: null,
         creditLimit: null,
+        npwp: null,
         lat: null,
         lng: null,
         checkinRadiusMeters: null,
