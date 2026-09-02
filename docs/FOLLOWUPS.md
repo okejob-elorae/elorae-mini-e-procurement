@@ -355,6 +355,29 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       credit at any moment. The two-stage treatment (recognize a customer-credit liability at retur
       approval, consume it at offset) is the fix and needs a new posting role plus a backfill
       decision for every already-approved, still-`AVAILABLE` retur at merge time.
+- [ ] A retur offset, once voided, can never be re-offset — the deterministic idempotency key
+      (`returoffset-<returnId>`) stays permanently bound to the voided payment (`voidPayment`
+      releases `offsetStatus` back to `AVAILABLE` but never clears it — `apps/web/lib/finance/ar/
+      void-writer.ts`), so `applyReturnOffset` deterministically throws `PAYMENT_VOIDED` on every
+      future attempt for that retur. The field retur detail card correctly explains this and
+      offers no action (`hasVoidedOffsetAttempt`, `apps/web/lib/field-sales/retur/queries.ts`) —
+      but the spec's own documented remedy, "record the correction as a new cash/transfer
+      payment," is technically wrong accounting for this specific case: it posts DR CASH/BANK for
+      money that never arrived, and the DR SALES_REVENUE / CR AR reversal this retur's value
+      should have produced never posts at all. Two other surfaces also still read this retur as
+      available credit after the void, since neither checks for a voided prior attempt: the field
+      returns register's offset-state badge/`creditFilter` (`FieldReturnsPageClient.tsx`,
+      `listFieldReturns`) and the piutang list's `getStoreAvailableCredit` figure
+      (`retur-offset-queries.ts`) — both are read-only/informational (no action button), so this
+      is a display overstatement in a rare state, not a reachable double-spend. Closing the
+      informational-surface gap needs a per-row payment lookup on what's currently a cheap list
+      query (N+1, or a join) for a state expected to be rare — deferred as a cost/benefit call,
+      not forgotten. The real fix for the underlying remedy problem is either the two-stage GL
+      treatment above (which would let a void-then-retry naturally re-consume the still-recognized
+      liability) or nulling the voided payment's `idempotencyKey` inside `voidPayment`'s own
+      transaction to restore genuine retry capability — deliberately not done in the retur-offset
+      slice, since the spec explicitly chose the permanent-lock behavior over a non-deterministic
+      key and reversing that is a design decision, not a bug fix.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
