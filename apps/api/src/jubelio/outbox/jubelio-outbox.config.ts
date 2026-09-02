@@ -13,3 +13,9 @@ export const OUTBOX_POLLER = {
   STUCK_AFTER_MS: 5 * 60 * 1_000,
   BATCH: 100,
 } as const;
+
+/**
+ * Jubelio warehouse location the WMS pick/pack/ship pushes act on. Single
+ * warehouse today; widen to a per-order lookup before onboarding a second one.
+ */
+export const JUBELIO_WMS_LOCATION_ID = 1;

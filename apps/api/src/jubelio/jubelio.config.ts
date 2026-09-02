@@ -25,6 +25,20 @@ export class JubelioConfig {
     return { email, password };
   }
 
+  /**
+   * Email stamped as the picker on WMS picklist pushes. Jubelio validates it
+   * against its own staff list, so it defaults to the integration account we
+   * already authenticate as rather than an arbitrary ERP user.
+   *
+   * Truthiness, not `??`: dotenv parses a bare `JUBELIO_PICKER_EMAIL=` as `""`,
+   * which is not `undefined` and would sail past `??` — sending `picker_id: ""`,
+   * which Jubelio's validator rejects the same way it rejects a missing field.
+   */
+  get pickerEmail(): string {
+    const configured = this.config.get<string>("JUBELIO_PICKER_EMAIL")?.trim();
+    return configured || this.credentials.email;
+  }
+
   get webhookSecret(): string {
     const secret = this.config.get<string>("JUBELIO_WEBHOOK_SECRET");
     if (!secret) throw new JubelioConfigError("JUBELIO_WEBHOOK_SECRET");
