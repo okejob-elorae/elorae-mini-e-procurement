@@ -129,7 +129,7 @@ export function OffsetToPiutangSheet({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t("detail.colDocNo")}</TableHead>
+                    <TableHead>{t("colDocNo")}</TableHead>
                     <TableHead>{t("credit.colDueDate")}</TableHead>
                     <TableHead className="text-right">{t("credit.colOutstanding")}</TableHead>
                     <TableHead className="text-right">{t("credit.colAllocation")}</TableHead>
