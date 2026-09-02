@@ -329,6 +329,32 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       but not deduplicated — `FakturPajakPageClient` and `DeliveriesCard`'s faktur badge each need
       the same four labels but read from different `next-intl` namespaces, so the text must be kept
       in sync by hand if either wording ever changes.
+- [ ] No COGS reversal for retur-restored stock. Approving a field retur restores
+      `InventoryValue` and posts a positive `StockAdjustment` with no journal alongside it
+      (`apps/web/lib/field-sales/retur/approve-writer.ts`), so `INVENTORY` is understated and
+      `COGS` overstated by the restored value on every field retur. Fires at approval, applies to
+      konsi and never-offset returs equally — not the retur-offset slice's trigger, but a live GL
+      hole now that a consumer of retur value exists.
+- [ ] AR journals are not GL-cutover gated. `postPaymentReceiptJournal`
+      (`apps/web/lib/finance/ar/payment-journal.ts`) credits `AR` unconditionally, so any payment —
+      cash or retur-offset, both routing through `debitRole` — against a backfilled receivable with
+      no revenue journal drives AR negative. Same shape as the settlement item already logged
+      above. The fix is one pass applying `classifySaleLeg`'s counterpart-journal gate across the
+      AR journals, covering both paths together.
+- [ ] No partial retur draw-down. A retur is consumed all-or-nothing (`applyReturnOffset`,
+      `apps/web/lib/finance/ar/retur-offset-writer.ts`), so one whose value exceeds the store's
+      total outstanding cannot be offset until more invoices exist. Needs a `FieldReturn.appliedValue`
+      column (does not exist today) and a per-event idempotency key, at which point `appliedValue`
+      alone would need to carry the double-spend guarantee the deterministic key currently provides.
+- [ ] No post-approval repricing for field returns, so a return that approved with
+      `valuationStatus: PENDING` has a permanently unusable value — `setLinePriceAction` refuses
+      once approved (`ALREADY_APPROVED`), so it can never become offsettable.
+- [ ] No way to cancel a standing retur credit. Belongs with the write-off/adjustment slice that
+      `ReceivableStatus.WRITTEN_OFF` is already waiting on, same act, same journal treatment.
+- [ ] Un-offset retur credits are invisible in the GL, overstating revenue by the total standing
+      credit at any moment. The two-stage treatment (recognize a customer-credit liability at retur
+      approval, consume it at offset) is the fix and needs a new posting role plus a backfill
+      decision for every already-approved, still-`AVAILABLE` retur at merge time.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
