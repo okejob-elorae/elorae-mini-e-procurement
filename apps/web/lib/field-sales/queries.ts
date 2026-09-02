@@ -4,6 +4,7 @@ import { variantDetailForSku } from "@/lib/items/variants";
 import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
 import { outstandingQty } from "./delivery/plan";
 import type { PlanHistory } from "./smart-request/plan";
+import type { TaxInvoiceStatusFilter } from "@/lib/tax-invoices/queries";
 
 export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 
@@ -32,6 +33,7 @@ export type FieldSalesDeliverySummary = {
   discountAmount: number;
   total: number;
   deliveredByName: string;
+  taxInvoiceStatus: TaxInvoiceStatusFilter | null;
   lines: FieldSalesDeliveryLineSummary[];
 };
 
@@ -175,6 +177,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
           id: true, docNo: true, deliveredAt: true, invoiceDate: true, dueDate: true,
           subtotal: true, discountAmount: true, total: true,
           deliveredBy: { select: { name: true } },
+          taxInvoice: { select: { status: true } },
           lines: {
             select: {
               id: true, orderLineId: true, productName: true, variantSku: true, qty: true,
@@ -269,6 +272,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
       discountAmount: toNum(d.discountAmount),
       total: toNum(d.total),
       deliveredByName: d.deliveredBy.name ?? "—",
+      taxInvoiceStatus: d.taxInvoice?.status ?? null,
       lines: d.lines.map((dl) => ({
         id: dl.id,
         orderLineId: dl.orderLineId,

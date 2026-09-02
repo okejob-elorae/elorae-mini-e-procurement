@@ -36,6 +36,7 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     marginPercent: 20,
     priceDiscountPercent: null,
     creditLimit: null,
+    npwp: null,
     lat: null,
     lng: null,
     checkinRadiusMeters: null,
@@ -112,6 +113,7 @@ d("store price discount guard (test bed only)", () => {
     marginPercent: null,
     priceDiscountPercent,
     creditLimit: null,
+    npwp: null,
     lat: null,
     lng: null,
     checkinRadiusMeters: null,
@@ -128,6 +130,7 @@ d("store price discount guard (test bed only)", () => {
     marginPercent: 20,
     priceDiscountPercent,
     creditLimit: null,
+    npwp: null,
     lat: null,
     lng: null,
     checkinRadiusMeters: null,
@@ -203,5 +206,16 @@ d("store price discount guard (test bed only)", () => {
     await expect(
       updateStore(created.id, konsiFields(`TEST-SQ-DISC-UPD2-${token}`, 10)),
     ).rejects.toBeInstanceOf(KonsiPriceDiscountNotAllowedError);
+  });
+
+  /* The faktur queue reads `Store.npwp` to prefill the buyer NPWP, so both the write in
+     `createStore`/`updateStore` and the pass-through in `serializeStore` are load-bearing. */
+  it("persists a provided npwp through create and update", async () => {
+    const created = await createStore({ ...putusFields(`TEST-SQ-NPWP-${token}`, null), npwp: "01.234.567.8-901.000" });
+    createdIds.push(created.id);
+    expect(created.npwp).toBe("01.234.567.8-901.000");
+
+    const updated = await updateStore(created.id, { ...putusFields(`TEST-SQ-NPWP-${token}`, null), npwp: "09.876.543.2-109.000" });
+    expect(updated.npwp).toBe("09.876.543.2-109.000");
   });
 });

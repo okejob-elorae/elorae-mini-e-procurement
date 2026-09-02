@@ -311,6 +311,7 @@ model Store {
   marginPercent  Decimal?       @db.Decimal(5, 2)
   priceDiscountPercent Decimal? @db.Decimal(5, 2)
   creditLimit    Decimal?       @db.Decimal(15, 2)
+  npwp           String?        @db.VarChar(32)
   lat            Decimal?       @db.Decimal(10, 7)
   lng            Decimal?       @db.Decimal(10, 7)
   checkinRadiusMeters Int?
@@ -533,6 +534,9 @@ model TaxInvoice {
   reason          String?            @db.Text
   notaPrintedAt   DateTime?
   notaPrintedById String?
+  buyerNpwp       String?            @db.VarChar(32)
+  taxableAmount   Decimal?           @db.Decimal(15, 2)
+  ppnAmount       Decimal?           @db.Decimal(15, 2)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   delivery        FieldSalesDelivery @relation(fields: [deliveryId], references: [id])
@@ -680,6 +684,7 @@ enum FieldSalesDeliveryStatus {
 enum TaxInvoiceStatus {
   PENDING
   CREATED
+  SENT_TO_STORE
   NOT_REQUIRED
 }
 

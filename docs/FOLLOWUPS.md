@@ -286,6 +286,49 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       the next scheduled run (dedup holds and receivables are processed oldest-due-first), but a
       single bad row currently halts the rest of that run's announcements instead of logging and
       continuing.
+- [ ] `Store.npwp` ships `NULL` for every existing store and nothing prompts anyone to fill it in,
+      so the first faktur raised at each store hits the required-NPWP block in
+      `markTaxInvoiceCreated`. The mark-created dialog's link to the store profile page is the
+      whole mitigation today — no bulk-fill flow, no store-list indicator for a missing NPWP.
+- [ ] Neither NPWP column (`Store.npwp`, `TaxInvoice.buyerNpwp`) is format-validated or normalised
+      beyond a length cap, so the same store's number can be stored with or without punctuation
+      (e.g. `01.234.567.8-901.000` vs the digits alone) in different places, and the faktur queue's
+      search will not match across the two spellings.
+- [ ] `TaxInvoice.buyerNpwp` carries no index, like `markedById`/`notaPrintedById` before it —
+      nothing queries by it today, so this is deferred rather than fixed.
+- [ ] `SENT_TO_STORE` records that a faktur was handed over but not how, when it reached the
+      store, or who received it on the store side. A real handover record (courier, signature,
+      received-at timestamp) is the Payment Settlement epic's (GitHub issue #28) territory, not
+      this slice's.
+- [ ] There is no way to correct a single field on a `CREATED` faktur — a wrong PPN figure means
+      reverting to pending (`revertTaxInvoiceToPending`) and re-entering all four fields (invoice
+      number, NPWP, taxable amount, PPN amount) from scratch. Deliberate (two honest audit rows
+      beat one silent edit), but will feel heavy if it happens often.
+- [ ] A `SENT_TO_STORE` faktur can only be undone by reverting to `PENDING`, and per Decision 4
+      that revert nulls all four value fields (invoice number, NPWP, taxable amount, PPN amount).
+      `SENT_TO_STORE` is otherwise a pure handover flag, so undoing a mis-click on it destroys the
+      whole filing: recovery means reading the four values back out of the `AuditLog` `changes`
+      blob and retyping them. Distinct from the `CREATED`-correction item above — the complaint
+      here is that the revert loses strictly more than the mistake that prompted it. A
+      `SENT_TO_STORE -> CREATED` step back would fix it, deferred until someone hits it.
+- [ ] `lib/tax-invoices/writer.test.ts` and `lib/tax-invoices/queries.test.ts` each drive the real
+      delivery writer per test case, so every run burns real `DELIVERY` doc numbers out of the
+      shared `:3308` `DocNumberConfig` row (queries.test.ts burns two per test). Non-destructive —
+      the counter only ever advances and nothing collides — but unrestored, and this slice roughly
+      doubled the burn rate by growing writer.test.ts from ~9 to ~20 cases. Only worth addressing
+      if the sequence gap ever becomes something a human reads.
+- [x] ~~`DeliveriesCard.tsx`'s faktur status badge rendered the raw missing-key string instead of a
+      translated label~~ — was scoped to `useTranslations("fieldSalesOrders")` while calling
+      `t(\`fakturPajakStatus.${key}\`)` against a sibling TOP-LEVEL `fakturPajakStatus` namespace,
+      not one nested under `fieldSalesOrders`; confirmed by running `use-intl`'s `createTranslator`
+      directly against the shipped `en.json` before the fix, which raised `MISSING_MESSAGE`. Fixed
+      with a second `useTranslations("fakturPajakStatus")` call for that lookup (PR pending, commit
+      `f273df5`).
+- [ ] `fakturPajak.status*` and the top-level `fakturPajakStatus.status*` block still hold
+      identical status label text hand-duplicated across both locale files, now correctly wired
+      but not deduplicated — `FakturPajakPageClient` and `DeliveriesCard`'s faktur badge each need
+      the same four labels but read from different `next-intl` namespaces, so the text must be kept
+      in sync by hand if either wording ever changes.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.

@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { formatDateTime, formatIDR } from "@/lib/sales-orders/format";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { STATUS_BADGE_VARIANT, STATUS_LABEL_KEY } from "@/lib/tax-invoices/status-display";
 import type {
   FieldSalesDeliveryStatus,
   FieldSalesDeliverySummary,
@@ -153,6 +154,7 @@ export function DeliveriesCard({
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
+  const tFakturStatus = useTranslations("fakturPajakStatus");
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -398,6 +400,7 @@ export function DeliveriesCard({
                 <TableHead className="text-right">{t("delivery.value")}</TableHead>
                 <TableHead>{t("delivery.deliveredBy")}</TableHead>
                 <TableHead>{t("delivery.dueDate")}</TableHead>
+                <TableHead>{t("delivery.taxInvoiceStatus")}</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
@@ -415,6 +418,15 @@ export function DeliveriesCard({
                   <TableCell className="max-w-40 truncate">{delivery.deliveredByName}</TableCell>
                   <TableCell className="whitespace-nowrap">
                     {formatDay(delivery.dueDate, locale)}
+                  </TableCell>
+                  <TableCell>
+                    {delivery.taxInvoiceStatus ? (
+                      <Badge variant={STATUS_BADGE_VARIANT[delivery.taxInvoiceStatus]}>
+                        {tFakturStatus(STATUS_LABEL_KEY[delivery.taxInvoiceStatus])}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="w-12 text-right">
                     <DropdownMenu>

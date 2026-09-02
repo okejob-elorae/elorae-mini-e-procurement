@@ -552,6 +552,17 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
               />
               <p className="text-xs text-muted-foreground">{t("creditLimitHint")}</p>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="npwp">{t("npwp")}</Label>
+              <Input
+                id="npwp"
+                disabled={pending || readOnly}
+                value={form.npwp ?? ""}
+                onChange={(e) => update("npwp", e.target.value === "" ? null : e.target.value)}
+                placeholder={t("npwpPlaceholder")}
+              />
+              <p className="text-xs text-muted-foreground">{t("npwpHint")}</p>
+            </div>
           </div>
         </section>
 

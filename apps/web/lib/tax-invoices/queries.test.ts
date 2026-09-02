@@ -15,13 +15,14 @@ const invoiceDateB = new Date("2026-01-01T00:00:00.000+07:00");
 const dueDateB = new Date("2026-01-08T00:00:00.000+07:00");
 
 d("listTaxInvoices (test bed only)", () => {
-  const token = Math.random().toString(36).slice(2, 10);
   /**
-   * Every query below is scoped by `q` to this run's own store name. The bed is shared with real
+   * Every query below is scoped by `q` to this test's own store name. The bed is shared with real
    * data, so an unscoped assertion on `counts` or `total` would depend on whatever else is in the
-   * table.
+   * table. Both are regenerated per test, not per file: a single `afterEach` that throws or times
+   * out would otherwise leave every later test colliding on the same `@unique` values.
    */
-  const storeName = `Test TIQ Store ${token}`;
+  let token = "";
+  let storeName = "";
 
   let uomId = "";
   let itemId = "";
@@ -30,12 +31,16 @@ d("listTaxInvoices (test bed only)", () => {
   let userId = "";
   let orderId = "";
   let lineId = "";
-  /* Only B's id is held: the teardown scopes on `orderId`, and B is the row flipped to CREATED. */
+  /* The teardown scopes on `orderId`; both delivery ids are held only so a test can flip one
+     tax invoice's status directly. */
+  let deliveryAId = "";
   let deliveryBId = "";
 
   beforeEach(async () => {
+    token = Math.random().toString(36).slice(2, 10);
+    storeName = `Test TIQ Store ${token}`;
     uomId = ""; itemId = ""; invId = ""; storeId = ""; userId = ""; orderId = ""; lineId = "";
-    deliveryBId = "";
+    deliveryAId = ""; deliveryBId = "";
 
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-TIQ-${token}`, nameId: "test", nameEn: "test" },
@@ -84,13 +89,14 @@ d("listTaxInvoices (test bed only)", () => {
       data: { source: "FIELD_SALES", fieldSalesLineId: lineId, itemId, variantSku: "", qty: 10, state: "RESERVED" },
     });
 
-    await recordFieldSalesDelivery({
+    const deliveryA = await recordFieldSalesDelivery({
       orderId,
       deliveredById: userId,
       lines: [{ orderLineId: lineId, qty: 5 }],
       invoiceDate: invoiceDateA,
       dueDate: dueDateA,
     });
+    deliveryAId = deliveryA.deliveryId;
 
     const deliveryB = await recordFieldSalesDelivery({
       orderId,
@@ -183,5 +189,34 @@ d("listTaxInvoices (test bed only)", () => {
     expect(total).toBe(1);
     expect(rows[0].status).toBe("CREATED");
     expect(rows[0].invoiceNo).toBe(`010.000-26.${token}`);
+  });
+
+  it("exposes the store's id and NPWP on each row", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { npwp: "01.234.567.8-901.000" } });
+    const { rows } = await listTaxInvoices({ q: storeName, page: 1, perPage: 10 });
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.storeId).toBe(storeId);
+      expect(row.storeNpwp).toBe("01.234.567.8-901.000");
+    }
+  });
+
+  it("counts and filters the SENT_TO_STORE bucket", async () => {
+    /* A is the PENDING one — flipped directly, same as the `beforeEach` does for B, because the
+       subject here is the query layer and going through the writer would drag its audit rows in. */
+    const sent = await prisma.taxInvoice.update({
+      where: { deliveryId: deliveryAId },
+      data: { status: "SENT_TO_STORE" },
+    });
+
+    /* A is now SENT_TO_STORE, B is still CREATED — no bucket may be inferred from a default. */
+    const { counts } = await listTaxInvoices({ q: storeName, page: 1, perPage: 10 });
+    expect(counts).toEqual({ PENDING: 0, CREATED: 1, SENT_TO_STORE: 1, NOT_REQUIRED: 0 });
+
+    const filtered = await listTaxInvoices({ q: storeName, status: "SENT_TO_STORE", page: 1, perPage: 10 });
+    expect(filtered.total).toBe(1);
+    expect(filtered.rows).toHaveLength(1);
+    expect(filtered.rows[0].id).toBe(sent.id);
+    expect(filtered.rows[0].status).toBe("SENT_TO_STORE");
   });
 });
