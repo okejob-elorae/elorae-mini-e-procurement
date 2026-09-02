@@ -9,6 +9,7 @@
       "ts"
     ],
     "rootDir": "src",
+    "maxWorkers": "50%",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
@@ -32,7 +33,7 @@
     "prod:start": "NODE_ENV=production node dist/main.js",
     "prod": "pnpm prod:build && pnpm migrate:deploy && pnpm prod:start",
     "lint": "eslint src --max-warnings 0",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc -p tsconfig.spec.json",
     "test": "jest"
   },
   "dependencies": {
