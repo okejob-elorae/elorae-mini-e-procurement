@@ -42,6 +42,8 @@ async function transition(t: Transition): Promise<{ ok: true }> {
         taxableAmount: true,
         ppnAmount: true,
         reason: true,
+        markedAt: true,
+        markedById: true,
       },
     });
     if (!row) throw new TaxInvoiceError("NOT_FOUND");
@@ -62,16 +64,43 @@ async function transition(t: Transition): Promise<{ ok: true }> {
      * spreading `t.data` over `before` so a field this transition did NOT touch (e.g.
      * `markTaxInvoiceSentToStore` never sets `invoiceNo`) shows its unchanged value in `after`,
      * honestly, rather than `undefined`.
+     *
+     * `markedAt`/`markedById` are read into `before` too: several transitions DO set them, so
+     * without the pair the log would record who a faktur was reassigned to and never who held it
+     * before — after a revert nothing anywhere would name the operator who first marked it.
+     *
+     * Both amounts are converted to plain numbers on the way in and out. `Prisma.Decimal.toJSON()`
+     * emits a STRING, so leaving them as Decimals would land `"5000"` in the JSON `changes` column
+     * and make a later `changes.before.taxableAmount === 5000` read false. The `data` objects
+     * themselves stay `Prisma.Decimal` — the column is `Decimal` and the write needs it.
      */
     const before = {
       status: row.status,
       invoiceNo: row.invoiceNo,
       buyerNpwp: row.buyerNpwp,
-      taxableAmount: row.taxableAmount,
-      ppnAmount: row.ppnAmount,
+      taxableAmount: row.taxableAmount !== null ? Number(row.taxableAmount) : null,
+      ppnAmount: row.ppnAmount !== null ? Number(row.ppnAmount) : null,
       reason: row.reason,
+      markedAt: row.markedAt,
+      markedById: row.markedById,
     };
-    const after = { ...before, status: t.to, ...t.data };
+    const after = {
+      ...before,
+      status: t.to,
+      ...t.data,
+      taxableAmount:
+        t.data.taxableAmount !== undefined
+          ? t.data.taxableAmount !== null
+            ? Number(t.data.taxableAmount)
+            : null
+          : before.taxableAmount,
+      ppnAmount:
+        t.data.ppnAmount !== undefined
+          ? t.data.ppnAmount !== null
+            ? Number(t.data.ppnAmount)
+            : null
+          : before.ppnAmount,
+    };
 
     await tx.auditLog.create({
       data: {

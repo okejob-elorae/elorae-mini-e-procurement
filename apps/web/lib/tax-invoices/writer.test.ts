@@ -13,7 +13,9 @@ const defaultDueDate = new Date("2026-01-08T00:00:00.000+07:00");
 const NPWP = "01.234.567.8-901.000";
 
 d("tax-invoice status transitions (test bed only)", () => {
-  const token = Math.random().toString(36).slice(2, 10);
+  /* Regenerated per test, not per file: a single `afterEach` that throws or times out on the
+     shared bed would otherwise leave every later test colliding on the same `@unique` values. */
+  let token = "";
   let uomId = "";
   let itemId = "";
   let invId = "";
@@ -25,6 +27,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   let taxInvoiceId = "";
 
   beforeEach(async () => {
+    token = Math.random().toString(36).slice(2, 10);
     uomId = ""; itemId = ""; invId = ""; storeId = ""; userId = ""; orderId = ""; lineId = ""; deliveryId = ""; taxInvoiceId = "";
 
     const uom = await prisma.uOM.create({

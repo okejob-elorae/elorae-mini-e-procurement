@@ -81,7 +81,7 @@ export function FakturPajakPageClient(props: Props) {
   const [searchInput, setSearchInput] = useState(props.q);
   const [dialog, setDialog] = useState<{ kind: DialogKind; row: SelectedRow } | null>(null);
   const [fieldValue, setFieldValue] = useState("");
-  const [markCreatedRow, setMarkCreatedRow] = useState<{ id: string; docNo: string; storeId: string; storeNpwp: string | null } | null>(null);
+  const [markCreatedRow, setMarkCreatedRow] = useState<{ id: string; docNo: string; storeId: string; storeNpwp: string | null; total: number } | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -116,7 +116,7 @@ export function FakturPajakPageClient(props: Props) {
   }
 
   function openMarkCreatedDialog(row: TaxInvoiceRow): void {
-    setMarkCreatedRow({ id: row.id, docNo: row.docNo, storeId: row.storeId, storeNpwp: row.storeNpwp });
+    setMarkCreatedRow({ id: row.id, docNo: row.docNo, storeId: row.storeId, storeNpwp: row.storeNpwp, total: row.total });
   }
 
   function closeDialog(): void {

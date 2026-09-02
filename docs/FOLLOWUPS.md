@@ -304,6 +304,19 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       reverting to pending (`revertTaxInvoiceToPending`) and re-entering all four fields (invoice
       number, NPWP, taxable amount, PPN amount) from scratch. Deliberate (two honest audit rows
       beat one silent edit), but will feel heavy if it happens often.
+- [ ] A `SENT_TO_STORE` faktur can only be undone by reverting to `PENDING`, and per Decision 4
+      that revert nulls all four value fields (invoice number, NPWP, taxable amount, PPN amount).
+      `SENT_TO_STORE` is otherwise a pure handover flag, so undoing a mis-click on it destroys the
+      whole filing: recovery means reading the four values back out of the `AuditLog` `changes`
+      blob and retyping them. Distinct from the `CREATED`-correction item above — the complaint
+      here is that the revert loses strictly more than the mistake that prompted it. A
+      `SENT_TO_STORE -> CREATED` step back would fix it, deferred until someone hits it.
+- [ ] `lib/tax-invoices/writer.test.ts` and `lib/tax-invoices/queries.test.ts` each drive the real
+      delivery writer per test case, so every run burns real `DELIVERY` doc numbers out of the
+      shared `:3308` `DocNumberConfig` row (queries.test.ts burns two per test). Non-destructive —
+      the counter only ever advances and nothing collides — but unrestored, and this slice roughly
+      doubled the burn rate by growing writer.test.ts from ~9 to ~20 cases. Only worth addressing
+      if the sequence gap ever becomes something a human reads.
 - [x] ~~`DeliveriesCard.tsx`'s faktur status badge rendered the raw missing-key string instead of a
       translated label~~ — was scoped to `useTranslations("fieldSalesOrders")` while calling
       `t(\`fakturPajakStatus.${key}\`)` against a sibling TOP-LEVEL `fakturPajakStatus` namespace,

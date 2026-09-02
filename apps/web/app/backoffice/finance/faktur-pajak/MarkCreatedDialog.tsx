@@ -17,7 +17,7 @@ import {
 import { markCreatedAction } from "@/app/actions/tax-invoices";
 import { looksLikeDjpInvoiceNumber } from "@/lib/tax-invoices/invoice-number-format";
 
-type Row = { id: string; docNo: string; storeId: string; storeNpwp: string | null };
+type Row = { id: string; docNo: string; storeId: string; storeNpwp: string | null; total: number };
 
 type Props = {
   row: Row | null;
@@ -37,8 +37,12 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
   const [isPending, setIsPending] = useState(false);
   const [invoiceNo, setInvoiceNo] = useState("");
   const [buyerNpwp, setBuyerNpwp] = useState(row?.storeNpwp ?? "");
-  const [taxableAmount, setTaxableAmount] = useState<number | "">("");
-  const [ppnAmount, setPpnAmount] = useState<number | "">("");
+  /* Prefilled from the nota's own total — the parent remounts this component per row (`key`),
+     so these initializers re-run fresh for every faktur rather than carrying a stale figure. */
+  const [taxableAmount, setTaxableAmount] = useState<number | "">(row?.total ?? "");
+  const [ppnAmount, setPpnAmount] = useState<number | "">(
+    row ? roundCents((row.total * ppnRatePercent) / 100) : "",
+  );
   const [ppnTouched, setPpnTouched] = useState(false);
 
   if (!row) return null;
@@ -71,8 +75,8 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
   function handleClose(): void {
     setInvoiceNo("");
     setBuyerNpwp(row?.storeNpwp ?? "");
-    setTaxableAmount("");
-    setPpnAmount("");
+    setTaxableAmount(row?.total ?? "");
+    setPpnAmount(row ? roundCents((row.total * ppnRatePercent) / 100) : "");
     setPpnTouched(false);
     onClose();
   }
@@ -137,7 +141,7 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
             {npwpMissingOnStore && (
               <p className="text-xs text-muted-foreground">
                 {t("markCreatedNpwpMissingHint")}{" "}
-                <a href={`/backoffice/stores/${row.storeId}`} className="underline" target="_blank" rel="noreferrer">
+                <a href={`/backoffice/stores/${row.storeId}/edit`} className="underline" target="_blank" rel="noreferrer">
                   {t("markCreatedNpwpMissingLink")}
                 </a>
               </p>
