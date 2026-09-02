@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
@@ -35,7 +35,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, Search, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Pager } from "@/components/Pager";
 
 type CallsResult = Awaited<ReturnType<typeof getJubelioApiCalls>>;
@@ -73,6 +74,17 @@ export default function JubelioAdminPage() {
     },
     [searchParams, pathname, router],
   );
+
+  /**
+   * The debounce fires up to 350ms after the render that armed it, by which time
+   * another control may already have pushed its own querystring. Calling the
+   * captured `updateUrl` then rebuilds the URL from a stale `searchParams` and
+   * silently drops that change, so the timeout goes through this ref instead.
+   */
+  const updateUrlRef = useRef(updateUrl);
+  useEffect(() => {
+    updateUrlRef.current = updateUrl;
+  }, [updateUrl]);
 
   const readNum = (key: string, fallback: number) => {
     const raw = searchParams?.get(key);
@@ -113,6 +125,7 @@ export default function JubelioAdminPage() {
     ["all", "errors", "DEAD"] as const,
     "all",
   );
+  const outboxQ = searchParams?.get("outboxQ") ?? "";
 
   const [calls, setCalls] = useState<CallRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -127,6 +140,10 @@ export default function JubelioAdminPage() {
   const [outboxStats, setOutboxStats] = useState<OutboxStats>(null);
   const [expandedOutboxId, setExpandedOutboxId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
+  const [outboxSearch, setOutboxSearch] = useState(outboxQ);
+  const [outboxLoading, setOutboxLoading] = useState(true);
+  const outboxSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const outboxLastPushedRef = useRef(outboxQ);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -173,14 +190,24 @@ export default function JubelioAdminPage() {
           ? (["DEAD", "SKIPPED"] as ("PENDING" | "PROCESSING" | "DONE" | "SKIPPED" | "DEAD")[])
           : undefined;
     const offset = (outboxPage - 1) * outboxSize;
-    const [rowsRes, statsRes] = await Promise.all([
-      getJubelioOutboxRows({ limit: outboxSize, offset, status: statusFilter }),
-      getJubelioOutboxStats(),
-    ]);
-    setOutboxRows(rowsRes.rows);
-    setOutboxTotal(rowsRes.total);
-    setOutboxStats(statsRes);
-  }, [outboxPage, outboxSize, outboxFilter]);
+    setOutboxLoading(true);
+    try {
+      const [rowsRes, statsRes] = await Promise.all([
+        getJubelioOutboxRows({
+          limit: outboxSize,
+          offset,
+          status: statusFilter,
+          q: outboxQ || undefined,
+        }),
+        getJubelioOutboxStats(),
+      ]);
+      setOutboxRows(rowsRes.rows);
+      setOutboxTotal(rowsRes.total);
+      setOutboxStats(statsRes);
+    } finally {
+      setOutboxLoading(false);
+    }
+  }, [outboxPage, outboxSize, outboxFilter, outboxQ]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -197,6 +224,24 @@ export default function JubelioAdminPage() {
   useEffect(() => {
     if (status === "authenticated") void loadOutbox();
   }, [status, loadOutbox]);
+
+  /**
+   * Adopt the term only when the URL moved on its own — back/forward, or a link.
+   * Without the guard this also fires on the RSC echo of our own debounced push,
+   * which lands mid-typing and resets the input to the value we pushed a moment
+   * ago, silently eating every character typed since.
+   */
+  useEffect(() => {
+    if (outboxQ === outboxLastPushedRef.current) return;
+    outboxLastPushedRef.current = outboxQ;
+    setOutboxSearch(outboxQ);
+  }, [outboxQ]);
+
+  useEffect(() => {
+    return () => {
+      if (outboxSearchDebounceRef.current) clearTimeout(outboxSearchDebounceRef.current);
+    };
+  }, []);
 
   const handleRetry = async (id: string) => {
     const result = await retryJubelioWebhookEvent(id);
@@ -220,6 +265,37 @@ export default function JubelioAdminPage() {
       setBulkPushing(false);
     }
   };
+
+  /**
+   * Typing stays local and only reaches the URL — and therefore the query — after
+   * a pause, so a search does not fire a server action per keystroke. Page resets
+   * to 1 because the old offset almost never makes sense against a new result set.
+   */
+  const handleOutboxSearchChange = (value: string) => {
+    setOutboxSearch(value);
+    if (outboxSearchDebounceRef.current) clearTimeout(outboxSearchDebounceRef.current);
+    outboxSearchDebounceRef.current = setTimeout(() => {
+      const term = value.trim();
+      outboxLastPushedRef.current = term;
+      updateUrlRef.current({ outboxQ: term || null, outboxPage: "1" });
+    }, 350);
+  };
+
+  const handleOutboxSearchClear = () => {
+    if (outboxSearchDebounceRef.current) clearTimeout(outboxSearchDebounceRef.current);
+    setOutboxSearch("");
+    outboxLastPushedRef.current = "";
+    updateUrlRef.current({ outboxQ: null, outboxPage: "1" });
+  };
+
+  const handleOutboxReset = () => {
+    if (outboxSearchDebounceRef.current) clearTimeout(outboxSearchDebounceRef.current);
+    setOutboxSearch("");
+    outboxLastPushedRef.current = "";
+    updateUrlRef.current({ outboxQ: null, outboxFilter: null, outboxPage: "1" });
+  };
+
+  const outboxFiltered = outboxQ !== "" || outboxFilter !== "all";
 
   const handleOutboxRetry = async (id: string) => {
     if (!confirm("Re-queue this row? Worker will re-push to Jubelio.")) return;
@@ -606,10 +682,10 @@ export default function JubelioAdminPage() {
       </div>
 
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
+        <CardHeader className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle>Outbox events</CardTitle>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {(["all", "errors", "DEAD"] as const).map((f) => (
                 <Button
                   key={f}
@@ -623,6 +699,41 @@ export default function JubelioAdminPage() {
                 </Button>
               ))}
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-0 flex-1 sm:max-w-sm">
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+              <Input
+                value={outboxSearch}
+                onChange={(e) => handleOutboxSearchChange(e.target.value)}
+                placeholder="Search row id, entity, or error text..."
+                aria-label="Search outbox events"
+                className="h-10 pr-9 pl-9"
+              />
+              {outboxSearch !== "" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Clear outbox search"
+                  className="absolute top-1/2 right-1 h-8 w-8 -translate-y-1/2"
+                  onClick={handleOutboxSearchClear}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-10"
+              disabled={!outboxFiltered}
+              onClick={handleOutboxReset}
+            >
+              Reset
+            </Button>
+            {outboxLoading && (
+              <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -641,13 +752,28 @@ export default function JubelioAdminPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {outboxRows.length === 0 ? (
+                  {outboxLoading && outboxRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="py-8 text-center">
+                        <Loader2 className="text-muted-foreground mx-auto h-5 w-5 animate-spin" />
+                      </TableCell>
+                    </TableRow>
+                  ) : outboxRows.length === 0 ? (
                     <TableRow>
                       <TableCell
                         colSpan={7}
-                        className="py-8 text-center text-muted-foreground"
+                        className="text-muted-foreground py-8 text-center"
                       >
-                        No outbox events.
+                        {outboxFiltered ? (
+                          <div className="space-y-3">
+                            <p>No outbox events match this search or filter.</p>
+                            <Button size="sm" variant="outline" onClick={handleOutboxReset}>
+                              Clear search and filter
+                            </Button>
+                          </div>
+                        ) : (
+                          "No outbox events."
+                        )}
                       </TableCell>
                     </TableRow>
                   ) : (
