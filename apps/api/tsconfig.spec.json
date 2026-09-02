@@ -1,7 +1,19 @@
 {
+  // Type-check config: the build tsconfig excludes src/**/*.spec.ts so specs stay
+  // out of dist, which meant `tsc --noEmit` was checking none of them. This one
+  // re-includes them.
+  //
+  // rootDir is widened to the repo root because six specs import across package
+  // boundaries by relative path (packages/db/src/*, apps/web/lib/redis/*) to test
+  // the SOURCE rather than the built @elorae/db barrel that jest's moduleNameMapper
+  // resolves. Those files sit outside apps/api/src, so the inherited rootDir made
+  // every one of them a TS6059 "not under rootDir" error. rootDir only constrains
+  // emit layout and nothing is emitted here, so widening it costs nothing — it does
+  // NOT pull extra files into the program, which comes from include plus imports.
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "rootDir": "../.."
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

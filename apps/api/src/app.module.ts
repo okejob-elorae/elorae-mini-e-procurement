@@ -10,6 +10,7 @@ import { JubelioCatalogModule } from "./jubelio/catalog/catalog.module";
 import { JubelioInventoryModule } from "./jubelio/inventory/jubelio-inventory.module";
 import { JubelioCategoriesModule } from "./jubelio/categories/categories.module";
 import { JubelioCouriersModule } from "./jubelio/couriers/couriers.module";
+import { JubelioLocationsModule } from "./jubelio/locations/locations.module";
 import { JubelioModule } from "./jubelio/jubelio.module";
 import { JubelioOutboxModule } from "./jubelio/outbox/jubelio-outbox.module";
 import { JubelioResyncModule } from "./jubelio/resync/jubelio-resync.module";
@@ -38,6 +39,7 @@ import { JubelioWebhooksModule } from "./jubelio/webhooks/webhooks.module";
     JubelioInventoryModule,
     JubelioCategoriesModule,
     JubelioCouriersModule,
+    JubelioLocationsModule,
     JubelioWebhooksModule,
     JubelioOutboxModule,
     JubelioResyncModule,
