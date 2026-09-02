@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { applyReturnOffset } from "./retur-offset-writer";
+import { recordPayment } from "./payment-writer";
 import { PaymentError } from "./errors";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -47,6 +48,9 @@ d("applyReturnOffset (test bed only)", () => {
         approvedAt: new Date(), approvedById: userId,
       },
     });
+    /* Tracked for teardown BEFORE the line create — a throw in between would otherwise orphan a
+       FieldReturn row on the shared test bed with nothing holding its id. */
+    returId = ret.id;
     await prisma.fieldReturnLine.create({
       data: { returnId: ret.id, itemId, qty: 5, reason: "UNSOLD" },
     });
@@ -121,7 +125,6 @@ d("applyReturnOffset (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.journalLine.deleteMany({ where: { journal: { sourceId: { in: [] } } } });
     const payments = await prisma.payment.findMany({ where: { storeId: { in: [seededId(storeId), seededId(otherStoreId)] } }, select: { id: true } });
     const paymentIds = payments.map((p) => p.id);
     if (paymentIds.length) {
@@ -188,6 +191,8 @@ d("applyReturnOffset (test bed only)", () => {
     }).catch((e) => e);
     expect(err).toBeInstanceOf(PaymentError);
     expect(err.code).toBe("WRONG_STORE");
+    const payments = await prisma.payment.findMany({ where: { storeId } });
+    expect(payments).toHaveLength(0);
   });
 
   it("creates a RETUR_OFFSET payment, decrements the receivable, and flips offsetStatus to APPLIED", async () => {
@@ -216,16 +221,48 @@ d("applyReturnOffset (test bed only)", () => {
     const first = await applyReturnOffset({
       returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
     });
-    const err = await applyReturnOffset({
+    const second = await applyReturnOffset({
       returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
-    }).catch((e) => e);
-    /* offsetStatus is already APPLIED by the time this second call's own guard runs. */
-    expect(err).toBeInstanceOf(PaymentError);
-    expect(err.code).toBe("ALREADY_APPLIED");
+    });
+    /* The idempotency-key lookup runs before the offsetStatus guard, so a repeat call resolves
+       to the existing payment and confirms the already-done flip instead of throwing. */
+    expect(second.ok).toBe(true);
+    expect(second.paymentId).toBe(first.paymentId);
+    expect(second.alreadyApplied).toBe(true);
 
     const payments = await prisma.payment.findMany({ where: { storeId } });
     expect(payments).toHaveLength(1);
     expect(payments[0].id).toBe(first.paymentId);
+  });
+
+  it("recovers cleanly when a crash left a payment posted but the retur never flipped", async () => {
+    returId = await makeReturn({ totalValue: 1000 });
+    /*
+     * Simulates a crash between recordPayment committing and the CAS flip: calls recordPayment
+     * directly with the same deterministic key applyReturnOffset would use, so a payment exists
+     * and the receivable is already decremented, but offsetStatus is still AVAILABLE -- exactly
+     * the state a real crash in that window leaves behind. Before the fix, retrying
+     * applyReturnOffset here read the now-decremented receivable and wrongly refused with
+     * INSUFFICIENT_OUTSTANDING, stranding this payment forever.
+     */
+    const crashed = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 1000, recordedById: userId,
+      allocations: [{ receivableId, amount: 1000 }], reference: "crash-sim",
+      idempotencyKey: `returoffset-${returId}`,
+    });
+
+    const result = await applyReturnOffset({
+      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.paymentId).toBe(crashed.paymentId);
+
+    const payments = await prisma.payment.findMany({ where: { storeId } });
+    expect(payments).toHaveLength(1);
+
+    const ret = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
+    expect(ret.offsetStatus).toBe("APPLIED");
+    expect(ret.offsetPaymentId).toBe(crashed.paymentId);
   });
 
   it("refuses re-application when the idempotency key resolves to a voided payment", async () => {
