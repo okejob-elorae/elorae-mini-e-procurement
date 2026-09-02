@@ -157,6 +157,7 @@ jobs:
     # have succeeded, and neither image build may have FAILED — skipped is fine, failed is not.
     if: |
       always() &&
+      !cancelled() &&
       needs.pull.result == 'success' &&
       needs.build-push-web.result != 'failure' &&
       needs.build-push-web.result != 'cancelled' &&
@@ -220,8 +221,14 @@ jobs:
     # while the overall run still read green. deploy-web already carried this exact
     # fix. The explicit result checks below are what keep a genuinely failed build
     # or migration blocking the deploy.
+    #
+    # !cancelled() is not decoration: always() evaluates true even on a CANCELLED
+    # run, and cancelling is the only abort button here (concurrency uses
+    # cancel-in-progress: false, so nothing else ever cancels a run). Without it,
+    # hitting Cancel while this job is queued would still ship the image.
     if: |
       always() &&
+      !cancelled() &&
       needs.migrate.result == 'success' &&
       needs.build-push-api.result == 'success' &&
       (
@@ -246,21 +253,36 @@ jobs:
             set -euo pipefail
             cd /srv/elorae
             docker compose -f docker-compose.prod.yml pull api
-            docker compose -f docker-compose.prod.yml up -d --no-build api
+            docker compose -f docker-compose.prod.yml up -d --no-build --wait --wait-timeout 180 api
+            # Assert the deployed image is the one we asked for. `up -d` is a no-op
+            # when compose resolves the image it already has, so a deploy that changed
+            # nothing otherwise exits 0 — the same silent-success class as the
+            # skipped-job bug above. Three details are load-bearing:
+            #  - resolve the container via `compose ps -q`, not by container_name:
+            #    docker-compose.prod.yml sits in BOTH path filters, so a rename would
+            #    make `docker inspect <name>` hit an orphan or abort under pipefail,
+            #    failing this deploy and (via deploy-web's needs) stranding a migration
+            #    in front of a stale web image — the PR #229 shape.
+            #  - compare resolved image IDs, not a substring: IMAGE_TAG is documented
+            #    to accept "master", which any :master reference trivially contains,
+            #    so substring matching cannot tell an old :master from a new one.
+            #  - --wait above blocks on the healthcheck; the image tag alone is true of
+            #    a container that is crash-looping on the new build.
+            CID=$(docker compose -f docker-compose.prod.yml ps -q api)
+            if [ -z "$CID" ]; then
+              echo "DEPLOY VERIFY FAILED: no api container after up -d" >&2; exit 1
+            fi
+            WANT=$(docker image inspect --format '{{.Id}}' "ghcr.io/okejob-elorae/elorae-api:$IMAGE_TAG")
+            GOT=$(docker inspect --format '{{.Image}}' "$CID")
+            if [ "$WANT" != "$GOT" ]; then
+              echo "DEPLOY VERIFY FAILED: api wanted $IMAGE_TAG ($WANT) but container runs $GOT" >&2; exit 1
+            fi
+            echo "OK: elorae-api runs $IMAGE_TAG ($GOT)"
             # -a is required: pulled images are sha-TAGGED, never dangling, so a bare
             # `prune -f` never reclaims them (that no-op filled the 96G disk 2026-08-04).
             # until=336h keeps 14 days of tags as local rollback targets; in-use images
             # are always skipped regardless of age (mariadb/redis/caddy stay put).
             docker image prune -a --filter "until=336h" -f
-            # Assert the container is actually running the tag we just deployed.
-            # `up -d` is a no-op when compose resolves the image it already has,
-            # so without this a deploy that changed nothing still exits 0 — the same
-            # silent-success class of failure as the skipped-job bug fixed above.
-            RUNNING=$(docker inspect --format '{{.Config.Image}}' elorae-api)
-            case "$RUNNING" in
-              *"$IMAGE_TAG"*) echo "OK: elorae-api is running $RUNNING" ;;
-              *) echo "DEPLOY VERIFY FAILED: expected $IMAGE_TAG, elorae-api is on $RUNNING" >&2; exit 1 ;;
-            esac
 
   deploy-web:
     name: Deploy web
@@ -269,6 +291,7 @@ jobs:
     # (api unchanged); still requires migrate + build-push-web success and web changed.
     if: |
       always() &&
+      !cancelled() &&
       needs.migrate.result == 'success' &&
       needs.build-push-web.result == 'success' &&
       (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped') &&
@@ -294,15 +317,30 @@ jobs:
             set -euo pipefail
             cd /srv/elorae
             docker compose -f docker-compose.prod.yml pull web
-            docker compose -f docker-compose.prod.yml up -d --no-build web
+            docker compose -f docker-compose.prod.yml up -d --no-build --wait --wait-timeout 180 web
+            # Assert the deployed image is the one we asked for. `up -d` is a no-op
+            # when compose resolves the image it already has, so a deploy that changed
+            # nothing otherwise exits 0 — the same silent-success class as the
+            # skipped-job bug above. Three details are load-bearing:
+            #  - resolve the container via `compose ps -q`, not by container_name:
+            #    docker-compose.prod.yml sits in BOTH path filters, so a rename would
+            #    make `docker inspect <name>` hit an orphan or abort under pipefail,
+            #    failing this deploy and (via deploy-web's needs) stranding a migration
+            #    in front of a stale web image — the PR #229 shape.
+            #  - compare resolved image IDs, not a substring: IMAGE_TAG is documented
+            #    to accept "master", which any :master reference trivially contains,
+            #    so substring matching cannot tell an old :master from a new one.
+            #  - --wait above blocks on the healthcheck; the image tag alone is true of
+            #    a container that is crash-looping on the new build.
+            CID=$(docker compose -f docker-compose.prod.yml ps -q web)
+            if [ -z "$CID" ]; then
+              echo "DEPLOY VERIFY FAILED: no web container after up -d" >&2; exit 1
+            fi
+            WANT=$(docker image inspect --format '{{.Id}}' "ghcr.io/okejob-elorae/elorae-web:$IMAGE_TAG")
+            GOT=$(docker inspect --format '{{.Image}}' "$CID")
+            if [ "$WANT" != "$GOT" ]; then
+              echo "DEPLOY VERIFY FAILED: web wanted $IMAGE_TAG ($WANT) but container runs $GOT" >&2; exit 1
+            fi
+            echo "OK: elorae-web runs $IMAGE_TAG ($GOT)"
             # See deploy-api: -a is required (sha-tagged images are never dangling).
             docker image prune -a --filter "until=336h" -f
-            # Assert the container is actually running the tag we just deployed.
-            # `up -d` is a no-op when compose resolves the image it already has,
-            # so without this a deploy that changed nothing still exits 0 — the same
-            # silent-success class of failure as the skipped-job bug fixed above.
-            RUNNING=$(docker inspect --format '{{.Config.Image}}' elorae-web)
-            case "$RUNNING" in
-              *"$IMAGE_TAG"*) echo "OK: elorae-web is running $RUNNING" ;;
-              *) echo "DEPLOY VERIFY FAILED: expected $IMAGE_TAG, elorae-web is on $RUNNING" >&2; exit 1 ;;
-            esac
