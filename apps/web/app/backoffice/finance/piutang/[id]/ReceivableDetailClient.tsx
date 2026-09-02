@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, ExternalLink, Loader2, Receipt, Wallet } from "lucide-react";
-import type { getReceivable } from "@/lib/finance/ar/queries";
+import type { getReceivable, AllocationCandidate } from "@/lib/finance/ar/queries";
 import { postFieldDeliveryJournalsAction } from "@/app/actions/field-sales-deliveries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { AGING_BUCKET_LABELS } from "@/lib/finance/ar/aging";
@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RecordPaymentSheet, type AllocationCandidate } from "./RecordPaymentSheet";
+import { RecordPaymentSheet } from "./RecordPaymentSheet";
 import { AssignCollectorCard } from "./AssignCollectorCard";
 
 type ReceivableDetail = NonNullable<Awaited<ReturnType<typeof getReceivable>>>;

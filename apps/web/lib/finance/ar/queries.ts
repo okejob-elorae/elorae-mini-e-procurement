@@ -240,9 +240,36 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
   };
 }
 
+export type AllocationCandidate = {
+  id: string;
+  docNo: string;
+  dueDate: Date;
+  outstandingAmount: number;
+};
+
+/**
+ * `listReceivables` takes a single `status`, so a store's full set of allocation candidates
+ * (OUTSTANDING + PARTIAL) needs two calls merged rather than one. Each call is already scoped to
+ * this one store, so it stays well clear of the "unpaginated fetch of the whole book" a payment
+ * sheet must never do — `pageSize` is a generous ceiling on one store's own open invoices, not a
+ * page cursor. Shared by the piutang receivable-detail sheet and the field-return offset sheet —
+ * both need the same store-scoped candidate set.
+ */
+const CANDIDATE_PAGE_SIZE = 500;
+
+export async function listAllocationCandidatesForStore(storeId: string): Promise<AllocationCandidate[]> {
+  const [outstanding, partial] = await Promise.all([
+    listReceivables({ storeId, status: "OUTSTANDING", pageSize: CANDIDATE_PAGE_SIZE }),
+    listReceivables({ storeId, status: "PARTIAL", pageSize: CANDIDATE_PAGE_SIZE }),
+  ]);
+  return [...outstanding.rows, ...partial.rows]
+    .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
+    .map((r) => ({ id: r.id, docNo: r.docNo, dueDate: r.dueDate, outstandingAmount: r.outstandingAmount }));
+}
+
 export type PaymentFilters = {
   storeId?: string;
-  method?: "CASH" | "TRANSFER";
+  method?: "CASH" | "TRANSFER" | "RETUR_OFFSET";
   status?: "POSTED" | "VOIDED";
   dateFrom?: Date;
   dateTo?: Date;
@@ -316,6 +343,7 @@ export async function getPayment(id: string) {
       store: { select: { id: true, name: true, code: true } },
       recordedBy: { select: { name: true } },
       voidedBy: { select: { name: true } },
+      returOffsetFor: { select: { id: true, docNo: true } },
       allocations: {
         select: {
           amount: true,
@@ -330,6 +358,7 @@ export async function getPayment(id: string) {
   return {
     ...p,
     amount: Number(p.amount),
+    returOffsetFor: p.returOffsetFor ? { id: p.returOffsetFor.id, docNo: p.returOffsetFor.docNo } : null,
     allocations: p.allocations.map((a) => ({
       amount: Number(a.amount),
       receivableId: a.receivable.id,
