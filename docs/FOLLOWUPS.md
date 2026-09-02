@@ -304,20 +304,18 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       reverting to pending (`revertTaxInvoiceToPending`) and re-entering all four fields (invoice
       number, NPWP, taxable amount, PPN amount) from scratch. Deliberate (two honest audit rows
       beat one silent edit), but will feel heavy if it happens often.
-- [ ] `fakturPajak.status*` and a separate top-level `fakturPajakStatus.status*` block hold
-      identical status label text in both locale files (flagged during Task 8, not logged then).
-      `FakturPajakPageClient` and the field-sales order's `DeliveriesCard` faktur badge each need
-      the same four labels but read from different `next-intl` namespaces, so the text is hand-
-      duplicated across both files and must be kept in sync if either wording ever changes. This
-      is worse than sync-debt today: `DeliveriesCard.tsx`'s `t(\`fakturPajakStatus.${key}\`)` call
-      is scoped to `useTranslations("fieldSalesOrders")`, but `fakturPajakStatus` is a sibling
-      TOP-LEVEL namespace, not nested under `fieldSalesOrders` — confirmed by running `use-intl`'s
-      `createTranslator` directly against the shipped `en.json`, which raises `MISSING_MESSAGE`
-      and returns the literal string `"fieldSalesOrders.fakturPajakStatus.statusPending"` instead
-      of `"Pending"`. Every faktur status badge on `/backoffice/field-sales-orders/[id]` currently
-      renders that raw key text rather than a translated label. The fix is a one-line namespace
-      correction (a second `useTranslations("fakturPajakStatus")` for that lookup); not made here
-      since this task is docs-only.
+- [x] ~~`DeliveriesCard.tsx`'s faktur status badge rendered the raw missing-key string instead of a
+      translated label~~ — was scoped to `useTranslations("fieldSalesOrders")` while calling
+      `t(\`fakturPajakStatus.${key}\`)` against a sibling TOP-LEVEL `fakturPajakStatus` namespace,
+      not one nested under `fieldSalesOrders`; confirmed by running `use-intl`'s `createTranslator`
+      directly against the shipped `en.json` before the fix, which raised `MISSING_MESSAGE`. Fixed
+      with a second `useTranslations("fakturPajakStatus")` call for that lookup (PR pending, commit
+      `f273df5`).
+- [ ] `fakturPajak.status*` and the top-level `fakturPajakStatus.status*` block still hold
+      identical status label text hand-duplicated across both locale files, now correctly wired
+      but not deduplicated — `FakturPajakPageClient` and `DeliveriesCard`'s faktur badge each need
+      the same four labels but read from different `next-intl` namespaces, so the text must be kept
+      in sync by hand if either wording ever changes.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
