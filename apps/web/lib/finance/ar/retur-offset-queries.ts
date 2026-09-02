@@ -11,6 +11,15 @@ export type OffsettableReturnRow = {
 
 const OFFSETTABLE_PAGE_SIZE = 25;
 
+function offsettableReturnWhere(storeId?: string): Prisma.FieldReturnWhereInput {
+  return {
+    status: "APPROVED",
+    valuationStatus: "VALUED",
+    offsetStatus: "AVAILABLE",
+    ...(storeId ? { storeId } : {}),
+  };
+}
+
 /**
  * Approved, fully-valued, not-yet-applied returns — the exact three conditions
  * `applyReturnOffset` itself enforces. Never widen this beyond `storeId` + `page`: a retur
@@ -21,12 +30,7 @@ export async function listOffsettableReturns(
   params: { storeId?: string; page?: number } = {},
 ): Promise<{ rows: OffsettableReturnRow[]; total: number }> {
   const page = params.page ?? 1;
-  const where: Prisma.FieldReturnWhereInput = {
-    status: "APPROVED",
-    valuationStatus: "VALUED",
-    offsetStatus: "AVAILABLE",
-    ...(params.storeId ? { storeId: params.storeId } : {}),
-  };
+  const where = offsettableReturnWhere(params.storeId);
   const [rows, total] = await Promise.all([
     prisma.fieldReturn.findMany({
       where,
@@ -56,7 +60,7 @@ export async function listOffsettableReturns(
  */
 export async function getStoreAvailableCredit(storeId: string): Promise<number> {
   const rows = await prisma.fieldReturn.findMany({
-    where: { storeId, status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE" },
+    where: offsettableReturnWhere(storeId),
     select: { totalValue: true },
   });
   return roundCents(rows.reduce((sum, r) => sum + (r.totalValue ? Number(r.totalValue) : 0), 0));
