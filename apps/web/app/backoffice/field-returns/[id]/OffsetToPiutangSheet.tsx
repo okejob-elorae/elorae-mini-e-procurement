@@ -113,17 +113,21 @@ export function OffsetToPiutangSheet({
         </SheetHeader>
 
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
-          {insufficientOutstanding ? (
+          {/* candidates.length === 0 is checked FIRST: with no candidates the outstanding sum is
+              always 0, so an insufficientOutstanding-first order made this branch unreachable and
+              showed a numeric shortfall message where the real answer is "this store has no
+              receivables at all". */}
+          {candidates.length === 0 ? (
+            <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+              {t("credit.noCandidates")}
+            </p>
+          ) : insufficientOutstanding ? (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
               {t("credit.insufficientOutstanding", {
                 total: formatRupiahExact(totalCandidateOutstanding),
                 needed: formatRupiahExact(totalValue),
               })}
             </div>
-          ) : candidates.length === 0 ? (
-            <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              {t("credit.noCandidates")}
-            </p>
           ) : (
             <div className="overflow-x-auto rounded-md border">
               <Table>
