@@ -89,6 +89,21 @@ describe("SalesOrderPickHandler", () => {
     });
   });
 
+  /**
+   * Pinned to the literal value, not to the constant, on purpose: asserting
+   * `location_id: JUBELIO_WMS_LOCATION_ID` is tautological and would keep passing
+   * if someone "tidied" the negative id back to 1 — which is the exact value that
+   * failed every pick push on prod with a foreign-key violation.
+   */
+  it("sends the prod-confirmed location id, not the 1 that never existed", async () => {
+    prisma.salesOrder.findUnique.mockResolvedValue(orderFixture());
+    http.post.mockResolvedValue({ status: "ok" });
+
+    await handler.handle(baseRow() as any);
+
+    expect(http.post.mock.calls[0][1].items[0].location_id).toBe(-1);
+  });
+
   it("never sends the bare ids payload Jubelio rejected with a picklist_no error", async () => {
     prisma.salesOrder.findUnique.mockResolvedValue(orderFixture());
     http.post.mockResolvedValue({ status: "ok" });
