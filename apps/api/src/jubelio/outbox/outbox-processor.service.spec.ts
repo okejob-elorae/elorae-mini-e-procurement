@@ -24,11 +24,43 @@ describe("OutboxProcessor", () => {
   let router: { route: jest.Mock };
   let admin: { write: jest.Mock };
 
+  function updateData() {
+    return prisma.jubelioOutbox.update.mock.calls.map((c: any[]) => c[0].data);
+  }
+
+  /**
+   * Stateful on purpose. A mock that always reports PENDING and always grants the
+   * claim passes whether or not the catch block releases the row, so it cannot
+   * see the wedge this suite exists to guard. Here `update` applies its `data` to
+   * the row and `updateMany` honours the status precondition, so a row left
+   * PROCESSING really does lose the next claim.
+   */
+  function statefulOutboxMock(initial: any = rowFixture()) {
+    let row = { ...initial };
+    return {
+      current: () => row,
+      findUnique: jest.fn(async () => (row ? { ...row } : null)),
+      update: jest.fn(async ({ data }: any) => {
+        row = { ...row, ...data };
+        return { ...row };
+      }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const allowed: string[] = where?.status?.in ?? [];
+        if (allowed.length > 0 && !allowed.includes(row.status)) return { count: 0 };
+        const { attempts, ...rest } = data;
+        row = { ...row, ...rest };
+        if (attempts?.increment) row.attempts += attempts.increment;
+        return { count: 1 };
+      }),
+    };
+  }
+
   beforeEach(async () => {
     prisma = {
       jubelioOutbox: {
         findUnique: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     router = { route: jest.fn() };
@@ -59,16 +91,37 @@ describe("OutboxProcessor", () => {
     },
   );
 
-  it("transitions PENDING → PROCESSING → DONE on success", async () => {
+  it("claims the row from PENDING only, incrementing attempts", async () => {
     prisma.jubelioOutbox.findUnique.mockResolvedValue(rowFixture());
     router.route.mockResolvedValue({ kind: "processed" });
 
     await processor.process({ data: { rowId: "r1" } } as any);
 
-    const updates = prisma.jubelioOutbox.update.mock.calls;
-    expect(updates[0][0].data).toMatchObject({ status: OUTBOX_STATUS.PROCESSING });
-    expect(updates[updates.length - 1][0].data).toMatchObject({ status: OUTBOX_STATUS.DONE });
-    expect(updates[updates.length - 1][0].data.processedAt).toBeInstanceOf(Date);
+    expect(prisma.jubelioOutbox.updateMany).toHaveBeenCalledWith({
+      where: { id: "r1", status: { in: [OUTBOX_STATUS.PENDING] } },
+      data: { status: OUTBOX_STATUS.PROCESSING, attempts: { increment: 1 } },
+    });
+  });
+
+  it("skips the duplicate fire when another worker won the claim", async () => {
+    prisma.jubelioOutbox.findUnique.mockResolvedValue(rowFixture());
+    prisma.jubelioOutbox.updateMany.mockResolvedValue({ count: 0 });
+
+    await processor.process({ data: { rowId: "r1" } } as any);
+
+    expect(router.route).not.toHaveBeenCalled();
+    expect(prisma.jubelioOutbox.update).not.toHaveBeenCalled();
+  });
+
+  it("transitions to DONE on success", async () => {
+    prisma.jubelioOutbox.findUnique.mockResolvedValue(rowFixture());
+    router.route.mockResolvedValue({ kind: "processed" });
+
+    await processor.process({ data: { rowId: "r1" } } as any);
+
+    const last = updateData().at(-1);
+    expect(last).toMatchObject({ status: OUTBOX_STATUS.DONE });
+    expect(last.processedAt).toBeInstanceOf(Date);
   });
 
   it("transitions to SKIPPED with reason", async () => {
@@ -77,8 +130,7 @@ describe("OutboxProcessor", () => {
 
     await processor.process({ data: { rowId: "r1" } } as any);
 
-    const updates = prisma.jubelioOutbox.update.mock.calls;
-    expect(updates[updates.length - 1][0].data).toMatchObject({
+    expect(updateData().at(-1)).toMatchObject({
       status: OUTBOX_STATUS.SKIPPED,
       skipReason: "missing_mapping",
     });
@@ -90,8 +142,7 @@ describe("OutboxProcessor", () => {
 
     await expect(processor.process({ data: { rowId: "r1" } } as any)).resolves.not.toThrow();
 
-    const updates = prisma.jubelioOutbox.update.mock.calls;
-    expect(updates.some((c: any[]) => c[0].data.status === OUTBOX_STATUS.DEAD)).toBe(true);
+    expect(updateData().some((d: any) => d.status === OUTBOX_STATUS.DEAD)).toBe(true);
     expect(admin.write).toHaveBeenCalledWith(
       expect.objectContaining({ category: "jubelio-outbox", severity: "ERROR" }),
     );
@@ -105,13 +156,68 @@ describe("OutboxProcessor", () => {
     expect(admin.write).not.toHaveBeenCalled();
   });
 
+  it("releases the claim back to PENDING on a retryable failure", async () => {
+    prisma.jubelioOutbox.findUnique.mockResolvedValue(rowFixture());
+    router.route.mockRejectedValue(new Error("transient Jubelio 503"));
+
+    await expect(
+      processor.process({ data: { rowId: "r1" }, attemptsMade: 0 } as any),
+    ).rejects.toThrow();
+
+    expect(updateData()).toContainEqual(
+      expect.objectContaining({
+        status: OUTBOX_STATUS.PENDING,
+        lastError: "transient Jubelio 503",
+      }),
+    );
+  });
+
+  it("lets a released row be re-claimed by the next attempt", async () => {
+    const store = statefulOutboxMock();
+    prisma.jubelioOutbox = store;
+    router.route.mockRejectedValueOnce(new Error("transient Jubelio 503"));
+
+    await expect(
+      processor.process({ data: { rowId: "r1" }, attemptsMade: 0 } as any),
+    ).rejects.toThrow();
+    expect(store.current().status).toBe(OUTBOX_STATUS.PENDING);
+
+    router.route.mockResolvedValue({ kind: "processed" });
+    await processor.process({ data: { rowId: "r1" }, attemptsMade: 1 } as any);
+
+    expect(store.current().status).toBe(OUTBOX_STATUS.DONE);
+    expect(store.current().attempts).toBe(2);
+  });
+
+  it("keeps the claim on the final attempt so the DEAD write cannot be raced", async () => {
+    const store = statefulOutboxMock();
+    prisma.jubelioOutbox = store;
+    router.route.mockRejectedValue(new Error("transient Jubelio 503"));
+
+    await expect(
+      processor.process({ data: { rowId: "r1" }, attemptsMade: 4 } as any),
+    ).rejects.toThrow();
+
+    expect(store.current().status).toBe(OUTBOX_STATUS.PROCESSING);
+    expect(store.current().lastError).toBe("transient Jubelio 503");
+  });
+
+  it("a row left PROCESSING loses the next claim — the wedge this guards against", async () => {
+    const store = statefulOutboxMock(rowFixture({ status: OUTBOX_STATUS.PROCESSING }));
+    prisma.jubelioOutbox = store;
+
+    await processor.process({ data: { rowId: "r1" }, attemptsMade: 1 } as any);
+
+    expect(router.route).not.toHaveBeenCalled();
+    expect(store.current().attempts).toBe(0);
+  });
+
   it("marks DEAD via onJobFailed when attemptsMade reaches JOB_ATTEMPTS", async () => {
     await processor.onJobFailed(
       { data: { rowId: "r1" }, attemptsMade: 5 } as any,
       new Error("final fail"),
     );
-    const updates = prisma.jubelioOutbox.update.mock.calls;
-    expect(updates.some((c: any[]) => c[0].data.status === OUTBOX_STATUS.DEAD)).toBe(true);
+    expect(updateData().some((d: any) => d.status === OUTBOX_STATUS.DEAD)).toBe(true);
     expect(admin.write).toHaveBeenCalled();
   });
 

@@ -2,7 +2,9 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { JubelioOutbox } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
+import { JUBELIO_WMS_LOCATION_ID } from "../jubelio-outbox.config";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
+import { isAlreadyInStateError } from "./already-in-state";
 import type { HandlerOutcome, OutboxHandler } from "./handler.types";
 
 type ShipPayload = { salesOrderId: string; jubelioSalesorderId: number; courierId: number };
@@ -25,7 +27,7 @@ export class SalesOrderShipHandler implements OutboxHandler {
 
     const body = {
       courier_new_id: payload.courierId,
-      location_id: 1,
+      location_id: JUBELIO_WMS_LOCATION_ID,
       shipment_type: "2",
       shipment_header_id: 0,
       shipment_no: "",
@@ -49,10 +51,4 @@ export class SalesOrderShipHandler implements OutboxHandler {
     this.logger.log(`Pushed Ship for salesorder ${order.salesorderId} via courier ${payload.courierId}`);
     return { kind: "processed" };
   }
-}
-
-function isAlreadyInStateError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const code = (err as { code?: unknown }).code;
-  return code === "ALREADY_IN_STATE";
 }

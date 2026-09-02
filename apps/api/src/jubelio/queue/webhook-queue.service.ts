@@ -3,6 +3,7 @@ import { Cron } from "@nestjs/schedule";
 import { InjectQueue } from "@nestjs/bullmq";
 import type { Queue } from "bullmq";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
+import { clearFinishedJob } from "./finished-jobs";
 import { JUBELIO_WEBHOOK_QUEUE, QUEUE_DEFAULTS, SWEEP } from "./jubelio-queue.config";
 import { WEBHOOK_STATUS } from "./webhook-status";
 
@@ -16,6 +17,18 @@ export class WebhookQueueService {
   ) {}
 
   async enqueue(rowId: string): Promise<void> {
+    /**
+     * Same trap as the outbound poller: the jobId is the row id, finished jobs are
+     * retained, and `add()` on an occupied jobId is a SILENT no-op. Without this,
+     * an admin Retry on a DEAD row re-enqueues nothing — the row sits RECEIVED
+     * with `lastEnqueuedAt` bumped on every sweep, retried zero times, forever.
+     */
+    if (!(await clearFinishedJob(this.q, rowId))) {
+      this.logger.debug(`row ${rowId} already has a live job; leaving it to run`);
+      await this.markEnqueued(rowId);
+      return;
+    }
+
     await this.q.add(
       "process",
       { rowId },
@@ -27,6 +40,10 @@ export class WebhookQueueService {
         jobId: rowId,
       },
     );
+    await this.markEnqueued(rowId);
+  }
+
+  private async markEnqueued(rowId: string): Promise<void> {
     await this.prisma.jubelioWebhookEvent.update({
       where: { id: rowId },
       data: { lastEnqueuedAt: new Date() },
