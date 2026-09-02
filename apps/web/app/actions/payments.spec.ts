@@ -17,6 +17,7 @@ const {
   mockPostPaymentVoidJournal,
   mockIsArJournalRetryable,
   mockRevalidatePath,
+  mockApplyReturnOffset,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
@@ -27,6 +28,7 @@ const {
   mockPostPaymentVoidJournal: vi.fn(),
   mockIsArJournalRetryable: vi.fn(),
   mockRevalidatePath: vi.fn(),
+  mockApplyReturnOffset: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -43,9 +45,10 @@ vi.mock("@/lib/finance/ar/payment-journal", () => ({
 }));
 vi.mock("@/lib/finance/ar/journal-pending", () => ({ isArJournalRetryable: mockIsArJournalRetryable }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
+vi.mock("@/lib/finance/ar/retur-offset-writer", () => ({ applyReturnOffset: mockApplyReturnOffset }));
 
 import { PaymentError } from "@/lib/finance/ar/errors";
-import { recordPaymentAction, voidPaymentAction, postPaymentJournalAction } from "./payments";
+import { recordPaymentAction, voidPaymentAction, postPaymentJournalAction, applyReturnOffsetAction } from "./payments";
 
 describe("payment action guards", () => {
   beforeEach(() => {
@@ -58,6 +61,7 @@ describe("payment action guards", () => {
     mockPostPaymentVoidJournal.mockReset();
     mockIsArJournalRetryable.mockReset();
     mockRevalidatePath.mockReset();
+    mockApplyReturnOffset.mockReset();
 
     mockAuth.mockResolvedValue({ user: { id: "user-1", permissions: [] } });
     mockHasPermission.mockReturnValue(true);
@@ -141,5 +145,27 @@ describe("payment action guards", () => {
     mockPostArJournalSafely.mockResolvedValue({ ok: false, code: "ERROR" });
     const res = await postPaymentJournalAction("p1");
     expect(res).toEqual({ ok: false, reason: "STILL_PENDING" });
+  });
+
+  it("refuses to apply a retur offset without payments:manage", async () => {
+    mockHasPermission.mockReturnValue(false);
+    const res = await applyReturnOffsetAction({ returnId: "ret-1", allocations: [{ receivableId: "r1", amount: 500 }] });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toBe("FORBIDDEN");
+    expect(mockApplyReturnOffset).not.toHaveBeenCalled();
+  });
+
+  it("maps RETURN_NOT_APPROVED through ERROR_CODE_MAP", async () => {
+    mockApplyReturnOffset.mockRejectedValue(new PaymentError("RETURN_NOT_APPROVED"));
+    const res = await applyReturnOffsetAction({ returnId: "ret-1", allocations: [{ receivableId: "r1", amount: 500 }] });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.reason).toBe("RETURN_NOT_APPROVED");
+  });
+
+  it("posts the receipt journal and reports alreadyApplied on success", async () => {
+    mockApplyReturnOffset.mockResolvedValue({ ok: true, paymentId: "pay-9", alreadyApplied: true });
+    const res = await applyReturnOffsetAction({ returnId: "ret-1", allocations: [{ receivableId: "r1", amount: 500 }] });
+    expect(res).toMatchObject({ ok: true, paymentId: "pay-9", alreadyApplied: true });
+    expect(mockPostArJournalSafely).toHaveBeenCalledWith("ar_payment", "pay-9", expect.any(Function));
   });
 });
