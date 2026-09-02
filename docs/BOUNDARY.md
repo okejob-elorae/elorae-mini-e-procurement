@@ -304,7 +304,12 @@ transaction. api outbox poller + router + handlers drain. See
   must accept this key (or be naturally idempotent).
 - **No sync HTTP call** from a Prisma transaction. Always outbox.
 - **Already-in-state Jubelio responses** are skipped (not retried) — see
-  `OUTBOX_SKIP_REASONS.ALREADY_IN_STATE`.
+  `OUTBOX_SKIP_REASONS.JUBELIO_ALREADY_IN_STATE`. Detection is a phrase match on
+  the response body, in `outbox/handlers/already-in-state.ts`, because Jubelio
+  returns these as a generic HTTP 500 with the reason in free text rather than as
+  a status code. This contract was **unmet in code** from the pick/pack/ship slice
+  until 2026-09-02 (the handlers tested for a marker nothing ever set); see
+  `docs/ARCHITECTURE-NOTES.md`.
 
 #### 4.2.1 `entityType` registry
 
