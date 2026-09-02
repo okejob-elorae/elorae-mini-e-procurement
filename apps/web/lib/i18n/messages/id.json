@@ -2573,6 +2573,7 @@
       "docNo": "No. Kiriman",
       "date": "Tanggal Kirim",
       "dueDate": "Jatuh Tempo",
+      "taxInvoiceStatus": "Status Faktur",
       "invoiceDate": "Tanggal nota",
       "tempoHint": "Tempo toko: {days} hari",
       "applyTempo": "Pakai tempo",
@@ -4149,6 +4150,12 @@
       "CONFLICT": "Status faktur baru saja diubah oleh pengguna lain. Muat ulang halaman dan coba lagi.",
       "ERROR": "Terjadi kesalahan. Silakan coba lagi."
     }
+  },
+  "fakturPajakStatus": {
+    "statusPending": "Pending",
+    "statusCreated": "Dibuat",
+    "statusSentToStore": "Terkirim ke Toko",
+    "statusNotRequired": "Tidak Perlu"
   },
   "piutang": {
     "pageTitle": "Piutang",

@@ -2573,6 +2573,7 @@
       "docNo": "Delivery No.",
       "date": "Delivered",
       "dueDate": "Due Date",
+      "taxInvoiceStatus": "Tax Invoice Status",
       "invoiceDate": "Invoice date",
       "tempoHint": "Store tempo: {days} days",
       "applyTempo": "Apply tempo",
@@ -4149,6 +4150,12 @@
       "CONFLICT": "The invoice status was just changed by someone else. Reload the page and try again.",
       "ERROR": "Something went wrong. Please try again."
     }
+  },
+  "fakturPajakStatus": {
+    "statusPending": "Pending",
+    "statusCreated": "Created",
+    "statusSentToStore": "Sent to Store",
+    "statusNotRequired": "Not Required"
   },
   "piutang": {
     "pageTitle": "Receivables (Piutang)",
