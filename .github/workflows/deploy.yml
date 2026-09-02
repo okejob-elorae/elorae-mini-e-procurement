@@ -209,12 +209,25 @@ jobs:
   deploy-api:
     name: Deploy api
     needs: [changes, build-push-api, migrate]
-    # No always() here on purpose: this if implicitly ANDs with "all needs succeeded",
-    # so a failed/skipped build-push-api or migrate correctly blocks the deploy. Do NOT
-    # add always() without also adding explicit needs.*.result checks (see deploy-web).
+    # always() is REQUIRED here, and the comment that used to argue the opposite was
+    # wrong. "All needs succeeded" is not the rule GitHub applies: a SKIP propagates
+    # transitively down the needs graph, and `migrate` needs `build-push-web`. So on
+    # an api-only push, build-push-web is legitimately skipped -> the skip travels
+    # through migrate (which itself ran, via its own always()) -> deploy-api is
+    # skipped even though all three of ITS needs succeeded. Measured 2026-09-02:
+    # runs 33617613828 (#277) and 33634525717 (#280) both built and pushed an api
+    # image and then silently deployed nothing, leaving prod on the previous image
+    # while the overall run still read green. deploy-web already carried this exact
+    # fix. The explicit result checks below are what keep a genuinely failed build
+    # or migration blocking the deploy.
     if: |
-      (github.event_name == 'push' && needs.changes.outputs.api == 'true') ||
-      (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'api'))
+      always() &&
+      needs.migrate.result == 'success' &&
+      needs.build-push-api.result == 'success' &&
+      (
+        (github.event_name == 'push' && needs.changes.outputs.api == 'true') ||
+        (github.event_name == 'workflow_dispatch' && (inputs.service == 'both' || inputs.service == 'api'))
+      )
     runs-on: ubuntu-latest
     steps:
       - name: SSH pull + restart api
@@ -239,6 +252,15 @@ jobs:
             # until=336h keeps 14 days of tags as local rollback targets; in-use images
             # are always skipped regardless of age (mariadb/redis/caddy stay put).
             docker image prune -a --filter "until=336h" -f
+            # Assert the container is actually running the tag we just deployed.
+            # `up -d` is a no-op when compose resolves the image it already has,
+            # so without this a deploy that changed nothing still exits 0 — the same
+            # silent-success class of failure as the skipped-job bug fixed above.
+            RUNNING=$(docker inspect --format '{{.Config.Image}}' elorae-api)
+            case "$RUNNING" in
+              *"$IMAGE_TAG"*) echo "OK: elorae-api is running $RUNNING" ;;
+              *) echo "DEPLOY VERIFY FAILED: expected $IMAGE_TAG, elorae-api is on $RUNNING" >&2; exit 1 ;;
+            esac
 
   deploy-web:
     name: Deploy web
@@ -275,3 +297,12 @@ jobs:
             docker compose -f docker-compose.prod.yml up -d --no-build web
             # See deploy-api: -a is required (sha-tagged images are never dangling).
             docker image prune -a --filter "until=336h" -f
+            # Assert the container is actually running the tag we just deployed.
+            # `up -d` is a no-op when compose resolves the image it already has,
+            # so without this a deploy that changed nothing still exits 0 — the same
+            # silent-success class of failure as the skipped-job bug fixed above.
+            RUNNING=$(docker inspect --format '{{.Config.Image}}' elorae-web)
+            case "$RUNNING" in
+              *"$IMAGE_TAG"*) echo "OK: elorae-web is running $RUNNING" ;;
+              *) echo "DEPLOY VERIFY FAILED: expected $IMAGE_TAG, elorae-web is on $RUNNING" >&2; exit 1 ;;
+            esac
