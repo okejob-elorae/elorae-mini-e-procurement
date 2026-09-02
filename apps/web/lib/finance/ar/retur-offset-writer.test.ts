@@ -228,6 +228,27 @@ d("applyReturnOffset (test bed only)", () => {
     expect(payments[0].id).toBe(first.paymentId);
   });
 
+  it("refuses re-application when the idempotency key resolves to a voided payment", async () => {
+    returId = await makeReturn({ totalValue: 1000 });
+    const first = await applyReturnOffset({
+      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
+    });
+    /*
+     * Simulates what Task 7's void-writer will do: void the payment, release the retur back to
+     * AVAILABLE. Task 7 hasn't landed yet, so this manually reproduces its effect to prove THIS
+     * writer's own re-application guard holds regardless of what releases the retur.
+     */
+    await prisma.payment.update({ where: { id: first.paymentId }, data: { status: "VOIDED" } });
+    await prisma.fieldReturn.update({ where: { id: returId }, data: { offsetStatus: "AVAILABLE", offsetPaymentId: null } });
+    await prisma.receivable.update({ where: { id: receivableId }, data: { outstandingAmount: 1000, status: "OUTSTANDING" } });
+
+    const err = await applyReturnOffset({
+      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("PAYMENT_VOIDED");
+  });
+
   it("splits across two of the store's receivables when allocations name both", async () => {
     const secondDelivery = await prisma.fieldSalesDelivery.create({
       data: {
