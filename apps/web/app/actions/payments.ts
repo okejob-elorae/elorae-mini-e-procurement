@@ -300,12 +300,6 @@ export async function postPaymentVoidJournalAction(paymentId: string): Promise<P
   return { ok: true, paymentId };
 }
 
-function isValidAllocation2(a: unknown): a is { receivableId: string; amount: number } {
-  if (typeof a !== "object" || a === null) return false;
-  const aa = a as Record<string, unknown>;
-  return typeof aa.receivableId === "string" && aa.receivableId !== "" && typeof aa.amount === "number" && Number.isFinite(aa.amount);
-}
-
 /**
  * Settles a store's receivable(s) using an approved retur's frozen value instead of cash. A
  * SEPARATE action from `recordPaymentAction`, deliberately — that action's own input guard stays
@@ -321,7 +315,7 @@ export async function applyReturnOffsetAction(input: {
     if ("ok" in g) return g;
 
     if (typeof input.returnId !== "string" || input.returnId === "") return { ok: false, reason: "INVALID_REQUEST" };
-    if (!Array.isArray(input.allocations) || !input.allocations.every(isValidAllocation2)) {
+    if (!Array.isArray(input.allocations) || !input.allocations.every(isValidAllocation)) {
       return { ok: false, reason: "INVALID_REQUEST" };
     }
 
