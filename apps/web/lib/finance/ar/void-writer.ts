@@ -100,6 +100,19 @@ export async function voidPayment(input: {
       await tx.receivable.update({ where: { id: a.receivableId }, data: { status } });
     }
 
+    /*
+     * Releases the retur this payment consumed, if any — zero rows matched is the normal case
+     * (the overwhelming majority of payments have no retur behind them at all) and not an error.
+     * Without this release, a single misallocation strands the store's credit permanently: the
+     * payment is voided, the debt is back, and the retur reads APPLIED against a voided payment
+     * with no UI path to re-apply it. The credit is real money owed to a store, so
+     * "unrecoverable through the UI" is not an acceptable resting state.
+     */
+    await tx.fieldReturn.updateMany({
+      where: { offsetPaymentId: payment.id, offsetStatus: "APPLIED" },
+      data: { offsetStatus: "AVAILABLE", offsetPaymentId: null },
+    });
+
     return { voided: true };
   });
 }
