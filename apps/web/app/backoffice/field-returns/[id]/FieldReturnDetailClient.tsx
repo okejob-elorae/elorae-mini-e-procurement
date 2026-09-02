@@ -463,6 +463,11 @@ export function FieldReturnDetailClient({
                   {r.offsetPayment.docNo}
                 </Link>
               </div>
+            ) : r.hasVoidedOffsetAttempt ? (
+              /* Offset once, then voided — offsetStatus is back to AVAILABLE, but the retur's
+                 deterministic idempotency key stays bound to the voided payment forever, so the
+                 offer button here would refuse every single time. Explain instead of offering. */
+              <p className="text-sm text-muted-foreground">{t("credit.voidedOffsetBody")}</p>
             ) : (
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -566,7 +571,7 @@ export function FieldReturnDetailClient({
         </AlertDialogContent>
       </AlertDialog>
 
-      {canOffsetPayments && r.totalValue !== null && (
+      {canOffsetPayments && r.totalValue !== null && !r.hasVoidedOffsetAttempt && (
         <OffsetToPiutangSheet
           open={offsetSheetOpen}
           onOpenChange={setOffsetSheetOpen}

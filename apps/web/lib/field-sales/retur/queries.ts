@@ -187,6 +187,14 @@ export type FieldReturnDetail = {
   offsetStatus: FieldReturnOffsetStatus;
   /** Non-null only while offsetStatus === "APPLIED". */
   offsetPayment: { id: string; docNo: string } | null;
+  /**
+   * True when this retur was offset once and that payment was later voided — offsetStatus is
+   * back to AVAILABLE (so the credit reads as unclaimed everywhere else), but the deterministic
+   * idempotency key stays permanently bound to the voided payment, so applyReturnOffset can
+   * never succeed for this retur again. The credit card must render a distinct, explanatory,
+   * no-action state here rather than a normal "Offset ke Piutang" button that would always fail.
+   */
+  hasVoidedOffsetAttempt: boolean;
   lines: FieldReturnLineDetail[];
 };
 
@@ -260,6 +268,19 @@ export async function getFieldReturnById(
   const docNoByDeliveryLineId = new Map(deliveryLines.map((dl) => [dl.id, dl.delivery.docNo]));
 
   /*
+   * Only worth checking when the retur currently reads AVAILABLE + VALUED -- if it's APPLIED,
+   * offsetPayment above already answers the question; if it's not yet valued, it was never
+   * offerable in the first place.
+   */
+  const voidedOffsetAttempt =
+    r.offsetStatus === "AVAILABLE" && r.valuationStatus === "VALUED" && r.totalValue !== null
+      ? await prisma.payment.findUnique({
+          where: { idempotencyKey: `returoffset-${r.id}` },
+          select: { status: true },
+        })
+      : null;
+
+  /*
    * Candidates are only meaningful while the retur can still be repriced by a viewer who is
    * actually allowed to reprice it. Gated on BOTH conditions LinePriceControls itself requires
    * (canManage + PRICEABLE_STATUS_SET), not just "not yet APPROVED" — a CANCELLED retur and a
@@ -314,6 +335,7 @@ export async function getFieldReturnById(
     valuationStatus: r.valuationStatus,
     offsetStatus: r.offsetStatus,
     offsetPayment: r.offsetPayment,
+    hasVoidedOffsetAttempt: voidedOffsetAttempt?.status === "VOIDED",
     lines: r.lines.map((l) => {
       const priceCandidates = candidatesByLineId.get(l.id);
       const priceState: FieldReturnPriceState = l.priceSource

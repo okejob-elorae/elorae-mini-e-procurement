@@ -31,9 +31,17 @@ export default async function FieldReturnDetailPage({ params }: PageProps) {
   const fieldReturn = await getFieldReturnById(id, { canManage });
   if (!fieldReturn) notFound();
 
+  /*
+   * hasVoidedOffsetAttempt excluded alongside the three offsettability conditions: the retur
+   * reads AVAILABLE again after a void, but its deterministic idempotency key stays bound to the
+   * voided payment, so applyReturnOffset can never succeed for it — the client renders an
+   * explanatory no-action state there and never mounts the sheet, so these two candidate queries
+   * would feed nothing.
+   */
   const isOffsettableNow =
     canOffsetPayments && fieldReturn.status === "APPROVED" &&
-    fieldReturn.valuationStatus === "VALUED" && fieldReturn.offsetStatus === "AVAILABLE";
+    fieldReturn.valuationStatus === "VALUED" && fieldReturn.offsetStatus === "AVAILABLE" &&
+    !fieldReturn.hasVoidedOffsetAttempt;
 
   const [allocationCandidates, suggestedAllocations] = await Promise.all([
     isOffsettableNow ? listAllocationCandidatesForStore(fieldReturn.storeId) : Promise.resolve<AllocationCandidate[]>([]),

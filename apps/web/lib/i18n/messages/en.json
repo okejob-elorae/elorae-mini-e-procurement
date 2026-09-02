@@ -2791,6 +2791,7 @@
     "credit": {
       "cardTitle": "Retur Credit",
       "neverOffsettable": "This return's valuation was left incomplete at approval and can never be offset — values are frozen and there is no repricing path.",
+      "voidedOffsetBody": "This return's value was previously offset, but that payment was voided. It can't be offset again — record the correction as a new cash or transfer payment instead.",
       "availableBody": "Available to apply against this store's outstanding balance.",
       "appliedBody": "Applied to payment",
       "offsetAction": "Offset ke Piutang",
