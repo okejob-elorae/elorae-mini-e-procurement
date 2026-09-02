@@ -62,6 +62,12 @@ function formatRupiahExact(value: number): string {
   }).format(value);
 }
 
+function methodLabelKey(method: string): "methodCash" | "methodTransfer" | "methodReturOffset" {
+  if (method === "CASH") return "methodCash";
+  if (method === "TRANSFER") return "methodTransfer";
+  return "methodReturOffset";
+}
+
 function Field({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
   return (
@@ -250,9 +256,21 @@ export function PaymentDetailClient({ payment: p, receiptJournalRetryable, voidJ
         <h2 className="font-semibold">{t("detail.factsTitle")}</h2>
         <Field label={t("colStore")} value={p.store.name} />
         <Field label={t("detail.paidAtLabel")} value={formatDateOnlyJakarta(p.paidAt)} />
-        <Field label={t("colMethod")} value={t(p.method === "CASH" ? "methodCash" : "methodTransfer")} />
+        <Field label={t("colMethod")} value={t(methodLabelKey(p.method))} />
         <Field label={t("detail.amountLabel")} value={formatRupiahExact(p.amount)} />
         <Field label={t("detail.referenceLabel")} value={p.reference} />
+        {p.returOffsetFor && (
+          <div className="flex justify-between gap-4 text-sm">
+            <span className="text-muted-foreground">{t("detail.returOffsetForLabel")}</span>
+            <Link
+              href={`/backoffice/field-returns/${p.returOffsetFor.id}`}
+              className="inline-flex items-center gap-1 font-mono hover:underline"
+            >
+              {p.returOffsetFor.docNo}
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          </div>
+        )}
         <Field label={t("detail.noteLabel")} value={p.note} />
         <Field label={t("detail.recordedByLabel")} value={p.recordedBy.name} />
         {isVoided && (
