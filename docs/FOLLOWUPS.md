@@ -286,6 +286,38 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       the next scheduled run (dedup holds and receivables are processed oldest-due-first), but a
       single bad row currently halts the rest of that run's announcements instead of logging and
       continuing.
+- [ ] `Store.npwp` ships `NULL` for every existing store and nothing prompts anyone to fill it in,
+      so the first faktur raised at each store hits the required-NPWP block in
+      `markTaxInvoiceCreated`. The mark-created dialog's link to the store profile page is the
+      whole mitigation today — no bulk-fill flow, no store-list indicator for a missing NPWP.
+- [ ] Neither NPWP column (`Store.npwp`, `TaxInvoice.buyerNpwp`) is format-validated or normalised
+      beyond a length cap, so the same store's number can be stored with or without punctuation
+      (e.g. `01.234.567.8-901.000` vs the digits alone) in different places, and the faktur queue's
+      search will not match across the two spellings.
+- [ ] `TaxInvoice.buyerNpwp` carries no index, like `markedById`/`notaPrintedById` before it —
+      nothing queries by it today, so this is deferred rather than fixed.
+- [ ] `SENT_TO_STORE` records that a faktur was handed over but not how, when it reached the
+      store, or who received it on the store side. A real handover record (courier, signature,
+      received-at timestamp) is the Payment Settlement epic's (GitHub issue #28) territory, not
+      this slice's.
+- [ ] There is no way to correct a single field on a `CREATED` faktur — a wrong PPN figure means
+      reverting to pending (`revertTaxInvoiceToPending`) and re-entering all four fields (invoice
+      number, NPWP, taxable amount, PPN amount) from scratch. Deliberate (two honest audit rows
+      beat one silent edit), but will feel heavy if it happens often.
+- [ ] `fakturPajak.status*` and a separate top-level `fakturPajakStatus.status*` block hold
+      identical status label text in both locale files (flagged during Task 8, not logged then).
+      `FakturPajakPageClient` and the field-sales order's `DeliveriesCard` faktur badge each need
+      the same four labels but read from different `next-intl` namespaces, so the text is hand-
+      duplicated across both files and must be kept in sync if either wording ever changes. This
+      is worse than sync-debt today: `DeliveriesCard.tsx`'s `t(\`fakturPajakStatus.${key}\`)` call
+      is scoped to `useTranslations("fieldSalesOrders")`, but `fakturPajakStatus` is a sibling
+      TOP-LEVEL namespace, not nested under `fieldSalesOrders` — confirmed by running `use-intl`'s
+      `createTranslator` directly against the shipped `en.json`, which raises `MISSING_MESSAGE`
+      and returns the literal string `"fieldSalesOrders.fakturPajakStatus.statusPending"` instead
+      of `"Pending"`. Every faktur status badge on `/backoffice/field-sales-orders/[id]` currently
+      renders that raw key text rather than a translated label. The fix is a one-line namespace
+      correction (a second `useTranslations("fakturPajakStatus")` for that lookup); not made here
+      since this task is docs-only.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.

@@ -138,6 +138,11 @@ One line per known trap: **the situation you are in — what bites — where the
 - Wondering why an already-45-days-overdue receivable gets one alert, not three? Only the highest crossed threshold fires per sweep pass — lower thresholds already skipped past are never revisited by design. See `docs/ARCHITECTURE-NOTES.md`.
 - Touching `ar.overdueThresholdDays` parsing? `parseOverdueThresholds` fails OPEN to the defaults on malformed input, the opposite of `readGlCutover`'s fail-closed — silence is the failure this feature removes. See `docs/ARCHITECTURE-NOTES.md`.
 - Calling `sendNotificationToUsers` from a new site? It carries no `VITEST` guard, unlike `fanOutAdminNotification` — guard your own caller or a spec run pushes to real phones. See `docs/ARCHITECTURE-NOTES.md`.
+- Touching `TaxInvoice.buyerNpwp`/`taxableAmount`/`ppnAmount`? They're snapshots taken once at `markTaxInvoiceCreated`, never live lookups against `Store.npwp` or `PPN_RATE_PERCENT` — editing either afterward must not retroactively change an already-filed faktur. See `docs/ARCHITECTURE-NOTES.md`.
+- Calling `markTaxInvoiceSentToStore`? Its `data` is `{ reason }` only — copying `markTaxInvoiceCreated`'s full data block in would silently reassign authorship and the amounts of every sent faktur. See `docs/ARCHITECTURE-NOTES.md`.
+- Wondering where the faktur NPWP requirement is enforced? In `markTaxInvoiceCreated` (the writer), not the dialog — every `"use server"` export is independently callable. See `docs/ARCHITECTURE-NOTES.md`.
+- Adding a `TaxInvoiceStatus` member? It touches `writer.ts`'s hand-written `Status`/`from`/`to` unions AND `FakturPajakPageClient`'s hand-written `totalCount` sum — neither is a `Record`, so a miss fails silently, not at compile time. See `docs/ARCHITECTURE-NOTES.md`.
+- Touching `lib/tax-invoices/status-display.ts`? Deliberately import-free — it declares its own `TaxInvoiceStatusValue` union instead of importing `TaxInvoiceStatusFilter` from `queries.ts`, to keep Prisma out of the client bundle. Keep both in sync by hand. See `docs/ARCHITECTURE-NOTES.md`.
 
 **Data ownership + auth**
 
