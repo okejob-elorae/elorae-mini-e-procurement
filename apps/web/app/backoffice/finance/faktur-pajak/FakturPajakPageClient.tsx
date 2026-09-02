@@ -450,6 +450,7 @@ export function FakturPajakPageClient(props: Props) {
       )}
 
       <MarkCreatedDialog
+        key={markCreatedRow?.id ?? "none"}
         row={markCreatedRow}
         ppnRatePercent={props.ppnRatePercent}
         onClose={() => setMarkCreatedRow(null)}
