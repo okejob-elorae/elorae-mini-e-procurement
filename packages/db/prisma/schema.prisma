@@ -601,6 +601,7 @@ model Payment {
   voidedBy       User?               @relation("PaymentVoidedBy", fields: [voidedById], references: [id])
   allocations    PaymentAllocation[]
   collectionSubmission CollectionSubmission?
+  returOffsetFor       FieldReturn?
 
   @@index([storeId, paidAt])
   @@index([status, paidAt])
@@ -609,6 +610,7 @@ model Payment {
 enum PaymentMethod {
   CASH
   TRANSFER
+  RETUR_OFFSET
 }
 
 enum PaymentStatus {
@@ -730,6 +732,11 @@ enum FieldReturnValuationStatus {
   VALUED
 }
 
+enum FieldReturnOffsetStatus {
+  AVAILABLE
+  APPLIED
+}
+
 model FieldReturn {
   id              String                     @id @default(cuid())
   docNo           String                     @unique
@@ -751,6 +758,9 @@ model FieldReturn {
   approvedById    String?
   totalValue      Decimal?                   @db.Decimal(15, 2)
   valuationStatus FieldReturnValuationStatus @default(PENDING)
+  offsetStatus    FieldReturnOffsetStatus    @default(AVAILABLE)
+  offsetPaymentId String?                    @unique
+  offsetPayment   Payment?                   @relation(fields: [offsetPaymentId], references: [id])
   store           Store                      @relation(fields: [storeId], references: [id])
   visit           StoreVisit?                @relation(fields: [visitId], references: [id])
   lines           FieldReturnLine[]
