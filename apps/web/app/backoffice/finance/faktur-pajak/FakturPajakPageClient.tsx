@@ -33,11 +33,13 @@ import { cn } from "@/lib/utils";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import type { TaxInvoiceRow, TaxInvoiceStatusFilter } from "@/lib/tax-invoices/queries";
 import {
-  markCreatedAction,
   markNotRequiredAction,
+  markSentToStoreAction,
   revertToPendingAction,
   type TaxInvoiceActionResult,
 } from "@/app/actions/tax-invoices";
+import { STATUS_BADGE_VARIANT, STATUS_LABEL_KEY } from "@/lib/tax-invoices/status-display";
+import { MarkCreatedDialog } from "./MarkCreatedDialog";
 
 type StatusFilter = TaxInvoiceStatusFilter | "ALL";
 
@@ -51,25 +53,14 @@ type Props = {
   pageSize: number;
   canManage: boolean;
   loadError: boolean;
+  ppnRatePercent: number;
 };
 
-type DialogKind = "markCreated" | "notRequired" | "revertToPending";
+type DialogKind = "sentToStore" | "notRequired" | "revertToPending";
 
 type SelectedRow = { id: string; docNo: string };
 
 const BASE_PATH = "/backoffice/finance/faktur-pajak";
-
-const STATUS_BADGE_VARIANT: Record<TaxInvoiceStatusFilter, "secondary" | "default" | "outline"> = {
-  PENDING: "secondary",
-  CREATED: "default",
-  NOT_REQUIRED: "outline",
-};
-
-const STATUS_LABEL_KEY: Record<TaxInvoiceStatusFilter, "statusPending" | "statusCreated" | "statusNotRequired"> = {
-  PENDING: "statusPending",
-  CREATED: "statusCreated",
-  NOT_REQUIRED: "statusNotRequired",
-};
 
 function formatRupiah(value: number): string {
   return new Intl.NumberFormat("id-ID", {
@@ -90,6 +81,7 @@ export function FakturPajakPageClient(props: Props) {
   const [searchInput, setSearchInput] = useState(props.q);
   const [dialog, setDialog] = useState<{ kind: DialogKind; row: SelectedRow } | null>(null);
   const [fieldValue, setFieldValue] = useState("");
+  const [markCreatedRow, setMarkCreatedRow] = useState<{ id: string; docNo: string; storeId: string; storeNpwp: string | null } | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -123,26 +115,30 @@ export function FakturPajakPageClient(props: Props) {
     setDialog({ kind, row: { id: row.id, docNo: row.docNo } });
   }
 
+  function openMarkCreatedDialog(row: TaxInvoiceRow): void {
+    setMarkCreatedRow({ id: row.id, docNo: row.docNo, storeId: row.storeId, storeNpwp: row.storeNpwp });
+  }
+
   function closeDialog(): void {
     setDialog(null);
     setFieldValue("");
   }
 
   const trimmedField = fieldValue.trim();
-  const canSubmitDialog = dialog !== null && !isActionPending && trimmedField !== "";
+  const canSubmitDialog = dialog !== null && !isActionPending && (dialog.kind === "sentToStore" || trimmedField !== "");
 
   function dialogCopyFor(kind: DialogKind, docNo: string) {
     switch (kind) {
-      case "markCreated":
+      case "sentToStore":
         return {
-          title: t("markCreatedTitle"),
-          description: t("markCreatedDescription", { docNo }),
-          fieldLabel: t("markCreatedFieldLabel"),
-          placeholder: t("markCreatedFieldPlaceholder"),
-          fieldRequired: t("markCreatedFieldRequired"),
-          submitLabel: t("markCreatedSubmit"),
-          submittingLabel: t("markCreatedSubmitting"),
-          multiline: false,
+          title: t("markSentToStoreTitle"),
+          description: t("markSentToStoreDescription", { docNo }),
+          fieldLabel: t("markSentToStoreFieldLabel"),
+          placeholder: t("markSentToStoreFieldPlaceholder"),
+          fieldRequired: null,
+          submitLabel: t("markSentToStoreSubmit"),
+          submittingLabel: t("markSentToStoreSubmitting"),
+          multiline: true,
         };
       case "notRequired":
         return {
@@ -175,12 +171,12 @@ export function FakturPajakPageClient(props: Props) {
     startActionTransition(async () => {
       try {
         let result: TaxInvoiceActionResult;
-        if (kind === "markCreated") {
-          result = await markCreatedAction({ taxInvoiceId: row.id, invoiceNo: trimmedField });
-        } else if (kind === "notRequired") {
+        if (kind === "notRequired") {
           result = await markNotRequiredAction({ taxInvoiceId: row.id, reason: trimmedField });
-        } else {
+        } else if (kind === "revertToPending") {
           result = await revertToPendingAction({ taxInvoiceId: row.id, reason: trimmedField });
+        } else {
+          result = await markSentToStoreAction({ taxInvoiceId: row.id, reason: trimmedField || undefined });
         }
         if (result.ok) {
           toast.success(t(`${kind}Success`));
@@ -195,7 +191,7 @@ export function FakturPajakPageClient(props: Props) {
     });
   }
 
-  const totalCount = props.counts.PENDING + props.counts.CREATED + props.counts.NOT_REQUIRED;
+  const totalCount = props.counts.PENDING + props.counts.CREATED + props.counts.SENT_TO_STORE + props.counts.NOT_REQUIRED;
   const copy = dialog ? dialogCopyFor(dialog.kind, dialog.row.docNo) : null;
 
   return (
@@ -233,6 +229,9 @@ export function FakturPajakPageClient(props: Props) {
               </TabsTrigger>
               <TabsTrigger value="CREATED">
                 {t("statusCreated")} ({props.counts.CREATED})
+              </TabsTrigger>
+              <TabsTrigger value="SENT_TO_STORE">
+                {t("statusSentToStore")} ({props.counts.SENT_TO_STORE})
               </TabsTrigger>
               <TabsTrigger value="NOT_REQUIRED">
                 {t("statusNotRequired")} ({props.counts.NOT_REQUIRED})
@@ -319,6 +318,16 @@ export function FakturPajakPageClient(props: Props) {
                                     {row.invoiceNo}
                                   </div>
                                 )}
+                                {row.buyerNpwp && (
+                                  <div className="mt-0.5 text-xs text-muted-foreground">
+                                    {t("npwpLabel", { npwp: row.buyerNpwp })}
+                                  </div>
+                                )}
+                                {row.ppnAmount !== null && (
+                                  <div className="mt-0.5 text-xs text-muted-foreground">
+                                    {t("ppnLabel", { amount: formatRupiah(row.ppnAmount) })}
+                                  </div>
+                                )}
                               </TableCell>
                               {props.canManage && (
                                 <TableCell>
@@ -329,7 +338,7 @@ export function FakturPajakPageClient(props: Props) {
                                           variant="outline"
                                           size="sm"
                                           className="h-10"
-                                          onClick={() => openDialog("markCreated", row)}
+                                          onClick={() => openMarkCreatedDialog(row)}
                                         >
                                           {t("actionMarkCreated")}
                                         </Button>
@@ -340,6 +349,25 @@ export function FakturPajakPageClient(props: Props) {
                                           onClick={() => openDialog("notRequired", row)}
                                         >
                                           {t("actionNotRequired")}
+                                        </Button>
+                                      </>
+                                    ) : status === "CREATED" ? (
+                                      <>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-10"
+                                          onClick={() => openDialog("sentToStore", row)}
+                                        >
+                                          {t("actionMarkSentToStore")}
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-10"
+                                          onClick={() => openDialog("revertToPending", row)}
+                                        >
+                                          {t("actionRevert")}
                                         </Button>
                                       </>
                                     ) : (
@@ -404,7 +432,7 @@ export function FakturPajakPageClient(props: Props) {
                   onChange={(e) => setFieldValue(e.target.value)}
                 />
               )}
-              {trimmedField === "" && (
+              {copy.fieldRequired !== null && trimmedField === "" && (
                 <p className="text-xs text-muted-foreground">{copy.fieldRequired}</p>
               )}
             </div>
@@ -420,6 +448,13 @@ export function FakturPajakPageClient(props: Props) {
           </DialogContent>
         </Dialog>
       )}
+
+      <MarkCreatedDialog
+        row={markCreatedRow}
+        ppnRatePercent={props.ppnRatePercent}
+        onClose={() => setMarkCreatedRow(null)}
+        onSuccess={() => router.refresh()}
+      />
     </div>
   );
 }
