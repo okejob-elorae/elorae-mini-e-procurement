@@ -87,7 +87,7 @@ d("submitCollection (test bed only)", () => {
     const r = await prisma.receivable.findUnique({ where: { id: receivableId } });
     expect(Number(r!.outstandingAmount)).toBe(1000);
     expect(r!.status).toBe("OUTSTANDING");
-    const sub = await prisma.collectionSubmission.findFirst({ where: { receivableId } });
+    const sub = await prisma.collectionSubmission.findFirst({ where: { receivableId: seededId(receivableId) } });
     expect(sub!.status).toBe("PENDING");
   });
 
@@ -121,7 +121,7 @@ d("submitCollection (test bed only)", () => {
   it("allows a second submission that fits within the remaining (unnetted) balance", async () => {
     await submitCollection({ ...base(), amount: 600 });
     await submitCollection({ ...base(), amount: 400 });
-    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId } });
+    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId: seededId(receivableId) } });
     expect(subs).toHaveLength(2);
   });
 
@@ -133,7 +133,7 @@ d("submitCollection (test bed only)", () => {
     const { submissionId } = await submitCollection({ ...base(), amount: 700 });
     await prisma.collectionSubmission.update({ where: { id: submissionId }, data: { status: "REJECTED" } });
     await submitCollection({ ...base(), amount: 1000 });
-    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId } });
+    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId: seededId(receivableId) } });
     expect(subs).toHaveLength(2);
   });
 
@@ -142,7 +142,7 @@ d("submitCollection (test bed only)", () => {
     const first = await submitCollection({ ...base(), idempotencyKey: key });
     const second = await submitCollection({ ...base(), idempotencyKey: key });
     expect(second.submissionId).toBe(first.submissionId);
-    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId } });
+    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId: seededId(receivableId) } });
     expect(subs).toHaveLength(1);
   });
 
@@ -155,7 +155,7 @@ d("submitCollection (test bed only)", () => {
   it("refuses RETUR_OFFSET even though the type system would normally block it", async () => {
     const err = await submitAndCatch({ ...base(), method: "RETUR_OFFSET" as unknown as "CASH" });
     expect(err.code).toBe("INVALID_METHOD");
-    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId } });
+    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId: seededId(receivableId) } });
     expect(subs).toHaveLength(0);
   });
 });

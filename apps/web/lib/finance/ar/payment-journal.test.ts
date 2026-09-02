@@ -23,6 +23,7 @@ d("payment-journal debitRole (test bed only)", () => {
   beforeEach(async () => {
     token = Math.floor(Math.random() * 1_000_000);
     storeId = ""; userId = ""; paymentId = "";
+    cashId = ""; bankId = ""; revId = ""; arId = "";
     mappingSnapshot = await snapshotMappings(["CASH", "BANK", "SALES_REVENUE", "AR"]);
 
     const store = await prisma.store.create({

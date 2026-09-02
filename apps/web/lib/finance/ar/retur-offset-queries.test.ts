@@ -22,12 +22,17 @@ d("retur-offset-queries (test bed only)", () => {
   let returPendingValId = "";
   let returPendingApprovalId = "";
   let returManualPricedId = "";
+  /* Every FieldReturn mkReturn creates, tracked the instant the row exists — the individual
+     ids above are only assigned once mkReturn RETURNS, so a throw while creating the return's
+     line would otherwise orphan a row on the shared test bed with nothing holding its id. */
+  let createdReturnIds: string[] = [];
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; userId = ""; uomId = ""; itemId = ""; orderId = ""; orderLineId = ""; deliveryId = ""; deliveryLineId = "";
     receivableId = ""; returAvailableId = ""; returAppliedId = ""; returPendingValId = "";
     returPendingApprovalId = ""; returManualPricedId = "";
+    createdReturnIds = [];
 
     const store = await prisma.store.create({
       data: { code: `TEST-ROQ-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -86,6 +91,7 @@ d("retur-offset-queries (test bed only)", () => {
           totalValue, approvedAt: status === "APPROVED" ? new Date() : null, approvedById: status === "APPROVED" ? userId : null,
         },
       });
+      createdReturnIds.push(ret.id);
       await prisma.fieldReturnLine.create({
         data: {
           returnId: ret.id, itemId, qty: 5, reason: "UNSOLD",
@@ -104,10 +110,7 @@ d("retur-offset-queries (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const returnIds = [
-      seededId(returAvailableId), seededId(returAppliedId), seededId(returPendingValId),
-      seededId(returPendingApprovalId), seededId(returManualPricedId),
-    ];
+    const returnIds = createdReturnIds.map((id) => seededId(id));
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
     await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
     await prisma.receivable.deleteMany({ where: { id: seededId(receivableId) } });
