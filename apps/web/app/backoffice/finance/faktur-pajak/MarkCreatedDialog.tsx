@@ -82,7 +82,7 @@ export function MarkCreatedDialog({ row, ppnRatePercent, onClose, onSuccess }: P
   }
 
   function handleSubmit(): void {
-    if (!canSubmit || typeof taxableAmount !== "number" || typeof ppnAmount !== "number") return;
+    if (!row || !canSubmit || typeof taxableAmount !== "number" || typeof ppnAmount !== "number") return;
     setIsPending(true);
     markCreatedAction({
       taxInvoiceId: row.id,
