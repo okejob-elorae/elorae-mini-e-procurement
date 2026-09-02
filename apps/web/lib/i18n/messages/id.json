@@ -2765,6 +2765,12 @@
     },
     "colValue": "Nilai",
     "valuationIncomplete": "Belum Ternilai",
+    "colCredit": "Kredit",
+    "creditFilterLabel": "Status Kredit",
+    "creditFilterAll": "Semua",
+    "creditAvailable": "Tersedia",
+    "creditApplied": "Diterapkan",
+    "creditNotYet": "Belum Bisa Dioffset",
     "valuation": {
       "cardTitle": "Penilaian Retur",
       "notYetValuedBody": "Nilai retur akan dihitung otomatis saat retur ini disetujui.",
@@ -2781,6 +2787,27 @@
       "surplusBadge": "Kelebihan Dikreditkan",
       "surplusStats": "Klaim {claimed} · Diterima {received} · Dikreditkan {credited}",
       "cancelledBody": "Retur ini dibatalkan sehingga tidak pernah dinilai."
+    },
+    "credit": {
+      "cardTitle": "Kredit Retur",
+      "neverOffsettable": "Valuasi retur ini tidak lengkap saat disetujui dan tidak akan pernah bisa dioffset — nilai sudah dibekukan dan tidak ada jalur repricing.",
+      "voidedOffsetBody": "Nilai retur ini pernah dioffset, tapi pembayaran itu sudah dibatalkan. Retur ini tidak bisa dioffset lagi — catat koreksinya sebagai pembayaran tunai atau transfer baru.",
+      "availableBody": "Tersedia untuk diterapkan ke saldo piutang toko ini.",
+      "appliedBody": "Diterapkan ke pembayaran",
+      "offsetAction": "Offset ke Piutang",
+      "offsetSheetTitle": "Offset Retur ke Piutang",
+      "offsetSheetDescription": "Terapkan nilai beku retur ini ({amount}) ke satu atau lebih piutang toko ini.",
+      "offsetSuccessToast": "Nilai retur diterapkan ke pembayaran.",
+      "insufficientOutstanding": "Total piutang toko ini ({total}) lebih kecil dari nilai retur ({needed}) — belum bisa dioffset sampai ada faktur lain.",
+      "noCandidates": "Toko ini tidak punya piutang yang bisa dikenakan kredit ini.",
+      "colDueDate": "Jatuh Tempo",
+      "colOutstanding": "Piutang",
+      "colAllocation": "Alokasi",
+      "allocateFull": "Penuh",
+      "negativeAmount": "Jumlah tidak boleh negatif.",
+      "overAllocated": "Melebihi saldo piutang ini.",
+      "runningTotalLabel": "Dialokasikan / Nilai Retur",
+      "submitting": "Memproses..."
     }
   },
   "fieldReturnReceiving": {
@@ -3863,6 +3890,7 @@
       "NOT_FOUND": "Setoran atau piutang tidak ditemukan.",
       "NOT_PENDING": "Setoran ini sudah diverifikasi atau ditolak sebelumnya.",
       "MISSING_REASON": "Alasan penolakan wajib diisi.",
+      "INVALID_METHOD": "Metode pembayaran ini tidak valid untuk penagihan lapangan.",
       "NO_ALLOCATIONS": "Tidak ada piutang yang dialokasikan untuk pembayaran ini.",
       "ALLOCATION_MISMATCH": "Jumlah alokasi tidak sesuai dengan jumlah pembayaran.",
       "OVER_ALLOCATED": "Jumlah melebihi sisa piutang ini.",
@@ -3881,6 +3909,7 @@
     "allMethods": "Semua Metode",
     "methodCash": "Tunai",
     "methodTransfer": "Transfer",
+    "methodReturOffset": "Offset Retur",
     "allStatus": "Semua Status",
     "statusPosted": "Berhasil",
     "statusVoided": "Dibatalkan",
@@ -3905,6 +3934,7 @@
       "paidAtLabel": "Tanggal Pembayaran",
       "amountLabel": "Jumlah",
       "referenceLabel": "No. Referensi",
+      "returOffsetForLabel": "Dilunasi Oleh Retur",
       "noteLabel": "Catatan",
       "recordedByLabel": "Dicatat Oleh",
       "voidedAtLabel": "Dibatalkan Pada",
@@ -3954,6 +3984,11 @@
       "NOT_FOUND": "Pembayaran atau piutang tidak ditemukan.",
       "ALREADY_SETTLED": "Piutang tersebut sudah lunas atau sudah dihapusbukukan.",
       "DUPLICATE_ALLOCATION": "Piutang yang sama dialokasikan lebih dari satu kali.",
+      "RETURN_NOT_APPROVED": "Retur ini belum disetujui, jadi belum ada nilai yang bisa dioffset.",
+      "NOT_VALUED": "Nilai retur ini belum lengkap dan tidak bisa dioffset.",
+      "ALREADY_APPLIED": "Nilai retur ini sudah diterapkan ke pembayaran lain.",
+      "INSUFFICIENT_OUTSTANDING": "Saldo piutang toko ini tidak cukup untuk menyerap seluruh nilai retur.",
+      "PAYMENT_VOIDED": "Offset sebelumnya untuk retur ini sudah dibatalkan. Catat koreksinya sebagai pembayaran baru.",
       "NOT_RETRYABLE": "Jurnal pembayaran ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
       "STILL_PENDING": "Jurnal masih gagal diposting. Periksa pemetaan akun, lalu coba lagi.",
       "ERROR": "Terjadi kesalahan saat mencatat pembayaran ini. Coba lagi."
@@ -4198,6 +4233,7 @@
     "recordPaymentAction": "Catat Pembayaran",
     "methodCash": "Tunai",
     "methodTransfer": "Transfer",
+    "methodReturOffset": "Offset Retur",
     "colCollector": "Kolektor",
     "allCollectors": "Semua Kolektor",
     "collectorSearchPlaceholder": "Cari kolektor...",
@@ -4284,7 +4320,9 @@
       "started": "Ekspor dimulai",
       "failed": "Ekspor gagal",
       "truncated": "Menampilkan 10.000 dari {total} baris — persempit filter untuk data lengkap"
-    }
+    },
+    "storeAvailableCreditTitle": "Kredit Retur Tersedia",
+    "storeAvailableCreditHint": "Retur yang disetujui dan belum diterapkan ke pembayaran mana pun untuk toko ini."
   },
   "profileAccounts": {
     "title": "Akun Profil",

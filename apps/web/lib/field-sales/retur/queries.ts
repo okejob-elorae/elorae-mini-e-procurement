@@ -18,6 +18,8 @@ export type FieldReturnTransport = "SELF_CARRY" | "EXPEDITION";
  */
 export type FieldReturnOrigin = "FIELD" | "ADMIN";
 
+export type FieldReturnOffsetStatus = "AVAILABLE" | "APPLIED";
+
 export type FieldReturnRow = {
   id: string;
   docNo: string;
@@ -30,11 +32,25 @@ export type FieldReturnRow = {
   createdAt: Date;
   totalValue: number | null;
   valuationStatus: "PENDING" | "VALUED";
+  /**
+   * The raw column — non-null on every retur, even one that isn't APPROVED+VALUED yet, because
+   * the schema default is AVAILABLE. A row's REAL offsettability is `status === "APPROVED" &&
+   * valuationStatus === "VALUED" && offsetStatus === "AVAILABLE"`; consumers must derive the
+   * displayed 3-way badge from all three fields together, never from this column alone.
+   */
+  offsetStatus: FieldReturnOffsetStatus;
 };
 
 export async function listFieldReturns(params: {
   q?: string;
   origin?: FieldReturnOrigin;
+  /**
+   * "AVAILABLE" means genuinely offsettable — APPROVED + VALUED + offsetStatus AVAILABLE — not
+   * merely `offsetStatus === "AVAILABLE"`, which every not-yet-approved retur also carries by
+   * default. "APPLIED" needs no such compound filter: only a return that was APPROVED + VALUED
+   * could ever have reached APPLIED in the first place.
+   */
+  creditFilter?: "AVAILABLE" | "APPLIED";
   page: number;
   perPage: number;
 }): Promise<{ rows: FieldReturnRow[]; total: number }> {
@@ -42,6 +58,11 @@ export async function listFieldReturns(params: {
   const where: Prisma.FieldReturnWhereInput = {
     ...(q ? { OR: [{ docNo: { contains: q } }, { store: { name: { contains: q } } }] } : {}),
     ...(params.origin ? { origin: params.origin } : {}),
+    ...(params.creditFilter === "AVAILABLE"
+      ? { status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE" }
+      : params.creditFilter === "APPLIED"
+        ? { offsetStatus: "APPLIED" }
+        : {}),
   };
 
   const [rows, total] = await Promise.all([
@@ -59,6 +80,7 @@ export async function listFieldReturns(params: {
         createdAt: true,
         totalValue: true,
         valuationStatus: true,
+        offsetStatus: true,
         store: { select: { name: true } },
         _count: { select: { lines: true } },
       },
@@ -78,6 +100,7 @@ export async function listFieldReturns(params: {
       createdAt: r.createdAt,
       totalValue: r.totalValue === null ? null : r.totalValue.toNumber(),
       valuationStatus: r.valuationStatus,
+      offsetStatus: r.offsetStatus,
     })),
     total,
   };
@@ -147,6 +170,7 @@ export type FieldReturnDetail = {
   id: string;
   docNo: string;
   status: FieldReturnStatus;
+  storeId: string;
   storeName: string;
   raisedByLabel: string;
   origin: FieldReturnOrigin;
@@ -160,6 +184,17 @@ export type FieldReturnDetail = {
   createdAt: Date;
   totalValue: number | null;
   valuationStatus: "PENDING" | "VALUED";
+  offsetStatus: FieldReturnOffsetStatus;
+  /** Non-null only while offsetStatus === "APPLIED". */
+  offsetPayment: { id: string; docNo: string } | null;
+  /**
+   * True when this retur was offset once and that payment was later voided — offsetStatus is
+   * back to AVAILABLE (so the credit reads as unclaimed everywhere else), but the deterministic
+   * idempotency key stays permanently bound to the voided payment, so applyReturnOffset can
+   * never succeed for this retur again. The credit card must render a distinct, explanatory,
+   * no-action state here rather than a normal "Offset ke Piutang" button that would always fail.
+   */
+  hasVoidedOffsetAttempt: boolean;
   lines: FieldReturnLineDetail[];
 };
 
@@ -184,6 +219,8 @@ export async function getFieldReturnById(
       storeId: true,
       totalValue: true,
       valuationStatus: true,
+      offsetStatus: true,
+      offsetPayment: { select: { id: true, docNo: true } },
       store: { select: { name: true } },
       lines: {
         select: {
@@ -231,6 +268,19 @@ export async function getFieldReturnById(
   const docNoByDeliveryLineId = new Map(deliveryLines.map((dl) => [dl.id, dl.delivery.docNo]));
 
   /*
+   * Only worth checking when the retur currently reads AVAILABLE + VALUED -- if it's APPLIED,
+   * offsetPayment above already answers the question; if it's not yet valued, it was never
+   * offerable in the first place.
+   */
+  const voidedOffsetAttempt =
+    r.offsetStatus === "AVAILABLE" && r.valuationStatus === "VALUED" && r.totalValue !== null
+      ? await prisma.payment.findUnique({
+          where: { idempotencyKey: `returoffset-${r.id}` },
+          select: { status: true },
+        })
+      : null;
+
+  /*
    * Candidates are only meaningful while the retur can still be repriced by a viewer who is
    * actually allowed to reprice it. Gated on BOTH conditions LinePriceControls itself requires
    * (canManage + PRICEABLE_STATUS_SET), not just "not yet APPROVED" — a CANCELLED retur and a
@@ -271,6 +321,7 @@ export async function getFieldReturnById(
     id: r.id,
     docNo: r.docNo,
     status: r.status,
+    storeId: r.storeId,
     storeName: r.store.name,
     raisedByLabel: labelFor(r.raisedById),
     origin: r.origin,
@@ -282,6 +333,9 @@ export async function getFieldReturnById(
     createdAt: r.createdAt,
     totalValue: r.totalValue === null ? null : r.totalValue.toNumber(),
     valuationStatus: r.valuationStatus,
+    offsetStatus: r.offsetStatus,
+    offsetPayment: r.offsetPayment,
+    hasVoidedOffsetAttempt: voidedOffsetAttempt?.status === "VOIDED",
     lines: r.lines.map((l) => {
       const priceCandidates = candidatesByLineId.get(l.id);
       const priceState: FieldReturnPriceState = l.priceSource

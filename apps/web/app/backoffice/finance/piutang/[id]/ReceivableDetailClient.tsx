@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, ExternalLink, Loader2, Receipt, Wallet } from "lucide-react";
-import type { getReceivable } from "@/lib/finance/ar/queries";
+import type { getReceivable, AllocationCandidate } from "@/lib/finance/ar/queries";
 import { postFieldDeliveryJournalsAction } from "@/app/actions/field-sales-deliveries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { AGING_BUCKET_LABELS } from "@/lib/finance/ar/aging";
@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RecordPaymentSheet, type AllocationCandidate } from "./RecordPaymentSheet";
+import { RecordPaymentSheet } from "./RecordPaymentSheet";
 import { AssignCollectorCard } from "./AssignCollectorCard";
 
 type ReceivableDetail = NonNullable<Awaited<ReturnType<typeof getReceivable>>>;
@@ -93,6 +93,12 @@ function formatRupiahExact(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function methodLabelKey(method: string): "methodCash" | "methodTransfer" | "methodReturOffset" {
+  if (method === "CASH") return "methodCash";
+  if (method === "TRANSFER") return "methodTransfer";
+  return "methodReturOffset";
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -379,7 +385,7 @@ export function ReceivableDetailClient({
                           {formatDateOnlyJakarta(a.payment.paidAt)}
                         </TableCell>
                         <TableCell className={cn(voided && "text-muted-foreground line-through")}>
-                          {t(a.payment.method === "CASH" ? "methodCash" : "methodTransfer")}
+                          {t(methodLabelKey(a.payment.method))}
                         </TableCell>
                         <TableCell
                           className={cn(

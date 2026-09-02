@@ -329,6 +329,55 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       but not deduplicated — `FakturPajakPageClient` and `DeliveriesCard`'s faktur badge each need
       the same four labels but read from different `next-intl` namespaces, so the text must be kept
       in sync by hand if either wording ever changes.
+- [ ] No COGS reversal for retur-restored stock. Approving a field retur restores
+      `InventoryValue` and posts a positive `StockAdjustment` with no journal alongside it
+      (`apps/web/lib/field-sales/retur/approve-writer.ts`), so `INVENTORY` is understated and
+      `COGS` overstated by the restored value on every field retur. Fires at approval, applies to
+      konsi and never-offset returs equally — not the retur-offset slice's trigger, but a live GL
+      hole now that a consumer of retur value exists.
+- [ ] AR journals are not GL-cutover gated. `postPaymentReceiptJournal`
+      (`apps/web/lib/finance/ar/payment-journal.ts`) credits `AR` unconditionally, so any payment —
+      cash or retur-offset, both routing through `debitRole` — against a backfilled receivable with
+      no revenue journal drives AR negative. Same shape as the settlement item already logged
+      above. The fix is one pass applying `classifySaleLeg`'s counterpart-journal gate across the
+      AR journals, covering both paths together.
+- [ ] No partial retur draw-down. A retur is consumed all-or-nothing (`applyReturnOffset`,
+      `apps/web/lib/finance/ar/retur-offset-writer.ts`), so one whose value exceeds the store's
+      total outstanding cannot be offset until more invoices exist. Needs a `FieldReturn.appliedValue`
+      column (does not exist today) and a per-event idempotency key, at which point `appliedValue`
+      alone would need to carry the double-spend guarantee the deterministic key currently provides.
+- [ ] No post-approval repricing for field returns, so a return that approved with
+      `valuationStatus: PENDING` has a permanently unusable value — `setLinePriceAction` refuses
+      once approved (`ALREADY_APPROVED`), so it can never become offsettable.
+- [ ] No way to cancel a standing retur credit. Belongs with the write-off/adjustment slice that
+      `ReceivableStatus.WRITTEN_OFF` is already waiting on, same act, same journal treatment.
+- [ ] Un-offset retur credits are invisible in the GL, overstating revenue by the total standing
+      credit at any moment. The two-stage treatment (recognize a customer-credit liability at retur
+      approval, consume it at offset) is the fix and needs a new posting role plus a backfill
+      decision for every already-approved, still-`AVAILABLE` retur at merge time.
+- [ ] A retur offset, once voided, can never be re-offset — the deterministic idempotency key
+      (`returoffset-<returnId>`) stays permanently bound to the voided payment (`voidPayment`
+      releases `offsetStatus` back to `AVAILABLE` but never clears it — `apps/web/lib/finance/ar/
+      void-writer.ts`), so `applyReturnOffset` deterministically throws `PAYMENT_VOIDED` on every
+      future attempt for that retur. The field retur detail card correctly explains this and
+      offers no action (`hasVoidedOffsetAttempt`, `apps/web/lib/field-sales/retur/queries.ts`) —
+      but the spec's own documented remedy, "record the correction as a new cash/transfer
+      payment," is technically wrong accounting for this specific case: it posts DR CASH/BANK for
+      money that never arrived, and the DR SALES_REVENUE / CR AR reversal this retur's value
+      should have produced never posts at all. Two other surfaces also still read this retur as
+      available credit after the void, since neither checks for a voided prior attempt: the field
+      returns register's offset-state badge/`creditFilter` (`FieldReturnsPageClient.tsx`,
+      `listFieldReturns`) and the piutang list's `getStoreAvailableCredit` figure
+      (`retur-offset-queries.ts`) — both are read-only/informational (no action button), so this
+      is a display overstatement in a rare state, not a reachable double-spend. Closing the
+      informational-surface gap needs a per-row payment lookup on what's currently a cheap list
+      query (N+1, or a join) for a state expected to be rare — deferred as a cost/benefit call,
+      not forgotten. The real fix for the underlying remedy problem is either the two-stage GL
+      treatment above (which would let a void-then-retry naturally re-consume the still-recognized
+      liability) or nulling the voided payment's `idempotencyKey` inside `voidPayment`'s own
+      transaction to restore genuine retry capability — deliberately not done in the retur-offset
+      slice, since the spec explicitly chose the permanent-lock behavior over a non-deterministic
+      key and reversing that is a design decision, not a bug fix.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.

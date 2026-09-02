@@ -8,7 +8,8 @@ export type CollectionErrorCode =
   | "OVER_COLLECTED"
   | "NOT_FOUND"
   | "NOT_PENDING"
-  | "MISSING_REASON";
+  | "MISSING_REASON"
+  | "INVALID_METHOD";
 
 export class CollectionError extends Error {
   code: CollectionErrorCode;

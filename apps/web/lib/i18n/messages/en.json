@@ -2765,6 +2765,12 @@
     },
     "colValue": "Value",
     "valuationIncomplete": "Not Fully Valued",
+    "colCredit": "Credit",
+    "creditFilterLabel": "Credit Status",
+    "creditFilterAll": "All",
+    "creditAvailable": "Available",
+    "creditApplied": "Applied",
+    "creditNotYet": "Not Yet Offsettable",
     "valuation": {
       "cardTitle": "Return Valuation",
       "notYetValuedBody": "The return's value will be computed automatically once this return is approved.",
@@ -2781,6 +2787,27 @@
       "surplusBadge": "Surplus Credited",
       "surplusStats": "Claimed {claimed} · Received {received} · Credited {credited}",
       "cancelledBody": "This return was cancelled, so it was never valued."
+    },
+    "credit": {
+      "cardTitle": "Retur Credit",
+      "neverOffsettable": "This return's valuation was left incomplete at approval and can never be offset — values are frozen and there is no repricing path.",
+      "voidedOffsetBody": "This return's value was previously offset, but that payment was voided. It can't be offset again — record the correction as a new cash or transfer payment instead.",
+      "availableBody": "Available to apply against this store's outstanding balance.",
+      "appliedBody": "Applied to payment",
+      "offsetAction": "Offset ke Piutang",
+      "offsetSheetTitle": "Offset Return to Piutang",
+      "offsetSheetDescription": "Apply this return's frozen value ({amount}) against one or more of this store's outstanding receivables.",
+      "offsetSuccessToast": "Return value applied to payment.",
+      "insufficientOutstanding": "This store's outstanding total ({total}) is less than the return's value ({needed}) — it can't be offset until more invoices exist.",
+      "noCandidates": "This store has no outstanding receivables to apply this credit to.",
+      "colDueDate": "Due Date",
+      "colOutstanding": "Outstanding",
+      "colAllocation": "Allocation",
+      "allocateFull": "Full",
+      "negativeAmount": "Amount can't be negative.",
+      "overAllocated": "Exceeds this receivable's outstanding balance.",
+      "runningTotalLabel": "Allocated / Return Value",
+      "submitting": "Applying..."
     }
   },
   "fieldReturnReceiving": {
@@ -3863,6 +3890,7 @@
       "NOT_FOUND": "Submission or receivable not found.",
       "NOT_PENDING": "This submission was already verified or rejected.",
       "MISSING_REASON": "A reject reason is required.",
+      "INVALID_METHOD": "This payment method isn't valid for a field collection.",
       "NO_ALLOCATIONS": "No receivable was allocated for this payment.",
       "ALLOCATION_MISMATCH": "The allocated amount doesn't match the payment amount.",
       "OVER_ALLOCATED": "The amount exceeds this receivable's outstanding balance.",
@@ -3881,6 +3909,7 @@
     "allMethods": "All Methods",
     "methodCash": "Cash",
     "methodTransfer": "Transfer",
+    "methodReturOffset": "Retur Offset",
     "allStatus": "All Status",
     "statusPosted": "Posted",
     "statusVoided": "Voided",
@@ -3905,6 +3934,7 @@
       "paidAtLabel": "Payment Date",
       "amountLabel": "Amount",
       "referenceLabel": "Reference No.",
+      "returOffsetForLabel": "Settled By Retur",
       "noteLabel": "Note",
       "recordedByLabel": "Recorded By",
       "voidedAtLabel": "Voided At",
@@ -3954,6 +3984,11 @@
       "NOT_FOUND": "Payment or receivable not found.",
       "ALREADY_SETTLED": "That receivable is already paid off or written off.",
       "DUPLICATE_ALLOCATION": "The same receivable was allocated more than once.",
+      "RETURN_NOT_APPROVED": "This return isn't approved yet, so it has no frozen value to offset.",
+      "NOT_VALUED": "This return's value is incomplete and can't be offset.",
+      "ALREADY_APPLIED": "This return's value has already been applied to a payment.",
+      "INSUFFICIENT_OUTSTANDING": "This store doesn't have enough outstanding balance to absorb the return's full value.",
+      "PAYMENT_VOIDED": "The prior offset for this return was voided. Record the correction as a new payment instead.",
       "NOT_RETRYABLE": "This payment's journal was never flagged as failed, so there is nothing to retry.",
       "STILL_PENDING": "The journal still failed to post. Check the account mapping, then try again.",
       "ERROR": "Something went wrong recording this payment. Try again."
@@ -4198,6 +4233,7 @@
     "recordPaymentAction": "Record Payment",
     "methodCash": "Cash",
     "methodTransfer": "Transfer",
+    "methodReturOffset": "Retur Offset",
     "colCollector": "Collector",
     "allCollectors": "All Collectors",
     "collectorSearchPlaceholder": "Search collector...",
@@ -4284,7 +4320,9 @@
       "started": "Export started",
       "failed": "Export failed",
       "truncated": "Showing 10,000 of {total} rows — narrow the filters for the complete set"
-    }
+    },
+    "storeAvailableCreditTitle": "Available Retur Credit",
+    "storeAvailableCreditHint": "Approved returns not yet applied to any payment for this store."
   },
   "profileAccounts": {
     "title": "Profile Accounts",

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listReceivables, getReceivable, listPayments, getPayment } from "./queries";
+import { listReceivables, getReceivable, listPayments, getPayment, listAllocationCandidatesForStore } from "./queries";
 import { recordPayment } from "./payment-writer";
 import { voidPayment } from "./void-writer";
 
@@ -32,12 +32,17 @@ d("AR queries (test bed only)", () => {
   let thirdRec = "";
   /* Set inside whichever test records a payment; stays "" (unmatchable) for every other test. */
   let paymentId = "";
+  /* Set only by the returOffsetFor test; stays "" (unmatchable) for every other test. */
+  let fieldReturnId = "";
+  let returItemId = "";
+  let returUomId = "";
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; userId = ""; orderAId = ""; orderBId = ""; orderCId = "";
     deliveryAId = ""; deliveryBId = ""; deliveryCId = "";
     currentRec = ""; overdueRec = ""; thirdRec = ""; paymentId = "";
+    fieldReturnId = ""; returItemId = ""; returUomId = "";
 
     const store = await prisma.store.create({
       data: { code: `TEST-ARQ-${token}`, name: `Toko ${token}`, address: "test", termsType: "PUTUS" },
@@ -159,7 +164,13 @@ d("AR queries (test bed only)", () => {
     await prisma.paymentAllocation.deleteMany({
       where: { receivableId: { in: [seededId(currentRec), seededId(overdueRec), seededId(thirdRec)] } },
     });
+    /* fieldReturnId's line/return, and their item/uom, only exist for the returOffsetFor test —
+     * children-first, and before `payment` since a FieldReturn points at its offset Payment. */
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(fieldReturnId) } });
+    await prisma.fieldReturn.deleteMany({ where: { id: seededId(fieldReturnId) } });
     await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(returItemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(returUomId) } });
     await prisma.receivable.deleteMany({
       where: { id: { in: [seededId(currentRec), seededId(overdueRec), seededId(thirdRec)] } },
     });
@@ -334,5 +345,73 @@ d("AR queries (test bed only)", () => {
     expect(detail!.allocations[0].receivableId).toBe(overdueRec);
     expect(detail!.allocations[0].docNo).toBe(`TEST-ARQ-DLV2-${token}`);
     expect(detail!.allocations[0].outstandingAmount).toBe(0);
+  });
+
+  /*
+   * listAllocationCandidatesForStore merges two `listReceivables` calls (OUTSTANDING + PARTIAL) for
+   * one store. overdueRec is flipped to PARTIAL here to cover both statuses; thirdRec is flipped to
+   * PAID to prove it's excluded rather than merely untouched.
+   */
+  it("returns OUTSTANDING and PARTIAL receivables for a store, sorted by dueDate, excluding PAID", async () => {
+    await prisma.receivable.update({
+      where: { id: overdueRec },
+      data: { status: "PARTIAL", paidAmount: 200, outstandingAmount: 300 },
+    });
+    await prisma.receivable.update({ where: { id: thirdRec }, data: { status: "PAID", outstandingAmount: 0 } });
+
+    const candidates = await listAllocationCandidatesForStore(storeId);
+
+    /* overdueRec (dueDate 2026-05-01) before currentRec (dueDate 2026-06-20); thirdRec absent. */
+    expect(candidates.map((c) => c.id)).toEqual([overdueRec, currentRec]);
+    expect(candidates.map((c) => c.outstandingAmount)).toEqual([300, 1000]);
+  });
+
+  /* GAP 5: getPayment's returOffsetFor lets the payment detail page and Task 9's writer tell a
+   * retur-settled payment apart from a plain one. */
+  it("exposes returOffsetFor for a payment settled by a field return, and null for a plain payment", async () => {
+    const uom = await prisma.uOM.create({ data: { code: `TEST-ARQ-UOM-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    returUomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku: `TEST-ARQ-ITEM-${token}`, nameId: "Retur item", nameEn: "Retur item", type: "FINISHED_GOOD", uomId: returUomId, isActive: true },
+    });
+    returItemId = item.id;
+
+    const offsetPayment = await prisma.payment.create({
+      data: {
+        docNo: `TEST-ARQ-PAY-OFFSET-${token}`,
+        storeId,
+        paidAt: asOf,
+        method: "RETUR_OFFSET",
+        amount: 300,
+        recordedById: userId,
+      },
+    });
+    paymentId = offsetPayment.id;
+
+    const fieldReturn = await prisma.fieldReturn.create({
+      data: {
+        docNo: `TEST-ARQ-RET-${token}`,
+        storeId,
+        raisedById: userId,
+        status: "APPROVED",
+        valuationStatus: "VALUED",
+        offsetStatus: "APPLIED",
+        offsetPaymentId: paymentId,
+        lines: { create: [{ itemId: returItemId, variantSku: "", qty: 1, reason: "UNSOLD" }] },
+      },
+    });
+    fieldReturnId = fieldReturn.id;
+
+    const offsetDetail = await getPayment(paymentId);
+    expect(offsetDetail).not.toBeNull();
+    expect(offsetDetail!.returOffsetFor).toEqual({ id: fieldReturnId, docNo: fieldReturn.docNo });
+
+    const cashPayment = await recordPayment({
+      storeId, paidAt: asOf, method: "CASH", recordedById: userId,
+      amount: 500, allocations: [{ receivableId: currentRec, amount: 500 }],
+    });
+    const cashDetail = await getPayment(cashPayment.paymentId);
+    expect(cashDetail).not.toBeNull();
+    expect(cashDetail!.returOffsetFor).toBeNull();
   });
 });

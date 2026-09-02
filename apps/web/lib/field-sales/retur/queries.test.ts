@@ -654,7 +654,7 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
   });
 });
 
-d("listFieldReturns — origin filter (test bed only)", () => {
+d("listFieldReturns — origin + credit filters (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
   let uomId = "";
   let itemId = "";
@@ -743,5 +743,27 @@ d("listFieldReturns — origin filter (test bed only)", () => {
     const { rows, total } = await listFieldReturns({ q: storeName, page: 1, perPage: 50 });
     expect(total).toBe(2);
     expect(rows.map((r) => r.id).sort()).toEqual([adminReturnId, fieldReturnId].sort());
+  });
+
+  it(`filters creditFilter: "AVAILABLE" on all three offsettability conditions, not offsetStatus alone`, async () => {
+    /*
+     * Both rows carry the schema default offsetStatus AVAILABLE and both are APPROVED — they
+     * differ ONLY in valuationStatus. A predicate reading offsetStatus alone (or omitting the
+     * valuationStatus leg) would return both, which is exactly the regression this guards.
+     */
+    await prisma.fieldReturn.update({
+      where: { id: adminReturnId },
+      data: { status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE", totalValue: 500 },
+    });
+    await prisma.fieldReturn.update({
+      where: { id: fieldReturnId },
+      data: { status: "APPROVED", valuationStatus: "PENDING", offsetStatus: "AVAILABLE", totalValue: null },
+    });
+
+    const { rows, total } = await listFieldReturns({ q: storeName, creditFilter: "AVAILABLE", page: 1, perPage: 50 });
+    expect(total).toBe(1);
+    expect(rows.map((r) => r.id)).toEqual([adminReturnId]);
+    expect(rows[0].offsetStatus).toBe("AVAILABLE");
+    expect(rows[0].valuationStatus).toBe("VALUED");
   });
 });

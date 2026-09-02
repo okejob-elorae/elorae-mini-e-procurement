@@ -6,7 +6,7 @@ import { PaymentError } from "./errors";
 export type RecordPaymentInput = {
   storeId: string;
   paidAt: Date;
-  method: "CASH" | "TRANSFER";
+  method: "CASH" | "TRANSFER" | "RETUR_OFFSET";
   amount: number;
   recordedById: string;
   allocations: Array<{ receivableId: string; amount: number }>;

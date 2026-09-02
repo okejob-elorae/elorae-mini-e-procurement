@@ -23,6 +23,18 @@ const EPSILON = 1e-6;
  * happens only in `verifyCollection`, after an admin confirms it.
  */
 export async function submitCollection(input: SubmitCollectionInput): Promise<{ submissionId: string }> {
+  /*
+   * `SubmitCollectionInput.method` is typed "CASH" | "TRANSFER", but a `"use server"` action is
+   * an independently callable endpoint reachable by a raw request that never went through
+   * TypeScript at all — and CollectionSubmission.method now legally accepts RETUR_OFFSET at the
+   * database level (PaymentMethod was widened for the payment side of this feature). A collector
+   * must never be able to submit a claim for a settlement instrument only an admin's offset
+   * writer may use. Cast to `unknown` first so this genuinely runs at runtime rather than being a
+   * type-level comparison TypeScript would otherwise flag as impossible.
+   */
+  const method: unknown = input.method;
+  if (method !== "CASH" && method !== "TRANSFER") throw new CollectionError("INVALID_METHOD");
+
   const amount = roundCents(input.amount);
   if (!(amount > 0)) throw new CollectionError("INVALID_AMOUNT");
 

@@ -3,9 +3,17 @@ import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finan
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
-/** CASH lands in the cash account, TRANSFER in the bank account. There is no third method yet. */
-function debitRole(method: "CASH" | "TRANSFER"): "CASH" | "BANK" {
-  return method === "CASH" ? "CASH" : "BANK";
+/**
+ * CASH lands in the cash account, TRANSFER in the bank account, RETUR_OFFSET reverses the
+ * revenue leg it never really collected — the store settled with goods, not money, so the
+ * "receipt" here is a revenue counter-entry (DR SALES_REVENUE / CR AR), the same shape a
+ * marketplace sales-return revenue leg already posts. Both callers below route through this
+ * one function, so the void reversal is correct for free.
+ */
+function debitRole(method: "CASH" | "TRANSFER" | "RETUR_OFFSET"): "CASH" | "BANK" | "SALES_REVENUE" {
+  if (method === "CASH") return "CASH";
+  if (method === "TRANSFER") return "BANK";
+  return "SALES_REVENUE";
 }
 
 export async function postPaymentReceiptJournal(

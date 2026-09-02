@@ -7,7 +7,12 @@ export type PaymentErrorCode =
   | "NOT_FOUND"
   | "ALREADY_SETTLED"
   | "DUPLICATE_ALLOCATION"
-  | "MISSING_REASON";
+  | "MISSING_REASON"
+  | "RETURN_NOT_APPROVED"
+  | "NOT_VALUED"
+  | "ALREADY_APPLIED"
+  | "INSUFFICIENT_OUTSTANDING"
+  | "PAYMENT_VOIDED";
 
 export class PaymentError extends Error {
   code: PaymentErrorCode;

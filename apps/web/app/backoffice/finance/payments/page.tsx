@@ -20,7 +20,7 @@ type PageProps = {
   }>;
 };
 
-const METHOD_VALUES = ["CASH", "TRANSFER"] as const;
+const METHOD_VALUES = ["CASH", "TRANSFER", "RETUR_OFFSET"] as const;
 const STATUS_VALUES = ["POSTED", "VOIDED"] as const;
 
 function parseMethod(raw: string | undefined): (typeof METHOD_VALUES)[number] | undefined {

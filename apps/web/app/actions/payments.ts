@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { voidPayment } from "@/lib/finance/ar/void-writer";
+import { applyReturnOffset } from "@/lib/finance/ar/retur-offset-writer";
 import { PaymentError, type PaymentErrorCode } from "@/lib/finance/ar/errors";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postPaymentReceiptJournal, postPaymentVoidJournal } from "@/lib/finance/ar/payment-journal";
@@ -24,6 +25,11 @@ export type PaymentActionReason =
   | "DUPLICATE_ALLOCATION"
   | "NOT_RETRYABLE"
   | "STILL_PENDING"
+  | "RETURN_NOT_APPROVED"
+  | "NOT_VALUED"
+  | "ALREADY_APPLIED"
+  | "INSUFFICIENT_OUTSTANDING"
+  | "PAYMENT_VOIDED"
   | "ERROR";
 
 export type PaymentActionResult =
@@ -87,6 +93,11 @@ const ERROR_CODE_MAP: Record<PaymentErrorCode, PaymentActionReason> = {
   ALREADY_SETTLED: "ALREADY_SETTLED",
   DUPLICATE_ALLOCATION: "DUPLICATE_ALLOCATION",
   MISSING_REASON: "INVALID_REQUEST",
+  RETURN_NOT_APPROVED: "RETURN_NOT_APPROVED",
+  NOT_VALUED: "NOT_VALUED",
+  ALREADY_APPLIED: "ALREADY_APPLIED",
+  INSUFFICIENT_OUTSTANDING: "INSUFFICIENT_OUTSTANDING",
+  PAYMENT_VOIDED: "PAYMENT_VOIDED",
 };
 
 /**
@@ -287,4 +298,41 @@ export async function postPaymentVoidJournalAction(paymentId: string): Promise<P
   revalidatePath("/backoffice/finance/piutang");
   revalidatePath("/backoffice/finance/payments");
   return { ok: true, paymentId };
+}
+
+/**
+ * Settles a store's receivable(s) using an approved retur's frozen value instead of cash. A
+ * SEPARATE action from `recordPaymentAction`, deliberately — that action's own input guard stays
+ * narrowed to "CASH" | "TRANSFER" on purpose, so RETUR_OFFSET is never reachable through the cash
+ * payment sheet's own endpoint.
+ */
+export async function applyReturnOffsetAction(input: {
+  returnId: string;
+  allocations: Array<{ receivableId: string; amount: number }>;
+}): Promise<PaymentActionResult & { alreadyApplied?: boolean }> {
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+
+    if (typeof input.returnId !== "string" || input.returnId === "") return { ok: false, reason: "INVALID_REQUEST" };
+    if (!Array.isArray(input.allocations) || !input.allocations.every(isValidAllocation)) {
+      return { ok: false, reason: "INVALID_REQUEST" };
+    }
+
+    const result = await applyReturnOffset({
+      returnId: input.returnId,
+      allocations: input.allocations,
+      appliedById: g.userId,
+    });
+
+    await postArJournalSafely("ar_payment", result.paymentId, () => postPaymentReceiptJournal(result.paymentId, g.userId));
+
+    revalidatePath("/backoffice/finance/piutang");
+    revalidatePath("/backoffice/finance/payments");
+    revalidatePath("/backoffice/field-returns");
+    revalidatePath(`/backoffice/field-returns/${input.returnId}`);
+    return { ok: true, paymentId: result.paymentId, alreadyApplied: result.alreadyApplied ?? false };
+  } catch (e) {
+    return toResult(e);
+  }
 }

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Loader2, Wallet } from "lucide-react";
 import { roundCents } from "@elorae/db/pricing";
 import { recordPaymentAction } from "@/app/actions/payments";
+import type { AllocationCandidate } from "@/lib/finance/ar/queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -28,13 +29,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-export type AllocationCandidate = {
-  id: string;
-  docNo: string;
-  dueDate: Date;
-  outstandingAmount: number;
-};
 
 type Props = {
   open: boolean;

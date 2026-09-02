@@ -30,7 +30,7 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import type { listPayments } from "@/lib/finance/ar/queries";
 
 type PaymentRow = Awaited<ReturnType<typeof listPayments>>["rows"][number];
-type PaymentMethodValue = "CASH" | "TRANSFER";
+type PaymentMethodValue = "CASH" | "TRANSFER" | "RETUR_OFFSET";
 type MethodFilter = PaymentMethodValue | "ALL";
 type PaymentStatusValue = "POSTED" | "VOIDED";
 type StatusFilter = PaymentStatusValue | "ALL";
@@ -63,6 +63,12 @@ function formatRupiah(value: number): string {
     currency: "IDR",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function methodLabelKey(method: string): "methodCash" | "methodTransfer" | "methodReturOffset" {
+  if (method === "CASH") return "methodCash";
+  if (method === "TRANSFER") return "methodTransfer";
+  return "methodReturOffset";
 }
 
 export function PaymentsPageClient(props: Props) {
@@ -139,6 +145,7 @@ export function PaymentsPageClient(props: Props) {
                 <SelectItem value="ALL">{t("allMethods")}</SelectItem>
                 <SelectItem value="CASH">{t("methodCash")}</SelectItem>
                 <SelectItem value="TRANSFER">{t("methodTransfer")}</SelectItem>
+                <SelectItem value="RETUR_OFFSET">{t("methodReturOffset")}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={props.status} onValueChange={(v) => pushParams({ status: v === "ALL" ? undefined : v })}>
@@ -215,7 +222,7 @@ export function PaymentsPageClient(props: Props) {
                               <TableCell className="whitespace-nowrap font-mono text-xs">{row.docNo}</TableCell>
                               <TableCell className="max-w-[180px] truncate font-medium">{row.storeName}</TableCell>
                               <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(row.paidAt)}</TableCell>
-                              <TableCell>{t(row.method === "CASH" ? "methodCash" : "methodTransfer")}</TableCell>
+                              <TableCell>{t(methodLabelKey(row.method))}</TableCell>
                               <TableCell className="text-right whitespace-nowrap tabular-nums font-medium">
                                 {formatRupiah(row.amount)}
                               </TableCell>
