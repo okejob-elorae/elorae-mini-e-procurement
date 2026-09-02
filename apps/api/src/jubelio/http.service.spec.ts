@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { JubelioHttpService } from "./http.service";
 import { JubelioConfig } from "./jubelio.config";
@@ -28,9 +29,15 @@ describe("JubelioHttpService call-log redaction", () => {
   let http: JubelioHttpService;
   let apiLog: { record: jest.Mock };
   let fetchMock: jest.SpyInstance;
+  let errorLog: jest.SpyInstance;
 
   function recorded() {
     return apiLog.record.mock.calls[0][0];
+  }
+
+  /* Everything the service emitted through the Nest logger, joined. */
+  function logged() {
+    return errorLog.mock.calls.map((c) => String(c[0])).join("\n");
   }
 
   beforeEach(async () => {
@@ -45,10 +52,12 @@ describe("JubelioHttpService call-log redaction", () => {
     }).compile();
     http = mod.get(JubelioHttpService);
     fetchMock = jest.spyOn(global, "fetch");
+    errorLog = jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     fetchMock.mockRestore();
+    errorLog.mockRestore();
   });
 
   it("logs the raw response body by default, which is what makes debugging possible", async () => {
@@ -76,7 +85,7 @@ describe("JubelioHttpService call-log redaction", () => {
     expect(body).toMatch(/redacted/i);
   });
 
-  it("withholds the body on the error path too", async () => {
+  it("withholds the body from the call log on the error path too", async () => {
     fetchMock.mockResolvedValue(jsonResponse(PII_BODY, 500));
 
     await expect(http.get("/locations/", { redactResponseBody: true })).rejects.toThrow();
@@ -84,6 +93,32 @@ describe("JubelioHttpService call-log redaction", () => {
     const body = recorded().responseBody as string;
     expect(body).not.toContain("kutabumi.warehouse@example.com");
     expect(body).toMatch(/redacted/i);
+  });
+
+  /**
+   * There are TWO sinks, not one. The failure path also writes the body straight
+   * to the Nest logger, which on prod is the container's stdout — redacting only
+   * the JubelioApiCall row leaves the address, phone and email in the logs, which
+   * is exactly what the first version of this did.
+   */
+  it("withholds the body from the Nest error log, not just the call log", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(PII_BODY, 500));
+
+    await expect(http.get("/locations/", { redactResponseBody: true })).rejects.toThrow();
+
+    const out = logged();
+    expect(out).toContain("/locations/");
+    expect(out).not.toContain("kutabumi.warehouse@example.com");
+    expect(out).not.toContain("215442490");
+    expect(out).not.toContain("Jl. Raya Kutabumi");
+  });
+
+  it("still logs the raw body on failure when not redacting, for debugging", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ statusCode: 500, code: "23503" }, 500));
+
+    await expect(http.get("/wms/sales/picklists/")).rejects.toThrow();
+
+    expect(logged()).toContain("23503");
   });
 
   it("still records the path, status and latency when redacting", async () => {

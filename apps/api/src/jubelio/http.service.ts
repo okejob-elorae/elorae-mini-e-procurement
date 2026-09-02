@@ -12,12 +12,12 @@ export type JubelioRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
   query?: Record<string, string | number | boolean | undefined>;
   /**
-   * Keep this call's response body OUT of `JubelioApiCall`. Every call otherwise
-   * persists its raw body verbatim for debugging, which is the right default —
-   * but some Jubelio endpoints return contact details (a location's street
-   * address, phone, email and warehouse PIC email) that we have no business
-   * retaining, and a caller shaping them out of ITS OWN return value does not
-   * stop the logger, which records the raw body before any mapping runs.
+   * Keep this call's response body out of BOTH sinks — the `JubelioApiCall` row
+   * and the Nest error log. Every call otherwise records its raw body verbatim
+   * for debugging, which is the right default, but some Jubelio endpoints return
+   * contact details (a location's street address, phone, email and warehouse PIC
+   * email) that we have no business retaining. A caller shaping them out of ITS
+   * OWN return value stops neither sink: both run before any caller mapping.
    */
   redactResponseBody?: boolean;
 };
@@ -81,15 +81,16 @@ export class JubelioHttpService {
       const responseBody = err instanceof JubelioError
         ? (typeof err.cause === "string" ? err.cause : JSON.stringify(err.cause))
         : undefined;
+      const loggableBody = this.logBody(init, responseBody);
       this.apiLog.record({
         method, path, body: bodyStr, statusCode,
         latencyMs: Date.now() - start, ok: false, rateLimited, errorMessage: message,
         requestBody: bodyStr,
-        responseBody: this.logBody(init, responseBody),
+        responseBody: loggableBody,
       });
       if (err instanceof JubelioError) {
         this.logger.error(
-          `Jubelio ${method} ${path} ${err.status}\n  REQ: ${bodyStr ?? "<no body>"}\n  RES: ${responseBody ?? "<no body>"}`,
+          `Jubelio ${method} ${path} ${err.status}\n  REQ: ${bodyStr ?? "<no body>"}\n  RES: ${loggableBody ?? "<no body>"}`,
         );
       }
       throw err;
