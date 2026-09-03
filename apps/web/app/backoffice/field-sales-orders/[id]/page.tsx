@@ -34,6 +34,10 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     session.user.permissions ?? [],
     PERMISSIONS.FIELD_SALES_ORDERS_DELIVER,
   );
+  const canShipShipment = hasPermission(
+    session.user.permissions ?? [],
+    PERMISSIONS.DELIVERIES_SHIP,
+  );
 
   /* Never-sent suggestions are konsi-only and only useful while the transfer is still decidable. */
   const wantsKonsiSuggestions =
@@ -94,6 +98,7 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
       order={order}
       canApprove={canApprove}
       canDeliver={canDeliver}
+      canShipShipment={canShipShipment}
       konsiSuggestions={konsiSuggestions}
       konsiAssortmentGaps={konsiAssortmentGaps}
       creditCheck={creditCheck}

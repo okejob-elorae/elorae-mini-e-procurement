@@ -81,6 +81,7 @@ type Props = {
   lines: DeliverableLine[];
   paymentTempo: number;
   canDeliver: boolean;
+  canShipShipment: boolean;
 };
 
 const DELIVERY_BADGE_VARIANT: Record<FieldSalesDeliveryStatus, "secondary" | "default" | "outline"> = {
@@ -152,6 +153,7 @@ export function DeliveriesCard({
   lines,
   paymentTempo,
   canDeliver,
+  canShipShipment,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
@@ -375,15 +377,17 @@ export function DeliveriesCard({
               <Truck className="h-4 w-4" />
               {t("delivery.create")}
             </Button>
-            <Button
-              variant="outline"
-              className="h-10"
-              disabled={isPending || !hasOutstanding}
-              onClick={() => setCreateShipmentOpen(true)}
-            >
-              <Truck className="h-4 w-4" />
-              {tShipments("createShipment")}
-            </Button>
+            {canShipShipment && (
+              <Button
+                variant="outline"
+                className="h-10"
+                disabled={isPending || !hasOutstanding}
+                onClick={() => setCreateShipmentOpen(true)}
+              >
+                <Truck className="h-4 w-4" />
+                {tShipments("createShipment")}
+              </Button>
+            )}
             <Button
               variant="outline"
               className="h-10"
