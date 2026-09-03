@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
 import { DeliveryShipmentError } from "./errors";
 
 export async function createDeliveryShipment(input: {
@@ -104,4 +105,85 @@ export async function shipDeliveryShipment(input: {
   });
   if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
   return { ok: true };
+}
+
+export async function completeDeliveryShipment(input: {
+  shipmentId: string;
+  deliveredById: string;
+  proofPhotoUrl: string;
+  proofPhotoR2Key: string;
+  invoiceDate: Date;
+  dueDate: Date;
+  lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
+}): Promise<{ ok: true; deliveryId: string }> {
+  if (!input.proofPhotoUrl) throw new DeliveryShipmentError("MISSING_PROOF");
+  for (const line of input.lines) {
+    if (!Number.isInteger(line.deliveredQty) || line.deliveredQty < 0) {
+      throw new DeliveryShipmentError("INVALID_QTY");
+    }
+  }
+
+  const shipment = await prisma.deliveryShipment.findUnique({
+    where: { id: input.shipmentId },
+    include: { lines: true, order: { select: { orderType: true } } },
+  });
+  if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
+  if (shipment.status !== "IN_TRANSIT") throw new DeliveryShipmentError("INVALID_STATE");
+
+  const lineById = new Map(shipment.lines.map((l) => [l.id, l]));
+  for (const line of input.lines) {
+    const shipmentLine = lineById.get(line.shipmentLineId);
+    if (!shipmentLine) throw new DeliveryShipmentError("NOT_FOUND");
+    if (line.deliveredQty > shipmentLine.plannedQty) throw new DeliveryShipmentError("OVER_PLANNED");
+  }
+
+  const anyShort = input.lines.some((line) => {
+    const shipmentLine = lineById.get(line.shipmentLineId)!;
+    return line.deliveredQty < shipmentLine.plannedQty;
+  });
+  const nextStatus = anyShort ? "PARTIALLY_DELIVERED" : "DELIVERED";
+
+  const isKonsi = shipment.order.orderType === "KONSI";
+  let deliveryId = "";
+
+  if (!isKonsi) {
+    const deliveredLines = input.lines
+      .filter((line) => line.deliveredQty > 0)
+      .map((line) => {
+        const shipmentLine = lineById.get(line.shipmentLineId)!;
+        return { orderLineId: shipmentLine.orderLineId, qty: line.deliveredQty };
+      });
+    if (deliveredLines.length > 0) {
+      const delivery = await recordFieldSalesDelivery({
+        orderId: shipment.orderId,
+        deliveredById: input.deliveredById,
+        lines: deliveredLines,
+        invoiceDate: input.invoiceDate,
+        dueDate: input.dueDate,
+      });
+      deliveryId = delivery.deliveryId;
+    }
+  }
+
+  await runSerializable(async (tx) => {
+    for (const line of input.lines) {
+      await tx.deliveryShipmentLine.update({
+        where: { id: line.shipmentLineId },
+        data: { deliveredQty: line.deliveredQty },
+      });
+    }
+    await tx.deliveryShipment.update({
+      where: { id: input.shipmentId },
+      data: {
+        status: nextStatus,
+        deliveredAt: new Date(),
+        deliveredById: input.deliveredById,
+        proofPhotoUrl: input.proofPhotoUrl,
+        proofPhotoR2Key: input.proofPhotoR2Key,
+        ...(deliveryId ? { deliveryId } : {}),
+      },
+    });
+  });
+
+  return { ok: true, deliveryId };
 }

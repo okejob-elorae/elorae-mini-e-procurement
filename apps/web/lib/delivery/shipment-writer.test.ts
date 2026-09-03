@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { createDeliveryShipment, updateShipmentTracking, shipDeliveryShipment } from "./shipment-writer";
+import {
+  createDeliveryShipment,
+  updateShipmentTracking,
+  shipDeliveryShipment,
+  completeDeliveryShipment,
+} from "./shipment-writer";
 import { DeliveryShipmentError } from "./errors";
 
 describe("createDeliveryShipment", () => {
@@ -187,5 +192,243 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
     await expect(
       shipDeliveryShipment({ shipmentId, shippedById: userId }),
     ).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
+});
+
+describe("completeDeliveryShipment", () => {
+  let storeId = "";
+  let userId = "";
+  let orderId = "";
+  let lineId = "";
+  let itemId = "";
+  let shipmentId = "";
+  let shipmentLineId = "";
+  let deliveryId = "";
+
+  async function seedInTransitShipment(qty: number) {
+    const store = await prisma.store.create({
+      data: { code: `ST-${Date.now()}`, name: "Test Store 3", address: "x", termsType: "PUTUS" },
+    });
+    storeId = store.id;
+    const salesman = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    userId = salesman!.id;
+    const uom = await prisma.uOM.findFirst({ where: { code: "PCS" } });
+    const item = await prisma.item.create({
+      data: { sku: `SKU3-${Date.now()}`, nameId: "Test Item 3", nameEn: "Test Item 3", type: "FINISHED_GOOD", uomId: uom!.id, sellingPrice: 10000 },
+    });
+    itemId = item.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `FSO3-${Date.now()}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: 100000,
+        total: 100000,
+        lines: { create: [{ itemId, productName: "Test Item 3", qty, unitPrice: 10000, lineTotal: qty * 10000 }] },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    lineId = order.lines[0].id;
+    /**
+     * recordFieldSalesDelivery (called by completeDeliveryShipment for PUTUS orders) consumes
+     * against a pre-existing StockReservation row keyed on fieldSalesLineId, and against an
+     * InventoryValue row keyed on (itemId, variantSku) — neither is created by inserting the
+     * order directly, only by the real approve-time reservation flow this test bypasses. Without
+     * these, consumeFieldSalesOrderPartial throws OVER_CONSUME / InventoryValueMissingError.
+     */
+    await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: qty, reservedQty: qty, avgCost: 500, totalValue: qty * 500 },
+    });
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: lineId, itemId, variantSku: "", qty, state: "RESERVED" },
+    });
+    const created = await createDeliveryShipment({
+      orderId,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: lineId, qty }],
+      packedById: userId,
+    });
+    shipmentId = created.shipmentId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId }, include: { lines: true } });
+    shipmentLineId = shipment!.lines[0].id;
+    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: "RESI-X" });
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+  }
+
+  afterEach(async () => {
+    if (deliveryId) {
+      await prisma.receivable.deleteMany({ where: { deliveryId: seededId(deliveryId) } });
+      await prisma.taxInvoice.deleteMany({ where: { deliveryId: seededId(deliveryId) } });
+      await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: seededId(deliveryId) } });
+      await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
+    }
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: seededId(shipmentId) } });
+    await prisma.deliveryShipment.deleteMany({ where: { id: seededId(shipmentId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    storeId = userId = orderId = lineId = itemId = shipmentId = shipmentLineId = deliveryId = "";
+  });
+
+  it("refuses completion without a proof photo url", async () => {
+    await seedInTransitShipment(4);
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "",
+        proofPhotoR2Key: "",
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_PROOF" });
+  });
+
+  it("completes fully delivered lines as DELIVERED and calls recordFieldSalesDelivery", async () => {
+    await seedInTransitShipment(4);
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: "delivery-proofs/x.jpg",
+      invoiceDate: new Date(),
+      dueDate: new Date(Date.now() + 7 * 86400000),
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = result.deliveryId;
+
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("DELIVERED");
+    expect(shipment?.deliveryId).toBe(result.deliveryId);
+
+    const delivery = await prisma.fieldSalesDelivery.findUnique({ where: { id: result.deliveryId } });
+    expect(delivery).not.toBeNull();
+  });
+
+  it("marks PARTIALLY_DELIVERED when a line under-delivers, and only consumes the delivered qty", async () => {
+    await seedInTransitShipment(4);
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: "delivery-proofs/x.jpg",
+      invoiceDate: new Date(),
+      dueDate: new Date(Date.now() + 7 * 86400000),
+      lines: [{ shipmentLineId, deliveredQty: 3 }],
+    });
+    deliveryId = result.deliveryId;
+
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId }, include: { lines: true } });
+    expect(shipment?.status).toBe("PARTIALLY_DELIVERED");
+    expect(shipment?.lines[0].deliveredQty).toBe(3);
+
+    const orderLine = await prisma.fieldSalesOrderLine.findUnique({ where: { id: lineId } });
+    expect(orderLine?.deliveredQty).toBe(3);
+  });
+
+  it("refuses a deliveredQty above plannedQty", async () => {
+    await seedInTransitShipment(4);
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-proofs/x.jpg",
+        invoiceDate: new Date(),
+        dueDate: new Date(Date.now() + 7 * 86400000),
+        lines: [{ shipmentLineId, deliveredQty: 999 }],
+      }),
+    ).rejects.toMatchObject({ code: "OVER_PLANNED" });
+  });
+
+  it("refuses completion from a non-IN_TRANSIT status", async () => {
+    await seedInTransitShipment(4);
+    await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: "delivery-proofs/x.jpg",
+      invoiceDate: new Date(),
+      dueDate: new Date(Date.now() + 7 * 86400000),
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    }).then((r) => { deliveryId = r.deliveryId; });
+
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-proofs/x.jpg",
+        invoiceDate: new Date(),
+        dueDate: new Date(Date.now() + 7 * 86400000),
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
+
+  it("does not call the stock-consuming delivery path for a KONSI order", async () => {
+    const store = await prisma.store.create({
+      data: { code: `ST-${Date.now()}`, name: "Konsi Store", address: "x", termsType: "KONSI" },
+    });
+    storeId = store.id;
+    const salesman = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    userId = salesman!.id;
+    const uom = await prisma.uOM.findFirst({ where: { code: "PCS" } });
+    const item = await prisma.item.create({
+      data: { sku: `SKUK-${Date.now()}`, nameId: "Konsi Item", nameEn: "Konsi Item", type: "FINISHED_GOOD", uomId: uom!.id, sellingPrice: 10000 },
+    });
+    itemId = item.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `FSOK-${Date.now()}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        orderType: "KONSI",
+        subtotal: 40000,
+        total: 40000,
+        lines: { create: [{ itemId, productName: "Konsi Item", qty: 4, unitPrice: 10000, lineTotal: 40000 }] },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    lineId = order.lines[0].id;
+    const created = await createDeliveryShipment({
+      orderId,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: lineId, qty: 4 }],
+      packedById: userId,
+    });
+    shipmentId = created.shipmentId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId }, include: { lines: true } });
+    shipmentLineId = shipment!.lines[0].id;
+    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: "RESI-K" });
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: "delivery-proofs/k.jpg",
+      invoiceDate: new Date(),
+      dueDate: new Date(Date.now() + 7 * 86400000),
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+
+    const finalShipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(finalShipment?.status).toBe("DELIVERED");
+    expect(finalShipment?.deliveryId).toBeNull();
+    expect(result.deliveryId).toBe("");
+
+    const orderLine = await prisma.fieldSalesOrderLine.findUnique({ where: { id: lineId } });
+    expect(orderLine?.deliveredQty).toBe(0);
   });
 });
