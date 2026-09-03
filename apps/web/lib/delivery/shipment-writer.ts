@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
+import { evaluateCheckinRadius, resolveEffectiveRadius, parseRadiusSetting } from "@/lib/pwa/checkin-radius";
 import { DeliveryShipmentError } from "./errors";
 
 export async function createDeliveryShipment(input: {
@@ -147,8 +148,17 @@ export async function completeDeliveryShipment(input: {
   deliveredById: string;
   proofPhotoUrl: string;
   proofPhotoR2Key: string;
-  invoiceDate: Date;
-  dueDate: Date;
+  /**
+   * EXPEDITION only. A SALESMAN_CARRY completion IGNORES these and reads the dates the admin
+   * committed to the shipment row at pack/ship time instead — the salesman in the field carries a
+   * printed nota bearing those dates, so the accounting record must match the paper, not whatever
+   * the phone happens to send at completion time. Optional in the type, still mandatory at
+   * runtime for EXPEDITION (MISSING_DATES).
+   */
+  invoiceDate?: Date;
+  dueDate?: Date;
+  /** SALESMAN_CARRY only, and mandatory there — the delivery's proof-of-location. */
+  gps?: { lat: number; lng: number };
   lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
 }): Promise<{ ok: true; deliveryId: string }> {
   if (input.lines.length === 0) throw new DeliveryShipmentError("NO_LINES");
@@ -161,10 +171,82 @@ export async function completeDeliveryShipment(input: {
 
   const shipment = await prisma.deliveryShipment.findUnique({
     where: { id: input.shipmentId },
-    include: { lines: true, order: { select: { orderType: true } } },
+    include: { lines: true, order: { select: { orderType: true, storeId: true } } },
   });
   if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
   if (shipment.status !== "IN_TRANSIT") throw new DeliveryShipmentError("INVALID_STATE");
+
+  /**
+   * Date source and location gate, branched on `method` — a precondition about WHO is completing
+   * and WHERE, so it runs before any quantity validation: it is the cheaper check and failing fast
+   * on the actor/location keeps a refused completion from having reasoned about quantities at all.
+   *
+   * Note this keys on `shipment.method` (`DeliveryShipment.method`), NOT on
+   * `shipment.order.orderType` — two different fields on two different rows. A KONSI order shipped
+   * by EXPEDITION skips this whole block; a KONSI order carried by a salesman passes through it and
+   * then still skips the stock/accounting path below, the two being independent sections.
+   */
+  let effectiveInvoiceDate: Date;
+  let effectiveDueDate: Date;
+  let salesmanCarryGps: { lat: number; lng: number; distanceMeters: number } | undefined;
+
+  if (shipment.method === "SALESMAN_CARRY") {
+    /**
+     * Defense in depth: `shipDeliveryShipment` already refuses to move a SALESMAN_CARRY shipment
+     * to IN_TRANSIT without both dates, so this should be unreachable. It stays because every
+     * write path here is independently callable and the alternative to refusing is passing
+     * `undefined` into the accounting record.
+     */
+    if (!shipment.invoiceDate || !shipment.dueDate) {
+      throw new DeliveryShipmentError("MISSING_DATES");
+    }
+    effectiveInvoiceDate = shipment.invoiceDate;
+    effectiveDueDate = shipment.dueDate;
+
+    if (!input.gps) throw new DeliveryShipmentError("MISSING_GPS");
+
+    const store = await prisma.store.findUnique({
+      where: { id: shipment.order.storeId },
+      select: { lat: true, lng: true, checkinRadiusMeters: true },
+    });
+    if (!store || store.lat === null || store.lng === null) {
+      throw new DeliveryShipmentError("STORE_NOT_GEOCODED");
+    }
+
+    const globalRow = await prisma.systemSetting.findUnique({
+      where: { key: "checkin.radiusMeters" },
+    });
+    const effectiveRadius = resolveEffectiveRadius(
+      store.checkinRadiusMeters,
+      parseRadiusSetting(globalRow?.value),
+    );
+    const gpsResult = evaluateCheckinRadius({
+      checkin: input.gps,
+      store: { lat: store.lat.toNumber(), lng: store.lng.toNumber() },
+      effectiveRadiusMeters: effectiveRadius,
+    });
+    /**
+     * `distanceMeters: null` is `evaluateCheckinRadius`'s "the store has no coordinates" return,
+     * and it comes back paired with `outOfRadius: false`. The store check-in flow treats that as a
+     * PASS (it only ever warns); here it is a REFUSAL — a deliberate divergence in interpretation,
+     * not a bug, and the reason this gate must not be expressed as `if (outOfRadius)` alone. The
+     * store null-check above already covers the same case; keeping both means a future change to
+     * `evaluateCheckinRadius`'s null conditions cannot silently open the gate. Compare `=== null`
+     * rather than falsiness: a legitimate 0-metre distance is falsy.
+     */
+    if (gpsResult.distanceMeters === null) throw new DeliveryShipmentError("STORE_NOT_GEOCODED");
+    if (gpsResult.outOfRadius) throw new DeliveryShipmentError("GPS_OUT_OF_RADIUS");
+
+    salesmanCarryGps = {
+      lat: input.gps.lat,
+      lng: input.gps.lng,
+      distanceMeters: gpsResult.distanceMeters,
+    };
+  } else {
+    if (!input.invoiceDate || !input.dueDate) throw new DeliveryShipmentError("MISSING_DATES");
+    effectiveInvoiceDate = input.invoiceDate;
+    effectiveDueDate = input.dueDate;
+  }
 
   const lineById = new Map(shipment.lines.map((l) => [l.id, l]));
 
@@ -214,8 +296,8 @@ export async function completeDeliveryShipment(input: {
         orderId: shipment.orderId,
         deliveredById: input.deliveredById,
         lines: deliveredLines,
-        invoiceDate: input.invoiceDate,
-        dueDate: input.dueDate,
+        invoiceDate: effectiveInvoiceDate,
+        dueDate: effectiveDueDate,
         idempotencyKey: `shipment-${input.shipmentId}`,
       });
       deliveryId = delivery.deliveryId;
@@ -232,6 +314,15 @@ export async function completeDeliveryShipment(input: {
         proofPhotoUrl: input.proofPhotoUrl,
         proofPhotoR2Key: input.proofPhotoR2Key,
         ...(deliveryId ? { deliveryId } : {}),
+        /* Same CAS-guarded write that moves the status — the GPS audit trail and the status it
+         * justifies must land together or not at all, never as a second write. */
+        ...(salesmanCarryGps
+          ? {
+              gpsLat: salesmanCarryGps.lat,
+              gpsLng: salesmanCarryGps.lng,
+              gpsDistanceMeters: salesmanCarryGps.distanceMeters,
+            }
+          : {}),
       },
     });
     if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");

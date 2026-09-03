@@ -402,6 +402,75 @@ describe("completeDeliveryShipment", () => {
     await shipDeliveryShipment({ shipmentId, shippedById: userId });
   }
 
+  /**
+   * SALESMAN_CARRY twin of `seedInTransitShipment`: a fresh store/item/order per call (this
+   * describe has no `beforeEach`, so nothing is shared between tests), populating the SAME
+   * fixture variables the helper above does — which is what lets the single `afterEach` below
+   * clean up after either helper without a second parallel teardown block. The store carries
+   * lat/lng/checkinRadiusMeters because completion now gates on them.
+   */
+  async function seedSalesmanCarryShipment(qty: number, storeOverrides: {
+    lat?: number; lng?: number; checkinRadiusMeters?: number;
+  } = {}) {
+    const store = await prisma.store.create({
+      data: {
+        code: `ST-SC-${Date.now()}`,
+        name: "Salesman Carry Store",
+        address: "x",
+        termsType: "PUTUS",
+        lat: storeOverrides.lat,
+        lng: storeOverrides.lng,
+        checkinRadiusMeters: storeOverrides.checkinRadiusMeters ?? 100,
+      },
+    });
+    storeId = store.id;
+    const salesman = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    userId = salesman!.id;
+    const uom = await prisma.uOM.findFirst({ where: { code: "PCS" } });
+    const item = await prisma.item.create({
+      data: { sku: `SKU-SC-${Date.now()}`, nameId: "Carry Item", nameEn: "Carry Item", type: "FINISHED_GOOD", uomId: uom!.id, sellingPrice: 10000 },
+    });
+    itemId = item.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `FSO-SC-${Date.now()}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: qty * 10000,
+        total: qty * 10000,
+        lines: { create: [{ itemId, productName: "Carry Item", qty, unitPrice: 10000, lineTotal: qty * 10000 }] },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    lineId = order.lines[0].id;
+    /* Same reservation/inventory prerequisite `seedInTransitShipment` documents above. */
+    await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: qty, reservedQty: qty, avgCost: 500, totalValue: qty * 500 },
+    });
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: lineId, itemId, variantSku: "", qty, state: "RESERVED" },
+    });
+    const created = await createDeliveryShipment({
+      orderId,
+      method: "SALESMAN_CARRY",
+      lines: [{ orderLineId: lineId, qty }],
+      packedById: userId,
+    });
+    shipmentId = created.shipmentId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId }, include: { lines: true } });
+    shipmentLineId = shipment!.lines[0].id;
+    await updateShipmentTracking({
+      shipmentId,
+      carriedById: userId,
+      invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
+      dueDate: new Date("2026-09-20T00:00:00.000Z"),
+    });
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+  }
+
   afterEach(async () => {
     /**
      * FIRST, before the delivery chain below: `recordFieldSalesDelivery` writes a `SalesHistory`
@@ -581,6 +650,101 @@ describe("completeDeliveryShipment", () => {
 
     const orderLine = await prisma.fieldSalesOrderLine.findUnique({ where: { id: lineId } });
     expect(orderLine?.deliveredQty).toBe(0);
+  });
+
+  it("refuses SALESMAN_CARRY completion with no gps", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_GPS" });
+  });
+
+  it("refuses SALESMAN_CARRY completion when the store has no lat/lng", async () => {
+    await seedSalesmanCarryShipment(4);
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "STORE_NOT_GEOCODED" });
+  });
+
+  it("refuses SALESMAN_CARRY completion when the coordinates are out of radius", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.3, lng: 106.8 }, /* ~11km away, well outside a 100m radius */
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "GPS_OUT_OF_RADIUS" });
+  });
+
+  it("completes SALESMAN_CARRY within radius, stamping gps fields and reading dates from the shipment row", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+      gps: { lat: -6.2, lng: 106.8 }, /* exact match, 0m */
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = result.deliveryId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("DELIVERED");
+    expect(shipment?.gpsDistanceMeters).toBe(0);
+    expect(Number(shipment?.gpsLat)).toBeCloseTo(-6.2, 5);
+    /* The dates come off the SHIPMENT ROW (seeded at pack time), never off the call's input —
+     * this call passes neither, and the accounting record still carries the admin's figures. */
+    const delivery = await prisma.fieldSalesDelivery.findUnique({ where: { id: result.deliveryId } });
+    expect(delivery?.invoiceDate.toISOString()).toBe(new Date("2026-09-10T00:00:00.000Z").toISOString());
+  });
+
+  it("refuses SALESMAN_CARRY completion if dates are somehow still missing on the shipment row", async () => {
+    /* Defensive: shipDeliveryShipment already guards this at ship time, but
+       completeDeliveryShipment must not silently proceed if it's ever reachable another way. */
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8 });
+    await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { invoiceDate: null } });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_DATES" });
+  });
+
+  it("still requires invoiceDate/dueDate as input for EXPEDITION (regression)", async () => {
+    /* The dates became OPTIONAL in the type so SALESMAN_CARRY can omit them; EXPEDITION must
+       still refuse without them rather than reaching recordFieldSalesDelivery undefined. */
+    await seedInTransitShipment(4);
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-proofs/x.jpg",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+        /* invoiceDate/dueDate deliberately omitted */
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_DATES" });
   });
 });
 
