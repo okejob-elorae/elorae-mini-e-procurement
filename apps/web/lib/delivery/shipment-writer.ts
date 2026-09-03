@@ -204,12 +204,37 @@ export async function completeDeliveryShipment(input: {
     effectiveDueDate = shipment.dueDate;
 
     if (!input.gps) throw new DeliveryShipmentError("MISSING_GPS");
+    /**
+     * The declared `number` type is not a runtime guarantee — this is a `"use server"`-reachable
+     * writer, so the payload is network input. Unvalidated, `{ lat: null, lng: null }` OPENS the
+     * gate instead of failing it: `null - null` coerces to `0` inside `haversineMeters`, which
+     * returns a distance of 0, which then passes both `=== null` and `> radius` and completes the
+     * delivery with a fabricated "0 metres from the store" audit record. `NaN` and a missing field
+     * do the same, since `NaN === null` and `NaN > radius` are both false. Same stance the
+     * `deliveredQty` check above takes on its own declared type, and the same range the check-in
+     * action's zod schema enforces. `Number.isFinite`, NOT the global `isFinite`, which coerces
+     * its argument — `isFinite(null)` is `true` and would make this guard a no-op.
+     */
+    if (
+      !Number.isFinite(input.gps.lat) ||
+      !Number.isFinite(input.gps.lng) ||
+      Math.abs(input.gps.lat) > 90 ||
+      Math.abs(input.gps.lng) > 180
+    ) {
+      throw new DeliveryShipmentError("MISSING_GPS");
+    }
 
     const store = await prisma.store.findUnique({
       where: { id: shipment.order.storeId },
       select: { lat: true, lng: true, checkinRadiusMeters: true },
     });
-    if (!store || store.lat === null || store.lng === null) {
+    /**
+     * Two distinct failures, two distinct codes: under `relationMode = "prisma"` there is no real
+     * FK behind `FieldSalesOrder.storeId`, so a missing row is genuinely possible and is a
+     * NOT_FOUND, not a geocoding gap the ops team could fix by entering coordinates.
+     */
+    if (!store) throw new DeliveryShipmentError("NOT_FOUND");
+    if (store.lat === null || store.lng === null) {
       throw new DeliveryShipmentError("STORE_NOT_GEOCODED");
     }
 

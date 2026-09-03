@@ -665,6 +665,38 @@ describe("completeDeliveryShipment", () => {
     ).rejects.toMatchObject({ code: "MISSING_GPS" });
   });
 
+  it("refuses SALESMAN_CARRY completion with non-finite or out-of-range gps coordinates", async () => {
+    /**
+     * The declared `number` type is not a runtime guarantee. Without the finiteness/range guard
+     * `{ lat: null, lng: null }` OPENS the gate: `null - null` coerces to 0 inside
+     * `haversineMeters`, so the distance is 0, which passes both the `=== null` and the
+     * `> radius` checks and completes the delivery with a fabricated 0-metre audit record.
+     */
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8 });
+    for (const gps of [
+      { lat: null as unknown as number, lng: null as unknown as number },
+      { lat: Number.NaN, lng: Number.NaN },
+      { lat: -6.2, lng: Number.POSITIVE_INFINITY },
+      { lat: 91, lng: 106.8 },
+      { lat: -6.2, lng: -181 },
+    ]) {
+      await expect(
+        completeDeliveryShipment({
+          shipmentId,
+          deliveredById: userId,
+          proofPhotoUrl: "https://r2.example/proof.jpg",
+          proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+          gps,
+          lines: [{ shipmentLineId, deliveredQty: 4 }],
+        }),
+      ).rejects.toMatchObject({ code: "MISSING_GPS" });
+    }
+    /* Every rejection must have left the shipment completable — no partial write escaped. */
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+    expect(shipment?.gpsDistanceMeters).toBeNull();
+  });
+
   it("refuses SALESMAN_CARRY completion when the store has no lat/lng", async () => {
     await seedSalesmanCarryShipment(4);
     await expect(
