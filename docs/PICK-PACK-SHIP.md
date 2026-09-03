@@ -62,8 +62,10 @@ actions catch `InvalidFulfillmentTransition` and return `{ ok: false, reason }`.
 
 Actions are gated on the `sales_orders:fulfill` permission (`PERMISSIONS.SALES_ORDERS_FULFILL`),
 checked server-side in every action, plus client-side to hide the buttons. The two **print pages
-check only that a session exists** — they are read-only views, but note the asymmetry before
-assuming print is fulfil-gated.
+sit at `sales_orders:view`**, not `sales_orders:fulfill` — `proxy.ts` prefix-matches them under
+`/backoffice/sales-orders` in `ROUTE_PERMISSIONS`, so anyone who can open the order list can print
+its pick list. Their page components only re-check that a session exists; the proxy is what
+enforces the permission.
 
 Batch behaviour: `runBatch` loops the selected ids one at a time and counts an
 `InvalidFulfillmentTransition` as `skipped` rather than aborting the batch, so a mixed selection
@@ -98,7 +100,7 @@ BullMQ job; `OutboxRouter` dispatches by `entityType`; the processor marks the r
 
 | Step | `entityType` | Jubelio endpoint | Body shape |
 |---|---|---|---|
-| Pick | `salesorder_pick` | `POST /wms/sales/picklists/` | Create-and-autocomplete: `picklist_id: 0`, `picklist_no: "[auto]"`, `is_completed: true`, `picker_id`, `salesorderIds`, and a per-line `items[]` carrying `salesorder_detail_id`, `item_id`, `location_id`, `qty_ordered`/`qty_picked`. Cancelled lines are filtered out; zero pushable lines → `SKIPPED`. |
+| Pick | `salesorder_pick` | `POST /wms/sales/picklists/` | Create-and-autocomplete: `picklist_id: 0`, `picklist_no: "[auto]"`, `is_completed: true`, `picker_id`, `salesorderIds`, and a per-line `items[]` carrying `salesorder_detail_id`, `item_id`, `location_id`, `qty_ordered`/`qty_picked`. Cancelled lines are filtered out; zero pushable lines → `SKIPPED`. `picker_id` is `JUBELIO_PICKER_EMAIL` (falling back to the integration account), **not** the operator who clicked — Jubelio gets no per-user picker audit; `pickedById` is the only place that exists. |
 | Pack | `salesorder_pack` | `POST /wms/sales/packlist/mark-as-complete/` | `{ ids: [salesorderId] }` and nothing else — **no `location_id`**. |
 | Ship | `salesorder_ship` | `POST /wms/shipments/` | `courier_new_id`, `location_id`, `shipment_type: "2"`, `shipment_date`, `orders: [salesorderId]`. |
 
