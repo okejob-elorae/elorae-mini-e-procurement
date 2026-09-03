@@ -19,10 +19,12 @@ moves the stock ledger:
 - Cancelled after having been applied → `releaseOrder` reverses the reservation.
 - Jubelio already reports the order shipped (`reportsShipped`: `wms_status === "SHIPPED"`,
   `is_shipped`, `marked_as_complete`, or a `completed_date`) → reserve first if needed, then
-  `consumeOrder` immediately. See §5.
+  `consumeOrder` immediately — stock is off `qtyOnHand` before an operator ever sees the order,
+  and `fulfillmentStatus` is seeded or advanced to `SHIPPED` (§4 for the ledger writes, §6 for the
+  status sync).
 
-So an order enters the fulfillment queue with stock **reserved but still on hand**.
-Available-to-sell is `qtyOnHand − reservedQty`, derived at read time.
+Otherwise — the normal path — an order enters the fulfillment queue with stock **reserved but
+still on hand**. Available-to-sell is `qtyOnHand − reservedQty`, derived at read time.
 
 ## 2. The state machine
 
@@ -69,8 +71,9 @@ processes what it can and reports `{ processed, skipped }`.
 
 ## 4. Where stock actually moves
 
-Only at **Ship**. `markOrderShipped` calls `consumeOrder` (`packages/db/src/reservation-writer.ts`)
-inside its transaction, which per reservation line:
+Only when the order is **consumed**, which happens on exactly two paths: Elorae's Ship step
+(`markOrderShipped`) and the inbound already-shipped path in §1. Both call `consumeOrder`
+(`packages/db/src/reservation-writer.ts`) inside a transaction, which per reservation line:
 
 - CAS-flips the `StockReservation` from `RESERVED` to `CONSUMED` via `updateMany`; a zero-row
   result means another path already consumed it, and the line is skipped (race-safe).
@@ -78,9 +81,10 @@ inside its transaction, which per reservation line:
   `decrement` (never read-modify-write — the webhook worker is concurrent).
 - Writes a `StockAdjustment` audit row, source `FULFILLMENT_CONSUME`, idempotency key
   `salesorder-<id>-consume-line-<detailId>`.
-- Stamps `SalesOrderItem.cogs` at the average cost in force at that moment.
+- Stamps `SalesOrderItem.cogs` as `qty × avgCost` — a **line total**, not a unit cost — using the
+  average cost in force at that moment. Finance sums this column later, so read it as a total.
 
-Pick and Pack move no stock at all. They are workflow stamps plus a push.
+Pick and Pack never touch the ledger. They are workflow stamps plus a push.
 
 Downstream, the sales-journal sweep (`apps/web/lib/finance/sales/sweep.ts`) treats an order as
 journalable when `status IN ('SHIPPED','COMPLETED') OR fulfillmentStatus = 'SHIPPED'`.
