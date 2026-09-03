@@ -2174,6 +2174,14 @@
       "colDate": "Tanggal",
       "colTotal": "Total"
     },
+    "piutang": {
+      "cardTitle": "Piutang",
+      "empty": "Tidak ada piutang tertunggak",
+      "colDocNo": "No. Faktur",
+      "colDueDate": "Jatuh Tempo",
+      "colAmount": "Jumlah",
+      "viewAll": "Lihat semua"
+    },
     "sentItems": {
       "cardTitle": "Barang Terkirim",
       "empty": "Belum ada barang terkirim ke toko ini",

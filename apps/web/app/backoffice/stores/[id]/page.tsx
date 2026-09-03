@@ -10,6 +10,7 @@ import { listStoreStocktakes } from "@/lib/stores/stocktake/queries";
 import { getInTransitAdminReturnQty } from "@/lib/field-sales/retur/queries";
 import { listAssortmentGaps, listAssortmentLines } from "@/lib/stores/assortment/queries";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
+import { getStorePiutangSummary, type StorePiutangSummary } from "@/lib/finance/ar/queries";
 import { StoreDetailView } from "./StoreDetailView";
 
 const STOCKTAKE_HISTORY_PAGE_SIZE = 10;
@@ -27,6 +28,11 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
 
   const canEdit = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
   const canManageFieldReturns = hasPermission(perms, PERMISSIONS.FIELD_RETURNS_MANAGE);
+  const canViewReceivables = hasPermission(perms, PERMISSIONS.RECEIVABLES_VIEW);
+  const piutangAsOf = new Date();
+  const piutang: StorePiutangSummary | null = canViewReceivables
+    ? await getStorePiutangSummary(store.id, piutangAsOf)
+    : null;
   const creditExposure =
     store.creditLimit !== null
       ? await computeStoreCreditExposure(prisma, store.id).then((e) => ({ exposure: e.total, headroom: store.creditLimit! - e.total }))
@@ -69,6 +75,8 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
       canEdit={canEdit}
       canManageFieldReturns={canManageFieldReturns}
       creditExposure={creditExposure}
+      piutang={piutang}
+      piutangAsOfIso={piutangAsOf.toISOString()}
       pendingChange={pending ? { requestId: pending.id, requestedByLabel: pending.requestedByLabel, proposed: pending.proposed, old: pending.old } : null}
       orders={orders}
       sentItems={sentItems}
