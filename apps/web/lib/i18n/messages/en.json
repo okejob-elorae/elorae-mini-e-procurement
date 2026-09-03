@@ -2174,6 +2174,14 @@
       "colDate": "Date",
       "colTotal": "Total"
     },
+    "piutang": {
+      "cardTitle": "Receivables",
+      "empty": "No outstanding receivables",
+      "colDocNo": "Invoice No.",
+      "colDueDate": "Due Date",
+      "colAmount": "Amount",
+      "viewAll": "View all"
+    },
     "sentItems": {
       "cardTitle": "Items Sent",
       "empty": "No items have been sent to this store yet",
