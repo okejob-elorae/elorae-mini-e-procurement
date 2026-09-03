@@ -39,11 +39,34 @@ export async function createDeliveryShipment(input: {
       qtyByOrderLineId.set(line.orderLineId, current + line.qty);
     }
 
+    /**
+     * Quantity already claimed by OTHER still-open shipments on the same order line.
+     * `orderLine.deliveredQty` only moves at COMPLETION, so without this two shipments packed
+     * back to back against one line each see the full remaining figure and both pass — the second
+     * to complete then dies inside `recordFieldSalesDelivery` with OVER_DELIVER, after the goods
+     * have physically left. PACKED and IN_TRANSIT are exactly the statuses holding an unconsumed
+     * claim: DELIVERED/PARTIALLY_DELIVERED already moved `deliveredQty`, and CANCELLED holds
+     * nothing. Scoped by `orderId` rather than filtering on the line relation, which keeps this a
+     * plain query on one table under `relationMode = "prisma"`.
+     */
+    const openShipments = await tx.deliveryShipment.findMany({
+      where: { orderId: input.orderId, status: { in: ["PACKED", "IN_TRANSIT"] } },
+      select: { lines: { select: { orderLineId: true, plannedQty: true } } },
+    });
+    const inFlightByOrderLineId = new Map<string, number>();
+    for (const openShipment of openShipments) {
+      for (const openLine of openShipment.lines) {
+        const current = inFlightByOrderLineId.get(openLine.orderLineId) ?? 0;
+        inFlightByOrderLineId.set(openLine.orderLineId, current + openLine.plannedQty);
+      }
+    }
+
     /* Validate aggregate quantities against remaining */
     for (const [orderLineId, totalQty] of qtyByOrderLineId) {
       const orderLine = orderLineById.get(orderLineId);
       if (!orderLine) throw new DeliveryShipmentError("NOT_FOUND");
-      const remaining = orderLine.qty - orderLine.deliveredQty - orderLine.cancelledQty;
+      const inFlight = inFlightByOrderLineId.get(orderLineId) ?? 0;
+      const remaining = orderLine.qty - orderLine.deliveredQty - orderLine.cancelledQty - inFlight;
       if (totalQty > remaining) throw new DeliveryShipmentError("OVER_PLANNED");
     }
 
@@ -132,11 +155,31 @@ export async function completeDeliveryShipment(input: {
   if (shipment.status !== "IN_TRANSIT") throw new DeliveryShipmentError("INVALID_STATE");
 
   const lineById = new Map(shipment.lines.map((l) => [l.id, l]));
+
+  /**
+   * The payload must name EVERY line on the shipment EXACTLY once. Both halves are load-bearing
+   * and neither is enforced anywhere else, because this call is terminal — there is no state left
+   * to correct from afterwards:
+   *
+   * - a DUPLICATE `shipmentLineId` would pass the per-entry OVER_PLANNED check below twice while
+   *   `recordFieldSalesDelivery` aggregates by `orderLineId` internally and consumes/invoices the
+   *   SUM, permanently desyncing this shipment's own `deliveredQty` from the accounting record;
+   * - a MISSING entry would leave that line's `deliveredQty` null forever while `anyShort` — which
+   *   only sees `input.lines` — still reads "nothing short" and moves the shipment to DELIVERED, a
+   *   terminal status that can neither be completed nor cancelled again.
+   *
+   * Same aggregate-then-validate stance `createDeliveryShipment` takes on duplicate
+   * `orderLineId`s, made stricter here for the reason above.
+   */
+  const seenLineIds = new Set<string>();
   for (const line of input.lines) {
     const shipmentLine = lineById.get(line.shipmentLineId);
     if (!shipmentLine) throw new DeliveryShipmentError("NOT_FOUND");
+    if (seenLineIds.has(line.shipmentLineId)) throw new DeliveryShipmentError("LINE_MISMATCH");
+    seenLineIds.add(line.shipmentLineId);
     if (line.deliveredQty > shipmentLine.plannedQty) throw new DeliveryShipmentError("OVER_PLANNED");
   }
+  if (seenLineIds.size !== shipment.lines.length) throw new DeliveryShipmentError("LINE_MISMATCH");
 
   const anyShort = input.lines.some((line) => {
     const shipmentLine = lineById.get(line.shipmentLineId)!;
