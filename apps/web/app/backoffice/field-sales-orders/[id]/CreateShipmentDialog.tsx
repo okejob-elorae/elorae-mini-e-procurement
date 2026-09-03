@@ -48,14 +48,25 @@ export function CreateShipmentDialog({ orderId, lines, open, onOpenChange }: Pro
       .map((line) => ({ orderLineId: line.id, qty: Number(qtyInputs[line.id] ?? "0") }))
       .filter((line) => line.qty > 0);
     startTransition(async () => {
-      const result = await createShipmentAction({ orderId, method, lines: payloadLines });
-      if (!result.ok) {
-        toast.error(t(`err.${result.reason}` as any));
-        return;
+      /**
+       * `OVER_PLANNED` is genuinely reachable from here now that `createDeliveryShipment` also
+       * subtracts quantity already claimed by other open shipments on the same order line, while
+       * the prefill below still suggests the plain outstanding figure. That arrives as a mapped
+       * reason; the catch covers an unexpected rejection, which would otherwise be swallowed by
+       * the transition and leave the dialog dead.
+       */
+      try {
+        const result = await createShipmentAction({ orderId, method, lines: payloadLines });
+        if (!result.ok) {
+          toast.error(t(`err.${result.reason}` as any));
+          return;
+        }
+        toast.success(t("createShipment"));
+        onOpenChange(false);
+        router.refresh();
+      } catch {
+        toast.error(t("err.UNEXPECTED"));
       }
-      toast.success(t("createShipment"));
-      onOpenChange(false);
-      router.refresh();
     });
   }
 

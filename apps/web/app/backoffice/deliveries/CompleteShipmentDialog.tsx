@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { parseDateOnlyInput } from "@/app/backoffice/field-sales-orders/[id]/DeliveryFormDialog";
 import { getShipmentAction, completeShipmentAction } from "@/app/actions/delivery-shipments";
 
 type Props = {
@@ -40,7 +41,13 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
   useEffect(() => {
     if (!open) return;
     setInvoiceDate(formatDateOnlyJakarta(new Date()));
-    setDueDate(formatDateOnlyJakarta(new Date()));
+    /**
+     * Deliberately EMPTY, not today. Pre-filling the due date with the invoice date books every
+     * receivable due the day it is invoiced — a silent default that is wrong for every store on
+     * terms. `DeliveryFormDialog`, the precedent for this same pair of inputs, starts it empty and
+     * gates submit until a human puts a value there.
+     */
+    setDueDate("");
     setProofPhotoUrl("");
     setProofPhotoR2Key("");
     getShipmentAction(shipmentId).then((detail) => {
@@ -65,36 +72,60 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
       }
       setProofPhotoUrl(data.url);
       setProofPhotoR2Key(data.key);
+    } catch {
+      /* The caller is `void handleUpload(file)`, so an unhandled rejection here would be a dead
+       * file input with no explanation — the upload silently never happened. */
+      toast.error(t("err.UNEXPECTED"));
     } finally {
       setUploading(false);
     }
   }
 
+  /**
+   * Both dates must parse as a real `YYYY-MM-DD` calendar day and the due date must not precede
+   * the invoice date, mirroring `DeliveryFormDialog`'s `datesValid`. The server re-checks this
+   * independently — a `"use server"` export is a network endpoint — so this gate exists to stop
+   * the operator submitting, not to be the guarantee.
+   */
+  const parsedInvoice = parseDateOnlyInput(invoiceDate);
+  const parsedDue = parseDateOnlyInput(dueDate);
+  const datesValid =
+    parsedInvoice !== null && parsedDue !== null && parsedDue.getTime() >= parsedInvoice.getTime();
+  const canSubmit = !isPending && !uploading && !!proofPhotoUrl && lines.length > 0 && datesValid;
+
   function handleSubmit(): void {
-    if (!proofPhotoUrl) {
-      toast.error(t("proofPhotoRequired"));
-      return;
-    }
+    /* Submit is disabled until `canSubmit`; the hints beside each control say what is missing. */
+    if (!canSubmit) return;
     const payloadLines = lines.map((line) => ({
       shipmentLineId: line.id,
       deliveredQty: Number(qtyInputs[line.id] ?? "0"),
     }));
     startTransition(async () => {
-      const result = await completeShipmentAction({
-        shipmentId,
-        proofPhotoUrl,
-        proofPhotoR2Key,
-        invoiceDate,
-        dueDate,
-        lines: payloadLines,
-      });
-      if (!result.ok) {
-        toast.error(t(`err.${result.reason}` as any));
-        return;
+      /**
+       * try/catch, not a bare await: an unmapped rejection inside a transition is swallowed and
+       * the dialog just sits there with no feedback at all. `mapError` on the action side now
+       * returns a reason for everything it can name; this covers the rest (a dropped connection,
+       * a digest-masked crash).
+       */
+      try {
+        const result = await completeShipmentAction({
+          shipmentId,
+          proofPhotoUrl,
+          proofPhotoR2Key,
+          invoiceDate,
+          dueDate,
+          lines: payloadLines,
+        });
+        if (!result.ok) {
+          toast.error(t(`err.${result.reason}` as any));
+          return;
+        }
+        toast.success(t("complete"));
+        onOpenChange(false);
+        onDone();
+      } catch {
+        toast.error(t("err.UNEXPECTED"));
       }
-      toast.success(t("complete"));
-      onOpenChange(false);
-      onDone();
     });
   }
 
@@ -119,18 +150,43 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
               }}
             />
             {uploading && <p className="mt-1 text-xs text-muted-foreground">{t("uploading")}</p>}
+            {!proofPhotoUrl && !uploading && (
+              <p className="mt-1 text-xs text-muted-foreground">{t("proofPhotoRequired")}</p>
+            )}
             {proofPhotoUrl && !uploading && (
               <img src={proofPhotoUrl} alt="" className="mt-2 h-24 w-24 rounded object-cover" />
             )}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
               <Label htmlFor="invoiceDate">{t("invoiceDate")}</Label>
-              <Input id="invoiceDate" type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+              <Input
+                id="invoiceDate"
+                type="date"
+                className="h-10"
+                value={invoiceDate}
+                disabled={isPending}
+                onChange={(e) => setInvoiceDate(e.target.value)}
+              />
+              {parsedInvoice === null && (
+                <p className="text-xs text-muted-foreground">{t("invoiceDateRequired")}</p>
+              )}
             </div>
-            <div>
+            <div className="space-y-1">
               <Label htmlFor="dueDate">{t("dueDate")}</Label>
-              <Input id="dueDate" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <Input
+                id="dueDate"
+                type="date"
+                className="h-10"
+                value={dueDate}
+                min={invoiceDate || undefined}
+                disabled={isPending}
+                onChange={(e) => setDueDate(e.target.value)}
+              />
+              {parsedDue === null && <p className="text-xs text-muted-foreground">{t("dueDateRequired")}</p>}
+              {parsedDue !== null && parsedInvoice !== null && !datesValid && (
+                <p className="text-xs text-destructive">{t("dueDateBeforeInvoice")}</p>
+              )}
             </div>
           </div>
           <div className="space-y-2">
@@ -150,7 +206,7 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={handleSubmit} disabled={isPending || uploading}>
+          <Button className="h-10" onClick={handleSubmit} disabled={!canSubmit}>
             {t("submit")}
           </Button>
         </DialogFooter>

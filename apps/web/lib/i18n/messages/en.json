@@ -98,7 +98,8 @@
     "masterData": "Master Data",
     "collapseSidebar": "Collapse sidebar",
     "expandSidebar": "Expand sidebar",
-    "profileAccounts": "Profile Accounts"
+    "profileAccounts": "Profile Accounts",
+    "navDeliveries": "Deliveries"
   },
   "notifications": {
     "title": "Notifications",
@@ -608,6 +609,11 @@
     "createShipmentDescription": "Select the method and quantity to pack for this order.",
     "methodLabel": "Delivery method",
     "qty": "Qty",
+    "invoiceDateRequired": "Enter an invoice date.",
+    "dueDateRequired": "Enter a due date.",
+    "dueDateBeforeInvoice": "The due date cannot be earlier than the invoice date.",
+    "storeSearchPlaceholder": "Search store...",
+    "storeSearchEmpty": "No store found.",
     "err": {
       "FORBIDDEN": "You don't have permission to do this.",
       "NOT_FOUND": "Shipment not found.",
@@ -616,7 +622,13 @@
       "OVER_PLANNED": "Quantity exceeds what was planned for this line.",
       "MISSING_RESI": "Enter a resi number before shipping.",
       "MISSING_PROOF": "Upload a proof photo before completing.",
-      "INVALID_QTY": "Enter a valid quantity."
+      "INVALID_QTY": "Enter a valid quantity.",
+      "LINE_MISMATCH": "The submitted lines don't match this shipment. Reopen the dialog and try again.",
+      "OVER_DELIVER": "Quantity exceeds what is still outstanding on the order.",
+      "INSUFFICIENT_STOCK": "Not enough stock on hand to complete this delivery.",
+      "INVALID_DATES": "The due date cannot be earlier than the invoice date.",
+      "INVALID_REQUEST": "Some of the values submitted are invalid. Check the form and try again.",
+      "UNEXPECTED": "Something went wrong. Try again."
     }
   },
   "production": {

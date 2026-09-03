@@ -42,15 +42,26 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone 
     });
   }, [open, shipmentId]);
 
+  /**
+   * Every action call below is wrapped. A rejection inside `startTransition` is otherwise
+   * swallowed whole — no toast, no state change, the dialog simply stops responding — and in
+   * production a thrown server action is digest-masked, so there is nothing for the operator to
+   * read either. The action layer's `mapError` returns a named reason for everything it can
+   * classify; these catches cover the rest.
+   */
   function handleSave(): void {
     startTransition(async () => {
-      const result = await updateShipmentTrackingAction({ shipmentId, carrierName, resiNumber });
-      if (!result.ok) {
-        toast.error(t(`err.${result.reason}` as any));
-        return;
+      try {
+        const result = await updateShipmentTrackingAction({ shipmentId, carrierName, resiNumber });
+        if (!result.ok) {
+          toast.error(t(`err.${result.reason}` as any));
+          return;
+        }
+        toast.success(t("save"));
+        onDone();
+      } catch {
+        toast.error(t("err.UNEXPECTED"));
       }
-      toast.success(t("save"));
-      onDone();
     });
   }
 
@@ -60,32 +71,40 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone 
       return;
     }
     startTransition(async () => {
-      const trackingResult = await updateShipmentTrackingAction({ shipmentId, carrierName, resiNumber });
-      if (!trackingResult.ok) {
-        toast.error(t(`err.${trackingResult.reason}` as any));
-        return;
+      try {
+        const trackingResult = await updateShipmentTrackingAction({ shipmentId, carrierName, resiNumber });
+        if (!trackingResult.ok) {
+          toast.error(t(`err.${trackingResult.reason}` as any));
+          return;
+        }
+        const result = await shipShipmentAction({ shipmentId });
+        if (!result.ok) {
+          toast.error(t(`err.${result.reason}` as any));
+          return;
+        }
+        toast.success(t("ship"));
+        onOpenChange(false);
+        onDone();
+      } catch {
+        toast.error(t("err.UNEXPECTED"));
       }
-      const result = await shipShipmentAction({ shipmentId });
-      if (!result.ok) {
-        toast.error(t(`err.${result.reason}` as any));
-        return;
-      }
-      toast.success(t("ship"));
-      onOpenChange(false);
-      onDone();
     });
   }
 
   function handleCancel(): void {
     if (!confirm(t("cancelConfirm"))) return;
     startTransition(async () => {
-      const result = await cancelShipmentAction({ shipmentId });
-      if (!result.ok) {
-        toast.error(t(`err.${result.reason}` as any));
-        return;
+      try {
+        const result = await cancelShipmentAction({ shipmentId });
+        if (!result.ok) {
+          toast.error(t(`err.${result.reason}` as any));
+          return;
+        }
+        onOpenChange(false);
+        onDone();
+      } catch {
+        toast.error(t("err.UNEXPECTED"));
       }
-      onOpenChange(false);
-      onDone();
     });
   }
 

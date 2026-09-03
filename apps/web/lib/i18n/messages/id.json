@@ -98,7 +98,8 @@
     "masterData": "Data Master",
     "collapseSidebar": "Ciutkan sidebar",
     "expandSidebar": "Perluas sidebar",
-    "profileAccounts": "Akun Profil"
+    "profileAccounts": "Akun Profil",
+    "navDeliveries": "Pengiriman"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -608,6 +609,11 @@
     "createShipmentDescription": "Pilih metode dan jumlah yang akan dikemas untuk order ini.",
     "methodLabel": "Metode pengiriman",
     "qty": "Qty",
+    "invoiceDateRequired": "Masukkan tanggal invoice.",
+    "dueDateRequired": "Masukkan tanggal jatuh tempo.",
+    "dueDateBeforeInvoice": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal invoice.",
+    "storeSearchPlaceholder": "Cari toko...",
+    "storeSearchEmpty": "Toko tidak ditemukan.",
     "err": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk melakukan ini.",
       "NOT_FOUND": "Pengiriman tidak ditemukan.",
@@ -616,7 +622,13 @@
       "OVER_PLANNED": "Jumlah melebihi rencana untuk baris ini.",
       "MISSING_RESI": "Masukkan nomor resi sebelum mengirim.",
       "MISSING_PROOF": "Unggah foto bukti sebelum menyelesaikan.",
-      "INVALID_QTY": "Masukkan jumlah yang valid."
+      "INVALID_QTY": "Masukkan jumlah yang valid.",
+      "LINE_MISMATCH": "Baris yang dikirim tidak sesuai dengan pengiriman ini. Buka ulang dialog lalu coba lagi.",
+      "OVER_DELIVER": "Jumlah melebihi sisa yang belum terkirim pada order.",
+      "INSUFFICIENT_STOCK": "Stok tidak cukup untuk menyelesaikan pengiriman ini.",
+      "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal invoice.",
+      "INVALID_REQUEST": "Ada nilai yang tidak valid. Periksa formulir lalu coba lagi.",
+      "UNEXPECTED": "Terjadi kesalahan. Coba lagi."
     }
   },
   "production": {
