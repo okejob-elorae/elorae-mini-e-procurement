@@ -182,9 +182,14 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
     await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: "RESI-2" });
     await shipDeliveryShipment({ shipmentId, shippedById: userId });
     const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment).not.toBeNull();
     expect(shipment?.status).toBe("IN_TRANSIT");
     expect(shipment?.shippedById).toBe(userId);
-    expect(shipment?.shippedAt).not.toBeNull();
+    /**
+     * `toBeInstanceOf(Date)`, not `not.toBeNull()`: optional chaining turns a missing row into
+     * `undefined`, and `expect(undefined).not.toBeNull()` passes — an assertion that cannot fail.
+     */
+    expect(shipment?.shippedAt).toBeInstanceOf(Date);
   });
 
   it("refuses ship from a non-PACKED status", async () => {
@@ -260,6 +265,13 @@ describe("completeDeliveryShipment", () => {
   }
 
   afterEach(async () => {
+    /**
+     * FIRST, before the delivery chain below: `recordFieldSalesDelivery` writes a `SalesHistory`
+     * row per delivered line, and nothing else in this teardown reaches it. Left behind, those
+     * rows accumulate permanently in the shared `:3308` bed. Same ordering the canonical sibling
+     * teardown uses (`lib/field-sales/delivery/writer.test.ts`).
+     */
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     if (deliveryId) {
       await prisma.receivable.deleteMany({ where: { deliveryId: seededId(deliveryId) } });
       await prisma.taxInvoice.deleteMany({ where: { deliveryId: seededId(deliveryId) } });
@@ -470,6 +482,22 @@ describe("cancelDeliveryShipment", () => {
     });
     orderId = order.id;
     lineId = order.lines[0].id;
+    /**
+     * The DELIVERED-shipment test completes this shipment first, and the order defaults to
+     * `orderType: "PUTUS"`, so completion reaches `recordFieldSalesDelivery` →
+     * `consumeFieldSalesOrderPartial`. That consume needs a RESERVED `StockReservation` keyed on
+     * `fieldSalesLineId` plus an `InventoryValue` row keyed on (itemId, variantSku) — inserting
+     * the order directly creates neither, only the real approve-time reservation flow does. With
+     * them missing the completion throws OVER_CONSUME → OVER_DELIVER on a bare `await`, so the
+     * cancel assertion the test exists for is never reached. Identical seed to
+     * `seedInTransitShipment` in the completeDeliveryShipment describe above.
+     */
+    await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 4, reservedQty: 4, avgCost: 500, totalValue: 2000 },
+    });
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4, state: "RESERVED" },
+    });
     const created = await createDeliveryShipment({
       orderId,
       method: "EXPEDITION",
@@ -480,6 +508,9 @@ describe("cancelDeliveryShipment", () => {
   });
 
   afterEach(async () => {
+    /* First, for the same reason as the completeDeliveryShipment describe: a completed shipment
+     * leaves SalesHistory rows nothing else here deletes. */
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
     const shipment = await prisma.deliveryShipment.findUnique({ where: { id: seededId(shipmentId) }, select: { deliveryId: true } });
     if (shipment?.deliveryId) {
       await prisma.receivable.deleteMany({ where: { deliveryId: seededId(shipment.deliveryId) } });
@@ -489,6 +520,11 @@ describe("cancelDeliveryShipment", () => {
     }
     await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: seededId(shipmentId) } });
     await prisma.deliveryShipment.deleteMany({ where: { id: seededId(shipmentId) } });
+    /* The DELIVERED test's completion moves stock, so the same three side-effect tables the
+     * completeDeliveryShipment describe cleans up are in play here too. */
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
