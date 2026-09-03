@@ -7,8 +7,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Pagination } from "@/components/ui/pagination";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listShipmentsAction } from "@/app/actions/delivery-shipments";
@@ -27,7 +29,26 @@ type ShipmentRow = {
   packedAt: Date;
 };
 
-type Props = { initialItems: ShipmentRow[]; initialTotal: number };
+type Props = {
+  initialItems: ShipmentRow[];
+  initialTotal: number;
+  storeOptions: { id: string; name: string }[];
+  canShip: boolean;
+  canPod: boolean;
+};
+
+/** Sentinel for "no store filter" — a Select/Combobox cannot carry an empty-string option value. */
+const ALL_STORES = "__ALL__";
+
+type Filters = {
+  status: string;
+  method: string;
+  storeId: string;
+  dateFrom: string;
+  dateTo: string;
+};
+
+const EMPTY_FILTERS: Filters = { status: "", method: "", storeId: "", dateFrom: "", dateTo: "" };
 
 const STATUS_BADGE: Record<string, string> = {
   PACKED: "bg-slate-100 text-slate-700",
@@ -48,23 +69,28 @@ const STATUS_LABEL_KEY: Record<
   CANCELLED: "statusCancelled",
 };
 
-export function DeliveriesPageClient({ initialItems, initialTotal }: Props) {
+export function DeliveriesPageClient({ initialItems, initialTotal, storeOptions, canShip, canPod }: Props) {
   const t = useTranslations("deliveryShipments");
   const [items, setItems] = useState(initialItems);
   const [total, setTotal] = useState(initialTotal);
   const [page, setPage] = useState(1);
-  const [status, setStatus] = useState<string>("");
-  const [method, setMethod] = useState<string>("");
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [isPending, startTransition] = useTransition();
   const [trackingShipmentId, setTrackingShipmentId] = useState<string | null>(null);
   const [completingShipmentId, setCompletingShipmentId] = useState<string | null>(null);
 
-  function refetch(nextPage: number, nextStatus: string, nextMethod: string): void {
+  const hasFilters =
+    !!filters.status || !!filters.method || !!filters.storeId || !!filters.dateFrom || !!filters.dateTo;
+
+  function refetch(nextPage: number, nextFilters: Filters): void {
     startTransition(async () => {
       try {
         const result = await listShipmentsAction({
-          status: nextStatus ? (nextStatus as any) : undefined,
-          method: nextMethod ? (nextMethod as any) : undefined,
+          status: nextFilters.status ? (nextFilters.status as any) : undefined,
+          method: nextFilters.method ? (nextFilters.method as any) : undefined,
+          storeId: nextFilters.storeId || undefined,
+          dateFrom: nextFilters.dateFrom || undefined,
+          dateTo: nextFilters.dateTo || undefined,
           page: nextPage,
           pageSize: DEFAULT_PAGE_SIZE,
         });
@@ -77,19 +103,22 @@ export function DeliveriesPageClient({ initialItems, initialTotal }: Props) {
     });
   }
 
+  /** Every control funnels through here so a filter change always resets to page 1. */
+  function applyFilters(patch: Partial<Filters>): void {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    refetch(1, next);
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col flex-wrap gap-3 sm:flex-row sm:items-center">
         <Select
-          value={status}
+          value={filters.status}
           disabled={isPending}
-          onValueChange={(v) => {
-            const next = v === "ALL" ? "" : v;
-            setStatus(next);
-            refetch(1, next, method);
-          }}
+          onValueChange={(v) => applyFilters({ status: v === "ALL" ? "" : v })}
         >
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="h-10 w-full sm:w-[180px]">
             <SelectValue placeholder={t("filterStatus")} />
           </SelectTrigger>
           <SelectContent>
@@ -102,15 +131,11 @@ export function DeliveriesPageClient({ initialItems, initialTotal }: Props) {
           </SelectContent>
         </Select>
         <Select
-          value={method}
+          value={filters.method}
           disabled={isPending}
-          onValueChange={(v) => {
-            const next = v === "ALL" ? "" : v;
-            setMethod(next);
-            refetch(1, status, next);
-          }}
+          onValueChange={(v) => applyFilters({ method: v === "ALL" ? "" : v })}
         >
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="h-10 w-full sm:w-[180px]">
             <SelectValue placeholder={t("filterMethod")} />
           </SelectTrigger>
           <SelectContent>
@@ -119,15 +144,45 @@ export function DeliveriesPageClient({ initialItems, initialTotal }: Props) {
             <SelectItem value="SALESMAN_CARRY">{t("methodSalesmanCarry")}</SelectItem>
           </SelectContent>
         </Select>
-        {(status || method) && (
+        <SearchableCombobox
+          options={[
+            { value: ALL_STORES, label: t("filterStore") },
+            ...storeOptions.map((s) => ({ value: s.id, label: s.name })),
+          ]}
+          value={filters.storeId || ALL_STORES}
+          disabled={isPending}
+          onValueChange={(v) => applyFilters({ storeId: v === ALL_STORES ? "" : v })}
+          placeholder={t("filterStore")}
+          searchPlaceholder={t("storeSearchPlaceholder")}
+          emptyMessage={t("storeSearchEmpty")}
+          triggerClassName="h-10 w-full sm:w-[220px]"
+        />
+        <Input
+          type="date"
+          value={filters.dateFrom}
+          max={filters.dateTo || undefined}
+          disabled={isPending}
+          onChange={(e) => applyFilters({ dateFrom: e.target.value })}
+          className="h-10 w-full sm:w-[160px]"
+          aria-label={t("filterDateFrom")}
+        />
+        <Input
+          type="date"
+          value={filters.dateTo}
+          min={filters.dateFrom || undefined}
+          disabled={isPending}
+          onChange={(e) => applyFilters({ dateTo: e.target.value })}
+          className="h-10 w-full sm:w-[160px]"
+          aria-label={t("filterDateTo")}
+        />
+        {hasFilters && (
           <Button
             variant="ghost"
-            size="sm"
+            className="h-10"
             disabled={isPending}
             onClick={() => {
-              setStatus("");
-              setMethod("");
-              refetch(1, "", "");
+              setFilters(EMPTY_FILTERS);
+              refetch(1, EMPTY_FILTERS);
             }}
           >
             {t("reset")}
@@ -174,12 +229,19 @@ export function DeliveriesPageClient({ initialItems, initialTotal }: Props) {
                         </TableCell>
                         <TableCell>{item.resiNumber ?? "-"}</TableCell>
                         <TableCell className="text-right">
-                          {item.status === "PACKED" && (
+                          {/**
+                           * Both buttons are permission-gated, and on the permission the action
+                           * they open actually checks — tracking/ship/cancel are
+                           * `deliveries:ship`, completion is `deliveries:pod`. Either can be held
+                           * without the other, so an ungated button here is a button that 403s on
+                           * submit with nothing explaining why.
+                           */}
+                          {canShip && item.status === "PACKED" && (
                             <Button size="sm" variant="outline" onClick={() => setTrackingShipmentId(item.id)}>
                               {t("editTracking")}
                             </Button>
                           )}
-                          {item.status === "IN_TRANSIT" && (
+                          {canPod && item.status === "IN_TRANSIT" && (
                             <Button size="sm" onClick={() => setCompletingShipmentId(item.id)}>
                               {t("complete")}
                             </Button>
@@ -192,7 +254,7 @@ export function DeliveriesPageClient({ initialItems, initialTotal }: Props) {
                 <Pagination
                   page={page}
                   totalPages={Math.max(1, Math.ceil(total / DEFAULT_PAGE_SIZE))}
-                  onPageChange={(p) => refetch(p, status, method)}
+                  onPageChange={(p) => refetch(p, filters)}
                   totalCount={total}
                   pageSize={DEFAULT_PAGE_SIZE}
                 />
@@ -207,7 +269,7 @@ export function DeliveriesPageClient({ initialItems, initialTotal }: Props) {
           shipmentId={trackingShipmentId}
           open={!!trackingShipmentId}
           onOpenChange={(open) => !open && setTrackingShipmentId(null)}
-          onDone={() => refetch(page, status, method)}
+          onDone={() => refetch(page, filters)}
         />
       )}
       {completingShipmentId && (
@@ -215,7 +277,7 @@ export function DeliveriesPageClient({ initialItems, initialTotal }: Props) {
           shipmentId={completingShipmentId}
           open={!!completingShipmentId}
           onOpenChange={(open) => !open && setCompletingShipmentId(null)}
-          onDone={() => refetch(page, status, method)}
+          onDone={() => refetch(page, filters)}
         />
       )}
     </div>
