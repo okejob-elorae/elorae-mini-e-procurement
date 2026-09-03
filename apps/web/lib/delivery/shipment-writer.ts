@@ -192,6 +192,25 @@ export async function completeDeliveryShipment(input: {
 
   if (shipment.method === "SALESMAN_CARRY") {
     /**
+     * The feature's anti-fraud property, and the whole reason `carriedById` exists: the actor
+     * closing the delivery must BE the salesman it was assigned to. `shipDeliveryShipment` only
+     * checks the column is SET, and `listMyDeliveries` only scopes the PWA queue — neither binds
+     * the completing actor, so without this check any `deliveries:pod` holder could open another
+     * salesman's shipment URL and close it: consuming stock, raising a receivable, posting the AR
+     * journals and stamping their own id as `deliveredById`, while the assigned carrier's queue
+     * silently loses the row. GPS is a LOCATION check standing in for an IDENTITY check and is
+     * trivially spoofed from a browser, so it is not a substitute. Enforced here rather than only
+     * in the PWA page because every `"use server"` export is independently callable.
+     *
+     * `!==` on the nullable column is safe: a null `carriedById` cannot equal a session user id,
+     * so an unassigned SALESMAN_CARRY shipment is refused here too (it should already have been
+     * refused at ship time by MISSING_CARRIER).
+     */
+    if (shipment.carriedById !== input.deliveredById) {
+      throw new DeliveryShipmentError("NOT_CARRIER");
+    }
+
+    /**
      * Defense in depth: `shipDeliveryShipment` already refuses to move a SALESMAN_CARRY shipment
      * to IN_TRANSIT without both dates, so this should be unreachable. It stays because every
      * write path here is independently callable and the alternative to refusing is passing

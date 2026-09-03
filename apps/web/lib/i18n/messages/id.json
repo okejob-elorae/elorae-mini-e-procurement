@@ -634,6 +634,7 @@
       "INVALID_REQUEST": "Ada nilai yang tidak valid. Periksa formulir lalu coba lagi.",
       "UNEXPECTED": "Terjadi kesalahan. Coba lagi.",
       "MISSING_CARRIER": "Pilih siapa yang membawa pengiriman ini sebelum mengirim.",
+      "NOT_CARRIER": "Pengiriman ini ditugaskan ke salesman lain.",
       "MISSING_DATES": "Masukkan tanggal invoice dan jatuh tempo sebelum mengirim.",
       "MISSING_GPS": "Lokasi diperlukan untuk menyelesaikan pengiriman ini.",
       "STORE_NOT_GEOCODED": "Toko ini belum memiliki lokasi tercatat — hubungi admin sebelum menyelesaikan di sini.",

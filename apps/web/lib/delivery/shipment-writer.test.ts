@@ -348,6 +348,13 @@ describe("completeDeliveryShipment", () => {
   let shipmentId = "";
   let shipmentLineId = "";
   let deliveryId = "";
+  /**
+   * A SECOND, purpose-created user for the NOT_CARRIER test — the only test here that needs two
+   * distinct actor identities. Created fresh (not `findFirst`ed like `salesman@elorae.com`, which
+   * is a shared seed row this teardown must never delete) and torn down with `deleteMany` so it
+   * no-ops harmlessly for every other test in this describe.
+   */
+  let otherUserId = "";
 
   async function seedInTransitShipment(qty: number) {
     const store = await prisma.store.create({
@@ -494,7 +501,11 @@ describe("completeDeliveryShipment", () => {
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    /* AFTER the order/delivery chain above — an order references its salesman, and this user is
+     * never the salesman on any fixture order, but the ordering keeps that true by construction. */
+    await prisma.user.deleteMany({ where: { id: seededId(otherUserId) } });
     storeId = userId = orderId = lineId = itemId = shipmentId = shipmentLineId = deliveryId = "";
+    otherUserId = "";
   });
 
   it("refuses completion without a proof photo url", async () => {
@@ -648,6 +659,41 @@ describe("completeDeliveryShipment", () => {
     expect(finalShipment?.deliveryId).toBeNull();
     expect(result.deliveryId).toBe("");
 
+    const orderLine = await prisma.fieldSalesOrderLine.findUnique({ where: { id: lineId } });
+    expect(orderLine?.deliveredQty).toBe(0);
+  });
+
+  it("refuses SALESMAN_CARRY completion by a user other than carriedById", async () => {
+    /**
+     * The feature's anti-fraud property. Everything about this payload is VALID except the actor:
+     * the proof photo is present, the coordinates are an exact match on the store (0m, well inside
+     * the radius), and the shipment carries both nota dates — so the only thing that can refuse it
+     * is the carrier-identity check. `seedSalesmanCarryShipment` assigns `carriedById: userId`
+     * (the shared `salesman@elorae.com` row), and this call completes as a DIFFERENT user.
+     */
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const other = await prisma.user.create({
+      data: { email: `carry-other-${Date.now()}@test.local`, name: "Other Salesman", role: "USER" },
+    });
+    otherUserId = other.id;
+    expect(otherUserId).not.toBe(userId);
+
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: otherUserId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_CARRIER" });
+
+    /* Nothing escaped the refusal: still completable by the real carrier, no stock consumed. */
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+    expect(shipment?.deliveredById).toBeNull();
+    expect(shipment?.deliveryId).toBeNull();
     const orderLine = await prisma.fieldSalesOrderLine.findUnique({ where: { id: lineId } });
     expect(orderLine?.deliveredQty).toBe(0);
   });

@@ -634,6 +634,7 @@
       "INVALID_REQUEST": "Some of the values submitted are invalid. Check the form and try again.",
       "UNEXPECTED": "Something went wrong. Try again.",
       "MISSING_CARRIER": "Select who is carrying this delivery before shipping.",
+      "NOT_CARRIER": "This delivery is assigned to a different salesman.",
       "MISSING_DATES": "Enter the invoice and due dates before shipping.",
       "MISSING_GPS": "Location is required to complete this delivery.",
       "STORE_NOT_GEOCODED": "This store has no location on record — contact an admin before completing here.",
