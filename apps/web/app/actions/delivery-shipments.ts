@@ -120,6 +120,17 @@ export async function updateShipmentTrackingAction(input: {
   if ((input.invoiceDate && !invoiceDate) || (input.dueDate && !dueDate)) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
+  /**
+   * Same ordering check `completeShipmentAction` applies below, but conditional on both dates
+   * actually being supplied — they are optional on this action, which is also how a carrier is
+   * saved on its own without touching the dates. This is the ONLY place a reversed pair can still
+   * be caught: `updateShipmentTracking` is PACKED-gated, so once the shipment ships the pair is
+   * frozen, and the salesman then discovers it in the field with no way to correct it. The
+   * SALESMAN_CARRY completion path reads these dates off the row and never revalidates them.
+   */
+  if (invoiceDate && dueDate && dueDate.getTime() < invoiceDate.getTime()) {
+    return { ok: false, reason: "INVALID_DATES" };
+  }
   try {
     await updateShipmentTracking({
       shipmentId: input.shipmentId,

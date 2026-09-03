@@ -88,6 +88,19 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
       toast.error(t("err.MISSING_CARRIER"));
       return;
     }
+    /**
+     * Fail fast on a reversed pair rather than letting the action refuse it, because this is the
+     * last moment the pair is editable at all: `updateShipmentTracking` is PACKED-gated, so once
+     * this dialog ships the shipment the dates freeze and the salesman meets them in the field.
+     * Both values are `YYYY-MM-DD` strings straight out of `<input type="date">`, so a plain
+     * string comparison is exactly a chronological one — no `Date` round-trip needed. Self-gating
+     * on both being non-empty, which is why it needs no `method` check of its own: the date
+     * inputs only render for SALESMAN_CARRY, and the server-side guard covers the rest.
+     */
+    if (invoiceDate && dueDate && dueDate < invoiceDate) {
+      toast.error(t("dueDateBeforeInvoice"));
+      return;
+    }
     if (method === "EXPEDITION" && !resiNumber) {
       toast.error(t("shipMissingResi"));
       return;
