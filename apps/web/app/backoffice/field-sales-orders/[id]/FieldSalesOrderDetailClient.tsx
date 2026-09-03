@@ -32,6 +32,7 @@ type Props = {
   order: FieldSalesOrderDetail;
   canApprove: boolean;
   canDeliver: boolean;
+  canShipShipment: boolean;
   konsiSuggestions: KonsiSuggestion[];
   konsiAssortmentGaps: KonsiAssortmentGapSuggestion[];
   creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
@@ -74,6 +75,7 @@ export function FieldSalesOrderDetailClient({
   order,
   canApprove,
   canDeliver,
+  canShipShipment,
   konsiSuggestions,
   konsiAssortmentGaps,
   creditCheck,
@@ -241,6 +243,7 @@ export function FieldSalesOrderDetailClient({
         lines={deliverableLines}
         paymentTempo={order.paymentTempo}
         canDeliver={canDeliver}
+        canShipShipment={canShipShipment}
       />
 
       <Card className="p-4 space-y-2">

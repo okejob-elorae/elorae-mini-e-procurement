@@ -67,6 +67,26 @@ interface NavChild {
   labelKey: string;
   href: string;
   permission?: string;
+  /**
+   * Visible when the user holds ANY ONE of these, for a page whose actors legitimately hold
+   * different permissions — the deliveries register is reachable by both `deliveries:ship` (pack,
+   * track, ship, cancel) and `deliveries:pod` (close against proof), and its server page admits
+   * either. Checked in addition to `permission`, so a child carrying both is visible when either
+   * matches.
+   */
+  anyPermissions?: string[];
+}
+
+/**
+ * Single spelling of a child's visibility rule, shared by the top-level filter and
+ * `visibleChildrenOf` — two copies of it is how one list starts hiding what the other shows.
+ */
+function isChildVisible(permissions: string[], child: NavChild): boolean {
+  if (child.anyPermissions?.length) {
+    if (child.anyPermissions.some((code) => hasPermission(permissions, code))) return true;
+  }
+  if (!child.permission) return !child.anyPermissions?.length;
+  return hasPermission(permissions, child.permission);
 }
 
 interface NavItem {
@@ -166,6 +186,11 @@ const navItems: NavItem[] = [
         labelKey: 'navFieldReturns',
         href: '/backoffice/field-returns',
         permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+      },
+      {
+        labelKey: 'navDeliveries',
+        href: '/backoffice/deliveries',
+        anyPermissions: [PERMISSIONS.DELIVERIES_SHIP, PERMISSIONS.DELIVERIES_POD],
       },
       {
         labelKey: 'navCanvassing',
@@ -418,6 +443,7 @@ function Sidebar({
       path.startsWith('/backoffice/returns') ||
       path.startsWith('/backoffice/field-sales-orders') ||
       path.startsWith('/backoffice/field-returns') ||
+      path.startsWith('/backoffice/deliveries') ||
       path.startsWith('/backoffice/canvassing') ||
       path.startsWith('/backoffice/van-sales') ||
       path.startsWith('/backoffice/spg-sales') ||
@@ -438,22 +464,18 @@ function Sidebar({
   const filteredItems = navItems.filter((item) => {
     if (item.adminOnly && userRole !== Role.ADMIN) return false;
     if (item.children?.length) {
-      const visibleChildren = item.children.filter(
-        (child) => !child.permission || hasPermission(permissions, child.permission)
-      );
+      const visibleChildren = item.children.filter((child) => isChildVisible(permissions, child));
       if (visibleChildren.length === 0) return false;
       if (hasPermission(permissions, item.permission)) return true;
       return visibleChildren.some(
-        (child) => child.permission && hasPermission(permissions, child.permission)
+        (child) => (child.permission || child.anyPermissions?.length) && isChildVisible(permissions, child)
       );
     }
     return hasPermission(permissions, item.permission);
   });
 
   function visibleChildrenOf(item: NavItem): NavChild[] {
-    return (item.children ?? []).filter(
-      (child) => !child.permission || hasPermission(permissions, child.permission)
-    );
+    return (item.children ?? []).filter((child) => isChildVisible(permissions, child));
   }
 
   function isChildActive(child: NavChild, siblings: NavChild[]): boolean {

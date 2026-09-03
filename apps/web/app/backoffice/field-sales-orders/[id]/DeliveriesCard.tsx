@@ -67,6 +67,7 @@ import {
   parseDateOnlyInput,
   type DeliverableLine,
 } from "./DeliveryFormDialog";
+import { CreateShipmentDialog } from "./CreateShipmentDialog";
 
 type Props = {
   orderId: string;
@@ -80,6 +81,7 @@ type Props = {
   lines: DeliverableLine[];
   paymentTempo: number;
   canDeliver: boolean;
+  canShipShipment: boolean;
 };
 
 const DELIVERY_BADGE_VARIANT: Record<FieldSalesDeliveryStatus, "secondary" | "default" | "outline"> = {
@@ -151,14 +153,17 @@ export function DeliveriesCard({
   lines,
   paymentTempo,
   canDeliver,
+  canShipShipment,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
   const tFakturStatus = useTranslations("fakturPajakStatus");
+  const tShipments = useTranslations("deliveryShipments");
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [formOpen, setFormOpen] = useState(false);
+  const [createShipmentOpen, setCreateShipmentOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeReason, setCloseReason] = useState("");
   const [tagihanDialogOpen, setTagihanDialogOpen] = useState(false);
@@ -372,6 +377,17 @@ export function DeliveriesCard({
               <Truck className="h-4 w-4" />
               {t("delivery.create")}
             </Button>
+            {canShipShipment && (
+              <Button
+                variant="outline"
+                className="h-10"
+                disabled={isPending || !hasOutstanding}
+                onClick={() => setCreateShipmentOpen(true)}
+              >
+                <Truck className="h-4 w-4" />
+                {tShipments("createShipment")}
+              </Button>
+            )}
             <Button
               variant="outline"
               className="h-10"
@@ -466,6 +482,13 @@ export function DeliveriesCard({
         paymentTempo={paymentTempo}
         open={formOpen}
         onOpenChange={setFormOpen}
+      />
+
+      <CreateShipmentDialog
+        orderId={orderId}
+        lines={lines}
+        open={createShipmentOpen}
+        onOpenChange={setCreateShipmentOpen}
       />
 
       <AlertDialog
