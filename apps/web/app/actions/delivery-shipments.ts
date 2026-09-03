@@ -41,6 +41,11 @@ export type ShipmentActionResult = { ok: true } | { ok: false; reason: ShipmentA
  * there. The stack still reaches the container logs via `console.error`, so nothing is lost by
  * not rethrowing; none of these actions call `redirect()`/`notFound()`, so there is no Next
  * control-flow error to swallow here.
+ *
+ * Not exported for the same reason `canReadShipments` below is not: a `"use server"` module may
+ * only export async functions, and this is a plain sync helper. `app/pwa/deliveries/actions.ts`
+ * reimplements this exact body (importing `DeliveryShipmentError`/`DeliveryError` directly)
+ * rather than importing it — keep the two in sync by hand if either error class gains a case.
  */
 function mapError(error: unknown): { ok: false; reason: ShipmentActionReason } {
   if (error instanceof DeliveryShipmentError) return { ok: false, reason: error.code };
