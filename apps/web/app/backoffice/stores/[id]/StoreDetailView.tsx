@@ -25,7 +25,7 @@ import type { StoreListItem } from "@/lib/stores/queries";
 import type { StoreSentItemRow } from "@/lib/field-sales/queries";
 import type { StoreStocktakeStatusValue } from "@/lib/stores/stocktake/queries";
 import type { StorePiutangSummary } from "@/lib/finance/ar/queries";
-import { isOverdue } from "@/lib/finance/ar/aging";
+import { AGING_BUCKETS, AGING_BUCKET_LABELS, isOverdue } from "@/lib/finance/ar/aging";
 import { createAction as createStocktakeAction } from "@/app/actions/store-stocktakes";
 import { raiseAdminReturnAction, type RaiseAdminReturnActionResult } from "@/app/actions/field-returns";
 import { FIELD_RETURN_REASONS, type FieldReturnLineInput, type FieldReturnReasonInput } from "@/lib/field-sales/retur/types";
@@ -786,6 +786,13 @@ export function StoreDetailView({
             </CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {AGING_BUCKETS.filter((bucket) => piutang.bucketTotals[bucket] !== 0).map((bucket) => (
+                <Badge key={bucket} variant={bucket === "CURRENT" ? "outline" : "destructive"}>
+                  {AGING_BUCKET_LABELS[bucket]}: {formatRupiah(piutang.bucketTotals[bucket])}
+                </Badge>
+              ))}
+            </div>
             {piutang.rows.length === 0 ? (
               <div className="text-center py-8">
                 <Receipt className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
