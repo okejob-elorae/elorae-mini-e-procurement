@@ -1,6 +1,6 @@
 # EPIC decomposition + status
 
-Per-EPIC sub-project tables: what each slice covers, what shipped, and which PR shipped it. Read it before building anything that sounds like it might already exist, or when you need to know what a shipped slice actually included. Split out of `CLAUDE.md` on 2026-08-25; the text is unchanged, and the maintenance rule near the bottom of this file still applies — tick the row here in the same session a slice merges.
+Per-EPIC sub-project tables: what each slice covers, what shipped, and which PR shipped it. Read it before building anything that sounds like it might already exist, or when you need to know what a shipped slice actually included. Split out of `AGENTS.md` on 2026-08-25; the text is unchanged, and the maintenance rule near the bottom of this file still applies — tick the row here in the same session a slice merges.
 
 EPIC-01 (Jubelio Integration) + EPIC-02 (Product & Stock Sync) are decomposed into 5 sub-projects, each its own spec → plan → PR cycle:
 

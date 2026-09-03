@@ -1,6 +1,6 @@
 # Elorae ERP
 
-A procurement and production management system for textile and garment manufacturing: suppliers, purchase orders, goods receipt, inventory, work orders, vendor returns, supplier payments, and settings (UOM, tax, document numbering, RBAC).
+An ERP for textile and garment manufacturing, covering three domains: **procurement and production** (suppliers, purchase orders, goods receipt, inventory, work orders, vendor returns, supplier payments), **field sales** (field-sales orders putus/konsi, canvassing van sales, SPG store sales, store stocktakes, field returns — with a PWA for the people in the field), and **finance** (AR ledger, payment recording, collections, general ledger and faktur pajak). Plus settings: UOM, tax, document numbering, RBAC.
 
 ## Features
 
@@ -10,11 +10,15 @@ A procurement and production management system for textile and garment manufactu
 - **Procurement & inventory** — Purchase orders, GRN, stock movements, adjustments, stock card, rejected goods; items and categories; UOM.
 - **Production** — Work orders, material issues, FG receipts, reconciliation, related flows (e.g. nota register).
 - **Returns & payables** — Vendor returns, supplier payments.
-- **AR ledger & payment recording** — Piutang ledger (`/backoffice/finance/piutang`) with one `Receivable` per field-sales (putus) nota tagihan and a six-bucket aging view (current through 120+ days); payment recording (`/backoffice/finance/payments`) with cash/transfer method, multi-receivable allocation, proof upload, and void with a reversing GL entry; four auto-journals (delivery revenue/COGS, payment receipt/void) posted best-effort with a manual retry. Does **not** cover: credit limit or its override, overdue notifications, giro/cek payment or its clearing state, retur-offset payment, write-off (the `WRITTEN_OFF` status exists in the schema but no writer sets it yet), unapplied credit / on-account balances, konsi sell-through AR (a konsi transfer is a stock move, not a sale, and stays outside this ledger), or historical GL backfill (pre-existing deliveries got a `Receivable` row but no revenue/COGS journal).
+- **Field sales** — Field-sales orders on PUTUS (sold outright, stock leaves at delivery, raises a `Receivable`) or KONSI (consignment, stock transfers to a per-store `StoreStock` ledger at approve, no receivable) terms; canvassing van sales and van reconciliation; SPG in-store sales; store stocktakes; per-store assortment and konsi suggestions. All of it is per-variant. The PWA (`/pwa/*`) is the field surface — orders, van, SPG, stores, collections, notifications — and works offline.
+- **Field returns** — Returns raised from the field (with nota photo and transport) or by an admin, warehouse receiving with a per-line sellable/rejected split, mismatch resolution naming who bears the variance, then approval that restores stock and freezes a value. Zero is a valid count on every line, including all-zero.
+- **AR ledger & payment recording** — Piutang ledger (`/backoffice/finance/piutang`) with one `Receivable` per field-sales (putus) nota tagihan and a six-bucket aging view (current through 120+ days); payment recording (`/backoffice/finance/payments`) with cash/transfer/retur-offset method, multi-receivable allocation, proof upload, and void with a reversing GL entry; four auto-journals (delivery revenue/COGS, payment receipt/void) posted best-effort with a manual retry. Credit limit per store with an approve-time live check and a reason-logged override. Daily overdue sweep raising an admin notification per receivable at its highest newly-crossed threshold. Retur-offset payment settles a receivable with an approved retur's frozen value, released back if the payment is voided. Does **not** cover: giro/cek payment or its clearing state, write-off (the `WRITTEN_OFF` status exists in the schema and every writer respects it as terminal, but no writer *sets* it — it is reachable only by hand SQL), unapplied credit / on-account balances, konsi sell-through AR (a konsi transfer is a stock move, not a sale, and stays outside this ledger), or historical GL backfill (pre-existing deliveries got a `Receivable` row but no revenue/COGS journal).
+- **Collections** — `Receivable.collectorId` assignment, a PWA submission queue where a collector files a `PENDING` claim (which moves no money and is deliberately ignored by credit exposure), and a backoffice verification queue; money moves only at verify, through the same `recordPayment` writer.
+- **General ledger & faktur pajak** — Chart of accounts, account mapping, journals, cash-flow sections and finance reports; marketplace settlements. Faktur pajak tracking (`/backoffice/finance/faktur-pajak`) with NPWP/PPN snapshotted at creation (never a live lookup) and a "Sent to Store" state.
 - **Operations** — Audit trail, HPP report, dashboard.
 - **Internationalization** — `next-intl` with messages under `lib/i18n/messages/`.
 - **Offline-first** — Dexie (IndexedDB), pending-operation queue, sync via `POST /api/sync` when online.
-- **PWA** — `next-pwa` (service worker enabled in production builds).
+- **PWA** — **Serwist** (`@serwist/next`, source `app/pwa/sw.ts`) generates the service worker, and it only exists in a **production build** — a 404 on `sw.js` in dev is expected. Never commit a generated `public/**/sw.js` or `workbox-*.js`; it poisons the precache manifest and kills SW install. `next.config.ts` still also wraps the config in the older `next-pwa` plugin; Serwist is the outer wrapper and the one that produces the shipped SW.
 - **Print / export** — HTML helpers under `lib/print/` for PO, stock card, inventory reports, and related documents.
 
 ## Tech stack
@@ -40,7 +44,7 @@ A procurement and production management system for textile and garment manufactu
 
 ## Getting started
 
-Run these from the **repo root** (`elorae/`), not from inside `apps/web/` — pnpm workspace commands are filtered by package name. See the root `README.md` for the full local-dev walkthrough (Redis, ngrok, prod-mode boot); this is the condensed web-only path.
+Run these from the **repo root** (`elorae/`), not from inside `apps/web/` — pnpm workspace commands are filtered by package name. See the root `README.md` for the full local-dev walkthrough (db, Redis, prod-mode boot); this is the condensed web-only path.
 
 1. Clone and install:
 
@@ -56,7 +60,7 @@ pnpm install
 cp apps/web/.env.example apps/web/.env
 ```
 
-`apps/web/.env` holds the shared `DATABASE_URL` (single source of truth — `apps/api` cascades it from here). There is no root `.env.example`.
+`apps/web/.env` holds the shared `DATABASE_URL` (`apps/api` cascades it from here). It points at the **local 3308 MariaDB test bed**, not prod — see root `README.md` §Local-dev DB access and `docs/local-db-testbed.md`. There is no root `.env.example`.
 
 3. Database — schema, migrations, and seeds live in `packages/db`, not here:
 
@@ -136,7 +140,8 @@ See **`apps/web/.env.example`** for the full list (there is no root `.env.exampl
 ```
 app/
   api/                 # Route handlers (auth, sync, suppliers, items, cron, …)
-  backoffice/          # Main ERP UI (dashboard, items, suppliers, POs, inventory, production, …)
+  backoffice/          # Main ERP UI (dashboard, items, suppliers, POs, inventory, production, field sales, finance, …)
+  pwa/                 # Field surface (orders, van, SPG, stores, collections, notifications) — offline-capable
   login/               # Sign-in
 components/            # UI, forms, domain components (GRN, tables, …)
 lib/
@@ -160,7 +165,7 @@ Business logic is split between **`app/actions/*`** (server actions) and **`app/
 
 ## Database domains (Prisma)
 
-Users and sessions; roles and permissions; suppliers and supplier types; items, categories, UOM; purchase orders and lines; GRN; inventory valuations and stock movements; adjustments; work orders, material issues, FG receipts; vendor returns; document numbering; audit logs; notifications; and related enums — see **`packages/db/prisma/schema.prisma`**.
+Users and sessions; roles and permissions; suppliers and supplier types; items, categories, UOM; purchase orders and lines; GRN; inventory valuations and stock movements; adjustments; work orders, material issues, FG receipts; vendor returns; stores, store stock and assortment; field-sales orders, deliveries, konsi transfers and field returns; van and SPG sales, van stock and reconciliation; receivables, payments and allocations, collection submissions; chart of accounts, journals and tax invoices; document numbering; audit logs; notifications; and related enums — see **`packages/db/prisma/schema.prisma`**.
 
 ## Role model (legacy enum + dynamic RBAC)
 
@@ -170,14 +175,16 @@ Users have a legacy **`Role`** enum (`ADMIN`, `PURCHASER`, `WAREHOUSE`, `PRODUCT
 
 No Vercel Cron — `apps/web` runs in-process **node-cron** (`lib/cron/jobs.ts`, registered from `instrumentation.ts` on server boot):
 
-- Daily `check-overdue` at 09:00 **Asia/Jakarta** (`0 9 * * *`).
+- Daily `check-overdue` at 09:00 **Asia/Jakarta** (`0 9 * * *`) — PO ETA / work orders / accessories CMT. Zero AR involvement.
+- Daily AR overdue threshold alerts at 08:00 **Asia/Jakarta** (`0 8 * * *`) — a deliberately separate job from `check-overdue`, an hour earlier so the two sweeps do not contend and the alert is waiting before the collections day starts.
 - Every 6 hours, Jubelio stock reconciliation (`0 */6 * * *`).
+- Every 5 minutes, sales revenue + COGS journal posting for shipped orders (`*/5 * * * *`).
 
-The corresponding `/api/cron/*` routes remain as manual triggers (e.g. smoke testing), guarded by `CRON_SECRET` when set — they are not what fires the jobs in normal operation.
+Only the first and third have a matching `/api/cron/*` route (`check-overdue`, `reconciliation`) kept as a manual trigger for smoke testing, guarded by `CRON_SECRET` when set — those routes are not what fires the jobs in normal operation. The AR overdue sweep and the sales-journal poster have **no** manual-trigger route; the scheduler is the only thing that runs them.
 
 ## Deployment
 
-Deployed to the **Hostinger VPS** via Docker Compose (`elorae.cloud`), alongside `apps/api` + MariaDB + Redis + Caddy. Vercel was decommissioned 2026-06-18 — there is no `vercel.json` in the repo. See root **`README.md`** §Production deploy — Hostinger VPS for first-time setup and the deploy commands (`git pull && docker compose -f docker-compose.prod.yml up -d --build web`).
+Deployed to the **Hostinger VPS** via Docker Compose (`elorae.cloud`), alongside `apps/api` + MariaDB + Redis + Caddy. Vercel was decommissioned 2026-06-18 — there is no `vercel.json` in the repo. Deploys are automatic: a push to `master` has GitHub Actions build the image, push it to `ghcr.io/okejob-elorae/elorae-web`, and the VPS *pull* it — `docker-compose.prod.yml` declares `image:` only, so the VPS never builds. See root **`README.md`** §Production deploy — Hostinger VPS for first-time setup and the manual/rollback commands.
 
 ## Security notes
 
