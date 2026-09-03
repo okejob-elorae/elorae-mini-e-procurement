@@ -80,6 +80,9 @@ model User {
   fieldSalesOrders FieldSalesOrder[] @relation("FieldSalesOrderSalesman")
   fieldSalesDeliveries FieldSalesDelivery[] @relation("FieldSalesDeliveryUser")
   fieldSalesLinesAdded FieldSalesOrderLine[] @relation("FieldSalesLineAddedBy")
+  deliveryShipmentsPacked    DeliveryShipment[] @relation("DeliveryShipmentPackedBy")
+  deliveryShipmentsShipped   DeliveryShipment[] @relation("DeliveryShipmentShippedBy")
+  deliveryShipmentsDelivered DeliveryShipment[] @relation("DeliveryShipmentDeliveredBy")
   taxInvoicesMarked TaxInvoice[] @relation("TaxInvoiceMarkedBy")
   storeChangeRequestsMade      StoreChangeRequest[] @relation("StoreChangeRequestedBy")
   storeChangeRequestsReviewed  StoreChangeRequest[] @relation("StoreChangeReviewedBy")
@@ -453,6 +456,7 @@ model FieldSalesOrder {
   lines         FieldSalesOrderLine[]
   deliveries    FieldSalesDelivery[]
   konsiTransfers KonsiTransfer[]
+  shipments      DeliveryShipment[]
   @@index([status, createdAt])
   @@index([storeId, createdAt])
   @@index([salesmanId, createdAt])
@@ -502,6 +506,7 @@ model FieldSalesDelivery {
   lines          FieldSalesDeliveryLine[]
   taxInvoice     TaxInvoice?
   receivable     Receivable?
+  shipment       DeliveryShipment?
   @@index([orderId])
   @@index([deliveredAt])
 }
@@ -522,6 +527,46 @@ model FieldSalesDeliveryLine {
   item           Item                @relation(fields: [itemId], references: [id])
   @@index([deliveryId])
   @@index([orderLineId])
+}
+
+model DeliveryShipment {
+  id              String                  @id @default(cuid())
+  docNo           String                  @unique
+  orderId         String
+  method          DeliveryShipmentMethod
+  status          DeliveryShipmentStatus  @default(PACKED)
+  carrierName     String?
+  resiNumber      String?
+  proofPhotoUrl   String?
+  proofPhotoR2Key String?
+  packedAt        DateTime                @default(now())
+  packedById      String
+  shippedAt       DateTime?
+  shippedById     String?
+  deliveredAt     DateTime?
+  deliveredById   String?
+  deliveryId      String?                 @unique
+  createdAt       DateTime                @default(now())
+  order           FieldSalesOrder         @relation(fields: [orderId], references: [id])
+  packedBy        User                    @relation("DeliveryShipmentPackedBy", fields: [packedById], references: [id])
+  shippedBy       User?                   @relation("DeliveryShipmentShippedBy", fields: [shippedById], references: [id])
+  deliveredBy     User?                   @relation("DeliveryShipmentDeliveredBy", fields: [deliveredById], references: [id])
+  delivery        FieldSalesDelivery?     @relation(fields: [deliveryId], references: [id])
+  lines           DeliveryShipmentLine[]
+  @@index([orderId])
+  @@index([status])
+}
+
+model DeliveryShipmentLine {
+  id           String            @id @default(cuid())
+  shipmentId   String
+  orderLineId  String
+  itemId       String
+  variantSku   String            @default("")
+  plannedQty   Int
+  deliveredQty Int?
+  shipment     DeliveryShipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  @@index([shipmentId])
 }
 
 model TaxInvoice {
@@ -681,6 +726,19 @@ enum FieldSalesDeliveryStatus {
   PARTIAL
   DELIVERED
   CLOSED
+}
+
+enum DeliveryShipmentMethod {
+  EXPEDITION
+  SALESMAN_CARRY
+}
+
+enum DeliveryShipmentStatus {
+  PACKED
+  IN_TRANSIT
+  DELIVERED
+  PARTIALLY_DELIVERED
+  CANCELLED
 }
 
 enum TaxInvoiceStatus {
