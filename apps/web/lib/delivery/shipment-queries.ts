@@ -123,3 +123,24 @@ export async function getDeliveryShipment(id: string): Promise<{
     })),
   };
 }
+
+export async function listMyDeliveries(carriedById: string): Promise<Array<{
+  id: string;
+  docNo: string;
+  storeName: string;
+  orderNo: string;
+  plannedTotalQty: number;
+}>> {
+  const rows = await prisma.deliveryShipment.findMany({
+    where: { carriedById, status: "IN_TRANSIT" },
+    include: { order: { include: { store: { select: { name: true } } } }, lines: true },
+    orderBy: { shippedAt: "asc" },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    docNo: row.docNo,
+    storeName: row.order.store.name,
+    orderNo: row.order.orderNo,
+    plannedTotalQty: row.lines.reduce((sum, l) => sum + l.plannedQty, 0),
+  }));
+}
