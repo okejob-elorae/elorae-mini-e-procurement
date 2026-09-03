@@ -191,3 +191,15 @@ export async function completeDeliveryShipment(input: {
 
   return { ok: true, deliveryId };
 }
+
+export async function cancelDeliveryShipment(input: {
+  shipmentId: string;
+  cancelledById: string;
+}): Promise<{ ok: true }> {
+  const result = await prisma.deliveryShipment.updateMany({
+    where: { id: input.shipmentId, status: { in: ["PACKED", "IN_TRANSIT"] } },
+    data: { status: "CANCELLED" },
+  });
+  if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+  return { ok: true };
+}
