@@ -17,10 +17,12 @@ export async function POST(req: NextRequest) {
   if (!isConfigured()) return NextResponse.json({ error: "R2 not configured" }, { status: 503 });
 
   const form = await req.formData();
-  const file = form.get("file") as File | null;
-  const shipmentId = form.get("shipmentId") as string | null;
+  const file = form.get("file");
+  const shipmentId = form.get("shipmentId");
 
-  if (!file || !shipmentId) return NextResponse.json({ error: "file, shipmentId required" }, { status: 400 });
+  if (!(file instanceof File) || typeof shipmentId !== "string" || !shipmentId) {
+    return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
+  }
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
 
