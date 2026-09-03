@@ -113,6 +113,15 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
   let lineId = "";
   let itemId = "";
   let shipmentId = "";
+  /* Second, independent fixture set for the SALESMAN_CARRY tests below — each of those tests
+   * creates its own store/item/order rather than reusing the EXPEDITION shipment/order this
+   * describe's beforeEach seeds, so a SALESMAN_CARRY test can never contend with the
+   * beforeEach-created shipment for in-flight qty on a shared order line (PR #288's guard). */
+  let carryStoreId = "";
+  let carryOrderId = "";
+  let carryLineId = "";
+  let carryItemId = "";
+  let carryShipmentId = "";
 
   beforeEach(async () => {
     storeId = "";
@@ -121,6 +130,11 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
     lineId = "";
     itemId = "";
     shipmentId = "";
+    carryStoreId = "";
+    carryOrderId = "";
+    carryLineId = "";
+    carryItemId = "";
+    carryShipmentId = "";
 
     const store = await prisma.store.create({
       data: { code: `ST-${Date.now()}`, name: "Test Store 2", address: "x", termsType: "PUTUS" },
@@ -163,6 +177,15 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
     await prisma.fieldSalesOrder.delete({ where: { id: seededId(orderId) } });
     await prisma.item.delete({ where: { id: seededId(itemId) } });
     await prisma.store.delete({ where: { id: seededId(storeId) } });
+
+    /* Second fixture set — only populated by the SALESMAN_CARRY tests below, so deleteMany
+     * (not delete) throughout: it must no-op harmlessly on every other test in this describe. */
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: seededId(carryShipmentId) } });
+    await prisma.deliveryShipment.deleteMany({ where: { id: seededId(carryShipmentId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { id: seededId(carryLineId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(carryOrderId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(carryItemId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(carryStoreId) } });
   });
 
   it("updates carrier and resi while PACKED", async () => {
@@ -224,6 +247,95 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
     await expect(
       updateShipmentTracking({ shipmentId, carriedById: userId }),
     ).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
+
+  /**
+   * Fresh store/item/order per SALESMAN_CARRY test rather than reusing the beforeEach's
+   * `orderId`/`lineId` (which already carries the beforeEach's own EXPEDITION shipment) — fully
+   * isolated, so this fixture can never contend with that shipment for in-flight qty on a shared
+   * order line (PR #288's guard), independent of the exact qty either fixture seeds.
+   */
+  async function seedCarryOrder() {
+    const store = await prisma.store.create({
+      data: { code: `ST-CARRY-${Date.now()}`, name: "Test Store Carry", address: "x", termsType: "PUTUS" },
+    });
+    carryStoreId = store.id;
+    const uom = await prisma.uOM.findFirst({ where: { code: "PCS" } });
+    const item = await prisma.item.create({
+      data: { sku: `SKU-CARRY-${Date.now()}`, nameId: "Test Item Carry", nameEn: "Test Item Carry", type: "FINISHED_GOOD", uomId: uom!.id, sellingPrice: 10000 },
+    });
+    carryItemId = item.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `FSO-CARRY-${Date.now()}`,
+        storeId: carryStoreId,
+        salesmanId: userId,
+        status: "APPROVED",
+        subtotal: 100000,
+        total: 100000,
+        lines: { create: [{ itemId: carryItemId, productName: "Test Item Carry", qty: 10, unitPrice: 10000, lineTotal: 100000 }] },
+      },
+      include: { lines: true },
+    });
+    carryOrderId = order.id;
+    carryLineId = order.lines[0].id;
+  }
+
+  it("refuses to ship SALESMAN_CARRY with no carriedById", async () => {
+    await seedCarryOrder();
+    const created = await createDeliveryShipment({
+      orderId: carryOrderId,
+      method: "SALESMAN_CARRY",
+      lines: [{ orderLineId: carryLineId, qty: 2 }],
+      packedById: userId,
+    });
+    carryShipmentId = created.shipmentId;
+    await expect(
+      shipDeliveryShipment({ shipmentId: created.shipmentId, shippedById: userId }),
+    ).rejects.toMatchObject({ code: "MISSING_CARRIER" });
+  });
+
+  it("refuses to ship SALESMAN_CARRY with carriedById but no dates", async () => {
+    await seedCarryOrder();
+    const created = await createDeliveryShipment({
+      orderId: carryOrderId,
+      method: "SALESMAN_CARRY",
+      lines: [{ orderLineId: carryLineId, qty: 2 }],
+      packedById: userId,
+    });
+    carryShipmentId = created.shipmentId;
+    await updateShipmentTracking({ shipmentId: created.shipmentId, carriedById: userId });
+    await expect(
+      shipDeliveryShipment({ shipmentId: created.shipmentId, shippedById: userId }),
+    ).rejects.toMatchObject({ code: "MISSING_DATES" });
+  });
+
+  it("ships SALESMAN_CARRY once carriedById and both dates are set", async () => {
+    await seedCarryOrder();
+    const created = await createDeliveryShipment({
+      orderId: carryOrderId,
+      method: "SALESMAN_CARRY",
+      lines: [{ orderLineId: carryLineId, qty: 2 }],
+      packedById: userId,
+    });
+    carryShipmentId = created.shipmentId;
+    await updateShipmentTracking({
+      shipmentId: created.shipmentId,
+      carriedById: userId,
+      invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
+      dueDate: new Date("2026-09-20T00:00:00.000Z"),
+    });
+    await shipDeliveryShipment({ shipmentId: created.shipmentId, shippedById: userId });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: created.shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+  });
+
+  it("does not require carriedById or dates to ship EXPEDITION", async () => {
+    /* Regression check: the new guards must be method-conditional, not universal. */
+    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: "RESI-REG" });
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
   });
 });
 

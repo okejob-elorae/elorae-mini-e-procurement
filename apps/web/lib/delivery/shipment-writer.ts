@@ -127,6 +127,12 @@ export async function shipDeliveryShipment(input: {
   if (shipment.method === "EXPEDITION" && !shipment.resiNumber) {
     throw new DeliveryShipmentError("MISSING_RESI");
   }
+  if (shipment.method === "SALESMAN_CARRY" && !shipment.carriedById) {
+    throw new DeliveryShipmentError("MISSING_CARRIER");
+  }
+  if (shipment.method === "SALESMAN_CARRY" && (!shipment.invoiceDate || !shipment.dueDate)) {
+    throw new DeliveryShipmentError("MISSING_DATES");
+  }
 
   const result = await prisma.deliveryShipment.updateMany({
     where: { id: input.shipmentId, status: "PACKED" },
