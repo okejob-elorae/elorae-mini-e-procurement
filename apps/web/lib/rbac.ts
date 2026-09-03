@@ -213,6 +213,9 @@ export const PERMISSIONS = {
   FIELD_SALES_ORDERS_APPROVE: 'field_sales_orders:approve',
   FIELD_SALES_ORDERS_DELIVER: 'field_sales_orders:deliver',
   FIELD_SALES_ORDERS_CREDIT_OVERRIDE: 'field_sales_orders:credit_override',
+  // Delivery Shipments
+  DELIVERIES_SHIP: 'deliveries:ship',
+  DELIVERIES_POD: 'deliveries:pod',
   // Purchase Orders
   PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
   PURCHASE_ORDERS_CREATE: 'purchase_orders:create',
