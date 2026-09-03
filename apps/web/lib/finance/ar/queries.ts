@@ -267,6 +267,57 @@ export async function listAllocationCandidatesForStore(storeId: string): Promise
     .map((r) => ({ id: r.id, docNo: r.docNo, dueDate: r.dueDate, outstandingAmount: r.outstandingAmount }));
 }
 
+export type StorePiutangRow = {
+  id: string;
+  docNo: string;
+  dueDateIso: string;
+  outstandingAmount: number;
+  bucket: AgingBucket;
+  daysOverdue: number;
+};
+
+export type StorePiutangSummary = {
+  grandOutstanding: number;
+  bucketTotals: Record<AgingBucket, number>;
+  openCount: number;
+  rows: StorePiutangRow[];
+};
+
+/**
+ * `bucketTotals`/`grandOutstanding` come from an unfiltered call because PAID/WRITTEN_OFF rows
+ * always carry outstandingAmount 0 and so contribute nothing to either fold — filtering by status
+ * for the totals call would be redundant, not more correct. `rows`/`total` from that call are
+ * discarded (they'd include zero-balance historical docs); the display rows come from the same
+ * OUTSTANDING+PARTIAL merge `listAllocationCandidatesForStore` already uses above.
+ */
+export async function getStorePiutangSummary(
+  storeId: string,
+  asOf: Date = new Date(),
+  take = 5,
+): Promise<StorePiutangSummary> {
+  const [totals, outstanding, partial] = await Promise.all([
+    listReceivables({ storeId, asOf, pageSize: 1 }),
+    listReceivables({ storeId, status: "OUTSTANDING", asOf, pageSize: CANDIDATE_PAGE_SIZE }),
+    listReceivables({ storeId, status: "PARTIAL", asOf, pageSize: CANDIDATE_PAGE_SIZE }),
+  ]);
+  const merged = [...outstanding.rows, ...partial.rows].sort(
+    (a, b) => a.dueDate.getTime() - b.dueDate.getTime(),
+  );
+  return {
+    grandOutstanding: totals.grandOutstanding,
+    bucketTotals: totals.bucketTotals,
+    openCount: merged.length,
+    rows: merged.slice(0, take).map((r) => ({
+      id: r.id,
+      docNo: r.docNo,
+      dueDateIso: r.dueDate.toISOString(),
+      outstandingAmount: r.outstandingAmount,
+      bucket: r.bucket,
+      daysOverdue: r.daysOverdue,
+    })),
+  };
+}
+
 export type PaymentFilters = {
   storeId?: string;
   method?: "CASH" | "TRANSFER" | "RETUR_OFFSET";
