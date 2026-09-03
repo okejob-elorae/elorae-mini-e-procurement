@@ -44,7 +44,7 @@ An ERP for textile and garment manufacturing, covering three domains: **procurem
 
 ## Getting started
 
-Run these from the **repo root** (`elorae/`), not from inside `apps/web/` — pnpm workspace commands are filtered by package name. See the root `README.md` for the full local-dev walkthrough (Redis, ngrok, prod-mode boot); this is the condensed web-only path.
+Run these from the **repo root** (`elorae/`), not from inside `apps/web/` — pnpm workspace commands are filtered by package name. See the root `README.md` for the full local-dev walkthrough (db, Redis, prod-mode boot); this is the condensed web-only path.
 
 1. Clone and install:
 

@@ -2,7 +2,7 @@
 
 Monorepo: `apps/web` (Next.js ERP), `apps/api` (NestJS Jubelio integration), `packages/db` (shared Prisma + MariaDB adapter).
 
-This README covers running the stack on your laptop and exposing `apps/api` publicly via ngrok for client demos. For the ERP feature list, see `apps/web/README.md`. For the service-boundary contract, see `docs/BOUNDARY.md`.
+This README covers running the stack on your laptop and deploying it to the VPS. For the ERP feature list, see `apps/web/README.md`. For the service-boundary contract, see `docs/BOUNDARY.md`.
 
 ---
 
@@ -10,7 +10,6 @@ This README covers running the stack on your laptop and exposing `apps/api` publ
 
 - Node `>=22`, pnpm `>=11` (declared in root `package.json` `engines`)
 - A MySQL/MariaDB-compatible database. Production runs **MariaDB 11.4** in the docker-compose stack on the VPS. Local dev runs its own **MariaDB 11.4 container on port 3308** (`docker compose -f docker-compose.dev.yml up -d db`) — a test bed, not prod (see Local-dev DB access below).
-- ngrok account (free, no card) — only needed for client demos
 - Jubelio account credentials — only needed to test integration
 
 ## Repo layout
@@ -34,8 +33,9 @@ docs/
 
 Both `.env` files are gitignored. Templates: `apps/web/.env.example`, `apps/api/.env.example`.
 
-Optional web keys worth knowing:
-- `SERPAPI_KEY` — enables **Find on map** place search on the backoffice store form (SerpAPI Google Maps). Map pin + paste-coords work without it.
+Web keys worth knowing:
+- `INTERNAL_API_URL` — where `apps/web` reaches `apps/api` for HMAC-signed internal calls. `http://localhost:3001` locally; the VPS env store sets the internal compose address in prod. Web features that call the api error out if it points at nothing listening.
+- `SERPAPI_KEY` — optional. Enables **Find on map** place search on the backoffice store form (SerpAPI Google Maps). Map pin + paste-coords work without it.
 
 The api env-load cascade: `apps/api/.env` → `<root>/.env` → `apps/web/.env`. Earlier wins per key (dotenv default no-override). Lets api omit shared keys.
 
@@ -99,31 +99,7 @@ pnpm --filter @elorae/api prod:start
 
 `prod:start` sets `NODE_ENV=production` and runs `node dist/main.js`. cwd must be `apps/api` so `bootstrap-env.ts` resolves the env cascade — `pnpm --filter` handles this automatically.
 
-## Client demo via ngrok
-
-Pattern: `apps/api` runs on your laptop and is exposed publicly via ngrok with a stable free domain so Jubelio can reach it. Your laptop's api talks to the local 3308 test bed unless you deliberately point `DATABASE_URL` at the prod tunnel — a demo that must show the client's real data needs that override.
-
-```bash
-# 1. start apps/api locally (dev or prod-mode)
-pnpm --filter @elorae/api dev
-
-# 2. start ngrok tunnel pointing at api port
-ngrok http --domain=<your-name>.ngrok-free.app 3001
-```
-
-Set `INTERNAL_API_URL=https://<your-name>.ngrok-free.app` in `apps/web/.env` (or VPS env) so web reaches your local api.
-
-Set `CORS_ORIGINS=https://<your-web-origin>` in `apps/api/.env` so the api accepts cross-origin requests from the web.
-
-Jubelio webhooks (optional): in the Jubelio dashboard set URL to `https://<your-name>.ngrok-free.app/webhooks/jubelio/<event>` and `JUBELIO_WEBHOOK_SECRET` to match. Only enable during demo windows — when your laptop is off, webhooks drop after 3 Jubelio retries.
-
-### Demo caveats
-
-- Laptop off = api down → web features that call `INTERNAL_API_URL` error out (local demo only; VPS is unaffected).
-- Local dev is isolated from prod by default (`DATABASE_URL` → 3308 test bed), so a local migration or destructive query does **not** reach the client's data. The risk is the inverse: if you have overridden `DATABASE_URL` to the 3307 prod tunnel for a demo, every subsequent command in that shell hits prod. Check what `DATABASE_URL` resolves to before any write.
-- ngrok free tier: 1 reserved domain, 40 connections/min, 20k req/month. Plenty for demos.
-
-### Local-dev DB access
+## Local-dev DB access
 
 Day to day you do not need prod at all — the default `DATABASE_URL` in `apps/web/.env` points at the local 3308 test bed:
 
@@ -143,6 +119,8 @@ autossh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud
 ```
 
 `apps/web/.env` carries `DATABASE_URL_PROD` (3307) as an inert bookmark — **no code reads it**. To actually target prod you must set `DATABASE_URL` yourself, or pass an explicit `SRC_DATABASE_URL`/`DEST_DATABASE_URL` to the scripts that clone prod data down. See `docs/local-db-testbed.md`.
+
+**If you do override it, that override is the hazard.** Every later command in that shell — a migration, a seed, a backfill, a stray `deleteMany` in a spec — hits prod with no prompt and no marker. Check what `DATABASE_URL` resolves to before any write, and prefer passing the prod URL explicitly to the one command that needs it over exporting it into the shell.
 
 The MariaDB port is bound to `127.0.0.1` on the VPS — no public reach, tunnel is mandatory.
 
@@ -484,6 +462,6 @@ silently becomes a password *prompt*, and `/proc/<pid>/cmdline` is world-readabl
 
 - **`Cannot read properties of undefined (reading 'prepareCacheLength')`** — `DATABASE_URL` not loaded. Check `apps/web/.env` exists and contains the URL. Cascade only reads existing files.
 - **`UOM with code PCS not found. Run db seed first.`** — catalog sync needs the `PCS` UOM seeded: `pnpm --filter @elorae/db seed`.
-- **`CORS_ORIGINS not set` warn on api boot** — fine in pure-local dev. Set to the web origin when deploying to VPS or exposing via ngrok.
+- **`CORS_ORIGINS not set` warn on api boot** — fine in pure-local dev. Set to the web origin when deploying to the VPS.
 - **`SWAGGER_USER / SWAGGER_PASS not set` warn** — `/docs` is disabled. Set both in `apps/api/.env` to enable Swagger.
 - **api boots but DB queries fail** — confirm migrations ran against the same `DATABASE_URL` you booted with. Check `_prisma_migrations` table.

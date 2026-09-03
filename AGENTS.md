@@ -30,7 +30,7 @@ Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostin
 - `docs/EPIC-STATUS.md` — EPIC decomposition + status tables. Read it before building anything that might already exist, and tick the row when a slice merges.
 - `docs/superpowers/specs/` + `docs/superpowers/plans/` — per-feature design specs + implementation plans (local-only, gitignored). Each feature follows brainstorm → spec → plan → implement → PR.
 - `apps/web/README.md` — ERP feature list.
-- `README.md` (root) — local setup, env layout, dev/prod commands, ngrok demo.
+- `README.md` (root) — local setup, env layout, dev/prod commands, VPS deploy, DB backups.
 
 ## Code conventions
 
@@ -63,9 +63,8 @@ Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostin
 | 3001 | apps/api (NestJS, prod-mode for queue work) | `pnpm prod:api` or `pnpm -F @elorae/api prod:start` | `pkill -f "node dist/main"` |
 | 3308 | MariaDB dev test bed (the default `DATABASE_URL`) | `docker compose -f docker-compose.dev.yml up -d db` (first time) or `docker start elorae-dev-db` | `docker stop elorae-dev-db` |
 | 6379 | Redis (BullMQ for apps/api) | `docker compose -f docker-compose.dev.yml up -d redis` (first time) or `docker start elorae-dev-redis` | `docker stop elorae-dev-redis` |
-| ngrok | Public tunnel to apps/api for Jubelio | `ngrok http --url unclean-noncalumniating-cory.ngrok-free.dev 3001` | `pkill -f "ngrok http"` |
 
-**Restart order:** db → Redis → api → web. Static ngrok domain is account-bound; Jubelio webhook config keeps working across restarts.
+**Restart order:** db → Redis → api → web.
 
 ## Production hosts
 
@@ -75,14 +74,14 @@ Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostin
 | Hostinger VPS (`api.elorae.cloud`) | apps/api + Redis + Caddy (Docker Compose) | Same CI-image flow (PR #106): GHA builds → `ghcr.io/okejob-elorae/elorae-api` → VPS pulls, no on-VPS build. Manual/rollback: `ssh elorae@api.elorae.cloud && cd /srv/elorae && git pull && IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml pull api && docker compose -f docker-compose.prod.yml up -d --no-build api`. Caddy handles auto-SSL. Webhook URL: `https://api.elorae.cloud/webhooks/jubelio/<event>`. See `README.md §Production deploy` for first-time setup + ops commands. |
 | VPS MariaDB (docker `db` service) | MySQL-compatible DB | Port 3306 bound to 127.0.0.1 on the VPS. Reached from a laptop only through a deliberate tunnel on local port **3307** (`ssh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud`) — nothing points at it by default; local dev runs on the 3308 test bed. The prod `DATABASE_URL` lives in the VPS env store, not in this repo. |
 
-ngrok stays available as a fallback for local-only demo work (laptop apps/api + temporary public tunnel). VPS is the authoritative prod target.
+The VPS is the only prod target. Client demos run against `https://elorae.cloud` directly — there is no laptop-plus-public-tunnel demo path any more, and Jubelio's webhooks point at `api.elorae.cloud`. One consequence to know before you touch webhook handling: **no documented way to receive a live Jubelio webhook on a laptop remains** — the tunnel was it. Inbound handler changes are covered by specs and by reading `JubelioWebhookEvent` rows on the VPS, not by a live local delivery. `scripts/replay-stuck-webhooks.mjs` is not a substitute: it re-enqueues rows already persisted on the VPS, it does not deliver a new one anywhere.
 
 ## Env layout
 
 - `apps/web/.env` — Next.js env. Holds the shared `DATABASE_URL` — the single source of truth *for local dev*, and it points at the **3308 test bed**, not prod. It also holds `DATABASE_URL_PROD` (3307), which no code reads.
 - `apps/api/.env` — api-only keys (`JUBELIO_*`, `SWAGGER_*`, `PORT`, `CORS_ORIGINS`, `REDIS_URL`). No `DATABASE_URL` — `apps/api/src/bootstrap-env.ts` cascades it from `apps/web/.env`.
 - Cascade order in api: `apps/api/.env` → `<root>/.env` → `apps/web/.env`. Earlier wins per key (dotenv no-override).
-- In prod (VPS + local-with-ngrok): each platform injects env from its own store; cascade is irrelevant.
+- In prod (VPS): env is injected from the platform's own store; the cascade is irrelevant there.
 - **Secrets that have appeared in any chat transcript are compromised.** Rotate `DATABASE_URL` password, `JUBELIO_WEBHOOK_SECRET`, `SWAGGER_PASS` if you accidentally paste them.
 
 ## Landmine index
@@ -200,7 +199,7 @@ One line per known trap: **the situation you are in — what bites — where the
 - Don't write to web-owned tables from apps/api (and vice versa) without going through a `@elorae/db` helper — see `docs/BOUNDARY.md §3`.
 - Don't add Prisma model comments. Don't add `Co-Authored-By` trailers to commits.
 - Don't run `prisma migrate dev` — not against the 3308 test bed, not against the VPS MariaDB. It creates throwaway migrations, resets state, and needs a CREATE DATABASE grant for its shadow database that neither host gives it (P3014). Hand-author the migration SQL and use `migrate:deploy` only.
-- Don't deploy apps/api or apps/web to Vercel. Both need persistent processes; Vercel functions don't fit (node-cron, BullMQ workers). Production target is the Hostinger VPS; local-ngrok is the dev/demo fallback.
+- Don't deploy apps/api or apps/web to Vercel. Both need persistent processes; Vercel functions don't fit (node-cron, BullMQ workers). Production target is the Hostinger VPS.
 - **Don't run the whole test suite** (no filter, or repo-wide). It's slow + wasteful. Scope to the specs you changed. **api (jest):** `pnpm -F @elorae/api test -- <pattern> [<pattern>...]` (jest treats each positional arg as a testPathPattern, OR-ed). **web (vitest):** `pnpm -F @elorae/web exec vitest run <pattern> [<pattern>...]` — positional args are file-path filters. **DO NOT use `pnpm -F @elorae/web test -- <pattern>`** — the `--` pattern is NOT forwarded to vitest, so it silently runs the FULL ~450-test suite against `:3308` (confirmed 2026-07-26; the jest-style `test --` form only works for api). Only widen if a change plausibly affects unrelated specs. **api jest is capped at `maxWorkers: "50%"` and transpiles without type-checking** (`isolatedModules` in `apps/api/tsconfig.json`) — before that it built one TypeScript language service per worker, and jest's default of `cores - 1` workers (15 on a 16-vCPU box) saturated a WSL box with 7.6GB into swap. Pass `--maxWorkers=4` on top if the machine is already loaded, and keep patterns narrow: three directory-shaped patterns matched 16 spec files where 7 were wanted.
 - **`pnpm -F @elorae/api type-check` runs against `tsconfig.spec.json`, not the build tsconfig — do NOT "simplify" it back to `tsc --noEmit`.** The build config excludes `src/**/*.spec.ts` (so specs stay out of `dist`), which means bare `tsc --noEmit` never checked a single api spec file; ts-jest's per-file language service was the only thing doing it, and turning that off would have left api specs unchecked by anything. `tsconfig.spec.json` extends the build config and re-includes specs, so one tsc run now covers what 15 jest workers used to. It also widens `rootDir` to the repo root, which is load-bearing: six specs under `src/db-shared/` and `src/web-shared/` import across package boundaries by relative path (`packages/db/src/*`, `apps/web/lib/redis/*`) to test the SOURCE rather than the built `@elorae/db` barrel, and the inherited `rootDir: ./src` made every one a TS6059 "not under rootDir" error. Nothing is emitted, so `rootDir` is decorative there — do not "tidy" it back. Note `isolatedModules` sits in the BUILD tsconfig because that is the only file ts-jest reads (it resolves the literal name `tsconfig.json` upward from jest's rootDir), so it constrains `nest build` too — clean today (no enums, no `export =`, no re-exports anywhere in `apps/api/src`), but its TS1272 rule for types referenced in a decorated signature is dormant only because `module` is `commonjs`; flipping that to an ES target arms it across every Nest constructor.
 - **Never write an id filter as identifier shorthand in a spec teardown.** `deleteMany({ where: { itemId } })` collapses to `deleteMany({})` — deleting the WHOLE TABLE on the shared `:3308` bed — whenever the fixture hook threw before assigning that id, because **Prisma drops an `undefined` filter term** (measured: `item.count({ where: { id: undefined } })` returns every row). Declare fixture ids `= ""`, reset them at the top of the hook, and pass every one through `seededId()` from `@elorae/db`'s `src/spec-teardown.ts` so the filter is explicit. Prefer `delete` over `deleteMany` for a single row where you can — `delete` REJECTS an undefined id instead of widening, which is fail-closed. Same rule for `in: [...]` lists (`?? []`). Never filter a teardown on a prefix, a category or a date range alone: those over-match real rows without any variable being undefined.
