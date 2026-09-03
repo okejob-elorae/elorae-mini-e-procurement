@@ -81,6 +81,7 @@ describe("shipment-queries", () => {
     await updateShipmentTracking({
       shipmentId,
       carriedById: userId,
+      resiNumber: "RESI-TEST",
       invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
       dueDate: new Date("2026-09-20T00:00:00.000Z"),
     });
