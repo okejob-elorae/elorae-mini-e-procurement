@@ -124,6 +124,16 @@ One line per known trap: **the situation you are in — what bites — where the
 - Adding a retur-offset-adjacent error code? It belongs on `PaymentErrorCode`/`PaymentActionReason`, never on `FieldReturnErrorCode` — `ERROR_CODE_MAP` in `app/actions/field-returns.ts` is deliberately unaffected by this feature. See `docs/ARCHITECTURE-NOTES.md`.
 - Wondering why an available retur credit doesn't reduce `computeStoreCreditExposure`? By design — no `Receivable` has changed and no journal exists yet, the same reasoning that already excludes a pending `CollectionSubmission`. See `docs/ARCHITECTURE-NOTES.md`.
 
+**Delivery shipments**
+
+- Touching anything called a "delivery"? TWO tables mean it — `DeliveryShipment` is the logistics event (`PACKED → IN_TRANSIT → DELIVERED`), `FieldSalesDelivery` stays the accounting event, and completion calls the latter with the DELIVERED, never the planned, quantities — that substitution IS the partial-refuse mechanism. Both also draw `docNo` from the same `DELIVERY` counter. See `docs/ARCHITECTURE-NOTES.md`.
+- Completing a KONSI shipment? It moves no stock — `KonsiTransfer` already moved it at approve — which contradicts this feature's own "stock moves at completion" rule; the contradiction is documented, NOT resolved, so never add a consuming call for konsi lines without reopening the at-approve decision. See `docs/ARCHITECTURE-NOTES.md`.
+- Copying the POD gate's shape onto another proof check? `completeDeliveryShipment`'s `MISSING_PROOF` is this codebase's FIRST hard-blocking proof gate — every sibling (`StoreVisit.checkinOutOfRadius`) warns and never blocks, so don't harmonise the two in either direction. See `docs/ARCHITECTURE-NOTES.md`.
+- Building a new caller on `completeDeliveryShipment`? It posts NO journals (`completeShipmentAction` does, after it returns, guarded on a non-empty `deliveryId`) and it throws TWO error classes — `DeliveryShipmentError` plus `recordFieldSalesDelivery`'s `DeliveryError`, overlapping code strings, different `instanceof`. See `docs/ARCHITECTURE-NOTES.md`.
+- Editing `completeDeliveryShipment`'s two-transaction tail? The deterministic `shipment-<id>` idempotency key and the `status: "IN_TRANSIT"` CAS `updateMany` are what make a crash between the AR write and the status write retryable — never regress either to a random key or a plain `update`. See `docs/ARCHITECTURE-NOTES.md`.
+- Changing carrier/resi handling? `updateShipmentTracking` is decoupled from `shipDeliveryShipment` on purpose (correctable while still `PACKED`, frozen once `IN_TRANSIT`), and the ship CAS deliberately does not re-check `resiNumber` — a known, accepted race. See `docs/ARCHITECTURE-NOTES.md`.
+- Gating a shipment control in the UI? `deliveries:ship` (create/pack/track/ship/cancel) and `deliveries:pod` (completing against proof) are two permissions — check the SAME one that action enforces, never the sibling next to it; that exact mismatch already shipped once on this branch. See `docs/ARCHITECTURE-NOTES.md`.
+
 **Finance — AR, payments**
 
 - Writing to `Receivable.paidAmount`/`outstandingAmount`? Atomic `increment`/`decrement` only, inside the payment/void transaction — never read-modify-write. Same rule as `InventoryValue.reservedQty` above. See `docs/ARCHITECTURE-NOTES.md`.
