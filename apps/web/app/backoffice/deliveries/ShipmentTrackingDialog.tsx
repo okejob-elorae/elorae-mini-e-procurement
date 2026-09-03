@@ -88,7 +88,7 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
       toast.error(t("err.MISSING_CARRIER"));
       return;
     }
-    if (!resiNumber) {
+    if (method === "EXPEDITION" && !resiNumber) {
       toast.error(t("shipMissingResi"));
       return;
     }
