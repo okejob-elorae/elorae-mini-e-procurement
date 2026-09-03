@@ -70,3 +70,38 @@ export async function createDeliveryShipment(input: {
     return { shipmentId: shipment.id, docNo: shipment.docNo };
   });
 }
+
+export async function updateShipmentTracking(input: {
+  shipmentId: string;
+  carrierName?: string;
+  resiNumber?: string;
+}): Promise<{ ok: true }> {
+  const result = await prisma.deliveryShipment.updateMany({
+    where: { id: input.shipmentId, status: "PACKED" },
+    data: {
+      ...(input.carrierName !== undefined ? { carrierName: input.carrierName } : {}),
+      ...(input.resiNumber !== undefined ? { resiNumber: input.resiNumber } : {}),
+    },
+  });
+  if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+  return { ok: true };
+}
+
+export async function shipDeliveryShipment(input: {
+  shipmentId: string;
+  shippedById: string;
+}): Promise<{ ok: true }> {
+  const shipment = await prisma.deliveryShipment.findUnique({ where: { id: input.shipmentId } });
+  if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
+  if (shipment.status !== "PACKED") throw new DeliveryShipmentError("INVALID_STATE");
+  if (shipment.method === "EXPEDITION" && !shipment.resiNumber) {
+    throw new DeliveryShipmentError("MISSING_RESI");
+  }
+
+  const result = await prisma.deliveryShipment.updateMany({
+    where: { id: input.shipmentId, status: "PACKED" },
+    data: { status: "IN_TRANSIT", shippedAt: new Date(), shippedById: input.shippedById },
+  });
+  if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+  return { ok: true };
+}
