@@ -1,4 +1,4 @@
--- Delivery shipment tracking (EPIC-20, expedition-first slice): the logistics lifecycle
+-- Delivery shipment tracking (expedition-first slice): the logistics lifecycle
 -- PACKED -> IN_TRANSIT -> DELIVERED/PARTIALLY_DELIVERED, in front of the existing
 -- FieldSalesDelivery writer. Completion calls recordFieldSalesDelivery with the actually
 -- delivered quantities and stores the resulting id in deliveryId -- FieldSalesDelivery
