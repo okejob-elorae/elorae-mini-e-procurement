@@ -15,6 +15,7 @@ import {
   Package,
   Pencil,
   Phone,
+  Receipt,
   ShoppingBag,
   Store,
   Undo2,
@@ -23,10 +24,13 @@ import {
 import type { StoreListItem } from "@/lib/stores/queries";
 import type { StoreSentItemRow } from "@/lib/field-sales/queries";
 import type { StoreStocktakeStatusValue } from "@/lib/stores/stocktake/queries";
+import type { StorePiutangSummary } from "@/lib/finance/ar/queries";
+import { isOverdue } from "@/lib/finance/ar/aging";
 import { createAction as createStocktakeAction } from "@/app/actions/store-stocktakes";
 import { raiseAdminReturnAction, type RaiseAdminReturnActionResult } from "@/app/actions/field-returns";
 import { FIELD_RETURN_REASONS, type FieldReturnLineInput, type FieldReturnReasonInput } from "@/lib/field-sales/retur/types";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -165,6 +169,10 @@ type Props = {
     old: PendingChangeFields;
   } | null;
   creditExposure: { exposure: number; headroom: number } | null;
+  /** Only populated for a user with `receivables:view` — the card is gated, not just its controls. */
+  piutang: StorePiutangSummary | null;
+  /** The instant `piutang` was computed as of, threaded through so the client's `isOverdue` call matches the server-computed buckets. */
+  piutangAsOfIso: string;
 };
 
 const STOCKTAKE_STATUS_BADGE_VARIANT: Record<StoreStocktakeStatusValue, "secondary" | "destructive" | "default" | "outline"> = {
@@ -287,6 +295,8 @@ export function StoreDetailView({
   assortment,
   pendingChange,
   creditExposure,
+  piutang,
+  piutangAsOfIso,
 }: Props) {
   const t = useTranslations("stores");
   const tBadge = useTranslations("stores.badge");
@@ -294,6 +304,7 @@ export function StoreDetailView({
   const tForm = useTranslations("stores.form");
   const tTable = useTranslations("stores.list.table");
   const tOrders = useTranslations("stores.orders");
+  const tPiutang = useTranslations("stores.piutang");
   const tSentItems = useTranslations("stores.sentItems");
   const tStocktake = useTranslations("stores.stocktake");
   const tAdminReturn = useTranslations("stores.adminReturn");
@@ -761,6 +772,76 @@ export function StoreDetailView({
           )}
         </CardContent>
       </Card>
+
+      {piutang && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Receipt className="h-4 w-4" />
+              {tPiutang("cardTitle")}
+              <span className="text-sm font-normal text-muted-foreground ml-2">({piutang.openCount})</span>
+              <span className="ml-auto text-sm font-semibold tabular-nums">
+                {formatRupiah(piutang.grandOutstanding)}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {piutang.rows.length === 0 ? (
+              <div className="text-center py-8">
+                <Receipt className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">{tPiutang("empty")}</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{tPiutang("colDocNo")}</TableHead>
+                      <TableHead>{tPiutang("colDueDate")}</TableHead>
+                      <TableHead className="text-right">{tPiutang("colAmount")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {piutang.rows.map((r) => {
+                      const overdue = isOverdue(new Date(r.dueDateIso), new Date(piutangAsOfIso));
+                      return (
+                        <TableRow
+                          key={r.id}
+                          className={cn(
+                            "cursor-pointer",
+                            overdue
+                              ? "bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-950/40"
+                              : "hover:bg-muted/50",
+                          )}
+                          onClick={() =>
+                            startTransition(() => router.push(`/backoffice/finance/piutang/${r.id}`))
+                          }
+                        >
+                          <TableCell className="font-mono text-xs">{r.docNo}</TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {formatDateOnlyJakarta(new Date(r.dueDateIso))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatRupiah(r.outstandingAmount)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            <div className="mt-3 text-right">
+              <Link
+                href={`/backoffice/finance/piutang?storeId=${store.id}`}
+                className="text-sm text-primary hover:underline inline-flex items-center gap-1 justify-end"
+              >
+                {tPiutang("viewAll")} <ExternalLink className="h-3 w-3" />
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
