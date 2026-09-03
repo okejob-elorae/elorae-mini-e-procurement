@@ -25,6 +25,7 @@ Database: **MariaDB 11.4** self-hosted in the docker-compose stack on the Hostin
 
 - `docs/BOUNDARY.md` — service responsibilities, data ownership (per-table write owners), communication patterns (sync HTTP vs outbox vs webhooks), auth model, failure modes, anti-patterns, decisions log.
 - `docs/INTEGRATION-GUIDE.md` — how to use the Jubelio-touching surface (outbox enqueue, stock adjustments, signed channel).
+- `docs/PICK-PACK-SHIP.md` — the marketplace fulfillment flow end to end: where stock is reserved vs consumed, the `PENDING → PICKED → PACKED → SHIPPED` state machine and its guards, the three Jubelio WMS pushes and their body shapes, and the forward-only `SHIPPED` sync back. Read it before touching anything on that path.
 - `docs/ARCHITECTURE-NOTES.md` — the detail behind the landmine index below. Read the entry for whatever surface you are about to touch, before writing code. A few triggers also have detail in `docs/EPIC-STATUS.md` (what a slice shipped) or `docs/FOLLOWUPS.md` (the instance still unfixed); the entry says so where that is true.
 - `docs/FOLLOWUPS.md` — follow-ups + known tech debt, grouped by area. Read the relevant section before starting work on that area; log every new follow-up there.
 - `docs/EPIC-STATUS.md` — EPIC decomposition + status tables. Read it before building anything that might already exist, and tick the row when a slice merges.
