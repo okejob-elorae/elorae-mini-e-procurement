@@ -614,6 +614,10 @@
     "dueDateBeforeInvoice": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal invoice.",
     "storeSearchPlaceholder": "Cari toko...",
     "storeSearchEmpty": "Toko tidak ditemukan.",
+    "carriedByLabel": "Dibawa oleh",
+    "carriedByPlaceholder": "Pilih salesman",
+    "invoiceDateLabel": "Tanggal invoice",
+    "dueDateLabel2": "Tanggal jatuh tempo",
     "err": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk melakukan ini.",
       "NOT_FOUND": "Pengiriman tidak ditemukan.",
@@ -628,7 +632,12 @@
       "INSUFFICIENT_STOCK": "Stok tidak cukup untuk menyelesaikan pengiriman ini.",
       "INVALID_DATES": "Tanggal jatuh tempo tidak boleh lebih awal dari tanggal invoice.",
       "INVALID_REQUEST": "Ada nilai yang tidak valid. Periksa formulir lalu coba lagi.",
-      "UNEXPECTED": "Terjadi kesalahan. Coba lagi."
+      "UNEXPECTED": "Terjadi kesalahan. Coba lagi.",
+      "MISSING_CARRIER": "Pilih siapa yang membawa pengiriman ini sebelum mengirim.",
+      "MISSING_DATES": "Masukkan tanggal invoice dan jatuh tempo sebelum mengirim.",
+      "MISSING_GPS": "Lokasi diperlukan untuk menyelesaikan pengiriman ini.",
+      "STORE_NOT_GEOCODED": "Toko ini belum memiliki lokasi tercatat — hubungi admin sebelum menyelesaikan di sini.",
+      "GPS_OUT_OF_RADIUS": "Anda terlalu jauh dari toko untuk menyelesaikan pengiriman ini."
     }
   },
   "production": {
@@ -2563,6 +2572,32 @@
       "markAllRead": "Tandai semua dibaca",
       "empty": "Belum ada notifikasi",
       "offlineError": "Gagal terhubung — periksa koneksi internet dan coba lagi"
+    },
+    "deliveries": {
+      "homeCta": "Pengiriman Saya",
+      "title": "Pengiriman Saya",
+      "count": "{count, plural, =0 {Tidak ada pengiriman} other {# pengiriman}}",
+      "empty": "Belum ada pengiriman yang ditugaskan ke Anda.",
+      "colStore": "Toko",
+      "colOrder": "Order",
+      "colQty": "Qty",
+      "detailTitle": "Selesaikan Pengiriman",
+      "proofLabel": "Foto bukti",
+      "proofUploadButton": "Unggah foto",
+      "proofUploading": "Mengunggah...",
+      "proofUploaded": "Terunggah: {name}",
+      "proofUploadError": "Unggah gagal. Coba lagi.",
+      "locationLabel": "Lokasi",
+      "locating": "Mengambil lokasi Anda...",
+      "locationError": "Tidak dapat mengambil lokasi Anda. Periksa izin dan coba lagi.",
+      "locationRetry": "Coba Lagi",
+      "permissionDenied": "Akses lokasi diperlukan untuk menyelesaikan pengiriman. Aktifkan di pengaturan browser Anda.",
+      "qtyLabel": "Qty terkirim",
+      "plannedLabel": "Rencana",
+      "submitButton": "Konfirmasi Pengiriman",
+      "submitting": "Mengirim...",
+      "submitSuccess": "Pengiriman selesai.",
+      "errGeneric": "Terjadi kesalahan. Coba lagi."
     }
   },
   "fieldSalesOrders": {

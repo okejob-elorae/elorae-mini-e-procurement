@@ -614,6 +614,10 @@
     "dueDateBeforeInvoice": "The due date cannot be earlier than the invoice date.",
     "storeSearchPlaceholder": "Search store...",
     "storeSearchEmpty": "No store found.",
+    "carriedByLabel": "Carried by",
+    "carriedByPlaceholder": "Select salesman",
+    "invoiceDateLabel": "Invoice date",
+    "dueDateLabel2": "Due date",
     "err": {
       "FORBIDDEN": "You don't have permission to do this.",
       "NOT_FOUND": "Shipment not found.",
@@ -628,7 +632,12 @@
       "INSUFFICIENT_STOCK": "Not enough stock on hand to complete this delivery.",
       "INVALID_DATES": "The due date cannot be earlier than the invoice date.",
       "INVALID_REQUEST": "Some of the values submitted are invalid. Check the form and try again.",
-      "UNEXPECTED": "Something went wrong. Try again."
+      "UNEXPECTED": "Something went wrong. Try again.",
+      "MISSING_CARRIER": "Select who is carrying this delivery before shipping.",
+      "MISSING_DATES": "Enter the invoice and due dates before shipping.",
+      "MISSING_GPS": "Location is required to complete this delivery.",
+      "STORE_NOT_GEOCODED": "This store has no location on record — contact an admin before completing here.",
+      "GPS_OUT_OF_RADIUS": "You're too far from the store to complete this delivery."
     }
   },
   "production": {
@@ -2563,6 +2572,32 @@
       "markAllRead": "Mark all read",
       "empty": "No notifications yet",
       "offlineError": "Couldn't connect — check your connection and try again"
+    },
+    "deliveries": {
+      "homeCta": "My Deliveries",
+      "title": "My Deliveries",
+      "count": "{count, plural, =0 {No deliveries} one {# delivery} other {# deliveries}}",
+      "empty": "No deliveries assigned to you right now.",
+      "colStore": "Store",
+      "colOrder": "Order",
+      "colQty": "Qty",
+      "detailTitle": "Complete Delivery",
+      "proofLabel": "Proof photo",
+      "proofUploadButton": "Upload photo",
+      "proofUploading": "Uploading...",
+      "proofUploaded": "Uploaded: {name}",
+      "proofUploadError": "Upload failed. Try again.",
+      "locationLabel": "Location",
+      "locating": "Getting your location...",
+      "locationError": "Could not get your location. Check permissions and try again.",
+      "locationRetry": "Retry",
+      "permissionDenied": "Location access is required to complete a delivery. Enable it in your browser settings.",
+      "qtyLabel": "Delivered qty",
+      "plannedLabel": "Planned",
+      "submitButton": "Confirm Delivery",
+      "submitting": "Submitting...",
+      "submitSuccess": "Delivery completed.",
+      "errGeneric": "Something went wrong. Try again."
     }
   },
   "fieldSalesOrders": {
