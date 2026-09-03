@@ -116,6 +116,7 @@ export async function completeDeliveryShipment(input: {
   dueDate: Date;
   lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
 }): Promise<{ ok: true; deliveryId: string }> {
+  if (input.lines.length === 0) throw new DeliveryShipmentError("NO_LINES");
   if (!input.proofPhotoUrl) throw new DeliveryShipmentError("MISSING_PROOF");
   for (const line of input.lines) {
     if (!Number.isInteger(line.deliveredQty) || line.deliveredQty < 0) {
@@ -160,20 +161,15 @@ export async function completeDeliveryShipment(input: {
         lines: deliveredLines,
         invoiceDate: input.invoiceDate,
         dueDate: input.dueDate,
+        idempotencyKey: `shipment-${input.shipmentId}`,
       });
       deliveryId = delivery.deliveryId;
     }
   }
 
   await runSerializable(async (tx) => {
-    for (const line of input.lines) {
-      await tx.deliveryShipmentLine.update({
-        where: { id: line.shipmentLineId },
-        data: { deliveredQty: line.deliveredQty },
-      });
-    }
-    await tx.deliveryShipment.update({
-      where: { id: input.shipmentId },
+    const result = await tx.deliveryShipment.updateMany({
+      where: { id: input.shipmentId, status: "IN_TRANSIT" },
       data: {
         status: nextStatus,
         deliveredAt: new Date(),
@@ -183,6 +179,14 @@ export async function completeDeliveryShipment(input: {
         ...(deliveryId ? { deliveryId } : {}),
       },
     });
+    if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+
+    for (const line of input.lines) {
+      await tx.deliveryShipmentLine.update({
+        where: { id: line.shipmentLineId },
+        data: { deliveredQty: line.deliveredQty },
+      });
+    }
   });
 
   return { ok: true, deliveryId };
