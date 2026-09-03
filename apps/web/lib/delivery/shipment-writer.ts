@@ -99,12 +99,18 @@ export async function updateShipmentTracking(input: {
   shipmentId: string;
   carrierName?: string;
   resiNumber?: string;
+  carriedById?: string;
+  invoiceDate?: Date;
+  dueDate?: Date;
 }): Promise<{ ok: true }> {
   const result = await prisma.deliveryShipment.updateMany({
     where: { id: input.shipmentId, status: "PACKED" },
     data: {
       ...(input.carrierName !== undefined ? { carrierName: input.carrierName } : {}),
       ...(input.resiNumber !== undefined ? { resiNumber: input.resiNumber } : {}),
+      ...(input.carriedById !== undefined ? { carriedById: input.carriedById } : {}),
+      ...(input.invoiceDate !== undefined ? { invoiceDate: input.invoiceDate } : {}),
+      ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
     },
   });
   if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");

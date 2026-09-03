@@ -199,6 +199,32 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
       shipDeliveryShipment({ shipmentId, shippedById: userId }),
     ).rejects.toMatchObject({ code: "INVALID_STATE" });
   });
+
+  it("sets carriedById, invoiceDate, and dueDate", async () => {
+    const invoiceDate = new Date("2026-09-10T00:00:00.000Z");
+    const dueDate = new Date("2026-09-20T00:00:00.000Z");
+    await updateShipmentTracking({ shipmentId, carriedById: userId, invoiceDate, dueDate });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.carriedById).toBe(userId);
+    expect(shipment?.invoiceDate?.toISOString()).toBe(invoiceDate.toISOString());
+    expect(shipment?.dueDate?.toISOString()).toBe(dueDate.toISOString());
+  });
+
+  it("leaves carriedById/invoiceDate/dueDate untouched when not supplied", async () => {
+    await updateShipmentTracking({ shipmentId, carrierName: "JNE" });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.carrierName).toBe("JNE");
+    expect(shipment?.carriedById).toBeNull();
+    expect(shipment?.invoiceDate).toBeNull();
+  });
+
+  it("still refuses when the shipment is not PACKED", async () => {
+    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: "RESI-CARRY" });
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+    await expect(
+      updateShipmentTracking({ shipmentId, carriedById: userId }),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
 });
 
 describe("completeDeliveryShipment", () => {
