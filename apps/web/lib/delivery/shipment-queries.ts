@@ -70,6 +70,9 @@ export async function getDeliveryShipment(id: string): Promise<{
   method: string;
   carrierName: string | null;
   resiNumber: string | null;
+  carriedById: string | null;
+  invoiceDate: Date | null;
+  dueDate: Date | null;
   proofPhotoUrl: string | null;
   orderId: string;
   storeName: string;
@@ -107,6 +110,9 @@ export async function getDeliveryShipment(id: string): Promise<{
     method: row.method,
     carrierName: row.carrierName,
     resiNumber: row.resiNumber,
+    carriedById: row.carriedById,
+    invoiceDate: row.invoiceDate,
+    dueDate: row.dueDate,
     proofPhotoUrl: row.proofPhotoUrl,
     orderId: row.orderId,
     storeName: row.order.store.name,

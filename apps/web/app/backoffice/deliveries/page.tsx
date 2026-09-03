@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { listShipmentsAction } from "@/app/actions/delivery-shipments";
 import { listStoreOptions } from "@/lib/stores/queries";
+import { listCarrierCandidates } from "@/lib/delivery/carrier-queries";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { DeliveriesPageClient } from "./DeliveriesPageClient";
 
@@ -22,9 +23,10 @@ export default async function DeliveriesPage() {
     redirect("/backoffice");
   }
 
-  const [initial, storeOptions] = await Promise.all([
+  const [initial, storeOptions, carriers] = await Promise.all([
     listShipmentsAction({ page: 1, pageSize: DEFAULT_PAGE_SIZE }),
     listStoreOptions(),
+    listCarrierCandidates(),
   ]);
 
   return (
@@ -32,6 +34,7 @@ export default async function DeliveriesPage() {
       initialItems={initial.items}
       initialTotal={initial.total}
       storeOptions={storeOptions}
+      carriers={carriers}
       canShip={canShip}
       canPod={canPod}
     />

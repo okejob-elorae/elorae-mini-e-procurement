@@ -33,6 +33,7 @@ type Props = {
   initialItems: ShipmentRow[];
   initialTotal: number;
   storeOptions: { id: string; name: string }[];
+  carriers: { id: string; name: string }[];
   canShip: boolean;
   canPod: boolean;
 };
@@ -69,7 +70,14 @@ const STATUS_LABEL_KEY: Record<
   CANCELLED: "statusCancelled",
 };
 
-export function DeliveriesPageClient({ initialItems, initialTotal, storeOptions, canShip, canPod }: Props) {
+export function DeliveriesPageClient({
+  initialItems,
+  initialTotal,
+  storeOptions,
+  carriers,
+  canShip,
+  canPod,
+}: Props) {
   const t = useTranslations("deliveryShipments");
   const [items, setItems] = useState(initialItems);
   const [total, setTotal] = useState(initialTotal);
@@ -270,6 +278,7 @@ export function DeliveriesPageClient({ initialItems, initialTotal, storeOptions,
           open={!!trackingShipmentId}
           onOpenChange={(open) => !open && setTrackingShipmentId(null)}
           onDone={() => refetch(page, filters)}
+          carriers={carriers}
         />
       )}
       {completingShipmentId && (

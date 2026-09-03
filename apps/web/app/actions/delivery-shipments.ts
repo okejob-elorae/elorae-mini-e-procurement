@@ -102,13 +102,28 @@ export async function updateShipmentTrackingAction(input: {
   shipmentId: string;
   carrierName?: string;
   resiNumber?: string;
+  carriedById?: string;
+  invoiceDate?: string;
+  dueDate?: string;
 }): Promise<ShipmentActionResult> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_SHIP)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
+  const invoiceDate = input.invoiceDate ? parseCalendarDay(input.invoiceDate) : undefined;
+  const dueDate = input.dueDate ? parseCalendarDay(input.dueDate) : undefined;
+  if ((input.invoiceDate && !invoiceDate) || (input.dueDate && !dueDate)) {
+    return { ok: false, reason: "INVALID_REQUEST" };
+  }
   try {
-    await updateShipmentTracking(input);
+    await updateShipmentTracking({
+      shipmentId: input.shipmentId,
+      carrierName: input.carrierName,
+      resiNumber: input.resiNumber,
+      carriedById: input.carriedById,
+      invoiceDate: invoiceDate ?? undefined,
+      dueDate: dueDate ?? undefined,
+    });
     revalidatePath("/backoffice/deliveries");
     return { ok: true };
   } catch (error) {
