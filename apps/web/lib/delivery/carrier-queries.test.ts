@@ -2,14 +2,44 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { listCarrierCandidates } from "./carrier-queries";
 
-describe("listCarrierCandidates", () => {
+/**
+ * Same prod guard every other spec in this repo that writes live `User`/`RoleDefinition` rows
+ * carries (see `lib/finance/collections/assign-writer.test.ts`). This file creates a real
+ * non-system role and a real user, and an ambient `DATABASE_URL` pointed at the 3307 prod tunnel
+ * would put both in the client's database.
+ */
+const url = process.env.DATABASE_URL ?? "";
+const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
+const d = isProd ? describe.skip : describe;
+
+/**
+ * `connectOrCreate`, not a `findUnique` + assert: `deliveries:pod` has never been seeded anywhere
+ * in this repo (no `seed-*-permissions.sql` counterpart exists for it), so asserting the row
+ * already exists made this file's only positive test die in its own setup — never reaching
+ * `listCarrierCandidates()` at all, while reading as two passing tests. The fixture creates
+ * whatever is missing and reuses whatever is already there, so it is correct on a freshly seeded
+ * bed and on prod-shaped data alike. Not torn down: a `Permission` row is shared reference data,
+ * and deleting one this spec may not have created would strip it from real roles.
+ */
+const podPermission = {
+  connectOrCreate: {
+    where: { code: "deliveries:pod" },
+    create: { code: "deliveries:pod", module: "deliveries", action: "pod" },
+  },
+};
+const pwaPermission = {
+  connectOrCreate: {
+    where: { code: "pwa:access" },
+    create: { code: "pwa:access", module: "pwa", action: "access" },
+  },
+};
+
+d("listCarrierCandidates (test bed only)", () => {
   let roleId = "";
   let userId = "";
-  let permissionId = "";
-  let pwaAccessPermissionId = "";
 
   beforeEach(async () => {
-    roleId = userId = permissionId = pwaAccessPermissionId = "";
+    roleId = userId = "";
   });
 
   afterEach(async () => {
@@ -18,17 +48,12 @@ describe("listCarrierCandidates", () => {
   });
 
   it("returns users whose role holds both deliveries:pod and pwa:access", async () => {
-    const podPermission = await prisma.permission.findUnique({ where: { code: "deliveries:pod" } });
-    const pwaPermission = await prisma.permission.findUnique({ where: { code: "pwa:access" } });
-    expect(podPermission).not.toBeNull();
-    expect(pwaPermission).not.toBeNull();
-
     const role = await prisma.roleDefinition.create({
       data: {
         name: `carrier-test-role-${Date.now()}`,
         isSystem: false,
         permissions: {
-          create: [{ permissionId: podPermission!.id }, { permissionId: pwaPermission!.id }],
+          create: [{ permission: podPermission }, { permission: pwaPermission }],
         },
       },
     });
@@ -44,12 +69,11 @@ describe("listCarrierCandidates", () => {
   });
 
   it("excludes a user whose role lacks deliveries:pod", async () => {
-    const pwaPermission = await prisma.permission.findUnique({ where: { code: "pwa:access" } });
     const role = await prisma.roleDefinition.create({
       data: {
         name: `non-carrier-role-${Date.now()}`,
         isSystem: false,
-        permissions: { create: [{ permissionId: pwaPermission!.id }] },
+        permissions: { create: [{ permission: pwaPermission }] },
       },
     });
     roleId = role.id;
