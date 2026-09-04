@@ -17,6 +17,7 @@ export default async function PwaHome() {
 
   const userName = session.user.name ?? session.user.email ?? "";
   const canCollect = hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_COLLECT);
+  const canCompletePod = hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_POD);
 
   /**
    * SPG is a fixed-store role (User.assignedStoreId) — detect it before
@@ -122,6 +123,7 @@ export default async function PwaHome() {
       stores={stores.map(s => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng }))}
       recentStores={recentStores}
       canCollect={canCollect}
+      canCompletePod={canCompletePod}
       onLogout={logout}
     />
   );

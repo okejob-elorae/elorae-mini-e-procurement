@@ -33,6 +33,7 @@ type Props = {
   initialItems: ShipmentRow[];
   initialTotal: number;
   storeOptions: { id: string; name: string }[];
+  carriers: { id: string; name: string }[];
   canShip: boolean;
   canPod: boolean;
 };
@@ -69,7 +70,14 @@ const STATUS_LABEL_KEY: Record<
   CANCELLED: "statusCancelled",
 };
 
-export function DeliveriesPageClient({ initialItems, initialTotal, storeOptions, canShip, canPod }: Props) {
+export function DeliveriesPageClient({
+  initialItems,
+  initialTotal,
+  storeOptions,
+  carriers,
+  canShip,
+  canPod,
+}: Props) {
   const t = useTranslations("deliveryShipments");
   const [items, setItems] = useState(initialItems);
   const [total, setTotal] = useState(initialTotal);
@@ -235,13 +243,21 @@ export function DeliveriesPageClient({ initialItems, initialTotal, storeOptions,
                            * `deliveries:ship`, completion is `deliveries:pod`. Either can be held
                            * without the other, so an ungated button here is a button that 403s on
                            * submit with nothing explaining why.
+                           *
+                           * Complete also checks `method`: a SALESMAN_CARRY shipment is closed
+                           * from the PWA, where the salesman's phone supplies the GPS the writer
+                           * now hard-gates on. `completeShipmentAction` never sends a `gps`
+                           * payload, so this button could only ever return MISSING_GPS on such a
+                           * row — same "gate the button on what the action actually enforces"
+                           * rule the paragraph above states, applied to a capability rather than
+                           * a permission.
                            */}
                           {canShip && item.status === "PACKED" && (
                             <Button size="sm" variant="outline" onClick={() => setTrackingShipmentId(item.id)}>
                               {t("editTracking")}
                             </Button>
                           )}
-                          {canPod && item.status === "IN_TRANSIT" && (
+                          {canPod && item.status === "IN_TRANSIT" && item.method === "EXPEDITION" && (
                             <Button size="sm" onClick={() => setCompletingShipmentId(item.id)}>
                               {t("complete")}
                             </Button>
@@ -270,6 +286,7 @@ export function DeliveriesPageClient({ initialItems, initialTotal, storeOptions,
           open={!!trackingShipmentId}
           onOpenChange={(open) => !open && setTrackingShipmentId(null)}
           onDone={() => refetch(page, filters)}
+          carriers={carriers}
         />
       )}
       {completingShipmentId && (

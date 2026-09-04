@@ -26,16 +26,18 @@ type Props = {
   stores: StoreWithCoords[];
   recentStores: Array<{ storeId: string; storeName: string }>;
   canCollect: boolean;
+  canCompletePod: boolean;
   onLogout: () => Promise<void>;
 };
 
-export function HomeShell({ userName, activeVisit, stores, recentStores, canCollect, onLogout }: Props) {
+export function HomeShell({ userName, activeVisit, stores, recentStores, canCollect, canCompletePod, onLogout }: Props) {
   const t = useTranslations("pwa.nearest");
   const tAuth = useTranslations("auth");
   const tOffline = useTranslations("pwa.offline");
   const tVanSale = useTranslations("vanSale");
   const tSmartRequest = useTranslations("pwa.smartRequest");
   const tCollections = useTranslations("pwa.collections");
+  const tDeliveries = useTranslations("pwa.deliveries");
   const tNotifications = useTranslations("pwa.notifications");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
@@ -154,6 +156,15 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
     </Button>
   ) : null;
 
+  const deliveriesCta = canCompletePod ? (
+    <Button asChild variant="outline" className="w-full">
+      <Link href="/pwa/deliveries">
+        <Truck className="h-4 w-4" />
+        {tDeliveries("homeCta")}
+      </Link>
+    </Button>
+  ) : null;
+
   const pendingChip = pendingCount > 0 ? (
     <Link
       href="/pwa/orders/pending"
@@ -208,6 +219,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
         </div>
         {vanSaleCta}
         {collectionsCta}
+        {deliveriesCta}
         <CheckOutButton visitId={activeVisit.id} />
       </div>
     );
@@ -221,6 +233,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
       {pendingChip}
       {vanSaleCta}
       {collectionsCta}
+      {deliveriesCta}
 
       <Card>
         <CardContent className="p-4 flex items-start gap-3">

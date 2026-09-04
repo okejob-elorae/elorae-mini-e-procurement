@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import {
   Dialog,
   DialogContent,
@@ -20,18 +21,24 @@ import {
   shipShipmentAction,
   cancelShipmentAction,
 } from "@/app/actions/delivery-shipments";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 
 type Props = {
   shipmentId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDone: () => void;
+  carriers: { id: string; name: string }[];
 };
 
-export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone }: Props) {
+export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone, carriers }: Props) {
   const t = useTranslations("deliveryShipments");
   const [carrierName, setCarrierName] = useState("");
   const [resiNumber, setResiNumber] = useState("");
+  const [method, setMethod] = useState("");
+  const [carriedById, setCarriedById] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -39,6 +46,10 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone 
     getShipmentAction(shipmentId).then((detail) => {
       setCarrierName(detail?.carrierName ?? "");
       setResiNumber(detail?.resiNumber ?? "");
+      setMethod(detail?.method ?? "");
+      setCarriedById(detail?.carriedById ?? "");
+      setInvoiceDate(detail?.invoiceDate ? formatDateOnlyJakarta(detail.invoiceDate) : "");
+      setDueDate(detail?.dueDate ? formatDateOnlyJakarta(detail.dueDate) : "");
     });
   }, [open, shipmentId]);
 
@@ -52,7 +63,14 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone 
   function handleSave(): void {
     startTransition(async () => {
       try {
-        const result = await updateShipmentTrackingAction({ shipmentId, carrierName, resiNumber });
+        const result = await updateShipmentTrackingAction({
+          shipmentId,
+          carrierName,
+          resiNumber,
+          carriedById: carriedById || undefined,
+          invoiceDate: invoiceDate || undefined,
+          dueDate: dueDate || undefined,
+        });
         if (!result.ok) {
           toast.error(t(`err.${result.reason}` as any));
           return;
@@ -66,13 +84,37 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone 
   }
 
   function handleShip(): void {
-    if (!resiNumber) {
+    if (method === "SALESMAN_CARRY" && (!carriedById || !invoiceDate || !dueDate)) {
+      toast.error(t("err.MISSING_CARRIER"));
+      return;
+    }
+    /**
+     * Fail fast on a reversed pair rather than letting the action refuse it, because this is the
+     * last moment the pair is editable at all: `updateShipmentTracking` is PACKED-gated, so once
+     * this dialog ships the shipment the dates freeze and the salesman meets them in the field.
+     * Both values are `YYYY-MM-DD` strings straight out of `<input type="date">`, so a plain
+     * string comparison is exactly a chronological one — no `Date` round-trip needed. Self-gating
+     * on both being non-empty, which is why it needs no `method` check of its own: the date
+     * inputs only render for SALESMAN_CARRY, and the server-side guard covers the rest.
+     */
+    if (invoiceDate && dueDate && dueDate < invoiceDate) {
+      toast.error(t("dueDateBeforeInvoice"));
+      return;
+    }
+    if (method === "EXPEDITION" && !resiNumber) {
       toast.error(t("shipMissingResi"));
       return;
     }
     startTransition(async () => {
       try {
-        const trackingResult = await updateShipmentTrackingAction({ shipmentId, carrierName, resiNumber });
+        const trackingResult = await updateShipmentTrackingAction({
+          shipmentId,
+          carrierName,
+          resiNumber,
+          carriedById: carriedById || undefined,
+          invoiceDate: invoiceDate || undefined,
+          dueDate: dueDate || undefined,
+        });
         if (!trackingResult.ok) {
           toast.error(t(`err.${trackingResult.reason}` as any));
           return;
@@ -124,6 +166,35 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone 
             <Label htmlFor="resiNumber">{t("resiNumberLabel")}</Label>
             <Input id="resiNumber" value={resiNumber} onChange={(e) => setResiNumber(e.target.value)} />
           </div>
+          {method === "SALESMAN_CARRY" && (
+            <>
+              <div>
+                <Label htmlFor="carriedBy">{t("carriedByLabel")}</Label>
+                <SearchableCombobox
+                  id="carriedBy"
+                  options={carriers.map((c) => ({ value: c.id, label: c.name }))}
+                  value={carriedById}
+                  onValueChange={setCarriedById}
+                  placeholder={t("carriedByPlaceholder")}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="invoiceDate">{t("invoiceDateLabel")}</Label>
+                  <Input
+                    id="invoiceDate"
+                    type="date"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="dueDate2">{t("dueDateLabel2")}</Label>
+                  <Input id="dueDate2" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                </div>
+              </div>
+            </>
+          )}
         </div>
         <DialogFooter className="flex-wrap gap-2">
           <Button variant="destructive" onClick={handleCancel} disabled={isPending}>

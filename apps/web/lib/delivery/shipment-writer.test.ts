@@ -113,6 +113,15 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
   let lineId = "";
   let itemId = "";
   let shipmentId = "";
+  /* Second, independent fixture set for the SALESMAN_CARRY tests below — each of those tests
+   * creates its own store/item/order rather than reusing the EXPEDITION shipment/order this
+   * describe's beforeEach seeds, so a SALESMAN_CARRY test can never contend with the
+   * beforeEach-created shipment for in-flight qty on a shared order line (PR #288's guard). */
+  let carryStoreId = "";
+  let carryOrderId = "";
+  let carryLineId = "";
+  let carryItemId = "";
+  let carryShipmentId = "";
 
   beforeEach(async () => {
     storeId = "";
@@ -121,6 +130,11 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
     lineId = "";
     itemId = "";
     shipmentId = "";
+    carryStoreId = "";
+    carryOrderId = "";
+    carryLineId = "";
+    carryItemId = "";
+    carryShipmentId = "";
 
     const store = await prisma.store.create({
       data: { code: `ST-${Date.now()}`, name: "Test Store 2", address: "x", termsType: "PUTUS" },
@@ -163,6 +177,15 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
     await prisma.fieldSalesOrder.delete({ where: { id: seededId(orderId) } });
     await prisma.item.delete({ where: { id: seededId(itemId) } });
     await prisma.store.delete({ where: { id: seededId(storeId) } });
+
+    /* Second fixture set — only populated by the SALESMAN_CARRY tests below, so deleteMany
+     * (not delete) throughout: it must no-op harmlessly on every other test in this describe. */
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: seededId(carryShipmentId) } });
+    await prisma.deliveryShipment.deleteMany({ where: { id: seededId(carryShipmentId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { id: seededId(carryLineId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(carryOrderId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(carryItemId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(carryStoreId) } });
   });
 
   it("updates carrier and resi while PACKED", async () => {
@@ -199,6 +222,121 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
       shipDeliveryShipment({ shipmentId, shippedById: userId }),
     ).rejects.toMatchObject({ code: "INVALID_STATE" });
   });
+
+  it("sets carriedById, invoiceDate, and dueDate", async () => {
+    const invoiceDate = new Date("2026-09-10T00:00:00.000Z");
+    const dueDate = new Date("2026-09-20T00:00:00.000Z");
+    await updateShipmentTracking({ shipmentId, carriedById: userId, invoiceDate, dueDate });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.carriedById).toBe(userId);
+    expect(shipment?.invoiceDate?.toISOString()).toBe(invoiceDate.toISOString());
+    expect(shipment?.dueDate?.toISOString()).toBe(dueDate.toISOString());
+  });
+
+  it("leaves carriedById/invoiceDate/dueDate untouched when not supplied", async () => {
+    await updateShipmentTracking({ shipmentId, carrierName: "JNE" });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.carrierName).toBe("JNE");
+    expect(shipment?.carriedById).toBeNull();
+    expect(shipment?.invoiceDate).toBeNull();
+  });
+
+  it("still refuses when the shipment is not PACKED", async () => {
+    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: "RESI-CARRY" });
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+    await expect(
+      updateShipmentTracking({ shipmentId, carriedById: userId }),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
+
+  /**
+   * Fresh store/item/order per SALESMAN_CARRY test rather than reusing the beforeEach's
+   * `orderId`/`lineId` (which already carries the beforeEach's own EXPEDITION shipment) — fully
+   * isolated, so this fixture can never contend with that shipment for in-flight qty on a shared
+   * order line (PR #288's guard), independent of the exact qty either fixture seeds.
+   */
+  async function seedCarryOrder() {
+    const store = await prisma.store.create({
+      data: { code: `ST-CARRY-${Date.now()}`, name: "Test Store Carry", address: "x", termsType: "PUTUS" },
+    });
+    carryStoreId = store.id;
+    const uom = await prisma.uOM.findFirst({ where: { code: "PCS" } });
+    const item = await prisma.item.create({
+      data: { sku: `SKU-CARRY-${Date.now()}`, nameId: "Test Item Carry", nameEn: "Test Item Carry", type: "FINISHED_GOOD", uomId: uom!.id, sellingPrice: 10000 },
+    });
+    carryItemId = item.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `FSO-CARRY-${Date.now()}`,
+        storeId: carryStoreId,
+        salesmanId: userId,
+        status: "APPROVED",
+        subtotal: 100000,
+        total: 100000,
+        lines: { create: [{ itemId: carryItemId, productName: "Test Item Carry", qty: 10, unitPrice: 10000, lineTotal: 100000 }] },
+      },
+      include: { lines: true },
+    });
+    carryOrderId = order.id;
+    carryLineId = order.lines[0].id;
+  }
+
+  it("refuses to ship SALESMAN_CARRY with no carriedById", async () => {
+    await seedCarryOrder();
+    const created = await createDeliveryShipment({
+      orderId: carryOrderId,
+      method: "SALESMAN_CARRY",
+      lines: [{ orderLineId: carryLineId, qty: 2 }],
+      packedById: userId,
+    });
+    carryShipmentId = created.shipmentId;
+    await expect(
+      shipDeliveryShipment({ shipmentId: created.shipmentId, shippedById: userId }),
+    ).rejects.toMatchObject({ code: "MISSING_CARRIER" });
+  });
+
+  it("refuses to ship SALESMAN_CARRY with carriedById but no dates", async () => {
+    await seedCarryOrder();
+    const created = await createDeliveryShipment({
+      orderId: carryOrderId,
+      method: "SALESMAN_CARRY",
+      lines: [{ orderLineId: carryLineId, qty: 2 }],
+      packedById: userId,
+    });
+    carryShipmentId = created.shipmentId;
+    await updateShipmentTracking({ shipmentId: created.shipmentId, carriedById: userId });
+    await expect(
+      shipDeliveryShipment({ shipmentId: created.shipmentId, shippedById: userId }),
+    ).rejects.toMatchObject({ code: "MISSING_DATES" });
+  });
+
+  it("ships SALESMAN_CARRY once carriedById and both dates are set", async () => {
+    await seedCarryOrder();
+    const created = await createDeliveryShipment({
+      orderId: carryOrderId,
+      method: "SALESMAN_CARRY",
+      lines: [{ orderLineId: carryLineId, qty: 2 }],
+      packedById: userId,
+    });
+    carryShipmentId = created.shipmentId;
+    await updateShipmentTracking({
+      shipmentId: created.shipmentId,
+      carriedById: userId,
+      invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
+      dueDate: new Date("2026-09-20T00:00:00.000Z"),
+    });
+    await shipDeliveryShipment({ shipmentId: created.shipmentId, shippedById: userId });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: created.shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+  });
+
+  it("does not require carriedById or dates to ship EXPEDITION", async () => {
+    /* Regression check: the new guards must be method-conditional, not universal. */
+    await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: "RESI-REG" });
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+  });
 });
 
 describe("completeDeliveryShipment", () => {
@@ -210,6 +348,13 @@ describe("completeDeliveryShipment", () => {
   let shipmentId = "";
   let shipmentLineId = "";
   let deliveryId = "";
+  /**
+   * A SECOND, purpose-created user for the NOT_CARRIER test — the only test here that needs two
+   * distinct actor identities. Created fresh (not `findFirst`ed like `salesman@elorae.com`, which
+   * is a shared seed row this teardown must never delete) and torn down with `deleteMany` so it
+   * no-ops harmlessly for every other test in this describe.
+   */
+  let otherUserId = "";
 
   async function seedInTransitShipment(qty: number) {
     const store = await prisma.store.create({
@@ -264,6 +409,75 @@ describe("completeDeliveryShipment", () => {
     await shipDeliveryShipment({ shipmentId, shippedById: userId });
   }
 
+  /**
+   * SALESMAN_CARRY twin of `seedInTransitShipment`: a fresh store/item/order per call (this
+   * describe has no `beforeEach`, so nothing is shared between tests), populating the SAME
+   * fixture variables the helper above does — which is what lets the single `afterEach` below
+   * clean up after either helper without a second parallel teardown block. The store carries
+   * lat/lng/checkinRadiusMeters because completion now gates on them.
+   */
+  async function seedSalesmanCarryShipment(qty: number, storeOverrides: {
+    lat?: number; lng?: number; checkinRadiusMeters?: number;
+  } = {}) {
+    const store = await prisma.store.create({
+      data: {
+        code: `ST-SC-${Date.now()}`,
+        name: "Salesman Carry Store",
+        address: "x",
+        termsType: "PUTUS",
+        lat: storeOverrides.lat,
+        lng: storeOverrides.lng,
+        checkinRadiusMeters: storeOverrides.checkinRadiusMeters ?? 100,
+      },
+    });
+    storeId = store.id;
+    const salesman = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    userId = salesman!.id;
+    const uom = await prisma.uOM.findFirst({ where: { code: "PCS" } });
+    const item = await prisma.item.create({
+      data: { sku: `SKU-SC-${Date.now()}`, nameId: "Carry Item", nameEn: "Carry Item", type: "FINISHED_GOOD", uomId: uom!.id, sellingPrice: 10000 },
+    });
+    itemId = item.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `FSO-SC-${Date.now()}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: qty * 10000,
+        total: qty * 10000,
+        lines: { create: [{ itemId, productName: "Carry Item", qty, unitPrice: 10000, lineTotal: qty * 10000 }] },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    lineId = order.lines[0].id;
+    /* Same reservation/inventory prerequisite `seedInTransitShipment` documents above. */
+    await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: qty, reservedQty: qty, avgCost: 500, totalValue: qty * 500 },
+    });
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: lineId, itemId, variantSku: "", qty, state: "RESERVED" },
+    });
+    const created = await createDeliveryShipment({
+      orderId,
+      method: "SALESMAN_CARRY",
+      lines: [{ orderLineId: lineId, qty }],
+      packedById: userId,
+    });
+    shipmentId = created.shipmentId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId }, include: { lines: true } });
+    shipmentLineId = shipment!.lines[0].id;
+    await updateShipmentTracking({
+      shipmentId,
+      carriedById: userId,
+      invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
+      dueDate: new Date("2026-09-20T00:00:00.000Z"),
+    });
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+  }
+
   afterEach(async () => {
     /**
      * FIRST, before the delivery chain below: `recordFieldSalesDelivery` writes a `SalesHistory`
@@ -287,7 +501,11 @@ describe("completeDeliveryShipment", () => {
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    /* AFTER the order/delivery chain above — an order references its salesman, and this user is
+     * never the salesman on any fixture order, but the ordering keeps that true by construction. */
+    await prisma.user.deleteMany({ where: { id: seededId(otherUserId) } });
     storeId = userId = orderId = lineId = itemId = shipmentId = shipmentLineId = deliveryId = "";
+    otherUserId = "";
   });
 
   it("refuses completion without a proof photo url", async () => {
@@ -443,6 +661,168 @@ describe("completeDeliveryShipment", () => {
 
     const orderLine = await prisma.fieldSalesOrderLine.findUnique({ where: { id: lineId } });
     expect(orderLine?.deliveredQty).toBe(0);
+  });
+
+  it("refuses SALESMAN_CARRY completion by a user other than carriedById", async () => {
+    /**
+     * The feature's anti-fraud property. Everything about this payload is VALID except the actor:
+     * the proof photo is present, the coordinates are an exact match on the store (0m, well inside
+     * the radius), and the shipment carries both nota dates — so the only thing that can refuse it
+     * is the carrier-identity check. `seedSalesmanCarryShipment` assigns `carriedById: userId`
+     * (the shared `salesman@elorae.com` row), and this call completes as a DIFFERENT user.
+     */
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const other = await prisma.user.create({
+      data: { email: `carry-other-${Date.now()}@test.local`, name: "Other Salesman", role: "USER" },
+    });
+    otherUserId = other.id;
+    expect(otherUserId).not.toBe(userId);
+
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: otherUserId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_CARRIER" });
+
+    /* Nothing escaped the refusal: still completable by the real carrier, no stock consumed. */
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+    expect(shipment?.deliveredById).toBeNull();
+    expect(shipment?.deliveryId).toBeNull();
+    const orderLine = await prisma.fieldSalesOrderLine.findUnique({ where: { id: lineId } });
+    expect(orderLine?.deliveredQty).toBe(0);
+  });
+
+  it("refuses SALESMAN_CARRY completion with no gps", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_GPS" });
+  });
+
+  it("refuses SALESMAN_CARRY completion with non-finite or out-of-range gps coordinates", async () => {
+    /**
+     * The declared `number` type is not a runtime guarantee. Without the finiteness/range guard
+     * `{ lat: null, lng: null }` OPENS the gate: `null - null` coerces to 0 inside
+     * `haversineMeters`, so the distance is 0, which passes both the `=== null` and the
+     * `> radius` checks and completes the delivery with a fabricated 0-metre audit record.
+     */
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8 });
+    for (const gps of [
+      { lat: null as unknown as number, lng: null as unknown as number },
+      { lat: Number.NaN, lng: Number.NaN },
+      { lat: -6.2, lng: Number.POSITIVE_INFINITY },
+      { lat: 91, lng: 106.8 },
+      { lat: -6.2, lng: -181 },
+    ]) {
+      await expect(
+        completeDeliveryShipment({
+          shipmentId,
+          deliveredById: userId,
+          proofPhotoUrl: "https://r2.example/proof.jpg",
+          proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+          gps,
+          lines: [{ shipmentLineId, deliveredQty: 4 }],
+        }),
+      ).rejects.toMatchObject({ code: "MISSING_GPS" });
+    }
+    /* Every rejection must have left the shipment completable — no partial write escaped. */
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+    expect(shipment?.gpsDistanceMeters).toBeNull();
+  });
+
+  it("refuses SALESMAN_CARRY completion when the store has no lat/lng", async () => {
+    await seedSalesmanCarryShipment(4);
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "STORE_NOT_GEOCODED" });
+  });
+
+  it("refuses SALESMAN_CARRY completion when the coordinates are out of radius", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.3, lng: 106.8 }, /* ~11km away, well outside a 100m radius */
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "GPS_OUT_OF_RADIUS" });
+  });
+
+  it("completes SALESMAN_CARRY within radius, stamping gps fields and reading dates from the shipment row", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+      gps: { lat: -6.2, lng: 106.8 }, /* exact match, 0m */
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = result.deliveryId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("DELIVERED");
+    expect(shipment?.gpsDistanceMeters).toBe(0);
+    expect(Number(shipment?.gpsLat)).toBeCloseTo(-6.2, 5);
+    /* The dates come off the SHIPMENT ROW (seeded at pack time), never off the call's input —
+     * this call passes neither, and the accounting record still carries the admin's figures. */
+    const delivery = await prisma.fieldSalesDelivery.findUnique({ where: { id: result.deliveryId } });
+    expect(delivery?.invoiceDate.toISOString()).toBe(new Date("2026-09-10T00:00:00.000Z").toISOString());
+  });
+
+  it("refuses SALESMAN_CARRY completion if dates are somehow still missing on the shipment row", async () => {
+    /* Defensive: shipDeliveryShipment already guards this at ship time, but
+       completeDeliveryShipment must not silently proceed if it's ever reachable another way. */
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8 });
+    await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { invoiceDate: null } });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_DATES" });
+  });
+
+  it("still requires invoiceDate/dueDate as input for EXPEDITION (regression)", async () => {
+    /* The dates became OPTIONAL in the type so SALESMAN_CARRY can omit them; EXPEDITION must
+       still refuse without them rather than reaching recordFieldSalesDelivery undefined. */
+    await seedInTransitShipment(4);
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-proofs/x.jpg",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+        /* invoiceDate/dueDate deliberately omitted */
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_DATES" });
   });
 });
 

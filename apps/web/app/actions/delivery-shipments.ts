@@ -41,6 +41,11 @@ export type ShipmentActionResult = { ok: true } | { ok: false; reason: ShipmentA
  * there. The stack still reaches the container logs via `console.error`, so nothing is lost by
  * not rethrowing; none of these actions call `redirect()`/`notFound()`, so there is no Next
  * control-flow error to swallow here.
+ *
+ * Not exported for the same reason `canReadShipments` below is not: a `"use server"` module may
+ * only export async functions, and this is a plain sync helper. `app/pwa/deliveries/actions.ts`
+ * reimplements this exact body (importing `DeliveryShipmentError`/`DeliveryError` directly)
+ * rather than importing it — keep the two in sync by hand if either error class gains a case.
  */
 function mapError(error: unknown): { ok: false; reason: ShipmentActionReason } {
   if (error instanceof DeliveryShipmentError) return { ok: false, reason: error.code };
@@ -102,13 +107,39 @@ export async function updateShipmentTrackingAction(input: {
   shipmentId: string;
   carrierName?: string;
   resiNumber?: string;
+  carriedById?: string;
+  invoiceDate?: string;
+  dueDate?: string;
 }): Promise<ShipmentActionResult> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_SHIP)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
+  const invoiceDate = input.invoiceDate ? parseCalendarDay(input.invoiceDate) : undefined;
+  const dueDate = input.dueDate ? parseCalendarDay(input.dueDate) : undefined;
+  if ((input.invoiceDate && !invoiceDate) || (input.dueDate && !dueDate)) {
+    return { ok: false, reason: "INVALID_REQUEST" };
+  }
+  /**
+   * Same ordering check `completeShipmentAction` applies below, but conditional on both dates
+   * actually being supplied — they are optional on this action, which is also how a carrier is
+   * saved on its own without touching the dates. This is the ONLY place a reversed pair can still
+   * be caught: `updateShipmentTracking` is PACKED-gated, so once the shipment ships the pair is
+   * frozen, and the salesman then discovers it in the field with no way to correct it. The
+   * SALESMAN_CARRY completion path reads these dates off the row and never revalidates them.
+   */
+  if (invoiceDate && dueDate && dueDate.getTime() < invoiceDate.getTime()) {
+    return { ok: false, reason: "INVALID_DATES" };
+  }
   try {
-    await updateShipmentTracking(input);
+    await updateShipmentTracking({
+      shipmentId: input.shipmentId,
+      carrierName: input.carrierName,
+      resiNumber: input.resiNumber,
+      carriedById: input.carriedById,
+      invoiceDate: invoiceDate ?? undefined,
+      dueDate: dueDate ?? undefined,
+    });
     revalidatePath("/backoffice/deliveries");
     return { ok: true };
   } catch (error) {

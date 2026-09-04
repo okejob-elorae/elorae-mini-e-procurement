@@ -70,6 +70,9 @@ export async function getDeliveryShipment(id: string): Promise<{
   method: string;
   carrierName: string | null;
   resiNumber: string | null;
+  carriedById: string | null;
+  invoiceDate: Date | null;
+  dueDate: Date | null;
   proofPhotoUrl: string | null;
   orderId: string;
   storeName: string;
@@ -107,6 +110,9 @@ export async function getDeliveryShipment(id: string): Promise<{
     method: row.method,
     carrierName: row.carrierName,
     resiNumber: row.resiNumber,
+    carriedById: row.carriedById,
+    invoiceDate: row.invoiceDate,
+    dueDate: row.dueDate,
     proofPhotoUrl: row.proofPhotoUrl,
     orderId: row.orderId,
     storeName: row.order.store.name,
@@ -122,4 +128,25 @@ export async function getDeliveryShipment(id: string): Promise<{
       deliveredQty: line.deliveredQty,
     })),
   };
+}
+
+export async function listMyDeliveries(carriedById: string): Promise<Array<{
+  id: string;
+  docNo: string;
+  storeName: string;
+  orderNo: string;
+  plannedTotalQty: number;
+}>> {
+  const rows = await prisma.deliveryShipment.findMany({
+    where: { carriedById, status: "IN_TRANSIT" },
+    include: { order: { include: { store: { select: { name: true } } } }, lines: true },
+    orderBy: { shippedAt: "asc" },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    docNo: row.docNo,
+    storeName: row.order.store.name,
+    orderNo: row.order.orderNo,
+    plannedTotalQty: row.lines.reduce((sum, l) => sum + l.plannedQty, 0),
+  }));
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listDeliveryShipments, getDeliveryShipment } from "./shipment-queries";
-import { createDeliveryShipment } from "./shipment-writer";
+import { listDeliveryShipments, getDeliveryShipment, listMyDeliveries } from "./shipment-queries";
+import { createDeliveryShipment, updateShipmentTracking, shipDeliveryShipment } from "./shipment-writer";
 
 describe("shipment-queries", () => {
   let storeId = "";
@@ -75,5 +75,25 @@ describe("shipment-queries", () => {
   it("returns null for a missing shipment", async () => {
     const detail = await getDeliveryShipment("does-not-exist");
     expect(detail).toBeNull();
+  });
+
+  it("lists only IN_TRANSIT shipments carried by the given user", async () => {
+    await updateShipmentTracking({
+      shipmentId,
+      carriedById: userId,
+      resiNumber: "RESI-TEST",
+      invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
+      dueDate: new Date("2026-09-20T00:00:00.000Z"),
+    });
+    /* shipmentId from this describe's beforeEach is still PACKED (never shipped in this
+       describe) — ship it here so it qualifies for the IN_TRANSIT filter. */
+    await shipDeliveryShipment({ shipmentId, shippedById: userId });
+
+    const mine = await listMyDeliveries(userId);
+    expect(mine.some((m) => m.id === shipmentId)).toBe(true);
+
+    const someoneElsesId = "does-not-exist-as-a-carrier";
+    const notMine = await listMyDeliveries(someoneElsesId);
+    expect(notMine.some((m) => m.id === shipmentId)).toBe(false);
   });
 });
