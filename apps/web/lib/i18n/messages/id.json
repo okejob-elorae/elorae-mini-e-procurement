@@ -640,7 +640,9 @@
       "STORE_NOT_GEOCODED": "Toko ini belum memiliki lokasi tercatat — hubungi admin sebelum menyelesaikan di sini.",
       "GPS_OUT_OF_RADIUS": "Anda terlalu jauh dari toko untuk menyelesaikan pengiriman ini.",
       "MISSING_NOTA_PHOTO": "Ambil foto nota yang sudah ditandatangani sebelum menyelesaikan.",
-      "MISSING_SIGNED_BY": "Masukkan nama penerima yang menandatangani pengiriman ini."
+      "MISSING_SIGNED_BY": "Masukkan nama penerima yang menandatangani pengiriman ini.",
+      "INVALID_FILE_TYPE": "Jenis file tidak didukung. Gunakan JPEG, PNG, atau WEBP.",
+      "FILE_TOO_LARGE": "Foto terlalu besar (maks 10MB). Coba foto yang lebih kecil."
     }
   },
   "production": {
@@ -2587,9 +2589,7 @@
       "detailTitle": "Selesaikan Pengiriman",
       "proofLabel": "Foto bukti",
       "proofUploadButton": "Unggah foto",
-      "proofUploading": "Mengunggah...",
-      "proofUploaded": "Terunggah: {name}",
-      "proofUploadError": "Unggah gagal. Coba lagi.",
+      "proofUploaded": "Dipilih: {name}",
       "locationLabel": "Lokasi",
       "locating": "Mengambil lokasi Anda...",
       "locationError": "Tidak dapat mengambil lokasi Anda. Periksa izin dan coba lagi.",
@@ -2604,9 +2604,7 @@
       "queuedToast": "Tersimpan — akan dikirim otomatis saat kembali online.",
       "queuedSuccess": "Pengiriman tersimpan offline. Akan tersinkron otomatis.",
       "notaPhotoLabel": "Foto nota bertanda tangan",
-      "notaPhotoUploading": "Mengunggah...",
-      "notaPhotoUploaded": "Terunggah: {name}",
-      "notaPhotoUploadError": "Unggah gagal. Coba lagi.",
+      "notaPhotoUploaded": "Dipilih: {name}",
       "signedByLabel": "Ditandatangani oleh",
       "signedByPlaceholder": "Nama penerima",
       "pending": {

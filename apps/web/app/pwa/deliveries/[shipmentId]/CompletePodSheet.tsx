@@ -33,6 +33,16 @@ type GpsState =
   | { status: "denied" }
   | { status: "error" };
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_FILE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/** Mirrors the server's own validation in apps/web/app/pwa/api/upload/delivery-pod-proof/route.ts — keep both in sync. */
+function fileCheckPasses(file: File): { ok: true } | { ok: false; reasonKey: string } {
+  if (!ALLOWED_FILE_TYPES.has(file.type)) return { ok: false, reasonKey: "err.INVALID_FILE_TYPE" };
+  if (file.size > MAX_FILE_SIZE) return { ok: false, reasonKey: "err.FILE_TOO_LARGE" };
+  return { ok: true };
+}
+
 export function CompletePodSheet({
   shipmentId, storeName, docNo, storeLat, storeLng, effectiveRadiusMeters, lines,
 }: Props) {
@@ -99,6 +109,16 @@ export function CompletePodSheet({
 
   function submit(): void {
     if (!canSubmit || gps.status !== "ready" || !proofFile || !notaProofFile) return;
+    const goodsCheck = fileCheckPasses(proofFile);
+    if (!goodsCheck.ok) {
+      toast.error(tErr(goodsCheck.reasonKey as any));
+      return;
+    }
+    const notaCheck = fileCheckPasses(notaProofFile);
+    if (!notaCheck.ok) {
+      toast.error(tErr(notaCheck.reasonKey as any));
+      return;
+    }
     const capturedGps = gps;
     const capturedProofFile = proofFile;
     const capturedNotaFile = notaProofFile;
@@ -116,7 +136,7 @@ export function CompletePodSheet({
           shipmentId,
           proofPhotoUrl: goods.url,
           proofPhotoR2Key: goods.key,
-          gps: { lat: capturedGps.status === "ready" ? capturedGps.lat : 0, lng: capturedGps.status === "ready" ? capturedGps.lng : 0 },
+          gps: { lat: capturedGps.lat, lng: capturedGps.lng },
           signatureUrl: nota.url,
           signatureR2Key: nota.key,
           signedByName: signedByName.trim(),

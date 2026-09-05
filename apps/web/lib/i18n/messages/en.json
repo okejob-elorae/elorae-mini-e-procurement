@@ -640,7 +640,9 @@
       "STORE_NOT_GEOCODED": "This store has no location on record — contact an admin before completing here.",
       "GPS_OUT_OF_RADIUS": "You're too far from the store to complete this delivery.",
       "MISSING_NOTA_PHOTO": "Take a photo of the signed nota before completing.",
-      "MISSING_SIGNED_BY": "Enter the name of who signed for this delivery."
+      "MISSING_SIGNED_BY": "Enter the name of who signed for this delivery.",
+      "INVALID_FILE_TYPE": "That file type isn't supported. Use JPEG, PNG, or WEBP.",
+      "FILE_TOO_LARGE": "That photo is too large (max 10MB). Try a smaller photo."
     }
   },
   "production": {
@@ -2587,9 +2589,7 @@
       "detailTitle": "Complete Delivery",
       "proofLabel": "Proof photo",
       "proofUploadButton": "Upload photo",
-      "proofUploading": "Uploading...",
-      "proofUploaded": "Uploaded: {name}",
-      "proofUploadError": "Upload failed. Try again.",
+      "proofUploaded": "Selected: {name}",
       "locationLabel": "Location",
       "locating": "Getting your location...",
       "locationError": "Could not get your location. Check permissions and try again.",
@@ -2604,9 +2604,7 @@
       "queuedToast": "Saved — will send automatically when back online.",
       "queuedSuccess": "Delivery saved offline. It will sync automatically.",
       "notaPhotoLabel": "Signed nota photo",
-      "notaPhotoUploading": "Uploading...",
-      "notaPhotoUploaded": "Uploaded: {name}",
-      "notaPhotoUploadError": "Upload failed. Try again.",
+      "notaPhotoUploaded": "Selected: {name}",
       "signedByLabel": "Signed by",
       "signedByPlaceholder": "Receiver's name",
       "pending": {
