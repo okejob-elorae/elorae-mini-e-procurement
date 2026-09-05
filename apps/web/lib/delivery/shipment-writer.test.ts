@@ -1098,6 +1098,90 @@ describe("completeDeliveryShipment", () => {
     const delivery = await prisma.fieldSalesDelivery.findUnique({ where: { id: result.deliveryId } });
     expect(delivery?.deliveredAt.toISOString()).toBe(capturedAt.toISOString());
   });
+
+  it("leaves completedOfflineAt null when completedOffline is omitted", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+      signedByName: "Budi Santoso",
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+      /* completedOffline deliberately omitted */
+    });
+    deliveryId = result.deliveryId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.completedOfflineAt).toBeNull();
+  });
+
+  /**
+   * Locks in a real priority change: shipment-existence/status checks now run before
+   * payload-shape checks (NO_LINES/MISSING_PROOF/INVALID_QTY), because the idempotent-replay
+   * guard has to see the shipment before those cheap checks can fire. See task-1-report.md
+   * for why.
+   */
+  it("returns NOT_FOUND for a malformed payload against a shipment that does not exist", async () => {
+    await expect(
+      completeDeliveryShipment({
+        shipmentId: "does-not-exist",
+        deliveredById: "does-not-matter",
+        proofPhotoUrl: "",
+        proofPhotoR2Key: "",
+        lines: [],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("returns INVALID_STATE for a malformed payload against a shipment that is still PACKED", async () => {
+    const store = await prisma.store.create({
+      data: { code: `ST-PACKED-${Date.now()}`, name: "Test Store Packed", address: "x", termsType: "PUTUS" },
+    });
+    storeId = store.id;
+    const salesman = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    userId = salesman!.id;
+    const uom = await prisma.uOM.findFirst({ where: { code: "PCS" } });
+    const item = await prisma.item.create({
+      data: { sku: `SKU-PACKED-${Date.now()}`, nameId: "Packed Item", nameEn: "Packed Item", type: "FINISHED_GOOD", uomId: uom!.id, sellingPrice: 10000 },
+    });
+    itemId = item.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `FSO-PACKED-${Date.now()}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: 40000,
+        total: 40000,
+        lines: { create: [{ itemId, productName: "Packed Item", qty: 4, unitPrice: 10000, lineTotal: 40000 }] },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    lineId = order.lines[0].id;
+    const created = await createDeliveryShipment({
+      orderId,
+      method: "EXPEDITION",
+      lines: [{ orderLineId: lineId, qty: 4 }],
+      packedById: userId,
+    });
+    shipmentId = created.shipmentId;
+    /* Never shipped — the shipment stays PACKED. */
+
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "",
+        proofPhotoR2Key: "",
+        lines: [],
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
 });
 
 describe("cancelDeliveryShipment", () => {
