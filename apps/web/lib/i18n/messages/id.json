@@ -2601,6 +2601,8 @@
       "submitting": "Mengirim...",
       "submitSuccess": "Pengiriman selesai.",
       "errGeneric": "Terjadi kesalahan. Coba lagi.",
+      "queuedToast": "Tersimpan — akan dikirim otomatis saat kembali online.",
+      "queuedSuccess": "Pengiriman tersimpan offline. Akan tersinkron otomatis.",
       "notaPhotoLabel": "Foto nota bertanda tangan",
       "notaPhotoUploading": "Mengunggah...",
       "notaPhotoUploaded": "Terunggah: {name}",

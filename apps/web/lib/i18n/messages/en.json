@@ -2601,6 +2601,8 @@
       "submitting": "Submitting...",
       "submitSuccess": "Delivery completed.",
       "errGeneric": "Something went wrong. Try again.",
+      "queuedToast": "Saved — will send automatically when back online.",
+      "queuedSuccess": "Delivery saved offline. It will sync automatically.",
       "notaPhotoLabel": "Signed nota photo",
       "notaPhotoUploading": "Uploading...",
       "notaPhotoUploaded": "Uploaded: {name}",

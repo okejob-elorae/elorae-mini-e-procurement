@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2, Loader2, MapPin, Truck } from "lucide-react";
 import { completePodAction } from "../actions";
+import { enqueueCompletion } from "@/lib/pwa/offline/completion-queue";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,9 @@ type Props = {
   shipmentId: string;
   storeName: string;
   docNo: string;
+  storeLat: number | null;
+  storeLng: number | null;
+  effectiveRadiusMeters: number;
   lines: Line[];
 };
 
@@ -34,7 +38,9 @@ type GpsState =
   | { status: "denied" }
   | { status: "error" };
 
-export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props) {
+export function CompletePodSheet({
+  shipmentId, storeName, docNo, storeLat, storeLng, effectiveRadiusMeters, lines,
+}: Props) {
   const t = useTranslations("pwa.deliveries");
   const tErr = useTranslations("deliveryShipments");
   const [isPending, startTransition] = useTransition();
@@ -47,6 +53,7 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
     () => Object.fromEntries(lines.map((l) => [l.id, String(l.plannedQty)])),
   );
   const [success, setSuccess] = useState(false);
+  const [queued, setQueued] = useState(false);
 
   useEffect(() => {
     requestLocation();
@@ -102,8 +109,32 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
   const canSubmit =
     proofReady && notaProofReady && signedByName.trim().length > 0 && gpsReady && !isPending;
 
+  function preCheckPasses(): { ok: true } | { ok: false; reasonKey: string } {
+    if (!signedByName.trim()) return { ok: false, reasonKey: "err.MISSING_SIGNED_BY" };
+    if (gps.status !== "ready") return { ok: false, reasonKey: "err.MISSING_GPS" };
+    if (storeLat === null || storeLng === null) return { ok: false, reasonKey: "err.STORE_NOT_GEOCODED" };
+    const R = 6371000;
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(storeLat - gps.lat);
+    const dLng = toRad(storeLng - gps.lng);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(gps.lat)) * Math.cos(toRad(storeLat)) * Math.sin(dLng / 2) ** 2;
+    const distanceMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    if (distanceMeters > effectiveRadiusMeters) return { ok: false, reasonKey: "err.GPS_OUT_OF_RADIUS" };
+    for (const line of lines) {
+      const qty = Number(qtyInputs[line.id] ?? "0");
+      if (!Number.isInteger(qty) || qty < 0 || qty > line.plannedQty) {
+        return { ok: false, reasonKey: "err.INVALID_QTY" };
+      }
+    }
+    return { ok: true };
+  }
+
   function submit(): void {
     if (!canSubmit || gps.status !== "ready" || proof.status !== "uploaded" || notaProof.status !== "uploaded") return;
+    if (!navigator.onLine) {
+      queueOffline();
+      return;
+    }
     startTransition(async () => {
       try {
         const result = await completePodAction({
@@ -126,12 +157,38 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
         }
         toast.error(tErr(`err.${result.reason}` as any));
       } catch {
-        toast.error(t("errGeneric"));
+        queueOffline();
       }
     });
   }
 
-  if (success) {
+  function queueOffline(): void {
+    if (gps.status !== "ready" || proof.status !== "uploaded" || notaProof.status !== "uploaded") return;
+    const check = preCheckPasses();
+    if (!check.ok) {
+      toast.error(tErr(check.reasonKey as any));
+      return;
+    }
+    startTransition(async () => {
+      await enqueueCompletion({
+        shipmentId,
+        goodsPhotoBlob: proof.file,
+        notaPhotoBlob: notaProof.file,
+        signedByName: signedByName.trim(),
+        gpsLat: gps.lat,
+        gpsLng: gps.lng,
+        lines: lines.map((l) => ({
+          shipmentLineId: l.id,
+          deliveredQty: Number(qtyInputs[l.id] ?? "0"),
+        })),
+        capturedAt: Date.now(),
+      });
+      toast.success(t("queuedToast"));
+      setQueued(true);
+    });
+  }
+
+  if (success || queued) {
     return (
       <div className="p-4">
         <Card className="border-primary/40 bg-primary/5">
@@ -140,7 +197,7 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
               <CheckCircle2 className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">{t("submitSuccess")}</p>
+              <p className="text-sm text-muted-foreground">{queued ? t("queuedSuccess") : t("submitSuccess")}</p>
               <p className="mt-1 text-lg font-semibold">{storeName}</p>
               <p className="text-xs text-muted-foreground">{docNo}</p>
             </div>
