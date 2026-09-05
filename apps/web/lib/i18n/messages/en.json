@@ -638,7 +638,9 @@
       "MISSING_DATES": "Enter the invoice and due dates before shipping.",
       "MISSING_GPS": "Location is required to complete this delivery.",
       "STORE_NOT_GEOCODED": "This store has no location on record — contact an admin before completing here.",
-      "GPS_OUT_OF_RADIUS": "You're too far from the store to complete this delivery."
+      "GPS_OUT_OF_RADIUS": "You're too far from the store to complete this delivery.",
+      "MISSING_NOTA_PHOTO": "Take a photo of the signed nota before completing.",
+      "MISSING_SIGNED_BY": "Enter the name of who signed for this delivery."
     }
   },
   "production": {
@@ -2598,7 +2600,13 @@
       "submitButton": "Confirm Delivery",
       "submitting": "Submitting...",
       "submitSuccess": "Delivery completed.",
-      "errGeneric": "Something went wrong. Try again."
+      "errGeneric": "Something went wrong. Try again.",
+      "notaPhotoLabel": "Signed nota photo",
+      "notaPhotoUploading": "Uploading...",
+      "notaPhotoUploaded": "Uploaded: {name}",
+      "notaPhotoUploadError": "Upload failed. Try again.",
+      "signedByLabel": "Signed by",
+      "signedByPlaceholder": "Receiver's name"
     }
   },
   "fieldSalesOrders": {

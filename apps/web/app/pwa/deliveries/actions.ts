@@ -51,6 +51,9 @@ export async function completePodAction(input: {
   proofPhotoUrl: string;
   proofPhotoR2Key: string;
   gps: { lat: number; lng: number };
+  signatureUrl?: string;
+  signatureR2Key?: string;
+  signedByName?: string;
   lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
 }): Promise<ShipmentActionResult> {
   const session = await auth();
@@ -64,6 +67,9 @@ export async function completePodAction(input: {
       proofPhotoUrl: input.proofPhotoUrl,
       proofPhotoR2Key: input.proofPhotoR2Key,
       gps: input.gps,
+      signatureUrl: input.signatureUrl,
+      signatureR2Key: input.signatureR2Key,
+      signedByName: input.signedByName,
       lines: input.lines,
     });
 
