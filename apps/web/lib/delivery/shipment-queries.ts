@@ -76,6 +76,9 @@ export async function getDeliveryShipment(id: string): Promise<{
   proofPhotoUrl: string | null;
   orderId: string;
   storeName: string;
+  storeLat: number | null;
+  storeLng: number | null;
+  storeCheckinRadiusMeters: number | null;
   orderNo: string;
   deliveryId: string | null;
   lines: Array<{
@@ -91,7 +94,7 @@ export async function getDeliveryShipment(id: string): Promise<{
   const row = await prisma.deliveryShipment.findUnique({
     where: { id },
     include: {
-      order: { include: { store: { select: { name: true } } } },
+      order: { include: { store: { select: { name: true, lat: true, lng: true, checkinRadiusMeters: true } } } },
       lines: { include: { } },
     },
   });
@@ -116,6 +119,9 @@ export async function getDeliveryShipment(id: string): Promise<{
     proofPhotoUrl: row.proofPhotoUrl,
     orderId: row.orderId,
     storeName: row.order.store.name,
+    storeLat: row.order.store.lat ? row.order.store.lat.toNumber() : null,
+    storeLng: row.order.store.lng ? row.order.store.lng.toNumber() : null,
+    storeCheckinRadiusMeters: row.order.store.checkinRadiusMeters,
     orderNo: row.order.orderNo,
     deliveryId: row.deliveryId,
     lines: row.lines.map((line) => ({

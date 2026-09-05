@@ -1,8 +1,10 @@
 import { notFound, redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getShipmentAction } from "@/app/actions/delivery-shipments";
+import { resolveEffectiveRadius, parseRadiusSetting } from "@/lib/pwa/checkin-radius";
 import { CompletePodSheet } from "./CompletePodSheet";
 
 export const dynamic = "force-dynamic";
@@ -30,11 +32,20 @@ export default async function CompletePodPage({ params }: PageProps) {
    */
   if (shipment.carriedById !== session.user.id) notFound();
 
+  const globalRadiusRow = await prisma.systemSetting.findUnique({ where: { key: "checkin.radiusMeters" } });
+  const effectiveRadiusMeters = resolveEffectiveRadius(
+    shipment.storeCheckinRadiusMeters,
+    parseRadiusSetting(globalRadiusRow?.value),
+  );
+
   return (
     <CompletePodSheet
       shipmentId={shipmentId}
       storeName={shipment.storeName}
       docNo={shipment.docNo}
+      storeLat={shipment.storeLat}
+      storeLng={shipment.storeLng}
+      effectiveRadiusMeters={effectiveRadiusMeters}
       lines={shipment.lines.map((l) => ({
         id: l.id,
         productName: l.productName,

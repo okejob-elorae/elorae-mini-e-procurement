@@ -1,5 +1,6 @@
 "use server";
 
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { completeDeliveryShipment } from "@/lib/delivery/shipment-writer";
@@ -8,7 +9,8 @@ import { DeliveryShipmentError } from "@/lib/delivery/errors";
 import { DeliveryError } from "@/lib/field-sales/errors";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
-import type { ShipmentActionResult, ShipmentActionReason } from "@/app/actions/delivery-shipments";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { getShipmentAction, type ShipmentActionResult, type ShipmentActionReason } from "@/app/actions/delivery-shipments";
 
 /**
  * Identical body to `mapError` in `@/app/actions/delivery-shipments` — reimplemented here
@@ -54,6 +56,8 @@ export async function completePodAction(input: {
   signatureUrl?: string;
   signatureR2Key?: string;
   signedByName?: string;
+  deliveredAt?: Date;
+  completedOffline?: boolean;
   lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
 }): Promise<ShipmentActionResult> {
   const session = await auth();
@@ -70,6 +74,8 @@ export async function completePodAction(input: {
       signatureUrl: input.signatureUrl,
       signatureR2Key: input.signatureR2Key,
       signedByName: input.signedByName,
+      deliveredAt: input.deliveredAt,
+      completedOffline: input.completedOffline,
       lines: input.lines,
     });
 
@@ -94,4 +100,36 @@ export async function completePodAction(input: {
   } catch (error) {
     return mapError(error);
   }
+}
+
+export async function reportStuckDeliveryCompletionAction(
+  shipmentId: string,
+  reason: string,
+): Promise<void> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_POD)) {
+    return;
+  }
+  const recent = await prisma.adminNotification.findMany({
+    where: { category: "DELIVERY_COMPLETION_STUCK", readAt: null },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    select: { metadata: true },
+  });
+  const alreadyFlagged = recent.some((n) => {
+    const m = n.metadata as { shipmentId?: string; reason?: string } | null;
+    return m?.shipmentId === shipmentId && m?.reason === reason;
+  });
+  if (alreadyFlagged) return;
+  const shipment = await getShipmentAction(shipmentId);
+  const notification = await prisma.adminNotification.create({
+    data: {
+      category: "DELIVERY_COMPLETION_STUCK",
+      severity: "WARNING",
+      title: "Salesman-carry delivery completion failed to sync",
+      message: `Shipment ${shipment?.docNo ?? shipmentId} could not be completed: ${reason}. Evidence (photos, GPS, receiver name) has been captured — check the offline queue on the salesman's device or contact them directly.`,
+      metadata: { shipmentId, reason, docNo: shipment?.docNo ?? null },
+    },
+  });
+  await fanOutAdminNotification(notification).catch(() => {});
 }
