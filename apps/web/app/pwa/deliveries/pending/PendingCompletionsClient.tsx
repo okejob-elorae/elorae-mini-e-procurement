@@ -6,7 +6,8 @@ import { useTranslations } from "next-intl";
 import { ArrowLeft, Loader2, RotateCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { listPendingCompletions, deletePendingCompletion, retryPendingCompletion } from "@/lib/pwa/offline/completion-queue";
-import { flushPendingCompletions, setupOrderSync } from "@/lib/pwa/offline/sync";
+import { setupOrderSync } from "@/lib/pwa/offline/sync";
+import { flushPendingCompletions } from "@/lib/pwa/offline/completion-sync";
 import { type PendingCompletion } from "@/lib/pwa/offline/db";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 
 export function PendingCompletionsClient() {
   const t = useTranslations("pwa.deliveries.pending");
+  const tErr = useTranslations("deliveryShipments");
   const [items, setItems] = useState<PendingCompletion[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -51,8 +53,8 @@ export function PendingCompletionsClient() {
   }
 
   return (
-    <div className="flex flex-col gap-3 p-4">
-      <header className="-ml-2">
+    <div className="p-4 space-y-4">
+      <header className="flex items-center gap-2 -ml-2">
         <Button asChild variant="ghost" size="sm">
           <Link href="/pwa/deliveries">
             <ArrowLeft className="h-4 w-4" />
@@ -60,33 +62,81 @@ export function PendingCompletionsClient() {
           </Link>
         </Button>
       </header>
-      <h1 className="text-lg font-semibold">{t("title")}</h1>
-      {items === null && <p className="text-sm text-muted-foreground">{t("loading")}</p>}
-      {items?.length === 0 && <p className="text-sm text-muted-foreground">{t("empty")}</p>}
-      {items?.map((item) => (
-        <Card key={item.shipmentId}>
-          <CardContent className="p-4 flex items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">{item.shipmentId}</p>
-              <Badge variant={item.syncState === "failed" ? "destructive" : "secondary"}>
-                {item.syncState === "pending" && t("statePending")}
-                {item.syncState === "syncing" && t("stateSyncing")}
-                {item.syncState === "failed" && t("stateFailed")}
-              </Badge>
-            </div>
-            <div className="flex gap-2">
-              {item.syncState === "failed" && (
-                <Button size="icon" variant="outline" disabled={busyId === item.shipmentId} onClick={() => handleRetry(item.shipmentId)}>
-                  {busyId === item.shipmentId ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
-                </Button>
-              )}
-              <Button size="icon" variant="outline" disabled={busyId === item.shipmentId} onClick={() => handleDelete(item.shipmentId)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
+
+      <h1 className="text-2xl font-bold leading-tight">{t("title")}</h1>
+
+      {items === null && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>{t("loading")}</span>
+        </div>
+      )}
+
+      {items !== null && items.length === 0 && (
+        <Card>
+          <CardContent className="p-6 text-center text-sm text-muted-foreground">
+            {t("empty")}
           </CardContent>
         </Card>
-      ))}
+      )}
+
+      {items !== null && items.length > 0 && (
+        <ul className="space-y-2">
+          {items.map((item) => {
+            const busy = busyId === item.shipmentId;
+            return (
+              <li key={item.shipmentId}>
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="truncate font-medium leading-tight min-w-0">{item.shipmentId}</p>
+                      <Badge
+                        variant={item.syncState === "failed" ? "destructive" : item.syncState === "syncing" ? "default" : "secondary"}
+                        className="shrink-0"
+                      >
+                        {item.syncState === "pending" && t("statePending")}
+                        {item.syncState === "syncing" && t("stateSyncing")}
+                        {item.syncState === "failed" && t("stateFailed")}
+                      </Badge>
+                    </div>
+
+                    {item.syncState === "failed" && item.error && (
+                      <p className="text-xs text-destructive">{tErr(`err.${item.error}` as any)}</p>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      {item.syncState === "failed" && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => handleRetry(item.shipmentId)}
+                          className="flex-1"
+                        >
+                          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
+                          {t("retry")}
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => handleDelete(item.shipmentId)}
+                        className="flex-1 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {t("delete")}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

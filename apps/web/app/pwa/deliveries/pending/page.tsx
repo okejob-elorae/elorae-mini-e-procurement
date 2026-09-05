@@ -4,6 +4,8 @@ import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { PendingCompletionsClient } from "./PendingCompletionsClient";
 
+export const dynamic = "force-dynamic";
+
 export default async function PendingDeliveryCompletionsPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");

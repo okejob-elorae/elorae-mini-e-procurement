@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { ArrowRight, Bell, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck, Wallet } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { listPendingOrders } from "@/lib/pwa/offline/queue";
+import { listPendingCompletions } from "@/lib/pwa/offline/completion-queue";
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
 import { CheckOutButton } from "./stores/[id]/CheckOutButton";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [fetchingOrigin, setFetchingOrigin] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingCompletionsCount, setPendingCompletionsCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
@@ -50,6 +52,9 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
     const refresh = () => {
       listPendingOrders().then(orders => {
         if (!cancelled) setPendingCount(orders.length);
+      });
+      listPendingCompletions().then(completions => {
+        if (!cancelled) setPendingCompletionsCount(completions.length);
       });
     };
     refresh();
@@ -176,11 +181,23 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
     </Link>
   ) : null;
 
+  const pendingCompletionsChip = canCompletePod && pendingCompletionsCount > 0 ? (
+    <Link
+      href="/pwa/deliveries/pending"
+      className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400 transition-colors hover:bg-amber-500/20"
+    >
+      <Truck className="h-4 w-4 shrink-0" />
+      <span className="flex-1">{tDeliveries("pending.homeChipCount", { count: pendingCompletionsCount })}</span>
+      <ChevronRight className="h-4 w-4 shrink-0" />
+    </Link>
+  ) : null;
+
   if (activeVisit) {
     return (
       <div className="p-4 space-y-4">
         {header}
         {pendingChip}
+        {pendingCompletionsChip}
         <Card className="border-primary/40 bg-primary/5">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-2">
@@ -231,6 +248,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
     <div className="p-4 space-y-5">
       {header}
       {pendingChip}
+      {pendingCompletionsChip}
       {vanSaleCta}
       {collectionsCta}
       {deliveriesCta}

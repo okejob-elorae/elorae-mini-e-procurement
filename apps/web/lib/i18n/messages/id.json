@@ -2618,7 +2618,10 @@
         "stateSyncing": "Menyinkron…",
         "stateFailed": "Gagal",
         "syncedToast": "{count} pengiriman tersinkron",
-        "errGeneric": "Terjadi kesalahan. Coba lagi."
+        "errGeneric": "Terjadi kesalahan. Coba lagi.",
+        "retry": "Coba Lagi",
+        "delete": "Hapus",
+        "homeChipCount": "{count, plural, =0 {Tidak ada pengiriman} other {# pengiriman menunggu sinkronisasi}}"
       }
     }
   },

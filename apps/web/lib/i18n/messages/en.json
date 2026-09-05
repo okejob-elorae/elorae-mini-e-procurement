@@ -2618,7 +2618,10 @@
         "stateSyncing": "Syncing…",
         "stateFailed": "Failed",
         "syncedToast": "{count} deliveries synced",
-        "errGeneric": "Something went wrong. Please try again."
+        "errGeneric": "Something went wrong. Please try again.",
+        "retry": "Retry",
+        "delete": "Delete",
+        "homeChipCount": "{count, plural, =0 {No deliveries} one {# delivery waiting to sync} other {# deliveries waiting to sync}}"
       }
     }
   },
