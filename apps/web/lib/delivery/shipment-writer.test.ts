@@ -779,6 +779,9 @@ describe("completeDeliveryShipment", () => {
       proofPhotoUrl: "https://r2.example/proof.jpg",
       proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
       gps: { lat: -6.2, lng: 106.8 }, /* exact match, 0m */
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+      signedByName: "Budi Santoso",
       lines: [{ shipmentLineId, deliveredQty: 4 }],
     });
     deliveryId = result.deliveryId;
@@ -790,6 +793,113 @@ describe("completeDeliveryShipment", () => {
      * this call passes neither, and the accounting record still carries the admin's figures. */
     const delivery = await prisma.fieldSalesDelivery.findUnique({ where: { id: result.deliveryId } });
     expect(delivery?.invoiceDate.toISOString()).toBe(new Date("2026-09-10T00:00:00.000Z").toISOString());
+  });
+
+  it("refuses SALESMAN_CARRY completion with no nota photo", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        signedByName: "Budi Santoso",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+        /* signatureUrl/signatureR2Key deliberately omitted */
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_NOTA_PHOTO" });
+  });
+
+  it("refuses SALESMAN_CARRY completion with a blank nota photo key", async () => {
+    /* Proves the trim fix, not truthiness-only — a whitespace-only key must still refuse. */
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: "   ",
+        signedByName: "Budi Santoso",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_NOTA_PHOTO" });
+  });
+
+  it("refuses SALESMAN_CARRY completion with no signed-by name", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+        /* signedByName deliberately omitted */
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_SIGNED_BY" });
+  });
+
+  it("refuses SALESMAN_CARRY completion with a whitespace-only signed-by name", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+        signedByName: "   ",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_SIGNED_BY" });
+  });
+
+  it("refuses SALESMAN_CARRY completion with a signed-by name over 120 characters", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+        signedByName: "A".repeat(121),
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_SIGNED_BY" });
+  });
+
+  it("completes SALESMAN_CARRY with all fields present, stamping the nota photo and signed-by name", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+      signedByName: "  Budi Santoso  ",
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = result.deliveryId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("DELIVERED");
+    expect(shipment?.signatureUrl).toBe("https://r2.example/nota.jpg");
+    expect(shipment?.signatureR2Key).toBe("delivery-pod-proofs/nota-x.jpg");
+    /* Trimmed before storage. */
+    expect(shipment?.signedByName).toBe("Budi Santoso");
   });
 
   it("refuses SALESMAN_CARRY completion if dates are somehow still missing on the shipment row", async () => {
