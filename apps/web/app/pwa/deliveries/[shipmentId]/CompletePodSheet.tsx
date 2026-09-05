@@ -6,6 +6,8 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2, Loader2, MapPin, Truck } from "lucide-react";
 import { completePodAction } from "../actions";
+import { enqueueCompletion } from "@/lib/pwa/offline/completion-queue";
+import { evaluateCheckinRadius } from "@/lib/pwa/checkin-radius";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,14 +20,11 @@ type Props = {
   shipmentId: string;
   storeName: string;
   docNo: string;
+  storeLat: number | null;
+  storeLng: number | null;
+  effectiveRadiusMeters: number;
   lines: Line[];
 };
-
-type ProofState =
-  | { status: "idle"; file: File | null }
-  | { status: "uploading"; file: File }
-  | { status: "uploaded"; file: File; url: string; key: string }
-  | { status: "error"; file: File };
 
 type GpsState =
   | { status: "idle" }
@@ -34,19 +33,31 @@ type GpsState =
   | { status: "denied" }
   | { status: "error" };
 
-export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props) {
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_FILE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/** Mirrors the server's own validation in apps/web/app/pwa/api/upload/delivery-pod-proof/route.ts — keep both in sync. */
+function fileCheckPasses(file: File): { ok: true } | { ok: false; reasonKey: string } {
+  if (!ALLOWED_FILE_TYPES.has(file.type)) return { ok: false, reasonKey: "err.INVALID_FILE_TYPE" };
+  if (file.size > MAX_FILE_SIZE) return { ok: false, reasonKey: "err.FILE_TOO_LARGE" };
+  return { ok: true };
+}
+
+export function CompletePodSheet({
+  shipmentId, storeName, docNo, storeLat, storeLng, effectiveRadiusMeters, lines,
+}: Props) {
   const t = useTranslations("pwa.deliveries");
   const tErr = useTranslations("deliveryShipments");
   const [isPending, startTransition] = useTransition();
-  const [proof, setProof] = useState<ProofState>({ status: "idle", file: null });
-  const [notaProof, setNotaProof] = useState<ProofState>({ status: "idle", file: null });
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [notaProofFile, setNotaProofFile] = useState<File | null>(null);
   const [signedByName, setSignedByName] = useState("");
   const [gps, setGps] = useState<GpsState>({ status: "idle" });
-  const [clientId] = useState(() => crypto.randomUUID());
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>(
     () => Object.fromEntries(lines.map((l) => [l.id, String(l.plannedQty)])),
   );
   const [success, setSuccess] = useState(false);
+  const [queued, setQueued] = useState(false);
 
   useEffect(() => {
     requestLocation();
@@ -62,57 +73,72 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
     );
   }
 
-  async function uploadProof(file: File): Promise<void> {
-    setProof({ status: "uploading", file });
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("shipmentId", shipmentId);
-      formData.append("clientId", `${clientId}-goods`);
-      const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
-      if (!res.ok) throw new Error("upload failed");
-      const data = (await res.json()) as { url: string; key: string };
-      setProof({ status: "uploaded", file, url: data.url, key: data.key });
-    } catch {
-      setProof({ status: "error", file });
-      toast.error(t("proofUploadError"));
-    }
+  async function uploadPhoto(file: File, kind: "goods" | "nota"): Promise<{ url: string; key: string }> {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("shipmentId", shipmentId);
+    formData.append("clientId", kind);
+    const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
+    if (!res.ok) throw new Error(`upload failed: ${kind}`);
+    return res.json();
   }
 
-  async function uploadNotaProof(file: File): Promise<void> {
-    setNotaProof({ status: "uploading", file });
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("shipmentId", shipmentId);
-      formData.append("clientId", `${clientId}-nota`);
-      const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
-      if (!res.ok) throw new Error("upload failed");
-      const data = (await res.json()) as { url: string; key: string };
-      setNotaProof({ status: "uploaded", file, url: data.url, key: data.key });
-    } catch {
-      setNotaProof({ status: "error", file });
-      toast.error(t("notaPhotoUploadError"));
-    }
-  }
-
-  const proofReady = proof.status === "uploaded";
-  const notaProofReady = notaProof.status === "uploaded";
   const gpsReady = gps.status === "ready";
   const canSubmit =
-    proofReady && notaProofReady && signedByName.trim().length > 0 && gpsReady && !isPending;
+    proofFile !== null && notaProofFile !== null && signedByName.trim().length > 0 && gpsReady && !isPending;
+
+  function preCheckPasses(): { ok: true } | { ok: false; reasonKey: string } {
+    if (!signedByName.trim()) return { ok: false, reasonKey: "err.MISSING_SIGNED_BY" };
+    if (gps.status !== "ready") return { ok: false, reasonKey: "err.MISSING_GPS" };
+    const { distanceMeters, outOfRadius } = evaluateCheckinRadius({
+      checkin: { lat: gps.lat, lng: gps.lng },
+      store: { lat: storeLat, lng: storeLng },
+      effectiveRadiusMeters,
+    });
+    if (distanceMeters === null) return { ok: false, reasonKey: "err.STORE_NOT_GEOCODED" };
+    if (outOfRadius) return { ok: false, reasonKey: "err.GPS_OUT_OF_RADIUS" };
+    for (const line of lines) {
+      const qty = Number(qtyInputs[line.id] ?? "0");
+      if (qty > line.plannedQty) return { ok: false, reasonKey: "err.OVER_PLANNED" };
+      if (!Number.isInteger(qty) || qty < 0) {
+        return { ok: false, reasonKey: "err.INVALID_QTY" };
+      }
+    }
+    return { ok: true };
+  }
 
   function submit(): void {
-    if (!canSubmit || gps.status !== "ready" || proof.status !== "uploaded" || notaProof.status !== "uploaded") return;
+    if (!canSubmit || gps.status !== "ready" || !proofFile || !notaProofFile) return;
+    const goodsCheck = fileCheckPasses(proofFile);
+    if (!goodsCheck.ok) {
+      toast.error(tErr(goodsCheck.reasonKey as any));
+      return;
+    }
+    const notaCheck = fileCheckPasses(notaProofFile);
+    if (!notaCheck.ok) {
+      toast.error(tErr(notaCheck.reasonKey as any));
+      return;
+    }
+    const capturedGps = gps;
+    const capturedProofFile = proofFile;
+    const capturedNotaFile = notaProofFile;
+    if (!navigator.onLine) {
+      startTransition(async () => {
+        await queueOffline(capturedProofFile, capturedNotaFile);
+      });
+      return;
+    }
     startTransition(async () => {
       try {
+        const goods = await uploadPhoto(capturedProofFile, "goods");
+        const nota = await uploadPhoto(capturedNotaFile, "nota");
         const result = await completePodAction({
           shipmentId,
-          proofPhotoUrl: proof.url,
-          proofPhotoR2Key: proof.key,
-          gps: { lat: gps.lat, lng: gps.lng },
-          signatureUrl: notaProof.url,
-          signatureR2Key: notaProof.key,
+          proofPhotoUrl: goods.url,
+          proofPhotoR2Key: goods.key,
+          gps: { lat: capturedGps.lat, lng: capturedGps.lng },
+          signatureUrl: nota.url,
+          signatureR2Key: nota.key,
           signedByName: signedByName.trim(),
           lines: lines.map((l) => ({
             shipmentLineId: l.id,
@@ -126,12 +152,42 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
         }
         toast.error(tErr(`err.${result.reason}` as any));
       } catch {
-        toast.error(t("errGeneric"));
+        await queueOffline(capturedProofFile, capturedNotaFile);
       }
     });
   }
 
-  if (success) {
+  async function queueOffline(goodsFile: File, notaFile: File): Promise<void> {
+    if (gps.status !== "ready") return;
+    const check = preCheckPasses();
+    if (!check.ok) {
+      toast.error(tErr(check.reasonKey as any));
+      return;
+    }
+    try {
+      await enqueueCompletion({
+        shipmentId,
+        storeName,
+        docNo,
+        goodsPhotoBlob: goodsFile,
+        notaPhotoBlob: notaFile,
+        signedByName: signedByName.trim(),
+        gpsLat: gps.lat,
+        gpsLng: gps.lng,
+        lines: lines.map((l) => ({
+          shipmentLineId: l.id,
+          deliveredQty: Number(qtyInputs[l.id] ?? "0"),
+        })),
+        capturedAt: Date.now(),
+      });
+      toast.success(t("queuedToast"));
+      setQueued(true);
+    } catch {
+      toast.error(t("errGeneric"));
+    }
+  }
+
+  if (success || queued) {
     return (
       <div className="p-4">
         <Card className="border-primary/40 bg-primary/5">
@@ -140,7 +196,7 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
               <CheckCircle2 className="h-8 w-8 text-primary-foreground" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">{t("submitSuccess")}</p>
+              <p className="text-sm text-muted-foreground">{queued ? t("queuedSuccess") : t("submitSuccess")}</p>
               <p className="mt-1 text-lg font-semibold">{storeName}</p>
               <p className="text-xs text-muted-foreground">{docNo}</p>
             </div>
@@ -218,21 +274,10 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
           accept="image/jpeg,image/png,image/webp"
           capture="environment"
           className="h-10"
-          disabled={isPending || proof.status === "uploading"}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void uploadProof(file);
-          }}
+          disabled={isPending}
+          onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
         />
-        {proof.status === "uploading" && (
-          <p className="text-xs text-muted-foreground flex items-center gap-2">
-            <Loader2 className="h-3 w-3 animate-spin" /> {t("proofUploading")}
-          </p>
-        )}
-        {proof.status === "uploaded" && (
-          <p className="text-xs text-muted-foreground">{t("proofUploaded", { name: proof.file.name })}</p>
-        )}
-        {proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
+        {proofFile && <p className="text-xs text-muted-foreground">{t("proofUploaded", { name: proofFile.name })}</p>}
       </div>
 
       <div className="space-y-1.5">
@@ -243,21 +288,10 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
           accept="image/jpeg,image/png,image/webp"
           capture="environment"
           className="h-10"
-          disabled={isPending || notaProof.status === "uploading"}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void uploadNotaProof(file);
-          }}
+          disabled={isPending}
+          onChange={(e) => setNotaProofFile(e.target.files?.[0] ?? null)}
         />
-        {notaProof.status === "uploading" && (
-          <p className="text-xs text-muted-foreground flex items-center gap-2">
-            <Loader2 className="h-3 w-3 animate-spin" /> {t("notaPhotoUploading")}
-          </p>
-        )}
-        {notaProof.status === "uploaded" && (
-          <p className="text-xs text-muted-foreground">{t("notaPhotoUploaded", { name: notaProof.file.name })}</p>
-        )}
-        {notaProof.status === "error" && <p className="text-xs text-destructive">{t("notaPhotoUploadError")}</p>}
+        {notaProofFile && <p className="text-xs text-muted-foreground">{t("notaPhotoUploaded", { name: notaProofFile.name })}</p>}
       </div>
 
       <div className="space-y-1.5">

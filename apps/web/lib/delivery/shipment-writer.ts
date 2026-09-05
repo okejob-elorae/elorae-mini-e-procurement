@@ -164,8 +164,42 @@ export async function completeDeliveryShipment(input: {
   signatureR2Key?: string;
   /** SALESMAN_CARRY only, and mandatory there — the receiver's typed name, trimmed and capped at 120 chars. */
   signedByName?: string;
+  /**
+   * When this completion actually happened, per the client's clock — set by the offline
+   * queue to the capture time, omitted (defaults to `new Date()`) by the live online path.
+   * Clamped server-side below: a value in the future or more than 3 days old is replaced
+   * with `new Date()` rather than trusted, so a malformed client clock cannot invalidate an
+   * otherwise-legitimate completion.
+   */
+  deliveredAt?: Date;
+  /** Set only by the offline-flush action — stamps DeliveryShipment.completedOfflineAt. */
+  completedOffline?: boolean;
   lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
 }): Promise<{ ok: true; deliveryId: string }> {
+  const shipment = await prisma.deliveryShipment.findUnique({
+    where: { id: input.shipmentId },
+    include: { lines: true, order: { select: { orderType: true, storeId: true } } },
+  });
+  if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
+  /**
+   * Idempotent replay guard — closes a real bug, not offline-specific: the classic
+   * "response lost after the server committed" failure mode. `recordFieldSalesDelivery`
+   * is ALREADY idempotent by `idempotencyKey` below; this status check firing first is what
+   * made that safety net unreachable on a retry. Scoped to the SAME actor only — a
+   * different actor hitting an already-completed shipment is a real anomaly, not a benign
+   * retry, and still refuses below. Deliberately runs BEFORE the NO_LINES/MISSING_PROOF/
+   * INVALID_QTY input checks below: a replay must short-circuit before any of those ever
+   * run, not merely happen to still satisfy them — an offline-queued retry may legitimately
+   * carry no photos/lines the second time around.
+   */
+  if (
+    (shipment.status === "DELIVERED" || shipment.status === "PARTIALLY_DELIVERED") &&
+    shipment.deliveredById === input.deliveredById
+  ) {
+    return { ok: true, deliveryId: shipment.deliveryId ?? "" };
+  }
+  if (shipment.status !== "IN_TRANSIT") throw new DeliveryShipmentError("INVALID_STATE");
+
   if (input.lines.length === 0) throw new DeliveryShipmentError("NO_LINES");
   const proofPhotoUrl = input.proofPhotoUrl?.trim();
   if (!proofPhotoUrl) throw new DeliveryShipmentError("MISSING_PROOF");
@@ -175,12 +209,14 @@ export async function completeDeliveryShipment(input: {
     }
   }
 
-  const shipment = await prisma.deliveryShipment.findUnique({
-    where: { id: input.shipmentId },
-    include: { lines: true, order: { select: { orderType: true, storeId: true } } },
-  });
-  if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
-  if (shipment.status !== "IN_TRANSIT") throw new DeliveryShipmentError("INVALID_STATE");
+  const now = new Date();
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const effectiveDeliveredAt =
+    input.deliveredAt &&
+    input.deliveredAt.getTime() <= now.getTime() &&
+    input.deliveredAt.getTime() >= now.getTime() - THREE_DAYS_MS
+      ? input.deliveredAt
+      : now;
 
   /**
    * Date source and location gate, branched on `method` — a precondition about WHO is completing
@@ -379,6 +415,7 @@ export async function completeDeliveryShipment(input: {
         invoiceDate: effectiveInvoiceDate,
         dueDate: effectiveDueDate,
         idempotencyKey: `shipment-${input.shipmentId}`,
+        deliveredAt: effectiveDeliveredAt,
       });
       deliveryId = delivery.deliveryId;
     }
@@ -389,11 +426,12 @@ export async function completeDeliveryShipment(input: {
       where: { id: input.shipmentId, status: "IN_TRANSIT" },
       data: {
         status: nextStatus,
-        deliveredAt: new Date(),
+        deliveredAt: effectiveDeliveredAt,
         deliveredById: input.deliveredById,
         proofPhotoUrl,
         proofPhotoR2Key: input.proofPhotoR2Key,
         ...(deliveryId ? { deliveryId } : {}),
+        ...(input.completedOffline ? { completedOfflineAt: now } : {}),
         /* Same CAS-guarded write that moves the status — the GPS audit trail and the status it
          * justifies must land together or not at all, never as a second write. */
         ...(salesmanCarryGps

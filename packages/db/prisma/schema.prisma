@@ -556,6 +556,7 @@ model DeliveryShipment {
   signatureUrl    String?
   signatureR2Key  String?
   signedByName    String?
+  completedOfflineAt DateTime?
   createdAt       DateTime                @default(now())
   order           FieldSalesOrder         @relation(fields: [orderId], references: [id])
   packedBy        User                    @relation("DeliveryShipmentPackedBy", fields: [packedById], references: [id])
