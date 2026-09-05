@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2, Loader2, MapPin, Truck } from "lucide-react";
 import { completePodAction } from "../actions";
 import { enqueueCompletion } from "@/lib/pwa/offline/completion-queue";
+import { evaluateCheckinRadius } from "@/lib/pwa/checkin-radius";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -112,17 +113,17 @@ export function CompletePodSheet({
   function preCheckPasses(): { ok: true } | { ok: false; reasonKey: string } {
     if (!signedByName.trim()) return { ok: false, reasonKey: "err.MISSING_SIGNED_BY" };
     if (gps.status !== "ready") return { ok: false, reasonKey: "err.MISSING_GPS" };
-    if (storeLat === null || storeLng === null) return { ok: false, reasonKey: "err.STORE_NOT_GEOCODED" };
-    const R = 6371000;
-    const toRad = (d: number) => (d * Math.PI) / 180;
-    const dLat = toRad(storeLat - gps.lat);
-    const dLng = toRad(storeLng - gps.lng);
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(gps.lat)) * Math.cos(toRad(storeLat)) * Math.sin(dLng / 2) ** 2;
-    const distanceMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    if (distanceMeters > effectiveRadiusMeters) return { ok: false, reasonKey: "err.GPS_OUT_OF_RADIUS" };
+    const { distanceMeters, outOfRadius } = evaluateCheckinRadius({
+      checkin: { lat: gps.lat, lng: gps.lng },
+      store: { lat: storeLat, lng: storeLng },
+      effectiveRadiusMeters,
+    });
+    if (distanceMeters === null) return { ok: false, reasonKey: "err.STORE_NOT_GEOCODED" };
+    if (outOfRadius) return { ok: false, reasonKey: "err.GPS_OUT_OF_RADIUS" };
     for (const line of lines) {
       const qty = Number(qtyInputs[line.id] ?? "0");
-      if (!Number.isInteger(qty) || qty < 0 || qty > line.plannedQty) {
+      if (qty > line.plannedQty) return { ok: false, reasonKey: "err.OVER_PLANNED" };
+      if (!Number.isInteger(qty) || qty < 0) {
         return { ok: false, reasonKey: "err.INVALID_QTY" };
       }
     }
@@ -170,21 +171,25 @@ export function CompletePodSheet({
       return;
     }
     startTransition(async () => {
-      await enqueueCompletion({
-        shipmentId,
-        goodsPhotoBlob: proof.file,
-        notaPhotoBlob: notaProof.file,
-        signedByName: signedByName.trim(),
-        gpsLat: gps.lat,
-        gpsLng: gps.lng,
-        lines: lines.map((l) => ({
-          shipmentLineId: l.id,
-          deliveredQty: Number(qtyInputs[l.id] ?? "0"),
-        })),
-        capturedAt: Date.now(),
-      });
-      toast.success(t("queuedToast"));
-      setQueued(true);
+      try {
+        await enqueueCompletion({
+          shipmentId,
+          goodsPhotoBlob: proof.file,
+          notaPhotoBlob: notaProof.file,
+          signedByName: signedByName.trim(),
+          gpsLat: gps.lat,
+          gpsLng: gps.lng,
+          lines: lines.map((l) => ({
+            shipmentLineId: l.id,
+            deliveredQty: Number(qtyInputs[l.id] ?? "0"),
+          })),
+          capturedAt: Date.now(),
+        });
+        toast.success(t("queuedToast"));
+        setQueued(true);
+      } catch {
+        toast.error(t("errGeneric"));
+      }
     });
   }
 
