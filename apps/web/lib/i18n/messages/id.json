@@ -2608,7 +2608,18 @@
       "notaPhotoUploaded": "Terunggah: {name}",
       "notaPhotoUploadError": "Unggah gagal. Coba lagi.",
       "signedByLabel": "Ditandatangani oleh",
-      "signedByPlaceholder": "Nama penerima"
+      "signedByPlaceholder": "Nama penerima",
+      "pending": {
+        "title": "Pengiriman Tertunda",
+        "back": "Kembali",
+        "loading": "Memuat…",
+        "empty": "Tidak ada pengiriman tertunda.",
+        "statePending": "Tertunda",
+        "stateSyncing": "Menyinkron…",
+        "stateFailed": "Gagal",
+        "syncedToast": "{count} pengiriman tersinkron",
+        "errGeneric": "Terjadi kesalahan. Coba lagi."
+      }
     }
   },
   "fieldSalesOrders": {

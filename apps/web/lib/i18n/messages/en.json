@@ -2608,7 +2608,18 @@
       "notaPhotoUploaded": "Uploaded: {name}",
       "notaPhotoUploadError": "Upload failed. Try again.",
       "signedByLabel": "Signed by",
-      "signedByPlaceholder": "Receiver's name"
+      "signedByPlaceholder": "Receiver's name",
+      "pending": {
+        "title": "Pending Deliveries",
+        "back": "Back",
+        "loading": "Loading…",
+        "empty": "No pending deliveries.",
+        "statePending": "Pending",
+        "stateSyncing": "Syncing…",
+        "stateFailed": "Failed",
+        "syncedToast": "{count} deliveries synced",
+        "errGeneric": "Something went wrong. Please try again."
+      }
     }
   },
   "fieldSalesOrders": {
