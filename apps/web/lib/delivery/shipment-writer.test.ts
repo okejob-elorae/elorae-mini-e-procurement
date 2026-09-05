@@ -780,7 +780,7 @@ describe("completeDeliveryShipment", () => {
       proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
       gps: { lat: -6.2, lng: 106.8 }, /* exact match, 0m */
       signatureUrl: "https://r2.example/nota.jpg",
-      signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
       signedByName: "Budi Santoso",
       lines: [{ shipmentLineId, deliveredQty: 4 }],
     });
@@ -829,6 +829,40 @@ describe("completeDeliveryShipment", () => {
     ).rejects.toMatchObject({ code: "MISSING_NOTA_PHOTO" });
   });
 
+  it("refuses SALESMAN_CARRY completion when the nota photo key equals the goods photo key", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/shared.jpg`,
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: `delivery-pod-proofs/${shipmentId}/shared.jpg`,
+        signedByName: "Budi Santoso",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_NOTA_PHOTO" });
+  });
+
+  it("refuses SALESMAN_CARRY completion when the nota photo key has no shipment-scoped prefix", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+        gps: { lat: -6.2, lng: 106.8 },
+        signatureUrl: "https://r2.example/nota.jpg",
+        signatureR2Key: "delivery-pod-proofs/some-other-shipment/nota.jpg",
+        signedByName: "Budi Santoso",
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "MISSING_NOTA_PHOTO" });
+  });
+
   it("refuses SALESMAN_CARRY completion with no signed-by name", async () => {
     await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
     await expect(
@@ -839,7 +873,7 @@ describe("completeDeliveryShipment", () => {
         proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
         gps: { lat: -6.2, lng: 106.8 },
         signatureUrl: "https://r2.example/nota.jpg",
-        signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+        signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
         lines: [{ shipmentLineId, deliveredQty: 4 }],
         /* signedByName deliberately omitted */
       }),
@@ -856,7 +890,7 @@ describe("completeDeliveryShipment", () => {
         proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
         gps: { lat: -6.2, lng: 106.8 },
         signatureUrl: "https://r2.example/nota.jpg",
-        signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+        signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
         signedByName: "   ",
         lines: [{ shipmentLineId, deliveredQty: 4 }],
       }),
@@ -873,7 +907,7 @@ describe("completeDeliveryShipment", () => {
         proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
         gps: { lat: -6.2, lng: 106.8 },
         signatureUrl: "https://r2.example/nota.jpg",
-        signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+        signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
         signedByName: "A".repeat(121),
         lines: [{ shipmentLineId, deliveredQty: 4 }],
       }),
@@ -889,7 +923,7 @@ describe("completeDeliveryShipment", () => {
       proofPhotoR2Key: "delivery-pod-proofs/x.jpg",
       gps: { lat: -6.2, lng: 106.8 },
       signatureUrl: "https://r2.example/nota.jpg",
-      signatureR2Key: "delivery-pod-proofs/nota-x.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
       signedByName: "  Budi Santoso  ",
       lines: [{ shipmentLineId, deliveredQty: 4 }],
     });
@@ -897,7 +931,7 @@ describe("completeDeliveryShipment", () => {
     const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
     expect(shipment?.status).toBe("DELIVERED");
     expect(shipment?.signatureUrl).toBe("https://r2.example/nota.jpg");
-    expect(shipment?.signatureR2Key).toBe("delivery-pod-proofs/nota-x.jpg");
+    expect(shipment?.signatureR2Key).toBe(`delivery-pod-proofs/${shipmentId}/nota-x.jpg`);
     /* Trimmed before storage. */
     expect(shipment?.signedByName).toBe("Budi Santoso");
   });

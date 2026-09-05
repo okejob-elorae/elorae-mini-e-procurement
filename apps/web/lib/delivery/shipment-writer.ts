@@ -167,7 +167,8 @@ export async function completeDeliveryShipment(input: {
   lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
 }): Promise<{ ok: true; deliveryId: string }> {
   if (input.lines.length === 0) throw new DeliveryShipmentError("NO_LINES");
-  if (!input.proofPhotoUrl?.trim()) throw new DeliveryShipmentError("MISSING_PROOF");
+  const proofPhotoUrl = input.proofPhotoUrl?.trim();
+  if (!proofPhotoUrl) throw new DeliveryShipmentError("MISSING_PROOF");
   for (const line of input.lines) {
     if (!Number.isInteger(line.deliveredQty) || line.deliveredQty < 0) {
       throw new DeliveryShipmentError("INVALID_QTY");
@@ -287,10 +288,26 @@ export async function completeDeliveryShipment(input: {
     if (gpsResult.distanceMeters === null) throw new DeliveryShipmentError("STORE_NOT_GEOCODED");
     if (gpsResult.outOfRadius) throw new DeliveryShipmentError("GPS_OUT_OF_RADIUS");
 
+    const signatureUrl = input.signatureUrl?.trim();
     const signatureR2Key = input.signatureR2Key?.trim();
     const signedByName = input.signedByName?.trim();
 
-    if (!signatureR2Key) throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
+    if (!signatureUrl || !signatureR2Key) throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
+    /**
+     * Two independent binds, both closing the same hole: without them, any `deliveries:pod`
+     * holder can pass the SAME R2 key already used for `proofPhotoR2Key` (one photo satisfies
+     * both gates) or an arbitrary string that was never uploaded to R2 at all for THIS shipment
+     * (nothing here queries R2 to confirm the object exists — the upload route already wrote it,
+     * this only checks the key's shape is consistent with having come from it). Same lesson as
+     * NOT_CARRIER above: every "use server" export is independently callable, so the UI only
+     * ever sending real uploaded keys is not a guarantee.
+     */
+    if (signatureR2Key === input.proofPhotoR2Key) {
+      throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
+    }
+    if (!signatureR2Key.startsWith(`delivery-pod-proofs/${input.shipmentId}/`)) {
+      throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
+    }
     if (!signedByName || signedByName.length > 120) {
       throw new DeliveryShipmentError("MISSING_SIGNED_BY");
     }
@@ -301,7 +318,7 @@ export async function completeDeliveryShipment(input: {
       distanceMeters: gpsResult.distanceMeters,
     };
     salesmanCarrySignature = {
-      url: input.signatureUrl ?? "",
+      url: signatureUrl,
       r2Key: signatureR2Key,
       signedByName,
     };
@@ -374,7 +391,7 @@ export async function completeDeliveryShipment(input: {
         status: nextStatus,
         deliveredAt: new Date(),
         deliveredById: input.deliveredById,
-        proofPhotoUrl: input.proofPhotoUrl,
+        proofPhotoUrl,
         proofPhotoR2Key: input.proofPhotoR2Key,
         ...(deliveryId ? { deliveryId } : {}),
         /* Same CAS-guarded write that moves the status — the GPS audit trail and the status it
