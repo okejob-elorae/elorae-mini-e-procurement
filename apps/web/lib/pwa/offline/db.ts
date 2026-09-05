@@ -35,6 +35,8 @@ export interface PendingPhoto {
 
 export interface PendingCompletion {
   shipmentId: string; // primary key — one queued completion per shipment, matching the 1:1 reality
+  storeName: string;
+  docNo: string;
   goodsPhotoBlob: Blob;
   notaPhotoBlob: Blob;
   signedByName: string;

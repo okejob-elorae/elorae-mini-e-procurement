@@ -89,7 +89,10 @@ export function PendingCompletionsClient() {
                 <Card>
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="truncate font-medium leading-tight min-w-0">{item.shipmentId}</p>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium leading-tight min-w-0">{item.storeName}</p>
+                        <p className="truncate text-xs text-muted-foreground">{item.docNo}</p>
+                      </div>
                       <Badge
                         variant={item.syncState === "failed" ? "destructive" : item.syncState === "syncing" ? "default" : "secondary"}
                         className="shrink-0"

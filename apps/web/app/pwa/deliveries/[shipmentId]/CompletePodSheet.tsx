@@ -26,12 +26,6 @@ type Props = {
   lines: Line[];
 };
 
-type ProofState =
-  | { status: "idle"; file: File | null }
-  | { status: "uploading"; file: File }
-  | { status: "uploaded"; file: File; url: string; key: string }
-  | { status: "error"; file: File };
-
 type GpsState =
   | { status: "idle" }
   | { status: "locating" }
@@ -45,11 +39,10 @@ export function CompletePodSheet({
   const t = useTranslations("pwa.deliveries");
   const tErr = useTranslations("deliveryShipments");
   const [isPending, startTransition] = useTransition();
-  const [proof, setProof] = useState<ProofState>({ status: "idle", file: null });
-  const [notaProof, setNotaProof] = useState<ProofState>({ status: "idle", file: null });
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [notaProofFile, setNotaProofFile] = useState<File | null>(null);
   const [signedByName, setSignedByName] = useState("");
   const [gps, setGps] = useState<GpsState>({ status: "idle" });
-  const [clientId] = useState(() => crypto.randomUUID());
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>(
     () => Object.fromEntries(lines.map((l) => [l.id, String(l.plannedQty)])),
   );
@@ -70,45 +63,19 @@ export function CompletePodSheet({
     );
   }
 
-  async function uploadProof(file: File): Promise<void> {
-    setProof({ status: "uploading", file });
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("shipmentId", shipmentId);
-      formData.append("clientId", `${clientId}-goods`);
-      const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
-      if (!res.ok) throw new Error("upload failed");
-      const data = (await res.json()) as { url: string; key: string };
-      setProof({ status: "uploaded", file, url: data.url, key: data.key });
-    } catch {
-      setProof({ status: "error", file });
-      toast.error(t("proofUploadError"));
-    }
+  async function uploadPhoto(file: File, kind: "goods" | "nota"): Promise<{ url: string; key: string }> {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("shipmentId", shipmentId);
+    formData.append("clientId", kind);
+    const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
+    if (!res.ok) throw new Error(`upload failed: ${kind}`);
+    return res.json();
   }
 
-  async function uploadNotaProof(file: File): Promise<void> {
-    setNotaProof({ status: "uploading", file });
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("shipmentId", shipmentId);
-      formData.append("clientId", `${clientId}-nota`);
-      const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
-      if (!res.ok) throw new Error("upload failed");
-      const data = (await res.json()) as { url: string; key: string };
-      setNotaProof({ status: "uploaded", file, url: data.url, key: data.key });
-    } catch {
-      setNotaProof({ status: "error", file });
-      toast.error(t("notaPhotoUploadError"));
-    }
-  }
-
-  const proofReady = proof.status === "uploaded";
-  const notaProofReady = notaProof.status === "uploaded";
   const gpsReady = gps.status === "ready";
   const canSubmit =
-    proofReady && notaProofReady && signedByName.trim().length > 0 && gpsReady && !isPending;
+    proofFile !== null && notaProofFile !== null && signedByName.trim().length > 0 && gpsReady && !isPending;
 
   function preCheckPasses(): { ok: true } | { ok: false; reasonKey: string } {
     if (!signedByName.trim()) return { ok: false, reasonKey: "err.MISSING_SIGNED_BY" };
@@ -131,20 +98,27 @@ export function CompletePodSheet({
   }
 
   function submit(): void {
-    if (!canSubmit || gps.status !== "ready" || proof.status !== "uploaded" || notaProof.status !== "uploaded") return;
+    if (!canSubmit || gps.status !== "ready" || !proofFile || !notaProofFile) return;
+    const capturedGps = gps;
+    const capturedProofFile = proofFile;
+    const capturedNotaFile = notaProofFile;
     if (!navigator.onLine) {
-      queueOffline();
+      startTransition(async () => {
+        await queueOffline(capturedProofFile, capturedNotaFile);
+      });
       return;
     }
     startTransition(async () => {
       try {
+        const goods = await uploadPhoto(capturedProofFile, "goods");
+        const nota = await uploadPhoto(capturedNotaFile, "nota");
         const result = await completePodAction({
           shipmentId,
-          proofPhotoUrl: proof.url,
-          proofPhotoR2Key: proof.key,
-          gps: { lat: gps.lat, lng: gps.lng },
-          signatureUrl: notaProof.url,
-          signatureR2Key: notaProof.key,
+          proofPhotoUrl: goods.url,
+          proofPhotoR2Key: goods.key,
+          gps: { lat: capturedGps.status === "ready" ? capturedGps.lat : 0, lng: capturedGps.status === "ready" ? capturedGps.lng : 0 },
+          signatureUrl: nota.url,
+          signatureR2Key: nota.key,
           signedByName: signedByName.trim(),
           lines: lines.map((l) => ({
             shipmentLineId: l.id,
@@ -158,39 +132,39 @@ export function CompletePodSheet({
         }
         toast.error(tErr(`err.${result.reason}` as any));
       } catch {
-        queueOffline();
+        await queueOffline(capturedProofFile, capturedNotaFile);
       }
     });
   }
 
-  function queueOffline(): void {
-    if (gps.status !== "ready" || proof.status !== "uploaded" || notaProof.status !== "uploaded") return;
+  async function queueOffline(goodsFile: File, notaFile: File): Promise<void> {
+    if (gps.status !== "ready") return;
     const check = preCheckPasses();
     if (!check.ok) {
       toast.error(tErr(check.reasonKey as any));
       return;
     }
-    startTransition(async () => {
-      try {
-        await enqueueCompletion({
-          shipmentId,
-          goodsPhotoBlob: proof.file,
-          notaPhotoBlob: notaProof.file,
-          signedByName: signedByName.trim(),
-          gpsLat: gps.lat,
-          gpsLng: gps.lng,
-          lines: lines.map((l) => ({
-            shipmentLineId: l.id,
-            deliveredQty: Number(qtyInputs[l.id] ?? "0"),
-          })),
-          capturedAt: Date.now(),
-        });
-        toast.success(t("queuedToast"));
-        setQueued(true);
-      } catch {
-        toast.error(t("errGeneric"));
-      }
-    });
+    try {
+      await enqueueCompletion({
+        shipmentId,
+        storeName,
+        docNo,
+        goodsPhotoBlob: goodsFile,
+        notaPhotoBlob: notaFile,
+        signedByName: signedByName.trim(),
+        gpsLat: gps.lat,
+        gpsLng: gps.lng,
+        lines: lines.map((l) => ({
+          shipmentLineId: l.id,
+          deliveredQty: Number(qtyInputs[l.id] ?? "0"),
+        })),
+        capturedAt: Date.now(),
+      });
+      toast.success(t("queuedToast"));
+      setQueued(true);
+    } catch {
+      toast.error(t("errGeneric"));
+    }
   }
 
   if (success || queued) {
@@ -280,21 +254,10 @@ export function CompletePodSheet({
           accept="image/jpeg,image/png,image/webp"
           capture="environment"
           className="h-10"
-          disabled={isPending || proof.status === "uploading"}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void uploadProof(file);
-          }}
+          disabled={isPending}
+          onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
         />
-        {proof.status === "uploading" && (
-          <p className="text-xs text-muted-foreground flex items-center gap-2">
-            <Loader2 className="h-3 w-3 animate-spin" /> {t("proofUploading")}
-          </p>
-        )}
-        {proof.status === "uploaded" && (
-          <p className="text-xs text-muted-foreground">{t("proofUploaded", { name: proof.file.name })}</p>
-        )}
-        {proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
+        {proofFile && <p className="text-xs text-muted-foreground">{t("proofUploaded", { name: proofFile.name })}</p>}
       </div>
 
       <div className="space-y-1.5">
@@ -305,21 +268,10 @@ export function CompletePodSheet({
           accept="image/jpeg,image/png,image/webp"
           capture="environment"
           className="h-10"
-          disabled={isPending || notaProof.status === "uploading"}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void uploadNotaProof(file);
-          }}
+          disabled={isPending}
+          onChange={(e) => setNotaProofFile(e.target.files?.[0] ?? null)}
         />
-        {notaProof.status === "uploading" && (
-          <p className="text-xs text-muted-foreground flex items-center gap-2">
-            <Loader2 className="h-3 w-3 animate-spin" /> {t("notaPhotoUploading")}
-          </p>
-        )}
-        {notaProof.status === "uploaded" && (
-          <p className="text-xs text-muted-foreground">{t("notaPhotoUploaded", { name: notaProof.file.name })}</p>
-        )}
-        {notaProof.status === "error" && <p className="text-xs text-destructive">{t("notaPhotoUploadError")}</p>}
+        {notaProofFile && <p className="text-xs text-muted-foreground">{t("notaPhotoUploaded", { name: notaProofFile.name })}</p>}
       </div>
 
       <div className="space-y-1.5">

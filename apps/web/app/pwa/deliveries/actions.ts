@@ -107,9 +107,7 @@ export async function reportStuckDeliveryCompletionAction(
   reason: string,
 ): Promise<void> {
   const session = await auth();
-  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_POD)) {
-    return;
-  }
+  if (!session?.user?.id) return;
   const recent = await prisma.adminNotification.findMany({
     where: { category: "DELIVERY_COMPLETION_STUCK", readAt: null },
     orderBy: { createdAt: "desc" },

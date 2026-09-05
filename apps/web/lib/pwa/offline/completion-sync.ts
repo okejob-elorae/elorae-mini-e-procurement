@@ -3,6 +3,8 @@ import { deletePendingCompletion } from "./completion-queue";
 import { classifyCompletionResult, type CompletionSyncDecision } from "./completion-classify";
 import { completePodAction, reportStuckDeliveryCompletionAction } from "@/app/pwa/deliveries/actions";
 
+const MAX_RETRY_ATTEMPTS = 20;
+
 let running = false;
 
 export async function flushPendingCompletions(): Promise<{ synced: number; failed: number; retried: number }> {
@@ -44,8 +46,16 @@ export async function flushPendingCompletions(): Promise<{ synced: number; faile
         await reportStuckDeliveryCompletionAction(c.shipmentId, reason).catch(() => {});
         failed += 1;
       } else {
-        await pwaDb.pendingCompletions.update(c.shipmentId, { syncState: "pending", attempts: c.attempts + 1 });
-        retried += 1;
+        const nextAttempts = c.attempts + 1;
+        if (nextAttempts >= MAX_RETRY_ATTEMPTS) {
+          const ceilingReason = reason || "RETRY_LIMIT_EXCEEDED";
+          await pwaDb.pendingCompletions.update(c.shipmentId, { syncState: "failed", error: ceilingReason, attempts: nextAttempts });
+          await reportStuckDeliveryCompletionAction(c.shipmentId, ceilingReason).catch(() => {});
+          failed += 1;
+        } else {
+          await pwaDb.pendingCompletions.update(c.shipmentId, { syncState: "pending", attempts: nextAttempts });
+          retried += 1;
+        }
       }
     }
   } finally {
@@ -56,9 +66,9 @@ export async function flushPendingCompletions(): Promise<{ synced: number; faile
 
 async function uploadPhotoBlob(shipmentId: string, blob: Blob, kind: "goods" | "nota"): Promise<{ url: string; key: string }> {
   const formData = new FormData();
-  formData.append("file", new File([blob], `${shipmentId}-${kind}.jpg`, { type: "image/jpeg" }));
+  formData.append("file", new File([blob], `${shipmentId}-${kind}`, { type: blob.type || "image/jpeg" }));
   formData.append("shipmentId", shipmentId);
-  formData.append("clientId", `offline-${kind}`);
+  formData.append("clientId", kind);
   const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
   if (!res.ok) throw new Error(`upload failed: ${kind}`);
   return res.json();
