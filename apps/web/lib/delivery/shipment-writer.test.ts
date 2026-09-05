@@ -581,6 +581,12 @@ describe("completeDeliveryShipment", () => {
   });
 
   it("refuses completion from a non-IN_TRANSIT status", async () => {
+    /**
+     * A same-actor retry against an already-DELIVERED shipment is now a legitimate idempotent
+     * replay (returns ok, per the new guard) rather than INVALID_STATE — covered separately
+     * below. This test proves the status refusal still holds for a DIFFERENT actor hitting the
+     * now-DELIVERED shipment, which is what non-IN_TRANSIT genuinely still refuses.
+     */
     await seedInTransitShipment(4);
     await completeDeliveryShipment({
       shipmentId,
@@ -592,10 +598,15 @@ describe("completeDeliveryShipment", () => {
       lines: [{ shipmentLineId, deliveredQty: 4 }],
     }).then((r) => { deliveryId = r.deliveryId; });
 
+    const other = await prisma.user.create({
+      data: { email: `other-non-in-transit-${Date.now()}@example.com`, name: "Other", role: "USER" },
+    });
+    otherUserId = other.id;
+
     await expect(
       completeDeliveryShipment({
         shipmentId,
-        deliveredById: userId,
+        deliveredById: otherUserId,
         proofPhotoUrl: "https://r2.example/proof.jpg",
         proofPhotoR2Key: "delivery-proofs/x.jpg",
         invoiceDate: new Date(),
@@ -967,6 +978,125 @@ describe("completeDeliveryShipment", () => {
         /* invoiceDate/dueDate deliberately omitted */
       }),
     ).rejects.toMatchObject({ code: "MISSING_DATES" });
+  });
+
+  it("returns ok on a same-actor replay of an already-DELIVERED shipment, without re-running any gate", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const first = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+      signedByName: "Budi Santoso",
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = first.deliveryId;
+    /* Replay: no gps, no photos, no signature — proves the replay short-circuits before
+       any of those checks ever run, not merely that it happens to still satisfy them. */
+    const second = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "",
+      proofPhotoR2Key: "",
+      lines: [],
+    });
+    expect(second).toEqual({ ok: true, deliveryId: first.deliveryId });
+  });
+
+  it("still refuses INVALID_STATE for a DIFFERENT actor against an already-DELIVERED shipment", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const first = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+      signedByName: "Budi Santoso",
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = first.deliveryId;
+    const otherUser = await prisma.user.create({
+      data: { email: `other-${Date.now()}@example.com`, name: "Other", passwordHash: "x", roleId: (await prisma.roleDefinition.findFirst({ where: { name: "SALESMAN" } }))!.id },
+    });
+    otherUserId = otherUser.id;
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: otherUserId,
+        proofPhotoUrl: "https://r2.example/proof2.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods2.jpg`,
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
+
+  it("clamps a future deliveredAt to now", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const before = new Date();
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+      signedByName: "Budi Santoso",
+      deliveredAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour in the future
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = result.deliveryId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.deliveredAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+  });
+
+  it("clamps a deliveredAt more than 3 days old to now", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const before = new Date();
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+      signedByName: "Budi Santoso",
+      deliveredAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000), // 4 days ago
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = result.deliveryId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.deliveredAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+  });
+
+  it("stores a deliveredAt within the 3-day window as given, and stamps completedOfflineAt only when completedOffline is true", async () => {
+    await seedSalesmanCarryShipment(4, { lat: -6.2, lng: 106.8, checkinRadiusMeters: 100 });
+    const capturedAt = new Date(Date.now() - 6 * 60 * 60 * 1000); // 6 hours ago
+    const result = await completeDeliveryShipment({
+      shipmentId,
+      deliveredById: userId,
+      proofPhotoUrl: "https://r2.example/proof.jpg",
+      proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+      gps: { lat: -6.2, lng: 106.8 },
+      signatureUrl: "https://r2.example/nota.jpg",
+      signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota.jpg`,
+      signedByName: "Budi Santoso",
+      deliveredAt: capturedAt,
+      completedOffline: true,
+      lines: [{ shipmentLineId, deliveredQty: 4 }],
+    });
+    deliveryId = result.deliveryId;
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.deliveredAt!.toISOString()).toBe(capturedAt.toISOString());
+    expect(shipment?.completedOfflineAt).not.toBeNull();
+    const delivery = await prisma.fieldSalesDelivery.findUnique({ where: { id: result.deliveryId } });
+    expect(delivery?.deliveredAt.toISOString()).toBe(capturedAt.toISOString());
   });
 });
 

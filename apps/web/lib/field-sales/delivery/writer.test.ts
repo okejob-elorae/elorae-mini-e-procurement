@@ -364,6 +364,20 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(Number(delivery.total)).toBe(2000);
   });
 
+  it("stores the given deliveredAt when supplied", async () => {
+    const explicit = new Date("2026-09-01T03:00:00.000Z");
+    const result = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+      deliveredAt: explicit,
+    });
+    const delivery = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: result.deliveryId } });
+    expect(delivery.deliveredAt.toISOString()).toBe(explicit.toISOString());
+  });
+
   it("gives each delivery of the same order its own receivable", async () => {
     const first = await recordFieldSalesDelivery({
       orderId,

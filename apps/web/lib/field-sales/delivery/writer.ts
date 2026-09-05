@@ -13,6 +13,7 @@ export async function recordFieldSalesDelivery(input: {
   invoiceDate: Date;
   dueDate: Date;
   idempotencyKey?: string;
+  deliveredAt?: Date;
 }): Promise<{ deliveryId: string; docNo: string }> {
   if (input.lines.length === 0) throw new DeliveryError("NO_LINES");
 
@@ -102,7 +103,7 @@ export async function recordFieldSalesDelivery(input: {
     const total = subtotal - lineDiscountTotal - allocation.orderDiscountAmount;
 
     const docNo = await generateDocNumber("DELIVERY", tx);
-    const now = new Date();
+    const now = input.deliveredAt ?? new Date();
 
     const delivery = await tx.fieldSalesDelivery.create({
       data: {
