@@ -39,6 +39,8 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
   const tErr = useTranslations("deliveryShipments");
   const [isPending, startTransition] = useTransition();
   const [proof, setProof] = useState<ProofState>({ status: "idle", file: null });
+  const [notaProof, setNotaProof] = useState<ProofState>({ status: "idle", file: null });
+  const [signedByName, setSignedByName] = useState("");
   const [gps, setGps] = useState<GpsState>({ status: "idle" });
   const [clientId] = useState(() => crypto.randomUUID());
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>(
@@ -66,7 +68,7 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
       const formData = new FormData();
       formData.append("file", file);
       formData.append("shipmentId", shipmentId);
-      formData.append("clientId", clientId);
+      formData.append("clientId", `${clientId}-goods`);
       const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
       if (!res.ok) throw new Error("upload failed");
       const data = (await res.json()) as { url: string; key: string };
@@ -77,12 +79,31 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
     }
   }
 
+  async function uploadNotaProof(file: File): Promise<void> {
+    setNotaProof({ status: "uploading", file });
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("shipmentId", shipmentId);
+      formData.append("clientId", `${clientId}-nota`);
+      const res = await fetch("/pwa/api/upload/delivery-pod-proof", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("upload failed");
+      const data = (await res.json()) as { url: string; key: string };
+      setNotaProof({ status: "uploaded", file, url: data.url, key: data.key });
+    } catch {
+      setNotaProof({ status: "error", file });
+      toast.error(t("notaPhotoUploadError"));
+    }
+  }
+
   const proofReady = proof.status === "uploaded";
+  const notaProofReady = notaProof.status === "uploaded";
   const gpsReady = gps.status === "ready";
-  const canSubmit = proofReady && gpsReady && !isPending;
+  const canSubmit =
+    proofReady && notaProofReady && signedByName.trim().length > 0 && gpsReady && !isPending;
 
   function submit(): void {
-    if (!canSubmit || gps.status !== "ready" || proof.status !== "uploaded") return;
+    if (!canSubmit || gps.status !== "ready" || proof.status !== "uploaded" || notaProof.status !== "uploaded") return;
     startTransition(async () => {
       try {
         const result = await completePodAction({
@@ -90,6 +111,9 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
           proofPhotoUrl: proof.url,
           proofPhotoR2Key: proof.key,
           gps: { lat: gps.lat, lng: gps.lng },
+          signatureUrl: notaProof.url,
+          signatureR2Key: notaProof.key,
+          signedByName: signedByName.trim(),
           lines: lines.map((l) => ({
             shipmentLineId: l.id,
             deliveredQty: Number(qtyInputs[l.id] ?? "0"),
@@ -192,6 +216,7 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
           id="pod-proof"
           type="file"
           accept="image/jpeg,image/png,image/webp"
+          capture="environment"
           className="h-10"
           disabled={isPending || proof.status === "uploading"}
           onChange={(e) => {
@@ -208,6 +233,45 @@ export function CompletePodSheet({ shipmentId, storeName, docNo, lines }: Props)
           <p className="text-xs text-muted-foreground">{t("proofUploaded", { name: proof.file.name })}</p>
         )}
         {proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="pod-nota-proof">{t("notaPhotoLabel")}</Label>
+        <Input
+          id="pod-nota-proof"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          capture="environment"
+          className="h-10"
+          disabled={isPending || notaProof.status === "uploading"}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void uploadNotaProof(file);
+          }}
+        />
+        {notaProof.status === "uploading" && (
+          <p className="text-xs text-muted-foreground flex items-center gap-2">
+            <Loader2 className="h-3 w-3 animate-spin" /> {t("notaPhotoUploading")}
+          </p>
+        )}
+        {notaProof.status === "uploaded" && (
+          <p className="text-xs text-muted-foreground">{t("notaPhotoUploaded", { name: notaProof.file.name })}</p>
+        )}
+        {notaProof.status === "error" && <p className="text-xs text-destructive">{t("notaPhotoUploadError")}</p>}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="pod-signed-by">{t("signedByLabel")}</Label>
+        <Input
+          id="pod-signed-by"
+          type="text"
+          maxLength={120}
+          placeholder={t("signedByPlaceholder")}
+          className="h-10"
+          disabled={isPending}
+          value={signedByName}
+          onChange={(e) => setSignedByName(e.target.value)}
+        />
       </div>
 
       <div className="space-y-2">

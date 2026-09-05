@@ -638,7 +638,9 @@
       "MISSING_DATES": "Masukkan tanggal invoice dan jatuh tempo sebelum mengirim.",
       "MISSING_GPS": "Lokasi diperlukan untuk menyelesaikan pengiriman ini.",
       "STORE_NOT_GEOCODED": "Toko ini belum memiliki lokasi tercatat — hubungi admin sebelum menyelesaikan di sini.",
-      "GPS_OUT_OF_RADIUS": "Anda terlalu jauh dari toko untuk menyelesaikan pengiriman ini."
+      "GPS_OUT_OF_RADIUS": "Anda terlalu jauh dari toko untuk menyelesaikan pengiriman ini.",
+      "MISSING_NOTA_PHOTO": "Ambil foto nota yang sudah ditandatangani sebelum menyelesaikan.",
+      "MISSING_SIGNED_BY": "Masukkan nama penerima yang menandatangani pengiriman ini."
     }
   },
   "production": {
@@ -2598,7 +2600,13 @@
       "submitButton": "Konfirmasi Pengiriman",
       "submitting": "Mengirim...",
       "submitSuccess": "Pengiriman selesai.",
-      "errGeneric": "Terjadi kesalahan. Coba lagi."
+      "errGeneric": "Terjadi kesalahan. Coba lagi.",
+      "notaPhotoLabel": "Foto nota bertanda tangan",
+      "notaPhotoUploading": "Mengunggah...",
+      "notaPhotoUploaded": "Terunggah: {name}",
+      "notaPhotoUploadError": "Unggah gagal. Coba lagi.",
+      "signedByLabel": "Ditandatangani oleh",
+      "signedByPlaceholder": "Nama penerima"
     }
   },
   "fieldSalesOrders": {

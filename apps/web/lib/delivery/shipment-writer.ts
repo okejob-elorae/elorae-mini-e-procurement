@@ -159,10 +159,16 @@ export async function completeDeliveryShipment(input: {
   dueDate?: Date;
   /** SALESMAN_CARRY only, and mandatory there — the delivery's proof-of-location. */
   gps?: { lat: number; lng: number };
+  /** SALESMAN_CARRY only, and mandatory there — a photo of the signed physical nota. */
+  signatureUrl?: string;
+  signatureR2Key?: string;
+  /** SALESMAN_CARRY only, and mandatory there — the receiver's typed name, trimmed and capped at 120 chars. */
+  signedByName?: string;
   lines: Array<{ shipmentLineId: string; deliveredQty: number }>;
 }): Promise<{ ok: true; deliveryId: string }> {
   if (input.lines.length === 0) throw new DeliveryShipmentError("NO_LINES");
-  if (!input.proofPhotoUrl) throw new DeliveryShipmentError("MISSING_PROOF");
+  const proofPhotoUrl = input.proofPhotoUrl?.trim();
+  if (!proofPhotoUrl) throw new DeliveryShipmentError("MISSING_PROOF");
   for (const line of input.lines) {
     if (!Number.isInteger(line.deliveredQty) || line.deliveredQty < 0) {
       throw new DeliveryShipmentError("INVALID_QTY");
@@ -189,6 +195,7 @@ export async function completeDeliveryShipment(input: {
   let effectiveInvoiceDate: Date;
   let effectiveDueDate: Date;
   let salesmanCarryGps: { lat: number; lng: number; distanceMeters: number } | undefined;
+  let salesmanCarrySignature: { url: string; r2Key: string; signedByName: string } | undefined;
 
   if (shipment.method === "SALESMAN_CARRY") {
     /**
@@ -281,10 +288,39 @@ export async function completeDeliveryShipment(input: {
     if (gpsResult.distanceMeters === null) throw new DeliveryShipmentError("STORE_NOT_GEOCODED");
     if (gpsResult.outOfRadius) throw new DeliveryShipmentError("GPS_OUT_OF_RADIUS");
 
+    const signatureUrl = input.signatureUrl?.trim();
+    const signatureR2Key = input.signatureR2Key?.trim();
+    const signedByName = input.signedByName?.trim();
+
+    if (!signatureUrl || !signatureR2Key) throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
+    /**
+     * Two independent binds, both closing the same hole: without them, any `deliveries:pod`
+     * holder can pass the SAME R2 key already used for `proofPhotoR2Key` (one photo satisfies
+     * both gates) or an arbitrary string that was never uploaded to R2 at all for THIS shipment
+     * (nothing here queries R2 to confirm the object exists — the upload route already wrote it,
+     * this only checks the key's shape is consistent with having come from it). Same lesson as
+     * NOT_CARRIER above: every "use server" export is independently callable, so the UI only
+     * ever sending real uploaded keys is not a guarantee.
+     */
+    if (signatureR2Key === input.proofPhotoR2Key) {
+      throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
+    }
+    if (!signatureR2Key.startsWith(`delivery-pod-proofs/${input.shipmentId}/`)) {
+      throw new DeliveryShipmentError("MISSING_NOTA_PHOTO");
+    }
+    if (!signedByName || signedByName.length > 120) {
+      throw new DeliveryShipmentError("MISSING_SIGNED_BY");
+    }
+
     salesmanCarryGps = {
       lat: input.gps.lat,
       lng: input.gps.lng,
       distanceMeters: gpsResult.distanceMeters,
+    };
+    salesmanCarrySignature = {
+      url: signatureUrl,
+      r2Key: signatureR2Key,
+      signedByName,
     };
   } else {
     if (!input.invoiceDate || !input.dueDate) throw new DeliveryShipmentError("MISSING_DATES");
@@ -355,7 +391,7 @@ export async function completeDeliveryShipment(input: {
         status: nextStatus,
         deliveredAt: new Date(),
         deliveredById: input.deliveredById,
-        proofPhotoUrl: input.proofPhotoUrl,
+        proofPhotoUrl,
         proofPhotoR2Key: input.proofPhotoR2Key,
         ...(deliveryId ? { deliveryId } : {}),
         /* Same CAS-guarded write that moves the status — the GPS audit trail and the status it
@@ -365,6 +401,13 @@ export async function completeDeliveryShipment(input: {
               gpsLat: salesmanCarryGps.lat,
               gpsLng: salesmanCarryGps.lng,
               gpsDistanceMeters: salesmanCarryGps.distanceMeters,
+            }
+          : {}),
+        ...(salesmanCarrySignature
+          ? {
+              signatureUrl: salesmanCarrySignature.url,
+              signatureR2Key: salesmanCarrySignature.r2Key,
+              signedByName: salesmanCarrySignature.signedByName,
             }
           : {}),
       },

@@ -33,7 +33,11 @@ export type DeliveryShipmentErrorCode =
   /** The order's store has no lat/lng on record — refuses rather than passing the gate open. */
   | "STORE_NOT_GEOCODED"
   /** The supplied coordinates are further than the effective radius from the store. */
-  | "GPS_OUT_OF_RADIUS";
+  | "GPS_OUT_OF_RADIUS"
+  /** SALESMAN_CARRY completion with no photo of the signed physical nota. */
+  | "MISSING_NOTA_PHOTO"
+  /** SALESMAN_CARRY completion with no (or blank, after trimming) typed receiver name. */
+  | "MISSING_SIGNED_BY";
 
 export class DeliveryShipmentError extends Error {
   constructor(readonly code: DeliveryShipmentErrorCode) {
