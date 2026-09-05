@@ -19,5 +19,5 @@ export async function deletePendingCompletion(shipmentId: string): Promise<void>
 }
 
 export async function retryPendingCompletion(shipmentId: string): Promise<void> {
-  await pwaDb.pendingCompletions.update(shipmentId, { syncState: "pending", error: undefined });
+  await pwaDb.pendingCompletions.update(shipmentId, { syncState: "pending", error: undefined, attempts: 0, notified: false });
 }

@@ -7,6 +7,12 @@ const MAX_RETRY_ATTEMPTS = 20;
 
 let running = false;
 
+async function markFailedAndNotify(shipmentId: string, reason: string, attempts: number): Promise<void> {
+  await pwaDb.pendingCompletions.update(shipmentId, { syncState: "failed", error: reason, attempts, notified: false });
+  const delivered = await reportStuckDeliveryCompletionAction(shipmentId, reason).then(() => true).catch(() => false);
+  if (delivered) await pwaDb.pendingCompletions.update(shipmentId, { notified: true });
+}
+
 export async function flushPendingCompletions(): Promise<{ synced: number; failed: number; retried: number }> {
   if (running) return { synced: 0, failed: 0, retried: 0 };
   running = true;
@@ -42,21 +48,32 @@ export async function flushPendingCompletions(): Promise<{ synced: number; faile
         await deletePendingCompletion(c.shipmentId);
         synced += 1;
       } else if (decision === "terminal") {
-        await pwaDb.pendingCompletions.update(c.shipmentId, { syncState: "failed", error: reason, attempts: c.attempts + 1 });
-        await reportStuckDeliveryCompletionAction(c.shipmentId, reason).catch(() => {});
+        await markFailedAndNotify(c.shipmentId, reason, c.attempts + 1);
         failed += 1;
       } else {
         const nextAttempts = c.attempts + 1;
         if (nextAttempts >= MAX_RETRY_ATTEMPTS) {
           const ceilingReason = reason || "RETRY_LIMIT_EXCEEDED";
-          await pwaDb.pendingCompletions.update(c.shipmentId, { syncState: "failed", error: ceilingReason, attempts: nextAttempts });
-          await reportStuckDeliveryCompletionAction(c.shipmentId, ceilingReason).catch(() => {});
+          await markFailedAndNotify(c.shipmentId, ceilingReason, nextAttempts);
           failed += 1;
         } else {
           await pwaDb.pendingCompletions.update(c.shipmentId, { syncState: "pending", attempts: nextAttempts });
           retried += 1;
         }
       }
+    }
+
+    /**
+     * A row already marked "failed" (this cycle or an earlier one) whose admin notification
+     * never confirmed delivery gets one more attempt at JUST the notification. Closes the gap
+     * where the report itself is lost in exactly the connectivity conditions that tripped the
+     * row into "failed" in the first place.
+     */
+    const unnotified = (await pwaDb.pendingCompletions.where("syncState").equals("failed").toArray())
+      .filter((c) => !c.notified);
+    for (const c of unnotified) {
+      const delivered = await reportStuckDeliveryCompletionAction(c.shipmentId, c.error ?? "UNKNOWN").then(() => true).catch(() => false);
+      if (delivered) await pwaDb.pendingCompletions.update(c.shipmentId, { notified: true });
     }
   } finally {
     running = false;

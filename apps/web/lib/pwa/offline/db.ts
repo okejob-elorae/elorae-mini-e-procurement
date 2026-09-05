@@ -47,6 +47,7 @@ export interface PendingCompletion {
   syncState: "pending" | "syncing" | "failed";
   error?: string;
   attempts: number;
+  notified?: boolean; // whether the admin rescue notification for a "failed" row is confirmed delivered
 }
 
 // Separate DB from the backoffice EloraeOfflineDB (different scope: PWA field orders).
