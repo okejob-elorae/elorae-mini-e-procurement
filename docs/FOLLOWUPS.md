@@ -420,7 +420,7 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       before the `try`, so a throw while creating the second leaks the first onto the shared `:3308`
       bed, and `afterEach`'s store cleanup then fails under emulated `Restrict`. Narrow window;
       moving both creates inside the `try` closes it.
-- [ ] **`packages/db/prisma/seed-amplop-permission.sql` must be hand-run on prod after the amplop
+- [x] **`packages/db/prisma/seed-amplop-permission.sql` must be hand-run on prod after the amplop
       digital PR merges, or the screen is invisible to every non-admin.** No migration applies it and
       nothing on the deploy path seeds permission rows. The failure is silent: the `/pwa/pelunasan`
       guard redirects to `/pwa` and the home CTA never renders, with no error anywhere. An admin CANNOT
@@ -499,7 +499,7 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       through this hole. But the BKM print route in the next slice will render the full deduction
       breakdown including this row, and it will follow whatever URL sits on it — so this stops being
       inert the moment that route ships (feat/settlement-document).
-- [ ] The new `settlements:submit` permission (`packages/db/prisma/seed-settlements-permission.sql`)
+- [x] The new `settlements:submit` permission (`packages/db/prisma/seed-settlements-permission.sql`)
       must be hand-run on prod post-merge, same as every other permission seed in this repo — no
       migration or deploy step seeds it. Until it runs, the settlement screen is silently unreachable
       for SALESMAN and COLLECTOR: the amplop's Settle button simply does not render for them (it is
@@ -507,6 +507,14 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       only an absent CTA. Post-seed verification must be done on a SALESMAN or COLLECTOR account —
       never an admin login, since `pwaAccessGuard` bounces any wildcard holder off `/pwa` entirely
       before a permission check ever runs (feat/settlement-document).
+      **Both seeds RUN ON PROD 2026-09-06** (PR #295 / PR #297), verified by reading the rows back:
+      `collections:amplop` and `settlements:submit` each granted to ADMIN, SALESMAN and COLLECTOR, with
+      `permissionsVersion` bumped twice per role (ADMIN 1→3, SALESMAN 2→4, COLLECTOR 1→3) so live
+      sessions pick both up without re-login. Worth recording WHY this needed catching: the amplop seed
+      had never been run since its own merge, so that screen had been dark in production the whole time
+      — and because the Settle button lives on an amplop store card, seeding `settlements:submit` alone
+      would have granted a permission for a screen nobody could navigate to. A pre-flight read of the
+      live `Permission` rows is what surfaced it; running the named seed and stopping would not have.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
