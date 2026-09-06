@@ -349,7 +349,7 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       it would need to: it is a projection of the POSTED payment ledger, and the ceiling that makes
       over-draw impossible lives inside `recordPayment`'s own serializable transaction
       (`EXCEEDS_REMAINING`) — see `docs/ARCHITECTURE-NOTES.md` for why reserve-then-post was
-      rejected. PR #___.
+      rejected. PR #293.
 - [ ] No post-approval repricing for field returns, so a return that approved with
       `valuationStatus: PENDING` has a permanently unusable value — `setLinePriceAction` refuses
       once approved (`ALREADY_APPROVED`), so it can never become offsettable.
@@ -371,7 +371,7 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       it drove are gone with it. What this item raised and this work did NOT fix stays open above:
       retur value is still absent from the GL until it is drawn, so the "record the correction as a
       fresh cash/transfer payment" workaround is still wrong accounting for the case where it is
-      needed — that belongs to the two-stage customer-credit-liability item. PR #___.
+      needed — that belongs to the two-stage customer-credit-liability item. PR #293.
 - [ ] No expiry or write-off path for a retur left partially drawn forever. A retur drawn to within
       a rupiah of its `totalValue` sits `AVAILABLE` with a residue nobody will ever allocate, and
       nothing can close it out — the same act as the "cancel a standing retur credit" item above,
@@ -404,6 +404,22 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       matches the pre-draw-down behaviour exactly and a VALUED retur is priced off delivered lines,
       so nothing suggests the state is reachable — but it wants a `remainingValue > 0` gate the
       moment a zero-value retur turns out to be producible in prod.
+- [ ] `listAllocationCandidatesForStore`'s `CANDIDATE_PAGE_SIZE` cap can under-report a store's open
+      balance, so the offset sheet's `insufficientOutstanding` banner can refuse a draw the writer
+      would have accepted. Pre-existing and unchanged by the draw-down work — it compared the capped
+      sum against `totalValue` before and against `drawAmount` now — but the draw-down makes it
+      easier to hit, because a partial draw is exactly the case where an operator picks a few
+      invoices out of many. The banner is advisory; the authoritative check is `OVER_ALLOCATED`
+      inside `recordPayment`'s transaction, so nothing wrong posts, the operator is just told no.
+- [ ] A fully drawn retur renders `Rp 0,00` as the primary figure in the field-returns register's
+      Value column, with its original value beneath. Correct by the column's own rule (it shows
+      what is left once anything has been drawn) and such a row is `APPLIED` rather than
+      offsettable, so nothing acts on it — but "Value: Rp 0,00" reads oddly for a retur that was
+      worth something, and no browser pass has looked at it. Worth an eye during the next smoke.
+- [ ] `apps/web/lib/finance/ar/queries.test.ts`'s `returOffsetFor` test creates its first payment
+      before the `try`, so a throw while creating the second leaks the first onto the shared `:3308`
+      bed, and `afterEach`'s store cleanup then fails under emulated `Restrict`. Narrow window;
+      moving both creates inside the `try` closes it.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
