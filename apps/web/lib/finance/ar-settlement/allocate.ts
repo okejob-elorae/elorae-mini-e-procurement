@@ -1,3 +1,10 @@
+/**
+ * Deliberately import-free apart from `roundCents` from `@elorae/db/pricing`, the same policy as
+ * `calc.ts` beside it: the PWA settlement screen is a "use client" component and imports this
+ * directory directly, so any import here that reaches the `@elorae/db` barrel (Prisma types, the
+ * generated schema enums, a `./queries`-style module) would drag Prisma and the mariadb driver
+ * into the browser bundle. `@elorae/db/pricing` is a safe subpath: a pure helper, not the barrel.
+ */
 import { roundCents } from "@elorae/db/pricing";
 
 export type AllocationInput = {
