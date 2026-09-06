@@ -1,6 +1,6 @@
 import { prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
-import { daysOverdue, agingBucket, isOverdue, type AgingBucket } from "@/lib/finance/ar/aging";
+import { daysOverdue, isOverdue } from "@/lib/finance/ar/aging";
 import { getStoreAvailableCreditMap } from "@/lib/finance/ar/retur-offset-queries";
 
 export type AmplopReceivableRow = {
@@ -9,7 +9,6 @@ export type AmplopReceivableRow = {
   dueDate: Date;
   outstandingAmount: number;
   daysOverdue: number;
-  bucket: AgingBucket;
   taxInvoiceStatus: string | null;
   pendingSubmittedAmount: number;
 };
@@ -90,7 +89,6 @@ export async function listAmplop(userId: string, asOf: Date = new Date()): Promi
       dueDate: r.dueDate,
       outstandingAmount,
       daysOverdue: daysOverdue(r.dueDate, asOf),
-      bucket: agingBucket(r.dueDate, asOf),
       taxInvoiceStatus: r.delivery.taxInvoice?.status ?? null,
       pendingSubmittedAmount: roundCents(r.submissions.reduce((sum, sub) => sum + Number(sub.amount), 0)),
     };
@@ -105,6 +103,13 @@ export async function listAmplop(userId: string, asOf: Date = new Date()): Promi
   const storeIds = Array.from(cardsByStore.keys());
   const creditMap = await getStoreAvailableCreditMap(storeIds);
   for (const [storeId, card] of cardsByStore) {
+    /**
+     * Deliberately store-wide, unlike `totalOutstanding`/`totalOverdue` above which are summed
+     * from only this user's matched rows — `availableCredit` is the store's entire offsettable
+     * retur balance, so two salesmen serving the same store both see the same figure. That is
+     * intentional: it is genuinely the store's standing credit, not a per-user share of it, and
+     * slice 3's settlement computation draws its offset from this same store-wide figure.
+     */
     card.availableCredit = creditMap.get(storeId) ?? 0;
   }
 

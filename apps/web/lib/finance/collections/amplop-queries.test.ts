@@ -36,9 +36,9 @@ d("amplop queries (test bed only)", () => {
   /* F4: tied with storeLowId at totalOverdue 0, named to sort before it — the name tiebreak. */
   let storeZeroId = "";
 
-  /* collectorStoreId's four receivables: a WRITTEN_OFF row, a PAID row, a row with no
-   * TaxInvoice, and a row carrying a PENDING CollectionSubmission. Each has its own
-   * order/delivery. */
+  /* collectorStoreId's five receivables: a WRITTEN_OFF row, a PAID row, a row with no
+   * TaxInvoice, a row carrying a PENDING (and a REJECTED, F7) CollectionSubmission, and a
+   * PARTIAL row (F6). Each has its own order/delivery. */
   let writtenOffOrderId = "";
   let writtenOffDeliveryId = "";
   let writtenOffReceivableId = "";
@@ -56,6 +56,13 @@ d("amplop queries (test bed only)", () => {
   let submittedReceivableId = "";
   let submittedTaxInvoiceId = "";
   let submissionId = "";
+  /* F7: a REJECTED submission on the same receivable, must NOT be netted into pendingSubmittedAmount. */
+  let rejectedSubmissionId = "";
+
+  /* F6: a PARTIAL receivable on collectorStoreId — the status filter's other member. */
+  let partialOrderId = "";
+  let partialDeliveryId = "";
+  let partialReceivableId = "";
 
   /* salesmanStoreId: one receivable, delivered by adminUserId, ordered by salesmanUserId. */
   let salesmanOrderId = "";
@@ -100,7 +107,8 @@ d("amplop queries (test bed only)", () => {
     writtenOffOrderId = ""; writtenOffDeliveryId = ""; writtenOffReceivableId = "";
     paidOrderId = ""; paidDeliveryId = ""; paidReceivableId = "";
     noFakturOrderId = ""; noFakturDeliveryId = ""; noFakturReceivableId = "";
-    submittedOrderId = ""; submittedDeliveryId = ""; submittedReceivableId = ""; submittedTaxInvoiceId = ""; submissionId = "";
+    submittedOrderId = ""; submittedDeliveryId = ""; submittedReceivableId = ""; submittedTaxInvoiceId = ""; submissionId = ""; rejectedSubmissionId = "";
+    partialOrderId = ""; partialDeliveryId = ""; partialReceivableId = "";
     salesmanOrderId = ""; salesmanDeliveryId = ""; salesmanReceivableId = "";
     bothOrderId = ""; bothDeliveryId = ""; bothReceivableId = "";
     storeHighOrderId = ""; storeHighDeliveryId = ""; storeHighReceivableId = "";
@@ -238,6 +246,31 @@ d("amplop queries (test bed only)", () => {
     });
     submissionId = submission.id;
 
+    /* F7: a REJECTED submission on the same receivable, at a DIFFERENT amount, so a query that
+     * dropped the `where: { status: "PENDING" }` filter would visibly inflate
+     * `pendingSubmittedAmount` past the expected `pendingAmountForFixture`. */
+    const rejectedSubmission = await prisma.collectionSubmission.create({
+      data: {
+        receivableId: submittedReceivableId,
+        collectorId: collectorUserId,
+        amount: 999,
+        method: "CASH",
+        paidAt: asOf,
+        status: "REJECTED",
+      },
+    });
+    rejectedSubmissionId = rejectedSubmission.id;
+
+    /* F6: a PARTIAL receivable on collectorStoreId, drawn down to outstandingOverride rather than
+     * the full amount — the status filter's `"PARTIAL"` member is otherwise never exercised by
+     * any fixture in this file. Due date sits between submitted's (05-01) and noFaktur's (07-01)
+     * so the row-ordering test below has a real middle position to place it in. */
+    const partial = await mkChain({
+      tag: "PART", storeId: collectorStoreId, salesmanId: adminUserId, collectorId: collectorUserId,
+      dueDate: new Date("2026-05-20T00:00:00.000+07:00"), amount: 450, status: "PARTIAL", outstandingOverride: 275,
+    });
+    partialOrderId = partial.orderId; partialDeliveryId = partial.deliveryId; partialReceivableId = partial.receivableId;
+
     /* salesmanStoreId: order raised by salesmanUserId, delivery COMPLETED by adminUserId — the
      * expedition-completed-by-backoffice-admin shape this feature must not key on. */
     const salesmanChain = await mkChain({
@@ -308,28 +341,30 @@ d("amplop queries (test bed only)", () => {
 
   afterEach(async () => {
     await prisma.taxInvoice.deleteMany({ where: { id: seededId(submittedTaxInvoiceId) } });
-    await prisma.collectionSubmission.deleteMany({ where: { id: seededId(submissionId) } });
+    await prisma.collectionSubmission.deleteMany({
+      where: { id: { in: [submissionId, rejectedSubmissionId].map(seededId) } },
+    });
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returId) } });
     await prisma.fieldReturn.deleteMany({ where: { id: seededId(returId) } });
 
     const receivableIds = [
       writtenOffReceivableId, paidReceivableId, noFakturReceivableId, submittedReceivableId,
-      salesmanReceivableId, bothReceivableId, storeHighReceivableId, storeMedReceivableId, storeLowReceivableId,
-      storeZeroReceivableId,
+      partialReceivableId, salesmanReceivableId, bothReceivableId, storeHighReceivableId, storeMedReceivableId,
+      storeLowReceivableId, storeZeroReceivableId,
     ].map(seededId);
     await prisma.receivable.deleteMany({ where: { id: { in: receivableIds } } });
 
     const deliveryIds = [
       writtenOffDeliveryId, paidDeliveryId, noFakturDeliveryId, submittedDeliveryId,
-      salesmanDeliveryId, bothDeliveryId, storeHighDeliveryId, storeMedDeliveryId, storeLowDeliveryId,
-      storeZeroDeliveryId,
+      partialDeliveryId, salesmanDeliveryId, bothDeliveryId, storeHighDeliveryId, storeMedDeliveryId,
+      storeLowDeliveryId, storeZeroDeliveryId,
     ].map(seededId);
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds } } });
 
     const orderIds = [
       writtenOffOrderId, paidOrderId, noFakturOrderId, submittedOrderId,
-      salesmanOrderId, bothOrderId, storeHighOrderId, storeMedOrderId, storeLowOrderId,
-      storeZeroOrderId,
+      partialOrderId, salesmanOrderId, bothOrderId, storeHighOrderId, storeMedOrderId,
+      storeLowOrderId, storeZeroOrderId,
     ].map(seededId);
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds } } });
 
@@ -420,28 +455,45 @@ d("amplop queries (test bed only)", () => {
 
   it("orders rows within a store by due date ascending", async () => {
     /*
-     * collectorStoreId's two surviving (non-PAID/WRITTEN_OFF) rows have distinct due dates:
-     * submittedReceivableId (2026-05-01) before noFakturReceivableId (2026-07-01). Pins
-     * `orderBy: { dueDate: "asc" }` reaching the per-store row list, not just the flat query.
+     * collectorStoreId's three surviving (non-PAID/WRITTEN_OFF) rows have distinct due dates:
+     * submittedReceivableId (2026-05-01), partialReceivableId (2026-05-20), noFakturReceivableId
+     * (2026-07-01). Pins `orderBy: { dueDate: "asc" }` reaching the per-store row list, not just
+     * the flat query.
      */
     const amplop = await listAmplop(collectorUserId, asOf);
     const card = amplop.stores.find((s) => s.storeId === collectorStoreId);
-    expect(card?.rows.map((r) => r.receivableId)).toEqual([submittedReceivableId, noFakturReceivableId]);
+    expect(card?.rows.map((r) => r.receivableId)).toEqual([
+      submittedReceivableId, partialReceivableId, noFakturReceivableId,
+    ]);
   });
 
-  it("computes daysOverdue and bucket from the row's own dueDate", async () => {
+  it("computes daysOverdue from the row's own dueDate", async () => {
     /*
      * submittedReceivableId's dueDate is 2026-05-01, asOf is 2026-06-01 — May has 31 days, so
-     * daysOverdue = 31 (> 30, <= 60 -> D31_60). Note this fixture sets `invoiceDate === dueDate`
-     * on every chain, so a bug that fed `invoiceDate` into these instead of `dueDate` would be
-     * invisible here — that substitution needs a fixture where the two dates differ.
+     * daysOverdue = 31. Note this fixture sets `invoiceDate === dueDate` on every chain, so a bug
+     * that fed `invoiceDate` into this instead of `dueDate` would be invisible here — that
+     * substitution needs a fixture where the two dates differ.
      */
     const amplop = await listAmplop(collectorUserId, asOf);
     const row = amplop.stores
       .flatMap((s) => s.rows)
       .find((r) => r.receivableId === submittedReceivableId);
     expect(row?.daysOverdue).toBe(31);
-    expect(row?.bucket).toBe("D31_60");
+  });
+
+  it("includes a PARTIAL receivable, not just OUTSTANDING", async () => {
+    /*
+     * F6: without `status: { in: ["OUTSTANDING", "PARTIAL"] }` reaching the query — e.g. narrowed
+     * to `status: "OUTSTANDING"` alone — partialReceivableId is dropped entirely and this lookup
+     * comes back `undefined`. outstandingAmount pins that the row also carries its OWN
+     * outstandingOverride (275), not the chain's full original amount (450).
+     */
+    const amplop = await listAmplop(collectorUserId, asOf);
+    const row = amplop.stores
+      .flatMap((s) => s.rows)
+      .find((r) => r.receivableId === partialReceivableId);
+    expect(row).toBeDefined();
+    expect(row?.outstandingAmount).toBe(275);
   });
 
   it("reports the store's remaining retur credit, not the retur's full value", async () => {
@@ -450,7 +502,12 @@ d("amplop queries (test bed only)", () => {
     expect(card?.availableCredit).toBe(remainingCreditForFixture);
   });
 
-  it("nets a PENDING collection submission into the row", async () => {
+  it("nets a PENDING collection submission into the row, ignoring a REJECTED one", async () => {
+    /*
+     * F7: submittedReceivableId also carries a REJECTED submission at amount 999 (seeded above).
+     * Without `submissions: { where: { status: "PENDING" } }` filtering it out, this total would
+     * read `pendingAmountForFixture + 999` instead of `pendingAmountForFixture` alone.
+     */
     const amplop = await listAmplop(collectorUserId, asOf);
     const row = amplop.stores
       .flatMap((s) => s.rows)

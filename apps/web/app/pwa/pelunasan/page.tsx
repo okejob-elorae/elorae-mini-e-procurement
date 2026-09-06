@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { listAmplop } from "@/lib/finance/collections/amplop-queries";
-import type { TaxInvoiceStatusValue } from "@/lib/tax-invoices/status-display";
+import { toTaxInvoiceStatusValue } from "@/lib/tax-invoices/status-display";
 import { AmplopList } from "./AmplopList";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,7 @@ export default async function AmplopDigitalPage() {
           dueDateIso: row.dueDate.toISOString(),
           outstandingAmount: row.outstandingAmount,
           daysOverdue: row.daysOverdue,
-          taxInvoiceStatus: row.taxInvoiceStatus as TaxInvoiceStatusValue | null,
+          taxInvoiceStatus: toTaxInvoiceStatusValue(row.taxInvoiceStatus),
           pendingSubmittedAmount: row.pendingSubmittedAmount,
         })),
       }))}
