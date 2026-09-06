@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { uploadToR2, isConfigured } from "@/lib/r2";
+import { uploadToR2, deleteFromR2, isConfigured } from "@/lib/r2";
 
 export const dynamic = "force-dynamic";
 
@@ -42,12 +43,58 @@ export async function POST(req: NextRequest) {
   if (!DRAFT_ID_PATTERN.test(draftId)) return NextResponse.json({ error: "invalid draftId" }, { status: 400 });
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
+  /**
+   * `draftId` is durable past this upload step — it becomes `StoreSettlement.idempotencyKey` on
+   * submit, and the object key stays `settlement-proofs/${draftId}/${slot}.*` forever. Without
+   * this check, any caller holding `settlements:submit` who learns a submitted draftId could
+   * `PutObject` over the audited evidence of a PENDING settlement awaiting approval. Evidence for
+   * an already-submitted document is immutable from this route; the error body deliberately does
+   * not name whose settlement it is. Runs AFTER the cheap in-memory type/size checks — a
+   * malformed upload should not pay a DB round trip, and a wrong-type or oversized upload against
+   * a submitted draftId must still surface as its own 400, not this route's 409.
+   */
+  const alreadySubmitted = await prisma.storeSettlement.findUnique({
+    where: { idempotencyKey: draftId },
+    select: { id: true },
+  });
+  if (alreadySubmitted) return NextResponse.json({ error: "evidence locked" }, { status: 409 });
 
   try {
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
     const key = `settlement-proofs/${draftId}/${slot}.${ext}`;
     const buffer = Buffer.from(await file.arrayBuffer());
     const url = await uploadToR2(key, buffer, file.type);
+
+    /**
+     * Compensating check, not a substitute for the one above — this is TOCTOU, not eliminated.
+     * The pre-upload `findUnique` leaves a window open for exactly as long as `uploadToR2` takes:
+     * a submit that inserts the `StoreSettlement` row in that window still lets this request land
+     * its `PutObject` afterward, overwriting evidence the 409 exists to lock, even though this
+     * caller already holds `settlements:submit` and the UUID `draftId` legitimately (their own
+     * retry, a leaked id, or their own submit racing their own upload). Re-running the same check
+     * AFTER the write narrows that window to "between the two DB reads" rather than closing it —
+     * a conditional/immutable R2 write was considered and rejected, because a legitimate pre-submit
+     * retry deliberately overwrites the same deterministic key and a write that refused that would
+     * break the normal retry path this route exists to support.
+     */
+    const submittedAfterUpload = await prisma.storeSettlement.findUnique({
+      where: { idempotencyKey: draftId },
+      select: { id: true },
+    });
+    if (submittedAfterUpload) {
+      /*
+       * A stale object left in R2 is far better than reporting success on evidence about to be
+       * treated as audited — so the delete failing must not turn this into a 500. Log and still
+       * return the same 409 either way.
+       */
+      try {
+        await deleteFromR2(key);
+      } catch (deleteError) {
+        console.error("settlement-proof post-upload cleanup failed:", deleteError);
+      }
+      return NextResponse.json({ error: "evidence locked" }, { status: 409 });
+    }
+
     return NextResponse.json({ url, key });
   } catch (e) {
     console.error("settlement-proof upload error:", e);

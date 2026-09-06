@@ -30,12 +30,14 @@ export type SettlementInvoiceRow = {
   outstandingAmount: number;
   daysOverdue: number;
   pendingSubmittedAmount: number;
+  reservedAmount: number;
 };
 
 export type SettlementOffsettableReturn = {
   fieldReturnId: string;
   docNo: string;
   remainingValue: number;
+  reservedAmount: number;
 };
 
 type Props = {
@@ -113,6 +115,39 @@ function parsePercent(raw: string): number {
   return toFiniteNumber(raw) ?? 0;
 }
 
+/**
+ * The headroom `submitSettlement` will actually honor for this invoice — `outstandingAmount`
+ * alone is not it, since the writer additionally nets every OTHER PENDING settlement's own claim
+ * before refusing with `INVOICE_OVERCLAIMED`. `reservedAmount` already carries that netted sum
+ * from the props layer (`page.tsx`), so this is the one place both the default fill and the max
+ * validity check must read from.
+ */
+function invoiceClaimable(inv: SettlementInvoiceRow): number {
+  return Math.max(0, roundCents(inv.outstandingAmount - inv.reservedAmount));
+}
+
+/**
+ * The ONE place `selectedInvoiceIds` and `invoiceAmountInputs` both seed from. Before this helper
+ * existed the two seeds carried the same formula written out twice and drifted apart: selection
+ * gated on `invoiceClaimable(inv) > 0` alone while the amount prefill also netted
+ * `pendingSubmittedAmount`, so an invoice fully covered by a PENDING setoran (`invoiceClaimable`
+ * still positive, since `reservedAmount` is 0) started TICKED with a `0.00` prefill — the exact
+ * whole-form block this fix exists to close, just reachable through the setoran input instead of
+ * the settlement-reservation one. Selection must gate on THIS value, not on either input alone.
+ */
+function invoiceDefaultAmount(inv: SettlementInvoiceRow): number {
+  return roundCents(Math.max(0, Math.min(inv.outstandingAmount - inv.pendingSubmittedAmount, invoiceClaimable(inv))));
+}
+
+/**
+ * The retur-side twin of `invoiceClaimable` — `option.remainingValue` alone is not the headroom
+ * the writer honors either, for the identical reason (netted against other PENDING settlements'
+ * `RETUR_OFFSET` claims, via `reservedAmount`).
+ */
+function returClaimable(option: SettlementOffsettableReturn): number {
+  return Math.max(0, roundCents(option.remainingValue - option.reservedAmount));
+}
+
 export function SettlementForm({ storeId, storeName, invoices, offsettableReturns }: Props) {
   const t = useTranslations("pwa.settlement");
   const [isPending, startTransition] = useTransition();
@@ -130,23 +165,34 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
    */
   const [draftId] = useState(() => crypto.randomUUID());
 
-  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Record<string, boolean>>({});
   /**
-   * Defaults to `outstanding − pendingSubmittedAmount`, not the full outstanding — a PENDING
-   * collection submission moves no money (`outstandingAmount` stays untouched until
-   * `verifyCollection` runs), and the two writers net only their own kind of PENDING claim.
-   * Prefilling the full outstanding here would let a salesman submit a settlement for the same
-   * money an unverified setoran already claims. This is a display/default fix only — the actual
-   * submit ceiling still checks against `outstandingAmount` below, matching what the writer
-   * itself enforces; the cross-writer netting is a `lib/finance` change out of scope here.
+   * Every invoice with a positive `invoiceDefaultAmount` starts ticked — each one already carries
+   * that same amount prefilled below, so leaving those unchecked was a tap per nota at a counter
+   * and made "submit with nothing selected" the easy path. An invoice whose default is ZERO
+   * starts UNTICKED instead — for either of two independent reasons: `invoiceClaimable(inv)` is
+   * zero (fully claimed by a colleague's PENDING settlement) or `outstandingAmount -
+   * pendingSubmittedAmount` is zero (a PENDING setoran already covers it). Gating on
+   * `invoiceDefaultAmount(inv) > 0` — the SAME expression the amount prefill below uses — is what
+   * keeps the two seeds from disagreeing; gating on `invoiceClaimable` alone (as this once did)
+   * still let the setoran case tick a row with a `0.00` prefill and block the whole form.
+   * `useState`'s lazy initializer, not a plain `{}` computed once and mutated later, matching how
+   * `invoiceAmountInputs` below is seeded.
+   */
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(invoices.map((inv) => [inv.receivableId, invoiceDefaultAmount(inv) > 0])),
+  );
+  /**
+   * Seeded from the SAME `invoiceDefaultAmount` helper the selection above reads — not the
+   * formula re-typed here, which is exactly how the two seeds drifted apart before this fix. A
+   * PENDING collection submission moves no money (`outstandingAmount` stays untouched until
+   * `verifyCollection` runs) and a PENDING settlement's own invoice claim reduces
+   * `invoiceClaimable` (via `reservedAmount`, computed at the props layer); prefilling past either
+   * would let a salesman submit for money an unverified setoran or a colleague's pending
+   * settlement already claims. The actual submit ceiling below reads `invoiceClaimable` directly,
+   * matching what the writer itself enforces.
    */
   const [invoiceAmountInputs, setInvoiceAmountInputs] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      invoices.map((inv) => [
-        inv.receivableId,
-        roundCents(Math.max(0, inv.outstandingAmount - inv.pendingSubmittedAmount)).toFixed(2),
-      ]),
-    ),
+    Object.fromEntries(invoices.map((inv) => [inv.receivableId, invoiceDefaultAmount(inv).toFixed(2)])),
   );
 
   const [rows, setRows] = useState<DeductionRow[]>([]);
@@ -173,14 +219,25 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   const hasSelectedInvoice = selectedInvoiceRows.length > 0;
   const invoiceAmountsValid = selectedInvoiceRows.every((inv) => {
     const amt = parseAmount(invoiceAmountInputs[inv.receivableId] ?? "");
-    return amt > 0 && amt <= inv.outstandingAmount + EPSILON;
+    return amt > 0 && amt <= invoiceClaimable(inv) + EPSILON;
   });
 
   const returRows = rows.filter((r): r is Extract<DeductionRow, { kind: "RETUR_OFFSET" }> => r.kind === "RETUR_OFFSET");
+  /**
+   * Gates the Add-retur button below. `returRows.length >= offsettableReturns.length` alone is
+   * not it — with every offsettable retur already claimed by a PENDING settlement (headroom
+   * zero), that count can still be under the option total, the button stays enabled, and a tap
+   * appends a row with no valid amount that blocks submit until removed. This must agree with
+   * what `addReturRow` itself can actually place a row on.
+   */
+  const usedReturnIds = new Set(returRows.map((row) => row.fieldReturnId));
+  const canAddReturRow = offsettableReturns.some(
+    (option) => !usedReturnIds.has(option.fieldReturnId) && returClaimable(option) > 0,
+  );
   const returRowsValid = returRows.every((row) => {
     const option = offsettableReturns.find((o) => o.fieldReturnId === row.fieldReturnId);
     const amt = parseAmount(row.amountInput);
-    return option !== undefined && amt > 0 && amt <= option.remainingValue + EPSILON;
+    return option !== undefined && amt > 0 && amt <= returClaimable(option) + EPSILON;
   });
 
   const programRows = rows.filter((r): r is Extract<DeductionRow, { kind: "PROGRAM" }> => r.kind === "PROGRAM");
@@ -239,24 +296,49 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
     setSelectedInvoiceIds((prev) => ({ ...prev, [receivableId]: checked }));
   }
 
+  /**
+   * Excludes a zero-headroom option — the same predicate gap C3 closed on the Add-retur button
+   * and `addReturRow`, one layer down: without it, this row's own `Select` would still OFFER a
+   * fully-reserved retur, and picking it blanks the amount input and blocks submit until it is
+   * changed back. The row's OWN current selection stays present even at zero headroom (checked
+   * via `o.fieldReturnId === fieldReturnId` first, short-circuiting the claimable check) — a form
+   * left open must not drop the row's own value out from under the salesman just because a
+   * colleague's pending settlement has since claimed the rest of it.
+   */
   function returOptionsForRow(rowId: string, fieldReturnId: string): SettlementOffsettableReturn[] {
     const usedByOthers = new Set(returRows.filter((r) => r.id !== rowId).map((r) => r.fieldReturnId));
-    return offsettableReturns.filter((o) => !usedByOthers.has(o.fieldReturnId) || o.fieldReturnId === fieldReturnId);
+    return offsettableReturns.filter(
+      (o) => o.fieldReturnId === fieldReturnId || (!usedByOthers.has(o.fieldReturnId) && returClaimable(o) > 0),
+    );
   }
 
+  /**
+   * `used` and `next` are derived from `prev` INSIDE the updater, not from the outer `returRows`
+   * closure — two taps before a re-render would otherwise both read the same stale `returRows`
+   * (missing the row the first tap is about to add) and both pick the SAME `next` retur, the same
+   * render-closure staleness `addAdminFeeRow`'s guard exists to rule out below, just producing a
+   * duplicate row instead of a `DUPLICATE_ADMIN_FEE` refusal.
+   */
   function addReturRow(): void {
-    const used = new Set(returRows.map((r) => r.fieldReturnId));
-    const next = offsettableReturns.find((o) => !used.has(o.fieldReturnId));
-    if (!next) return;
-    setRows((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        kind: "RETUR_OFFSET",
-        fieldReturnId: next.fieldReturnId,
-        amountInput: next.remainingValue > 0 ? next.remainingValue.toFixed(2) : "",
-      },
-    ]);
+    setRows((prev) => {
+      const used = new Set(
+        prev
+          .filter((r): r is Extract<DeductionRow, { kind: "RETUR_OFFSET" }> => r.kind === "RETUR_OFFSET")
+          .map((r) => r.fieldReturnId),
+      );
+      const next = offsettableReturns.find((o) => !used.has(o.fieldReturnId) && returClaimable(o) > 0);
+      if (!next) return prev;
+      const claimable = returClaimable(next);
+      return [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          kind: "RETUR_OFFSET",
+          fieldReturnId: next.fieldReturnId,
+          amountInput: claimable > 0 ? claimable.toFixed(2) : "",
+        },
+      ];
+    });
   }
 
   /**
@@ -275,11 +357,20 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
     ]);
   }
 
+  /**
+   * Guarded INSIDE the updater against an existing `ADMIN_FEE` row, not just by the button's
+   * `disabled={adminFeeRows.length >= 1}` — that reads `adminFeeRows` from the render closure, and
+   * functional updaters chain, so two taps before a re-render would otherwise both see zero
+   * existing rows and both append one, failing submit with `DUPLICATE_ADMIN_FEE`.
+   */
   function addAdminFeeRow(): void {
-    setRows((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), kind: "ADMIN_FEE", slot: "adminfee", percentInput: "", proof: { status: "idle", file: null } },
-    ]);
+    setRows((prev) => {
+      if (prev.some((r) => r.kind === "ADMIN_FEE")) return prev;
+      return [
+        ...prev,
+        { id: crypto.randomUUID(), kind: "ADMIN_FEE", slot: "adminfee", percentInput: "", proof: { status: "idle", file: null } },
+      ];
+    });
   }
 
   function removeRow(id: string): void {
@@ -446,7 +537,21 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
             {invoices.map((inv) => {
               const checked = selectedInvoiceIds[inv.receivableId] === true;
               const amt = parseAmount(invoiceAmountInputs[inv.receivableId] ?? "");
-              const invalid = checked && !(amt > 0 && amt <= inv.outstandingAmount + EPSILON);
+              const claimable = invoiceClaimable(inv);
+              const invalid = checked && !(amt > 0 && amt <= claimable + EPSILON);
+              /**
+               * Only shown when this row starts UNTICKED because its own default amount is zero
+               * (never for a row the salesman manually unticked despite having room) — the two
+               * causes are independent and read differently to a salesman: `claimable <= 0` means
+               * another PENDING settlement already reserved the whole balance, while a positive
+               * `claimable` with a zero default means a PENDING setoran already covers it. Showing
+               * the wrong one points the salesman at the wrong colleague's document.
+               */
+              const unavailableReason = !checked && invoiceDefaultAmount(inv) <= 0
+                ? claimable <= 0
+                  ? "reserved"
+                  : "setoran"
+                : null;
               return (
                 <li key={inv.receivableId} className="flex items-start gap-3 rounded-md border p-3">
                   <Checkbox
@@ -478,6 +583,16 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                     {inv.pendingSubmittedAmount > 0 && (
                       <p className="text-xs text-muted-foreground">
                         {t("pendingSubmittedLabel")}: {formatRupiahPrecise(inv.pendingSubmittedAmount)}
+                      </p>
+                    )}
+                    {inv.reservedAmount > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("reservedByOtherSettlementLabel")}: {formatRupiahPrecise(inv.reservedAmount)}
+                      </p>
+                    )}
+                    {unavailableReason && (
+                      <p className="text-xs text-muted-foreground">
+                        {unavailableReason === "reserved" ? t("invoiceUnavailableReserved") : t("invoiceUnavailableSetoran")}
                       </p>
                     )}
                     {checked && (
@@ -520,7 +635,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
             variant="outline"
             size="sm"
             className="h-8"
-            disabled={isPending || returRows.length >= offsettableReturns.length}
+            disabled={isPending || !canAddReturRow}
             onClick={addReturRow}
           >
             <Plus className="h-3.5 w-3.5" />
@@ -529,12 +644,20 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
         </div>
         {offsettableReturns.length === 0 ? (
           <p className="text-xs text-muted-foreground">{t("noReturCredit")}</p>
+        ) : returRows.length === 0 && !canAddReturRow ? (
+          /**
+           * Distinct from `noReturCredit` above — this store DOES have offsettable returs, every
+           * one of them is just fully claimed by another PENDING settlement right now. Without
+           * this branch the section renders only the heading and a greyed-out button with no rows
+           * and no explanation, the exact blank dead-end the house UI standard rules out.
+           */
+          <p className="text-xs text-muted-foreground">{t("returAllReserved")}</p>
         ) : (
           returRows.map((row) => {
             const options = returOptionsForRow(row.id, row.fieldReturnId);
             const option = offsettableReturns.find((o) => o.fieldReturnId === row.fieldReturnId);
             const amt = parseAmount(row.amountInput);
-            const invalid = !option || !(amt > 0 && amt <= option.remainingValue + EPSILON);
+            const invalid = !option || !(amt > 0 && amt <= returClaimable(option) + EPSILON);
             return (
               <div key={row.id} className="space-y-2 rounded-md border p-3">
                 <div className="flex items-center gap-2">
@@ -548,7 +671,8 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                        * its own remaining credit. Reset to the new option's own headroom.
                        */
                       const next = offsettableReturns.find((o) => o.fieldReturnId === value);
-                      const nextAmount = next && next.remainingValue > 0 ? next.remainingValue.toFixed(2) : "";
+                      const nextClaimable = next ? returClaimable(next) : 0;
+                      const nextAmount = nextClaimable > 0 ? nextClaimable.toFixed(2) : "";
                       updateRow(row.id, { ...row, fieldReturnId: value, amountInput: nextAmount });
                     }}
                   >
@@ -558,7 +682,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                     <SelectContent>
                       {options.map((opt) => (
                         <SelectItem key={opt.fieldReturnId} value={opt.fieldReturnId}>
-                          {`${opt.docNo} — ${formatRupiahPrecise(opt.remainingValue)}`}
+                          {`${opt.docNo} — ${formatRupiahPrecise(returClaimable(opt))}`}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -588,8 +712,13 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                   onChange={(e) => updateRow(row.id, { ...row, amountInput: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {t("returRemainingLabel")}: {formatRupiahPrecise(option?.remainingValue ?? 0)}
+                  {t("returClaimableLabel")}: {formatRupiahPrecise(option ? returClaimable(option) : 0)}
                 </p>
+                {option && option.reservedAmount > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("reservedByOtherSettlementLabel")}: {formatRupiahPrecise(option.reservedAmount)}
+                  </p>
+                )}
                 {invalid && <p className="text-xs text-destructive">{t("returAmountInvalid")}</p>}
               </div>
             );

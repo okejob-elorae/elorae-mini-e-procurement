@@ -27,6 +27,12 @@ function offsettableReturnWhere(storeId?: string): Prisma.FieldReturnWhereInput 
  * `applyReturnOffset` itself enforces. Never widen this beyond `storeId` + `page`: a retur
  * cannot be hard-linked to one receivable (its lines price independently), so the store is the
  * only key that holds for every retur.
+ *
+ * Currently has NO production caller — the PWA settlement screen, its one caller at merge-base,
+ * switched to the unpaged `listAllOffsettableReturns` below (a counter-side picker cannot lose
+ * a retur to a second page). Kept, not deleted, because it is a real, independently-tested,
+ * correctly-paginated query that a genuine backoffice returns list would want as-is; there is no
+ * such list today. Confirm this is still true before reusing it for anything new.
  */
 export async function listOffsettableReturns(
   params: { storeId?: string; page?: number } = {},
@@ -105,6 +111,73 @@ export async function getStoreAvailableCreditMap(storeIds: string[]): Promise<Ma
   for (const r of rows) {
     const remaining = (r.totalValue ? Number(r.totalValue) : 0) - Number(r.appliedValue);
     result.set(r.storeId, roundCents((result.get(r.storeId) ?? 0) + remaining));
+  }
+  return result;
+}
+
+/**
+ * The unpaged, store-scoped twin of `listOffsettableReturns` — built on the identical
+ * `offsettableReturnWhere` conditions so the two can never drift on what "available" means, but
+ * with no `skip`/`take`. A counter-side picker (the PWA settlement screen) needs every available
+ * retur at a store, or a store with more than one page of credit silently loses the rest from the
+ * picker, and the `Add retur` button reads its own disabled state off the same truncated count.
+ * Never call this without a `storeId` — an unbounded, store-wide fetch here would be the
+ * "unpaginated fetch of the whole book" this codebase already treats as a mistake elsewhere.
+ */
+export async function listAllOffsettableReturns(storeId: string): Promise<OffsettableReturnRow[]> {
+  const rows = await prisma.fieldReturn.findMany({
+    where: offsettableReturnWhere(storeId),
+    orderBy: { approvedAt: "asc" },
+    select: {
+      id: true,
+      docNo: true,
+      storeId: true,
+      totalValue: true,
+      appliedValue: true,
+      store: { select: { name: true } },
+    },
+  });
+  return rows.map((r) => {
+    const totalValue = r.totalValue ? Number(r.totalValue) : 0;
+    const appliedValue = Number(r.appliedValue);
+    return {
+      id: r.id,
+      docNo: r.docNo,
+      storeId: r.storeId,
+      storeName: r.store.name,
+      totalValue,
+      appliedValue,
+      remainingValue: roundCents(totalValue - appliedValue),
+    };
+  });
+}
+
+/**
+ * The screen's own headroom (`remainingValue` above) is only `totalValue - appliedValue` —
+ * `submitSettlement` additionally nets every OTHER PENDING settlement's `RETUR_OFFSET` claim on
+ * the same retur before refusing with `RETUR_OVERCLAIMED`. Without this, the settlement screen
+ * can show and default from headroom the writer will not honor the moment a colleague already
+ * holds a pending claim on the same retur. Every requested id is present in the returned map,
+ * defaulting to 0, matching `getStoreAvailableCreditMap`'s convention above.
+ */
+export async function getPendingReturClaimsMap(returnIds: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (returnIds.length === 0) return result;
+  for (const id of returnIds) result.set(id, 0);
+
+  const rows = await prisma.storeSettlementDeduction.groupBy({
+    by: ["fieldReturnId"],
+    where: {
+      type: "RETUR_OFFSET",
+      fieldReturnId: { in: returnIds },
+      settlement: { status: "PENDING" },
+    },
+    _sum: { amount: true },
+  });
+
+  for (const r of rows) {
+    if (!r.fieldReturnId) continue;
+    result.set(r.fieldReturnId, roundCents(Number(r._sum.amount ?? 0)));
   }
   return result;
 }

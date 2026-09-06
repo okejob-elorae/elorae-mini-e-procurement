@@ -2,8 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import {
   listOffsettableReturns,
+  listAllOffsettableReturns,
   getStoreAvailableCredit,
   getStoreAvailableCreditMap,
+  getPendingReturClaimsMap,
   suggestOffsetAllocations,
 } from "./retur-offset-queries";
 
@@ -32,6 +34,7 @@ d("retur-offset-queries (test bed only)", () => {
      ids above are only assigned once mkReturn RETURNS, so a throw while creating the return's
      line would otherwise orphan a row on the shared test bed with nothing holding its id. */
   let createdReturnIds: string[] = [];
+  let createdSettlementIds: string[] = [];
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
@@ -39,6 +42,7 @@ d("retur-offset-queries (test bed only)", () => {
     receivableId = ""; returAvailableId = ""; returAppliedId = ""; returPendingValId = "";
     returPendingApprovalId = ""; returManualPricedId = "";
     createdReturnIds = [];
+    createdSettlementIds = [];
 
     const store = await prisma.store.create({
       data: { code: `TEST-ROQ-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -120,6 +124,10 @@ d("retur-offset-queries (test bed only)", () => {
   });
 
   afterEach(async () => {
+    const settlementIds = createdSettlementIds.map((id) => seededId(id));
+    await prisma.storeSettlementDeduction.deleteMany({ where: { settlementId: { in: settlementIds } } });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds } } });
+
     const returnIds = createdReturnIds.map((id) => seededId(id));
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
     await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
@@ -226,5 +234,65 @@ d("retur-offset-queries (test bed only)", () => {
     const suggestions = await suggestOffsetAllocations(returAvailableId);
     const total = suggestions.reduce((s, a) => s + a.amount, 0);
     expect(total).toBeLessThanOrEqual(50);
+  });
+
+  it("listAllOffsettableReturns returns every offsettable retur for a store, unpaged", async () => {
+    /*
+     * `listOffsettableReturns` defaults to a 25-row page; a store with more offsettable returns
+     * than that would silently drop the rest from a counter-side picker. This helper must return
+     * the same APPROVED+VALUED+AVAILABLE set with no `skip`/`take` at all.
+     */
+    const rows = await listAllOffsettableReturns(storeId);
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(returAvailableId);
+    expect(ids).toContain(returManualPricedId);
+    expect(ids).not.toContain(returAppliedId);
+    expect(ids).not.toContain(returPendingValId);
+    expect(ids).not.toContain(returPendingApprovalId);
+    expect(rows).toHaveLength(2);
+  });
+
+  it("getPendingReturClaimsMap sums a PENDING settlement's RETUR_OFFSET claim on that retur", async () => {
+    const settlement = await prisma.storeSettlement.create({
+      data: {
+        docNo: `TEST-ROQ-STL-${token}`,
+        storeId, salesmanId: userId,
+        expectedAmount: 120, actualAmount: 120, varianceAmount: 0,
+        status: "PENDING",
+        deductions: { create: [{ type: "RETUR_OFFSET", amount: 120, fieldReturnId: returAvailableId }] },
+      },
+    });
+    createdSettlementIds.push(settlement.id);
+
+    const map = await getPendingReturClaimsMap([returAvailableId, returManualPricedId]);
+    expect(map.get(returAvailableId)).toBe(120);
+    expect(map.get(returManualPricedId)).toBe(0);
+  });
+
+  it("getPendingReturClaimsMap excludes a non-PENDING settlement's claim", async () => {
+    /*
+     * A settlement that stops being PENDING (rejected, or later approved) must stop contributing
+     * to this sum -- exactly what `submitSettlement`'s own in-transaction netting relies on. This
+     * pins the query-side twin of that same rule so the screen's headroom never disagrees with
+     * what the writer will actually enforce.
+     */
+    const settlement = await prisma.storeSettlement.create({
+      data: {
+        docNo: `TEST-ROQ-STL2-${token}`,
+        storeId, salesmanId: userId,
+        expectedAmount: 120, actualAmount: 120, varianceAmount: 0,
+        status: "REJECTED",
+        deductions: { create: [{ type: "RETUR_OFFSET", amount: 120, fieldReturnId: returAvailableId }] },
+      },
+    });
+    createdSettlementIds.push(settlement.id);
+
+    const map = await getPendingReturClaimsMap([returAvailableId]);
+    expect(map.get(returAvailableId)).toBe(0);
+  });
+
+  it("getPendingReturClaimsMap returns an empty map for an empty id list", async () => {
+    const map = await getPendingReturClaimsMap([]);
+    expect(map.size).toBe(0);
   });
 });

@@ -483,6 +483,69 @@ d("submitSettlement (test bed only)", () => {
     })).rejects.toMatchObject({ code: "INVALID_PROOF_KEY" });
   });
 
+  it("refuses a proof key over the VARCHAR(191) column limit", async () => {
+    /*
+     * `proofR2Key` used to be capped at 300 -- past the real column ceiling. A key at 192
+     * characters would have sailed through that bound and died at insert with a MySQL
+     * data-truncation error instead of this named, cheap-to-reject code.
+     */
+    const draftId = `keylen-${token}`;
+    const prefix = `settlement-proofs/${draftId}/`;
+    const proofR2Key = `${prefix}${"x".repeat(200)}`;
+    await expect(submitSettlement({
+      ...baseInput, draftId,
+      deductions: [{ type: "PROGRAM", amount: 100, proofUrl: "u", proofR2Key }],
+    })).rejects.toMatchObject({ code: "INPUT_TOO_LARGE" });
+  });
+
+  it("refuses when the DERIVED proof url exceeds the column limit even though the key itself is within bounds", async () => {
+    /*
+     * `proofUrl` is derived via `urlFromKey` (PUBLIC_URL + "/" + key) and is therefore always
+     * LONGER than the key by at least one character (the separator) -- a key sitting right at
+     * the 191-char key ceiling still yields a url over 191, so capping the key alone never
+     * protected the column the url actually lands in. Padding the key to exactly 191 characters
+     * makes this deterministic regardless of the configured PUBLIC_URL.
+     */
+    const draftId = `urllen-${token}`;
+    const prefix = `settlement-proofs/${draftId}/`;
+    const proofR2Key = `${prefix}${"x".repeat(Math.max(0, 191 - prefix.length))}`;
+    expect(proofR2Key.length).toBeLessThanOrEqual(191);
+    await expect(submitSettlement({
+      ...baseInput, draftId,
+      deductions: [{ type: "PROGRAM", amount: 100, proofUrl: "u", proofR2Key }],
+    })).rejects.toMatchObject({ code: "INPUT_TOO_LARGE" });
+  });
+
+  it("refuses a RETUR_OFFSET deduction with a proofUrl over the VARCHAR(191) column limit", async () => {
+    /*
+     * The two length checks used to sit AFTER the loop's `if (type === "RETUR_OFFSET") continue`,
+     * so this exact deduction skipped both entirely. The create block persists proof columns for
+     * every deduction type (`proofR2Key ? urlFromKey(...) : deduction.proofUrl`), and a
+     * RETUR_OFFSET deduction with no `proofR2Key` writes the caller's own `proofUrl` verbatim --
+     * without the hoist this would sail past every guard and die at insert with a MySQL 1406
+     * data-truncation error instead of this named, cheap-to-reject code.
+     */
+    await expect(submitSettlement({
+      ...baseInput, draftId: `returproof-${token}`,
+      deductions: [{ type: "RETUR_OFFSET", amount: 50, fieldReturnId: retId, proofUrl: "x".repeat(300) }],
+    })).rejects.toMatchObject({ code: "INPUT_TOO_LARGE" });
+  });
+
+  it("accepts a RETUR_OFFSET deduction with an explicit null proofR2Key instead of crashing on .length", async () => {
+    /*
+     * A raw request is independently callable and can send `proofR2Key: null` even though the
+     * declared type is `string | undefined` -- TypeScript never enforces that at the network
+     * boundary. The hoisted length guards check `typeof === "string"`, not `!== undefined`,
+     * specifically so `null` here is treated as "no key" rather than reaching `.length` on `null`
+     * and surfacing an opaque UNEXPECTED -- the exact outcome these bounds exist to eliminate.
+     */
+    const result = await submitSettlement({
+      ...baseInput, draftId: `returnullkey-${token}`,
+      deductions: [{ type: "RETUR_OFFSET", amount: 50, fieldReturnId: retId, proofR2Key: null }],
+    } as unknown as SubmitSettlementInput);
+    expect(result.settlementId).toBeTruthy();
+  });
+
   it("refuses reusing the identical proof key across multiple deductions", async () => {
     /*
      * The POD-proof landmine, verbatim: one uploaded photo satisfying every proof requirement at
