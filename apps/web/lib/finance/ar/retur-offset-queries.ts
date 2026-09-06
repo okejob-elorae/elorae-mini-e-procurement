@@ -7,6 +7,8 @@ export type OffsettableReturnRow = {
   storeId: string;
   storeName: string;
   totalValue: number;
+  appliedValue: number;
+  remainingValue: number;
 };
 
 const OFFSETTABLE_PAGE_SIZE = 25;
@@ -37,33 +39,48 @@ export async function listOffsettableReturns(
       orderBy: { approvedAt: "asc" },
       skip: (page - 1) * OFFSETTABLE_PAGE_SIZE,
       take: OFFSETTABLE_PAGE_SIZE,
-      select: { id: true, docNo: true, storeId: true, totalValue: true, store: { select: { name: true } } },
+      select: {
+        id: true,
+        docNo: true,
+        storeId: true,
+        totalValue: true,
+        appliedValue: true,
+        store: { select: { name: true } },
+      },
     }),
     prisma.fieldReturn.count({ where }),
   ]);
   return {
-    rows: rows.map((r) => ({
-      id: r.id,
-      docNo: r.docNo,
-      storeId: r.storeId,
-      storeName: r.store.name,
-      totalValue: r.totalValue ? Number(r.totalValue) : 0,
-    })),
+    rows: rows.map((r) => {
+      const totalValue = r.totalValue ? Number(r.totalValue) : 0;
+      const appliedValue = Number(r.appliedValue);
+      return {
+        id: r.id,
+        docNo: r.docNo,
+        storeId: r.storeId,
+        storeName: r.store.name,
+        totalValue,
+        appliedValue,
+        remainingValue: roundCents(totalValue - appliedValue),
+      };
+    }),
     total,
   };
 }
 
 /**
  * Pure aggregate — no new table, no stored figure. A retur counts here for as long as it sits
- * AVAILABLE; the moment it is offset it stops contributing, with no separate "consumed" ledger
- * to keep in sync.
+ * AVAILABLE and contributes only what is left of it; the moment it is fully drawn down it stops
+ * contributing, with no separate "consumed" ledger to keep in sync.
  */
 export async function getStoreAvailableCredit(storeId: string): Promise<number> {
   const rows = await prisma.fieldReturn.findMany({
     where: offsettableReturnWhere(storeId),
-    select: { totalValue: true },
+    select: { totalValue: true, appliedValue: true },
   });
-  return roundCents(rows.reduce((sum, r) => sum + (r.totalValue ? Number(r.totalValue) : 0), 0));
+  return roundCents(
+    rows.reduce((sum, r) => sum + (r.totalValue ? Number(r.totalValue) : 0) - Number(r.appliedValue), 0),
+  );
 }
 
 export type OffsetAllocationSuggestion = { receivableId: string; amount: number };
@@ -86,7 +103,7 @@ export type OffsetAllocationSuggestion = { receivableId: string; amount: number 
 export async function suggestOffsetAllocations(returnId: string): Promise<OffsetAllocationSuggestion[]> {
   const ret = await prisma.fieldReturn.findUnique({
     where: { id: returnId },
-    select: { totalValue: true, lines: { select: { priceDeliveryLineId: true } } },
+    select: { totalValue: true, appliedValue: true, lines: { select: { priceDeliveryLineId: true } } },
   });
   if (!ret || ret.totalValue === null) return [];
 
@@ -108,7 +125,7 @@ export async function suggestOffsetAllocations(returnId: string): Promise<Offset
     orderBy: { dueDate: "asc" },
   });
 
-  let remaining = roundCents(Number(ret.totalValue));
+  let remaining = roundCents(Number(ret.totalValue) - Number(ret.appliedValue));
   const suggestions: OffsetAllocationSuggestion[] = [];
   for (const r of receivables) {
     if (remaining <= 0) break;

@@ -164,11 +164,12 @@ d("AR queries (test bed only)", () => {
     await prisma.paymentAllocation.deleteMany({
       where: { receivableId: { in: [seededId(currentRec), seededId(overdueRec), seededId(thirdRec)] } },
     });
-    /* fieldReturnId's line/return, and their item/uom, only exist for the returOffsetFor test —
-     * children-first, and before `payment` since a FieldReturn points at its offset Payment. */
+    /* fieldReturnId's line/return, and their item/uom, only exist for the returOffsetFor test.
+     * Payment.fieldReturnId now points AT the FieldReturn (the reverse of the pre-drawdown
+     * direction), so the payment must go first, then the return's own line, then the return. */
+    await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(fieldReturnId) } });
     await prisma.fieldReturn.deleteMany({ where: { id: seededId(fieldReturnId) } });
-    await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.item.deleteMany({ where: { id: seededId(returItemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(returUomId) } });
     await prisma.receivable.deleteMany({
@@ -376,18 +377,11 @@ d("AR queries (test bed only)", () => {
     });
     returItemId = item.id;
 
-    const offsetPayment = await prisma.payment.create({
-      data: {
-        docNo: `TEST-ARQ-PAY-OFFSET-${token}`,
-        storeId,
-        paidAt: asOf,
-        method: "RETUR_OFFSET",
-        amount: 300,
-        recordedById: userId,
-      },
-    });
-    paymentId = offsetPayment.id;
-
+    /*
+     * The relation now runs Payment -> FieldReturn (Payment.fieldReturnId), the reverse of the
+     * pre-drawdown FieldReturn.offsetPaymentId -> Payment direction, so the FieldReturn must exist
+     * before the Payment that points at it, not after.
+     */
     const fieldReturn = await prisma.fieldReturn.create({
       data: {
         docNo: `TEST-ARQ-RET-${token}`,
@@ -396,11 +390,24 @@ d("AR queries (test bed only)", () => {
         status: "APPROVED",
         valuationStatus: "VALUED",
         offsetStatus: "APPLIED",
-        offsetPaymentId: paymentId,
+        appliedValue: 300,
         lines: { create: [{ itemId: returItemId, variantSku: "", qty: 1, reason: "UNSOLD" }] },
       },
     });
     fieldReturnId = fieldReturn.id;
+
+    const offsetPayment = await prisma.payment.create({
+      data: {
+        docNo: `TEST-ARQ-PAY-OFFSET-${token}`,
+        storeId,
+        paidAt: asOf,
+        method: "RETUR_OFFSET",
+        amount: 300,
+        recordedById: userId,
+        fieldReturnId: fieldReturn.id,
+      },
+    });
+    paymentId = offsetPayment.id;
 
     const offsetDetail = await getPayment(paymentId);
     expect(offsetDetail).not.toBeNull();

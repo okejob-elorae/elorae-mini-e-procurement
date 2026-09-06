@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { roundCents } from "@elorae/db/pricing";
 import { lineVariance, creditedQtyForLine } from "./variance";
 import { listPriceCandidates, type PriceCandidate } from "./pricing";
 import { classifyPriceCandidates } from "./pricing-rules";
@@ -31,12 +32,18 @@ export type FieldReturnRow = {
   lineCount: number;
   createdAt: Date;
   totalValue: number | null;
+  /** How much of `totalValue` has been drawn down against a payment so far. Always 0 while `totalValue` is null. */
+  appliedValue: number;
+  /** `totalValue - appliedValue`, the credit this retur still has left. `null` exactly when `totalValue` is null. */
+  remainingValue: number | null;
   valuationStatus: "PENDING" | "VALUED";
   /**
    * The raw column — non-null on every retur, even one that isn't APPROVED+VALUED yet, because
    * the schema default is AVAILABLE. A row's REAL offsettability is `status === "APPROVED" &&
    * valuationStatus === "VALUED" && offsetStatus === "AVAILABLE"`; consumers must derive the
-   * displayed 3-way badge from all three fields together, never from this column alone.
+   * displayed 3-way badge from all three fields together, never from this column alone. A row can
+   * legitimately stay AVAILABLE with `appliedValue > 0` — a partially drawn retur is still
+   * available for the remainder.
    */
   offsetStatus: FieldReturnOffsetStatus;
 };
@@ -79,6 +86,7 @@ export async function listFieldReturns(params: {
         transport: true,
         createdAt: true,
         totalValue: true,
+        appliedValue: true,
         valuationStatus: true,
         offsetStatus: true,
         store: { select: { name: true } },
@@ -89,19 +97,25 @@ export async function listFieldReturns(params: {
   ]);
 
   return {
-    rows: rows.map((r) => ({
-      id: r.id,
-      docNo: r.docNo,
-      storeName: r.store.name,
-      origin: r.origin,
-      transport: r.transport,
-      status: r.status,
-      lineCount: r._count.lines,
-      createdAt: r.createdAt,
-      totalValue: r.totalValue === null ? null : r.totalValue.toNumber(),
-      valuationStatus: r.valuationStatus,
-      offsetStatus: r.offsetStatus,
-    })),
+    rows: rows.map((r) => {
+      const totalValue = r.totalValue === null ? null : r.totalValue.toNumber();
+      const appliedValue = r.appliedValue.toNumber();
+      return {
+        id: r.id,
+        docNo: r.docNo,
+        storeName: r.store.name,
+        origin: r.origin,
+        transport: r.transport,
+        status: r.status,
+        lineCount: r._count.lines,
+        createdAt: r.createdAt,
+        totalValue,
+        appliedValue,
+        remainingValue: totalValue === null ? null : roundCents(totalValue - appliedValue),
+        valuationStatus: r.valuationStatus,
+        offsetStatus: r.offsetStatus,
+      };
+    }),
     total,
   };
 }
@@ -183,16 +197,23 @@ export type FieldReturnDetail = {
   note: string | null;
   createdAt: Date;
   totalValue: number | null;
+  /** How much of `totalValue` has been drawn down against a payment so far. Always 0 while `totalValue` is null. */
+  appliedValue: number;
+  /** `totalValue - appliedValue`, the credit this retur still has left. `null` exactly when `totalValue` is null. */
+  remainingValue: number | null;
   valuationStatus: "PENDING" | "VALUED";
   offsetStatus: FieldReturnOffsetStatus;
-  /** Non-null only while offsetStatus === "APPLIED". */
-  offsetPayment: { id: string; docNo: string } | null;
   /**
-   * True when this retur was offset once and that payment was later voided — offsetStatus is
-   * back to AVAILABLE (so the credit reads as unclaimed everywhere else), but the deterministic
-   * idempotency key stays permanently bound to the voided payment, so applyReturnOffset can
-   * never succeed for this retur again. The credit card must render a distinct, explanatory,
-   * no-action state here rather than a normal "Offset ke Piutang" button that would always fail.
+   * Every POSTED payment that has drawn on this retur, oldest first. Empty until the first draw.
+   * A retur can carry several now that a draw takes only PART of its frozen value — this is a
+   * list, not the single terminal payment the pre-draw-down shape used to hand back.
+   */
+  offsetPayments: { id: string; docNo: string }[];
+  /**
+   * True when at least one offset draw against this retur was later voided. Informational only —
+   * under the drawdown model each draw keys its idempotency on its own eventId
+   * (`returoffset-<returnId>-<eventId>`), so a voided draw does NOT block a further one the way
+   * it did before draws could be partial; do not read this as "cannot be offset again."
    */
   hasVoidedOffsetAttempt: boolean;
   lines: FieldReturnLineDetail[];
@@ -218,9 +239,14 @@ export async function getFieldReturnById(
       raisedById: true,
       storeId: true,
       totalValue: true,
+      appliedValue: true,
       valuationStatus: true,
       offsetStatus: true,
-      offsetPayment: { select: { id: true, docNo: true } },
+      offsetPayments: {
+        where: { status: "POSTED" },
+        orderBy: { paidAt: "asc" },
+        select: { id: true, docNo: true },
+      },
       store: { select: { name: true } },
       lines: {
         select: {
@@ -268,17 +294,18 @@ export async function getFieldReturnById(
   const docNoByDeliveryLineId = new Map(deliveryLines.map((dl) => [dl.id, dl.delivery.docNo]));
 
   /*
-   * Only worth checking when the retur currently reads AVAILABLE + VALUED -- if it's APPLIED,
-   * offsetPayment above already answers the question; if it's not yet valued, it was never
-   * offerable in the first place.
+   * Reads directly off Payment.fieldReturnId now that the relation runs that direction (Task 1) —
+   * the old lookup keyed on a single fixed idempotencyKey (`returoffset-<returnId>`), which the
+   * drawdown writer no longer ever produces (each draw's key carries its own eventId), so that
+   * lookup would silently and permanently read as "never voided" post-drawdown. A voided draw can
+   * coexist with POSTED ones (an earlier draw voided, a later one re-applied), so this is a
+   * `findFirst`, not gated on the retur's current status — it is informational regardless of where
+   * offsetStatus currently sits.
    */
-  const voidedOffsetAttempt =
-    r.offsetStatus === "AVAILABLE" && r.valuationStatus === "VALUED" && r.totalValue !== null
-      ? await prisma.payment.findUnique({
-          where: { idempotencyKey: `returoffset-${r.id}` },
-          select: { status: true },
-        })
-      : null;
+  const voidedOffsetAttempt = await prisma.payment.findFirst({
+    where: { fieldReturnId: r.id, status: "VOIDED" },
+    select: { id: true },
+  });
 
   /*
    * Candidates are only meaningful while the retur can still be repriced by a viewer who is
@@ -332,10 +359,12 @@ export async function getFieldReturnById(
     note: r.note,
     createdAt: r.createdAt,
     totalValue: r.totalValue === null ? null : r.totalValue.toNumber(),
+    appliedValue: r.appliedValue.toNumber(),
+    remainingValue: r.totalValue === null ? null : roundCents(r.totalValue.toNumber() - r.appliedValue.toNumber()),
     valuationStatus: r.valuationStatus,
     offsetStatus: r.offsetStatus,
-    offsetPayment: r.offsetPayment,
-    hasVoidedOffsetAttempt: voidedOffsetAttempt?.status === "VOIDED",
+    offsetPayments: r.offsetPayments,
+    hasVoidedOffsetAttempt: voidedOffsetAttempt !== null,
     lines: r.lines.map((l) => {
       const priceCandidates = candidatesByLineId.get(l.id);
       const priceState: FieldReturnPriceState = l.priceSource
