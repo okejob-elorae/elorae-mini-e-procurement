@@ -1,8 +1,8 @@
 /**
  * Deliberately import-free — no `@elorae/db`, not even for the `TaxInvoiceStatusFilter` type.
- * Both `FakturPajakPageClient.tsx` and `DeliveriesCard.tsx` are "use client" components; one
- * import of the barrel, even a type-only one re-exported through a value module, would drag
- * Prisma and the mariadb driver into the browser bundle. Same policy as
+ * `FakturPajakPageClient.tsx`, `DeliveriesCard.tsx`, and `AmplopList.tsx` are all "use client"
+ * components; one import of the barrel, even a type-only one re-exported through a value module,
+ * would drag Prisma and the mariadb driver into the browser bundle. Same policy as
  * `lib/field-sales/retur/variance.ts`. This module declares its own status union rather than
  * importing `TaxInvoiceStatusFilter` from `./queries` (a `@elorae/db`-importing module) — the two
  * unions must be kept in sync by hand, which is exactly why this is Global Constraint site 7: the
