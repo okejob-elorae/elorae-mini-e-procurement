@@ -132,28 +132,30 @@ export async function listSettlementQueue(
 }
 
 /**
- * Deliberately the same shape as `listCollectorCandidates` in `lib/finance/collections/queries.ts`
- * — a bounded read of `User` by role, not a scan of the fact table. The obvious alternative,
- * `storeSettlement.findMany({ distinct: ["salesmanId"] })`, is a trap here: Prisma applies
- * `distinct` in memory on connectors without `DISTINCT ON`, and MariaDB is one, so it would pull
- * every settlement row ever written into Node on every page load and every filter change to
- * produce a dropdown of a dozen names, growing forever.
+ * The salesmen this filter can narrow by, derived from the rows it filters — NOT from who currently
+ * holds `settlements:submit`, which is the shape `listCollectorCandidates`
+ * (`lib/finance/collections/queries.ts`) uses. The two look interchangeable and are not: that one
+ * populates an ASSIGNMENT control and answers "who *can* collect", where permission-derived is
+ * exactly right. This one populates a FILTER over rows that already exist and answers "who *did*
+ * file" — and losing `settlements:submit` is ordinary (offboarding, a move off field sales, a
+ * routine role edit). The moment it happens, permission-derived silently drops every settlement
+ * that salesman ever filed out of reach of the filter, and the closed historical documents this
+ * queue exists to let finance go back through are exactly the ones most likely to need it. No
+ * error, no empty state that explains itself.
  *
- * Consequence to know: `settlements:submit` has no migration behind it (see
- * `packages/db/prisma/seed-settlements-permission.sql`), so in an environment where that seed has
- * not been hand-run the filter offers nothing. It narrows a list; it gates nothing.
+ * `groupBy` pushes the DISTINCT down to SQL. `findMany({ distinct: ["salesmanId"] })` would not:
+ * Prisma applies `distinct` in memory on connectors without `DISTINCT ON`, and MariaDB is one, so
+ * it would pull every settlement row ever written into Node on every page load and every filter
+ * change to produce a dropdown of a dozen names, growing forever. The cost of doing this correctly
+ * is one extra bounded round trip.
  */
 export async function listSettlementSalesmanCandidates(): Promise<Array<{ id: string; name: string }>> {
+  const grouped = await prisma.storeSettlement.groupBy({ by: ["salesmanId"] });
+  const salesmanIds = grouped.map((row) => row.salesmanId);
+  if (salesmanIds.length === 0) return [];
+
   const users = await prisma.user.findMany({
-    where: {
-      roleDefinition: {
-        isSystem: false,
-        AND: [
-          { permissions: { some: { permission: { code: "settlements:submit" } } } },
-          { permissions: { some: { permission: { code: "pwa:access" } } } },
-        ],
-      },
-    },
+    where: { id: { in: salesmanIds } },
     select: { id: true, name: true, email: true },
     orderBy: { name: "asc" },
   });
@@ -424,7 +426,13 @@ export async function getSettlementForApproval(
   for (const payment of existingPayments) {
     if (payment.idempotencyKey !== null) paymentByKey.set(payment.idempotencyKey, payment);
   }
-  const postedKeys = new Set(paymentByKey.keys());
+  /**
+   * Every component key a `Payment` row exists for, VOIDED rows included — deliberately
+   * status-neutral, mirroring `approveSettlement`'s own `paymentByKey`, which is also built with
+   * no status filter. `NO_VOIDED_COMPONENT` is what refuses a voided component; re-counting one as
+   * still owed here would refuse it twice, in the wrong words.
+   */
+  const componentPaymentKeys = new Set(paymentByKey.keys());
 
   const components: SettlementComponentDetail[] = componentSpecs.map((spec) => {
     const payment = spec.key === null ? undefined : paymentByKey.get(spec.key);
@@ -533,8 +541,8 @@ export async function getSettlementForApproval(
   } else {
     const headroom = await computeComponentHeadroom(invoiceRows, componentKeys);
     checks.push(buildCollectibilityCheck(headroom, invoiceDetails));
-    checks.push(buildHeadroomCheck(headroom, componentSpecs, postedKeys));
-    checks.push(buildReturCreditCheck(componentSpecs, postedKeys, returById));
+    checks.push(buildHeadroomCheck(headroom, componentSpecs, componentPaymentKeys));
+    checks.push(buildReturCreditCheck(componentSpecs, componentPaymentKeys, returById));
   }
 
   const storedExpectedAmount = roundCents(Number(settlement.expectedAmount));

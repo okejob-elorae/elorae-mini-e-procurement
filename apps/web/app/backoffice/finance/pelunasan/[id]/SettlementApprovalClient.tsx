@@ -199,23 +199,27 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
   const varianceOverride = s.varianceOverride;
 
   /**
-   * A zero-amount component with no payment behind it is genuinely nothing — on the common
-   * cash-only settlement the program and admin-fee rows would otherwise head the card as two
-   * "Rp 0,00 — nothing to post" lines. A row that is BROKEN is never hidden: a retur deduction
-   * with no `fieldReturnId` carries a real amount, no idempotency key and no payment, and dropping
-   * it would make the document read as cheaper than it is while finance works out why it is
-   * blocked.
+   * Two different questions, one filter.
+   *
+   * While the document is open: a zero-amount component with no payment behind it is genuinely
+   * nothing — on the common cash-only settlement the program and admin-fee rows would otherwise
+   * head the card as two "Rp 0,00 — nothing to post" lines. A row that is BROKEN is never hidden:
+   * a retur deduction with no `fieldReturnId` carries a real amount, no idempotency key and no
+   * payment, and dropping it would make the document read as cheaper than it is while finance
+   * works out why it is blocked.
+   *
+   * Once REJECTED nothing was meant to post, so the card only earns its place if something did —
+   * the orphaned-payment case the writer logs, reachable when approval posts one component, throws
+   * before the next, and the still-`PENDING` document is then rejected. Its copy tells finance to
+   * void what is listed, so the list has to be the payments and nothing else: showing the unposted
+   * siblings under that heading would name rows there is nothing to void.
    */
-  const visibleComponents = s.components.filter(
-    (component) => component.amount > 0 || component.paymentId !== null,
+  const visibleComponents = s.components.filter((component) =>
+    s.status === "REJECTED"
+      ? component.paymentId !== null
+      : component.amount > 0 || component.paymentId !== null,
   );
-  const hasPostedComponent = s.components.some((component) => component.paymentId !== null);
-  /**
-   * On a REJECTED document nothing was meant to post, so the card only earns its place if
-   * something did — which is the orphaned-payment case the writer logs.
-   */
-  const showComponents =
-    visibleComponents.length > 0 && (s.status !== "REJECTED" || hasPostedComponent);
+  const showComponents = visibleComponents.length > 0;
 
   /**
    * `STATUS_PENDING` still gates `approvable` server-side, but the card it would appear in only
@@ -558,7 +562,7 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
                                 </span>
                               ) : paymentId === null ? (
                                 <span className="text-sm text-muted-foreground">
-                                  {component.amount > 0 ? t("componentNotPosted") : t("componentSkipped")}
+                                  {t("componentNotPosted")}
                                 </span>
                               ) : (
                                 <Link
@@ -755,9 +759,11 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
                 rows={3}
               />
               <div className="flex items-start justify-between gap-3">
-                {/* Rendered whenever the confirm button is blocked, not only once something has been
-                    typed — with an empty box, which is the state the dialog opens in, the operator
-                    would otherwise see a greyed-out button and nothing saying why. */}
+                {/**
+                  * Rendered whenever the confirm button is blocked, not only once something has
+                  * been typed — with an empty box, the state the dialog opens in, the operator
+                  * would otherwise see a greyed-out button and nothing saying why.
+                  */}
                 <p className={cn("text-xs", overrideOk ? "invisible" : "text-destructive")}>
                   {t("reasonRequired")}
                 </p>

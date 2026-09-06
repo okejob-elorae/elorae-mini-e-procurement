@@ -230,17 +230,28 @@ export function buildCollectibilityCheck(
   const docNoById = new Map(invoices.map((invoice) => [invoice.receivableId, invoice.docNo]));
   const statusById = new Map(invoices.map((invoice) => [invoice.receivableId, invoice.receivableStatus]));
 
-  const blocked: string[] = [];
+  const blocked: Array<{ docNo: string | null; id: string }> = [];
   for (const row of headroom) {
     if (!(row.agreedRemaining > EPSILON)) continue;
     const status = statusById.get(row.receivableId);
     if (status !== "OUTSTANDING" && status !== "PARTIAL") {
-      blocked.push(docNoById.get(row.receivableId) ?? row.receivableId);
+      blocked.push({ docNo: docNoById.get(row.receivableId) ?? null, id: row.receivableId });
     }
   }
-  return blocked.length === 0
-    ? pass("INVOICES_COLLECTIBLE")
-    : fail("INVOICES_COLLECTIBLE", "NOT_OUTSTANDING", "INVOICE", blocked);
+  if (blocked.length === 0) return pass("INVOICES_COLLECTIBLE");
+  /**
+   * A receivable with no delivery docNo can only be named by its cuid, and a bare cuid is
+   * unactionable. `subjectKind` is one value for the whole check, so the labelled kind is used
+   * as soon as ANY row falls back to an id — a docNo rendered as "invoice DLV/0009" still reads
+   * correctly, while an unlabelled cuid does not.
+   */
+  const invoiceKind = blocked.every((row) => row.docNo !== null) ? "INVOICE" : "INVOICE_ID";
+  return fail(
+    "INVOICES_COLLECTIBLE",
+    "NOT_OUTSTANDING",
+    invoiceKind,
+    blocked.map((row) => row.docNo ?? row.id),
+  );
 }
 
 /**
@@ -248,15 +259,21 @@ export function buildCollectibilityCheck(
  * already posted: a component that already has a payment is not owed again, and the headroom
  * already excludes what that payment consumed. A component with no idempotency key at all (a retur
  * deduction missing its `fieldReturnId`) can never have posted, so it is always still owed.
+ *
+ * `componentPaymentKeys` is every component key a `Payment` row exists for, VOIDED rows included,
+ * and the name is status-neutral for that reason. That is not an oversight and not a divergence
+ * from the writer: `approveSettlement` builds its own `paymentByKey` with no status filter for the
+ * same lookup, and a voided component is caught by `NO_VOIDED_COMPONENT` on its own terms rather
+ * than being quietly re-counted as still owed here.
  */
 export function buildHeadroomCheck(
   headroom: Array<{ outstandingAmount: number }>,
   componentSpecs: Array<{ amount: number; key: string | null }>,
-  postedKeys: ReadonlySet<string>,
+  componentPaymentKeys: ReadonlySet<string>,
 ): SettlementCheck {
   const totalOwed = roundCents(
     componentSpecs
-      .filter((spec) => spec.amount > 0 && (spec.key === null || !postedKeys.has(spec.key)))
+      .filter((spec) => spec.amount > 0 && (spec.key === null || !componentPaymentKeys.has(spec.key)))
       .reduce((sum, spec) => sum + spec.amount, 0),
   );
   const totalHeadroom = roundCents(
@@ -271,30 +288,42 @@ export function buildHeadroomCheck(
  * Mirrors the writer's `RETUR_OVERCLAIMED` pre-flight, counting only draws this run still owes —
  * a draw that already posted is inside `alreadyDrawn`, so counting it again would report every
  * resumable approval as an over-claim.
+ *
+ * `componentPaymentKeys` carries the same status-neutral meaning as in `buildHeadroomCheck` above.
  */
 export function buildReturCreditCheck(
   componentSpecs: SettlementComponentSpec[],
-  postedKeys: ReadonlySet<string>,
+  componentPaymentKeys: ReadonlySet<string>,
   returById: ReadonlyMap<string, SettlementReturDetail>,
 ): SettlementCheck {
   const owedByReturn = new Map<string, number>();
   for (const spec of componentSpecs) {
     if (spec.returnId === null || !(spec.amount > 0)) continue;
-    if (spec.key !== null && postedKeys.has(spec.key)) continue;
+    if (spec.key !== null && componentPaymentKeys.has(spec.key)) continue;
     const prior = owedByReturn.get(spec.returnId) ?? 0;
     owedByReturn.set(spec.returnId, roundCents(prior + spec.amount));
   }
 
-  const overclaimed: string[] = [];
+  const overclaimed: Array<{ docNo: string | null; id: string }> = [];
   for (const [returnId, owed] of owedByReturn) {
     const retur = returById.get(returnId);
     const totalValue = retur?.totalValue ?? 0;
     const alreadyDrawn = retur?.alreadyDrawn ?? 0;
     if (alreadyDrawn + owed - totalValue > EPSILON) {
-      overclaimed.push(retur?.docNo ?? returnId);
+      overclaimed.push({ docNo: retur?.docNo ?? null, id: returnId });
     }
   }
-  return overclaimed.length === 0
-    ? pass("RETUR_CREDIT_AVAILABLE")
-    : fail("RETUR_CREDIT_AVAILABLE", "RETUR_OVERCLAIMED", "RETUR", overclaimed);
+  if (overclaimed.length === 0) return pass("RETUR_CREDIT_AVAILABLE");
+  /**
+   * A retur whose row has gone reaches here with no docNo, and it reaches `RETURNS_ELIGIBLE` at the
+   * same time — which already labels the cuid. Leaving this one bare put the same id on two
+   * adjacent checklist rows in two different spellings.
+   */
+  const returKind = overclaimed.every((row) => row.docNo !== null) ? "RETUR" : "RETUR_ID";
+  return fail(
+    "RETUR_CREDIT_AVAILABLE",
+    "RETUR_OVERCLAIMED",
+    returKind,
+    overclaimed.map((row) => row.docNo ?? row.id),
+  );
 }

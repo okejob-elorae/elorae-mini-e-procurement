@@ -41,8 +41,14 @@ async function notifySalesmanOfRejection(
  * Rejects a submitted store settlement: CAS-flips `PENDING -> REJECTED` and tells the salesman
  * why, surfaced on the existing `/pwa/notifications` bell.
  *
- * Posts no journal and moves no money — a rejected settlement never became a `Payment` in the
- * first place, unlike an approved one, so there is nothing for `postArJournalSafely` to reverse.
+ * Posts no journal and moves no money ITSELF, and reverses nothing either — there is no
+ * compensating path here for a `Payment` that already exists. The usual case is that none does: a
+ * settlement that never reached approval never posted a component. But `approveSettlement` is a
+ * resumable sequence rather than one transaction, so a run that posts a component and then throws
+ * leaves the document `PENDING` with a real `Payment` behind it, and rejecting it from there
+ * strands that payment attached to a `REJECTED` document. The finance approval screen surfaces
+ * exactly this case (`componentsTitleOrphaned` in `app/backoffice/finance/pelunasan/[id]`) and
+ * tells an admin to void the payments by hand; nothing here does it for them.
  *
  * A second call against a settlement that is no longer `PENDING` (already `REJECTED`, or since
  * `APPROVED`) throws `NOT_PENDING`, the same shape as `rejectCollection`

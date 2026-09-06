@@ -180,6 +180,7 @@ describe("buildCollectibilityCheck", () => {
     );
     expect(check.status).toBe("FAIL");
     expect(check.reason).toBe("NOT_OUTSTANDING");
+    expect(check.subjectKind).toBe("INVOICE");
     expect(check.subjects).toEqual(["DLV/0009"]);
   });
 
@@ -191,12 +192,32 @@ describe("buildCollectibilityCheck", () => {
     expect(check.reason).toBe("NOT_OUTSTANDING");
   });
 
-  it("falls back to the receivable id when the invoice has no docNo", () => {
+  it("falls back to the receivable id when the invoice has no docNo, and marks it as an id", () => {
     const check = buildCollectibilityCheck(
       [{ receivableId: "rcv-1", agreedRemaining: 100000 }],
       [invoice({ receivableId: "rcv-1", docNo: null, receivableStatus: "PAID" })],
     );
+    expect(check.subjectKind).toBe("INVOICE_ID");
     expect(check.subjects).toEqual(["rcv-1"]);
+  });
+
+  /**
+   * `subjectKind` is one value for the whole check, so a list mixing docNos with id fallbacks takes
+   * the labelled kind — "invoice DLV/0009" still reads correctly, an unlabelled cuid does not.
+   */
+  it("uses the labelled kind as soon as any blocked invoice falls back to an id", () => {
+    const check = buildCollectibilityCheck(
+      [
+        { receivableId: "rcv-1", agreedRemaining: 100000 },
+        { receivableId: "rcv-2", agreedRemaining: 100000 },
+      ],
+      [
+        invoice({ receivableId: "rcv-1", docNo: "DLV/0009", receivableStatus: "PAID" }),
+        invoice({ receivableId: "rcv-2", docNo: null, receivableStatus: "PAID" }),
+      ],
+    );
+    expect(check.subjectKind).toBe("INVOICE_ID");
+    expect(check.subjects).toEqual(["DLV/0009", "rcv-2"]);
   });
 });
 
@@ -221,13 +242,13 @@ describe("buildHeadroomCheck", () => {
   });
 
   /**
-   * The resume regression this spec exists for. Drop the `postedKeys` term and a settlement whose
-   * cash component posted before a crash renders headroom FAIL with Approve permanently disabled —
-   * a resumable document finance could then only reject, orphaning the payments already behind it.
-   * The headroom passed in is already netted by `computeComponentHeadroom`, so counting the posted
-   * component again double-counts it.
+   * The resume regression this spec exists for. Drop the `componentPaymentKeys` term and a
+   * settlement whose cash component posted before a crash renders headroom FAIL with Approve
+   * permanently disabled — a resumable document finance could then only reject, orphaning the
+   * payments already behind it. The headroom passed in is already netted by
+   * `computeComponentHeadroom`, so counting that component again double-counts it.
    */
-  it("does not count a component that already posted", () => {
+  it("does not count a component that already has a payment", () => {
     const specs = [spec({ amount: 60000, key: "k1" }), spec({ amount: 60000, key: "k2" })];
     expect(buildHeadroomCheck([{ outstandingAmount: 60000 }], specs, new Set(["k1"])).status).toBe("PASS");
     expect(buildHeadroomCheck([{ outstandingAmount: 60000 }], specs, new Set<string>()).status).toBe("FAIL");
@@ -286,6 +307,7 @@ describe("buildReturCreditCheck", () => {
     );
     expect(check.status).toBe("FAIL");
     expect(check.reason).toBe("RETUR_OVERCLAIMED");
+    expect(check.subjectKind).toBe("RETUR");
     expect(check.subjects).toEqual(["FIELDRET/0001"]);
   });
 
@@ -294,7 +316,7 @@ describe("buildReturCreditCheck", () => {
    * `alreadyDrawn`; counting it as still owed as well would refuse every resumed approval that got
    * as far as posting one of its retur components.
    */
-  it("does not count a draw that already posted", () => {
+  it("does not count a draw whose component already has a payment", () => {
     const drawn = new Map<string, SettlementReturDetail>([
       ["ret-1", retur({ id: "ret-1", totalValue: 100000, alreadyDrawn: 100000 })],
     ]);
@@ -342,13 +364,19 @@ describe("buildReturCreditCheck", () => {
     expect(check.status).toBe("PASS");
   });
 
-  it("refuses a draw against a retur whose row is missing, since its credit reads as zero", () => {
+  /**
+   * A retur whose row has gone fails `RETURNS_ELIGIBLE` at the same time, and that check already
+   * labels the cuid. Leaving this one bare put the same id on two adjacent checklist rows in two
+   * different spellings.
+   */
+  it("refuses a draw against a retur whose row is missing, and marks the id as an id", () => {
     const check = buildReturCreditCheck(
       [spec({ method: "RETUR_OFFSET", amount: 1, key: "k1", returnId: "ret-gone" })],
       new Set<string>(),
       returns,
     );
     expect(check.status).toBe("FAIL");
+    expect(check.subjectKind).toBe("RETUR_ID");
     expect(check.subjects).toEqual(["ret-gone"]);
   });
 });
