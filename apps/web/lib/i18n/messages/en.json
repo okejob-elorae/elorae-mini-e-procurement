@@ -2512,6 +2512,23 @@
       "errNotAssignedCollector": "This receivable is not assigned to you.",
       "errGeneric": "Failed to submit the collection. Try again."
     },
+    "amplop": {
+      "homeCta": "Store Envelope",
+      "title": "Store Envelope",
+      "count": "{count, plural, =0 {No stores} one {# store} other {# stores}}",
+      "emptyTitle": "Nothing to carry today",
+      "emptyHint": "No outstanding receivables are assigned to you right now.",
+      "totalOutstandingLabel": "Total outstanding",
+      "totalOverdueLabel": "Total overdue",
+      "storeOutstandingLabel": "Outstanding",
+      "storeOverdueLabel": "Overdue",
+      "availableCreditLabel": "Available retur credit",
+      "colDueDate": "Due date",
+      "colOutstanding": "Outstanding",
+      "notYetDue": "Not yet due",
+      "noFaktur": "No faktur yet",
+      "pendingSubmittedLabel": "Pending submission"
+    },
     "storeChanges": {
       "editButton": "Edit store data",
       "title": "Edit store data",

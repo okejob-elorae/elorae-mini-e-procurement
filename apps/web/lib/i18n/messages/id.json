@@ -2512,6 +2512,23 @@
       "errNotAssignedCollector": "Piutang ini tidak ditugaskan kepada Anda.",
       "errGeneric": "Gagal mengirim setoran. Coba lagi."
     },
+    "amplop": {
+      "homeCta": "Amplop Digital",
+      "title": "Amplop Digital",
+      "count": "{count, plural, =0 {Tidak ada toko} other {# toko}}",
+      "emptyTitle": "Tidak ada yang perlu dibawa hari ini",
+      "emptyHint": "Belum ada piutang yang ditugaskan kepada Anda saat ini.",
+      "totalOutstandingLabel": "Total belum lunas",
+      "totalOverdueLabel": "Total jatuh tempo",
+      "storeOutstandingLabel": "Belum lunas",
+      "storeOverdueLabel": "Jatuh tempo",
+      "availableCreditLabel": "Kredit retur tersedia",
+      "colDueDate": "Jatuh tempo",
+      "colOutstanding": "Belum lunas",
+      "notYetDue": "Belum jatuh tempo",
+      "noFaktur": "Belum ada faktur",
+      "pendingSubmittedLabel": "Setoran tertunda"
+    },
     "storeChanges": {
       "editButton": "Ubah data toko",
       "title": "Ubah data toko",

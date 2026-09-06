@@ -18,6 +18,7 @@ export default async function PwaHome() {
   const userName = session.user.name ?? session.user.email ?? "";
   const canCollect = hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_COLLECT);
   const canCompletePod = hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_POD);
+  const canViewAmplop = hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_AMPLOP);
 
   /**
    * SPG is a fixed-store role (User.assignedStoreId) — detect it before
@@ -124,6 +125,7 @@ export default async function PwaHome() {
       recentStores={recentStores}
       canCollect={canCollect}
       canCompletePod={canCompletePod}
+      canViewAmplop={canViewAmplop}
       onLogout={logout}
     />
   );
