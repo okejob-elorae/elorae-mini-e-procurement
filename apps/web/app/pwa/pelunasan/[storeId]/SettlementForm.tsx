@@ -283,9 +283,20 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
     setSelectedInvoiceIds((prev) => ({ ...prev, [receivableId]: checked }));
   }
 
+  /**
+   * Excludes a zero-headroom option — the same predicate gap C3 closed on the Add-retur button
+   * and `addReturRow`, one layer down: without it, this row's own `Select` would still OFFER a
+   * fully-reserved retur, and picking it blanks the amount input and blocks submit until it is
+   * changed back. The row's OWN current selection stays present even at zero headroom (checked
+   * via `o.fieldReturnId === fieldReturnId` first, short-circuiting the claimable check) — a form
+   * left open must not drop the row's own value out from under the salesman just because a
+   * colleague's pending settlement has since claimed the rest of it.
+   */
   function returOptionsForRow(rowId: string, fieldReturnId: string): SettlementOffsettableReturn[] {
     const usedByOthers = new Set(returRows.filter((r) => r.id !== rowId).map((r) => r.fieldReturnId));
-    return offsettableReturns.filter((o) => !usedByOthers.has(o.fieldReturnId) || o.fieldReturnId === fieldReturnId);
+    return offsettableReturns.filter(
+      (o) => o.fieldReturnId === fieldReturnId || (!usedByOthers.has(o.fieldReturnId) && returClaimable(o) > 0),
+    );
   }
 
   /**
@@ -601,6 +612,14 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
         </div>
         {offsettableReturns.length === 0 ? (
           <p className="text-xs text-muted-foreground">{t("noReturCredit")}</p>
+        ) : returRows.length === 0 && !canAddReturRow ? (
+          /**
+           * Distinct from `noReturCredit` above — this store DOES have offsettable returs, every
+           * one of them is just fully claimed by another PENDING settlement right now. Without
+           * this branch the section renders only the heading and a greyed-out button with no rows
+           * and no explanation, the exact blank dead-end the house UI standard rules out.
+           */
+          <p className="text-xs text-muted-foreground">{t("returAllReserved")}</p>
         ) : (
           returRows.map((row) => {
             const options = returOptionsForRow(row.id, row.fieldReturnId);
@@ -661,7 +680,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                   onChange={(e) => updateRow(row.id, { ...row, amountInput: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {t("returRemainingLabel")}: {formatRupiahPrecise(option ? returClaimable(option) : 0)}
+                  {t("returClaimableLabel")}: {formatRupiahPrecise(option ? returClaimable(option) : 0)}
                 </p>
                 {option && option.reservedAmount > 0 && (
                   <p className="text-xs text-muted-foreground">

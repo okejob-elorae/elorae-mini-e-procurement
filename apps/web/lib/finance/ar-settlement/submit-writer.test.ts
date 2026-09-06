@@ -531,6 +531,21 @@ d("submitSettlement (test bed only)", () => {
     })).rejects.toMatchObject({ code: "INPUT_TOO_LARGE" });
   });
 
+  it("accepts a RETUR_OFFSET deduction with an explicit null proofR2Key instead of crashing on .length", async () => {
+    /*
+     * A raw request is independently callable and can send `proofR2Key: null` even though the
+     * declared type is `string | undefined` -- TypeScript never enforces that at the network
+     * boundary. The hoisted length guards check `typeof === "string"`, not `!== undefined`,
+     * specifically so `null` here is treated as "no key" rather than reaching `.length` on `null`
+     * and surfacing an opaque UNEXPECTED -- the exact outcome these bounds exist to eliminate.
+     */
+    const result = await submitSettlement({
+      ...baseInput, draftId: `returnullkey-${token}`,
+      deductions: [{ type: "RETUR_OFFSET", amount: 50, fieldReturnId: retId, proofR2Key: null }],
+    } as unknown as SubmitSettlementInput);
+    expect(result.settlementId).toBeTruthy();
+  });
+
   it("refuses reusing the identical proof key across multiple deductions", async () => {
     /*
      * The POD-proof landmine, verbatim: one uploaded photo satisfying every proof requirement at

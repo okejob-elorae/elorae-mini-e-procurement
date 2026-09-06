@@ -173,7 +173,15 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
        * supplied directly into the same VARCHAR(191) column. Checking only inside the
        * evidence-required branch left that column unguarded for exactly this row type.
        */
-      if (deduction.proofR2Key !== undefined && deduction.proofR2Key.length > MAX_PROOF_KEY_LENGTH) {
+      /*
+       * `typeof === "string"`, not `!== undefined` — a raw request is independently callable and
+       * can send an explicit `null` for either field (the declared type is `string | undefined`,
+       * which TypeScript never enforces at the network boundary). `!== undefined` lets `null`
+       * through to the `.length` access below and crashes as an opaque `UNEXPECTED`, the precise
+       * outcome these bounds exist to eliminate — before this hoist the RETUR_OFFSET `continue`
+       * shielded that case by accident, not by design.
+       */
+      if (typeof deduction.proofR2Key === "string" && deduction.proofR2Key.length > MAX_PROOF_KEY_LENGTH) {
         throw new SettlementError("INPUT_TOO_LARGE");
       }
       /*
@@ -183,7 +191,7 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
        * derived url over it once `PUBLIC_URL + "/"` is prepended.
        */
       const effectiveProofUrl = deduction.proofR2Key ? urlFromKey(deduction.proofR2Key) : deduction.proofUrl;
-      if (effectiveProofUrl !== undefined && effectiveProofUrl.length > MAX_PROOF_URL_LENGTH) {
+      if (typeof effectiveProofUrl === "string" && effectiveProofUrl.length > MAX_PROOF_URL_LENGTH) {
         throw new SettlementError("INPUT_TOO_LARGE");
       }
 
