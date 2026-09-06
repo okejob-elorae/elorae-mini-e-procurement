@@ -2513,8 +2513,8 @@
       "errGeneric": "Failed to submit the collection. Try again."
     },
     "amplop": {
-      "homeCta": "Store Envelope",
-      "title": "Store Envelope",
+      "homeCta": "Amplop Digital",
+      "title": "Amplop Digital",
       "count": "{count, plural, =0 {No stores} one {# store} other {# stores}}",
       "emptyTitle": "Nothing to carry today",
       "emptyHint": "No outstanding receivables are assigned to you right now.",
