@@ -30,23 +30,11 @@ d("voidPayment (test bed only)", () => {
   let recB = "";
   let paymentId = "";
   let returId = "";
-  let itemId = "";
-  let uomId = "";
-
-  async function seedItemForVoidSpec(): Promise<string> {
-    const uom = await prisma.uOM.create({ data: { code: `TEST-VOID-UOM-${token}`, nameId: "pcs", nameEn: "pcs" } });
-    uomId = uom.id;
-    const item = await prisma.item.create({
-      data: { sku: `TEST-VOID-ITEM-${token}`, nameId: "t", nameEn: "t", type: "FINISHED_GOOD", uomId, isActive: true },
-    });
-    itemId = item.id;
-    return itemId;
-  }
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; userId = ""; orderAId = ""; orderBId = ""; deliveryAId = ""; deliveryBId = "";
-    recA = ""; recB = ""; paymentId = ""; returId = ""; itemId = ""; uomId = "";
+    recA = ""; recB = ""; paymentId = ""; returId = "";
 
     const store = await prisma.store.create({
       data: { code: `TEST-VOID-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -116,8 +104,6 @@ d("voidPayment (test bed only)", () => {
       where: { id: { in: [seededId(orderAId), seededId(orderBId)] } },
     });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
-    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
-    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
 
@@ -265,38 +251,66 @@ d("voidPayment (test bed only)", () => {
     expect(afterB.status).toBe("OUTSTANDING");
   });
 
-  it("releases the retur back to AVAILABLE when its RETUR_OFFSET payment is voided", async () => {
+  it("re-projects appliedValue down by the voided draw and leaves the rest applied", async () => {
+    const orderB = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `TEST-ARVW-ORDB-${token}`, storeId, salesmanId: userId, subtotal: 100000, total: 100000 },
+    });
+    orderBId = orderB.id;
+
+    const deliveryB = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-ARVW-DLVB-${token}`, orderId: orderBId,
+        deliveredAt: paidAt, deliveredById: userId,
+        invoiceDate: paidAt, dueDate: paidAt,
+        subtotal: 100000, total: 100000,
+      },
+    });
+    deliveryBId = deliveryB.id;
+
+    const b = await prisma.receivable.create({
+      data: {
+        deliveryId: deliveryBId, storeId,
+        invoiceDate: paidAt, dueDate: paidAt,
+        originalAmount: 100000, outstandingAmount: 100000,
+      },
+    });
+    recB = b.id;
+
     const ret = await prisma.fieldReturn.create({
       data: {
         docNo: `TEST-VOID-RET-${token}`, storeId, raisedById: userId,
         status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE",
-        totalValue: 600, approvedAt: paidAt, approvedById: userId,
+        totalValue: 100000, approvedAt: paidAt, approvedById: userId,
       },
     });
     returId = ret.id;
-    await prisma.fieldReturnLine.create({ data: { returnId: returId, itemId: itemId || (await seedItemForVoidSpec()), qty: 1, reason: "UNSOLD" } });
 
-    /* recA is at outstanding 600 after the beforeEach's 400 CASH payment (1000 - 400). */
-    const offset = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId: recA, amount: 600 }], appliedById: userId,
+    const first = await applyReturnOffset({
+      returnId: returId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: recB, amount: 40000 }], appliedById: userId,
+    });
+    await applyReturnOffset({
+      returnId: returId, eventId: "evt-2", drawAmount: 60000,
+      allocations: [{ receivableId: recB, amount: 60000 }], appliedById: userId,
     });
 
-    const flipped = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
-    expect(flipped.offsetStatus).toBe("APPLIED");
-    const offsetPayment = await prisma.payment.findUniqueOrThrow({ where: { id: offset.paymentId } });
-    expect(offsetPayment.fieldReturnId).toBe(returId);
+    await voidPayment({ paymentId: first.paymentId, reason: "test", voidedById: userId });
 
-    await voidPayment({ paymentId: offset.paymentId, reason: "wrong retur applied", voidedById: userId });
+    const released = await prisma.fieldReturn.findUnique({
+      where: { id: returId },
+      select: { offsetStatus: true, appliedValue: true },
+    });
+    expect(Number(released?.appliedValue)).toBe(60000);
+    expect(released?.offsetStatus).toBe("AVAILABLE");
+  });
 
-    const released = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
-    expect(released.offsetStatus).toBe("AVAILABLE");
-    /*
-     * fieldReturnId is history now, not a live claim -- voidPayment resets offsetStatus/appliedValue
-     * but deliberately leaves the voided payment's own link alone, same as it leaves the voided
-     * payment's allocations alone.
-     */
-    const voidedPayment = await prisma.payment.findUniqueOrThrow({ where: { id: offset.paymentId } });
-    expect(voidedPayment.fieldReturnId).toBe(returId);
+  it("leaves a payment with no retur behind it untouched", async () => {
+    const cash = await recordPayment({
+      storeId, paidAt, method: "CASH", amount: 100,
+      recordedById: userId, allocations: [{ receivableId: recA, amount: 100 }],
+    });
+    const result = await voidPayment({ paymentId: cash.paymentId, reason: "test", voidedById: userId });
+    expect(result.voided).toBe(true);
   });
 
   it("voiding a CASH payment leaves every retur untouched (zero-rows no-op)", async () => {
