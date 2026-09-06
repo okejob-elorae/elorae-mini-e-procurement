@@ -341,11 +341,15 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       no revenue journal drives AR negative. Same shape as the settlement item already logged
       above. The fix is one pass applying `classifySaleLeg`'s counterpart-journal gate across the
       AR journals, covering both paths together.
-- [ ] No partial retur draw-down. A retur is consumed all-or-nothing (`applyReturnOffset`,
-      `apps/web/lib/finance/ar/retur-offset-writer.ts`), so one whose value exceeds the store's
-      total outstanding cannot be offset until more invoices exist. Needs a `FieldReturn.appliedValue`
-      column (does not exist today) and a per-event idempotency key, at which point `appliedValue`
-      alone would need to carry the double-spend guarantee the deterministic key currently provides.
+- [x] ~~No partial retur draw-down. A retur is consumed all-or-nothing~~ — `FieldReturn.appliedValue`
+      now exists and `applyReturnOffset` takes a `drawAmount` plus a per-event idempotency key
+      (`returoffset-<returnId>-<eventId>`), so a retur's frozen value is consumed in parts across
+      several payments and one worth more than the invoices to hand is usable for the part that
+      fits. `appliedValue` did NOT end up carrying the double-spend guarantee this item predicted
+      it would need to: it is a projection of the POSTED payment ledger, and the ceiling that makes
+      over-draw impossible lives inside `recordPayment`'s own serializable transaction
+      (`EXCEEDS_REMAINING`) — see `docs/ARCHITECTURE-NOTES.md` for why reserve-then-post was
+      rejected. PR #___.
 - [ ] No post-approval repricing for field returns, so a return that approved with
       `valuationStatus: PENDING` has a permanently unusable value — `setLinePriceAction` refuses
       once approved (`ALREADY_APPROVED`), so it can never become offsettable.
@@ -355,29 +359,51 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       credit at any moment. The two-stage treatment (recognize a customer-credit liability at retur
       approval, consume it at offset) is the fix and needs a new posting role plus a backfill
       decision for every already-approved, still-`AVAILABLE` retur at merge time.
-- [ ] A retur offset, once voided, can never be re-offset — the deterministic idempotency key
-      (`returoffset-<returnId>`) stays permanently bound to the voided payment (`voidPayment`
-      releases `offsetStatus` back to `AVAILABLE` but never clears it — `apps/web/lib/finance/ar/
-      void-writer.ts`), so `applyReturnOffset` deterministically throws `PAYMENT_VOIDED` on every
-      future attempt for that retur. The field retur detail card correctly explains this and
-      offers no action (`hasVoidedOffsetAttempt`, `apps/web/lib/field-sales/retur/queries.ts`) —
-      but the spec's own documented remedy, "record the correction as a new cash/transfer
-      payment," is technically wrong accounting for this specific case: it posts DR CASH/BANK for
-      money that never arrived, and the DR SALES_REVENUE / CR AR reversal this retur's value
-      should have produced never posts at all. Two other surfaces also still read this retur as
-      available credit after the void, since neither checks for a voided prior attempt: the field
-      returns register's offset-state badge/`creditFilter` (`FieldReturnsPageClient.tsx`,
-      `listFieldReturns`) and the piutang list's `getStoreAvailableCredit` figure
-      (`retur-offset-queries.ts`) — both are read-only/informational (no action button), so this
-      is a display overstatement in a rare state, not a reachable double-spend. Closing the
-      informational-surface gap needs a per-row payment lookup on what's currently a cheap list
-      query (N+1, or a join) for a state expected to be rare — deferred as a cost/benefit call,
-      not forgotten. The real fix for the underlying remedy problem is either the two-stage GL
-      treatment above (which would let a void-then-retry naturally re-consume the still-recognized
-      liability) or nulling the voided payment's `idempotencyKey` inside `voidPayment`'s own
-      transaction to restore genuine retry capability — deliberately not done in the retur-offset
-      slice, since the spec explicitly chose the permanent-lock behavior over a non-deterministic
-      key and reversing that is a design decision, not a bug fix.
+- [x] ~~A retur offset, once voided, can never be re-offset — the deterministic idempotency key
+      (`returoffset-<returnId>`) stays permanently bound to the voided payment~~ — the key is
+      per-EVENT now (`returoffset-<returnId>-<eventId>`), so a re-draw carries a new key and simply
+      posts; `PAYMENT_VOIDED` survives only for a replay of the SAME event. The two informational
+      surfaces this item flagged as overstating credit after a void — the field returns register's
+      offset badge (`listFieldReturns`) and the piutang list's `getStoreAvailableCredit` — are
+      correct now without the per-row payment lookup this item feared, because both read
+      `totalValue - appliedValue` and `voidPayment` re-projects `appliedValue` back down inside its
+      own transaction. `hasVoidedOffsetAttempt` and the `credit.voidedOffsetBody` no-action state
+      it drove are gone with it. What this item raised and this work did NOT fix stays open above:
+      retur value is still absent from the GL until it is drawn, so the "record the correction as a
+      fresh cash/transfer payment" workaround is still wrong accounting for the case where it is
+      needed — that belongs to the two-stage customer-credit-liability item. PR #___.
+- [ ] No expiry or write-off path for a retur left partially drawn forever. A retur drawn to within
+      a rupiah of its `totalValue` sits `AVAILABLE` with a residue nobody will ever allocate, and
+      nothing can close it out — the same act as the "cancel a standing retur credit" item above,
+      which is already waiting on the `ReceivableStatus.WRITTEN_OFF` slice, so the two should land
+      together rather than growing a second bespoke path.
+- [ ] `projectReturnOffset` is exported but nothing schedules a repair caller
+      (`apps/web/lib/finance/ar/retur-offset-writer.ts`). It is only ever reached from a draw or a
+      void, so a `FieldReturn` whose `appliedValue` ever drifts from its POSTED payment sum — a
+      hand-run SQL correction, a restore, a bug in some future caller — stays wrong until someone
+      happens to draw from or void against that exact retur. The projection is idempotent by
+      construction (a SET, not an increment), so a sweep over rows with a non-zero `appliedValue`
+      is safe to write whenever it is worth the cost; there is no drift detector today either, so
+      nothing would report the need.
+- [ ] `Payment.fieldReturnId` surviving a void is unpinned by any test. The link is deliberately not
+      nulled — it is history, like the payment's `PaymentAllocation` rows and its original
+      `PAYMENT_RECEIPT` journal, and the projection filters on `status: "POSTED"` so a voided row
+      stops counting without the trail being erased. Nothing in the AR suite asserts it and the
+      design spec no longer states it, so a future "tidy up the voided row" change would read as
+      harmless while quietly severing the audit trail from a payment back to the retur it drew.
+- [ ] `PaymentErrorCode.ALREADY_APPLIED` is orphaned — nothing throws it any more. The CAS flip
+      that raised it (`offsetStatus !== "AVAILABLE"` on a first attempt) went away with the
+      draw-down rewrite, but the member is still declared in `apps/web/lib/finance/ar/errors.ts`,
+      still mapped in `ERROR_CODE_MAP`, and still translated in both locale files. Harmless dead
+      weight today; the decision to make is whether a later slice reintroduces a terminal-state
+      refusal that wants the name, or whether all four surfaces should drop it together.
+- [ ] A degenerate `totalValue === 0` VALUED retur renders a live Offset button that can never
+      submit. The credit card gates on `offsetStatus === "AVAILABLE" && remainingValue !== null`,
+      both true at zero, while `applyReturnOffset` refuses any `drawAmount <= 0` with
+      `INVALID_AMOUNT` and the sheet's own `canSubmit` never turns on. Left as-is deliberately: it
+      matches the pre-draw-down behaviour exactly and a VALUED retur is priced off delivered lines,
+      so nothing suggests the state is reachable — but it wants a `remainingValue > 0` gate the
+      moment a zero-value retur turns out to be producible in prod.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
