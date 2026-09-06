@@ -195,19 +195,41 @@ export type SettlementApprovalDetail = {
   storedExpectedAmount: number;
   storedVarianceAmount: number;
   storedFiguresDiffer: boolean;
+  /**
+   * Both are meaningful only while the document is `PENDING`, and are reported as `0`/`false` on a
+   * closed one — the checklist block that produces them is skipped there, because nothing renders
+   * it and it costs three extra queries per view. Do not start rendering either on a closed
+   * document without moving that computation back out of the `PENDING` branch.
+   */
   toleranceRupiah: number;
   needsOverrideReason: boolean;
   checks: SettlementCheck[];
   approvable: boolean;
   varianceOverride: SettlementVarianceOverride | null;
+  /**
+   * The POSTED component payments of an APPROVED settlement that carry no `PAYMENT_RECEIPT`
+   * journal. Always empty while the document is `PENDING` or `REJECTED`. See the block that fills
+   * it for why the gap is reachable and why it has no other repair path.
+   */
+  paymentsMissingJournal: string[];
 };
 
 /**
  * Reads one settlement for the finance approval screen and re-runs, read-only, every guard
- * `approveSettlement` enforces — in the writer's own order, against the same live rows, using the
- * writer's own `computeComponentHeadroom` and idempotency-key helpers rather than a second copy of
- * that arithmetic. The checklist is a PREVIEW of the writer, never a substitute for it: every
- * `"use server"` export is independently callable, so the button this gates is not the guard.
+ * `approveSettlement` enforces, against the same live rows and using the writer's own
+ * `computeComponentHeadroom` and idempotency-key helpers rather than a second copy of that
+ * arithmetic.
+ *
+ * The SET of guards matches the writer exactly; the ORDER is this screen's reading order, not the
+ * writer's — `NO_VOIDED_COMPONENT` is evaluated here before the three headroom-dependent checks,
+ * while the writer's voided-component guard sits inside its component loop, after all three
+ * pre-flights. Only one pairing is load-bearing and it is preserved: collectibility is decided
+ * before the headroom comparison, because a receivable closed elsewhere leaves zero headroom too
+ * and the other order would report it as an allocation shortfall.
+ *
+ * The checklist is a PREVIEW of the writer, never a substitute for it: every `"use server"` export
+ * is independently callable, so the button this gates is not the guard. It is computed only while
+ * the document is `PENDING` — see the branch that builds it.
  *
  * A check reports `SKIPPED` where an earlier failure makes it unanswerable — a missing receivable
  * means the headroom cannot be computed at all (`computeComponentHeadroom` throws on it), and
@@ -443,106 +465,151 @@ export async function getSettlementForApproval(
     };
   });
 
-  const toleranceRow = await prisma.systemSetting.findUnique({
-    where: { key: VARIANCE_TOLERANCE_SETTING_KEY },
-    select: { value: true },
-  });
-  const toleranceRupiah = parseVarianceTolerance(toleranceRow?.value);
-  const needsOverrideReason = Math.abs(variance) - toleranceRupiah > EPSILON;
+  /**
+   * The POSTED component payments carrying no `PAYMENT_RECEIPT` journal.
+   *
+   * `approveSettlementAction` posts the journals AFTER `approveSettlement` returns, in a loop of up
+   * to five sequential `postArJournalSafely` calls outside any transaction. A failure between the
+   * status flip committing and that loop finishing leaves those payments with no `Journal` row AND
+   * no `JOURNAL_PENDING` notification — the notification is what `postArJournalSafely` writes, and
+   * it never ran — so `isArJournalRetryable` reports nothing to retry and the payment detail page
+   * offers no control. AR and the payment subledger are correct; only the GL leg is missing, and
+   * silently.
+   *
+   * The absence of a `Journal` row is safe evidence HERE, unlike the `isArJournalRetryable` gate it
+   * deliberately does not reuse: that gate exists because a backfilled pre-existing delivery has no
+   * journal by construction, and offering a retry off its absence would post revenue against
+   * nothing. A settlement component payment has no such history — it was created by this feature,
+   * by a writer whose caller always attempts the journal — so a missing row means the attempt was
+   * lost, not that it was never owed.
+   *
+   * VOIDED components are excluded: their receipt journal is not what a retry would post.
+   */
+  const postedComponentPaymentIds = components
+    .filter((component) => component.paymentId !== null && component.paymentStatus === "POSTED")
+    .map((component) => component.paymentId as string);
+  let paymentsMissingJournal: string[] = [];
+  if (settlement.status === "APPROVED" && postedComponentPaymentIds.length > 0) {
+    const journals = await prisma.journal.findMany({
+      where: { sourceType: "PAYMENT_RECEIPT", sourceId: { in: postedComponentPaymentIds } },
+      select: { sourceId: true },
+    });
+    const journalled = new Set(journals.map((journal) => journal.sourceId));
+    paymentsMissingJournal = postedComponentPaymentIds.filter((id) => !journalled.has(id));
+  }
 
+  /**
+   * The checklist, the tolerance behind it and the headroom it needs are computed ONLY while the
+   * document is still open. Nothing renders any of it on an APPROVED or REJECTED settlement — the
+   * approval card, the tolerance hint and the action bar are all `PENDING`-gated — and computing it
+   * anyway costs a `SystemSetting` read plus `computeComponentHeadroom`'s two queries on every view
+   * of a closed document, which is most of what the queue is opened for once a day's work is done.
+   */
+  let toleranceRupiah = 0;
+  let needsOverrideReason = false;
   const checks: SettlementCheck[] = [];
 
-  checks.push(
-    settlement.status === "PENDING"
-      ? pass("STATUS_PENDING")
-      : fail("STATUS_PENDING", "NOT_PENDING"),
-  );
+  if (settlement.status === "PENDING") {
+    const toleranceRow = await prisma.systemSetting.findUnique({
+      where: { key: VARIANCE_TOLERANCE_SETTING_KEY },
+      select: { value: true },
+    });
+    toleranceRupiah = parseVarianceTolerance(toleranceRow?.value);
+    needsOverrideReason = Math.abs(variance) - toleranceRupiah > EPSILON;
 
-  checks.push(
-    invoiceRows.length > 0 ? pass("INVOICES_PRESENT") : fail("INVOICES_PRESENT", "NO_INVOICES"),
-  );
+    /*
+     * Always a pass inside this branch — the branch IS the status test. The row is kept so the
+     * `SettlementCheckId` union stays fully represented and the locale parity check over
+     * `check.*` stays green; `renderedChecks` in the client drops it before display.
+     */
+    checks.push(pass("STATUS_PENDING"));
 
-  const missingReceivables = invoiceDetails.filter((invoice) => invoice.receivableStatus === null);
-  checks.push(
-    missingReceivables.length === 0
-      ? pass("INVOICES_EXIST")
-      : fail(
-          "INVOICES_EXIST",
-          "RECEIVABLE_NOT_FOUND",
-          "INVOICE_ID",
-          missingReceivables.map((invoice) => invoice.receivableId),
-        ),
-  );
+    checks.push(
+      invoiceRows.length > 0 ? pass("INVOICES_PRESENT") : fail("INVOICES_PRESENT", "NO_INVOICES"),
+    );
 
-  const wrongStoreInvoices = invoiceDetails.filter(
-    (invoice) => invoice.receivableStatus !== null && !invoice.storeMatches,
-  );
-  checks.push(
-    wrongStoreInvoices.length === 0
-      ? pass("INVOICES_STORE_MATCH")
-      : fail(
-          "INVOICES_STORE_MATCH",
-          "WRONG_STORE",
-          "INVOICE",
-          wrongStoreInvoices.map((invoice) => invoice.docNo ?? invoice.receivableId),
-        ),
-  );
+    const missingReceivables = invoiceDetails.filter((invoice) => invoice.receivableStatus === null);
+    checks.push(
+      missingReceivables.length === 0
+        ? pass("INVOICES_EXIST")
+        : fail(
+            "INVOICES_EXIST",
+            "RECEIVABLE_NOT_FOUND",
+            "INVOICE_ID",
+            missingReceivables.map((invoice) => invoice.receivableId),
+          ),
+    );
 
-  const missingEvidence = deductionDetails.filter(
-    (deduction) => deduction.type !== "RETUR_OFFSET" && !deduction.hasEvidence,
-  );
-  checks.push(
-    missingEvidence.length === 0
-      ? pass("EVIDENCE_PRESENT")
-      : fail(
-          "EVIDENCE_PRESENT",
-          "MISSING_EVIDENCE",
-          "DEDUCTION_TYPE",
-          missingEvidence.map((deduction) => deduction.type),
-        ),
-  );
+    const wrongStoreInvoices = invoiceDetails.filter(
+      (invoice) => invoice.receivableStatus !== null && !invoice.storeMatches,
+    );
+    checks.push(
+      wrongStoreInvoices.length === 0
+        ? pass("INVOICES_STORE_MATCH")
+        : fail(
+            "INVOICES_STORE_MATCH",
+            "WRONG_STORE",
+            "INVOICE",
+            wrongStoreInvoices.map((invoice) => invoice.docNo ?? invoice.receivableId),
+          ),
+    );
 
-  checks.push(buildReturnEligibilityCheck(deductionDetails));
+    const missingEvidence = deductionDetails.filter(
+      (deduction) => deduction.type !== "RETUR_OFFSET" && !deduction.hasEvidence,
+    );
+    checks.push(
+      missingEvidence.length === 0
+        ? pass("EVIDENCE_PRESENT")
+        : fail(
+            "EVIDENCE_PRESENT",
+            "MISSING_EVIDENCE",
+            "DEDUCTION_TYPE",
+            missingEvidence.map((deduction) => deduction.type),
+          ),
+    );
 
-  /**
-   * Ordered ahead of the headroom checks exactly as the writer orders it. An over-tender is
-   * refused on its own terms and no override reason can rescue it — `recordPayment` supports no
-   * unapplied credit — so the screen must never offer the override box as the way past it.
-   */
-  checks.push(variance > EPSILON ? fail("NO_OVER_TENDER", "OVER_TENDER") : pass("NO_OVER_TENDER"));
+    checks.push(buildReturnEligibilityCheck(deductionDetails));
 
-  /**
-   * Scoped to `amount > 0`, matching the writer, whose own voided-payment guard sits inside the
-   * component loop AFTER `if (!(component.amount > 0)) continue;` — a zero-amount component is
-   * never reached there and must not block approval here either.
-   */
-  const voidedComponents = components.filter(
-    (component) => component.amount > 0 && component.paymentStatus === "VOIDED",
-  );
-  checks.push(
-    voidedComponents.length === 0
-      ? pass("NO_VOIDED_COMPONENT")
-      : fail(
-          "NO_VOIDED_COMPONENT",
-          "COMPONENT_VOIDED",
-          "PAYMENT",
-          voidedComponents.map((component) => component.method),
-        ),
-  );
+    /**
+     * Ordered ahead of the headroom checks exactly as the writer orders it. An over-tender is
+     * refused on its own terms and no override reason can rescue it — `recordPayment` supports no
+     * unapplied credit — so the screen must never offer the override box as the way past it.
+     */
+    checks.push(variance > EPSILON ? fail("NO_OVER_TENDER", "OVER_TENDER") : pass("NO_OVER_TENDER"));
 
-  /**
-   * `computeComponentHeadroom` throws `RECEIVABLE_NOT_FOUND` on a missing receivable rather than
-   * skipping it, so the three checks that depend on it can only run once existence is settled.
-   */
-  if (missingReceivables.length > 0 || invoiceRows.length === 0) {
-    checks.push(skipped("INVOICES_COLLECTIBLE"));
-    checks.push(skipped("ALLOCATION_HEADROOM"));
-    checks.push(skipped("RETUR_CREDIT_AVAILABLE"));
-  } else {
-    const headroom = await computeComponentHeadroom(invoiceRows, componentKeys);
-    checks.push(buildCollectibilityCheck(headroom, invoiceDetails));
-    checks.push(buildHeadroomCheck(headroom, componentSpecs, componentPaymentKeys));
-    checks.push(buildReturCreditCheck(componentSpecs, componentPaymentKeys, returById));
+    /**
+     * Scoped to `amount > 0`, matching the writer, whose own voided-payment guard sits inside the
+     * component loop AFTER `if (!(component.amount > 0)) continue;` — a zero-amount component is
+     * never reached there and must not block approval here either.
+     */
+    const voidedComponents = components.filter(
+      (component) => component.amount > 0 && component.paymentStatus === "VOIDED",
+    );
+    checks.push(
+      voidedComponents.length === 0
+        ? pass("NO_VOIDED_COMPONENT")
+        : fail(
+            "NO_VOIDED_COMPONENT",
+            "COMPONENT_VOIDED",
+            "PAYMENT",
+            voidedComponents.map((component) => component.method),
+          ),
+    );
+
+    /**
+     * `computeComponentHeadroom` throws `RECEIVABLE_NOT_FOUND` on a missing receivable rather than
+     * skipping it, so the three checks that depend on it can only run once existence is settled.
+     */
+    if (missingReceivables.length > 0 || invoiceRows.length === 0) {
+      checks.push(skipped("INVOICES_COLLECTIBLE"));
+      checks.push(skipped("ALLOCATION_HEADROOM"));
+      checks.push(skipped("RETUR_CREDIT_AVAILABLE"));
+    } else {
+      const headroom = await computeComponentHeadroom(invoiceRows, componentKeys);
+      checks.push(buildCollectibilityCheck(headroom, invoiceDetails));
+      checks.push(buildHeadroomCheck(headroom, componentSpecs, componentPaymentKeys));
+      checks.push(buildReturCreditCheck(componentSpecs, componentPaymentKeys, returById));
+    }
   }
 
   const storedExpectedAmount = roundCents(Number(settlement.expectedAmount));
@@ -585,8 +652,13 @@ export async function getSettlementForApproval(
     toleranceRupiah,
     needsOverrideReason,
     checks,
-    approvable: checks.every((check) => check.status === "PASS"),
+    /*
+     * `checks` is empty on a closed document, and `[].every(...)` is `true` — so the status test
+     * is spelled out here rather than left to the checklist that no longer runs.
+     */
+    approvable: settlement.status === "PENDING" && checks.every((check) => check.status === "PASS"),
     varianceOverride,
+    paymentsMissingJournal,
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeSettlementTotals, computeVariance } from "./calc";
+import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
 
 describe("computeSettlementTotals", () => {
   it("nets retur and program off the invoice total before the admin fee", () => {
@@ -61,5 +61,20 @@ describe("computeVariance", () => {
 
   it("returns a positive variance when the store overpays", () => {
     expect(computeVariance(630000, 650000)).toBe(20000);
+  });
+});
+
+/**
+ * One assertion, and it is not a tautology. `EPSILON` is imported by four modules that must agree
+ * on it exactly — the two writers, the approval preview's query layer and its pure check builders
+ * — and nothing type-checks two independently declared constants against each other. Pinning the
+ * value here is what makes a "tidy-up" that re-declares it next to a consumer, or nudges the
+ * magnitude, a failing test rather than a silent fork between what the screen offers and what the
+ * writer accepts. `submit-writer.ts` carried its own private copy at this value until it was
+ * folded into this module.
+ */
+describe("EPSILON", () => {
+  it("is the one shared float-comparison slack, at 1e-6", () => {
+    expect(EPSILON).toBe(1e-6);
   });
 });

@@ -519,6 +519,71 @@ d("approveSettlement (test bed only)", () => {
     expect(settlement!.reviewedById).toBe(approverId);
   });
 
+  it("resumes when its own component closed a receivable whose agreed share is still partly unspent", async () => {
+    /**
+     * The half of the resume scoping that `agreedRemaining` alone cannot express, and the state
+     * every other resume test here misses because it never sets up `agreed > live`.
+     *
+     * recA is claimed at its full 1000, then a verified `CollectionSubmission` pays 600 of it off
+     * between submission and approval — a documented path, since that writer and this one
+     * deliberately do not net each other. The trade-program component then takes the remaining 400
+     * and closes recA, while this settlement's AGREED share of it still has 600 unspent. Scoping
+     * collectibility on `agreedRemaining` alone therefore sees 600 still owed against a PAID row
+     * and throws `NOT_OUTSTANDING` on every retry, forever — over a receivable `min(live,
+     * agreedRemaining)` puts at zero headroom, so no `recordPayment` call would ever be made
+     * against it.
+     */
+    const settlementId = await createSettlement({
+      invoices: [
+        { receivableId: recA, amount: 1000 },
+        { receivableId: recB, amount: 500 },
+      ],
+      deductions: [evidencedDeduction("PROGRAM", 400)],
+      actualAmount: 500,
+      expectedAmount: 1100,
+    });
+
+    /* The other channel: 600 of recA collected and verified after this settlement was filed. */
+    await prisma.receivable.update({
+      where: { id: recA },
+      data: { outstandingAmount: 400, paidAmount: 600, status: "PARTIAL" },
+    });
+
+    /* recA is the oldest invoice, so the trade-program component takes its whole 400 remainder. */
+    const program = await recordPayment({
+      storeId, paidAt: new Date(), method: "PROGRAM_DEDUCTION", amount: 400,
+      recordedById: approverId,
+      allocations: [{ receivableId: recA, amount: 400 }],
+      idempotencyKey: `settlement-${settlementId}-PROGRAM_DEDUCTION`,
+    });
+
+    const closed = await prisma.receivable.findUnique({ where: { id: recA } });
+    expect(closed!.status).toBe("PAID");
+
+    const result = await approveSettlement({
+      settlementId,
+      approvedById: approverId,
+      overrideReason: "Sisa ditagih minggu depan",
+    });
+    expect(result.paymentIds).toContain(program.paymentId);
+    expect(result.paymentIds).toHaveLength(2);
+
+    /* The cash spills into recB, the only invoice with headroom left. */
+    const payments = await paymentsForStore();
+    const cash = payments.find((payment) => payment.method === "CASH");
+    expect(cash).toBeDefined();
+    const cashAllocations = await prisma.paymentAllocation.findMany({
+      where: { paymentId: cash!.id },
+      select: { receivableId: true, amount: true },
+    });
+    expect(cashAllocations).toHaveLength(1);
+    expect(cashAllocations[0].receivableId).toBe(recB);
+    expect(Number(cashAllocations[0].amount)).toBe(500);
+
+    const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(settlement!.status).toBe("APPROVED");
+  });
+
   it("re-projects a resumed retur draw whose appliedValue was never written", async () => {
     /**
      * The failure a uniform resume skip hides. `recordPayment` commits the draw; the projection

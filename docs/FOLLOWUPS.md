@@ -340,8 +340,9 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       cash, transfer, retur-offset, program-deduction or admin-fee, all five routing through the one
       `debitRole` seam — against a backfilled receivable with no revenue journal drives AR negative.
       Same shape as the settlement item already logged above. The hole got wider with the store
-      settlement approval slice, which posts up to four payments plus one per retur deduction from a
-      single approval, each with its own `PAYMENT_RECEIPT` journal. The fix is one pass applying
+      settlement approval slice, which posts one payment per retur deduction row plus up to three more
+      (trade-program, admin fee, cash) from a single approval, each with its own `PAYMENT_RECEIPT`
+      journal. The fix is one pass applying
       `classifySaleLeg`'s counterpart-journal gate across the AR journals, covering every path
       together.
 - [x] ~~No partial retur draw-down. A retur is consumed all-or-nothing~~ — `FieldReturn.appliedValue`
@@ -502,6 +503,40 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       hand from `/backoffice/finance/payments`. Closing it properly means either refusing a reject
       once any component has posted, or a void-the-components path on the reject writer
       (feat/settlement-approval).
+- [ ] Voiding ONE component payment of an APPROVED settlement silently desynchronises the document —
+      the other half of the same missing "unapprove" concept as the item above. `voidPayment` has no
+      settlement awareness: nothing refuses the void, the `StoreSettlement` stays `APPROVED`, and
+      re-running approval takes `approveSettlement`'s write-free `alreadyApproved` branch, which
+      reports the same `paymentIds` and re-posts nothing. So the document claims a settled amount the
+      ledger no longer carries, and the only way to re-close the hole is recording a payment by hand.
+      The approval screen does render the component as Voided, which is the sole signal anywhere. The
+      two halves want the same answer: a concept for taking an approved settlement back apart, rather
+      than a guard bolted onto `voidPayment` (feat/settlement-approval).
+- [ ] `approveSettlement` throws `MISSING_FIELD_RETURN_ID` while building its component list, which is
+      AHEAD of the `APPROVED` replay branch — so an already-approved settlement carrying a retur
+      deduction with a null `fieldReturnId` throws instead of replaying, and the journal-gap re-post on
+      the approval screen cannot reach it either. Only constructible via raw SQL today (the action
+      validates the field and `submitSettlement` requires it), so this is ordering hygiene rather than
+      a live defect — but the file's own comment argues the replay lookup runs "FIRST, ahead of every
+      guard below", and this construction step is not below it. Moving the status read and the replay
+      return ahead of the component build would make the comment true (feat/settlement-approval).
+- [ ] Two concurrent approvals of the same settlement collide on `Payment.idempotencyKey @unique`
+      inside `recordPayment`, and the loser sees a generic `UNEXPECTED`: `isRetryableTxError` returns
+      false for P2002, so `withRetry` rethrows it unwrapped instead of re-running the callback onto the
+      now-existing row. Benign — a second click resolves it, because the retry finds the payment and
+      takes the idempotent path — but the operator is told nothing useful in the meantime. Pre-existing
+      in `recordPayment` rather than introduced here; the new finance queue makes it plausible, since
+      two admins can open the same document. The fix is treating a P2002 on `idempotencyKey`
+      specifically as retryable, not widening `isRetryableTxError` to P2002 generally
+      (feat/settlement-approval).
+- [ ] The two settlement posting roles `TRADE_PROGRAM_EXPENSE` and `ADMIN_FEE_EXPENSE` have no
+      `JournalAccountMapping` row on production, and nothing on the deploy path creates one — the role
+      column is a plain `String`, so there is no migration and no seed involved; finance maps them in
+      Settings → Account Mapping to a `BEBAN` account. Until that happens the first approval carrying an
+      admin fee (essentially every settlement) has `resolveAccount` throw `UnmappedRoleError`, degrading
+      that payment's journal to `JOURNAL_PENDING` and needing a hand-mapping plus a retry. Tracked here
+      as a GO-LIVE step rather than debt: it is a one-time action on the day the queue is first used,
+      and `docs/EPIC-STATUS.md`'s slice-5 row now names it (feat/settlement-approval).
 - [ ] Nothing tells the salesman a settlement was APPROVED. Rejection pushes a `SETTLEMENT_REJECTED`
       notification with a click-through to `/pwa/pelunasan/${storeId}`; approval sends nothing, on the
       grounds that the money already changed hands at the counter and the approval is a back-office

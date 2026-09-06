@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { rejectSettlement } from "./reject-writer";
-import { SettlementError } from "./errors";
+import { buildRejectionBody, rejectSettlement } from "./reject-writer";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -48,7 +47,13 @@ d("rejectSettlement (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.auditLog.deleteMany({ where: { entityId: seededId(settlementId) } });
+    /*
+     * `entityType` is a second discriminator on purpose, matching the approve spec's tighter
+     * scoping: `entityId` alone is a bare cuid shared across every entity kind on the bed.
+     */
+    await prisma.auditLog.deleteMany({
+      where: { entityType: "StoreSettlement", entityId: seededId(settlementId) },
+    });
     await prisma.storeSettlement.deleteMany({ where: { id: seededId(settlementId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(salesmanId), seededId(adminId)] } } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -75,10 +80,14 @@ d("rejectSettlement (test bed only)", () => {
     expect(log!.reason).toBe("wrong amount");
   });
 
+  /*
+   * The CODE, not just the class. Every refusal below throws a `SettlementError`, so asserting the
+   * class alone passes even when a regression swaps one reason for another.
+   */
   it("refuses a blank reason", async () => {
     await expect(
       rejectSettlement({ settlementId, rejectedById: adminId, reason: "   " }),
-    ).rejects.toBeInstanceOf(SettlementError);
+    ).rejects.toMatchObject({ code: "MISSING_REASON" });
     const row = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
     expect(row!.status).toBe("PENDING");
   });
@@ -86,13 +95,52 @@ d("rejectSettlement (test bed only)", () => {
   it("refuses a reason made only of zero-width characters", async () => {
     await expect(
       rejectSettlement({ settlementId, rejectedById: adminId, reason: "\u200B\u200B" }),
-    ).rejects.toBeInstanceOf(SettlementError);
+    ).rejects.toMatchObject({ code: "MISSING_REASON" });
   });
 
   it("refuses a reason longer than 191 characters", async () => {
     await expect(
       rejectSettlement({ settlementId, rejectedById: adminId, reason: "x".repeat(192) }),
-    ).rejects.toBeInstanceOf(SettlementError);
+    ).rejects.toMatchObject({ code: "INPUT_TOO_LARGE" });
+    const row = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(row!.status).toBe("PENDING");
+  });
+
+  /*
+   * The other side of the bound. Without this, relaxing the guard from `>` to `>=` — the classic
+   * off-by-one on a length cap — passes the whole file.
+   */
+  it("accepts a reason of exactly 191 characters", async () => {
+    const reason = "x".repeat(191);
+    await rejectSettlement({ settlementId, rejectedById: adminId, reason });
+    const row = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(row!.status).toBe("REJECTED");
+    expect(row!.rejectReason).toBe(reason);
+  });
+
+  /*
+   * The length guard runs on the TRIMMED reason and the trimmed reason is what persists — 191
+   * characters of content wrapped in whitespace must not be refused, and the stored reason must
+   * not carry the padding into the 191-character `AuditLog.reason` column.
+   */
+  it("trims the reason before measuring and storing it", async () => {
+    await rejectSettlement({
+      settlementId,
+      rejectedById: adminId,
+      reason: `   ${"x".repeat(191)}   `,
+    });
+    const row = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(row!.rejectReason).toBe("x".repeat(191));
+    const log = await prisma.auditLog.findFirst({
+      where: { entityType: "StoreSettlement", entityId: settlementId, action: "SETTLEMENT_REJECT" },
+    });
+    expect(log!.reason).toBe("x".repeat(191));
+  });
+
+  it("refuses a rejecter id with no User row", async () => {
+    await expect(
+      rejectSettlement({ settlementId, rejectedById: "does-not-exist", reason: "wrong amount" }),
+    ).rejects.toMatchObject({ code: "REJECTER_NOT_FOUND" });
     const row = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
     expect(row!.status).toBe("PENDING");
   });
@@ -108,5 +156,37 @@ d("rejectSettlement (test bed only)", () => {
     await expect(
       rejectSettlement({ settlementId, rejectedById: adminId, reason: "second attempt" }),
     ).rejects.toMatchObject({ code: "NOT_PENDING" });
+  });
+
+  /**
+   * `NotificationQueue.body` is `VARCHAR(191)` and the body DERIVES from a reason already allowed
+   * all 191 characters, so the overflow is in the derived value rather than in either input. The
+   * writer's own best-effort catch swallows the resulting truncation error and the action still
+   * reports success, so an unbounded body means the salesman is never told his settlement was
+   * rejected — with nothing anywhere saying so.
+   */
+  describe("buildRejectionBody", () => {
+    it("leaves a short reason whole", () => {
+      expect(buildRejectionBody("BKM/2026/09/0001", "salah jumlah")).toBe(
+        "Pelunasan BKM/2026/09/0001 ditolak: salah jumlah",
+      );
+    });
+
+    it("keeps a maximum-length reason on a real docNo inside 191 characters", () => {
+      const body = buildRejectionBody("BKM/2026/09/0001", "x".repeat(191));
+      expect(body.length).toBe(191);
+      expect(body.startsWith("Pelunasan BKM/2026/09/0001 ditolak: ")).toBe(true);
+    });
+
+    it("marks the cut instead of stopping mid-reason silently", () => {
+      const body = buildRejectionBody("BKM/2026/09/0001", "x".repeat(191));
+      expect(body.endsWith("\u2026")).toBe(true);
+    });
+
+    it("drops the reason entirely rather than overflow when the docNo alone fills the column", () => {
+      const body = buildRejectionBody("B".repeat(400), "salah jumlah");
+      expect(body.length).toBe(191);
+      expect(body).not.toContain("salah jumlah");
+    });
   });
 });

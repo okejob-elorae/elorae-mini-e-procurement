@@ -28,7 +28,12 @@ import { Pagination } from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import type { listPayments } from "@/lib/finance/ar/queries";
-import { paymentMethodLabelKey, type PaymentMethodValue } from "@/lib/finance/ar/payment-method-display";
+import {
+  paymentMethodLabelKey,
+  PAYMENT_METHOD_LABEL_KEY,
+  PAYMENT_METHOD_VALUES,
+  type PaymentMethodValue,
+} from "@/lib/finance/ar/payment-method-display";
 
 type PaymentRow = Awaited<ReturnType<typeof listPayments>>["rows"][number];
 type MethodFilter = PaymentMethodValue | "ALL";
@@ -137,11 +142,18 @@ export function PaymentsPageClient(props: Props) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">{t("allMethods")}</SelectItem>
-                <SelectItem value="CASH">{t("methodCash")}</SelectItem>
-                <SelectItem value="TRANSFER">{t("methodTransfer")}</SelectItem>
-                <SelectItem value="RETUR_OFFSET">{t("methodReturOffset")}</SelectItem>
-                <SelectItem value="PROGRAM_DEDUCTION">{t("methodProgramDeduction")}</SelectItem>
-                <SelectItem value="ADMIN_FEE">{t("methodAdminFee")}</SelectItem>
+                {/**
+                  * Derived from the shared tuple, never hand-listed. A hand-written list is the one
+                  * surface a widened `PaymentMethod` slips past silently: the label map and the
+                  * filter union are both compile-checked, so a new member would parse and render
+                  * correctly and still be unfilterable — which is exactly how the last widening
+                  * shipped a defect on this page.
+                  */}
+                {PAYMENT_METHOD_VALUES.map((method) => (
+                  <SelectItem key={method} value={method}>
+                    {t(PAYMENT_METHOD_LABEL_KEY[method])}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={props.status} onValueChange={(v) => pushParams({ status: v === "ALL" ? undefined : v })}>

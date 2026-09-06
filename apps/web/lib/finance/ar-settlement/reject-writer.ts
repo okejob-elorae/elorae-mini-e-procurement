@@ -5,14 +5,42 @@ import { SettlementError } from "./errors";
 
 /**
  * `AuditLog.reason` is a bare `String?` in the Prisma schema — no `@db.Text` — which is MySQL
- * `VARCHAR(191)`. `StoreSettlement.rejectReason` is `@db.Text` and has no such ceiling on its
- * own, but the action layer persists this same reason into an `AuditLog` row after this writer
- * returns, so 191 is the real ceiling regardless of which column is checked first. Enforcing it
- * here means the action never has to re-validate the length itself. See `approve-writer.ts`'s
- * identical comment for the override reason, which shares the same constraint for the same
- * reason.
+ * `VARCHAR(191)`. `StoreSettlement.rejectReason` is `@db.Text` and has no such ceiling on its own,
+ * but this writer persists the same reason into a `SETTLEMENT_REJECT` `AuditLog` row inside its own
+ * transaction (see the write below for why it lives here rather than in the action), so 191 is the
+ * real ceiling regardless of which column is checked first. See `approve-writer.ts`'s identical
+ * comment for the override reason, which shares the same constraint for the same reason.
  */
 const MAX_REASON_LENGTH = 191;
+
+/**
+ * `NotificationQueue.body` is a bare `String` too, i.e. `VARCHAR(191)` again — and the rejection
+ * body DERIVES from a reason that is itself allowed all 191 characters, with `Pelunasan <docNo>
+ * ditolak: ` prepended. A `BKM/`-prefixed docNo costs roughly 33 characters, so the body overflows
+ * well before either input does. The failure is silent in the worst way: the truncation error lands
+ * inside this writer's best-effort notification catch, the action still returns `{ ok: true }`, the
+ * operator sees a successful rejection, and the salesman is never told. Bound the derived value
+ * rather than widening the column — the full reason is already durable on
+ * `StoreSettlement.rejectReason`, which is `@db.Text`.
+ */
+const MAX_NOTIFICATION_BODY_LENGTH = 191;
+
+/**
+ * Fits the rejection notice inside `NotificationQueue.body`, cutting the REASON rather than the
+ * sentence around it, and marking the cut with an ellipsis — a reason that just stops mid-word
+ * reads as the whole reason, which on a rejection notice is the difference between "refile without
+ * the program deduction" and "refile".
+ *
+ * The reason is dropped entirely in the degenerate case where the prefix alone fills the column, so
+ * the salesman still learns WHICH document was rejected and can open it for the full text.
+ */
+export function buildRejectionBody(docNo: string, reason: string): string {
+  const prefix = `Pelunasan ${docNo} ditolak: `;
+  const room = MAX_NOTIFICATION_BODY_LENGTH - prefix.length;
+  if (room <= 0) return `Pelunasan ${docNo} ditolak`.slice(0, MAX_NOTIFICATION_BODY_LENGTH);
+  if (reason.length <= room) return `${prefix}${reason}`;
+  return `${prefix}${reason.slice(0, room - 1)}…`;
+}
 
 export type RejectSettlementInput = {
   settlementId: string;
@@ -79,6 +107,22 @@ export async function rejectSettlement(input: RejectSettlementInput): Promise<Re
     if (!row) throw new SettlementError("SETTLEMENT_NOT_FOUND");
     if (row.status !== "PENDING") throw new SettlementError("NOT_PENDING");
 
+    /**
+     * The same guard `approveSettlement` runs before its own audit write, for the same reason.
+     * `StoreSettlement.reviewedBy` is an optional relation but `AuditLog.user` is a REQUIRED one,
+     * and under `relationMode = "prisma"` there is no database foreign key behind either — a
+     * dangling rejecter id would commit an audit row that throws `Inconsistent query result` on
+     * every later read through it. The blast radius is what earns the check rather than any live
+     * path to it: `getAuditLogs` and the dashboard's recent-activity feed both `include: { user }`
+     * across ALL audit rows, so one poisoned row takes the whole audit screen down, not just this
+     * settlement's history.
+     */
+    const rejecter = await tx.user.findUnique({
+      where: { id: input.rejectedById },
+      select: { id: true },
+    });
+    if (!rejecter) throw new SettlementError("REJECTER_NOT_FOUND");
+
     const flipped = await tx.storeSettlement.updateMany({
       where: { id: row.id, status: "PENDING" },
       data: {
@@ -124,7 +168,7 @@ export async function rejectSettlement(input: RejectSettlementInput): Promise<Re
     try {
       await notifySalesmanOfRejection(salesman, {
         title: "Pelunasan ditolak",
-        body: `Pelunasan ${settlement.docNo} ditolak: ${reason}`,
+        body: buildRejectionBody(settlement.docNo, reason),
         data: { settlementId: settlement.id, docNo: settlement.docNo, storeId: settlement.storeId },
       });
     } catch (e) {

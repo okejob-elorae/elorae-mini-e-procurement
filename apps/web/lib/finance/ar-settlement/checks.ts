@@ -8,7 +8,8 @@
  *
  * The three netting rules below are what the writer's own comments call the difference between a
  * resumable settlement and a broken one, and they are the reason this file has its own spec:
- * collectibility scoped to `agreedRemaining`, `totalOwed` excluding already-posted components, and
+ * collectibility exempting any receivable this settlement itself already allocated against or has
+ * fully spent its agreed share of, `totalOwed` excluding already-posted components, and
  * `owedByReturn` excluding already-posted draws. Dropping any one of them turns a half-posted,
  * perfectly resumable approval into a permanently blocked one that finance can only reject —
  * orphaning the payments already behind it.
@@ -218,13 +219,17 @@ export function buildReturnEligibilityCheck(deductions: SettlementDeductionDetai
 }
 
 /**
- * Mirrors the writer's `NOT_OUTSTANDING` gate, including its scoping: a receivable whose
- * `agreedRemaining` has reached zero has already had this settlement's whole share of it settled
- * BY this settlement, so its closed status is explained rather than a refusal. Checking every
- * selected receivable unconditionally would report a resumable half-posted approval as broken.
+ * Mirrors the writer's `NOT_OUTSTANDING` gate, including BOTH of its exemptions — a receivable
+ * this settlement has already allocated against (`settlementAllocated > 0`), or one whose agreed
+ * share is fully spent (`agreedRemaining <= 0`), has a closed status this document itself explains.
+ * Checking every selected receivable unconditionally would report a resumable half-posted approval
+ * as broken, and the first exemption is the one the second cannot stand in for: an agreed amount
+ * larger than the live balance lets one component close the receivable with the agreed share still
+ * partly unspent. Neither exemption may be widened to "the effective headroom is zero" — that also
+ * covers a receivable some OTHER channel closed, which is the refusal this check is FOR.
  */
 export function buildCollectibilityCheck(
-  headroom: Array<{ receivableId: string; agreedRemaining: number }>,
+  headroom: Array<{ receivableId: string; agreedRemaining: number; settlementAllocated: number }>,
   invoices: SettlementInvoiceDetail[],
 ): SettlementCheck {
   const docNoById = new Map(invoices.map((invoice) => [invoice.receivableId, invoice.docNo]));
@@ -232,6 +237,7 @@ export function buildCollectibilityCheck(
 
   const blocked: Array<{ docNo: string | null; id: string }> = [];
   for (const row of headroom) {
+    if (row.settlementAllocated > EPSILON) continue;
     if (!(row.agreedRemaining > EPSILON)) continue;
     const status = statusById.get(row.receivableId);
     if (status !== "OUTSTANDING" && status !== "PARTIAL") {

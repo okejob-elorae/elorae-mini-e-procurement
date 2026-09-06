@@ -11,10 +11,18 @@
 import { roundCents } from "@elorae/db/pricing";
 
 /**
- * The float-comparison slack every settlement guard uses. It lives here rather than in each
- * consumer because `approve-writer.ts`, `queries.ts` and `checks.ts` must agree on it exactly:
- * the writer refuses on a margin the approval preview has to reproduce, and two epsilons that
- * drift apart would let the screen offer an approval the writer then refuses (or the reverse).
+ * The float-comparison slack every settlement guard uses. It is exported FROM HERE, not from
+ * `approve-writer.ts` — all four consumers (`submit-writer.ts`, `approve-writer.ts`, `queries.ts`,
+ * `checks.ts`) import it from this module — because they must agree on it exactly: the writer
+ * refuses on a margin the approval preview has to reproduce, and two epsilons that drift apart
+ * would let the screen offer an approval the writer then refuses, or the reverse.
+ *
+ * The way that drift actually happens is a tidy-up HERE. This file is the import-free one, so a
+ * later change that moves `EPSILON` "closer to its user" or inlines `1e-6` at one call site forks
+ * the number silently — nothing type-checks two constants against each other, and the symptom is a
+ * screen and a writer disagreeing about a sub-cent margin on a document worth millions of rupiah.
+ * `submit-writer.ts` held its own private copy at the same value until this branch; that is the
+ * exact shape to keep out.
  */
 export const EPSILON = 1e-6;
 

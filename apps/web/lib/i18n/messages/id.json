@@ -4006,7 +4006,7 @@
       "INVENTORY_VARIANCE": "Selisih Persediaan",
       "TAX": "Pajak",
       "TRADE_PROGRAM_EXPENSE": "Biaya Program Dagang",
-      "ADMIN_FEE_EXPENSE": "Biaya Administrasi"
+      "ADMIN_FEE_EXPENSE": "Biaya Admin"
     },
     "desc": {
       "INVENTORY": "Akun aset yang didebit saat stok masuk dan dikredit saat stok keluar.",
@@ -4026,8 +4026,8 @@
       "MARKETPLACE_FEE_OTHER": "Sisa potongan marketplace yang tidak terinci — termasuk biaya iklan, subsidi pengiriman, penyesuaian, dan seluruh biaya TikTok.",
       "INVENTORY_VARIANCE": "Akun untuk mencatat selisih stock opname/rekonsiliasi.",
       "TAX": "Akun untuk kewajiban/beban pajak.",
-      "TRADE_PROGRAM_EXPENSE": "Akun beban untuk potongan program dagang yang dinegosiasikan toko saat settlement.",
-      "ADMIN_FEE_EXPENSE": "Akun beban untuk biaya administrasi yang dipotong toko saat settlement."
+      "TRADE_PROGRAM_EXPENSE": "Akun beban untuk potongan program dagang yang dinegosiasikan toko saat pelunasan.",
+      "ADMIN_FEE_EXPENSE": "Akun beban untuk biaya admin yang dipotong toko saat pelunasan."
     },
     "error": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk mengubah pemetaan akun.",
@@ -4252,7 +4252,7 @@
       "NO_OVER_TENDER": "Uang diterima tidak melebihi seharusnya",
       "INVOICES_COLLECTIBLE": "Semua faktur yang masih ditagih bisa dilunasi",
       "ALLOCATION_HEADROOM": "Faktur cukup menampung semua komponen",
-      "RETUR_CREDIT_AVAILABLE": "Semua retur masih punya kredit yang diklaim",
+      "RETUR_CREDIT_AVAILABLE": "Setiap retur masih punya kredit yang cukup untuk klaim ini",
       "NO_VOIDED_COMPONENT": "Tidak ada pembayaran komponen yang dibatalkan"
     },
     "approveButton": "Setujui",
@@ -4270,6 +4270,10 @@
     "rejectReasonLabel": "Alasan",
     "rejectConfirmButton": "Tolak pelunasan",
     "rejectSuccessToast": "{docNo} ditolak.",
+    "journalGapTitle": "Jurnal buku besar belum terbentuk",
+    "journalGapMessage": "{count} pembayaran dari pelunasan ini sudah mengurangi piutang tetapi belum masuk ke buku besar. Persetujuannya tetap sah dan tidak ada uang yang berisiko — hanya jurnalnya yang belum ada. Memposting ulang aman dan tidak mengubah apa pun selain itu.",
+    "journalGapButton": "Posting jurnal yang belum ada",
+    "journalGapToast": "Pemostingan dijalankan ulang. Yang masih belum terbentuk tetap tampil di sini.",
     "storedDriftMessageClosed": "Pelunasan ini diajukan dengan nilai seharusnya {storedExpected}, tetapi baris faktur dan potongannya menghasilkan {expected}. Angka di bawah adalah hasil hitung ulang.",
     "componentsTitlePosted": "Pembayaran yang diposting persetujuan ini",
     "componentsHintPosted": "Setiap komponen diposting sebagai pembayaran tersendiri. Buka salah satunya untuk melihat alokasi atau membatalkannya.",
@@ -4284,10 +4288,11 @@
       "SETTLEMENT_NOT_FOUND": "Pelunasan tidak ditemukan.",
       "NOT_PENDING": "Pelunasan ini sudah disetujui atau ditolak sebelumnya.",
       "APPROVER_NOT_FOUND": "Akun Anda tidak ditemukan. Silakan masuk kembali.",
-      "VARIANCE_REQUIRES_REASON": "Jumlah yang diterima berbeda dari jumlah yang diharapkan — alasan override wajib diisi.",
+      "REJECTER_NOT_FOUND": "Akun Anda tidak ditemukan. Silakan masuk kembali.",
+      "VARIANCE_REQUIRES_REASON": "Jumlah yang diterima berbeda dari jumlah seharusnya — alasan selisih wajib diisi.",
       "COMPONENT_EXCEEDS_HEADROOM": "Salah satu komponen pelunasan ini sudah tidak cocok lagi dengan faktur yang dialokasikan. Muat ulang dan periksa sisa piutang faktur tersebut.",
       "COMPONENT_VOIDED": "Salah satu pembayaran pelunasan ini sudah dibatalkan. Pelunasan ini tidak bisa disetujui apa adanya.",
-      "OVER_TENDER": "Toko menyerahkan lebih dari jumlah yang diharapkan. Ini tidak bisa diatasi dengan override — tolak dokumen ini dan minta salesman mengajukan ulang dengan jumlah yang benar.",
+      "OVER_TENDER": "Toko menyerahkan lebih dari jumlah seharusnya. Ini tidak bisa diatasi dengan alasan selisih — tolak dokumen ini dan minta sales mengajukan ulang dengan jumlah yang benar.",
       "RETUR_OVERCLAIMED": "Salah satu retur yang dipilih sudah tidak memiliki sisa kredit yang cukup.",
       "NO_INVOICES": "Pelunasan ini belum memilih faktur apa pun.",
       "RECEIVABLE_NOT_FOUND": "Salah satu faktur pada pelunasan ini tidak ditemukan.",

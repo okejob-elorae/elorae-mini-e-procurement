@@ -2,7 +2,7 @@ import { roundCents } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { urlFromKey } from "@/lib/r2";
-import { computeSettlementTotals, computeVariance } from "./calc";
+import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
 import { SettlementError } from "./errors";
 
 export type SettlementDeductionInputRow = {
@@ -30,8 +30,6 @@ export type SubmitSettlementResult = {
   docNo: string;
   alreadySubmitted?: true;
 };
-
-const EPSILON = 1e-6;
 
 /**
  * Bounds on a "use server" export are load-bearing, not cosmetic — a raw request never went

@@ -148,8 +148,8 @@ describe("buildCollectibilityCheck", () => {
   it("passes when every still-owed invoice is outstanding or partial", () => {
     const check = buildCollectibilityCheck(
       [
-        { receivableId: "rcv-1", agreedRemaining: 100000 },
-        { receivableId: "rcv-2", agreedRemaining: 50000 },
+        { receivableId: "rcv-1", agreedRemaining: 100000, settlementAllocated: 0 },
+        { receivableId: "rcv-2", agreedRemaining: 50000, settlementAllocated: 0 },
       ],
       [
         invoice({ receivableId: "rcv-1", receivableStatus: "OUTSTANDING" }),
@@ -167,7 +167,22 @@ describe("buildCollectibilityCheck", () => {
    */
   it("ignores an invoice this settlement already settled in full", () => {
     const check = buildCollectibilityCheck(
-      [{ receivableId: "rcv-1", agreedRemaining: 0 }],
+      [{ receivableId: "rcv-1", agreedRemaining: 0, settlementAllocated: 100000 }],
+      [invoice({ receivableId: "rcv-1", receivableStatus: "PAID" })],
+    );
+    expect(check.status).toBe("PASS");
+  });
+
+  /**
+   * The case `agreedRemaining` alone cannot reach, and the reason `settlementAllocated` is carried
+   * separately. When the agreed share exceeds the live balance — a verified `CollectionSubmission`
+   * paying the invoice down between submit and approval is enough — one component closes the
+   * RECEIVABLE while leaving part of the agreed share unspent. `agreedRemaining` stays positive
+   * against a now-PAID row, so scoping on it alone refuses the resume permanently.
+   */
+  it("ignores an invoice this settlement closed while its agreed share is still partly unspent", () => {
+    const check = buildCollectibilityCheck(
+      [{ receivableId: "rcv-1", agreedRemaining: 60000, settlementAllocated: 40000 }],
       [invoice({ receivableId: "rcv-1", receivableStatus: "PAID" })],
     );
     expect(check.status).toBe("PASS");
@@ -175,7 +190,7 @@ describe("buildCollectibilityCheck", () => {
 
   it("refuses an invoice still owed that someone else closed", () => {
     const check = buildCollectibilityCheck(
-      [{ receivableId: "rcv-1", agreedRemaining: 100000 }],
+      [{ receivableId: "rcv-1", agreedRemaining: 100000, settlementAllocated: 0 }],
       [invoice({ receivableId: "rcv-1", docNo: "DLV/0009", receivableStatus: "PAID" })],
     );
     expect(check.status).toBe("FAIL");
@@ -186,7 +201,7 @@ describe("buildCollectibilityCheck", () => {
 
   it("refuses a WRITTEN_OFF invoice that is still owed", () => {
     const check = buildCollectibilityCheck(
-      [{ receivableId: "rcv-1", agreedRemaining: 1 }],
+      [{ receivableId: "rcv-1", agreedRemaining: 1, settlementAllocated: 0 }],
       [invoice({ receivableId: "rcv-1", receivableStatus: "WRITTEN_OFF" })],
     );
     expect(check.reason).toBe("NOT_OUTSTANDING");
@@ -194,7 +209,7 @@ describe("buildCollectibilityCheck", () => {
 
   it("falls back to the receivable id when the invoice has no docNo, and marks it as an id", () => {
     const check = buildCollectibilityCheck(
-      [{ receivableId: "rcv-1", agreedRemaining: 100000 }],
+      [{ receivableId: "rcv-1", agreedRemaining: 100000, settlementAllocated: 0 }],
       [invoice({ receivableId: "rcv-1", docNo: null, receivableStatus: "PAID" })],
     );
     expect(check.subjectKind).toBe("INVOICE_ID");
@@ -208,8 +223,8 @@ describe("buildCollectibilityCheck", () => {
   it("uses the labelled kind as soon as any blocked invoice falls back to an id", () => {
     const check = buildCollectibilityCheck(
       [
-        { receivableId: "rcv-1", agreedRemaining: 100000 },
-        { receivableId: "rcv-2", agreedRemaining: 100000 },
+        { receivableId: "rcv-1", agreedRemaining: 100000, settlementAllocated: 0 },
+        { receivableId: "rcv-2", agreedRemaining: 100000, settlementAllocated: 0 },
       ],
       [
         invoice({ receivableId: "rcv-1", docNo: "DLV/0009", receivableStatus: "PAID" }),

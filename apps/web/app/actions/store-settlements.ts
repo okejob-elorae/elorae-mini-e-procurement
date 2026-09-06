@@ -241,10 +241,13 @@ function isValidRejectSettlementInput(input: unknown): input is { settlementId: 
  * Approves a submitted settlement for the finance queue.
  *
  * `approveSettlement` posts NO journal itself and returns every payment id it created —
- * `paymentIds` holds up to four simple components (retur/program/admin-fee/cash) PLUS one per
- * retur deduction row, never just one. This loops `postArJournalSafely` over the WHOLE array —
- * copying `recordPaymentAction`'s single-payment shape here is the exact mistake this task exists
- * to avoid, since a settlement can post several payments where a plain payment posts one.
+ * `paymentIds` holds one retur DRAW per retur deduction row plus up to three singleton components
+ * (trade-program, admin fee, cash), never just one. `RETUR_OFFSET` is one of the four component
+ * KINDS, not a fourth singleton standing beside the draws, and the writer's own `Component` union
+ * says so: `kind: "SIMPLE"` is `Exclude<SettlementPaymentMethod, "RETUR_OFFSET">`. This loops
+ * `postArJournalSafely` over the WHOLE array — copying `recordPaymentAction`'s single-payment shape
+ * here is the exact mistake this task exists to avoid, since a settlement can post several payments
+ * where a plain payment posts one.
  *
  * The loop stays correct on an `alreadyApproved` resume: `postArJournalSafely` never throws, and
  * `generateAutoJournal`'s own `Journal @@unique([sourceType, sourceId])` makes a repeat call

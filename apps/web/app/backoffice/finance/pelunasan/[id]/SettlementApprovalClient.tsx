@@ -185,6 +185,7 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
   const [rejectReason, setRejectReason] = useState("");
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [postingJournals, setPostingJournals] = useState(false);
 
   const busy = approving || rejecting;
   const isPending = s.status === "PENDING";
@@ -222,9 +223,11 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
   const showComponents = visibleComponents.length > 0;
 
   /**
-   * `STATUS_PENDING` still gates `approvable` server-side, but the card it would appear in only
-   * renders while the document IS pending — so the row can never say anything but "passed" and is
-   * pure noise beside the ten checks that can actually fail.
+   * `checks` is computed server-side only while the document is `PENDING` (and `approvable` spells
+   * the status test out separately rather than leaning on this row), so `STATUS_PENDING` can never
+   * say anything but "passed" by the time it reaches here — pure noise beside the ten checks that
+   * can actually fail. The row is still produced so the `SettlementCheckId` union stays fully
+   * represented in both locale files.
    */
   const renderedChecks = s.checks.filter((check) => check.id !== "STATUS_PENDING");
 
@@ -298,6 +301,42 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
       toast.error(t("err.UNEXPECTED"));
     } finally {
       setApproving(false);
+    }
+  }
+
+  /**
+   * Re-runs the journal-posting loop for an APPROVED settlement whose component payments never got
+   * their `PAYMENT_RECEIPT` entries — see `paymentsMissingJournal` in
+   * `lib/finance/ar-settlement/queries.ts` for how that gap opens and why nothing else can close
+   * it (no `JOURNAL_PENDING` notification was ever written, so the payment detail page's own retry
+   * control does not appear).
+   *
+   * It calls the approve action deliberately rather than a second endpoint of its own. On an
+   * already-`APPROVED` settlement that action takes `approveSettlement`'s write-free
+   * `alreadyApproved` branch, hands back the same `paymentIds`, and re-runs the loop — and the
+   * repeat is absorbed by `Journal @@unique([sourceType, sourceId])`, so a payment that DID get its
+   * journal is untouched. No money moves and no status changes; this is not a second approval, and
+   * the copy around the button has to keep saying so.
+   *
+   * A success result does not mean every journal posted: `postArJournalSafely` never throws and
+   * degrades a failure to a `JOURNAL_PENDING` flag. Hence the deliberately non-committal toast —
+   * the refreshed alert below is the real answer.
+   */
+  async function handlePostJournals(): Promise<void> {
+    if (postingJournals) return;
+    setPostingJournals(true);
+    try {
+      const result = await approveSettlementAction({ settlementId: s.id });
+      if (result.ok) {
+        toast.info(t("journalGapToast"));
+      } else {
+        toast.error(errorMessage(result.reason));
+      }
+      router.refresh();
+    } catch {
+      toast.error(t("err.UNEXPECTED"));
+    } finally {
+      setPostingJournals(false);
     }
   }
 
@@ -389,6 +428,25 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
             ) : (
               <p className="text-xs">{t("noOverrideRecorded")}</p>
             )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {s.paymentsMissingJournal.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{t("journalGapTitle")}</AlertTitle>
+          <AlertDescription>
+            <p>{t("journalGapMessage", { count: s.paymentsMissingJournal.length })}</p>
+            <Button
+              variant="outline"
+              className="mt-2 h-10"
+              disabled={postingJournals}
+              onClick={() => void handlePostJournals()}
+            >
+              {postingJournals && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t("journalGapButton")}
+            </Button>
           </AlertDescription>
         </Alert>
       )}

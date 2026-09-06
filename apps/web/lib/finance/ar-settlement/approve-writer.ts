@@ -46,13 +46,21 @@ export type SettlementPaymentMethod = "CASH" | "RETUR_OFFSET" | "PROGRAM_DEDUCTI
 export type InvoiceRow = { receivableId: string; amount: number };
 
 /**
- * What `allocateOldestFirst` needs, plus the raw `agreedRemaining` term behind
- * `outstandingAmount`. That term is what separates "this settlement still owes something on this
- * invoice" from "this settlement has already settled its whole share of it" — which the
- * `NOT_OUTSTANDING` re-validation has to distinguish, or a resumed approval refuses itself over
- * the very receivables its own earlier components closed.
+ * What `allocateOldestFirst` needs, plus the two raw terms behind `outstandingAmount`. Both are
+ * what the `NOT_OUTSTANDING` re-validation needs to tell "this settlement still owes something on
+ * this invoice" apart from "this settlement's own components already touched it" — without them a
+ * resumed approval refuses itself over the very receivables its own earlier components closed.
+ *
+ * `agreedRemaining` is the store's agreed share of that invoice minus what this settlement has
+ * already allocated to it. `settlementAllocated` is that already-allocated figure on its own, and
+ * it is NOT derivable from `agreedRemaining`: a component can close the RECEIVABLE while leaving
+ * part of the agreed share unspent, whenever `StoreSettlementInvoice.amount` exceeds the live
+ * balance. Keeping both is what makes the two cases distinguishable.
  */
-export type HeadroomRow = AllocationInput & { agreedRemaining: number };
+export type HeadroomRow = AllocationInput & {
+  agreedRemaining: number;
+  settlementAllocated: number;
+};
 
 type Component =
   | {
@@ -166,12 +174,14 @@ export async function computeComponentHeadroom(
     const receivable = receivableById.get(row.receivableId);
     if (!receivable) throw new SettlementError("RECEIVABLE_NOT_FOUND");
     const live = roundCents(Number(receivable.outstandingAmount));
-    const agreedRemaining = roundCents(row.amount - (allocatedByReceivable.get(row.receivableId) ?? 0));
+    const settlementAllocated = allocatedByReceivable.get(row.receivableId) ?? 0;
+    const agreedRemaining = roundCents(row.amount - settlementAllocated);
     headroom.push({
       receivableId: row.receivableId,
       dueDate: receivable.dueDate,
       outstandingAmount: Math.max(0, Math.min(live, agreedRemaining)),
       agreedRemaining,
+      settlementAllocated,
     });
   }
   return headroom;
@@ -453,17 +463,38 @@ export async function approveSettlement(
   const preflightHeadroom = await computeComponentHeadroom(invoiceRows, componentKeys);
 
   /**
-   * The collectibility check, scoped to what this document still owes. It CANNOT run over every
-   * selected receivable unconditionally: a resumed approval would then refuse itself over the very
-   * receivables its own earlier components paid off, and since the status flip is the last write,
-   * that is exactly the state a crash leaves behind — money moved, document stuck `PENDING`, no
-   * path to `APPROVED` from anywhere. A receivable whose `agreedRemaining` has reached zero has
-   * had this settlement's whole share of it settled, by this settlement, so its closed status is
-   * explained rather than surprising. Anything still owed must still be collectible: a receivable
-   * closed by some OTHER channel between submission and approval is a genuine refusal, which is
-   * what `recordPayment` would itself raise as `ALREADY_SETTLED` a moment later anyway.
+   * The collectibility check, scoped so this document can never refuse itself over its own work.
+   * It CANNOT run over every selected receivable unconditionally: a resumed approval would then
+   * refuse itself over the very receivables its own earlier components paid off, and since the
+   * status flip is the last write, that is exactly the state a crash leaves behind — money moved,
+   * document stuck `PENDING`, no path to `APPROVED` from anywhere.
+   *
+   * TWO exemptions, and both are needed. Neither is "skip whenever the effective headroom is
+   * zero": `outstandingAmount` here is `min(live, agreedRemaining)`, so that broader rule would
+   * also skip a receivable some OTHER channel closed before this approval ever ran — the genuine
+   * refusal this check exists for — and would then re-report it as `COMPONENT_EXCEEDS_HEADROOM`
+   * one block down, pointing the operator at the invoice selection instead of at the invoice
+   * someone else already settled. Only the AGREED side of the minimum may excuse a closed status.
+   *
+   *   - `settlementAllocated > 0` — a component of THIS settlement already allocated against this
+   *     receivable, so whatever closed it, this document is at least partly why. This is the case
+   *     the `agreedRemaining` term alone misses: `StoreSettlementInvoice.amount` can exceed the
+   *     live balance (a verified `CollectionSubmission` paying the invoice down between submit and
+   *     approval is enough, since those two writers deliberately do not net each other), and then
+   *     a single component closes the receivable while leaving the agreed share partly unspent.
+   *     `agreedRemaining` stays positive against a now-`PAID` row and the resume throws
+   *     `NOT_OUTSTANDING` forever. The tell that the refusal is spurious: `min(live,
+   *     agreedRemaining)` is 0 for that row, so `allocateOldestFirst` skips it and no
+   *     `recordPayment` call is ever made against it — the check would be refusing over a
+   *     receivable it will not touch.
+   *   - `agreedRemaining <= 0` — this settlement's whole agreed share of the invoice is spent, so
+   *     the same reasoning applies with nothing left to allocate either way.
+   *
+   * Anything still owed and untouched by this document must still be collectible, which is what
+   * `recordPayment` would itself raise as `ALREADY_SETTLED` a moment later anyway.
    */
   for (const row of preflightHeadroom) {
+    if (row.settlementAllocated > EPSILON) continue;
     if (!(row.agreedRemaining > EPSILON)) continue;
     const receivable = receivableById.get(row.receivableId);
     if (!receivable) throw new SettlementError("RECEIVABLE_NOT_FOUND");
