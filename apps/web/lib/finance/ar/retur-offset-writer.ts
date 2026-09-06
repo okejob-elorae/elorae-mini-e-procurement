@@ -21,6 +21,18 @@ async function finishFlip(
   paymentId: string,
   totalValue: number,
 ): Promise<{ ok: true; paymentId: string; alreadyApplied?: true }> {
+  /*
+   * Stamped here rather than beside the recordPayment call because BOTH paths into this function
+   * must link the payment — the genuine first attempt and the idempotency-key replay after a crash
+   * alike. The old writer got this for free by setting the link and the status in one FieldReturn
+   * write; moving the link onto the Payment row split that, so the stamp lives at the join point.
+   * Guarded on fieldReturnId: null so a replay is a no-op rather than a redundant write.
+   */
+  await prisma.payment.updateMany({
+    where: { id: paymentId, fieldReturnId: null },
+    data: { fieldReturnId: returnId },
+  });
+
   const flipped = await prisma.fieldReturn.updateMany({
     where: { id: returnId, offsetStatus: "AVAILABLE" },
     data: { offsetStatus: "APPLIED", appliedValue: totalValue },
@@ -123,15 +135,6 @@ export async function applyReturnOffset(
     allocations,
     reference: ret.docNo,
     idempotencyKey,
-  });
-
-  /*
-   * The fieldReturnId parameter on recordPayment does not exist yet (it arrives in Task 2) --
-   * this stamp will move inside recordPayment's own transaction in that follow-up.
-   */
-  await prisma.payment.update({
-    where: { id: paymentId },
-    data: { fieldReturnId: ret.id },
   });
 
   /*
