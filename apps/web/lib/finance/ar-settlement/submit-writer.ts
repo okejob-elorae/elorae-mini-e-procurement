@@ -51,6 +51,10 @@ const EPSILON = 1e-6;
  * Both claims are DERIVED, never stored: a settlement that stops being PENDING (rejected, or later
  * approved into something else) stops contributing to either sum by construction. There is no
  * `claimedValue` column to keep in sync and no release path to forget on reject.
+ *
+ * The idempotency replay itself is scoped to the SAME actor at the SAME store: a `draftId`
+ * collision from a different `salesmanId`/`storeId` is refused (`DRAFT_ID_CONFLICT`) rather than
+ * handing that caller someone else's real settlement id and docNo back as a reported success.
  */
 export async function submitSettlement(input: SubmitSettlementInput): Promise<SubmitSettlementResult> {
   /*
@@ -67,13 +71,22 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
     /*
      * Step 1: the idempotency lookup runs FIRST, ahead of every guard below. A replay of a
      * `draftId` whose first attempt already committed must return that settlement as-is, never
-     * re-derive a guard (e.g. the retur headroom) against state the first attempt itself changed.
+     * re-derive a guard (e.g. the retur headroom) against state the first attempt itself changed
+     * — but ONLY when the replay is the SAME actor at the SAME store. A `draftId` collision from a
+     * DIFFERENT salesman or store (low-entropy client-minted id, or a bug reusing one) must not be
+     * handed someone else's real settlement id and docNo back as if it were their own successful
+     * submission. Same shape as `completeDeliveryShipment`'s replay guard in `AGENTS.md`: a
+     * same-actor replay against already-settled state returns success, a different-actor replay
+     * against the same state is refused outright.
      */
     const existing = await tx.storeSettlement.findUnique({
       where: { idempotencyKey: input.draftId },
-      select: { id: true, docNo: true },
+      select: { id: true, docNo: true, salesmanId: true, storeId: true },
     });
     if (existing) {
+      if (existing.salesmanId !== input.salesmanId || existing.storeId !== input.storeId) {
+        throw new SettlementError("DRAFT_ID_CONFLICT");
+      }
       return { settlementId: existing.id, docNo: existing.docNo, alreadySubmitted: true };
     }
 

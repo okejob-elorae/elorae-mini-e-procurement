@@ -1,5 +1,6 @@
 export type SettlementErrorCode =
   | "INVALID_DRAFT_ID"
+  | "DRAFT_ID_CONFLICT"
   | "NO_INVOICES"
   | "INVALID_AMOUNT"
   | "INVALID_PERCENT"

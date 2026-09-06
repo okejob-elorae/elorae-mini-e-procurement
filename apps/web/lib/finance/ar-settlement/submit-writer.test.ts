@@ -284,6 +284,33 @@ d("submitSettlement (test bed only)", () => {
     expect(count).toBe(1);
   });
 
+  it("returns the original settlement on a same-actor, same-store replay", async () => {
+    /* Same shape as the idempotency test above, asserted explicitly against the ownership guard:
+     * the SAME salesmanId and storeId as the first attempt must still short-circuit to the
+     * original row rather than being caught by the new different-owner check. */
+    const input = { ...baseInput, draftId: `sameactor-${token}` };
+    const first = await submitSettlement(input);
+    const replay = await submitSettlement({ ...input });
+    expect(replay.settlementId).toBe(first.settlementId);
+    expect(replay.docNo).toBe(first.docNo);
+    expect(replay.alreadySubmitted).toBe(true);
+  });
+
+  it("refuses a draftId replay from a different salesman", async () => {
+    /*
+     * A draftId collision from a DIFFERENT salesman must not hand back someone else's real
+     * settlement id/docNo as a reported success — that would silently discard this caller's own
+     * invoices/deductions and attribute another salesman's document to them. Same precedent as
+     * completeDeliveryShipment's replay guard: same-actor replay succeeds, different-actor replay
+     * against the same state is refused.
+     */
+    const draftId = `crossactor-${token}`;
+    await submitSettlement({ ...baseInput, draftId });
+    await expect(
+      submitSettlement({ ...otherInput, draftId }),
+    ).rejects.toMatchObject({ code: "DRAFT_ID_CONFLICT" });
+  });
+
   it("refuses a program deduction with no evidence", async () => {
     await expect(
       submitSettlement({ ...baseInput, draftId: `prog-${token}`, deductions: [{ type: "PROGRAM", amount: 100 }] }),
