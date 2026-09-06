@@ -674,6 +674,8 @@ enum PaymentMethod {
   CASH
   TRANSFER
   RETUR_OFFSET
+  PROGRAM_DEDUCTION
+  ADMIN_FEE
 }
 
 enum PaymentStatus {

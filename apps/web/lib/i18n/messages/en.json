@@ -4003,7 +4003,9 @@
       "MARKETPLACE_FEE_PROCESSING": "Marketplace Order Processing Fee",
       "MARKETPLACE_FEE_OTHER": "Other Marketplace Fees",
       "INVENTORY_VARIANCE": "Inventory Variance",
-      "TAX": "Tax"
+      "TAX": "Tax",
+      "TRADE_PROGRAM_EXPENSE": "Trade Program Expense",
+      "ADMIN_FEE_EXPENSE": "Admin Fee Expense"
     },
     "desc": {
       "INVENTORY": "Asset account debited on stock-in and credited on stock-out.",
@@ -4022,7 +4024,9 @@
       "MARKETPLACE_FEE_PROCESSING": "Expense for the order processing fee, from the Biaya Proses Pesanan column.",
       "MARKETPLACE_FEE_OTHER": "Unitemized remainder of marketplace deductions — including ad fees, shipping subsidies, adjustments, and every TikTok fee.",
       "INVENTORY_VARIANCE": "Account for recording stock opname/reconciliation variances.",
-      "TAX": "Account for tax liabilities/expenses."
+      "TAX": "Account for tax liabilities/expenses.",
+      "TRADE_PROGRAM_EXPENSE": "Expense account for trade program deductions a store negotiates at settlement.",
+      "ADMIN_FEE_EXPENSE": "Expense account for the admin fee a store deducts at settlement."
     },
     "error": {
       "FORBIDDEN": "You do not have permission to change account mappings.",

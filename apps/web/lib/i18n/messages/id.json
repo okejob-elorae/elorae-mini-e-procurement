@@ -4003,7 +4003,9 @@
       "MARKETPLACE_FEE_PROCESSING": "Biaya Proses Pesanan Marketplace",
       "MARKETPLACE_FEE_OTHER": "Biaya Marketplace Lainnya",
       "INVENTORY_VARIANCE": "Selisih Persediaan",
-      "TAX": "Pajak"
+      "TAX": "Pajak",
+      "TRADE_PROGRAM_EXPENSE": "Biaya Program Dagang",
+      "ADMIN_FEE_EXPENSE": "Biaya Administrasi"
     },
     "desc": {
       "INVENTORY": "Akun aset yang didebit saat stok masuk dan dikredit saat stok keluar.",
@@ -4022,7 +4024,9 @@
       "MARKETPLACE_FEE_PROCESSING": "Beban biaya proses pesanan, dari kolom Biaya Proses Pesanan.",
       "MARKETPLACE_FEE_OTHER": "Sisa potongan marketplace yang tidak terinci — termasuk biaya iklan, subsidi pengiriman, penyesuaian, dan seluruh biaya TikTok.",
       "INVENTORY_VARIANCE": "Akun untuk mencatat selisih stock opname/rekonsiliasi.",
-      "TAX": "Akun untuk kewajiban/beban pajak."
+      "TAX": "Akun untuk kewajiban/beban pajak.",
+      "TRADE_PROGRAM_EXPENSE": "Akun beban untuk potongan program dagang yang dinegosiasikan toko saat settlement.",
+      "ADMIN_FEE_EXPENSE": "Akun beban untuk biaya administrasi yang dipotong toko saat settlement."
     },
     "error": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk mengubah pemetaan akun.",
