@@ -30,7 +30,8 @@ export type SettlementErrorCode =
   | "APPROVER_NOT_FOUND"
   | "VARIANCE_REQUIRES_REASON"
   | "COMPONENT_EXCEEDS_HEADROOM"
-  | "COMPONENT_VOIDED";
+  | "COMPONENT_VOIDED"
+  | "OVER_TENDER";
 
 export class SettlementError extends Error {
   code: SettlementErrorCode;

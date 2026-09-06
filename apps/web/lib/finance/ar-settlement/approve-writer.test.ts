@@ -3,6 +3,7 @@ import { prisma, seededId } from "@elorae/db";
 import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { voidPayment } from "@/lib/finance/ar/void-writer";
 import { approveSettlement } from "./approve-writer";
+import { VARIANCE_TOLERANCE_SETTING_KEY } from "./variance-tolerance";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -35,20 +36,34 @@ d("approveSettlement (test bed only)", () => {
   let retId = "";
   let retSmallId = "";
   let retNotApprovedId = "";
+  let retWrongStoreId = "";
   let recA = "";
   let recB = "";
   let recSmall = "";
+  let recOtherStore = "";
   let orderIds: string[] = [];
   let deliveryIds: string[] = [];
   let settlementIds: string[] = [];
   let settlementSeq = 0;
+  /**
+   * `settlement.varianceToleranceRupiah` is a GLOBAL row shared with whatever the dev bed already
+   * holds. Snapshot it and put it back — `parseVarianceTolerance` fails open, so an unconditional
+   * delete would silently revert an operator's configured tolerance with nothing ever surfacing
+   * the loss.
+   */
+  let toleranceSnapshot: string | null = null;
 
   /* Creates one order -> delivery -> receivable chain and tracks the parent ids for teardown. */
-  async function seedReceivable(label: string, amount: number, dueDate: Date): Promise<string> {
+  async function seedReceivable(
+    label: string,
+    amount: number,
+    dueDate: Date,
+    receivableStoreId: string = storeId,
+  ): Promise<string> {
     const order = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `TEST-APV-ORD-${label}-${token}`,
-        storeId,
+        storeId: receivableStoreId,
         salesmanId,
         subtotal: amount,
         total: amount,
@@ -73,7 +88,7 @@ d("approveSettlement (test bed only)", () => {
     const receivable = await prisma.receivable.create({
       data: {
         deliveryId: delivery.id,
-        storeId,
+        storeId: receivableStoreId,
         invoiceDate: new Date("2026-05-01T00:00:00.000+07:00"),
         dueDate,
         originalAmount: amount,
@@ -154,10 +169,16 @@ d("approveSettlement (test bed only)", () => {
     storeId = ""; storeOtherId = "";
     salesmanId = ""; approverId = "";
     itemId = ""; uomId = "";
-    retId = ""; retSmallId = ""; retNotApprovedId = "";
-    recA = ""; recB = ""; recSmall = "";
+    retId = ""; retSmallId = ""; retNotApprovedId = ""; retWrongStoreId = "";
+    recA = ""; recB = ""; recSmall = ""; recOtherStore = "";
     orderIds = []; deliveryIds = []; settlementIds = [];
     settlementSeq = 0;
+
+    const existingTolerance = await prisma.systemSetting.findUnique({
+      where: { key: VARIANCE_TOLERANCE_SETTING_KEY },
+      select: { value: true },
+    });
+    toleranceSnapshot = existingTolerance?.value ?? null;
 
     const store = await prisma.store.create({
       data: { code: `TEST-APV-${token}`, name: `Toko ${token}`, address: "test", termsType: "PUTUS" },
@@ -189,6 +210,7 @@ d("approveSettlement (test bed only)", () => {
     recA = await seedReceivable("A", 1000, new Date("2026-06-01T00:00:00.000+07:00"));
     recB = await seedReceivable("B", 500, new Date("2026-07-01T00:00:00.000+07:00"));
     recSmall = await seedReceivable("SMALL", 100, new Date("2026-06-15T00:00:00.000+07:00"));
+    recOtherStore = await seedReceivable("OTH", 500, new Date("2026-06-01T00:00:00.000+07:00"), storeOtherId);
 
     const fieldReturn = await prisma.fieldReturn.create({
       data: {
@@ -220,6 +242,16 @@ d("approveSettlement (test bed only)", () => {
       },
     });
     retNotApprovedId = retNotApproved.id;
+
+    const retWrongStore = await prisma.fieldReturn.create({
+      data: {
+        docNo: `TEST-APV-RETWS-${token}`, storeId: storeOtherId, raisedById: salesmanId,
+        status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE",
+        totalValue: 300, appliedValue: 0,
+        lines: { create: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }] },
+      },
+    });
+    retWrongStoreId = retWrongStore.id;
   });
 
   afterEach(async () => {
@@ -242,19 +274,31 @@ d("approveSettlement (test bed only)", () => {
     await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: ids } } });
     await prisma.storeSettlement.deleteMany({ where: { id: { in: ids } } });
 
-    const returIds = [seededId(retId), seededId(retSmallId), seededId(retNotApprovedId)];
+    const returIds = [
+      seededId(retId), seededId(retSmallId), seededId(retNotApprovedId), seededId(retWrongStoreId),
+    ];
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returIds } } });
     await prisma.fieldReturn.deleteMany({ where: { id: { in: returIds } } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
 
     await prisma.receivable.deleteMany({
-      where: { id: { in: [recA, recB, recSmall].map(seededId) } },
+      where: { id: { in: [recA, recB, recSmall, recOtherStore].map(seededId) } },
     });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds.map(seededId) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds.map(seededId) } } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(salesmanId), seededId(approverId)] } } });
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(storeOtherId)] } } });
+
+    if (toleranceSnapshot === null) {
+      await prisma.systemSetting.deleteMany({ where: { key: VARIANCE_TOLERANCE_SETTING_KEY } });
+    } else {
+      await prisma.systemSetting.upsert({
+        where: { key: VARIANCE_TOLERANCE_SETTING_KEY },
+        create: { key: VARIANCE_TOLERANCE_SETTING_KEY, value: toleranceSnapshot },
+        update: { value: toleranceSnapshot },
+      });
+    }
   });
 
   it("resumes after a partial failure without double-paying", async () => {
@@ -380,34 +424,187 @@ d("approveSettlement (test bed only)", () => {
 
   it("flips to APPROVED only after every component has posted", async () => {
     /**
-     * Two retur draws of 100 against a retur holding only 100 of value. The invoice-side pre-flight
-     * cannot see that — the invoice has plenty of headroom — so the first draw posts and the SECOND
-     * dies inside `recordPayment`'s own retur ceiling. The settlement must be left `PENDING` with
-     * one real payment behind it, which is precisely the resumable state the design promises: a
-     * settlement reading `APPROVED` means every component committed.
+     * The state a crash BETWEEN components leaves behind, built by hand: the trade-program
+     * component posted and closed `recA`, the cash component never ran, and the status flip — the
+     * LAST write — never happened. A settlement in that state reads `PENDING`, which is the whole
+     * point: `APPROVED` means every component committed.
+     *
+     * Resuming must then post only what is owed. The naive re-validation refuses here, because
+     * `recSmall` is now `PAID` — by this settlement's own component — and the document could never
+     * reach `APPROVED` again with 100 already moved.
+     */
+    const settlementId = await createSettlement({
+      invoices: [
+        { receivableId: recSmall, amount: 100 },
+        { receivableId: recB, amount: 500 },
+      ],
+      deductions: [evidencedDeduction("PROGRAM", 100)],
+      actualAmount: 500,
+      expectedAmount: 500,
+    });
+
+    /* recSmall is the older invoice and its whole 100 balance is claimed, so this closes it. */
+    const program = await recordPayment({
+      storeId,
+      paidAt: new Date(),
+      method: "PROGRAM_DEDUCTION",
+      amount: 100,
+      recordedById: approverId,
+      allocations: [{ receivableId: recSmall, amount: 100 }],
+      idempotencyKey: `settlement-${settlementId}-PROGRAM_DEDUCTION`,
+    });
+
+    const midway = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(midway!.status).toBe("PENDING");
+    expect(midway!.reviewedAt).toBeNull();
+    const closedSmall = await prisma.receivable.findUnique({ where: { id: recSmall } });
+    expect(closedSmall!.status).toBe("PAID");
+
+    const result = await approveSettlement({ settlementId, approvedById: approverId });
+    expect(result.paymentIds).toContain(program.paymentId);
+    expect(result.paymentIds).toHaveLength(2);
+
+    const payments = await paymentsForStore();
+    expect(payments).toHaveLength(2);
+    const cash = payments.find((payment) => payment.method === "CASH");
+    expect(cash).toBeDefined();
+
+    const cashAllocations = await prisma.paymentAllocation.findMany({
+      where: { paymentId: cash!.id },
+      select: { receivableId: true, amount: true },
+    });
+    expect(cashAllocations).toHaveLength(1);
+    expect(cashAllocations[0].receivableId).toBe(recB);
+
+    const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(settlement!.status).toBe("APPROVED");
+  });
+
+  it("resumes when every component posted but the flip never committed", async () => {
+    /**
+     * The narrowest crash window there is: both components committed and the CAS `updateMany`
+     * never ran. Every receivable this document names is now closed, so a re-validation that
+     * checks collectibility unconditionally refuses forever. The retry must post nothing new and
+     * simply flip.
      */
     const settlementId = await createSettlement({
       invoices: [{ receivableId: recA, amount: 1000 }],
-      deductions: [
-        { type: "RETUR_OFFSET", amount: 100, fieldReturnId: retSmallId },
-        { type: "RETUR_OFFSET", amount: 100, fieldReturnId: retSmallId },
-      ],
+      deductions: [evidencedDeduction("PROGRAM", 200)],
       actualAmount: 800,
       expectedAmount: 800,
     });
 
+    const program = await recordPayment({
+      storeId, paidAt: new Date(), method: "PROGRAM_DEDUCTION", amount: 200,
+      recordedById: approverId,
+      allocations: [{ receivableId: recA, amount: 200 }],
+      idempotencyKey: `settlement-${settlementId}-PROGRAM_DEDUCTION`,
+    });
+    const cash = await recordPayment({
+      storeId, paidAt: new Date(), method: "CASH", amount: 800,
+      recordedById: approverId,
+      allocations: [{ receivableId: recA, amount: 800 }],
+      idempotencyKey: `settlement-${settlementId}-CASH`,
+    });
+
+    const closed = await prisma.receivable.findUnique({ where: { id: recA } });
+    expect(closed!.status).toBe("PAID");
+
+    const result = await approveSettlement({ settlementId, approvedById: approverId });
+    expect([...result.paymentIds].sort()).toEqual([program.paymentId, cash.paymentId].sort());
+
+    expect(await paymentsForStore()).toHaveLength(2);
+    const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(settlement!.status).toBe("APPROVED");
+    expect(settlement!.reviewedById).toBe(approverId);
+  });
+
+  it("re-projects a resumed retur draw whose appliedValue was never written", async () => {
+    /**
+     * The failure a uniform resume skip hides. `recordPayment` commits the draw; the projection
+     * onto `FieldReturn.appliedValue` is a SEPARATE `runSerializable` inside
+     * `projectReturnOffset`, so a serialization failure between the two leaves 300 of credit spent
+     * and the retur still reading `appliedValue: 0` / `offsetStatus: "AVAILABLE"`. Nothing
+     * re-projects except voiding that very draw — and `submitSettlement` computes retur headroom
+     * as `totalValue - appliedValue - other PENDING claims`, so every later settlement over-claims
+     * at submit and then dies at approval on `EXCEEDS_REMAINING`.
+     *
+     * Re-entering `applyReturnOffset` is what recovers it: its replay branch re-runs the
+     * projection before returning.
+     */
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [{ type: "RETUR_OFFSET", amount: 300, fieldReturnId: retId }],
+      actualAmount: 700,
+      expectedAmount: 700,
+    });
+
+    const deduction = await prisma.storeSettlementDeduction.findFirst({
+      where: { settlementId, type: "RETUR_OFFSET" },
+      select: { id: true },
+    });
+
+    /* The draw commits; the projection never runs — recordPayment does not project. */
+    const draw = await recordPayment({
+      storeId,
+      paidAt: new Date(),
+      method: "RETUR_OFFSET",
+      amount: 300,
+      recordedById: approverId,
+      allocations: [{ receivableId: recA, amount: 300 }],
+      idempotencyKey: `returoffset-${retId}-${deduction!.id}`,
+      fieldReturnId: retId,
+    });
+
+    const stale = await prisma.fieldReturn.findUnique({ where: { id: retId } });
+    expect(Number(stale!.appliedValue)).toBe(0);
+    expect(stale!.offsetStatus).toBe("AVAILABLE");
+
+    const result = await approveSettlement({ settlementId, approvedById: approverId });
+    expect(result.paymentIds).toContain(draw.paymentId);
+
+    const reprojected = await prisma.fieldReturn.findUnique({ where: { id: retId } });
+    expect(Number(reprojected!.appliedValue)).toBe(300);
+    expect(reprojected!.offsetStatus).toBe("APPLIED");
+
+    /* And no second draw was created for the same deduction row. */
+    const draws = (await paymentsForStore()).filter((payment) => payment.method === "RETUR_OFFSET");
+    expect(draws).toHaveLength(1);
+  });
+
+  it("refuses a retur draw that no longer has headroom, before any component posts", async () => {
+    /**
+     * A backoffice offset sheet drawing part of the same retur between submission and approval.
+     * The invoice-side pre-flight cannot see it — the invoice has plenty of room — so without a
+     * retur-side aggregate the shortfall surfaces inside `recordPayment`'s own in-transaction
+     * ceiling, mid-sequence, with earlier draws already committed.
+     */
+    await recordPayment({
+      storeId,
+      paidAt: new Date(),
+      method: "RETUR_OFFSET",
+      amount: 200,
+      recordedById: approverId,
+      allocations: [{ receivableId: recA, amount: 200 }],
+      idempotencyKey: `returoffset-${retId}-elsewhere-${token}`,
+      fieldReturnId: retId,
+    });
+
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recB, amount: 500 }],
+      deductions: [{ type: "RETUR_OFFSET", amount: 300, fieldReturnId: retId }],
+      actualAmount: 200,
+      expectedAmount: 200,
+    });
+
     await expect(approveSettlement({ settlementId, approvedById: approverId })).rejects.toMatchObject({
-      code: "EXCEEDS_REMAINING",
+      code: "RETUR_OVERCLAIMED",
     });
 
     const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
     expect(settlement!.status).toBe("PENDING");
-    expect(settlement!.reviewedAt).toBeNull();
-
-    const payments = await paymentsForStore();
-    expect(payments).toHaveLength(1);
-    expect(payments[0].method).toBe("RETUR_OFFSET");
-    expect(payments.some((payment) => payment.method === "CASH")).toBe(false);
+    /* Only the pre-existing draw exists — the approval posted nothing. */
+    expect(await paymentsForStore()).toHaveLength(1);
   });
 
   it("is idempotent — re-approving posts nothing new and returns the same payments", async () => {
@@ -703,10 +900,13 @@ d("approveSettlement (test bed only)", () => {
     expect(settledA!.status).toBe("PARTIAL");
   });
 
-  it("refuses before moving any money when the components exceed the invoice headroom", async () => {
-    /*
-     * A 100 invoice cannot absorb a 100 program deduction AND a 100 cash tender. The refusal must
-     * land before the first component posts, not halfway through.
+  it("refuses an over-tender on its own terms, not as an allocation shortfall", async () => {
+    /**
+     * A 100 invoice fully consumed by a 100 program deduction, and the store hands over 100 cash
+     * on top. The components sum to `invoiceTotal + variance` by construction and the headroom is
+     * bounded by `invoiceTotal`, so a positive variance can never allocate — `recordPayment`
+     * supports no unapplied credit. Typing an override reason changes nothing, which is exactly
+     * why this needs a code of its own rather than reading as a headroom problem.
      */
     const settlementId = await createSettlement({
       invoices: [{ receivableId: recSmall, amount: 100 }],
@@ -717,11 +917,116 @@ d("approveSettlement (test bed only)", () => {
 
     await expect(
       approveSettlement({ settlementId, approvedById: approverId, overrideReason: "kelebihan setor" }),
-    ).rejects.toMatchObject({ code: "COMPONENT_EXCEEDS_HEADROOM" });
+    ).rejects.toMatchObject({ code: "OVER_TENDER" });
 
     expect(await paymentsForStore()).toHaveLength(0);
     const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
     expect(settlement!.status).toBe("PENDING");
+  });
+
+  it("refuses before moving any money when a partly-paid invoice cannot absorb the components", async () => {
+    /*
+     * Variance is zero, so this is not an over-tender — the invoice was simply paid down elsewhere
+     * to 400 while the document still claims 1000 of it. Nothing may post.
+     */
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      actualAmount: 1000,
+      expectedAmount: 1000,
+    });
+
+    await prisma.receivable.update({
+      where: { id: recA },
+      data: { outstandingAmount: 400, paidAmount: 600, status: "PARTIAL" },
+    });
+
+    await expect(approveSettlement({ settlementId, approvedById: approverId })).rejects.toMatchObject({
+      code: "COMPONENT_EXCEEDS_HEADROOM",
+    });
+
+    expect(await paymentsForStore()).toHaveLength(0);
+    const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(settlement!.status).toBe("PENDING");
+  });
+
+  it("approves a variance inside the configured tolerance with no override reason", async () => {
+    /**
+     * The permitting direction of the feature. `parseVarianceTolerance` is unit-tested on its own,
+     * but the writer's `SystemSetting` read and the `|variance| - tolerance > EPSILON` gate are
+     * only ever exercised at the shipped default of 0 otherwise.
+     */
+    await prisma.systemSetting.upsert({
+      where: { key: VARIANCE_TOLERANCE_SETTING_KEY },
+      create: { key: VARIANCE_TOLERANCE_SETTING_KEY, value: "500" },
+      update: { value: "500" },
+    });
+
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      actualAmount: 900,
+      expectedAmount: 1000,
+    });
+
+    const result = await approveSettlement({ settlementId, approvedById: approverId });
+    expect(result.paymentIds).toHaveLength(1);
+
+    const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(settlement!.status).toBe("APPROVED");
+
+    /* Inside tolerance is not an override, so nothing is audited as one. */
+    const audit = await prisma.auditLog.findFirst({
+      where: { entityType: "StoreSettlement", entityId: settlementId },
+    });
+    expect(audit).toBeNull();
+
+    const receivable = await prisma.receivable.findUnique({ where: { id: recA } });
+    expect(Number(receivable!.outstandingAmount)).toBe(100);
+  });
+
+  it("still demands a reason for a variance outside the configured tolerance", async () => {
+    await prisma.systemSetting.upsert({
+      where: { key: VARIANCE_TOLERANCE_SETTING_KEY },
+      create: { key: VARIANCE_TOLERANCE_SETTING_KEY, value: "50" },
+      update: { value: "50" },
+    });
+
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      actualAmount: 900,
+      expectedAmount: 1000,
+    });
+
+    await expect(approveSettlement({ settlementId, approvedById: approverId })).rejects.toMatchObject({
+      code: "VARIANCE_REQUIRES_REASON",
+    });
+    expect(await paymentsForStore()).toHaveLength(0);
+  });
+
+  it("refuses a receivable belonging to another store", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recOtherStore, amount: 500 }],
+      actualAmount: 500,
+      expectedAmount: 500,
+    });
+
+    await expect(approveSettlement({ settlementId, approvedById: approverId })).rejects.toMatchObject({
+      code: "WRONG_STORE",
+    });
+    expect(await paymentsForStore()).toHaveLength(0);
+  });
+
+  it("refuses a retur belonging to another store", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [{ type: "RETUR_OFFSET", amount: 100, fieldReturnId: retWrongStoreId }],
+      actualAmount: 900,
+      expectedAmount: 900,
+    });
+
+    await expect(approveSettlement({ settlementId, approvedById: approverId })).rejects.toMatchObject({
+      code: "RETUR_WRONG_STORE",
+    });
+    expect(await paymentsForStore()).toHaveLength(0);
   });
 
   it("refuses to resume onto a component payment that was voided", async () => {

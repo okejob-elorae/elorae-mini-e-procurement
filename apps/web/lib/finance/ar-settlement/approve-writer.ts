@@ -47,6 +47,15 @@ type SettlementPaymentMethod = "CASH" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "
 
 type InvoiceRow = { receivableId: string; amount: number };
 
+/**
+ * What `allocateOldestFirst` needs, plus the raw `agreedRemaining` term behind
+ * `outstandingAmount`. That term is what separates "this settlement still owes something on this
+ * invoice" from "this settlement has already settled its whole share of it" — which the
+ * `NOT_OUTSTANDING` re-validation has to distinguish, or a resumed approval refuses itself over
+ * the very receivables its own earlier components closed.
+ */
+type HeadroomRow = AllocationInput & { agreedRemaining: number };
+
 type Component =
   | {
       kind: "RETUR";
@@ -78,8 +87,21 @@ function simpleComponentKey(settlementId: string, method: SettlementPaymentMetho
   return `settlement-${settlementId}-${method}`;
 }
 
-function sumAllocations(allocations: AllocationOutput[]): number {
-  return roundCents(allocations.reduce((sum, allocation) => sum + allocation.amount, 0));
+/**
+ * Allocates one component across the headroom and refuses unless it fills EXACTLY. A short fill
+ * would otherwise post a payment smaller than the component the document declares, settling less
+ * of the store's invoices than the document says it did. The whole-document pre-flight should have
+ * caught any shortfall long before this; this is the per-component belt-and-braces.
+ */
+function allocateForComponent(amount: number, headroom: HeadroomRow[]): AllocationOutput[] {
+  const allocations = allocateOldestFirst(amount, headroom);
+  const allocated = roundCents(
+    allocations.reduce((sum, allocation) => sum + allocation.amount, 0),
+  );
+  if (Math.abs(allocated - amount) > EPSILON) {
+    throw new SettlementError("COMPONENT_EXCEEDS_HEADROOM");
+  }
+  return allocations;
 }
 
 /**
@@ -111,7 +133,7 @@ function sumAllocations(allocations: AllocationOutput[]): number {
 async function computeComponentHeadroom(
   invoiceRows: InvoiceRow[],
   componentKeys: string[],
-): Promise<AllocationInput[]> {
+): Promise<HeadroomRow[]> {
   const posted = await prisma.payment.findMany({
     where: { idempotencyKey: { in: componentKeys }, status: "POSTED" },
     select: { allocations: { select: { receivableId: true, amount: true } } },
@@ -134,7 +156,7 @@ async function computeComponentHeadroom(
   });
   const receivableById = new Map(receivables.map((receivable) => [receivable.id, receivable]));
 
-  const headroom: AllocationInput[] = [];
+  const headroom: HeadroomRow[] = [];
   for (const row of invoiceRows) {
     const receivable = receivableById.get(row.receivableId);
     if (!receivable) throw new SettlementError("RECEIVABLE_NOT_FOUND");
@@ -144,6 +166,7 @@ async function computeComponentHeadroom(
       receivableId: row.receivableId,
       dueDate: receivable.dueDate,
       outstandingAmount: Math.max(0, Math.min(live, agreedRemaining)),
+      agreedRemaining,
     });
   }
   return headroom;
@@ -157,10 +180,20 @@ async function computeComponentHeadroom(
  * **This is a resumable sequence, not a transaction, and it must not pretend to be one.**
  * `recordPayment` and `applyReturnOffset` each open their own `prisma.$transaction`, and nesting
  * those on the same client is unsafe. What makes a crash mid-approval safe is that every component
- * carries a DETERMINISTIC idempotency key: re-approving finds what already posted, skips it, posts
- * the remainder and flips the status. A settlement that reads `APPROVED` therefore means every
+ * carries a DETERMINISTIC idempotency key: re-approving finds what already posted, posts the
+ * remainder and flips the status. A settlement that reads `APPROVED` therefore means every
  * component committed — the converse of a settlement stranded `PENDING`, which means some may
  * have.
+ *
+ * A resume SKIPS an already-posted cash/program/fee component but deliberately RE-ENTERS
+ * `applyReturnOffset` for an already-posted retur draw, because that writer's replay branch re-runs
+ * the projection onto `FieldReturn.appliedValue` — which is the very thing a crash between the
+ * payment and the projection leaves stale. See the component loop.
+ *
+ * Every re-validation this function performs is therefore scoped so that a resume cannot be
+ * refused by the effects of its OWN earlier components: the collectibility check only applies to
+ * invoices this document still owes something on, and both pre-flights count only components that
+ * have not already posted.
  *
  * The status flip is the LAST write for a second reason beyond resumability. The submit writer's
  * retur and invoice claims are DERIVED from `PENDING` settlements, so a settlement that stops
@@ -320,13 +353,14 @@ export async function approveSettlement(
     select: { id: true, storeId: true, status: true },
   });
   const receivableById = new Map(receivables.map((receivable) => [receivable.id, receivable]));
+  /*
+   * Existence and ownership are unconditional. The COLLECTIBILITY check is not, and deliberately
+   * runs later, once the headroom is known — see the `NOT_OUTSTANDING` block below.
+   */
   for (const row of invoiceRows) {
     const receivable = receivableById.get(row.receivableId);
     if (!receivable) throw new SettlementError("RECEIVABLE_NOT_FOUND");
     if (receivable.storeId !== settlement.storeId) throw new SettlementError("WRONG_STORE");
-    if (receivable.status !== "OUTSTANDING" && receivable.status !== "PARTIAL") {
-      throw new SettlementError("NOT_OUTSTANDING");
-    }
   }
 
   for (const deduction of deductions) {
@@ -339,8 +373,10 @@ export async function approveSettlement(
     if (!deduction.proofUrl || !deduction.proofR2Key) throw new SettlementError("MISSING_EVIDENCE");
   }
 
+  const returTotalValueById = new Map<string, number>();
   for (const component of components) {
     if (component.kind !== "RETUR") continue;
+    if (returTotalValueById.has(component.returnId)) continue;
     const fieldReturn = await prisma.fieldReturn.findUnique({
       where: { id: component.returnId },
       select: { id: true, storeId: true, status: true, valuationStatus: true, totalValue: true },
@@ -351,6 +387,7 @@ export async function approveSettlement(
     if (fieldReturn.valuationStatus !== "VALUED" || fieldReturn.totalValue === null) {
       throw new SettlementError("NOT_VALUED");
     }
+    returTotalValueById.set(component.returnId, roundCents(Number(fieldReturn.totalValue)));
   }
 
   /**
@@ -363,6 +400,22 @@ export async function approveSettlement(
   });
   const tolerance = parseVarianceTolerance(toleranceRow?.value);
   const variance = computeVariance(totals.expected, actualAmount);
+
+  /**
+   * An over-tender is refused on its own terms, ahead of both the override gate and the headroom
+   * pre-flight, because it is unapprovable in a way no override can rescue and no re-allocation
+   * can absorb. The components sum to `invoiceTotal + variance` by construction (the deductions
+   * plus the cash reconstitute the invoice total plus whatever the store handed over beyond it),
+   * while the total headroom is bounded above by `invoiceTotal` — so ANY positive variance,
+   * tolerated or not, leaves money with nowhere to allocate. `recordPayment` supports no unapplied
+   * credit: a payment is fully allocated the moment it is recorded, on purpose, because an
+   * on-account balance is its own feature with its own GL treatment.
+   *
+   * Without this it reported `COMPONENT_EXCEEDS_HEADROOM`, which reads as an allocation problem
+   * and sends an operator hunting through invoice selections for a fault that is not there. The
+   * real remedy is a corrected document: reject it and have the salesman resubmit.
+   */
+  if (variance > EPSILON) throw new SettlementError("OVER_TENDER");
 
   const overrideReason = (input.overrideReason ?? "").trim();
   /*
@@ -393,11 +446,68 @@ export async function approveSettlement(
     owedComponents.reduce((sum, component) => sum + component.amount, 0),
   );
   const preflightHeadroom = await computeComponentHeadroom(invoiceRows, componentKeys);
+
+  /**
+   * The collectibility check, scoped to what this document still owes. It CANNOT run over every
+   * selected receivable unconditionally: a resumed approval would then refuse itself over the very
+   * receivables its own earlier components paid off, and since the status flip is the last write,
+   * that is exactly the state a crash leaves behind — money moved, document stuck `PENDING`, no
+   * path to `APPROVED` from anywhere. A receivable whose `agreedRemaining` has reached zero has
+   * had this settlement's whole share of it settled, by this settlement, so its closed status is
+   * explained rather than surprising. Anything still owed must still be collectible: a receivable
+   * closed by some OTHER channel between submission and approval is a genuine refusal, which is
+   * what `recordPayment` would itself raise as `ALREADY_SETTLED` a moment later anyway.
+   */
+  for (const row of preflightHeadroom) {
+    if (!(row.agreedRemaining > EPSILON)) continue;
+    const receivable = receivableById.get(row.receivableId);
+    if (!receivable) throw new SettlementError("RECEIVABLE_NOT_FOUND");
+    if (receivable.status !== "OUTSTANDING" && receivable.status !== "PARTIAL") {
+      throw new SettlementError("NOT_OUTSTANDING");
+    }
+  }
+
+  /*
+   * Ordered AFTER the collectibility check on purpose: a receivable closed elsewhere leaves zero
+   * headroom too, and reporting that as an allocation shortfall would point an operator at the
+   * invoice selection instead of at the invoice someone else already settled.
+   */
   const totalHeadroom = roundCents(
     preflightHeadroom.reduce((sum, row) => sum + row.outstandingAmount, 0),
   );
   if (totalOwed - totalHeadroom > EPSILON) {
     throw new SettlementError("COMPONENT_EXCEEDS_HEADROOM");
+  }
+
+  /**
+   * The retur-side twin of the headroom pre-flight, and it needs its own aggregate: the invoice
+   * check above knows nothing about how much of a retur's frozen `totalValue` is already spent.
+   * Reachable with no raw-row trickery at all — a backoffice offset sheet drawing part of the same
+   * retur between submission and approval is enough. Without this the shortfall surfaces inside
+   * `recordPayment`'s own in-transaction ceiling as `EXCEEDS_REMAINING`, and with two retur
+   * deduction rows the first draw has already committed by then: the retry skips it and fails
+   * again on the second, and voiding the first to unstick it only converts the refusal into
+   * `COMPONENT_VOIDED`.
+   *
+   * Only components this run still OWES are counted — a draw that already posted is inside the
+   * `alreadyDrawn` aggregate, so counting it twice would refuse every resume.
+   */
+  const owedByReturn = new Map<string, number>();
+  for (const component of owedComponents) {
+    if (component.kind !== "RETUR") continue;
+    const prior = owedByReturn.get(component.returnId) ?? 0;
+    owedByReturn.set(component.returnId, roundCents(prior + component.amount));
+  }
+  for (const [returnId, owed] of owedByReturn) {
+    const drawn = await prisma.payment.aggregate({
+      where: { fieldReturnId: returnId, status: "POSTED" },
+      _sum: { amount: true },
+    });
+    const alreadyDrawn = roundCents(Number(drawn._sum.amount ?? 0));
+    const totalValue = returTotalValueById.get(returnId) ?? 0;
+    if (alreadyDrawn + owed - totalValue > EPSILON) {
+      throw new SettlementError("RETUR_OVERCLAIMED");
+    }
   }
 
   const paidAt = new Date();
@@ -407,30 +517,39 @@ export async function approveSettlement(
     if (!(component.amount > 0)) continue;
 
     /**
-     * The resume skip. A component whose payment already exists is NOT re-posted and NOT
-     * re-allocated: `computeComponentHeadroom` has already netted it out, so re-deriving its
-     * allocation here would fail to fill and throw `COMPONENT_EXCEEDS_HEADROOM` on a settlement
-     * that is perfectly resumable.
-     *
-     * A VOIDED prior payment is refused rather than skipped. `recordPayment`'s own idempotency
-     * lookup would hand that voided row straight back and report success for a component that
-     * moved no money, and `applyReturnOffset` already refuses the same case with
-     * `PAYMENT_VOIDED` — this is the cash/program/fee half of that guard.
+     * A VOIDED prior payment is refused for BOTH component kinds. `recordPayment`'s own
+     * idempotency lookup would hand that voided row straight back and report success for a
+     * component that moved no money; `applyReturnOffset` refuses the same case itself with
+     * `PAYMENT_VOIDED`, and this raises the settlement-level code before either is reached so the
+     * refusal reads the same whichever component hit it.
      */
     const existing = paymentByKey.get(component.idempotencyKey);
-    if (existing) {
-      if (existing.status === "VOIDED") throw new SettlementError("COMPONENT_VOIDED");
-      paymentIds.push(existing.id);
-      continue;
-    }
+    if (existing?.status === "VOIDED") throw new SettlementError("COMPONENT_VOIDED");
 
-    const headroom = await computeComponentHeadroom(invoiceRows, componentKeys);
-    const allocations = allocateOldestFirst(component.amount, headroom);
-    if (Math.abs(sumAllocations(allocations) - component.amount) > EPSILON) {
-      throw new SettlementError("COMPONENT_EXCEEDS_HEADROOM");
-    }
-
+    /**
+     * A retur component is NEVER short-circuited on an existing payment, unlike the others.
+     * `applyReturnOffset`'s own replay branch re-runs `projectReturnOffset` before returning, and
+     * that projection is the entire reason the branch exists: it recovers from a failure between
+     * the payment committing and `FieldReturn.appliedValue` being written. Skipping the call
+     * strands the retur at a stale `appliedValue` with `offsetStatus: "AVAILABLE"` permanently —
+     * nothing else re-projects except voiding that very draw — and `submitSettlement` computes
+     * retur headroom as `totalValue - appliedValue - other PENDING claims`, so every later
+     * settlement over-claims at submit time and then dies at approval on `EXCEEDS_REMAINING`.
+     * This does not need a process kill to happen: `projectReturnOffset` opens its own
+     * `runSerializable`, and `withRetry` rethrows a serialization failure after four attempts.
+     *
+     * The allocations are deliberately empty on that path. `applyReturnOffset` returns from its
+     * replay branch BEFORE it looks at them, so they are ignored — and if the payment somehow
+     * vanished between the lookup above and the call, an empty list fails closed on that writer's
+     * own `ALLOCATION_MISMATCH` rather than silently posting a short draw.
+     */
     if (component.kind === "RETUR") {
+      const allocations = existing
+        ? []
+        : allocateForComponent(
+            component.amount,
+            await computeComponentHeadroom(invoiceRows, componentKeys),
+          );
       const applied = await applyReturnOffset({
         returnId: component.returnId,
         eventId: component.eventId,
@@ -441,6 +560,23 @@ export async function approveSettlement(
       paymentIds.push(applied.paymentId);
       continue;
     }
+
+    /**
+     * The resume skip, for cash/program/fee only. A component whose payment already exists is NOT
+     * re-posted and NOT re-allocated: `computeComponentHeadroom` has already netted it out, so
+     * re-deriving its allocation here would fail to fill and throw `COMPONENT_EXCEEDS_HEADROOM` on
+     * a settlement that is perfectly resumable. These three post through `recordPayment`, which
+     * projects nothing onto any other row, so there is nothing left to re-run.
+     */
+    if (existing) {
+      paymentIds.push(existing.id);
+      continue;
+    }
+
+    const allocations = allocateForComponent(
+      component.amount,
+      await computeComponentHeadroom(invoiceRows, componentKeys),
+    );
 
     const { paymentId } = await recordPayment({
       storeId: settlement.storeId,
