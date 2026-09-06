@@ -727,10 +727,48 @@ d("approveSettlement (test bed only)", () => {
       overrideReason: "tidak diperlukan",
     });
 
+    /*
+     * `SETTLEMENT_APPROVE` is written unconditionally by every successful approval, so the
+     * override-specific claim here is scoped to `action`, not to "no audit row at all".
+     */
     const audit = await prisma.auditLog.findFirst({
-      where: { entityType: "StoreSettlement", entityId: settlementId },
+      where: { entityType: "StoreSettlement", entityId: settlementId, action: "SETTLEMENT_VARIANCE_OVERRIDE" },
     });
     expect(audit).toBeNull();
+  });
+
+  it("writes a SETTLEMENT_APPROVE audit row inside the same transaction as the status flip", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      actualAmount: 1000,
+      expectedAmount: 1000,
+    });
+
+    const result = await approveSettlement({ settlementId, approvedById: approverId });
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { entityType: "StoreSettlement", entityId: settlementId, action: "SETTLEMENT_APPROVE" },
+    });
+    expect(audit).not.toBeNull();
+    expect(audit!.userId).toBe(approverId);
+    expect((audit!.metadata as { paymentIds?: string[] } | null)?.paymentIds).toEqual(result.paymentIds);
+  });
+
+  it("does not duplicate the SETTLEMENT_APPROVE row on an alreadyApproved replay", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      actualAmount: 1000,
+      expectedAmount: 1000,
+    });
+
+    await approveSettlement({ settlementId, approvedById: approverId });
+    const replay = await approveSettlement({ settlementId, approvedById: approverId });
+    expect(replay.alreadyApproved).toBe(true);
+
+    const audits = await prisma.auditLog.findMany({
+      where: { entityType: "StoreSettlement", entityId: settlementId, action: "SETTLEMENT_APPROVE" },
+    });
+    expect(audits).toHaveLength(1);
   });
 
   it("refuses a settlement that is not PENDING", async () => {
@@ -973,9 +1011,12 @@ d("approveSettlement (test bed only)", () => {
     const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
     expect(settlement!.status).toBe("APPROVED");
 
-    /* Inside tolerance is not an override, so nothing is audited as one. */
+    /*
+     * Inside tolerance is not an override, so nothing is audited as one — scoped to `action`
+     * since `SETTLEMENT_APPROVE` itself is still written unconditionally.
+     */
     const audit = await prisma.auditLog.findFirst({
-      where: { entityType: "StoreSettlement", entityId: settlementId },
+      where: { entityType: "StoreSettlement", entityId: settlementId, action: "SETTLEMENT_VARIANCE_OVERRIDE" },
     });
     expect(audit).toBeNull();
 

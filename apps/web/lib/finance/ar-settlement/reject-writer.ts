@@ -89,6 +89,24 @@ export async function rejectSettlement(input: RejectSettlementInput): Promise<Re
      */
     if (flipped.count === 0) throw new SettlementError("NOT_PENDING");
 
+    /**
+     * Written here, not in the action, so it can never go missing. A process death between this
+     * transaction committing and the action's own `auditLog.create` would otherwise leave the
+     * rejection with no audit row and no way back to writing one: a retry against this settlement
+     * throws `NOT_PENDING` (there is no replay branch for reject — see the docstring above), so
+     * nothing past this transaction ever gets a second chance to create it. The CAS above
+     * guarantees this line runs at most once per rejection.
+     */
+    await tx.auditLog.create({
+      data: {
+        userId: input.rejectedById,
+        action: "SETTLEMENT_REJECT",
+        entityType: "StoreSettlement",
+        entityId: row.id,
+        reason,
+      },
+    });
+
     return row;
   });
 

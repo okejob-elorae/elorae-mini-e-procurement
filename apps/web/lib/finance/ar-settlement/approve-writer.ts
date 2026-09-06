@@ -593,8 +593,14 @@ export async function approveSettlement(
 
   /**
    * The status flip, last. `runSerializable` COMMITS on a normal return and rolls back only on a
-   * throw, so the zero-count arm below is deliberately write-free — the audit row is created only
-   * after the CAS actually matched.
+   * throw, so the zero-count arm below is deliberately write-free — both audit rows below are
+   * created only after the CAS actually matched, which is also exactly why they live here rather
+   * than in the action: a crash between this transaction committing and the action's own next
+   * statement (the journal-posting loop, or a process death right before an `auditLog.create` of
+   * its own) is unrecoverable if the audit write depends on anything past this return. The CAS
+   * guarantees this block runs at most once per approval — a resumed call that lands on the
+   * `alreadyApproved` branch above never reaches here, so there is no double-write to guard
+   * against.
    */
   return runSerializable<ApproveSettlementResult>(async (tx) => {
     const flipped = await tx.storeSettlement.updateMany({
@@ -629,9 +635,27 @@ export async function approveSettlement(
     }
 
     /**
-     * The override is recorded here rather than in the action because the tolerance and the
-     * variance it was measured against are known only to this function. The action writes its own
-     * `SETTLEMENT_APPROVE` row for the approval itself; this one exists solely for the exception.
+     * `SETTLEMENT_APPROVE` is written here, not in the action, so it can never go missing: a
+     * process death between this transaction committing and the action's next statement (the
+     * journal-posting loop, or its own `auditLog.create`) would otherwise leave the approval with
+     * no audit row and no way back to writing one — a retry lands on the `alreadyApproved` replay
+     * branch above, which is write-free by design and must stay that way, so nothing past this
+     * transaction ever gets a second chance to create it.
+     */
+    await tx.auditLog.create({
+      data: {
+        userId: input.approvedById,
+        action: "SETTLEMENT_APPROVE",
+        entityType: "StoreSettlement",
+        entityId: settlement.id,
+        metadata: { paymentIds },
+      },
+    });
+
+    /**
+     * The override reason is recorded here too, for the same reason — the tolerance and the
+     * variance it was measured against are known only to this function, and this is the one
+     * transaction guaranteed to run exactly once per approval.
      */
     if (needsOverride) {
       await tx.auditLog.create({

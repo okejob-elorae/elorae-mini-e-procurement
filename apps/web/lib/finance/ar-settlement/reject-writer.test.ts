@@ -48,6 +48,7 @@ d("rejectSettlement (test bed only)", () => {
   });
 
   afterEach(async () => {
+    await prisma.auditLog.deleteMany({ where: { entityId: seededId(settlementId) } });
     await prisma.storeSettlement.deleteMany({ where: { id: seededId(settlementId) } });
     await prisma.user.deleteMany({ where: { id: { in: [seededId(salesmanId), seededId(adminId)] } } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -61,6 +62,17 @@ d("rejectSettlement (test bed only)", () => {
     expect(row!.rejectReason).toBe("wrong amount");
     expect(row!.reviewedById).toBe(adminId);
     expect(row!.reviewedAt).not.toBeNull();
+  });
+
+  it("writes a SETTLEMENT_REJECT audit row inside the same transaction as the CAS", async () => {
+    await rejectSettlement({ settlementId, rejectedById: adminId, reason: "wrong amount" });
+    const log = await prisma.auditLog.findFirst({
+      where: { entityId: settlementId, action: "SETTLEMENT_REJECT" },
+    });
+    expect(log).not.toBeNull();
+    expect(log!.userId).toBe(adminId);
+    expect(log!.entityType).toBe("StoreSettlement");
+    expect(log!.reason).toBe("wrong amount");
   });
 
   it("refuses a blank reason", async () => {

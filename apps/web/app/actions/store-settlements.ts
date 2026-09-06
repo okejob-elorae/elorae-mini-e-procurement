@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { submitSettlement } from "@/lib/finance/ar-settlement/submit-writer";
@@ -273,25 +272,12 @@ export async function approveSettlementAction(input: unknown): Promise<ApproveSe
   }
 
   /*
-   * Written only for the run that actually flips the status. A resumed call landing on
-   * `alreadyApproved` reports the same payments again but must not create a second
-   * `SETTLEMENT_APPROVE` row for the one approval that already happened — the writer's own
-   * `SETTLEMENT_VARIANCE_OVERRIDE` row (written inside its status-flip transaction, only when an
-   * override was actually needed) is the only other audit entry this feature writes, and this
-   * action does not duplicate it.
+   * `SETTLEMENT_APPROVE` is written inside `approveSettlement`'s own status-flip transaction, not
+   * here — a process death between that transaction committing and this action's next statement
+   * would otherwise leave the approval with no audit row and no way back to writing one, since a
+   * retry lands on the `alreadyApproved` replay branch, which is write-free by design. See that
+   * writer's own comment beside the write for the full reasoning.
    */
-  if (!result.alreadyApproved) {
-    await prisma.auditLog.create({
-      data: {
-        userId: g.userId,
-        action: "SETTLEMENT_APPROVE",
-        entityType: "StoreSettlement",
-        entityId: input.settlementId,
-        metadata: { paymentIds: result.paymentIds },
-      },
-    });
-  }
-
   revalidatePath("/pwa/pelunasan");
   revalidatePath("/backoffice/finance/pelunasan");
 
@@ -300,9 +286,9 @@ export async function approveSettlementAction(input: unknown): Promise<ApproveSe
 
 /**
  * Rejects a submitted settlement for the finance queue. `rejectSettlement` itself CAS-flips
- * `PENDING -> REJECTED` and enqueues the salesman's `NotificationQueue` row; this action owns the
- * `SETTLEMENT_REJECT` audit row, the same split as `approveSettlementAction` owning
- * `SETTLEMENT_APPROVE` above — the writer's docstring reasons through why that split exists.
+ * `PENDING -> REJECTED`, writes its own `SETTLEMENT_REJECT` audit row inside that same
+ * transaction, and enqueues the salesman's `NotificationQueue` row — see that writer's comment
+ * beside the audit write for why it lives there rather than in this action.
  */
 export async function rejectSettlementAction(input: unknown): Promise<RejectSettlementActionResult> {
   const g = await guardManage();
@@ -314,16 +300,6 @@ export async function rejectSettlementAction(input: unknown): Promise<RejectSett
   } catch (e) {
     return toApprovalResult(e);
   }
-
-  await prisma.auditLog.create({
-    data: {
-      userId: g.userId,
-      action: "SETTLEMENT_REJECT",
-      entityType: "StoreSettlement",
-      entityId: input.settlementId,
-      reason: input.reason.trim(),
-    },
-  });
 
   revalidatePath("/pwa/pelunasan");
   revalidatePath("/backoffice/finance/pelunasan");
