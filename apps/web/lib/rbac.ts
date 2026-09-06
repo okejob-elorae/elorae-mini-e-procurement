@@ -311,4 +311,5 @@ export const PERMISSIONS = {
   // Finance — Collections
   COLLECTIONS_COLLECT: "collections:collect",
   COLLECTIONS_MANAGE: "collections:manage",
+  COLLECTIONS_AMPLOP: "collections:amplop",
 } as const;

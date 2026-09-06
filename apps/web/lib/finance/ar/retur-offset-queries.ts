@@ -83,6 +83,32 @@ export async function getStoreAvailableCredit(storeId: string): Promise<number> 
   );
 }
 
+/**
+ * The batched sibling of getStoreAvailableCredit, for a screen showing several stores at once.
+ * Built on the same offsettableReturnWhere conditions so the two can never drift on what
+ * "available" means, and it sums REMAINING value — a partially drawn retur deliberately stays
+ * offsetStatus AVAILABLE, so reading totalValue here would overstate a store's credit.
+ *
+ * Every requested id is present in the returned map; a store with nothing offsettable maps to 0,
+ * so a caller never has to distinguish "no credit" from "not asked about".
+ */
+export async function getStoreAvailableCreditMap(storeIds: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (storeIds.length === 0) return result;
+  for (const id of storeIds) result.set(id, 0);
+
+  const rows = await prisma.fieldReturn.findMany({
+    where: { ...offsettableReturnWhere(), storeId: { in: storeIds } },
+    select: { storeId: true, totalValue: true, appliedValue: true },
+  });
+
+  for (const r of rows) {
+    const remaining = (r.totalValue ? Number(r.totalValue) : 0) - Number(r.appliedValue);
+    result.set(r.storeId, roundCents((result.get(r.storeId) ?? 0) + remaining));
+  }
+  return result;
+}
+
 export type OffsetAllocationSuggestion = { receivableId: string; amount: number };
 
 /**

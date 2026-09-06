@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowRight, Bell, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck, Wallet } from "lucide-react";
+import { ArrowRight, Bell, ChevronRight, Clock, LogOut, Mail, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck, Wallet } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { listPendingOrders } from "@/lib/pwa/offline/queue";
 import { listPendingCompletions } from "@/lib/pwa/offline/completion-queue";
@@ -28,16 +28,27 @@ type Props = {
   recentStores: Array<{ storeId: string; storeName: string }>;
   canCollect: boolean;
   canCompletePod: boolean;
+  canViewAmplop: boolean;
   onLogout: () => Promise<void>;
 };
 
-export function HomeShell({ userName, activeVisit, stores, recentStores, canCollect, canCompletePod, onLogout }: Props) {
+export function HomeShell({
+  userName,
+  activeVisit,
+  stores,
+  recentStores,
+  canCollect,
+  canCompletePod,
+  canViewAmplop,
+  onLogout,
+}: Props) {
   const t = useTranslations("pwa.nearest");
   const tAuth = useTranslations("auth");
   const tOffline = useTranslations("pwa.offline");
   const tVanSale = useTranslations("vanSale");
   const tSmartRequest = useTranslations("pwa.smartRequest");
   const tCollections = useTranslations("pwa.collections");
+  const tAmplop = useTranslations("pwa.amplop");
   const tDeliveries = useTranslations("pwa.deliveries");
   const tNotifications = useTranslations("pwa.notifications");
   const [perm, setPerm] = useState<PermState>("unknown");
@@ -161,6 +172,15 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
     </Button>
   ) : null;
 
+  const amplopCta = canViewAmplop ? (
+    <Button asChild variant="outline" className="w-full">
+      <Link href="/pwa/pelunasan">
+        <Mail className="h-4 w-4" />
+        {tAmplop("homeCta")}
+      </Link>
+    </Button>
+  ) : null;
+
   const deliveriesCta = canCompletePod ? (
     <Button asChild variant="outline" className="w-full">
       <Link href="/pwa/deliveries">
@@ -236,6 +256,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
         </div>
         {vanSaleCta}
         {collectionsCta}
+        {amplopCta}
         {deliveriesCta}
         <CheckOutButton visitId={activeVisit.id} />
       </div>
@@ -251,6 +272,7 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, canColl
       {pendingCompletionsChip}
       {vanSaleCta}
       {collectionsCta}
+      {amplopCta}
       {deliveriesCta}
 
       <Card>

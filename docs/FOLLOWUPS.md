@@ -420,6 +420,39 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       before the `try`, so a throw while creating the second leaks the first onto the shared `:3308`
       bed, and `afterEach`'s store cleanup then fails under emulated `Restrict`. Narrow window;
       moving both creates inside the `try` closes it.
+- [ ] **`packages/db/prisma/seed-amplop-permission.sql` must be hand-run on prod after the amplop
+      digital PR merges, or the screen is invisible to every non-admin.** No migration applies it and
+      nothing on the deploy path seeds permission rows. The failure is silent: the `/pwa/pelunasan`
+      guard redirects to `/pwa` and the home CTA never renders, with no error anywhere. An admin CANNOT
+      detect the gap, and not for the reason it looks like: `pwaAccessGuard` redirects every wildcard
+      holder to `/backoffice` BEFORE the permission check runs, so an admin never reaches this screen
+      at all and the ADMIN grant in the seed is convention-mirroring only. **Verify on a SALESMAN or
+      COLLECTOR account, never your own admin login.** The seed is idempotent and bumps
+      `permissionsVersion` on ADMIN, SALESMAN and COLLECTOR so logged-in users pick the grant up
+      without re-login — but it targets each non-system role BY NAME and silently no-ops for any that
+      is absent, COLLECTOR included, so verify the grant landed for BOTH non-system roles rather than
+      assuming it. A missed COLLECTOR grant is the quiet one: `listCollectorCandidates` only offers
+      users holding `collections:collect` + `pwa:access`, so collectors are exactly who ends up in
+      `Receivable.collectorId`, and without the grant the amplop's collector arm never fires for
+      anyone (amplop-digital).
+- [ ] Story 23-01's "sorted by route/visit plan" ordering is undelivered and blocked on an entity that
+      does not exist. There is no route, territory or visit-plan model in this codebase — `StoreVisit`
+      is a GPS check-in record and `Store` has no route column — so the amplop sorts stores by total
+      overdue descending, then by name. This slice deliberately invented no substitute (a synthesised
+      ordering off check-in history or store proximity would look like a route without being one),
+      and building a real route entity is its own feature, not a clause inside an AR epic (amplop-digital).
+- [ ] Konsi stores can never appear in an amplop, and will not until sell-through invoicing exists.
+      The amplop reads `Receivable` rows and a konsi order creates none — `Receivable.deliveryId` is
+      `@unique` onto a putus `FieldSalesDelivery`, and konsi sell-through AR is still blocked (see the
+      Consignment Lifecycle rows in `docs/EPIC-STATUS.md`). Nothing in the amplop is konsi-aware or
+      needs to be: it lights up for free the moment a konsi receivable exists. Worth stating because a
+      salesman carrying both putus and konsi paperwork will notice half the envelope missing and read
+      it as a bug (amplop-digital).
+- [ ] The amplop is READ-ONLY by design — no writer, no tap-through, no offline capture. The acting
+      surface is the settlement entry in the next slice, which is richer than the collection submit the
+      amplop would otherwise have linked into, so wiring it to the existing collection flow now would
+      have to be unpicked. Offline capture is absent for the same reason rather than as debt: the PWA
+      offline queue exists but a read surface has nothing to queue (amplop-digital).
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.

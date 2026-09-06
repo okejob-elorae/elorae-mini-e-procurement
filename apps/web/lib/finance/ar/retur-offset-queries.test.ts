@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listOffsettableReturns, getStoreAvailableCredit, suggestOffsetAllocations } from "./retur-offset-queries";
+import {
+  listOffsettableReturns,
+  getStoreAvailableCredit,
+  getStoreAvailableCreditMap,
+  suggestOffsetAllocations,
+} from "./retur-offset-queries";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -9,6 +14,7 @@ const d = isProd ? describe.skip : describe;
 d("retur-offset-queries (test bed only)", () => {
   let token = "";
   let storeId = "";
+  let otherStoreId = "";
   let userId = "";
   let uomId = "";
   let itemId = "";
@@ -29,7 +35,7 @@ d("retur-offset-queries (test bed only)", () => {
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
-    storeId = ""; userId = ""; uomId = ""; itemId = ""; orderId = ""; orderLineId = ""; deliveryId = ""; deliveryLineId = "";
+    storeId = ""; otherStoreId = ""; userId = ""; uomId = ""; itemId = ""; orderId = ""; orderLineId = ""; deliveryId = ""; deliveryLineId = "";
     receivableId = ""; returAvailableId = ""; returAppliedId = ""; returPendingValId = "";
     returPendingApprovalId = ""; returManualPricedId = "";
     createdReturnIds = [];
@@ -38,6 +44,10 @@ d("retur-offset-queries (test bed only)", () => {
       data: { code: `TEST-ROQ-${token}`, name: "test", address: "test", termsType: "PUTUS" },
     });
     storeId = store.id;
+    const otherStore = await prisma.store.create({
+      data: { code: `TEST-ROQ-OTHER-${token}`, name: "test-other", address: "test", termsType: "PUTUS" },
+    });
+    otherStoreId = otherStore.id;
     const user = await prisma.user.create({
       data: { email: `roq-${token}@test.local`, name: "test", role: "ADMIN" },
     });
@@ -122,6 +132,7 @@ d("retur-offset-queries (test bed only)", () => {
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(otherStoreId) } });
   });
 
   it("listOffsettableReturns returns only APPROVED + VALUED + AVAILABLE returns", async () => {
@@ -182,6 +193,28 @@ d("retur-offset-queries (test bed only)", () => {
 
     /* returAvailableId (300 - 100) + returManualPricedId (250 - 0) still AVAILABLE */
     expect(await getStoreAvailableCredit(storeId)).toBe(450);
+  });
+
+  it("getStoreAvailableCreditMap maps every requested store id, with zero for stores holding no offsettable retur", async () => {
+    const map = await getStoreAvailableCreditMap([storeId, otherStoreId]);
+    expect(map.get(otherStoreId)).toBe(0);
+    expect(map.has(otherStoreId)).toBe(true);
+  });
+
+  it("getStoreAvailableCreditMap sums remaining value, not total, per store", async () => {
+    await prisma.fieldReturn.update({
+      where: { id: returAvailableId },
+      data: { appliedValue: 100 },
+    });
+
+    /* returAvailableId (300 - 100) + returManualPricedId (250 - 0) still AVAILABLE */
+    const map = await getStoreAvailableCreditMap([storeId]);
+    expect(map.get(storeId)).toBe(450);
+  });
+
+  it("getStoreAvailableCreditMap returns an empty map for an empty id list", async () => {
+    const map = await getStoreAvailableCreditMap([]);
+    expect(map.size).toBe(0);
   });
 
   it("suggests allocations only up to the remaining value", async () => {
