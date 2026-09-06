@@ -25,6 +25,7 @@ import {
   simpleComponentKey,
   type InvoiceRow,
 } from "./approve-writer";
+import { findArJournalPendingFlags } from "@/lib/finance/ar/journal-pending";
 
 /**
  * Re-exported so the screen components import their types from one place. The definitions live in
@@ -168,6 +169,17 @@ export type SettlementVarianceOverride = {
   at: Date;
 };
 
+/**
+ * One reason a component payment's `PAYMENT_RECEIPT` journal did not post, read off the
+ * `JOURNAL_PENDING` notification the attempt left behind. `reason` is `postArJournalSafely`'s own
+ * code (`UNMAPPED_ROLE`, `UNBALANCED`, `ERROR`); `role` is the posting role it named, present only
+ * for `UNMAPPED_ROLE`.
+ */
+export type SettlementJournalGapCause = {
+  reason: string;
+  role: string | null;
+};
+
 export type SettlementApprovalDetail = {
   id: string;
   docNo: string;
@@ -209,9 +221,16 @@ export type SettlementApprovalDetail = {
   /**
    * The POSTED component payments of an APPROVED settlement that carry no `PAYMENT_RECEIPT`
    * journal. Always empty while the document is `PENDING` or `REJECTED`. See the block that fills
-   * it for why the gap is reachable and why it has no other repair path.
+   * it for the two ways the gap opens.
    */
   paymentsMissingJournal: string[];
+  /**
+   * Why the last posting attempt for those payments failed, where it got far enough to say — the
+   * distinct (reason, role) pairs of the `JOURNAL_PENDING` rows standing against them. EMPTY means
+   * no attempt was ever recorded, i.e. the crash window, where re-posting is the whole fix.
+   * Non-empty means posting was attempted and refused, and re-posting alone will refuse again.
+   */
+  journalGapCauses: SettlementJournalGapCause[];
 };
 
 /**
@@ -466,22 +485,36 @@ export async function getSettlementForApproval(
   });
 
   /**
-   * The POSTED component payments carrying no `PAYMENT_RECEIPT` journal.
+   * The POSTED component payments carrying no `PAYMENT_RECEIPT` journal, and — where one exists —
+   * the reason the last posting attempt gave.
    *
    * `approveSettlementAction` posts the journals AFTER `approveSettlement` returns, in a loop of up
-   * to five sequential `postArJournalSafely` calls outside any transaction. A failure between the
-   * status flip committing and that loop finishing leaves those payments with no `Journal` row AND
-   * no `JOURNAL_PENDING` notification — the notification is what `postArJournalSafely` writes, and
-   * it never ran — so `isArJournalRetryable` reports nothing to retry and the payment detail page
-   * offers no control. AR and the payment subledger are correct; only the GL leg is missing, and
-   * silently.
+   * to five sequential `postArJournalSafely` calls outside any transaction. TWO different failures
+   * land here, and only reporting both makes the alert actionable:
+   *
+   *   - the CRASH window — a failure between the status flip committing and that loop finishing
+   *     leaves those payments with no `Journal` row AND no `JOURNAL_PENDING` notification, because
+   *     the notification is what `postArJournalSafely` writes and it never ran. So
+   *     `isArJournalRetryable` reports nothing to retry, the payment detail page offers no control
+   *     either, and this screen's re-post is the only repair path;
+   *   - a REFUSED post — `postArJournalSafely` degrades a throwing or failing builder into a
+   *     `JOURNAL_PENDING` notification and returns, which also leaves no `Journal` row. This is the
+   *     documented production day-one state, not a rare one: `TRADE_PROGRAM_EXPENSE` and
+   *     `ADMIN_FEE_EXPENSE` have no `JournalAccountMapping` row until finance maps them, so
+   *     `resolveAccount` raises `UnmappedRoleError` on essentially every first approval. A re-post
+   *     from here hits the same refusal, and `alreadyFlagged` dedups the notification, so nothing
+   *     on the screen would change and nothing would name the cause.
+   *
+   * `journalGapCauses` is what separates the two. It carries the distinct (reason, role) pairs of
+   * the JOURNAL_PENDING rows standing against these payments — empty for the crash window, and for
+   * a refused post the thing the operator has to fix before the re-post button can do anything.
    *
    * The absence of a `Journal` row is safe evidence HERE, unlike the `isArJournalRetryable` gate it
    * deliberately does not reuse: that gate exists because a backfilled pre-existing delivery has no
    * journal by construction, and offering a retry off its absence would post revenue against
    * nothing. A settlement component payment has no such history — it was created by this feature,
    * by a writer whose caller always attempts the journal — so a missing row means the attempt was
-   * lost, not that it was never owed.
+   * lost or refused, never that it was not owed.
    *
    * VOIDED components are excluded: their receipt journal is not what a retry would post.
    */
@@ -489,6 +522,7 @@ export async function getSettlementForApproval(
     .filter((component) => component.paymentId !== null && component.paymentStatus === "POSTED")
     .map((component) => component.paymentId as string);
   let paymentsMissingJournal: string[] = [];
+  const journalGapCauses: SettlementJournalGapCause[] = [];
   if (settlement.status === "APPROVED" && postedComponentPaymentIds.length > 0) {
     const journals = await prisma.journal.findMany({
       where: { sourceType: "PAYMENT_RECEIPT", sourceId: { in: postedComponentPaymentIds } },
@@ -496,6 +530,21 @@ export async function getSettlementForApproval(
     });
     const journalled = new Set(journals.map((journal) => journal.sourceId));
     paymentsMissingJournal = postedComponentPaymentIds.filter((id) => !journalled.has(id));
+
+    const flags = await findArJournalPendingFlags("ar_payment", paymentsMissingJournal);
+    const seen = new Set<string>();
+    for (const flag of flags.values()) {
+      /*
+       * `reason` is never absent on a row this feature wrote, but the column is untyped JSON and a
+       * hand-inserted row would render an empty cause. `ERROR` is the same fallback the writer's
+       * own catch arm uses.
+       */
+      const reason = flag.reason ?? "ERROR";
+      const key = `${reason}|${flag.role ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      journalGapCauses.push({ reason, role: flag.role });
+    }
   }
 
   /**
@@ -659,6 +708,7 @@ export async function getSettlementForApproval(
     approvable: settlement.status === "PENDING" && checks.every((check) => check.status === "PASS"),
     varianceOverride,
     paymentsMissingJournal,
+    journalGapCauses,
   };
 }
 

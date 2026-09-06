@@ -6,6 +6,72 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/**
+ * `NotificationQueue.body` is `VARCHAR(191)` and the body DERIVES from a reason already allowed
+ * all 191 characters, so the overflow is in the derived value rather than in either input. The
+ * writer's own best-effort catch swallows the resulting truncation error and the action still
+ * reports success, so an unbounded body means the salesman is never told his settlement was
+ * rejected — with nothing anywhere saying so.
+ */
+describe("buildRejectionBody", () => {
+  it("leaves a short reason whole", () => {
+    expect(buildRejectionBody("BKM/2026/09/0001", "salah jumlah")).toBe(
+      "Pelunasan BKM/2026/09/0001 ditolak: salah jumlah",
+    );
+  });
+
+  it("keeps a maximum-length reason on a real docNo inside 191 characters", () => {
+    const body = buildRejectionBody("BKM/2026/09/0001", "x".repeat(191));
+    expect(body.length).toBe(191);
+    expect(body.startsWith("Pelunasan BKM/2026/09/0001 ditolak: ")).toBe(true);
+  });
+
+  it("marks the cut instead of stopping mid-reason silently", () => {
+    const body = buildRejectionBody("BKM/2026/09/0001", "x".repeat(191));
+    expect(body.endsWith("\u2026")).toBe(true);
+  });
+
+  it("drops the reason entirely rather than overflow when the docNo alone fills the column", () => {
+    const body = buildRejectionBody("B".repeat(400), "salah jumlah");
+    expect(body.length).toBe(191);
+    expect(body).not.toContain("salah jumlah");
+  });
+
+  /**
+   * The cut must land between characters, not inside one. `String.prototype.slice` works in UTF-16
+   * code units, so an astral character straddling the boundary is left as a lone high surrogate —
+   * unrenderable, and replaced with U+FFFD the moment the body is encoded on its way into
+   * `NotificationQueue.body`. The regex tests the property directly rather than the encoder's
+   * reaction to it, so the assertion holds in any environment.
+   */
+  it("does not split a surrogate pair at the cut", () => {
+    const docNo = "BKM/2026/09/0001";
+    const room = 191 - `Pelunasan ${docNo} ditolak: `.length;
+    /* Puts the emoji's two code units at room-2 and room-1, so the cut falls between them. */
+    const reason = `${"x".repeat(room - 2)}\u{1F600}${"y".repeat(20)}`;
+    const body = buildRejectionBody(docNo, reason);
+    expect(body.length).toBeLessThanOrEqual(191);
+    expect(LONE_SURROGATE.test(body)).toBe(false);
+    expect(body.endsWith("\u2026")).toBe(true);
+  });
+
+  /*
+   * The other direction. Dropping the orphaned surrogate must not turn into dropping a character
+   * that fits — a fix that trimmed one code point unconditionally would pass the test above and
+   * silently shorten every truncated body by one.
+   */
+  it("keeps an astral character that fits entirely inside the cut", () => {
+    const docNo = "BKM/2026/09/0001";
+    const room = 191 - `Pelunasan ${docNo} ditolak: `.length;
+    const reason = `${"x".repeat(room - 3)}\u{1F600}${"y".repeat(20)}`;
+    const body = buildRejectionBody(docNo, reason);
+    expect(body.length).toBe(191);
+    expect(body).toContain("\u{1F600}");
+  });
+});
+
 d("rejectSettlement (test bed only)", () => {
   let token = "";
   let storeId = "";
@@ -156,37 +222,5 @@ d("rejectSettlement (test bed only)", () => {
     await expect(
       rejectSettlement({ settlementId, rejectedById: adminId, reason: "second attempt" }),
     ).rejects.toMatchObject({ code: "NOT_PENDING" });
-  });
-
-  /**
-   * `NotificationQueue.body` is `VARCHAR(191)` and the body DERIVES from a reason already allowed
-   * all 191 characters, so the overflow is in the derived value rather than in either input. The
-   * writer's own best-effort catch swallows the resulting truncation error and the action still
-   * reports success, so an unbounded body means the salesman is never told his settlement was
-   * rejected — with nothing anywhere saying so.
-   */
-  describe("buildRejectionBody", () => {
-    it("leaves a short reason whole", () => {
-      expect(buildRejectionBody("BKM/2026/09/0001", "salah jumlah")).toBe(
-        "Pelunasan BKM/2026/09/0001 ditolak: salah jumlah",
-      );
-    });
-
-    it("keeps a maximum-length reason on a real docNo inside 191 characters", () => {
-      const body = buildRejectionBody("BKM/2026/09/0001", "x".repeat(191));
-      expect(body.length).toBe(191);
-      expect(body.startsWith("Pelunasan BKM/2026/09/0001 ditolak: ")).toBe(true);
-    });
-
-    it("marks the cut instead of stopping mid-reason silently", () => {
-      const body = buildRejectionBody("BKM/2026/09/0001", "x".repeat(191));
-      expect(body.endsWith("\u2026")).toBe(true);
-    });
-
-    it("drops the reason entirely rather than overflow when the docNo alone fills the column", () => {
-      const body = buildRejectionBody("B".repeat(400), "salah jumlah");
-      expect(body.length).toBe(191);
-      expect(body).not.toContain("salah jumlah");
-    });
   });
 });

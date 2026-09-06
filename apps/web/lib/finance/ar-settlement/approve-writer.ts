@@ -56,6 +56,22 @@ export type InvoiceRow = { receivableId: string; amount: number };
  * it is NOT derivable from `agreedRemaining`: a component can close the RECEIVABLE while leaving
  * part of the agreed share unspent, whenever `StoreSettlementInvoice.amount` exceeds the live
  * balance. Keeping both is what makes the two cases distinguishable.
+ *
+ * **THIS TYPE IS FORKED, and the fork is invisible to the compiler.** It and
+ * `SettlementPaymentMethod` are exported to describe this writer's shape, not as a shared seam —
+ * nothing outside this module imports either one, so a rename here type-checks cleanly across the
+ * whole app. The consumer that LOOKS like it would catch a mistake does not:
+ * `buildCollectibilityCheck` in `./checks` RESTATES this row structurally, as
+ * `Array<{ receivableId: string; agreedRemaining: number; settlementAllocated: number }>`, so that
+ * module can stay import-free of everything but this feature's own pure modules. Nothing
+ * type-checks the two declarations against each other, so re-typing or renaming a field here leaves
+ * `checks.ts` compiling happily against its own copy while the screen previews different arithmetic
+ * from the writer it claims to mirror. Same fork shape as `EPSILON` in `calc.ts`, and the same
+ * rule: change one, change the other by hand in the same commit.
+ *
+ * The four exports that ARE a shared seam — `computeComponentHeadroom`, `returComponentKey`,
+ * `simpleComponentKey` and `InvoiceRow` — are the ones `queries.ts` actually imports, and those the
+ * compiler does hold together.
  */
 export type HeadroomRow = AllocationInput & {
   agreedRemaining: number;
@@ -139,9 +155,11 @@ function allocateForComponent(amount: number, headroom: HeadroomRow[]): Allocati
  * PUBLIC API — do not strip the `export`. `lib/finance/ar-settlement/queries.ts` calls this to
  * build the finance approval screen's checklist, so the preview shares this exact arithmetic
  * rather than a second copy of it. The same applies to `returComponentKey`/`simpleComponentKey`
- * above and to `InvoiceRow`/`HeadroomRow`: a preview that spelled the idempotency keys itself
+ * above and to the `InvoiceRow` they are fed: a preview that spelled the idempotency keys itself
  * would report every already-posted component as unposted and mis-state both the headroom and the
- * retur-credit checks.
+ * retur-credit checks. Those FOUR are the shared seam. `HeadroomRow` and `SettlementPaymentMethod`
+ * are exported but imported nowhere — see the warning on `HeadroomRow` above for the fork that
+ * hides behind that.
  */
 export async function computeComponentHeadroom(
   invoiceRows: InvoiceRow[],
@@ -487,6 +505,15 @@ export async function approveSettlement(
    *     agreedRemaining)` is 0 for that row, so `allocateOldestFirst` skips it and no
    *     `recordPayment` call is ever made against it — the check would be refusing over a
    *     receivable it will not touch.
+   *
+   *     This exemption does NOT make the misdiagnosis the paragraph above warns about impossible;
+   *     it narrows it, and one shape survives. Where this settlement pays a row down PARTIALLY and
+   *     some OTHER channel then closes the rest, the row is skipped here on `settlementAllocated`
+   *     and the components still owed are refused one block down as `COMPONENT_EXCEEDS_HEADROOM`,
+   *     pointing at the invoice selection rather than at the invoice someone else settled — the
+   *     same misdirection, now reachable for a row this document DID touch. Telling that case
+   *     apart needs a third term this design does not carry, and both refusals block the same
+   *     approval without moving money, so the trade stands deliberately.
    *   - `agreedRemaining <= 0` — this settlement's whole agreed share of the invoice is spent, so
    *     the same reasoning applies with nothing left to allocate either way.
    *

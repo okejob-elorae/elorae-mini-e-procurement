@@ -4274,6 +4274,13 @@
     "journalGapMessage": "{count} pembayaran dari pelunasan ini sudah mengurangi piutang tetapi belum masuk ke buku besar. Persetujuannya tetap sah dan tidak ada uang yang berisiko — hanya jurnalnya yang belum ada. Memposting ulang aman dan tidak mengubah apa pun selain itu.",
     "journalGapButton": "Posting jurnal yang belum ada",
     "journalGapToast": "Pemostingan dijalankan ulang. Yang masih belum terbentuk tetap tampil di sini.",
+    "journalGapCauseMessage": "Pemostingan sudah pernah dicoba dan ditolak buku besar — {causes}. Memposting ulang akan ditolak dengan cara yang sama sampai hal itu diperbaiki.",
+    "journalGapReason": {
+      "UNMAPPED_ROLE": "belum ada akun yang dipetakan untuk peran posting ini",
+      "UNBALANCED": "jurnalnya tidak balance",
+      "ERROR": "kesalahan tak terduga"
+    },
+    "journalGapMappingLink": "Buka Pemetaan Akun",
     "storedDriftMessageClosed": "Pelunasan ini diajukan dengan nilai seharusnya {storedExpected}, tetapi baris faktur dan potongannya menghasilkan {expected}. Angka di bawah adalah hasil hitung ulang.",
     "componentsTitlePosted": "Pembayaran yang diposting persetujuan ini",
     "componentsHintPosted": "Setiap komponen diposting sebagai pembayaran tersendiri. Buka salah satunya untuk melihat alokasi atau membatalkannya.",

@@ -227,6 +227,13 @@ export function buildReturnEligibilityCheck(deductions: SettlementDeductionDetai
  * larger than the live balance lets one component close the receivable with the agreed share still
  * partly unspent. Neither exemption may be widened to "the effective headroom is zero" — that also
  * covers a receivable some OTHER channel closed, which is the refusal this check is FOR.
+ *
+ * The `headroom` parameter RESTATES `approve-writer.ts`'s `HeadroomRow` structurally rather than
+ * importing it, which is what keeps this module import-free of the writer — and means nothing
+ * type-checks the two declarations against each other. A field renamed or re-typed there leaves
+ * this signature compiling against its own copy while the preview silently diverges from the writer
+ * it claims to mirror, so the two must be changed together by hand. `HeadroomRow` carries the
+ * matching warning.
  */
 export function buildCollectibilityCheck(
   headroom: Array<{ receivableId: string; agreedRemaining: number; settlementAllocated: number }>,

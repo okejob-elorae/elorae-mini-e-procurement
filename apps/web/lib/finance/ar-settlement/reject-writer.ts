@@ -39,7 +39,27 @@ export function buildRejectionBody(docNo: string, reason: string): string {
   const room = MAX_NOTIFICATION_BODY_LENGTH - prefix.length;
   if (room <= 0) return `Pelunasan ${docNo} ditolak`.slice(0, MAX_NOTIFICATION_BODY_LENGTH);
   if (reason.length <= room) return `${prefix}${reason}`;
-  return `${prefix}${reason.slice(0, room - 1)}…`;
+  return `${prefix}${sliceCodeUnitsWholeCharacters(reason, room - 1)}…`;
+}
+
+/**
+ * `String.prototype.slice` cuts on UTF-16 code units, so a character outside the BMP — an emoji,
+ * most obviously — straddling the boundary is left as a lone high surrogate. Node's UTF-8 encoder
+ * has nothing valid to write for one and substitutes U+FFFD, so the salesman's rejection notice
+ * ends in a replacement character.
+ *
+ * The budget stays in CODE UNITS rather than code points, because it exists to protect a
+ * `VARCHAR(191)` column that this codebase measures with `.length` everywhere else; dropping the
+ * orphaned surrogate can only make the result shorter, never longer, so the bound still holds.
+ *
+ * A lone high surrogate can only end up last here by having been split off its pair, or by having
+ * been unpaired in the input already — both are dropped, and the second was never renderable.
+ */
+function sliceCodeUnitsWholeCharacters(value: string, maxCodeUnits: number): string {
+  const cut = value.slice(0, maxCodeUnits);
+  if (cut.length === 0) return cut;
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
 export type RejectSettlementInput = {

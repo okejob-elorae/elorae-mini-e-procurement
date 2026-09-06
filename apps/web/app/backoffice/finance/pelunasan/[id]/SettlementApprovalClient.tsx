@@ -57,14 +57,18 @@ import type {
   SettlementComponentDetail,
   SettlementDeductionDetail,
   SettlementDeductionTypeValue,
+  SettlementJournalGapCause,
   SettlementStatusValue,
 } from "@/lib/finance/ar-settlement/queries";
 
 type Props = {
   settlement: SettlementApprovalDetail;
+  /* Holds `journals:view`? The journal-gap alert's mapping link is gated on it. */
+  canViewAccountMapping: boolean;
 };
 
 const QUEUE_PATH = "/backoffice/finance/pelunasan";
+const ACCOUNT_MAPPING_PATH = "/backoffice/finance/account-mapping";
 const MAX_REASON_LENGTH = 191;
 
 /**
@@ -173,9 +177,10 @@ function TotalRow({
   );
 }
 
-export function SettlementApprovalClient({ settlement: s }: Props) {
+export function SettlementApprovalClient({ settlement: s, canViewAccountMapping }: Props) {
   const t = useTranslations("financeStoreSettlements");
   const tCommon = useTranslations("common");
+  const tMapping = useTranslations("financeAccountMapping");
   const locale = useLocale();
   const router = useRouter();
 
@@ -240,6 +245,21 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
   const errorMessage = (reason: SettlementApprovalActionReason): string => {
     const key = `err.${reason}`;
     return t.has(key) ? t(key) : t("err.UNEXPECTED");
+  };
+
+  /**
+   * Names one journal-gap cause in the operator's own words. Both halves fall back to the raw code
+   * rather than an "unknown reason" placeholder: a `JOURNAL_PENDING` row carries whatever the
+   * builder returned, and a posting role added later has its `financeAccountMapping.role.*` copy
+   * added in the same slice — until then the bare `TRADE_PROGRAM_EXPENSE` is still the string
+   * finance searches for on the account-mapping screen, which is more use than "unknown".
+   */
+  const causeLabel = (cause: SettlementJournalGapCause): string => {
+    const reasonKey = `journalGapReason.${cause.reason}`;
+    const reason = t.has(reasonKey) ? t(reasonKey) : cause.reason;
+    if (cause.role === null) return reason;
+    const roleKey = `role.${cause.role}`;
+    return `${reason}: ${tMapping.has(roleKey) ? tMapping(roleKey) : cause.role}`;
   };
 
   const formatTimestamp = (date: Date) =>
@@ -307,9 +327,15 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
   /**
    * Re-runs the journal-posting loop for an APPROVED settlement whose component payments never got
    * their `PAYMENT_RECEIPT` entries — see `paymentsMissingJournal` in
-   * `lib/finance/ar-settlement/queries.ts` for how that gap opens and why nothing else can close
-   * it (no `JOURNAL_PENDING` notification was ever written, so the payment detail page's own retry
-   * control does not appear).
+   * `lib/finance/ar-settlement/queries.ts` for the two ways that gap opens.
+   *
+   * It is the whole fix for only ONE of them, the crash window, where no `JOURNAL_PENDING`
+   * notification was ever written and the payment detail page's own retry control therefore does
+   * not appear either. Against a post that was attempted and REFUSED — the unmapped-role state
+   * every fresh environment starts in — this button re-runs into the same refusal, and
+   * `alreadyFlagged` dedups the notification, so nothing visible changes. That is why the alert
+   * renders `journalGapCauses` and a link to the account-mapping screen beside it: the button
+   * alone would look broken, and the operator would have nothing to act on.
    *
    * It calls the approve action deliberately rather than a second endpoint of its own. On an
    * already-`APPROVED` settlement that action takes `approveSettlement`'s write-free
@@ -438,15 +464,32 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
           <AlertTitle>{t("journalGapTitle")}</AlertTitle>
           <AlertDescription>
             <p>{t("journalGapMessage", { count: s.paymentsMissingJournal.length })}</p>
-            <Button
-              variant="outline"
-              className="mt-2 h-10"
-              disabled={postingJournals}
-              onClick={() => void handlePostJournals()}
-            >
-              {postingJournals && <Loader2 className="h-4 w-4 animate-spin" />}
-              {t("journalGapButton")}
-            </Button>
+            {s.journalGapCauses.length > 0 && (
+              <p className="font-medium">
+                {t("journalGapCauseMessage", {
+                  causes: s.journalGapCauses.map(causeLabel).join("; "),
+                })}
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                className="h-10"
+                disabled={postingJournals}
+                onClick={() => void handlePostJournals()}
+              >
+                {postingJournals && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t("journalGapButton")}
+              </Button>
+              {s.journalGapCauses.length > 0 && canViewAccountMapping && (
+                <Button variant="outline" className="h-10" asChild>
+                  <Link href={ACCOUNT_MAPPING_PATH}>
+                    {t("journalGapMappingLink")}
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
+            </div>
           </AlertDescription>
         </Alert>
       )}
