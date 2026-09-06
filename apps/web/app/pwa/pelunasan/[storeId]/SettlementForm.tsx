@@ -82,14 +82,6 @@ const REASON_KEY: Partial<Record<SettlementActionReason, string>> = {
   DEDUCTIONS_EXCEED_INVOICES: "errDeductionsExceedInvoices",
 };
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 /**
  * Every input on this screen carries sen — `Decimal(15,2)` receivables and a documented
  * sub-rupiah `PARTIAL` residue make a fractional expected/actual figure reachable. The totals
@@ -258,13 +250,23 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
     ]);
   }
 
+  /**
+   * The slot number is derived INSIDE `setNextProgramSlot`'s own updater, not read from the
+   * render-time closure — two taps batched into the same event tick would otherwise both read the
+   * same stale `nextProgramSlot` value and mint the identical `program-N` slot, letting one
+   * uploaded photo satisfy both rows' evidence requirement. Functional updaters queued on the same
+   * piece of state run in order against the latest value, so nesting the `setRows` call inside
+   * this one guarantees each tap gets its own, never-reused index.
+   */
   function addProgramRow(): void {
-    const slot = `program-${nextProgramSlot}`;
-    setNextProgramSlot((n) => n + 1);
-    setRows((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), kind: "PROGRAM", slot, amountInput: "", note: "", proof: { status: "idle", file: null } },
-    ]);
+    setNextProgramSlot((n) => {
+      const slot = `program-${n}`;
+      setRows((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), kind: "PROGRAM", slot, amountInput: "", note: "", proof: { status: "idle", file: null } },
+      ]);
+      return n + 1;
+    });
   }
 
   function addAdminFeeRow(): void {
@@ -464,26 +466,33 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                         {t("colDueDate")}: {formatDateOnlyJakarta(new Date(inv.dueDateIso))}
                       </p>
                       <p className="text-right">
-                        {t("colOutstanding")}: {formatRupiah(inv.outstandingAmount)}
+                        {t("colOutstanding")}: {formatRupiahPrecise(inv.outstandingAmount)}
                       </p>
                     </div>
                     {inv.pendingSubmittedAmount > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        {t("pendingSubmittedLabel")}: {formatRupiah(inv.pendingSubmittedAmount)}
+                        {t("pendingSubmittedLabel")}: {formatRupiahPrecise(inv.pendingSubmittedAmount)}
                       </p>
                     )}
                     {checked && (
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        min="0"
-                        className="h-10"
-                        disabled={isPending}
-                        value={invoiceAmountInputs[inv.receivableId] ?? ""}
-                        aria-invalid={invalid}
-                        onChange={(e) => setInvoiceAmountInputs((prev) => ({ ...prev, [inv.receivableId]: e.target.value }))}
-                      />
+                      <div className="space-y-1">
+                        <Label htmlFor={`invoice-amount-${inv.receivableId}`} className="sr-only">
+                          {t("invoiceAmountLabel")}
+                        </Label>
+                        <Input
+                          id={`invoice-amount-${inv.receivableId}`}
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          min="0"
+                          className="h-10"
+                          placeholder={t("invoiceAmountPlaceholder")}
+                          disabled={isPending}
+                          value={invoiceAmountInputs[inv.receivableId] ?? ""}
+                          aria-invalid={invalid}
+                          onChange={(e) => setInvoiceAmountInputs((prev) => ({ ...prev, [inv.receivableId]: e.target.value }))}
+                        />
+                      </div>
                     )}
                     {invalid && <p className="text-xs text-destructive">{t("invoiceAmountInvalid")}</p>}
                   </div>
@@ -491,6 +500,9 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
               );
             })}
           </ul>
+        )}
+        {submitAttempted && !hasSelectedInvoice && invoices.length > 0 && (
+          <p className="text-xs text-destructive">{t("errNoInvoices")}</p>
         )}
       </section>
 
@@ -540,7 +552,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                     <SelectContent>
                       {options.map((opt) => (
                         <SelectItem key={opt.fieldReturnId} value={opt.fieldReturnId}>
-                          {`${opt.docNo} — ${formatRupiah(opt.remainingValue)}`}
+                          {`${opt.docNo} — ${formatRupiahPrecise(opt.remainingValue)}`}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -570,7 +582,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                   onChange={(e) => updateRow(row.id, { ...row, amountInput: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {t("returRemainingLabel")}: {formatRupiah(option?.remainingValue ?? 0)}
+                  {t("returRemainingLabel")}: {formatRupiahPrecise(option?.remainingValue ?? 0)}
                 </p>
                 {invalid && <p className="text-xs text-destructive">{t("returAmountInvalid")}</p>}
               </div>
@@ -855,7 +867,16 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
       {submitError && <p className="text-sm text-destructive">{submitError}</p>}
 
       <div className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <Button type="button" className="w-full" size="lg" disabled={!canSubmit} onClick={submit}>
+        {/**
+          * The button stays enabled even when the form is incomplete — `disabled={!canSubmit}`
+          * would make `onClick` (and therefore `submit()`'s own `setSubmitAttempted(true)`) never
+          * fire while anything is invalid, leaving every per-section "why is this blocked" message
+          * below permanently dead. `submit()`'s own `if (!canSubmit) return;` still stops a real
+          * request from going out; only `isPending` disables the tap itself, so a salesman standing
+          * at a counter with an incomplete form gets pointed at what's missing instead of a grey
+          * button with no explanation.
+          */}
+        <Button type="button" className="w-full" size="lg" disabled={isPending} onClick={submit}>
           {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
           {isPending ? t("submitting") : t("submitButton")}
         </Button>

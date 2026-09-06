@@ -43,7 +43,12 @@ describe("computeSettlementTotals", () => {
   });
 
   it("treats a missing admin fee as zero rather than NaN", () => {
-    const t = computeSettlementTotals([1000], []);
+    /**
+     * An `ADMIN_FEE` deduction with no `percent` field at all — not an empty deductions array,
+     * which never reaches the `?? 0` fallback since `.filter(...).reduce(...)` on an empty result
+     * short-circuits to the reduce's own seed regardless of any fallback in its callback.
+     */
+    const t = computeSettlementTotals([1000], [{ type: "ADMIN_FEE" }]);
     expect(t.adminFee).toBe(0);
     expect(t.expected).toBe(1000);
   });

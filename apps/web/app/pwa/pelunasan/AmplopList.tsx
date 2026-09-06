@@ -37,6 +37,7 @@ type Props = {
   stores: AmplopStoreItem[];
   totalOutstanding: number;
   totalOverdue: number;
+  canSubmitSettlement: boolean;
 };
 
 function formatRupiah(value: number): string {
@@ -47,7 +48,7 @@ function formatRupiah(value: number): string {
   }).format(value);
 }
 
-export function AmplopList({ stores, totalOutstanding, totalOverdue }: Props) {
+export function AmplopList({ stores, totalOutstanding, totalOverdue, canSubmitSettlement }: Props) {
   const t = useTranslations("pwa.amplop");
   const tFaktur = useTranslations("fakturPajakStatus");
   const tNav = useTranslations("pwa.nav");
@@ -190,12 +191,14 @@ export function AmplopList({ stores, totalOutstanding, totalOverdue }: Props) {
                       })}
                     </ul>
 
-                    <Button asChild className="w-full" size="lg">
-                      <Link href={`/pwa/pelunasan/${store.storeId}`}>
-                        <Wallet className="h-4 w-4" />
-                        {t("settleButton")}
-                      </Link>
-                    </Button>
+                    {canSubmitSettlement && (
+                      <Button asChild className="w-full" size="lg">
+                        <Link href={`/pwa/pelunasan/${store.storeId}`}>
+                          <Wallet className="h-4 w-4" />
+                          {t("settleButton")}
+                        </Link>
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               </li>

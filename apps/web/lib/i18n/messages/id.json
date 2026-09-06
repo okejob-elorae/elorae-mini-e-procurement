@@ -2538,6 +2538,8 @@
       "colOutstanding": "Belum lunas",
       "colDueDate": "Jatuh tempo",
       "pendingSubmittedLabel": "Setoran tertunda",
+      "invoiceAmountLabel": "Jumlah yang dilunasi untuk nota ini",
+      "invoiceAmountPlaceholder": "Jumlah pelunasan",
       "invoiceAmountInvalid": "Jumlah harus lebih besar dari nol dan tidak melebihi sisa piutang.",
       "returSectionTitle": "Kredit retur",
       "addReturButton": "Tambah retur",

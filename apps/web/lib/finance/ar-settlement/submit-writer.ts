@@ -1,6 +1,7 @@
 import { roundCents } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { urlFromKey } from "@/lib/r2";
 import { computeSettlementTotals, computeVariance } from "./calc";
 import { SettlementError } from "./errors";
 
@@ -31,6 +32,19 @@ export type SubmitSettlementResult = {
 };
 
 const EPSILON = 1e-6;
+
+/**
+ * Bounds on a "use server" export are load-bearing, not cosmetic — a raw request never went
+ * through the client's own limits (the note Textarea's maxLength, the single-photo-per-row
+ * shape). Without these, a caller can hit a Decimal(15,2) range error on a bare `1e20` amount, a
+ * MySQL 1406 data-truncation on an oversized note, or 10,000 sequential per-line aggregates
+ * inside one serializable transaction — all surfacing as an opaque UNEXPECTED instead of a named,
+ * cheap-to-reject code.
+ */
+const MAX_LINES = 200;
+const MAX_NOTE_LENGTH = 1000;
+const MAX_PROOF_KEY_LENGTH = 300;
+const MAX_AMOUNT = 999_999_999.99;
 
 /**
  * Accepts a salesman's settlement document for a store's invoices. Moves no money and posts no
@@ -98,16 +112,23 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
     if (!Array.isArray(input.invoices) || input.invoices.length === 0) {
       throw new SettlementError("NO_INVOICES");
     }
-    if (!(input.actualAmount >= 0)) throw new SettlementError("INVALID_AMOUNT");
+    if (input.invoices.length > MAX_LINES) throw new SettlementError("INPUT_TOO_LARGE");
+    if (!(input.actualAmount >= 0) || input.actualAmount > MAX_AMOUNT) {
+      throw new SettlementError("INVALID_AMOUNT");
+    }
+    if (input.note !== undefined && input.note.length > MAX_NOTE_LENGTH) {
+      throw new SettlementError("INPUT_TOO_LARGE");
+    }
 
     const seenReceivableIds = new Set<string>();
     for (const invoice of input.invoices) {
-      if (!(invoice.amount > 0)) throw new SettlementError("INVALID_AMOUNT");
+      if (!(invoice.amount > 0) || invoice.amount > MAX_AMOUNT) throw new SettlementError("INVALID_AMOUNT");
       if (seenReceivableIds.has(invoice.receivableId)) throw new SettlementError("DUPLICATE_INVOICE");
       seenReceivableIds.add(invoice.receivableId);
     }
 
     if (!Array.isArray(input.deductions)) throw new SettlementError("INVALID_DEDUCTIONS");
+    if (input.deductions.length > MAX_LINES) throw new SettlementError("INPUT_TOO_LARGE");
 
     let adminFeeCount = 0;
     for (const deduction of input.deductions) {
@@ -117,12 +138,15 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
           throw new SettlementError("INVALID_PERCENT");
         }
       } else {
-        if (typeof deduction.amount !== "number" || !(deduction.amount > 0)) {
+        if (typeof deduction.amount !== "number" || !(deduction.amount > 0) || deduction.amount > MAX_AMOUNT) {
           throw new SettlementError("INVALID_AMOUNT");
         }
         if (deduction.type === "RETUR_OFFSET" && !deduction.fieldReturnId) {
           throw new SettlementError("MISSING_FIELD_RETURN_ID");
         }
+      }
+      if (deduction.note !== undefined && deduction.note.length > MAX_NOTE_LENGTH) {
+        throw new SettlementError("INPUT_TOO_LARGE");
       }
     }
     if (adminFeeCount > 1) throw new SettlementError("DUPLICATE_ADMIN_FEE");
@@ -132,6 +156,7 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
     for (const deduction of input.deductions) {
       if (deduction.type === "RETUR_OFFSET") continue;
       if (!deduction.proofUrl || !deduction.proofR2Key) throw new SettlementError("MISSING_EVIDENCE");
+      if (deduction.proofR2Key.length > MAX_PROOF_KEY_LENGTH) throw new SettlementError("INPUT_TOO_LARGE");
       /*
        * Unbound, reusable proof keys are exactly the POD-proof landmine this repo has already hit:
        * one uploaded photo satisfying every proof requirement at once. Binding the key to this
@@ -144,22 +169,38 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       seenProofKeys.add(deduction.proofR2Key);
     }
 
-    /*
+    /**
      * Step 3: verify the salesman is a real row — `StoreSettlement.salesman` is a REQUIRED
      * relation, and under `relationMode = "prisma"` there is no FK behind it, so a dangling id
      * would commit a row that throws `Inconsistent query result` on every future query selecting
-     * through it, with no UI repair path. Then load every selected receivable, verify it belongs
-     * to this store and is still collectible, and net this submission's claim on it against
-     * OTHER PENDING settlements' claims on the same receivable — the invoice-side twin of the
-     * retur claim guard below.
+     * through it, with no UI repair path. `StoreSettlement.store` is the same shape of required,
+     * FK-less relation, so a receivable pointing at a deleted store gets the identical check.
      */
     const salesman = await tx.user.findUnique({ where: { id: input.salesmanId }, select: { id: true } });
     if (!salesman) throw new SettlementError("SALESMAN_NOT_FOUND");
 
+    const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { id: true } });
+    if (!store) throw new SettlementError("STORE_NOT_FOUND");
+
+    /**
+     * Then load every selected receivable, verify it belongs to this store, is still collectible,
+     * and — this is the part the screen's own scoping was standing in for — that the SUBMITTING
+     * salesman actually has a relationship to it (its collector, or its order's salesman). Without
+     * this a raw request naming a receivable assigned to a DIFFERENT salesman/collector at a
+     * shared store would still pass every other guard and stamp a PENDING settlement over money
+     * that isn't this caller's to claim, with no release path until an approval slice that does
+     * not yet exist. Same shape as `submitCollection`'s `NOT_ASSIGNED_COLLECTOR` guard in
+     * `lib/finance/collections/submit-writer.ts`. Finally net this submission's claim against
+     * OTHER PENDING settlements' claims on the same receivable — the invoice-side twin of the
+     * retur claim guard below.
+     */
     const receivableIds = input.invoices.map((invoice) => invoice.receivableId);
     const receivables = await tx.receivable.findMany({
       where: { id: { in: receivableIds } },
-      select: { id: true, storeId: true, status: true, outstandingAmount: true },
+      select: {
+        id: true, storeId: true, status: true, outstandingAmount: true, collectorId: true,
+        delivery: { select: { order: { select: { salesmanId: true } } } },
+      },
     });
     const receivableById = new Map(receivables.map((r) => [r.id, r]));
     for (const invoice of input.invoices) {
@@ -169,17 +210,25 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       if (receivable.status !== "OUTSTANDING" && receivable.status !== "PARTIAL") {
         throw new SettlementError("NOT_OUTSTANDING");
       }
+      if (receivable.collectorId !== input.salesmanId && receivable.delivery.order.salesmanId !== input.salesmanId) {
+        throw new SettlementError("NOT_ASSIGNED");
+      }
 
-      /*
+      /**
        * Netted against PENDING settlements' `StoreSettlementInvoice` rows, computed inside this
        * transaction via `tx` — the same reasoning as the retur guard below. Without this, two
        * salesmen could each select the same receivable for its full outstanding amount, both pass
        * every other guard, and both collect cash at the counter before either settlement reaches
-       * approval.
+       * approval. Scoped to `storeId` too, not just `status` — under SERIALIZABLE every plain
+       * SELECT takes a shared-mode lock, and `@@index([status, createdAt])` leads on `status`
+       * alone, so an unscoped filter S-locks the WHOLE PENDING range across every store. Two
+       * salesmen submitting for completely unrelated stores would then lock-contend and deadlock
+       * each other under load. Adding `storeId` (already proven above) moves the optimizer onto
+       * `@@index([storeId, status])` and changes no semantics — only which rows get locked.
        */
       const outstanding = roundCents(Number(receivable.outstandingAmount));
       const otherInvoiceClaims = await tx.storeSettlementInvoice.aggregate({
-        where: { receivableId: invoice.receivableId, settlement: { status: "PENDING" } },
+        where: { receivableId: invoice.receivableId, settlement: { status: "PENDING", storeId: input.storeId } },
         _sum: { amount: true },
       });
       const claimedByOthers = roundCents(Number(otherInvoiceClaims._sum.amount ?? 0));
@@ -218,16 +267,19 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       const totalValue = roundCents(Number(fieldReturn.totalValue));
       const appliedValue = roundCents(Number(fieldReturn.appliedValue));
 
-      /*
+      /**
        * Netted against PENDING settlements' deductions, computed inside this transaction via `tx`
        * — not the top-level `prisma` singleton, and not read before `runSerializable` opened. Two
        * concurrent submissions each reading a stale sum outside the transaction would both
        * individually pass this guard and together over-claim the retur; `Serializable` isolation
        * plus this in-transaction read is what forces the second one to either see the first's
-       * committed row or hit a serialization conflict and retry.
+       * committed row or hit a serialization conflict and retry. Scoped to `storeId` too, same
+       * reasoning as the invoice-side aggregate above — `fieldReturn.storeId` is already proven
+       * to equal `input.storeId` by the `RETUR_WRONG_STORE` check, so this changes no semantics,
+       * only moving the lock range from every store's PENDING rows to just this one.
        */
       const otherClaims = await tx.storeSettlementDeduction.aggregate({
-        where: { type: "RETUR_OFFSET", fieldReturnId, settlement: { status: "PENDING" } },
+        where: { type: "RETUR_OFFSET", fieldReturnId, settlement: { status: "PENDING", storeId: input.storeId } },
         _sum: { amount: true },
       });
       const claimedByOthers = roundCents(Number(otherClaims._sum.amount ?? 0));
@@ -253,8 +305,10 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
 
     const actualAmount = roundCents(input.actualAmount);
     const varianceAmount = computeVariance(totals.expected, actualAmount);
-    /* The configurable tolerance belongs to the approval queue in a later slice — here ANY
-     * non-zero variance flags, so there is exactly one place that ever hardcodes a threshold. */
+    /**
+     * The configurable tolerance belongs to the approval queue in a later slice — here ANY
+     * non-zero variance flags, so there is exactly one place that ever hardcodes a threshold.
+     */
     const isFlagged = Math.abs(varianceAmount) > EPSILON;
 
     /*
@@ -283,13 +337,20 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
           })),
         },
         deductions: {
+          /**
+           * `proofUrl` is DERIVED from `proofR2Key` via `urlFromKey`, never the caller's own
+           * `proofUrl` field — the key already went through the prefix/uniqueness validation
+           * above, but the URL did not, and a raw caller could otherwise pair a validly-scoped key
+           * with an arbitrary URL. The approval screen (and the BKM print route after it) would
+           * then render the attacker's URL while the audited key points at real evidence.
+           */
           create: input.deductions.map((deduction) => ({
             type: deduction.type,
             amount: deduction.type === "ADMIN_FEE" ? totals.adminFee : roundCents(deduction.amount ?? 0),
             percent: deduction.type === "ADMIN_FEE" ? deduction.percent : null,
             fieldReturnId: deduction.type === "RETUR_OFFSET" ? deduction.fieldReturnId : null,
             note: deduction.note,
-            proofUrl: deduction.proofUrl,
+            proofUrl: deduction.proofR2Key ? urlFromKey(deduction.proofR2Key) : deduction.proofUrl,
             proofR2Key: deduction.proofR2Key,
           })),
         },

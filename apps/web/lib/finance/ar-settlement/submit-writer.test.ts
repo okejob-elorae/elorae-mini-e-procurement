@@ -46,12 +46,13 @@ d("submitSettlement (test bed only)", () => {
     amount: number,
     status: "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF" = "OUTSTANDING",
     receivableStoreId: string = storeId,
+    orderSalesmanId: string = salesmanAId,
   ): Promise<string> {
     const order = await prisma.fieldSalesOrder.create({
       data: {
         orderNo: `TEST-STL-ORD-${label}-${token}`,
         storeId: receivableStoreId,
-        salesmanId: salesmanAId,
+        salesmanId: orderSalesmanId,
         subtotal: amount,
         total: amount,
       },
@@ -63,7 +64,7 @@ d("submitSettlement (test bed only)", () => {
         docNo: `TEST-STL-DLV-${label}-${token}`,
         orderId: order.id,
         deliveredAt: new Date("2026-05-01T00:00:00.000+07:00"),
-        deliveredById: salesmanAId,
+        deliveredById: orderSalesmanId,
         invoiceDate: new Date("2026-05-01T00:00:00.000+07:00"),
         dueDate: new Date("2026-06-01T00:00:00.000+07:00"),
         subtotal: amount,
@@ -119,7 +120,13 @@ d("submitSettlement (test bed only)", () => {
     itemId = item.id;
 
     recA = await seedReceivable("A", 1000);
-    recB = await seedReceivable("B", 1000);
+    /**
+     * recB is owned by salesman B, not the fixture-wide default — `otherInput` submits as
+     * salesmanBId, and the new ownership guard (step 3 of the writer) refuses a submission
+     * whose salesmanId matches neither the receivable's collectorId nor its order's salesmanId.
+     * Every test below that has otherInput claim recB relies on this.
+     */
+    recB = await seedReceivable("B", 1000, "OUTSTANDING", storeId, salesmanBId);
     recWrongStore = await seedReceivable("WRONG", 500, "OUTSTANDING", storeOtherId);
     recPaid = await seedReceivable("PAID", 400, "PAID");
     recWrittenOff = await seedReceivable("WO", 400, "WRITTEN_OFF");
@@ -165,9 +172,11 @@ d("submitSettlement (test bed only)", () => {
     });
     retWrongStoreId = retWrongStore.id;
 
-    /* Headroom after appliedValue: 300 - 200 = 100. Distinct from retId (appliedValue 0) so a
+    /**
+     * Headroom after appliedValue: 300 - 200 = 100. Distinct from retId (appliedValue 0) so a
      * regression that drops the `- appliedValue` term from the headroom formula cannot hide
-     * behind every other retur fixture sharing appliedValue: 0. */
+     * behind every other retur fixture sharing appliedValue: 0.
+     */
     const retApplied = await prisma.fieldReturn.create({
       data: {
         docNo: `TEST-STL-RETAP-${token}`, storeId, raisedById: salesmanAId,
@@ -246,8 +255,10 @@ d("submitSettlement (test bed only)", () => {
     });
     expect(settlement).not.toBeNull();
     expect(settlement!.status).toBe("PENDING");
-    /* invoiceTotal 1000 - returTotal 100 - programTotal 100 = adminFeeBase 800; 5% fee = 40;
-     * expected = 800 - 40 = 760. */
+    /**
+     * invoiceTotal 1000 - returTotal 100 - programTotal 100 = adminFeeBase 800; 5% fee = 40;
+     * expected = 800 - 40 = 760.
+     */
     expect(Number(settlement!.expectedAmount)).toBe(760);
     expect(Number(settlement!.actualAmount)).toBe(760);
     expect(Number(settlement!.varianceAmount)).toBe(0);
@@ -285,9 +296,11 @@ d("submitSettlement (test bed only)", () => {
   });
 
   it("returns the original settlement on a same-actor, same-store replay", async () => {
-    /* Same shape as the idempotency test above, asserted explicitly against the ownership guard:
+    /**
+     * Same shape as the idempotency test above, asserted explicitly against the ownership guard:
      * the SAME salesmanId and storeId as the first attempt must still short-circuit to the
-     * original row rather than being caught by the new different-owner check. */
+     * original row rather than being caught by the new different-owner check.
+     */
     const input = { ...baseInput, draftId: `sameactor-${token}` };
     const first = await submitSettlement(input);
     const replay = await submitSettlement({ ...input });
@@ -309,6 +322,38 @@ d("submitSettlement (test bed only)", () => {
     await expect(
       submitSettlement({ ...otherInput, draftId }),
     ).rejects.toMatchObject({ code: "DRAFT_ID_CONFLICT" });
+  });
+
+  it("refuses a draftId replay from a different store", async () => {
+    /**
+     * The storeId half of the replay ownership guard, tested in isolation from the salesmanId
+     * half above — deleting `|| existing.storeId !== input.storeId` from the writer would let
+     * this pass, since the SAME salesman (A) is submitting both times. recWrongStore belongs to
+     * `storeOtherId` and is still owned by salesmanAId, so this exercises only the storeId
+     * mismatch, not a second ownership failure.
+     */
+    const draftId = `crossstore-${token}`;
+    await submitSettlement({ ...baseInput, draftId });
+    await expect(
+      submitSettlement({
+        ...baseInput, draftId, storeId: storeOtherId,
+        invoices: [{ receivableId: recWrongStore, amount: 500 }],
+      }),
+    ).rejects.toMatchObject({ code: "DRAFT_ID_CONFLICT" });
+  });
+
+  it("refuses a receivable not assigned to the submitting salesman or its collector", async () => {
+    /**
+     * recB belongs to salesman B (see the fixture comment above it), not A. A request naming it
+     * while authenticated as salesman A must be refused before it can claim B's cash, even though
+     * both salesmen serve the same store and every other guard (store match, OUTSTANDING status)
+     * would otherwise pass. This is the writer's own re-derivation of the ownership scoping
+     * `listAmplop` already applies to what the screen shows — a raw request bypasses the screen
+     * entirely, so the writer cannot trust that scoping alone.
+     */
+    await expect(submitSettlement({
+      ...baseInput, draftId: `notassigned-${token}`, invoices: [{ receivableId: recB, amount: 1000 }],
+    })).rejects.toMatchObject({ code: "NOT_ASSIGNED" });
   });
 
   it("refuses a program deduction with no evidence", async () => {
@@ -384,8 +429,10 @@ d("submitSettlement (test bed only)", () => {
   });
 
   it("refuses a RETUR_OFFSET deduction missing a fieldReturnId", async () => {
-    /* Malformed payload (no fieldReturnId at all) is a distinct failure from a fieldReturnId that
-     * was provided but does not resolve to a row (FIELD_RETURN_NOT_FOUND, above). */
+    /**
+     * Malformed payload (no fieldReturnId at all) is a distinct failure from a fieldReturnId that
+     * was provided but does not resolve to a row (FIELD_RETURN_NOT_FOUND, above).
+     */
     await expect(submitSettlement({
       ...baseInput, draftId: `noreturid-${token}`, deductions: [{ type: "RETUR_OFFSET", amount: 50 }],
     })).rejects.toMatchObject({ code: "MISSING_FIELD_RETURN_ID" });
@@ -396,8 +443,10 @@ d("submitSettlement (test bed only)", () => {
   });
 
   it("refuses a salesmanId that does not exist", async () => {
-    /* StoreSettlement.salesman is a REQUIRED relation with no FK under relationMode = "prisma" —
-     * a dangling id would otherwise commit a row that throws on every later read through it. */
+    /**
+     * StoreSettlement.salesman is a REQUIRED relation with no FK under relationMode = "prisma" —
+     * a dangling id would otherwise commit a row that throws on every later read through it.
+     */
     await expect(submitSettlement({
       ...baseInput, draftId: `nosalesman-${token}`, salesmanId: `missing-${token}`,
     })).rejects.toMatchObject({ code: "SALESMAN_NOT_FOUND" });
@@ -410,9 +459,11 @@ d("submitSettlement (test bed only)", () => {
   });
 
   it("refuses a non-array deductions payload", async () => {
-    /* A "use server" export is independently callable by a raw request that never went through
+    /**
+     * A "use server" export is independently callable by a raw request that never went through
      * TypeScript at all, so a malformed (non-array) deductions field must fail closed rather than
-     * crash on the first .filter/.reduce call. */
+     * crash on the first .filter/.reduce call.
+     */
     await expect(submitSettlement({
       ...baseInput, draftId: `baddeductions-${token}`, deductions: null,
     } as unknown as SubmitSettlementInput)).rejects.toMatchObject({ code: "INVALID_DEDUCTIONS" });
@@ -479,20 +530,30 @@ d("submitSettlement (test bed only)", () => {
   });
 
   it("refuses a claim that exceeds headroom once appliedValue is subtracted", async () => {
-    /* retAppliedId: totalValue 300, appliedValue 200 -> remaining 100. A claim of 150 must be
+    /**
+     * retAppliedId: totalValue 300, appliedValue 200 -> remaining 100. A claim of 150 must be
      * refused; deleting the `- appliedValue` term from the headroom formula would leave 300 of
      * apparent room and let every test in this file (all of which use appliedValue: 0 elsewhere)
-     * stay green while this one alone catches it. */
+     * stay green while this one alone catches it.
+     */
     await expect(
       submitSettlement({ ...baseInput, draftId: `applied-${token}`, deductions: [returDeduction(150, retAppliedId)] }),
     ).rejects.toMatchObject({ code: "RETUR_OVERCLAIMED" });
   });
 
-  it("does not count an APPROVED settlement's claim against retur headroom", async () => {
-    /* Manually seeded rather than reached through submitSettlement, since the writer only ever
-     * creates PENDING rows itself. This settlement claims 250 of retId's 300 headroom but is
-     * already APPROVED -- if the netting query's PENDING filter were dropped (or widened to any
-     * non-REJECTED status), the second claim below would see only 50 of room and be refused. */
+  it("does not count an APPROVED settlement's claim against retur or invoice headroom", async () => {
+    /**
+     * Manually seeded rather than reached through submitSettlement, since the writer only ever
+     * creates PENDING rows itself. This settlement claims 250 of retId's 300 retur headroom AND
+     * the full 1000 of recA's outstanding, but is already APPROVED -- if either netting query's
+     * PENDING filter were dropped (or widened to any non-REJECTED status), the retur claim below
+     * would see only 50 of room and the invoice claim would see 0, and both would be refused.
+     *
+     * The second submit is pointed at recA (not otherInput's default recB) and stamped with
+     * salesmanAId — recA's own order salesman — specifically so this exercises the INVOICE-side
+     * exclusion too, not just the retur-side one this test originally covered alone; recB would
+     * only have exercised the retur side, leaving the invoice-side APPROVED exclusion untested.
+     */
     await prisma.storeSettlement.create({
       data: {
         docNo: `TEST-STL-APPR-${token}`,
@@ -505,7 +566,12 @@ d("submitSettlement (test bed only)", () => {
     });
 
     const result = await submitSettlement({
-      ...otherInput, draftId: `appr-check-${token}`, deductions: [returDeduction(200)], actualAmount: 800,
+      draftId: `appr-check-${token}`,
+      storeId,
+      salesmanId: salesmanAId,
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [returDeduction(200)],
+      actualAmount: 800,
     });
     expect(result.settlementId).toBeTruthy();
   });
@@ -519,8 +585,15 @@ d("submitSettlement (test bed only)", () => {
     await submitSettlement({
       ...baseInput, draftId: `inv-d1-${token}`, invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
     });
+    /**
+     * Both submissions target recA and BOTH run as salesmanAId (recA's own order salesman) — this
+     * isolates the netting behaviour under test from the ownership guard. Using otherInput's
+     * salesmanBId here would hit NOT_ASSIGNED first (B has no relationship to recA), masking the
+     * INVOICE_OVERCLAIMED this test exists to catch.
+     */
     await expect(submitSettlement({
-      ...otherInput, draftId: `inv-d2-${token}`, invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
+      ...otherInput, salesmanId: salesmanAId, draftId: `inv-d2-${token}`,
+      invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
     })).rejects.toMatchObject({ code: "INVOICE_OVERCLAIMED" });
   });
 
@@ -529,8 +602,10 @@ d("submitSettlement (test bed only)", () => {
       ...baseInput, draftId: `inv-d1-${token}`, invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
     });
     await prisma.storeSettlement.updateMany({ where: { idempotencyKey: `inv-d1-${token}` }, data: { status: "REJECTED" } });
+    /* Same salesmanAId override as the sibling test above, for the same ownership-guard reason. */
     const second = await submitSettlement({
-      ...otherInput, draftId: `inv-d2-${token}`, invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
+      ...otherInput, salesmanId: salesmanAId, draftId: `inv-d2-${token}`,
+      invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
     });
     expect(second.settlementId).toBeTruthy();
   });

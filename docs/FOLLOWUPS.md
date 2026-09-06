@@ -489,6 +489,22 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       in an amplop (see the konsi item above): the settlement selects `Receivable` rows and a konsi
       order creates none. Nothing in the settlement is konsi-aware and nothing needs to be — it lights
       up for free the moment a konsi receivable exists (feat/settlement-document).
+- [ ] A `RETUR_OFFSET` deduction's `proofUrl`/`proofR2Key` are persisted from the caller unvalidated
+      — the writer's prefix/uniqueness/derive-from-key handling only runs for `PROGRAM`/`ADMIN_FEE`
+      rows (`if (deduction.type === "RETUR_OFFSET") continue;` skips it entirely, since a retur
+      offset auto-links its own nota and needs no separate evidence). No UI path ever sends these
+      fields on a `RETUR_OFFSET` row today, so nothing can currently satisfy an evidence requirement
+      through this hole. But the BKM print route in the next slice will render the full deduction
+      breakdown including this row, and it will follow whatever URL sits on it — so this stops being
+      inert the moment that route ships (feat/settlement-document).
+- [ ] The new `settlements:submit` permission (`packages/db/prisma/seed-settlements-permission.sql`)
+      must be hand-run on prod post-merge, same as every other permission seed in this repo — no
+      migration or deploy step seeds it. Until it runs, the settlement screen is silently unreachable
+      for SALESMAN and COLLECTOR: the amplop's Settle button simply does not render for them (it is
+      now gated on the same permission the next screen enforces), so there is no dead-end to notice,
+      only an absent CTA. Post-seed verification must be done on a SALESMAN or COLLECTOR account —
+      never an admin login, since `pwaAccessGuard` bounces any wildcard holder off `/pwa` entirely
+      before a permission check ever runs (feat/settlement-document).
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.

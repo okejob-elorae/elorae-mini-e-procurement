@@ -2538,6 +2538,8 @@
       "colOutstanding": "Outstanding",
       "colDueDate": "Due date",
       "pendingSubmittedLabel": "Pending submission",
+      "invoiceAmountLabel": "Amount to settle for this invoice",
+      "invoiceAmountPlaceholder": "Amount to settle",
       "invoiceAmountInvalid": "Amount must be greater than zero and not exceed the outstanding balance.",
       "returSectionTitle": "Retur credit",
       "addReturButton": "Add retur",

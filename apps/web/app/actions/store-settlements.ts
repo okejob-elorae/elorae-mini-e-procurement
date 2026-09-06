@@ -122,7 +122,7 @@ function isValidInput(input: unknown): input is SubmitStoreSettlementInput {
 async function guard(): Promise<{ userId: string } | { ok: false; reason: "UNAUTHENTICATED" | "FORBIDDEN" }> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, reason: "UNAUTHENTICATED" };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_COLLECT)) {
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTLEMENTS_SUBMIT)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
   return { userId: session.user.id };

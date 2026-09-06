@@ -18,7 +18,7 @@ export default async function StoreSettlementPage({
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   if (pwaAccessGuard(session.user.permissions) !== "render") redirect("/backoffice");
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_COLLECT)) redirect("/pwa");
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTLEMENTS_SUBMIT)) redirect("/pwa");
 
   const store = await getStore(storeId);
   if (!store) notFound();
