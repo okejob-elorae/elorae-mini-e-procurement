@@ -1,42 +1,47 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
-import { computeSettlementTotals, computeVariance, type SettlementTotals } from "./calc";
+import { computeVariance, EPSILON } from "./calc";
 import { parseVarianceTolerance, VARIANCE_TOLERANCE_SETTING_KEY } from "./variance-tolerance";
 import {
-  EPSILON,
+  buildCollectibilityCheck,
+  buildHeadroomCheck,
+  buildReturCreditCheck,
+  buildReturnEligibilityCheck,
+  deriveTotals,
+  fail,
+  pass,
+  skipped,
+  type SettlementCheck,
+  type SettlementComponentDetail,
+  type SettlementComponentSpec,
+  type SettlementDeductionDetail,
+  type SettlementInvoiceDetail,
+  type SettlementReturDetail,
+  type SettlementStatusValue,
+} from "./checks";
+import {
   computeComponentHeadroom,
   returComponentKey,
   simpleComponentKey,
-  type HeadroomRow,
   type InvoiceRow,
 } from "./approve-writer";
-import type { SettlementErrorCode } from "./errors";
-
-export type SettlementStatusValue = "PENDING" | "APPROVED" | "REJECTED";
-export type SettlementDeductionTypeValue = "RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE";
 
 /**
- * `StoreSettlement.expectedAmount` and `varianceAmount` are stored once at submit time and
- * `approveSettlement` never reads or reconciles them — it recomputes both from the invoice and
- * deduction rows through `computeSettlementTotals`. Every figure this module reports is therefore
- * DERIVED the same way the writer derives what it enforces, and the stored columns are surfaced
- * only as `stored*` so the detail screen can flag a document whose rows no longer agree with the
- * numbers it was filed under. Rendering the stored figures as the truth would let the queue show a
- * balanced document that the writer then refuses with `VARIANCE_REQUIRES_REASON` or `OVER_TENDER`.
+ * Re-exported so the screen components import their types from one place. The definitions live in
+ * `./checks`, which is Prisma-free on purpose — see that module's header.
  */
-function deriveTotals(
-  invoiceAmounts: number[],
-  deductions: Array<{ type: SettlementDeductionTypeValue; amount: number; percent: number | null }>,
-): SettlementTotals {
-  return computeSettlementTotals(
-    invoiceAmounts,
-    deductions.map((deduction) => ({
-      type: deduction.type,
-      amount: deduction.amount,
-      percent: deduction.percent === null ? undefined : deduction.percent,
-    })),
-  );
-}
+export type {
+  SettlementCheck,
+  SettlementCheckId,
+  SettlementCheckReason,
+  SettlementCheckSubjectKind,
+  SettlementComponentDetail,
+  SettlementDeductionDetail,
+  SettlementDeductionTypeValue,
+  SettlementInvoiceDetail,
+  SettlementReturDetail,
+  SettlementStatusValue,
+} from "./checks";
 
 export type SettlementQueueFilters = {
   storeId?: string;
@@ -55,8 +60,6 @@ export type SettlementQueueRow = {
   salesmanName: string;
   status: SettlementStatusValue;
   invoiceCount: number;
-  deductionCount: number;
-  invoiceTotal: number;
   expectedAmount: number;
   actualAmount: number;
   varianceAmount: number;
@@ -118,8 +121,6 @@ export async function listSettlementQueue(
         salesmanName: settlement.salesman.name ?? settlement.salesman.email,
         status: settlement.status,
         invoiceCount: settlement.invoices.length,
-        deductionCount: settlement.deductions.length,
-        invoiceTotal: totals.invoiceTotal,
         expectedAmount: totals.expected,
         actualAmount,
         varianceAmount: computeVariance(totals.expected, actualAmount),
@@ -131,115 +132,33 @@ export async function listSettlementQueue(
 }
 
 /**
- * Only salesmen who have actually filed a settlement, so the filter never offers a name that
- * cannot narrow anything. `distinct` on `salesmanId` keeps this one query rather than a role
- * lookup that would list every salesman in the company.
+ * Deliberately the same shape as `listCollectorCandidates` in `lib/finance/collections/queries.ts`
+ * — a bounded read of `User` by role, not a scan of the fact table. The obvious alternative,
+ * `storeSettlement.findMany({ distinct: ["salesmanId"] })`, is a trap here: Prisma applies
+ * `distinct` in memory on connectors without `DISTINCT ON`, and MariaDB is one, so it would pull
+ * every settlement row ever written into Node on every page load and every filter change to
+ * produce a dropdown of a dozen names, growing forever.
+ *
+ * Consequence to know: `settlements:submit` has no migration behind it (see
+ * `packages/db/prisma/seed-settlements-permission.sql`), so in an environment where that seed has
+ * not been hand-run the filter offers nothing. It narrows a list; it gates nothing.
  */
 export async function listSettlementSalesmanCandidates(): Promise<Array<{ id: string; name: string }>> {
-  const rows = await prisma.storeSettlement.findMany({
-    distinct: ["salesmanId"],
-    select: { salesmanId: true, salesman: { select: { id: true, name: true, email: true } } },
-    orderBy: { salesmanId: "asc" },
+  const users = await prisma.user.findMany({
+    where: {
+      roleDefinition: {
+        isSystem: false,
+        AND: [
+          { permissions: { some: { permission: { code: "settlements:submit" } } } },
+          { permissions: { some: { permission: { code: "pwa:access" } } } },
+        ],
+      },
+    },
+    select: { id: true, name: true, email: true },
+    orderBy: { name: "asc" },
   });
-  return rows
-    .map((row) => ({ id: row.salesman.id, name: row.salesman.name ?? row.salesman.email }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return users.map((user) => ({ id: user.id, name: user.name ?? user.email }));
 }
-
-export type SettlementCheckId =
-  | "STATUS_PENDING"
-  | "INVOICES_PRESENT"
-  | "INVOICES_EXIST"
-  | "INVOICES_STORE_MATCH"
-  | "EVIDENCE_PRESENT"
-  | "RETURNS_ELIGIBLE"
-  | "NO_OVER_TENDER"
-  | "INVOICES_COLLECTIBLE"
-  | "ALLOCATION_HEADROOM"
-  | "RETUR_CREDIT_AVAILABLE"
-  | "NO_VOIDED_COMPONENT";
-
-/**
- * Names what the `subjects` of a failing check are, so the screen can render an invoice number
- * verbatim while translating a deduction type through its own label map. Without it the server
- * would have to know the operator's locale to name a deduction.
- */
-export type SettlementCheckSubjectKind = "INVOICE" | "RETUR" | "DEDUCTION_TYPE" | "PAYMENT";
-
-/**
- * The subset of `SettlementErrorCode` the checklist can actually report — every approve-time
- * refusal, and nothing from the submit path that `approveSettlement` can never raise. Narrowing it
- * matters because the screen renders each failing check through `financeStoreSettlements.err.<code>`
- * with no exhaustive `Record` in between: a code outside this set has no locale key and would show
- * the operator a raw key path. `Extract` keeps it welded to `errors.ts`, so renaming a member there
- * breaks here rather than silently dropping a check's explanation.
- */
-export type SettlementCheckReason = Extract<
-  SettlementErrorCode,
-  | "NOT_PENDING"
-  | "NO_INVOICES"
-  | "RECEIVABLE_NOT_FOUND"
-  | "WRONG_STORE"
-  | "MISSING_EVIDENCE"
-  | "MISSING_FIELD_RETURN_ID"
-  | "FIELD_RETURN_NOT_FOUND"
-  | "RETUR_WRONG_STORE"
-  | "RETURN_NOT_APPROVED"
-  | "NOT_VALUED"
-  | "OVER_TENDER"
-  | "COMPONENT_VOIDED"
-  | "NOT_OUTSTANDING"
-  | "COMPONENT_EXCEEDS_HEADROOM"
-  | "RETUR_OVERCLAIMED"
->;
-
-export type SettlementCheck = {
-  id: SettlementCheckId;
-  status: "PASS" | "FAIL" | "SKIPPED";
-  reason: SettlementCheckReason | null;
-  subjectKind: SettlementCheckSubjectKind | null;
-  subjects: string[];
-};
-
-export type SettlementInvoiceDetail = {
-  receivableId: string;
-  docNo: string | null;
-  agreedAmount: number;
-  liveOutstanding: number | null;
-  receivableStatus: string | null;
-  storeMatches: boolean;
-  dueDate: Date | null;
-};
-
-export type SettlementReturDetail = {
-  id: string;
-  docNo: string;
-  status: string;
-  valuationStatus: string;
-  totalValue: number | null;
-  alreadyDrawn: number;
-  remaining: number | null;
-  storeMatches: boolean;
-};
-
-export type SettlementDeductionDetail = {
-  id: string;
-  type: SettlementDeductionTypeValue;
-  amount: number;
-  percent: number | null;
-  note: string | null;
-  proofUrl: string | null;
-  hasEvidence: boolean;
-  fieldReturnId: string | null;
-  fieldReturn: SettlementReturDetail | null;
-};
-
-export type SettlementComponentDetail = {
-  method: "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE" | "CASH";
-  amount: number;
-  paymentId: string | null;
-  paymentStatus: string | null;
-};
 
 export type SettlementVarianceOverride = {
   reason: string | null;
@@ -281,23 +200,6 @@ export type SettlementApprovalDetail = {
   varianceOverride: SettlementVarianceOverride | null;
 };
 
-function pass(id: SettlementCheckId): SettlementCheck {
-  return { id, status: "PASS", reason: null, subjectKind: null, subjects: [] };
-}
-
-function fail(
-  id: SettlementCheckId,
-  reason: SettlementCheckReason,
-  subjectKind: SettlementCheckSubjectKind | null = null,
-  subjects: string[] = [],
-): SettlementCheck {
-  return { id, status: "FAIL", reason, subjectKind, subjects };
-}
-
-function skipped(id: SettlementCheckId): SettlementCheck {
-  return { id, status: "SKIPPED", reason: null, subjectKind: null, subjects: [] };
-}
-
 /**
  * Reads one settlement for the finance approval screen and re-runs, read-only, every guard
  * `approveSettlement` enforces — in the writer's own order, against the same live rows, using the
@@ -308,6 +210,9 @@ function skipped(id: SettlementCheckId): SettlementCheck {
  * A check reports `SKIPPED` where an earlier failure makes it unanswerable — a missing receivable
  * means the headroom cannot be computed at all (`computeComponentHeadroom` throws on it), and
  * reporting that as a pass would be a lie in the direction that matters.
+ *
+ * The decisions themselves live in `./checks`, which holds no Prisma import so each one is
+ * unit-testable with plain data. This function's job is the reading.
  */
 export async function getSettlementForApproval(
   settlementId: string,
@@ -351,7 +256,7 @@ export async function getSettlementForApproval(
     amount: roundCents(Number(invoice.amount)),
   }));
 
-  /*
+  /**
    * Same ordering the writer imposes on its own component sequence, so the posted-payment column
    * on the screen lines up row for row with what a resumed approval would walk.
    */
@@ -423,15 +328,21 @@ export async function getSettlementForApproval(
    * `alreadyDrawn` is read from the POSTED payments carrying the retur, exactly as the writer's
    * `RETUR_OVERCLAIMED` pre-flight does — NOT from `FieldReturn.appliedValue`, which is a
    * projection of those same payments and can legitimately lag behind them between a draw
-   * committing and its projection landing.
+   * committing and its projection landing. `remaining` is therefore an eighth retur-credit read
+   * surface that deliberately does NOT use the `totalValue - appliedValue` formula the landmine
+   * index documents; see `docs/ARCHITECTURE-NOTES.md` for why this one is the exception.
    */
   const drawnByReturn = new Map<string, number>();
-  for (const returId of returIds) {
-    const drawn = await prisma.payment.aggregate({
-      where: { fieldReturnId: returId, status: "POSTED" },
+  if (returIds.length > 0) {
+    const drawn = await prisma.payment.groupBy({
+      by: ["fieldReturnId"],
+      where: { fieldReturnId: { in: returIds }, status: "POSTED" },
       _sum: { amount: true },
     });
-    drawnByReturn.set(returId, roundCents(Number(drawn._sum.amount ?? 0)));
+    for (const row of drawn) {
+      if (row.fieldReturnId === null) continue;
+      drawnByReturn.set(row.fieldReturnId, roundCents(Number(row._sum.amount ?? 0)));
+    }
   }
 
   const returById = new Map<string, SettlementReturDetail>();
@@ -462,24 +373,24 @@ export async function getSettlementForApproval(
     fieldReturn: deduction.fieldReturnId ? returById.get(deduction.fieldReturnId) ?? null : null,
   }));
 
-  /*
+  /**
    * The component list, in the writer's fixed order: every retur draw, then the program deduction,
    * then the admin fee, then the cash. The keys must be spelled by the writer's own helpers —
    * `applyReturnOffset` mints the retur key itself, so a locally invented one would report every
    * already-posted draw as unposted.
+   *
+   * A retur deduction with no `fieldReturnId` gets a `null` key rather than being dropped: it has
+   * no payment to look up (the writer refuses it with `MISSING_FIELD_RETURN_ID` before any
+   * component posts), but omitting it would make the card hide the broken row AND make `totalOwed`
+   * under-count by its amount, so the document would read as cheaper than it is.
    */
-  const componentSpecs: Array<{
-    method: SettlementComponentDetail["method"];
-    amount: number;
-    key: string;
-    returnId: string | null;
-  }> = [];
+  const componentSpecs: SettlementComponentSpec[] = [];
   for (const deduction of deductions) {
-    if (deduction.type !== "RETUR_OFFSET" || !deduction.fieldReturnId) continue;
+    if (deduction.type !== "RETUR_OFFSET") continue;
     componentSpecs.push({
       method: "RETUR_OFFSET",
       amount: roundCents(Number(deduction.amount)),
-      key: returComponentKey(deduction.fieldReturnId, deduction.id),
+      key: deduction.fieldReturnId ? returComponentKey(deduction.fieldReturnId, deduction.id) : null,
       returnId: deduction.fieldReturnId,
     });
   }
@@ -502,21 +413,23 @@ export async function getSettlementForApproval(
     returnId: null,
   });
 
-  const componentKeys = componentSpecs.map((spec) => spec.key);
+  const componentKeys = componentSpecs
+    .map((spec) => spec.key)
+    .filter((key): key is string => key !== null);
   const existingPayments = await prisma.payment.findMany({
     where: { idempotencyKey: { in: componentKeys } },
-    select: { id: true, idempotencyKey: true, status: true, method: true },
+    select: { id: true, idempotencyKey: true, status: true },
   });
   const paymentByKey = new Map<string, (typeof existingPayments)[number]>();
   for (const payment of existingPayments) {
     if (payment.idempotencyKey !== null) paymentByKey.set(payment.idempotencyKey, payment);
   }
+  const postedKeys = new Set(paymentByKey.keys());
 
   const components: SettlementComponentDetail[] = componentSpecs.map((spec) => {
-    const payment = paymentByKey.get(spec.key);
+    const payment = spec.key === null ? undefined : paymentByKey.get(spec.key);
     return {
-      method: spec.method,
-      amount: spec.amount,
+      ...spec,
       paymentId: payment?.id ?? null,
       paymentStatus: payment?.status ?? null,
     };
@@ -548,7 +461,7 @@ export async function getSettlementForApproval(
       : fail(
           "INVOICES_EXIST",
           "RECEIVABLE_NOT_FOUND",
-          "INVOICE",
+          "INVOICE_ID",
           missingReceivables.map((invoice) => invoice.receivableId),
         ),
   );
@@ -583,14 +496,21 @@ export async function getSettlementForApproval(
 
   checks.push(buildReturnEligibilityCheck(deductionDetails));
 
-  /*
+  /**
    * Ordered ahead of the headroom checks exactly as the writer orders it. An over-tender is
    * refused on its own terms and no override reason can rescue it — `recordPayment` supports no
    * unapplied credit — so the screen must never offer the override box as the way past it.
    */
   checks.push(variance > EPSILON ? fail("NO_OVER_TENDER", "OVER_TENDER") : pass("NO_OVER_TENDER"));
 
-  const voidedComponents = components.filter((component) => component.paymentStatus === "VOIDED");
+  /**
+   * Scoped to `amount > 0`, matching the writer, whose own voided-payment guard sits inside the
+   * component loop AFTER `if (!(component.amount > 0)) continue;` — a zero-amount component is
+   * never reached there and must not block approval here either.
+   */
+  const voidedComponents = components.filter(
+    (component) => component.amount > 0 && component.paymentStatus === "VOIDED",
+  );
   checks.push(
     voidedComponents.length === 0
       ? pass("NO_VOIDED_COMPONENT")
@@ -602,7 +522,7 @@ export async function getSettlementForApproval(
         ),
   );
 
-  /*
+  /**
    * `computeComponentHeadroom` throws `RECEIVABLE_NOT_FOUND` on a missing receivable rather than
    * skipping it, so the three checks that depend on it can only run once existence is settled.
    */
@@ -613,8 +533,8 @@ export async function getSettlementForApproval(
   } else {
     const headroom = await computeComponentHeadroom(invoiceRows, componentKeys);
     checks.push(buildCollectibilityCheck(headroom, invoiceDetails));
-    checks.push(buildHeadroomCheck(headroom, componentSpecs, paymentByKey));
-    checks.push(buildReturCreditCheck(componentSpecs, paymentByKey, returById));
+    checks.push(buildHeadroomCheck(headroom, componentSpecs, postedKeys));
+    checks.push(buildReturCreditCheck(componentSpecs, postedKeys, returById));
   }
 
   const storedExpectedAmount = roundCents(Number(settlement.expectedAmount));
@@ -660,130 +580,6 @@ export async function getSettlementForApproval(
     approvable: checks.every((check) => check.status === "PASS"),
     varianceOverride,
   };
-}
-
-/**
- * The writer refuses a retur deduction on four separate grounds and reports whichever it reaches
- * first. This collapses them into one checklist row carrying that same first reason, so an
- * operator reads "this retur is not approved yet" rather than a generic "retur problem".
- */
-function buildReturnEligibilityCheck(deductions: SettlementDeductionDetail[]): SettlementCheck {
-  const returDeductions = deductions.filter((deduction) => deduction.type === "RETUR_OFFSET");
-
-  const unlinked = returDeductions.filter((deduction) => !deduction.fieldReturnId);
-  if (unlinked.length > 0) return fail("RETURNS_ELIGIBLE", "MISSING_FIELD_RETURN_ID");
-
-  const notFound = returDeductions.filter((deduction) => deduction.fieldReturn === null);
-  if (notFound.length > 0) {
-    return fail(
-      "RETURNS_ELIGIBLE",
-      "FIELD_RETURN_NOT_FOUND",
-      "RETUR",
-      notFound.map((deduction) => deduction.fieldReturnId ?? ""),
-    );
-  }
-
-  const checked: Array<[SettlementCheckReason, (retur: SettlementReturDetail) => boolean]> = [
-    ["RETUR_WRONG_STORE", (retur) => !retur.storeMatches],
-    ["RETURN_NOT_APPROVED", (retur) => retur.status !== "APPROVED"],
-    ["NOT_VALUED", (retur) => retur.valuationStatus !== "VALUED" || retur.totalValue === null],
-  ];
-  for (const [reason, isBroken] of checked) {
-    const broken = returDeductions.filter((deduction) => {
-      const retur = deduction.fieldReturn;
-      return retur !== null && isBroken(retur);
-    });
-    if (broken.length > 0) {
-      return fail(
-        "RETURNS_ELIGIBLE",
-        reason,
-        "RETUR",
-        broken.map((deduction) => deduction.fieldReturn?.docNo ?? ""),
-      );
-    }
-  }
-
-  return pass("RETURNS_ELIGIBLE");
-}
-
-/**
- * Mirrors the writer's `NOT_OUTSTANDING` gate, including its scoping: a receivable whose
- * `agreedRemaining` has reached zero has already had this settlement's whole share of it settled
- * BY this settlement, so its closed status is explained rather than a refusal. Checking every
- * selected receivable unconditionally would report a resumable half-posted approval as broken.
- */
-function buildCollectibilityCheck(
-  headroom: HeadroomRow[],
-  invoices: SettlementInvoiceDetail[],
-): SettlementCheck {
-  const docNoById = new Map(invoices.map((invoice) => [invoice.receivableId, invoice.docNo]));
-  const statusById = new Map(invoices.map((invoice) => [invoice.receivableId, invoice.receivableStatus]));
-
-  const blocked: string[] = [];
-  for (const row of headroom) {
-    if (!(row.agreedRemaining > EPSILON)) continue;
-    const status = statusById.get(row.receivableId);
-    if (status !== "OUTSTANDING" && status !== "PARTIAL") {
-      blocked.push(docNoById.get(row.receivableId) ?? row.receivableId);
-    }
-  }
-  return blocked.length === 0
-    ? pass("INVOICES_COLLECTIBLE")
-    : fail("INVOICES_COLLECTIBLE", "NOT_OUTSTANDING", "INVOICE", blocked);
-}
-
-/**
- * Mirrors the writer's whole-document allocation pre-flight. Both sides net what a prior run
- * already posted: a component that already has a payment is not owed again, and the headroom
- * already excludes what that payment consumed.
- */
-function buildHeadroomCheck(
-  headroom: HeadroomRow[],
-  componentSpecs: Array<{ amount: number; key: string }>,
-  paymentByKey: ReadonlyMap<string, unknown>,
-): SettlementCheck {
-  const totalOwed = roundCents(
-    componentSpecs
-      .filter((spec) => spec.amount > 0 && !paymentByKey.has(spec.key))
-      .reduce((sum, spec) => sum + spec.amount, 0),
-  );
-  const totalHeadroom = roundCents(
-    headroom.reduce((sum, row) => sum + row.outstandingAmount, 0),
-  );
-  return totalOwed - totalHeadroom > EPSILON
-    ? fail("ALLOCATION_HEADROOM", "COMPONENT_EXCEEDS_HEADROOM")
-    : pass("ALLOCATION_HEADROOM");
-}
-
-/**
- * Mirrors the writer's `RETUR_OVERCLAIMED` pre-flight, counting only draws this run still owes —
- * a draw that already posted is inside `alreadyDrawn`, so counting it again would report every
- * resumable approval as an over-claim.
- */
-function buildReturCreditCheck(
-  componentSpecs: Array<{ amount: number; key: string; returnId: string | null }>,
-  paymentByKey: ReadonlyMap<string, unknown>,
-  returById: ReadonlyMap<string, SettlementReturDetail>,
-): SettlementCheck {
-  const owedByReturn = new Map<string, number>();
-  for (const spec of componentSpecs) {
-    if (!spec.returnId || !(spec.amount > 0) || paymentByKey.has(spec.key)) continue;
-    const prior = owedByReturn.get(spec.returnId) ?? 0;
-    owedByReturn.set(spec.returnId, roundCents(prior + spec.amount));
-  }
-
-  const overclaimed: string[] = [];
-  for (const [returnId, owed] of owedByReturn) {
-    const retur = returById.get(returnId);
-    const totalValue = retur?.totalValue ?? 0;
-    const alreadyDrawn = retur?.alreadyDrawn ?? 0;
-    if (alreadyDrawn + owed - totalValue > EPSILON) {
-      overclaimed.push(retur?.docNo ?? returnId);
-    }
-  }
-  return overclaimed.length === 0
-    ? pass("RETUR_CREDIT_AVAILABLE")
-    : fail("RETUR_CREDIT_AVAILABLE", "RETUR_OVERCLAIMED", "RETUR", overclaimed);
 }
 
 /**

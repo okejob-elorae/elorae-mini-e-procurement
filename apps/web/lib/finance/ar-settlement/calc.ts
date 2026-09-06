@@ -10,6 +10,14 @@
  */
 import { roundCents } from "@elorae/db/pricing";
 
+/**
+ * The float-comparison slack every settlement guard uses. It lives here rather than in each
+ * consumer because `approve-writer.ts`, `queries.ts` and `checks.ts` must agree on it exactly:
+ * the writer refuses on a margin the approval preview has to reproduce, and two epsilons that
+ * drift apart would let the screen offer an approval the writer then refuses (or the reverse).
+ */
+export const EPSILON = 1e-6;
+
 export type SettlementDeductionInput = {
   type: "RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE";
   amount?: number;

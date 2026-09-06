@@ -4193,7 +4193,7 @@
     "colAgreed": "Disepakati di toko",
     "colLiveOutstanding": "Sisa saat ini",
     "colReceivableStatus": "Status",
-    "invoiceMissing": "Hilang",
+    "invoiceMissing": "Tidak ditemukan",
     "invoiceWrongStore": "Toko lain",
     "statusOutstanding": "Belum Lunas",
     "statusPartial": "Lunas Sebagian",
@@ -4219,7 +4219,7 @@
     "colAmount": "Nilai",
     "colPosted": "Tercatat",
     "methodCash": "Tunai",
-    "methodReturOffset": "Potong Retur",
+    "methodReturOffset": "Offset Retur",
     "methodProgramDeduction": "Potongan Program",
     "methodAdminFee": "Biaya Admin",
     "componentPosted": "Tercatat",
@@ -4271,6 +4271,16 @@
     "rejectReasonLabel": "Alasan",
     "rejectConfirmButton": "Tolak pelunasan",
     "rejectSuccessToast": "{docNo} ditolak.",
+    "storedDriftMessageClosed": "Pelunasan ini diajukan dengan nilai seharusnya {storedExpected}, tetapi baris faktur dan potongannya menghasilkan {expected}. Angka di bawah adalah hasil hitung ulang.",
+    "componentsTitlePosted": "Pembayaran yang diposting persetujuan ini",
+    "componentsHintPosted": "Setiap komponen diposting sebagai pembayaran tersendiri. Buka salah satunya untuk melihat alokasi atau membatalkannya.",
+    "componentsTitleOrphaned": "Pembayaran yang tertinggal dari pelunasan ini",
+    "componentsHintOrphaned": "Pelunasan ini ditolak, tetapi pembayaran berikut terlanjur diposting. Tidak ada dokumen yang menaunginya — batalkan atau laporkan ke finance.",
+    "componentUnlinked": "Retur belum tertaut",
+    "subjectInvoiceId": "faktur {id}",
+    "subjectReturId": "retur {id}",
+    "evidenceUnavailable": "Foto bukti tidak bisa dimuat.",
+    "evidenceOpenDirect": "Buka berkasnya",
     "err": {
       "SETTLEMENT_NOT_FOUND": "Pelunasan tidak ditemukan.",
       "NOT_PENDING": "Pelunasan ini sudah disetujui atau ditolak sebelumnya.",
@@ -4302,7 +4312,10 @@
       "MISSING_REASON": "Alasan penolakan wajib diisi.",
       "FORBIDDEN": "Anda tidak memiliki izin untuk menyetujui atau menolak pelunasan.",
       "INVALID_REQUEST": "Permintaan tidak valid. Tutup dialog ini lalu buka kembali.",
-      "UNEXPECTED": "Terjadi kesalahan. Silakan coba lagi."
+      "UNEXPECTED": "Terjadi kesalahan. Silakan coba lagi.",
+      "NO_ALLOCATIONS": "Salah satu pembayaran pelunasan ini tidak punya faktur untuk dialokasikan.",
+      "DUPLICATE_ALLOCATION": "Salah satu pembayaran pelunasan ini mengalokasikan ke faktur yang sama dua kali.",
+      "ALREADY_APPLIED": "Kredit retur tersebut sudah terpakai seluruhnya."
     }
   },
   "payments": {

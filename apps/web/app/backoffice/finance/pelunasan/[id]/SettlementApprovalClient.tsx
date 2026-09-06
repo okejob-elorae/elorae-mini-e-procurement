@@ -12,6 +12,7 @@ import {
   CircleDashed,
   ExternalLink,
   FileText,
+  ImageOff,
   ListChecks,
   Loader2,
   Receipt,
@@ -144,10 +145,6 @@ function formatRupiahExact(value: number): string {
   }).format(value);
 }
 
-function errKey(reason: SettlementApprovalActionReason): string {
-  return `err.${reason}`;
-}
-
 function TotalRow({
   label,
   value,
@@ -201,6 +198,43 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
    */
   const varianceOverride = s.varianceOverride;
 
+  /**
+   * A zero-amount component with no payment behind it is genuinely nothing — on the common
+   * cash-only settlement the program and admin-fee rows would otherwise head the card as two
+   * "Rp 0,00 — nothing to post" lines. A row that is BROKEN is never hidden: a retur deduction
+   * with no `fieldReturnId` carries a real amount, no idempotency key and no payment, and dropping
+   * it would make the document read as cheaper than it is while finance works out why it is
+   * blocked.
+   */
+  const visibleComponents = s.components.filter(
+    (component) => component.amount > 0 || component.paymentId !== null,
+  );
+  const hasPostedComponent = s.components.some((component) => component.paymentId !== null);
+  /**
+   * On a REJECTED document nothing was meant to post, so the card only earns its place if
+   * something did — which is the orphaned-payment case the writer logs.
+   */
+  const showComponents =
+    visibleComponents.length > 0 && (s.status !== "REJECTED" || hasPostedComponent);
+
+  /**
+   * `STATUS_PENDING` still gates `approvable` server-side, but the card it would appear in only
+   * renders while the document IS pending — so the row can never say anything but "passed" and is
+   * pure noise beside the ten checks that can actually fail.
+   */
+  const renderedChecks = s.checks.filter((check) => check.id !== "STATUS_PENDING");
+
+  /**
+   * `toApprovalResult` passes any `PaymentError.code` straight through, and that union is wider
+   * than the copy this namespace carries — a member with no key would render the raw key path to
+   * the operator. `t.has` keeps that impossible without a hand-maintained list of codes to drift
+   * out of sync with `errors.ts`.
+   */
+  const errorMessage = (reason: SettlementApprovalActionReason): string => {
+    const key = `err.${reason}`;
+    return t.has(key) ? t(key) : t("err.UNEXPECTED");
+  };
+
   const formatTimestamp = (date: Date) =>
     new Intl.DateTimeFormat(locale, {
       day: "2-digit",
@@ -212,14 +246,18 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
 
   function checkSubjectText(check: SettlementCheck): string | null {
     if (check.subjects.length === 0) return null;
-    const names =
-      check.subjectKind === "DEDUCTION_TYPE"
-        ? check.subjects.map((subject) => t(DEDUCTION_TYPE_LABEL_KEY[subject as SettlementDeductionTypeValue]))
-        : check.subjectKind === "PAYMENT"
-          ? check.subjects.map((subject) =>
-              t(COMPONENT_METHOD_LABEL_KEY[subject as SettlementComponentDetail["method"]]),
-            )
-          : check.subjects;
+    const names = check.subjects.map((subject) => {
+      if (check.subjectKind === "DEDUCTION_TYPE") {
+        return t(DEDUCTION_TYPE_LABEL_KEY[subject as SettlementDeductionTypeValue]);
+      }
+      if (check.subjectKind === "PAYMENT") {
+        return t(COMPONENT_METHOD_LABEL_KEY[subject as SettlementComponentDetail["method"]]);
+      }
+      /* A raw cuid on its own is unactionable; say what kind of record it identifies. */
+      if (check.subjectKind === "INVOICE_ID") return t("subjectInvoiceId", { id: subject });
+      if (check.subjectKind === "RETUR_ID") return t("subjectReturId", { id: subject });
+      return subject;
+    });
     return names.join(", ");
   }
 
@@ -242,12 +280,15 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
         router.refresh();
         return;
       }
-      toast.error(t(errKey(result.reason)));
       /**
-       * A refusal is very often something that moved under the operator while the page sat open —
-       * another admin approving it, a retur drawn elsewhere. Refreshing re-runs the checklist so
-       * the screen stops disagreeing with the writer that just refused it.
+       * The dialog closes on a refusal too, not only on success. A typed refusal is very often
+       * something that moved under the operator while the page sat open — another admin approving
+       * it, a retur drawn elsewhere — and `router.refresh()` re-renders the banner and the
+       * checklist behind it. Leaving the modal up would hide that refreshed answer behind its own
+       * overlay, over a question that is no longer the one being asked.
        */
+      setApproveOpen(false);
+      toast.error(errorMessage(result.reason));
       router.refresh();
     } catch {
       toast.error(t("err.UNEXPECTED"));
@@ -270,7 +311,8 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
         router.refresh();
         return;
       }
-      toast.error(t(errKey(result.reason)));
+      setRejectOpen(false);
+      toast.error(errorMessage(result.reason));
       router.refresh();
     } catch {
       toast.error(t("err.UNEXPECTED"));
@@ -352,7 +394,7 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>{t("storedDriftTitle")}</AlertTitle>
           <AlertDescription>
-            {t("storedDriftMessage", {
+            {t(isPending ? "storedDriftMessage" : "storedDriftMessageClosed", {
               storedExpected: formatRupiahExact(s.storedExpectedAmount),
               expected: formatRupiahExact(s.expectedAmount),
             })}
@@ -360,7 +402,7 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
         </Alert>
       )}
 
-      {overTender && (
+      {overTender && isPending && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>{t("overTenderTitle")}</AlertTitle>
@@ -464,62 +506,83 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Receipt className="h-5 w-5" />
-                {t("componentsTitle")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-3 text-sm text-muted-foreground">{t("componentsHint")}</p>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("colComponent")}</TableHead>
-                      <TableHead className="text-right">{t("colAmount")}</TableHead>
-                      <TableHead>{t("colPosted")}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {s.components.map((component, index) => {
-                      const paymentId = component.paymentId;
-                      return (
-                        <TableRow key={`${component.method}-${index}`}>
-                          <TableCell className="whitespace-nowrap">
-                            {t(COMPONENT_METHOD_LABEL_KEY[component.method])}
-                          </TableCell>
-                          <TableCell className="text-right whitespace-nowrap tabular-nums">
-                            {formatRupiahExact(component.amount)}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {paymentId === null ? (
-                              <span className="text-sm text-muted-foreground">
-                                {component.amount > 0 ? t("componentNotPosted") : t("componentSkipped")}
-                              </span>
-                            ) : (
-                              <Link
-                                href={`/backoffice/finance/payments/${paymentId}`}
-                                className="inline-flex items-center gap-1 text-sm hover:underline"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                {component.paymentStatus === "VOIDED"
-                                  ? t("componentVoided")
-                                  : t("componentPosted")}
-                                <ExternalLink className="h-3 w-3" />
-                              </Link>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+          {showComponents && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Receipt className="h-5 w-5" />
+                  {t(
+                    s.status === "PENDING"
+                      ? "componentsTitle"
+                      : s.status === "APPROVED"
+                        ? "componentsTitlePosted"
+                        : "componentsTitleOrphaned",
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  {t(
+                    s.status === "PENDING"
+                      ? "componentsHint"
+                      : s.status === "APPROVED"
+                        ? "componentsHintPosted"
+                        : "componentsHintOrphaned",
+                  )}
+                </p>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("colComponent")}</TableHead>
+                        <TableHead className="text-right">{t("colAmount")}</TableHead>
+                        <TableHead>{t("colPosted")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleComponents.map((component, index) => {
+                        const paymentId = component.paymentId;
+                        const unlinked = component.key === null;
+                        return (
+                          <TableRow key={`${component.method}-${index}`}>
+                            <TableCell className="whitespace-nowrap">
+                              {t(COMPONENT_METHOD_LABEL_KEY[component.method])}
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap tabular-nums">
+                              {formatRupiahExact(component.amount)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {unlinked ? (
+                                <span className="text-sm font-medium text-destructive">
+                                  {t("componentUnlinked")}
+                                </span>
+                              ) : paymentId === null ? (
+                                <span className="text-sm text-muted-foreground">
+                                  {component.amount > 0 ? t("componentNotPosted") : t("componentSkipped")}
+                                </span>
+                              ) : (
+                                <Link
+                                  href={`/backoffice/finance/payments/${paymentId}`}
+                                  className="inline-flex items-center gap-1 text-sm hover:underline"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  {component.paymentStatus === "VOIDED"
+                                    ? t("componentVoided")
+                                    : t("componentPosted")}
+                                  <ExternalLink className="h-3 w-3" />
+                                </Link>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -553,9 +616,11 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
                   tone={s.varianceAmount === 0 ? undefined : "danger"}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                {t("toleranceHint", { tolerance: formatRupiahExact(s.toleranceRupiah) })}
-              </p>
+              {isPending && (
+                <p className="text-xs text-muted-foreground">
+                  {t("toleranceHint", { tolerance: formatRupiahExact(s.toleranceRupiah) })}
+                </p>
+              )}
               {s.needsOverrideReason && isPending && !overTender && (
                 <p className="text-xs text-amber-600 dark:text-amber-400">{t("overrideRequiredHint")}</p>
               )}
@@ -568,58 +633,69 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ListChecks className="h-5 w-5" />
-                {t("checklistTitle")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">{t("checklistHint")}</p>
-              {s.checks.map((check) => {
-                const subject = checkSubjectText(check);
-                return (
-                  <div key={check.id} className="flex items-start gap-2">
-                    {check.status === "PASS" ? (
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
-                    ) : check.status === "SKIPPED" ? (
-                      <CircleDashed className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                    )}
-                    <div className="min-w-0 space-y-0.5">
-                      <p
-                        className={cn(
-                          "text-sm",
-                          check.status === "FAIL" && "font-medium text-destructive",
-                          check.status === "SKIPPED" && "text-muted-foreground",
-                        )}
-                      >
-                        {t(`check.${check.id}`)}
-                      </p>
-                      {check.status === "SKIPPED" && (
-                        <p className="text-xs text-muted-foreground">{t("checkSkipped")}</p>
+          {isPending && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ListChecks className="h-5 w-5" />
+                  {t("checklistTitle")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">{t("checklistHint")}</p>
+                {renderedChecks.map((check) => {
+                  const subject = checkSubjectText(check);
+                  return (
+                    <div key={check.id} className="flex items-start gap-2">
+                      {check.status === "PASS" ? (
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
+                      ) : check.status === "SKIPPED" ? (
+                        <CircleDashed className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                       )}
-                      {check.reason !== null && (
-                        <p className="text-xs text-muted-foreground">{t(`err.${check.reason}`)}</p>
-                      )}
-                      {subject !== null && (
-                        <p className="break-words text-xs text-muted-foreground">
-                          {t("checkAffected", { subjects: subject })}
+                      <div className="min-w-0 space-y-0.5">
+                        <p
+                          className={cn(
+                            "text-sm",
+                            check.status === "FAIL" && "font-medium text-destructive",
+                            check.status === "SKIPPED" && "text-muted-foreground",
+                          )}
+                        >
+                          {t(`check.${check.id}`)}
                         </p>
-                      )}
+                        {check.status === "SKIPPED" && (
+                          <p className="text-xs text-muted-foreground">{t("checkSkipped")}</p>
+                        )}
+                        {check.reason !== null && (
+                          <p className="text-xs text-muted-foreground">{t(`err.${check.reason}`)}</p>
+                        )}
+                        {subject !== null && (
+                          <p className="break-words text-xs text-muted-foreground">
+                            {t("checkAffected", { subjects: subject })}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </CardContent>
-          </Card>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
       {isPending && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 p-3 backdrop-blur lg:static lg:z-auto lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+        /**
+         * `pr-28` (112px) is not decoration: `components/QuickActionFAB.tsx` is `fixed bottom-6
+         * right-6 z-50` with an `h-14 w-14` button, so it occupies 24-80px from both the bottom and
+         * the right on EVERY backoffice route, and its `shadow-lg` spreads ~12px further left. This
+         * is the only `fixed inset-x-0 bottom-0` bar in `app/backoffice`, so nothing else has ever
+         * had to survive it — without the clearance a finance operator on a phone or tablet taps
+         * the right end of Approve and gets the Quick Action dropdown instead, on the control that
+         * moves the money. `lg:` drops the whole thing back to a normal in-flow row.
+         */
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 py-3 pl-3 pr-28 backdrop-blur lg:static lg:z-auto lg:border-0 lg:bg-transparent lg:p-0 lg:pr-0 lg:backdrop-blur-none">
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <Button
               variant="destructive"
@@ -678,9 +754,17 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
                 maxLength={MAX_REASON_LENGTH}
                 rows={3}
               />
-              {!overrideOk && overrideReason.length > 0 && (
-                <p className="text-xs text-destructive">{t("reasonRequired")}</p>
-              )}
+              <div className="flex items-start justify-between gap-3">
+                {/* Rendered whenever the confirm button is blocked, not only once something has been
+                    typed — with an empty box, which is the state the dialog opens in, the operator
+                    would otherwise see a greyed-out button and nothing saying why. */}
+                <p className={cn("text-xs", overrideOk ? "invisible" : "text-destructive")}>
+                  {t("reasonRequired")}
+                </p>
+                <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                  {overrideReason.length}/{MAX_REASON_LENGTH}
+                </p>
+              </div>
             </div>
           )}
 
@@ -727,9 +811,14 @@ export function SettlementApprovalClient({ settlement: s }: Props) {
               maxLength={MAX_REASON_LENGTH}
               rows={3}
             />
-            {!rejectOk && rejectReason.length > 0 && (
-              <p className="text-xs text-destructive">{t("reasonRequired")}</p>
-            )}
+            <div className="flex items-start justify-between gap-3">
+              <p className={cn("text-xs", rejectOk ? "invisible" : "text-destructive")}>
+                {t("reasonRequired")}
+              </p>
+              <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                {rejectReason.length}/{MAX_REASON_LENGTH}
+              </p>
+            </div>
           </div>
 
           <AlertDialogFooter>
@@ -765,6 +854,12 @@ function DeductionRow({
    * survive into the nested JSX that reads its members, but narrowing this local const does.
    */
   const retur = deduction.fieldReturn;
+  /**
+   * A dead or expired R2 URL otherwise renders the browser's broken-image glyph with no
+   * explanation. Evidence is load-bearing on a screen that moves money — "the photo will not load"
+   * and "there is no photo" are different findings and have to read differently.
+   */
+  const [evidenceBroken, setEvidenceBroken] = useState(false);
 
   return (
     <div className="rounded-md border p-3">
@@ -821,7 +916,22 @@ function DeductionRow({
 
       {deduction.type !== "RETUR_OFFSET" && (
         <div className="mt-2 border-t pt-2">
-          {deduction.proofUrl ? (
+          {!deduction.proofUrl ? (
+            <p className="text-xs text-destructive">{t("evidenceMissing")}</p>
+          ) : evidenceBroken ? (
+            <div className="flex items-center gap-2 rounded-md border border-dashed p-3">
+              <ImageOff className="h-4 w-4 shrink-0 text-destructive" />
+              <p className="min-w-0 text-xs text-destructive">{t("evidenceUnavailable")}</p>
+              <a
+                href={deduction.proofUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-auto shrink-0 text-xs hover:underline"
+              >
+                {t("evidenceOpenDirect")}
+              </a>
+            </div>
+          ) : (
             <a
               href={deduction.proofUrl}
               target="_blank"
@@ -833,10 +943,9 @@ function DeductionRow({
                 src={deduction.proofUrl}
                 alt={t("evidenceAlt")}
                 className="max-h-48 w-full object-contain"
+                onError={() => setEvidenceBroken(true)}
               />
             </a>
-          ) : (
-            <p className="text-xs text-destructive">{t("evidenceMissing")}</p>
           )}
         </div>
       )}

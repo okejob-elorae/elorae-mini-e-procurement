@@ -4,7 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { applyReturnOffset } from "@/lib/finance/ar/retur-offset-writer";
 import { allocateOldestFirst, type AllocationInput, type AllocationOutput } from "./allocate";
-import { computeSettlementTotals, computeVariance } from "./calc";
+import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
 import { SettlementError } from "./errors";
 import { parseVarianceTolerance, VARIANCE_TOLERANCE_SETTING_KEY } from "./variance-tolerance";
 
@@ -19,8 +19,6 @@ export type ApproveSettlementResult = {
   paymentIds: string[];
   alreadyApproved?: true;
 };
-
-export const EPSILON = 1e-6;
 
 /**
  * `AuditLog.reason` is a bare `String?` in the Prisma schema — no `@db.Text` — which is MySQL
@@ -129,6 +127,13 @@ function allocateForComponent(amount: number, headroom: HeadroomRow[]): Allocati
  * were written by an earlier process, so an in-memory tally would start at zero and over-state the
  * remaining agreed amount. VOIDED payments are excluded, symmetrically with the live balance,
  * which a void has already restored.
+ *
+ * PUBLIC API — do not strip the `export`. `lib/finance/ar-settlement/queries.ts` calls this to
+ * build the finance approval screen's checklist, so the preview shares this exact arithmetic
+ * rather than a second copy of it. The same applies to `returComponentKey`/`simpleComponentKey`
+ * above and to `InvoiceRow`/`HeadroomRow`: a preview that spelled the idempotency keys itself
+ * would report every already-posted component as unposted and mis-state both the headroom and the
+ * retur-credit checks.
  */
 export async function computeComponentHeadroom(
   invoiceRows: InvoiceRow[],

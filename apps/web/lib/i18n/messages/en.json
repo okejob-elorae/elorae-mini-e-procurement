@@ -4271,6 +4271,16 @@
     "rejectReasonLabel": "Reason",
     "rejectConfirmButton": "Reject settlement",
     "rejectSuccessToast": "{docNo} rejected.",
+    "storedDriftMessageClosed": "This settlement was filed as {storedExpected} expected, but its invoice and deduction rows compute to {expected}. The figures below are the computed ones.",
+    "componentsTitlePosted": "Payments this approval posted",
+    "componentsHintPosted": "Each component posted as its own payment. Open one to see its allocations or void it.",
+    "componentsTitleOrphaned": "Payments left behind by this settlement",
+    "componentsHintOrphaned": "This settlement was rejected, but these payments had already posted. They are not linked to any approved document — void them or raise it with finance.",
+    "componentUnlinked": "No retur linked",
+    "subjectInvoiceId": "invoice {id}",
+    "subjectReturId": "retur {id}",
+    "evidenceUnavailable": "The evidence photo could not be loaded.",
+    "evidenceOpenDirect": "Open the file",
     "err": {
       "SETTLEMENT_NOT_FOUND": "Settlement not found.",
       "NOT_PENDING": "This settlement was already approved or rejected.",
@@ -4302,7 +4312,10 @@
       "MISSING_REASON": "A reject reason is required.",
       "FORBIDDEN": "You don't have permission to approve or reject settlements.",
       "INVALID_REQUEST": "That request was not valid. Close this dialog and open it again.",
-      "UNEXPECTED": "Something went wrong. Please try again."
+      "UNEXPECTED": "Something went wrong. Please try again.",
+      "NO_ALLOCATIONS": "One of this settlement's payments has nothing to allocate against.",
+      "DUPLICATE_ALLOCATION": "One of this settlement's payments allocates to the same invoice twice.",
+      "ALREADY_APPLIED": "That retur credit has already been fully applied."
     }
   },
   "payments": {
