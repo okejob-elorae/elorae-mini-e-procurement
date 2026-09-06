@@ -149,7 +149,9 @@ describe("payment action guards", () => {
 
   it("refuses to apply a retur offset without payments:manage", async () => {
     mockHasPermission.mockReturnValue(false);
-    const res = await applyReturnOffsetAction({ returnId: "ret-1", allocations: [{ receivableId: "r1", amount: 500 }] });
+    const res = await applyReturnOffsetAction({
+      returnId: "ret-1", eventId: "evt-1", drawAmount: 500, allocations: [{ receivableId: "r1", amount: 500 }],
+    });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toBe("FORBIDDEN");
     expect(mockApplyReturnOffset).not.toHaveBeenCalled();
@@ -157,15 +159,55 @@ describe("payment action guards", () => {
 
   it("maps RETURN_NOT_APPROVED through ERROR_CODE_MAP", async () => {
     mockApplyReturnOffset.mockRejectedValue(new PaymentError("RETURN_NOT_APPROVED"));
-    const res = await applyReturnOffsetAction({ returnId: "ret-1", allocations: [{ receivableId: "r1", amount: 500 }] });
+    const res = await applyReturnOffsetAction({
+      returnId: "ret-1", eventId: "evt-1", drawAmount: 500, allocations: [{ receivableId: "r1", amount: 500 }],
+    });
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toBe("RETURN_NOT_APPROVED");
   });
 
   it("posts the receipt journal and reports alreadyApplied on success", async () => {
     mockApplyReturnOffset.mockResolvedValue({ ok: true, paymentId: "pay-9", alreadyApplied: true });
-    const res = await applyReturnOffsetAction({ returnId: "ret-1", allocations: [{ receivableId: "r1", amount: 500 }] });
+    const res = await applyReturnOffsetAction({
+      returnId: "ret-1", eventId: "evt-1", drawAmount: 500, allocations: [{ receivableId: "r1", amount: 500 }],
+    });
     expect(res).toMatchObject({ ok: true, paymentId: "pay-9", alreadyApplied: true });
     expect(mockPostArJournalSafely).toHaveBeenCalledWith("ar_payment", "pay-9", expect.any(Function));
+  });
+
+  it("refuses INVALID_REQUEST when drawAmount is zero or negative", async () => {
+    const zero = await applyReturnOffsetAction({
+      returnId: "ret-1", eventId: "evt-1", drawAmount: 0, allocations: [{ receivableId: "r1", amount: 500 }],
+    });
+    expect(zero).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    const negative = await applyReturnOffsetAction({
+      returnId: "ret-1", eventId: "evt-1", drawAmount: -500, allocations: [{ receivableId: "r1", amount: 500 }],
+    });
+    expect(negative).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(mockApplyReturnOffset).not.toHaveBeenCalled();
+  });
+
+  it("refuses INVALID_REQUEST when eventId is missing", async () => {
+    const res = await applyReturnOffsetAction({
+      returnId: "ret-1", eventId: "", drawAmount: 500, allocations: [{ receivableId: "r1", amount: 500 }],
+    });
+    expect(res).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(mockApplyReturnOffset).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Discriminates Number.isFinite from the global isFinite, which the drawAmount <= 0 checks
+   * above cannot: both functions reject 0 and -500 identically. The global isFinite COERCES its
+   * argument, so isFinite("500") is true and "500" <= 0 is false — a hand-rolled POST with a
+   * string drawAmount would sail through both clauses and reach roundCents in the writer, the
+   * same shape of bug the delivery GPS gate shipped once already.
+   */
+  it("refuses INVALID_REQUEST when drawAmount is a numeric string rather than a number", async () => {
+    const coerced = await applyReturnOffsetAction({
+      returnId: "ret-1", eventId: "evt-1", drawAmount: "500" as unknown as number,
+      allocations: [{ receivableId: "r1", amount: 500 }],
+    });
+    expect(coerced).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(mockApplyReturnOffset).not.toHaveBeenCalled();
   });
 });

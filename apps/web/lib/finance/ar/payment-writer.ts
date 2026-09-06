@@ -15,6 +15,7 @@ export type RecordPaymentInput = {
   proofUrl?: string;
   proofR2Key?: string;
   idempotencyKey?: string;
+  fieldReturnId?: string;
 };
 
 /**
@@ -64,6 +65,15 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
     throw new PaymentError("DUPLICATE_ALLOCATION");
   }
 
+  /*
+   * The coupling used to be structural — a `@unique FieldReturn.offsetPaymentId` plus an
+   * `offsetStatus` CAS made a stray retur-offset payment unreachable. Both were removed for
+   * partial draw-down, so it is enforced here instead: without a `fieldReturnId`, a
+   * RETUR_OFFSET payment would settle receivables and post the revenue reversal with no retur
+   * behind it, invisible to `projectReturnOffset`.
+   */
+  if (input.method === "RETUR_OFFSET" && !input.fieldReturnId) throw new PaymentError("NOT_FOUND");
+
   return runSerializable(async (tx) => {
     if (input.idempotencyKey) {
       const existing = await tx.payment.findUnique({
@@ -71,6 +81,36 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
         select: { id: true, docNo: true },
       });
       if (existing) return { paymentId: existing.id, docNo: existing.docNo };
+    }
+
+    /*
+     * The retur draw ceiling. This lives inside the same serializable transaction that creates the
+     * payment, for the same reason OVER_ALLOCATED does: a check that commits separately from the
+     * fact it checks is not a check. Two concurrent draws against one retur are serialised here,
+     * so the sum of POSTED payments carrying this fieldReturnId can never pass the retur's frozen
+     * totalValue. VOIDED payments are excluded — a voided draw released its value.
+     */
+    if (input.fieldReturnId) {
+      const ret = await tx.fieldReturn.findUnique({
+        where: { id: input.fieldReturnId },
+        select: { storeId: true, totalValue: true },
+      });
+      if (!ret) throw new PaymentError("NOT_FOUND");
+      /*
+       * Every guard lives here, not in the form: without this, a payment can draw down store A's
+       * retur credit while settling store B's receivables — the ceiling check and the allocation
+       * loop's WRONG_STORE both pass, since neither compares the retur's own store against the
+       * other.
+       */
+      if (ret.storeId !== input.storeId) throw new PaymentError("WRONG_STORE");
+      if (ret.totalValue === null) throw new PaymentError("NOT_VALUED");
+      const drawn = await tx.payment.aggregate({
+        where: { fieldReturnId: input.fieldReturnId, status: "POSTED" },
+        _sum: { amount: true },
+      });
+      const alreadyDrawn = roundCents(Number(drawn._sum.amount ?? 0));
+      const totalValue = roundCents(Number(ret.totalValue));
+      if (alreadyDrawn + amount > totalValue + EPSILON) throw new PaymentError("EXCEEDS_REMAINING");
     }
 
     for (const a of allocations) {
@@ -107,6 +147,7 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
         proofR2Key: input.proofR2Key,
         recordedById: input.recordedById,
         idempotencyKey: input.idempotencyKey ?? null,
+        fieldReturnId: input.fieldReturnId ?? null,
         allocations: {
           create: allocations.map((a) => ({ receivableId: a.receivableId, amount: a.amount })),
         },

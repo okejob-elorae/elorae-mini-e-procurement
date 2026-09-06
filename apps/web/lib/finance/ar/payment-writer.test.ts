@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { recordPayment } from "./payment-writer";
+import { voidPayment } from "./void-writer";
 import { PaymentError } from "./errors";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -26,6 +27,13 @@ d("recordPayment (test bed only)", () => {
   let recB = "";
   let otherRec = "";
   let recResidual = "";
+  let orderRetAId = "";
+  let orderRetBId = "";
+  let deliveryRetAId = "";
+  let deliveryRetBId = "";
+  let receivableAId = "";
+  let receivableBId = "";
+  let returnId = "";
 
   beforeEach(async () => {
     /*
@@ -40,6 +48,8 @@ d("recordPayment (test bed only)", () => {
     orderAId = ""; orderBId = ""; orderOtherId = ""; orderResidualId = "";
     deliveryAId = ""; deliveryBId = ""; deliveryOtherId = ""; deliveryResidualId = "";
     recA = ""; recB = ""; otherRec = ""; recResidual = "";
+    orderRetAId = ""; orderRetBId = ""; deliveryRetAId = ""; deliveryRetBId = "";
+    receivableAId = ""; receivableBId = ""; returnId = "";
 
     const store = await prisma.store.create({
       data: { code: `TEST-AR-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -160,26 +170,110 @@ d("recordPayment (test bed only)", () => {
       },
     });
     recResidual = residual.id;
+
+    /*
+     * Sized well above any single retur-draw test amount (max 100_000) so the ceiling check —
+     * which runs before the per-allocation OVER_ALLOCATED check — is what these tests exercise,
+     * not an unrelated outstanding-balance refusal.
+     */
+    const orderRetA = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `TEST-ARPW-ORDRETA-${token}`, storeId, salesmanId: userId, subtotal: 500000, total: 500000 },
+    });
+    orderRetAId = orderRetA.id;
+
+    const deliveryRetA = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-ARPW-DLVRETA-${token}`, orderId: orderRetAId,
+        deliveredAt: paidAt, deliveredById: userId,
+        invoiceDate: paidAt, dueDate: paidAt,
+        subtotal: 500000, total: 500000,
+      },
+    });
+    deliveryRetAId = deliveryRetA.id;
+
+    const receivableA = await prisma.receivable.create({
+      data: {
+        deliveryId: deliveryRetAId, storeId,
+        invoiceDate: paidAt, dueDate: paidAt,
+        originalAmount: 500000, outstandingAmount: 500000,
+      },
+    });
+    receivableAId = receivableA.id;
+
+    const orderRetB = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `TEST-ARPW-ORDRETB-${token}`, storeId, salesmanId: userId, subtotal: 500000, total: 500000 },
+    });
+    orderRetBId = orderRetB.id;
+
+    const deliveryRetB = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-ARPW-DLVRETB-${token}`, orderId: orderRetBId,
+        deliveredAt: paidAt, deliveredById: userId,
+        invoiceDate: paidAt, dueDate: paidAt,
+        subtotal: 500000, total: 500000,
+      },
+    });
+    deliveryRetBId = deliveryRetB.id;
+
+    const receivableB = await prisma.receivable.create({
+      data: {
+        deliveryId: deliveryRetBId, storeId,
+        invoiceDate: paidAt, dueDate: paidAt,
+        originalAmount: 500000, outstandingAmount: 500000,
+      },
+    });
+    receivableBId = receivableB.id;
+
+    /* totalValue 100_000, matching the brief's test cases verbatim. */
+    const fieldReturn = await prisma.fieldReturn.create({
+      data: {
+        docNo: `TEST-ARPW-RET-${token}`, storeId, raisedById: userId, totalValue: 100000,
+      },
+    });
+    returnId = fieldReturn.id;
   });
 
   afterEach(async () => {
     await prisma.paymentAllocation.deleteMany({
-      where: { receivableId: { in: [seededId(recA), seededId(recB), seededId(otherRec), seededId(recResidual)] } },
+      where: {
+        receivableId: {
+          in: [
+            seededId(recA), seededId(recB), seededId(otherRec), seededId(recResidual),
+            seededId(receivableAId), seededId(receivableBId),
+          ],
+        },
+      },
     });
     await prisma.payment.deleteMany({ where: { storeId: { in: [seededId(storeId), seededId(otherStoreId)] } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
     await prisma.receivable.deleteMany({
-      where: { id: { in: [seededId(recA), seededId(recB), seededId(otherRec), seededId(recResidual)] } },
+      where: {
+        id: {
+          in: [
+            seededId(recA), seededId(recB), seededId(otherRec), seededId(recResidual),
+            seededId(receivableAId), seededId(receivableBId),
+          ],
+        },
+      },
     });
     await prisma.fieldSalesDelivery.deleteMany({
       where: {
         id: {
-          in: [seededId(deliveryAId), seededId(deliveryBId), seededId(deliveryOtherId), seededId(deliveryResidualId)],
+          in: [
+            seededId(deliveryAId), seededId(deliveryBId), seededId(deliveryOtherId), seededId(deliveryResidualId),
+            seededId(deliveryRetAId), seededId(deliveryRetBId),
+          ],
         },
       },
     });
     await prisma.fieldSalesOrder.deleteMany({
       where: {
-        id: { in: [seededId(orderAId), seededId(orderBId), seededId(orderOtherId), seededId(orderResidualId)] },
+        id: {
+          in: [
+            seededId(orderAId), seededId(orderBId), seededId(orderOtherId), seededId(orderResidualId),
+            seededId(orderRetAId), seededId(orderRetBId),
+          ],
+        },
       },
     });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
@@ -310,5 +404,106 @@ d("recordPayment (test bed only)", () => {
 
     const after = await prisma.receivable.findUniqueOrThrow({ where: { id: recA } });
     expect(Number(after.outstandingAmount)).toBe(600);
+  });
+
+  it("refuses a retur-linked payment that would exceed the retur's remaining value", async () => {
+    /* retur totalValue is 100_000; a 60_000 draw is already POSTED against it */
+    await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 60000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 60000 }],
+      fieldReturnId: returnId, idempotencyKey: `test-draw-1-${token}`,
+    });
+
+    await expect(
+      recordPayment({
+        storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 40001,
+        recordedById: userId, allocations: [{ receivableId: receivableBId, amount: 40001 }],
+        fieldReturnId: returnId, idempotencyKey: `test-draw-2-${token}`,
+      }),
+    ).rejects.toMatchObject({ code: "EXCEEDS_REMAINING" });
+  });
+
+  it("allows a retur-linked payment that exactly exhausts the remaining value", async () => {
+    await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 60000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 60000 }],
+      fieldReturnId: returnId, idempotencyKey: `test-draw-1-${token}`,
+    });
+
+    const { paymentId } = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 40000,
+      recordedById: userId, allocations: [{ receivableId: receivableBId, amount: 40000 }],
+      fieldReturnId: returnId, idempotencyKey: `test-draw-2-${token}`,
+    });
+
+    const row = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      select: { fieldReturnId: true },
+    });
+    expect(row?.fieldReturnId).toBe(returnId);
+  });
+
+  it("ignores VOIDED payments when computing the remaining value", async () => {
+    const first = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 100000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 100000 }],
+      fieldReturnId: returnId, idempotencyKey: `test-draw-1-${token}`,
+    });
+    await voidPayment({ paymentId: first.paymentId, reason: "test", voidedById: userId });
+
+    const second = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 100000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 100000 }],
+      fieldReturnId: returnId, idempotencyKey: `test-draw-2-${token}`,
+    });
+    expect(second.paymentId).not.toBe(first.paymentId);
+  });
+
+  it("rejects a draw against a retur with no frozen value yet", async () => {
+    await prisma.fieldReturn.update({ where: { id: returnId }, data: { totalValue: null } });
+    const err = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 1000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 1000 }],
+      fieldReturnId: returnId,
+    }).catch((e) => e);
+    expect(err.code).toBe("NOT_VALUED");
+  });
+
+  it("rejects a draw naming a retur that does not exist", async () => {
+    const err = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 1000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 1000 }],
+      fieldReturnId: `does-not-exist-${token}`,
+    }).catch((e) => e);
+    expect(err.code).toBe("NOT_FOUND");
+  });
+
+  it("rejects a RETUR_OFFSET payment with no fieldReturnId", async () => {
+    /*
+     * fieldReturnId is entirely absent, so a guard scoped to "if fieldReturnId is present" never
+     * runs — this proves the method-level guard exists independently of it. Allocation is within
+     * recA's own outstanding balance, so without the guard this would post successfully.
+     */
+    const err = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 100,
+      recordedById: userId, allocations: [{ receivableId: recA, amount: 100 }],
+    }).catch((e) => e);
+    expect(err.code).toBe("NOT_FOUND");
+  });
+
+  it("rejects a retur-linked payment whose retur belongs to a different store than the payment", async () => {
+    /*
+     * storeId and the allocation's receivable (otherRec) both belong to otherStoreId, so the
+     * allocation loop's own WRONG_STORE guard cannot fire here — only the retur block's
+     * `ret.storeId !== input.storeId` comparison can. This is what F2 could not prove: the prior
+     * test always called recordPayment with storeId: ret.storeId, so this comparison always
+     * passed and any WRONG_STORE observed there came from the allocation loop instead.
+     */
+    const err = await recordPayment({
+      storeId: otherStoreId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 100,
+      recordedById: userId, allocations: [{ receivableId: otherRec, amount: 100 }],
+      fieldReturnId: returnId, idempotencyKey: `test-cross-store-${token}`,
+    }).catch((e) => e);
+    expect(err.code).toBe("WRONG_STORE");
   });
 });

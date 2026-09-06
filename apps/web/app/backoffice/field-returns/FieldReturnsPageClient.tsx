@@ -214,6 +214,11 @@ export function FieldReturnsPageClient(props: Props) {
                        * mark every open retur "incomplete" even when nothing is actually wrong yet.
                        */
                       const valuationIncomplete = r.status === "APPROVED" && r.valuationStatus === "PENDING";
+                      const totalValue = r.totalValue;
+                      const remainingValue = r.remainingValue;
+                      const partiallyDrawn =
+                        totalValue !== null && remainingValue !== null && remainingValue < totalValue;
+                      const displayValue = partiallyDrawn ? remainingValue : totalValue;
                       return (
                         <TableRow
                           key={r.id}
@@ -231,10 +236,15 @@ export function FieldReturnsPageClient(props: Props) {
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{r.lineCount}</TableCell>
                           <TableCell className="text-right tabular-nums whitespace-nowrap">
-                            {r.totalValue !== null ? (
-                              formatMoney2(r.totalValue)
+                            {displayValue !== null ? (
+                              formatMoney2(displayValue)
                             ) : (
                               <span className="text-muted-foreground">—</span>
+                            )}
+                            {partiallyDrawn && totalValue !== null && (
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {t("originalValueHint", { total: formatMoney2(totalValue) })}
+                              </div>
                             )}
                             {valuationIncomplete && (
                               <div className="mt-1">

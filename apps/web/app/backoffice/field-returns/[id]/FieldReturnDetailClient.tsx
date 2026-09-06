@@ -453,32 +453,37 @@ export function FieldReturnDetailClient({
                  approved-but-incomplete valuation can never become offsettable. Say so plainly
                  rather than rendering a control that would always refuse. */
               <p className="text-sm text-muted-foreground">{t("credit.neverOffsettable")}</p>
-            ) : r.offsetStatus === "APPLIED" && r.offsetPayment ? (
-              <div className="flex items-center justify-between gap-4">
-                <p className="text-sm text-muted-foreground">{t("credit.appliedBody")}</p>
-                <Link
-                  href={`/backoffice/finance/payments/${r.offsetPayment.id}`}
-                  className="inline-flex items-center gap-1 font-mono text-sm hover:underline"
-                >
-                  {r.offsetPayment.docNo}
-                </Link>
-              </div>
-            ) : r.hasVoidedOffsetAttempt ? (
-              /* Offset once, then voided — offsetStatus is back to AVAILABLE, but the retur's
-                 deterministic idempotency key stays bound to the voided payment forever, so the
-                 offer button here would refuse every single time. Explain instead of offering. */
-              <p className="text-sm text-muted-foreground">{t("credit.voidedOffsetBody")}</p>
             ) : (
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-2xl font-bold tabular-nums">{formatMoney2(r.totalValue)}</p>
-                  <p className="text-xs text-muted-foreground">{t("credit.availableBody")}</p>
-                </div>
-                {canOffsetPayments && (
-                  <Button className="h-10" onClick={() => setOffsetSheetOpen(true)}>
-                    <Wallet className="h-4 w-4 mr-2" />
-                    {t("credit.offsetAction")}
-                  </Button>
+              <div className="space-y-3">
+                {r.offsetPayments.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">{t("credit.appliedBody")}</p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {r.offsetPayments.map((payment) => (
+                        <Link
+                          key={payment.id}
+                          href={`/backoffice/finance/payments/${payment.id}`}
+                          className="inline-flex items-center gap-1 font-mono text-sm hover:underline"
+                        >
+                          {payment.docNo}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {r.offsetStatus === "AVAILABLE" && r.remainingValue !== null && (
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-2xl font-bold tabular-nums">{formatMoney2(r.remainingValue)}</p>
+                      <p className="text-xs text-muted-foreground">{t("credit.availableBody")}</p>
+                    </div>
+                    {canOffsetPayments && (
+                      <Button className="h-10" onClick={() => setOffsetSheetOpen(true)}>
+                        <Wallet className="h-4 w-4 mr-2" />
+                        {t("credit.offsetAction")}
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -571,12 +576,12 @@ export function FieldReturnDetailClient({
         </AlertDialogContent>
       </AlertDialog>
 
-      {canOffsetPayments && r.totalValue !== null && !r.hasVoidedOffsetAttempt && (
+      {canOffsetPayments && r.offsetStatus === "AVAILABLE" && r.remainingValue !== null && (
         <OffsetToPiutangSheet
           open={offsetSheetOpen}
           onOpenChange={setOffsetSheetOpen}
           returnId={r.id}
-          totalValue={r.totalValue}
+          remainingValue={r.remainingValue}
           candidates={allocationCandidates}
           suggestedAllocations={suggestedAllocations}
           onApplied={() => {

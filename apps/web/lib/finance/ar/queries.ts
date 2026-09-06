@@ -394,7 +394,7 @@ export async function getPayment(id: string) {
       store: { select: { id: true, name: true, code: true } },
       recordedBy: { select: { name: true } },
       voidedBy: { select: { name: true } },
-      returOffsetFor: { select: { id: true, docNo: true } },
+      fieldReturn: { select: { id: true, docNo: true } },
       allocations: {
         select: {
           amount: true,
@@ -406,10 +406,11 @@ export async function getPayment(id: string) {
     },
   });
   if (!p) return null;
+  const { fieldReturn, ...rest } = p;
   return {
-    ...p,
+    ...rest,
     amount: Number(p.amount),
-    returOffsetFor: p.returOffsetFor ? { id: p.returOffsetFor.id, docNo: p.returOffsetFor.docNo } : null,
+    returOffsetFor: fieldReturn ? { id: fieldReturn.id, docNo: fieldReturn.docNo } : null,
     allocations: p.allocations.map((a) => ({
       amount: Number(a.amount),
       receivableId: a.receivable.id,

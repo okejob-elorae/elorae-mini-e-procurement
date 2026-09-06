@@ -1,4 +1,5 @@
 import { runSerializable } from "@/lib/db/tx-retry";
+import { projectReturnOffset } from "./retur-offset-writer";
 import { PaymentError } from "./errors";
 
 /**
@@ -101,17 +102,20 @@ export async function voidPayment(input: {
     }
 
     /*
-     * Releases the retur this payment consumed, if any — zero rows matched is the normal case
-     * (the overwhelming majority of payments have no retur behind them at all) and not an error.
-     * Without this release, a single misallocation strands the store's credit permanently: the
-     * payment is voided, the debt is back, and the retur reads APPLIED against a voided payment
-     * with no UI path to re-apply it. The credit is real money owed to a store, so
-     * "unrecoverable through the UI" is not an acceptable resting state.
+     * Re-projects the retur this payment drew from, if any — zero effect is the normal case (the
+     * overwhelming majority of payments have no retur behind them at all) and not an error. The
+     * projection is a SET recomputed from the remaining POSTED payments, so voiding one draw of
+     * several correctly returns only that draw's value, and voiding the last one returns the retur
+     * to AVAILABLE. Passed `tx` so the release commits or rolls back with the void itself. Without
+     * it, a single misallocation strands the store's credit permanently.
      */
-    await tx.fieldReturn.updateMany({
-      where: { offsetPaymentId: payment.id, offsetStatus: "APPLIED" },
-      data: { offsetStatus: "AVAILABLE", offsetPaymentId: null },
+    const voidedPayment = await tx.payment.findUnique({
+      where: { id: payment.id },
+      select: { fieldReturnId: true },
     });
+    if (voidedPayment?.fieldReturnId) {
+      await projectReturnOffset(voidedPayment.fieldReturnId, tx);
+    }
 
     return { voided: true };
   });

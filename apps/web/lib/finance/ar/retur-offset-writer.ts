@@ -1,10 +1,13 @@
-import { prisma } from "@elorae/db";
+import { prisma, Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
+import { runSerializable } from "@/lib/db/tx-retry";
 import { recordPayment } from "./payment-writer";
 import { PaymentError } from "./errors";
 
 export type ApplyReturnOffsetInput = {
   returnId: string;
+  eventId: string;
+  drawAmount: number;
   allocations: Array<{ receivableId: string; amount: number }>;
   appliedById: string;
 };
@@ -12,52 +15,84 @@ export type ApplyReturnOffsetInput = {
 const EPSILON = 1e-6;
 
 /**
- * Flips offsetStatus AVAILABLE -> APPLIED via a guarded CAS, or confirms an already-flipped
- * retur points at OUR OWN paymentId (the safe race / retry-after-crash case). Shared by the
- * genuine-first-attempt path and the idempotency-key-replay path below — both end here.
+ * The read-aggregate-then-write body of projectReturnOffset, run against whatever client the
+ * caller settled on — either the fresh serializable tx this function's own export opens, or the
+ * tx a caller (voidPayment) already holds. Never call this directly from outside the file: without
+ * serializable isolation around it, two concurrent projections (e.g. two draws against the same
+ * retur committing back to back) can each read the aggregate before the other's write lands, and
+ * the LAST write wins with a stale sum — permanently under-reporting appliedValue with nothing
+ * scheduling a re-projection to correct it.
  */
-async function finishFlip(
+async function projectReturnOffsetBody(
   returnId: string,
-  paymentId: string,
-): Promise<{ ok: true; paymentId: string; alreadyApplied?: true }> {
-  const flipped = await prisma.fieldReturn.updateMany({
-    where: { id: returnId, offsetStatus: "AVAILABLE" },
-    data: { offsetStatus: "APPLIED", offsetPaymentId: paymentId },
+  client: Prisma.TransactionClient | typeof prisma,
+): Promise<void> {
+  const ret = await client.fieldReturn.findUnique({
+    where: { id: returnId },
+    select: { totalValue: true },
   });
-  if (flipped.count === 0) {
-    const current = await prisma.fieldReturn.findUnique({
-      where: { id: returnId },
-      select: { offsetStatus: true, offsetPaymentId: true },
-    });
-    if (current?.offsetStatus === "APPLIED" && current.offsetPaymentId === paymentId) {
-      return { ok: true, paymentId, alreadyApplied: true };
-    }
-    console.error(
-      `[applyReturnOffset] orphaned payment: return ${returnId} landed on offsetStatus=${current?.offsetStatus ?? "MISSING"} with offsetPaymentId=${current?.offsetPaymentId ?? "MISSING"} after payment ${paymentId} was posted (expected APPLIED with our payment id)`,
-    );
-    throw new PaymentError("ALREADY_APPLIED");
-  }
-  return { ok: true, paymentId };
+  if (!ret || ret.totalValue === null) return;
+
+  const drawn = await client.payment.aggregate({
+    where: { fieldReturnId: returnId, status: "POSTED" },
+    _sum: { amount: true },
+  });
+  const appliedValue = roundCents(Number(drawn._sum.amount ?? 0));
+  const totalValue = roundCents(Number(ret.totalValue));
+
+  await client.fieldReturn.update({
+    where: { id: returnId },
+    data: {
+      appliedValue,
+      offsetStatus: appliedValue + EPSILON >= totalValue ? "APPLIED" : "AVAILABLE",
+    },
+  });
 }
 
 /**
- * Settles one or more of a store's receivables using an approved, fully-valued field retur's
- * frozen totalValue instead of cash. Copies verifyCollection's shape: deterministic idempotency
- * key -> recordPayment (self-contained, its own transaction) -> CAS flip on this writer's own
- * document — never one enclosing transaction, since nesting prisma.$transaction calls on the
- * same client is unsafe.
+ * Recomputes appliedValue and offsetStatus from the payments that actually posted against this
+ * retur. A projection, never a reservation: it is a SET rather than an increment, so replaying it
+ * after a retry, a crash or a void converges on the same answer instead of double-counting. The
+ * ceiling that makes over-draw impossible lives in recordPayment's own transaction, not here.
  *
- * The idempotency-key lookup runs FIRST, before any guard that reads state a prior successful
- * call would already have mutated (the outstanding-sum diagnostic, most importantly). A crash
- * between recordPayment committing and the CAS flip leaves offsetStatus still AVAILABLE with a
- * real payment already posted and the store's outstanding already decremented — retrying from
- * the top must find that payment via the key and finish the flip, never re-derive the
- * allocation-sum or outstanding-sum guards against state the first attempt already changed.
- * Without this ordering, a retur whose value fully (or nearly) clears the store's outstanding
- * fails INSUFFICIENT_OUTSTANDING on retry after its own first attempt already succeeded --
- * stranding a real payment that never gets flipped to APPLIED, and double-counting the credit
- * in every reporting surface (listOffsettableReturns, getStoreAvailableCredit, the register
- * badge) forever.
+ * The read (aggregate) and the write (update) must be atomic with each other, not just individually
+ * safe: two draws against the same retur can each call this function back to back, and without
+ * shared isolation the second one's aggregate can run before the first one's write lands, then the
+ * first one's write lands LAST and overwrites the second one's correct, larger sum with its own
+ * stale one — a retur can end up permanently under-reporting appliedValue, stuck at AVAILABLE with
+ * no re-projection ever scheduled to fix it. So when called WITHOUT a client (the ordinary
+ * post-commit call from applyReturnOffset), this wraps the body in its own runSerializable
+ * transaction. When called WITH a client, the caller (voidPayment) is already inside a transaction
+ * of its own — this must NOT open a nested one, so it runs the body directly against that client
+ * and lets the release commit or roll back with the void itself.
+ */
+export async function projectReturnOffset(
+  returnId: string,
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<void> {
+  if (client === prisma) {
+    await runSerializable((tx) => projectReturnOffsetBody(returnId, tx));
+    return;
+  }
+  await projectReturnOffsetBody(returnId, client);
+}
+
+/**
+ * Settles one or more of a store's receivables using PART of an approved, fully-valued field
+ * retur's frozen totalValue instead of cash. Copies verifyCollection's shape: deterministic
+ * idempotency key -> recordPayment (self-contained, its own transaction) -> projection onto this
+ * writer's own document — never one enclosing transaction, since nesting prisma.$transaction calls
+ * on the same client is unsafe.
+ *
+ * The idempotency-key lookup runs FIRST, before any guard that reads state a prior successful call
+ * would already have mutated. A crash between recordPayment committing and the projection leaves a
+ * real payment posted with appliedValue stale; retrying from the top must find that payment by the
+ * key and re-project, never re-derive guards against state the first attempt already changed.
+ *
+ * The key is per-EVENT, not per-retur, because one retur can now back several payments. The caller
+ * owns the eventId and must keep it stable across retries of the same logical draw — in the
+ * settlement flow it is the deduction row's id; in the backoffice sheet it is a UUID minted once
+ * when the sheet opens.
  */
 export async function applyReturnOffset(
   input: ApplyReturnOffsetInput,
@@ -66,21 +101,20 @@ export async function applyReturnOffset(
     where: { id: input.returnId },
     select: {
       id: true, docNo: true, storeId: true, status: true,
-      valuationStatus: true, totalValue: true, offsetStatus: true,
+      valuationStatus: true, totalValue: true,
     },
   });
   if (!ret) throw new PaymentError("NOT_FOUND");
   if (ret.status !== "APPROVED") throw new PaymentError("RETURN_NOT_APPROVED");
   if (ret.valuationStatus !== "VALUED" || ret.totalValue === null) throw new PaymentError("NOT_VALUED");
 
-  const totalValue = roundCents(Number(ret.totalValue));
-  const idempotencyKey = `returoffset-${ret.id}`;
+  const idempotencyKey = `returoffset-${ret.id}-${input.eventId}`;
 
   /*
-   * A re-application after a void collides with this same deterministic key: nothing clears a
-   * voided payment's idempotencyKey, so the lookup finds the OLD VOIDED payment. Refused here
-   * rather than made non-deterministic, which would cost the crash-safety property above for a
-   * rare path. The operator records the correction as a fresh CASH/TRANSFER payment instead.
+   * A replay of THIS event after its payment was voided still refuses: nothing clears a voided
+   * payment's idempotencyKey, so the lookup finds the old voided row. A re-draw is a NEW event
+   * with a new key, which is the supported path — unlike the pre-draw-down writer, where the
+   * one-key-per-retur design made re-application impossible entirely.
    */
   const existingPayment = await prisma.payment.findUnique({
     where: { idempotencyKey },
@@ -88,51 +122,51 @@ export async function applyReturnOffset(
   });
   if (existingPayment) {
     if (existingPayment.status === "VOIDED") throw new PaymentError("PAYMENT_VOIDED");
-    return finishFlip(ret.id, existingPayment.id);
+    await projectReturnOffset(ret.id);
+    return { ok: true, paymentId: existingPayment.id, alreadyApplied: true };
   }
 
-  // No prior payment for this retur exists yet — this is a genuine first attempt.
-  if (ret.offsetStatus !== "AVAILABLE") throw new PaymentError("ALREADY_APPLIED");
+  const drawAmount = roundCents(input.drawAmount);
+  if (!(drawAmount > 0)) throw new PaymentError("INVALID_AMOUNT");
 
   const allocations = input.allocations.map((a) => ({ ...a, amount: roundCents(a.amount) }));
   const allocated = allocations.reduce((s, a) => s + a.amount, 0);
-  if (Math.abs(allocated - totalValue) > EPSILON) throw new PaymentError("ALLOCATION_MISMATCH");
+  if (Math.abs(allocated - drawAmount) > EPSILON) throw new PaymentError("ALLOCATION_MISMATCH");
 
   /*
    * Diagnostic only, not the safety mechanism — a plain read outside any transaction, so a
-   * concurrent payment can invalidate it before recordPayment's own OVER_ALLOCATED check (which
-   * runs inside its serializable transaction against the live outstandingAmount) actually fires.
-   * This exists to name the real problem -- "this store's outstanding is less than the retur
-   * value" -- instead of a generic allocation error an operator would keep re-arranging numbers
-   * that can never sum to chase. Now genuinely only reachable on a first attempt (see the
-   * idempotency-key lookup above), so it can no longer fire against state its own prior success
-   * already mutated.
+   * concurrent payment can invalidate it before recordPayment's own OVER_ALLOCATED check actually
+   * fires. It exists to name the real problem — "this store's outstanding is less than what you
+   * are drawing" — instead of a generic allocation error an operator would keep re-arranging
+   * numbers that can never sum to chase.
    */
   const outstanding = await prisma.receivable.aggregate({
     where: { storeId: ret.storeId, status: { in: ["OUTSTANDING", "PARTIAL"] } },
     _sum: { outstandingAmount: true },
   });
   const totalOutstanding = Number(outstanding._sum.outstandingAmount ?? 0);
-  if (totalOutstanding + EPSILON < totalValue) throw new PaymentError("INSUFFICIENT_OUTSTANDING");
+  if (totalOutstanding + EPSILON < drawAmount) throw new PaymentError("INSUFFICIENT_OUTSTANDING");
 
   const { paymentId } = await recordPayment({
     storeId: ret.storeId,
     paidAt: new Date(),
     method: "RETUR_OFFSET",
-    amount: totalValue,
+    amount: drawAmount,
     recordedById: input.appliedById,
     allocations,
     reference: ret.docNo,
     idempotencyKey,
+    fieldReturnId: ret.id,
   });
 
   /*
-   * recordPayment's own idempotency lookup can still resolve to a pre-existing VOIDED payment
-   * that landed between this function's own lookup above and this call — a narrow race, but the
-   * same "flipped APPLIED against a payment that moved zero money" outcome, so it stays guarded.
+   * recordPayment's own idempotency lookup can still resolve to a pre-existing VOIDED payment that
+   * landed between this function's own lookup above and this call — a narrow race, but the same
+   * "projected a draw against a payment that moved zero money" outcome, so it stays guarded.
    */
   const posted = await prisma.payment.findUnique({ where: { id: paymentId }, select: { status: true } });
   if (posted?.status === "VOIDED") throw new PaymentError("PAYMENT_VOIDED");
 
-  return finishFlip(ret.id, paymentId);
+  await projectReturnOffset(ret.id);
+  return { ok: true, paymentId };
 }

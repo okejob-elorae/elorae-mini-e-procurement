@@ -160,4 +160,38 @@ d("retur-offset-queries (test bed only)", () => {
     });
     deliveryLineId = recreated.id;
   });
+
+  it("reports remaining value, not total, for a partially drawn retur", async () => {
+    await prisma.fieldReturn.update({
+      where: { id: returAvailableId },
+      data: { appliedValue: 100 },
+    });
+
+    const { rows } = await listOffsettableReturns({ storeId });
+    const row = rows.find((r) => r.id === returAvailableId);
+    expect(row?.appliedValue).toBe(100);
+    expect(row?.remainingValue).toBe(200);
+    expect(row?.totalValue).toBe(300);
+  });
+
+  it("sums remaining value across returns for store available credit", async () => {
+    await prisma.fieldReturn.update({
+      where: { id: returAvailableId },
+      data: { appliedValue: 100 },
+    });
+
+    /* returAvailableId (300 - 100) + returManualPricedId (250 - 0) still AVAILABLE */
+    expect(await getStoreAvailableCredit(storeId)).toBe(450);
+  });
+
+  it("suggests allocations only up to the remaining value", async () => {
+    await prisma.fieldReturn.update({
+      where: { id: returAvailableId },
+      data: { appliedValue: 250 },
+    });
+
+    const suggestions = await suggestOffsetAllocations(returAvailableId);
+    const total = suggestions.reduce((s, a) => s + a.amount, 0);
+    expect(total).toBeLessThanOrEqual(50);
+  });
 });

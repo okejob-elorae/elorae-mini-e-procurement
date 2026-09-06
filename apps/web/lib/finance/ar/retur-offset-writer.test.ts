@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { applyReturnOffset } from "./retur-offset-writer";
 import { recordPayment } from "./payment-writer";
+import { voidPayment } from "./void-writer";
 import { PaymentError } from "./errors";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -16,26 +17,20 @@ d("applyReturnOffset (test bed only)", () => {
   let uomId = "";
   let itemId = "";
   let orderId = "";
-  let deliveryId = "";
-  let receivableId = "";
+  let deliveryAId = "";
+  let deliveryBId = "";
+  let receivableAId = "";
+  let receivableBId = "";
   let otherOrderId = "";
   let otherDeliveryId = "";
   let otherReceivableId = "";
-  /* Set only by the "splits across two receivables" test — describe-scoped so the shared
-     afterEach (not the test itself) deletes it, after payments/allocations are cleared. A test
-     deleting its own extra receivable inline races the still-live PaymentAllocation row that
-     points at it: relationMode="prisma" emulates a required-relation check on delete, so deleting
-     a Receivable a PaymentAllocation still references throws. */
-  let secondDeliveryId = "";
-  let secondReceivableId = "";
-  let returId = "";
+  let returnId = "";
 
   async function makeReturn(overrides: Partial<{
     status: "PENDING_APPROVAL" | "APPROVED";
     valuationStatus: "PENDING" | "VALUED";
     offsetStatus: "AVAILABLE" | "APPLIED";
     totalValue: number | null;
-    offsetPaymentId: string | null;
   }> = {}): Promise<string> {
     const ret = await prisma.fieldReturn.create({
       data: {
@@ -43,14 +38,13 @@ d("applyReturnOffset (test bed only)", () => {
         status: overrides.status ?? "APPROVED",
         valuationStatus: overrides.valuationStatus ?? "VALUED",
         offsetStatus: overrides.offsetStatus ?? "AVAILABLE",
-        totalValue: overrides.totalValue === undefined ? 1000 : overrides.totalValue,
-        offsetPaymentId: overrides.offsetPaymentId ?? null,
+        totalValue: overrides.totalValue === undefined ? 100000 : overrides.totalValue,
         approvedAt: new Date(), approvedById: userId,
       },
     });
     /* Tracked for teardown BEFORE the line create — a throw in between would otherwise orphan a
        FieldReturn row on the shared test bed with nothing holding its id. */
-    returId = ret.id;
+    returnId = ret.id;
     await prisma.fieldReturnLine.create({
       data: { returnId: ret.id, itemId, qty: 5, reason: "UNSOLD" },
     });
@@ -60,9 +54,8 @@ d("applyReturnOffset (test bed only)", () => {
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; otherStoreId = ""; userId = ""; uomId = ""; itemId = "";
-    orderId = ""; deliveryId = ""; receivableId = "";
-    otherOrderId = ""; otherDeliveryId = ""; otherReceivableId = "";
-    secondDeliveryId = ""; secondReceivableId = ""; returId = "";
+    orderId = ""; deliveryAId = ""; deliveryBId = ""; receivableAId = ""; receivableBId = "";
+    otherOrderId = ""; otherDeliveryId = ""; otherReceivableId = ""; returnId = "";
 
     const store = await prisma.store.create({
       data: { code: `TEST-ROW-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -85,24 +78,45 @@ d("applyReturnOffset (test bed only)", () => {
       data: { orderNo: `TEST-ROW-ORD-${token}`, storeId, salesmanId: userId, subtotal: 1000, total: 1000 },
     });
     orderId = order.id;
-    const delivery = await prisma.fieldSalesDelivery.create({
+
+    const deliveryA = await prisma.fieldSalesDelivery.create({
       data: {
-        docNo: `TEST-ROW-DLV-${token}`, orderId, deliveredAt: new Date(), deliveredById: userId,
-        invoiceDate: new Date(), dueDate: new Date("2026-05-01"), subtotal: 1000, total: 1000,
+        docNo: `TEST-ROW-DLV-A-${token}`, orderId, deliveredAt: new Date(), deliveredById: userId,
+        invoiceDate: new Date(), dueDate: new Date("2026-05-01"), subtotal: 100000, total: 100000,
       },
     });
-    deliveryId = delivery.id;
-    const receivable = await prisma.receivable.create({
+    deliveryAId = deliveryA.id;
+    const receivableA = await prisma.receivable.create({
       data: {
-        deliveryId, storeId, invoiceDate: new Date(), dueDate: new Date("2026-05-01"),
-        originalAmount: 1000, outstandingAmount: 1000,
+        deliveryId: deliveryAId, storeId, invoiceDate: new Date(), dueDate: new Date("2026-05-01"),
+        originalAmount: 100000, outstandingAmount: 100000,
       },
     });
-    receivableId = receivable.id;
+    receivableAId = receivableA.id;
+
+    /*
+     * A second receivable of the SAME store, standing by for the draw-down tests that split a
+     * retur's value across two of its receivables in one call, or across two separate draws.
+     * Receivable.deliveryId is @unique, so it needs its own delivery.
+     */
+    const deliveryB = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-ROW-DLV-B-${token}`, orderId, deliveredAt: new Date(), deliveredById: userId,
+        invoiceDate: new Date(), dueDate: new Date("2026-05-01"), subtotal: 100000, total: 100000,
+      },
+    });
+    deliveryBId = deliveryB.id;
+    const receivableB = await prisma.receivable.create({
+      data: {
+        deliveryId: deliveryBId, storeId, invoiceDate: new Date(), dueDate: new Date("2026-05-01"),
+        originalAmount: 100000, outstandingAmount: 100000,
+      },
+    });
+    receivableBId = receivableB.id;
 
     /*
      * Receivable.deliveryId is @unique, so a cross-store receivable needs its OWN delivery (and
-     * therefore its own order) — it cannot reuse the storeId-scoped delivery above.
+     * therefore its own order) — it cannot reuse the storeId-scoped deliveries above.
      */
     const otherOrder = await prisma.fieldSalesOrder.create({
       data: { orderNo: `TEST-ROW-OTH-ORD-${token}`, storeId: otherStoreId, salesmanId: userId, subtotal: 1000, total: 1000 },
@@ -128,17 +142,17 @@ d("applyReturnOffset (test bed only)", () => {
     const payments = await prisma.payment.findMany({ where: { storeId: { in: [seededId(storeId), seededId(otherStoreId)] } }, select: { id: true } });
     const paymentIds = payments.map((p) => p.id);
     if (paymentIds.length) {
-      await prisma.fieldReturn.updateMany({ where: { offsetPaymentId: { in: paymentIds } }, data: { offsetPaymentId: null } });
+      await prisma.payment.updateMany({ where: { id: { in: paymentIds } }, data: { fieldReturnId: null } });
       await prisma.paymentAllocation.deleteMany({ where: { paymentId: { in: paymentIds } } });
       await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
     }
-    await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returId) } });
-    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returId) } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
+    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
     await prisma.receivable.deleteMany({
-      where: { id: { in: [seededId(receivableId), seededId(otherReceivableId), seededId(secondReceivableId)] } },
+      where: { id: { in: [seededId(receivableAId), seededId(receivableBId), seededId(otherReceivableId)] } },
     });
     await prisma.fieldSalesDelivery.deleteMany({
-      where: { id: { in: [seededId(deliveryId), seededId(otherDeliveryId), seededId(secondDeliveryId)] } },
+      where: { id: { in: [seededId(deliveryAId), seededId(deliveryBId), seededId(otherDeliveryId)] } },
     });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: [seededId(orderId), seededId(otherOrderId)] } } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -147,47 +161,90 @@ d("applyReturnOffset (test bed only)", () => {
     await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(otherStoreId)] } } });
   });
 
-  it("refuses a return that is not APPROVED", async () => {
-    returId = await makeReturn({ status: "PENDING_APPROVAL", valuationStatus: "PENDING", totalValue: null });
+  it("refuses a return that does not exist", async () => {
     const err = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
+      returnId: `does-not-exist-${token}`, eventId: "evt-1", drawAmount: 1000,
+      allocations: [{ receivableId: receivableAId, amount: 1000 }], appliedById: userId,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("NOT_FOUND");
+  });
+
+  it("refuses a return that is not APPROVED", async () => {
+    returnId = await makeReturn({ status: "PENDING_APPROVAL", valuationStatus: "PENDING", totalValue: null });
+    const err = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 1000,
+      allocations: [{ receivableId: receivableAId, amount: 1000 }], appliedById: userId,
     }).catch((e) => e);
     expect(err).toBeInstanceOf(PaymentError);
     expect(err.code).toBe("RETURN_NOT_APPROVED");
   });
 
   it("refuses a return that is APPROVED but not VALUED", async () => {
-    returId = await makeReturn({ valuationStatus: "PENDING", totalValue: null });
+    returnId = await makeReturn({ valuationStatus: "PENDING", totalValue: null });
     const err = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
+      returnId, eventId: "evt-1", drawAmount: 1000,
+      allocations: [{ receivableId: receivableAId, amount: 1000 }], appliedById: userId,
     }).catch((e) => e);
     expect(err).toBeInstanceOf(PaymentError);
     expect(err.code).toBe("NOT_VALUED");
   });
 
-  it("refuses when the allocations don't sum to the return's totalValue", async () => {
-    returId = await makeReturn({ totalValue: 1000 });
+  it("refuses when the draw exceeds the store's total outstanding", async () => {
+    await prisma.receivable.update({ where: { id: receivableAId }, data: { outstandingAmount: 200 } });
+    await prisma.receivable.update({ where: { id: receivableBId }, data: { outstandingAmount: 200 } });
+    returnId = await makeReturn();
     const err = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 700 }], appliedById: userId,
-    }).catch((e) => e);
-    expect(err).toBeInstanceOf(PaymentError);
-    expect(err.code).toBe("ALLOCATION_MISMATCH");
-  });
-
-  it("refuses when the return's value exceeds the store's total outstanding", async () => {
-    await prisma.receivable.update({ where: { id: receivableId }, data: { outstandingAmount: 400 } });
-    returId = await makeReturn({ totalValue: 1000 });
-    const err = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
+      returnId, eventId: "evt-1", drawAmount: 1000,
+      allocations: [{ receivableId: receivableAId, amount: 1000 }], appliedById: userId,
     }).catch((e) => e);
     expect(err).toBeInstanceOf(PaymentError);
     expect(err.code).toBe("INSUFFICIENT_OUTSTANDING");
   });
 
-  it("refuses a cross-store receivable via recordPayment's own guard", async () => {
-    returId = await makeReturn({ totalValue: 1000 });
+  it("succeeds when the draw fits the store's outstanding even though it is less than the retur's totalValue", async () => {
+    /*
+     * Pins the guard to drawAmount rather than totalValue: totalOutstanding (50000) sits BELOW
+     * totalValue (100000, the default) but at or above drawAmount (40000). The pre-draw-down
+     * writer compared totalOutstanding against totalValue and would have wrongly refused this with
+     * INSUFFICIENT_OUTSTANDING; reverting the guard to totalValue makes this test fail while the
+     * "refuses when the draw exceeds..." test above keeps passing either way.
+     */
+    await prisma.receivable.update({ where: { id: receivableAId }, data: { outstandingAmount: 50000 } });
+    await prisma.receivable.update({ where: { id: receivableBId }, data: { outstandingAmount: 0 } });
+    returnId = await makeReturn();
+    const result = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a draw amount of zero", async () => {
+    returnId = await makeReturn();
     const err = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId: otherReceivableId, amount: 1000 }], appliedById: userId,
+      returnId, eventId: "evt-1", drawAmount: 0,
+      allocations: [{ receivableId: receivableAId, amount: 0 }], appliedById: userId,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("INVALID_AMOUNT");
+  });
+
+  it("refuses a negative draw amount", async () => {
+    returnId = await makeReturn();
+    const err = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: -1000,
+      allocations: [{ receivableId: receivableAId, amount: -1000 }], appliedById: userId,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("INVALID_AMOUNT");
+  });
+
+  it("refuses a cross-store receivable via recordPayment's own guard", async () => {
+    returnId = await makeReturn();
+    const err = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 1000,
+      allocations: [{ receivableId: otherReceivableId, amount: 1000 }], appliedById: userId,
     }).catch((e) => e);
     expect(err).toBeInstanceOf(PaymentError);
     expect(err.code).toBe("WRONG_STORE");
@@ -195,129 +252,170 @@ d("applyReturnOffset (test bed only)", () => {
     expect(payments).toHaveLength(0);
   });
 
-  it("creates a RETUR_OFFSET payment, decrements the receivable, and flips offsetStatus to APPLIED", async () => {
-    returId = await makeReturn({ totalValue: 1000 });
+  it("draws part of a retur and leaves it AVAILABLE with the remainder", async () => {
+    returnId = await makeReturn();
+    await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+
+    const ret = await prisma.fieldReturn.findUnique({
+      where: { id: returnId },
+      select: { offsetStatus: true, appliedValue: true },
+    });
+    expect(ret?.offsetStatus).toBe("AVAILABLE");
+    expect(Number(ret?.appliedValue)).toBe(40000);
+  });
+
+  it("flips to APPLIED only when the final draw exhausts the value", async () => {
+    returnId = await makeReturn();
+    await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+    await applyReturnOffset({
+      returnId, eventId: "evt-2", drawAmount: 60000,
+      allocations: [{ receivableId: receivableBId, amount: 60000 }], appliedById: userId,
+    });
+
+    const ret = await prisma.fieldReturn.findUnique({
+      where: { id: returnId },
+      select: { offsetStatus: true, appliedValue: true },
+    });
+    expect(ret?.offsetStatus).toBe("APPLIED");
+    expect(Number(ret?.appliedValue)).toBe(100000);
+  });
+
+  it("refuses a draw larger than what is left", async () => {
+    returnId = await makeReturn();
+    await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 60000,
+      allocations: [{ receivableId: receivableAId, amount: 60000 }], appliedById: userId,
+    });
+
+    await expect(
+      applyReturnOffset({
+        returnId, eventId: "evt-2", drawAmount: 40001,
+        allocations: [{ receivableId: receivableBId, amount: 40001 }], appliedById: userId,
+      }),
+    ).rejects.toMatchObject({ code: "EXCEEDS_REMAINING" });
+  });
+
+  it("refuses allocations that do not sum to the requested draw", async () => {
+    returnId = await makeReturn();
+    await expect(
+      applyReturnOffset({
+        returnId, eventId: "evt-1", drawAmount: 40000,
+        allocations: [{ receivableId: receivableAId, amount: 39000 }], appliedById: userId,
+      }),
+    ).rejects.toMatchObject({ code: "ALLOCATION_MISMATCH" });
+  });
+
+  it("splits a single draw across two of the store's receivables", async () => {
+    returnId = await makeReturn();
     const result = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
-    });
-    expect(result.ok).toBe(true);
-    expect(result.alreadyApplied).toBeUndefined();
-
-    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: result.paymentId } });
-    expect(payment.method).toBe("RETUR_OFFSET");
-    expect(Number(payment.amount)).toBe(1000);
-
-    const receivable = await prisma.receivable.findUniqueOrThrow({ where: { id: receivableId } });
-    expect(Number(receivable.outstandingAmount)).toBe(0);
-    expect(receivable.status).toBe("PAID");
-
-    const ret = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
-    expect(ret.offsetStatus).toBe("APPLIED");
-    expect(ret.offsetPaymentId).toBe(result.paymentId);
-  });
-
-  it("a second call for the same return returns the same payment and creates nothing new", async () => {
-    returId = await makeReturn({ totalValue: 1000 });
-    const first = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
-    });
-    const second = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
-    });
-    /* The idempotency-key lookup runs before the offsetStatus guard, so a repeat call resolves
-       to the existing payment and confirms the already-done flip instead of throwing. */
-    expect(second.ok).toBe(true);
-    expect(second.paymentId).toBe(first.paymentId);
-    expect(second.alreadyApplied).toBe(true);
-
-    const payments = await prisma.payment.findMany({ where: { storeId } });
-    expect(payments).toHaveLength(1);
-    expect(payments[0].id).toBe(first.paymentId);
-  });
-
-  it("recovers cleanly when a crash left a payment posted but the retur never flipped", async () => {
-    returId = await makeReturn({ totalValue: 1000 });
-    /*
-     * Simulates a crash between recordPayment committing and the CAS flip: calls recordPayment
-     * directly with the same deterministic key applyReturnOffset would use, so a payment exists
-     * and the receivable is already decremented, but offsetStatus is still AVAILABLE -- exactly
-     * the state a real crash in that window leaves behind. Before the fix, retrying
-     * applyReturnOffset here read the now-decremented receivable and wrongly refused with
-     * INSUFFICIENT_OUTSTANDING, stranding this payment forever.
-     */
-    const crashed = await recordPayment({
-      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 1000, recordedById: userId,
-      allocations: [{ receivableId, amount: 1000 }], reference: "crash-sim",
-      idempotencyKey: `returoffset-${returId}`,
-    });
-
-    const result = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
-    });
-    expect(result.ok).toBe(true);
-    expect(result.paymentId).toBe(crashed.paymentId);
-
-    const payments = await prisma.payment.findMany({ where: { storeId } });
-    expect(payments).toHaveLength(1);
-
-    const ret = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
-    expect(ret.offsetStatus).toBe("APPLIED");
-    expect(ret.offsetPaymentId).toBe(crashed.paymentId);
-  });
-
-  it("refuses re-application when the idempotency key resolves to a voided payment", async () => {
-    returId = await makeReturn({ totalValue: 1000 });
-    const first = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
-    });
-    /*
-     * Simulates what Task 7's void-writer will do: void the payment, release the retur back to
-     * AVAILABLE. Task 7 hasn't landed yet, so this manually reproduces its effect to prove THIS
-     * writer's own re-application guard holds regardless of what releases the retur.
-     */
-    await prisma.payment.update({ where: { id: first.paymentId }, data: { status: "VOIDED" } });
-    await prisma.fieldReturn.update({ where: { id: returId }, data: { offsetStatus: "AVAILABLE", offsetPaymentId: null } });
-    await prisma.receivable.update({ where: { id: receivableId }, data: { outstandingAmount: 1000, status: "OUTSTANDING" } });
-
-    const err = await applyReturnOffset({
-      returnId: returId, allocations: [{ receivableId, amount: 1000 }], appliedById: userId,
-    }).catch((e) => e);
-    expect(err).toBeInstanceOf(PaymentError);
-    expect(err.code).toBe("PAYMENT_VOIDED");
-  });
-
-  it("splits across two of the store's receivables when allocations name both", async () => {
-    const secondDelivery = await prisma.fieldSalesDelivery.create({
-      data: {
-        docNo: `TEST-ROW-DLV2-${token}`, orderId, deliveredAt: new Date(), deliveredById: userId,
-        invoiceDate: new Date(), dueDate: new Date("2026-05-01"), subtotal: 500, total: 500,
-      },
-    });
-    secondDeliveryId = secondDelivery.id;
-    const secondReceivable = await prisma.receivable.create({
-      data: {
-        deliveryId: secondDeliveryId, storeId, invoiceDate: new Date(), dueDate: new Date("2026-05-01"),
-        originalAmount: 500, outstandingAmount: 500,
-      },
-    });
-    secondReceivableId = secondReceivable.id;
-
-    returId = await makeReturn({ totalValue: 1200 });
-    const result = await applyReturnOffset({
-      returnId: returId,
-      allocations: [{ receivableId, amount: 1000 }, { receivableId: secondReceivableId, amount: 200 }],
+      returnId, eventId: "evt-1", drawAmount: 60000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }, { receivableId: receivableBId, amount: 20000 }],
       appliedById: userId,
     });
     expect(result.ok).toBe(true);
 
-    const first = await prisma.receivable.findUniqueOrThrow({ where: { id: receivableId } });
-    const second = await prisma.receivable.findUniqueOrThrow({ where: { id: secondReceivableId } });
-    expect(Number(first.outstandingAmount)).toBe(0);
-    expect(Number(second.outstandingAmount)).toBe(300);
+    const a = await prisma.receivable.findUniqueOrThrow({ where: { id: receivableAId } });
+    const b = await prisma.receivable.findUniqueOrThrow({ where: { id: receivableBId } });
+    expect(Number(a.outstandingAmount)).toBe(60000);
+    expect(Number(b.outstandingAmount)).toBe(80000);
 
-    /* No inline cleanup here — secondReceivableId/secondDeliveryId are torn down by the shared
-       afterEach, AFTER it clears the PaymentAllocation row this test's payment created against
-       secondReceivable. Deleting inline, before that row is gone, throws under
-       relationMode="prisma"'s emulated required-relation check. */
+    const ret = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returnId } });
+    expect(ret.offsetStatus).toBe("AVAILABLE");
+    expect(Number(ret.appliedValue)).toBe(60000);
+  });
+
+  it("is idempotent for a replayed eventId", async () => {
+    returnId = await makeReturn();
+    const first = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+    const replay = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+
+    expect(replay.paymentId).toBe(first.paymentId);
+    const ret = await prisma.fieldReturn.findUnique({
+      where: { id: returnId }, select: { appliedValue: true },
+    });
+    expect(Number(ret?.appliedValue)).toBe(40000);
+  });
+
+  it("recovers cleanly when a crash left a payment posted but the retur was never projected", async () => {
+    returnId = await makeReturn();
+    /*
+     * Simulates a crash between recordPayment committing and projectReturnOffset running: calls
+     * recordPayment directly with the same deterministic key and fieldReturnId applyReturnOffset
+     * would use, so a real POSTED payment exists and the receivable is already decremented, but
+     * the retur's own appliedValue/offsetStatus were never recomputed — exactly the state a real
+     * crash in that window leaves behind.
+     */
+    const crashed = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 40000, recordedById: userId,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], reference: "crash-sim",
+      idempotencyKey: `returoffset-${returnId}-evt-1`,
+      fieldReturnId: returnId,
+    });
+
+    const result = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.paymentId).toBe(crashed.paymentId);
+    expect(result.alreadyApplied).toBe(true);
+
+    const payments = await prisma.payment.findMany({ where: { storeId } });
+    expect(payments).toHaveLength(1);
+
+    const ret = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returnId } });
+    expect(ret.offsetStatus).toBe("AVAILABLE");
+    expect(Number(ret.appliedValue)).toBe(40000);
+  });
+
+  it("refuses a replay of an event whose payment was voided", async () => {
+    returnId = await makeReturn();
+    const first = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+    await voidPayment({ paymentId: first.paymentId, reason: "test", voidedById: userId });
+
+    await expect(
+      applyReturnOffset({
+        returnId, eventId: "evt-1", drawAmount: 40000,
+        allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+      }),
+    ).rejects.toMatchObject({ code: "PAYMENT_VOIDED" });
+  });
+
+  it("allows a fresh eventId to re-draw after a void", async () => {
+    returnId = await makeReturn();
+    const first = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+    await voidPayment({ paymentId: first.paymentId, reason: "test", voidedById: userId });
+
+    const second = await applyReturnOffset({
+      returnId, eventId: "evt-2", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+    expect(second.paymentId).not.toBe(first.paymentId);
+
+    /* The real claim here: the voided draw must not leak back into the aggregate and double-count
+       alongside the fresh one. Without this, a bug that let the VOIDED payment's amount stay in
+       the sum would still pass on paymentId alone while appliedValue silently read 80000. */
+    const ret = await prisma.fieldReturn.findUnique({
+      where: { id: returnId }, select: { appliedValue: true },
+    });
+    expect(Number(ret?.appliedValue)).toBe(40000);
   });
 });
