@@ -423,11 +423,18 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] **`packages/db/prisma/seed-amplop-permission.sql` must be hand-run on prod after the amplop
       digital PR merges, or the screen is invisible to every non-admin.** No migration applies it and
       nothing on the deploy path seeds permission rows. The failure is silent: the `/pwa/pelunasan`
-      guard redirects to `/pwa` and the home CTA never renders, with no error anywhere. ADMIN holds it
-      via the code wildcard regardless, so an admin smoke test cannot detect the gap. The seed is
-      idempotent and bumps `permissionsVersion` on ADMIN and SALESMAN so logged-in users pick the
-      grant up without re-login — but it targets the non-system `SALESMAN` role BY NAME and silently
-      no-ops if that role is absent, so verify the grant landed rather than assuming it (amplop-digital).
+      guard redirects to `/pwa` and the home CTA never renders, with no error anywhere. An admin CANNOT
+      detect the gap, and not for the reason it looks like: `pwaAccessGuard` redirects every wildcard
+      holder to `/backoffice` BEFORE the permission check runs, so an admin never reaches this screen
+      at all and the ADMIN grant in the seed is convention-mirroring only. **Verify on a SALESMAN or
+      COLLECTOR account, never your own admin login.** The seed is idempotent and bumps
+      `permissionsVersion` on ADMIN, SALESMAN and COLLECTOR so logged-in users pick the grant up
+      without re-login — but it targets each non-system role BY NAME and silently no-ops for any that
+      is absent, COLLECTOR included, so verify the grant landed for BOTH non-system roles rather than
+      assuming it. A missed COLLECTOR grant is the quiet one: `listCollectorCandidates` only offers
+      users holding `collections:collect` + `pwa:access`, so collectors are exactly who ends up in
+      `Receivable.collectorId`, and without the grant the amplop's collector arm never fires for
+      anyone (amplop-digital).
 - [ ] Story 23-01's "sorted by route/visit plan" ordering is undelivered and blocked on an entity that
       does not exist. There is no route, territory or visit-plan model in this codebase — `StoreVisit`
       is a GPS check-in record and `Store` has no route column — so the amplop sorts stores by total
