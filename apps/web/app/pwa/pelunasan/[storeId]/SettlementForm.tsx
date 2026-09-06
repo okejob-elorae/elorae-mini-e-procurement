@@ -607,8 +607,16 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
         </div>
         {programRows.length === 0 && <p className="text-xs text-muted-foreground">{t("noProgramRows")}</p>}
         {programRows.map((row) => {
-          const proofBusy = row.proof.status === "uploading";
-          const proofReady = row.proof.status === "uploaded";
+          /*
+           * Narrowed into a const, not re-read as `row.proof` at each use. TypeScript keeps the
+           * narrowing of a const VARIABLE inside a nested closure but discards the narrowing of a
+           * property access, because it cannot prove `row.proof` is unchanged by the time an
+           * onClick fires — so `row.proof.file` in the retry handler resolves to `File | null`
+           * even under a `row.proof.status === "error"` guard, and fails to compile.
+           */
+          const proof = row.proof;
+          const proofBusy = proof.status === "uploading";
+          const proofReady = proof.status === "uploaded";
           const amountInvalid = !(parseAmount(row.amountInput) > 0);
           return (
             <div key={row.id} className="space-y-2 rounded-md border p-3">
@@ -660,14 +668,14 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                       if (file) void uploadDeductionProof(row.id, row.slot, file);
                     }}
                   />
-                  {row.proof.status === "error" && (
+                  {proof.status === "error" && (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       className="h-10"
                       disabled={isPending}
-                      onClick={() => void uploadDeductionProof(row.id, row.slot, row.proof.file)}
+                      onClick={() => void uploadDeductionProof(row.id, row.slot, proof.file)}
                     >
                       {t("retryButton")}
                     </Button>
@@ -681,8 +689,8 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                 </p>
               )}
               {proofReady && <p className="text-xs text-emerald-600 dark:text-emerald-400">{t("proofUploaded")}</p>}
-              {row.proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
-              {row.proof.status === "idle" && submitAttempted && (
+              {proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
+              {proof.status === "idle" && submitAttempted && (
                 <p className="text-xs text-destructive">{t("proofRequired")}</p>
               )}
             </div>
@@ -707,8 +715,16 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
         </div>
         {adminFeeRows.length === 0 && <p className="text-xs text-muted-foreground">{t("noAdminFeeRows")}</p>}
         {adminFeeRows.map((row) => {
-          const proofBusy = row.proof.status === "uploading";
-          const proofReady = row.proof.status === "uploaded";
+          /*
+           * Narrowed into a const, not re-read as `row.proof` at each use. TypeScript keeps the
+           * narrowing of a const VARIABLE inside a nested closure but discards the narrowing of a
+           * property access, because it cannot prove `row.proof` is unchanged by the time an
+           * onClick fires — so `row.proof.file` in the retry handler resolves to `File | null`
+           * even under a `row.proof.status === "error"` guard, and fails to compile.
+           */
+          const proof = row.proof;
+          const proofBusy = proof.status === "uploading";
+          const proofReady = proof.status === "uploaded";
           const pct = toFiniteNumber(row.percentInput);
           const percentInvalid = pct === null || !(pct >= 0 && pct <= 100);
           return (
@@ -759,14 +775,14 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                       if (file) void uploadDeductionProof(row.id, row.slot, file);
                     }}
                   />
-                  {row.proof.status === "error" && (
+                  {proof.status === "error" && (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       className="h-10"
                       disabled={isPending}
-                      onClick={() => void uploadDeductionProof(row.id, row.slot, row.proof.file)}
+                      onClick={() => void uploadDeductionProof(row.id, row.slot, proof.file)}
                     >
                       {t("retryButton")}
                     </Button>
@@ -780,8 +796,8 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                 </p>
               )}
               {proofReady && <p className="text-xs text-emerald-600 dark:text-emerald-400">{t("proofUploaded")}</p>}
-              {row.proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
-              {row.proof.status === "idle" && submitAttempted && (
+              {proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
+              {proof.status === "idle" && submitAttempted && (
                 <p className="text-xs text-destructive">{t("proofRequired")}</p>
               )}
             </div>
