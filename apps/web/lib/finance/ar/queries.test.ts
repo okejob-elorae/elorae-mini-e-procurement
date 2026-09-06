@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listReceivables, getReceivable, listPayments, getPayment, listAllocationCandidatesForStore } from "./queries";
+import {
+  listReceivables,
+  getReceivable,
+  listPayments,
+  getPayment,
+  listAllocationCandidatesForStore,
+  getPendingSettlementInvoiceClaimsMap,
+} from "./queries";
 import { recordPayment } from "./payment-writer";
 import { voidPayment } from "./void-writer";
 
@@ -36,6 +43,7 @@ d("AR queries (test bed only)", () => {
   let fieldReturnId = "";
   let returItemId = "";
   let returUomId = "";
+  let createdSettlementIds: string[] = [];
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
@@ -43,6 +51,7 @@ d("AR queries (test bed only)", () => {
     deliveryAId = ""; deliveryBId = ""; deliveryCId = "";
     currentRec = ""; overdueRec = ""; thirdRec = ""; paymentId = "";
     fieldReturnId = ""; returItemId = ""; returUomId = "";
+    createdSettlementIds = [];
 
     const store = await prisma.store.create({
       data: { code: `TEST-ARQ-${token}`, name: `Toko ${token}`, address: "test", termsType: "PUTUS" },
@@ -157,6 +166,10 @@ d("AR queries (test bed only)", () => {
   });
 
   afterEach(async () => {
+    const settlementIds = createdSettlementIds.map((id) => seededId(id));
+    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds } } });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds } } });
+
     /* Defensive, same as void-writer.test.ts: neither writer under test posts a journal itself, but
      * clean up the slot children-first in case that ever changes. */
     await prisma.journalLine.deleteMany({ where: { journal: { sourceId: seededId(paymentId) } } });
@@ -420,5 +433,49 @@ d("AR queries (test bed only)", () => {
     const cashDetail = await getPayment(cashPayment.paymentId);
     expect(cashDetail).not.toBeNull();
     expect(cashDetail!.returOffsetFor).toBeNull();
+  });
+
+  it("getPendingSettlementInvoiceClaimsMap sums a PENDING settlement's invoice claim on that receivable", async () => {
+    const settlement = await prisma.storeSettlement.create({
+      data: {
+        docNo: `TEST-ARQ-STL-${token}`,
+        storeId, salesmanId: userId,
+        expectedAmount: 400, actualAmount: 400, varianceAmount: 0,
+        status: "PENDING",
+        invoices: { create: [{ receivableId: currentRec, amount: 400 }] },
+      },
+    });
+    createdSettlementIds.push(settlement.id);
+
+    const map = await getPendingSettlementInvoiceClaimsMap([currentRec, overdueRec]);
+    expect(map.get(currentRec)).toBe(400);
+    expect(map.get(overdueRec)).toBe(0);
+  });
+
+  it("getPendingSettlementInvoiceClaimsMap excludes a non-PENDING settlement's claim", async () => {
+    /*
+     * The settlement screen's own headroom must never disagree with what `submitSettlement`
+     * actually nets -- the writer's aggregate is scoped to PENDING settlements only, so this
+     * query-side twin must be too. A REJECTED settlement's old claim contributing here would show
+     * the salesman less headroom than the writer will actually allow.
+     */
+    const settlement = await prisma.storeSettlement.create({
+      data: {
+        docNo: `TEST-ARQ-STL2-${token}`,
+        storeId, salesmanId: userId,
+        expectedAmount: 400, actualAmount: 400, varianceAmount: 0,
+        status: "REJECTED",
+        invoices: { create: [{ receivableId: currentRec, amount: 400 }] },
+      },
+    });
+    createdSettlementIds.push(settlement.id);
+
+    const map = await getPendingSettlementInvoiceClaimsMap([currentRec]);
+    expect(map.get(currentRec)).toBe(0);
+  });
+
+  it("getPendingSettlementInvoiceClaimsMap returns an empty map for an empty id list", async () => {
+    const map = await getPendingSettlementInvoiceClaimsMap([]);
+    expect(map.size).toBe(0);
   });
 });

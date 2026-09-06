@@ -43,7 +43,17 @@ const EPSILON = 1e-6;
  */
 const MAX_LINES = 200;
 const MAX_NOTE_LENGTH = 1000;
-const MAX_PROOF_KEY_LENGTH = 300;
+/**
+ * `StoreSettlementDeduction.proofR2Key`/`proofUrl` are bare `String?` in the Prisma schema — no
+ * `@db.Text` — which is MySQL `VARCHAR(191)`. 300 was never the real ceiling: a key that passed
+ * the prefix check and a 300-character bound still died at insert with a data-truncation error,
+ * surfacing as a bare `UNEXPECTED` instead of this named, cheap-to-reject code. `proofUrl` is
+ * derived from the key via `urlFromKey` (`PUBLIC_URL + "/" + key`), so it is ALWAYS longer than
+ * the key and env-dependent — capping the key alone does not protect the column the URL lands in.
+ * Real keys run ~68 characters and real URLs ~130, so nothing legitimate is refused at 191.
+ */
+const MAX_PROOF_KEY_LENGTH = 191;
+const MAX_PROOF_URL_LENGTH = 191;
 const MAX_AMOUNT = 999_999_999.99;
 
 /**
@@ -157,6 +167,14 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       if (deduction.type === "RETUR_OFFSET") continue;
       if (!deduction.proofUrl || !deduction.proofR2Key) throw new SettlementError("MISSING_EVIDENCE");
       if (deduction.proofR2Key.length > MAX_PROOF_KEY_LENGTH) throw new SettlementError("INPUT_TOO_LARGE");
+      /*
+       * The DERIVED url (what actually gets written below, never the caller's own `proofUrl`
+       * field) must independently clear the same VARCHAR(191) column — a key just under 191 can
+       * still yield a url over it once `PUBLIC_URL + "/"` is prepended.
+       */
+      if (urlFromKey(deduction.proofR2Key).length > MAX_PROOF_URL_LENGTH) {
+        throw new SettlementError("INPUT_TOO_LARGE");
+      }
       /*
        * Unbound, reusable proof keys are exactly the POD-proof landmine this repo has already hit:
        * one uploaded photo satisfying every proof requirement at once. Binding the key to this

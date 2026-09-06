@@ -30,12 +30,14 @@ export type SettlementInvoiceRow = {
   outstandingAmount: number;
   daysOverdue: number;
   pendingSubmittedAmount: number;
+  reservedAmount: number;
 };
 
 export type SettlementOffsettableReturn = {
   fieldReturnId: string;
   docNo: string;
   remainingValue: number;
+  reservedAmount: number;
 };
 
 type Props = {
@@ -113,6 +115,26 @@ function parsePercent(raw: string): number {
   return toFiniteNumber(raw) ?? 0;
 }
 
+/**
+ * The headroom `submitSettlement` will actually honor for this invoice — `outstandingAmount`
+ * alone is not it, since the writer additionally nets every OTHER PENDING settlement's own claim
+ * before refusing with `INVOICE_OVERCLAIMED`. `reservedAmount` already carries that netted sum
+ * from the props layer (`page.tsx`), so this is the one place both the default fill and the max
+ * validity check must read from.
+ */
+function invoiceClaimable(inv: SettlementInvoiceRow): number {
+  return Math.max(0, roundCents(inv.outstandingAmount - inv.reservedAmount));
+}
+
+/**
+ * The retur-side twin of `invoiceClaimable` — `option.remainingValue` alone is not the headroom
+ * the writer honors either, for the identical reason (netted against other PENDING settlements'
+ * `RETUR_OFFSET` claims, via `reservedAmount`).
+ */
+function returClaimable(option: SettlementOffsettableReturn): number {
+  return Math.max(0, roundCents(option.remainingValue - option.reservedAmount));
+}
+
 export function SettlementForm({ storeId, storeName, invoices, offsettableReturns }: Props) {
   const t = useTranslations("pwa.settlement");
   const [isPending, startTransition] = useTransition();
@@ -130,21 +152,29 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
    */
   const [draftId] = useState(() => crypto.randomUUID());
 
-  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Record<string, boolean>>({});
   /**
-   * Defaults to `outstanding − pendingSubmittedAmount`, not the full outstanding — a PENDING
-   * collection submission moves no money (`outstandingAmount` stays untouched until
-   * `verifyCollection` runs), and the two writers net only their own kind of PENDING claim.
-   * Prefilling the full outstanding here would let a salesman submit a settlement for the same
-   * money an unverified setoran already claims. This is a display/default fix only — the actual
-   * submit ceiling still checks against `outstandingAmount` below, matching what the writer
-   * itself enforces; the cross-writer netting is a `lib/finance` change out of scope here.
+   * Every invoice starts ticked — each one already carries a prefilled amount below, so an
+   * unchecked-by-default list was a tap per nota at a counter and made "submit with nothing
+   * selected" the easy path. `useState`'s lazy initializer, not a plain `{}` computed once and
+   * mutated later, matching how `invoiceAmountInputs` below is seeded.
+   */
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(invoices.map((inv) => [inv.receivableId, true])),
+  );
+  /**
+   * Defaults to `min(outstanding − pendingSubmittedAmount, invoiceClaimable(inv))`, not the full
+   * outstanding — a PENDING collection submission moves no money (`outstandingAmount` stays
+   * untouched until `verifyCollection` runs) and a PENDING settlement's own invoice claim reduces
+   * `invoiceClaimable` (via `reservedAmount`, computed at the props layer). Prefilling past
+   * either would let a salesman submit for money an unverified setoran or a colleague's pending
+   * settlement already claims. The actual submit ceiling below reads from the SAME
+   * `invoiceClaimable` figure, matching what the writer itself enforces.
    */
   const [invoiceAmountInputs, setInvoiceAmountInputs] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       invoices.map((inv) => [
         inv.receivableId,
-        roundCents(Math.max(0, inv.outstandingAmount - inv.pendingSubmittedAmount)).toFixed(2),
+        roundCents(Math.max(0, Math.min(inv.outstandingAmount - inv.pendingSubmittedAmount, invoiceClaimable(inv)))).toFixed(2),
       ]),
     ),
   );
@@ -173,14 +203,14 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   const hasSelectedInvoice = selectedInvoiceRows.length > 0;
   const invoiceAmountsValid = selectedInvoiceRows.every((inv) => {
     const amt = parseAmount(invoiceAmountInputs[inv.receivableId] ?? "");
-    return amt > 0 && amt <= inv.outstandingAmount + EPSILON;
+    return amt > 0 && amt <= invoiceClaimable(inv) + EPSILON;
   });
 
   const returRows = rows.filter((r): r is Extract<DeductionRow, { kind: "RETUR_OFFSET" }> => r.kind === "RETUR_OFFSET");
   const returRowsValid = returRows.every((row) => {
     const option = offsettableReturns.find((o) => o.fieldReturnId === row.fieldReturnId);
     const amt = parseAmount(row.amountInput);
-    return option !== undefined && amt > 0 && amt <= option.remainingValue + EPSILON;
+    return option !== undefined && amt > 0 && amt <= returClaimable(option) + EPSILON;
   });
 
   const programRows = rows.filter((r): r is Extract<DeductionRow, { kind: "PROGRAM" }> => r.kind === "PROGRAM");
@@ -244,19 +274,33 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
     return offsettableReturns.filter((o) => !usedByOthers.has(o.fieldReturnId) || o.fieldReturnId === fieldReturnId);
   }
 
+  /**
+   * `used` and `next` are derived from `prev` INSIDE the updater, not from the outer `returRows`
+   * closure — two taps before a re-render would otherwise both read the same stale `returRows`
+   * (missing the row the first tap is about to add) and both pick the SAME `next` retur, the same
+   * render-closure staleness `addAdminFeeRow`'s guard exists to rule out below, just producing a
+   * duplicate row instead of a `DUPLICATE_ADMIN_FEE` refusal.
+   */
   function addReturRow(): void {
-    const used = new Set(returRows.map((r) => r.fieldReturnId));
-    const next = offsettableReturns.find((o) => !used.has(o.fieldReturnId));
-    if (!next) return;
-    setRows((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        kind: "RETUR_OFFSET",
-        fieldReturnId: next.fieldReturnId,
-        amountInput: next.remainingValue > 0 ? next.remainingValue.toFixed(2) : "",
-      },
-    ]);
+    setRows((prev) => {
+      const used = new Set(
+        prev
+          .filter((r): r is Extract<DeductionRow, { kind: "RETUR_OFFSET" }> => r.kind === "RETUR_OFFSET")
+          .map((r) => r.fieldReturnId),
+      );
+      const next = offsettableReturns.find((o) => !used.has(o.fieldReturnId));
+      if (!next) return prev;
+      const claimable = returClaimable(next);
+      return [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          kind: "RETUR_OFFSET",
+          fieldReturnId: next.fieldReturnId,
+          amountInput: claimable > 0 ? claimable.toFixed(2) : "",
+        },
+      ];
+    });
   }
 
   /**
@@ -275,11 +319,20 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
     ]);
   }
 
+  /**
+   * Guarded INSIDE the updater against an existing `ADMIN_FEE` row, not just by the button's
+   * `disabled={adminFeeRows.length >= 1}` — that reads `adminFeeRows` from the render closure, and
+   * functional updaters chain, so two taps before a re-render would otherwise both see zero
+   * existing rows and both append one, failing submit with `DUPLICATE_ADMIN_FEE`.
+   */
   function addAdminFeeRow(): void {
-    setRows((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), kind: "ADMIN_FEE", slot: "adminfee", percentInput: "", proof: { status: "idle", file: null } },
-    ]);
+    setRows((prev) => {
+      if (prev.some((r) => r.kind === "ADMIN_FEE")) return prev;
+      return [
+        ...prev,
+        { id: crypto.randomUUID(), kind: "ADMIN_FEE", slot: "adminfee", percentInput: "", proof: { status: "idle", file: null } },
+      ];
+    });
   }
 
   function removeRow(id: string): void {
@@ -446,7 +499,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
             {invoices.map((inv) => {
               const checked = selectedInvoiceIds[inv.receivableId] === true;
               const amt = parseAmount(invoiceAmountInputs[inv.receivableId] ?? "");
-              const invalid = checked && !(amt > 0 && amt <= inv.outstandingAmount + EPSILON);
+              const invalid = checked && !(amt > 0 && amt <= invoiceClaimable(inv) + EPSILON);
               return (
                 <li key={inv.receivableId} className="flex items-start gap-3 rounded-md border p-3">
                   <Checkbox
@@ -478,6 +531,11 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                     {inv.pendingSubmittedAmount > 0 && (
                       <p className="text-xs text-muted-foreground">
                         {t("pendingSubmittedLabel")}: {formatRupiahPrecise(inv.pendingSubmittedAmount)}
+                      </p>
+                    )}
+                    {inv.reservedAmount > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("reservedByOtherSettlementLabel")}: {formatRupiahPrecise(inv.reservedAmount)}
                       </p>
                     )}
                     {checked && (
@@ -534,7 +592,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
             const options = returOptionsForRow(row.id, row.fieldReturnId);
             const option = offsettableReturns.find((o) => o.fieldReturnId === row.fieldReturnId);
             const amt = parseAmount(row.amountInput);
-            const invalid = !option || !(amt > 0 && amt <= option.remainingValue + EPSILON);
+            const invalid = !option || !(amt > 0 && amt <= returClaimable(option) + EPSILON);
             return (
               <div key={row.id} className="space-y-2 rounded-md border p-3">
                 <div className="flex items-center gap-2">
@@ -548,7 +606,8 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                        * its own remaining credit. Reset to the new option's own headroom.
                        */
                       const next = offsettableReturns.find((o) => o.fieldReturnId === value);
-                      const nextAmount = next && next.remainingValue > 0 ? next.remainingValue.toFixed(2) : "";
+                      const nextClaimable = next ? returClaimable(next) : 0;
+                      const nextAmount = nextClaimable > 0 ? nextClaimable.toFixed(2) : "";
                       updateRow(row.id, { ...row, fieldReturnId: value, amountInput: nextAmount });
                     }}
                   >
@@ -558,7 +617,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                     <SelectContent>
                       {options.map((opt) => (
                         <SelectItem key={opt.fieldReturnId} value={opt.fieldReturnId}>
-                          {`${opt.docNo} — ${formatRupiahPrecise(opt.remainingValue)}`}
+                          {`${opt.docNo} — ${formatRupiahPrecise(returClaimable(opt))}`}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -588,8 +647,13 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                   onChange={(e) => updateRow(row.id, { ...row, amountInput: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  {t("returRemainingLabel")}: {formatRupiahPrecise(option?.remainingValue ?? 0)}
+                  {t("returRemainingLabel")}: {formatRupiahPrecise(option ? returClaimable(option) : 0)}
                 </p>
+                {option && option.reservedAmount > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("reservedByOtherSettlementLabel")}: {formatRupiahPrecise(option.reservedAmount)}
+                  </p>
+                )}
                 {invalid && <p className="text-xs text-destructive">{t("returAmountInvalid")}</p>}
               </div>
             );

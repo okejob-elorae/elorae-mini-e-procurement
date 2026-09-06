@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { roundCents } from "@elorae/db/pricing";
 import { agingBucket, AGING_BUCKETS, daysOverdue, type AgingBucket } from "./aging";
 
 export type ReceivableFilters = {
@@ -238,6 +239,35 @@ export async function getReceivable(id: string, asOf: Date = new Date()) {
       collectorName: s.collector.name,
     })),
   };
+}
+
+/**
+ * `Receivable.outstandingAmount` alone is not what `submitSettlement` will honor —
+ * the writer additionally nets every OTHER PENDING settlement's own claim on the same receivable
+ * (`StoreSettlementInvoice.amount`) before refusing with `INVOICE_OVERCLAIMED`. Without this, a
+ * screen defaulting or validating off raw `outstandingAmount` can show headroom the writer will
+ * not honor the moment a colleague already holds a pending claim on the same invoice. Every
+ * requested id is present in the returned map, defaulting to 0, same convention as
+ * `getStoreAvailableCreditMap` in `retur-offset-queries.ts`.
+ */
+export async function getPendingSettlementInvoiceClaimsMap(receivableIds: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (receivableIds.length === 0) return result;
+  for (const id of receivableIds) result.set(id, 0);
+
+  const rows = await prisma.storeSettlementInvoice.groupBy({
+    by: ["receivableId"],
+    where: {
+      receivableId: { in: receivableIds },
+      settlement: { status: "PENDING" },
+    },
+    _sum: { amount: true },
+  });
+
+  for (const r of rows) {
+    result.set(r.receivableId, roundCents(Number(r._sum.amount ?? 0)));
+  }
+  return result;
 }
 
 export type AllocationCandidate = {

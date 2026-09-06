@@ -483,6 +483,39 @@ d("submitSettlement (test bed only)", () => {
     })).rejects.toMatchObject({ code: "INVALID_PROOF_KEY" });
   });
 
+  it("refuses a proof key over the VARCHAR(191) column limit", async () => {
+    /*
+     * `proofR2Key` used to be capped at 300 -- past the real column ceiling. A key at 192
+     * characters would have sailed through that bound and died at insert with a MySQL
+     * data-truncation error instead of this named, cheap-to-reject code.
+     */
+    const draftId = `keylen-${token}`;
+    const prefix = `settlement-proofs/${draftId}/`;
+    const proofR2Key = `${prefix}${"x".repeat(200)}`;
+    await expect(submitSettlement({
+      ...baseInput, draftId,
+      deductions: [{ type: "PROGRAM", amount: 100, proofUrl: "u", proofR2Key }],
+    })).rejects.toMatchObject({ code: "INPUT_TOO_LARGE" });
+  });
+
+  it("refuses when the DERIVED proof url exceeds the column limit even though the key itself is within bounds", async () => {
+    /*
+     * `proofUrl` is derived via `urlFromKey` (PUBLIC_URL + "/" + key) and is therefore always
+     * LONGER than the key by at least one character (the separator) -- a key sitting right at
+     * the 191-char key ceiling still yields a url over 191, so capping the key alone never
+     * protected the column the url actually lands in. Padding the key to exactly 191 characters
+     * makes this deterministic regardless of the configured PUBLIC_URL.
+     */
+    const draftId = `urllen-${token}`;
+    const prefix = `settlement-proofs/${draftId}/`;
+    const proofR2Key = `${prefix}${"x".repeat(Math.max(0, 191 - prefix.length))}`;
+    expect(proofR2Key.length).toBeLessThanOrEqual(191);
+    await expect(submitSettlement({
+      ...baseInput, draftId,
+      deductions: [{ type: "PROGRAM", amount: 100, proofUrl: "u", proofR2Key }],
+    })).rejects.toMatchObject({ code: "INPUT_TOO_LARGE" });
+  });
+
   it("refuses reusing the identical proof key across multiple deductions", async () => {
     /*
      * The POD-proof landmine, verbatim: one uploaded photo satisfying every proof requirement at
