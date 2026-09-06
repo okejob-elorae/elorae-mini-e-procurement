@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useState, useTransition } from "react";
+import { useLayoutEffect, useMemo, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Loader2, Wallet } from "lucide-react";
@@ -19,6 +19,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   returnId: string;
   totalValue: number;
+  remainingValue: number;
   candidates: AllocationCandidate[];
   suggestedAllocations: Array<{ receivableId: string; amount: number }>;
   onApplied: () => void;
@@ -37,20 +38,28 @@ function formatRupiahExact(value: number): string {
 
 /**
  * Mirrors RecordPaymentSheet's allocation-table shape rather than reusing the component: the
- * amount here is FIXED at totalValue and not editable (the offset is all-or-nothing), and there
- * is no method picker, no proof upload, no reference field — three subtractive differences deep
- * enough into that component's ~400 lines that reusing it would mean conditionally stripping most
- * of its JSX. This is a fresh sibling instead, matching the repo's own preference for small,
- * focused files over one component branching on a mode prop.
+ * draw amount here is bounded by remainingValue rather than fixed at it — a retur's frozen value
+ * can now be drawn down in parts — and there is no method picker, no proof upload, no reference
+ * field — subtractive differences deep enough into that component's ~400 lines that reusing it
+ * would mean conditionally stripping most of its JSX. This is a fresh sibling instead, matching
+ * the repo's own preference for small, focused files over one component branching on a mode prop.
  */
 export function OffsetToPiutangSheet({
-  open, onOpenChange, returnId, totalValue, candidates, suggestedAllocations, onApplied,
+  open, onOpenChange, returnId, totalValue, remainingValue, candidates, suggestedAllocations, onApplied,
 }: Props) {
   const t = useTranslations("fieldReturns");
   const tCommon = useTranslations("common");
   const tPayments = useTranslations("payments");
   const [isPending, startTransition] = useTransition();
   const [allocationInputs, setAllocationInputs] = useState<Record<string, string>>({});
+
+  /*
+   * One id per opening of the sheet, stable across retries of the same submission. It is the
+   * writer's idempotency key, so a double-click or a retried request resolves to the one payment
+   * already posted instead of drawing the retur twice.
+   */
+  const eventId = useMemo(() => crypto.randomUUID(), [open]);
+  const [drawInput, setDrawInput] = useState("");
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -60,6 +69,7 @@ export function OffsetToPiutangSheet({
       seeded[c.id] = suggestion ? suggestion.amount.toFixed(2) : "";
     }
     setAllocationInputs(seeded);
+    setDrawInput(remainingValue.toFixed(2));
     /* eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per open */
   }, [open]);
 
@@ -71,11 +81,15 @@ export function OffsetToPiutangSheet({
     .filter((r) => r.amount > 0)
     .map((r) => ({ receivableId: r.id, amount: r.amount }));
   const allocatedTotal = roundCents(activeAllocations.reduce((sum, a) => sum + a.amount, 0));
-  const mismatch = Math.abs(allocatedTotal - totalValue) > 0.005;
   const totalCandidateOutstanding = roundCents(candidates.reduce((sum, c) => sum + c.outstandingAmount, 0));
-  const insufficientOutstanding = totalCandidateOutstanding + 0.005 < totalValue;
   const hasInvalidRow = allocationRows.some((r) => r.negative || r.overAllocated);
-  const canSubmit = !insufficientOutstanding && !mismatch && activeAllocations.length > 0 && !hasInvalidRow && !isPending;
+  const drawAmount = roundedAmount(drawInput);
+  const exceedsRemaining = drawAmount > remainingValue + 0.005;
+  const invalidDraw = !(drawAmount > 0) || exceedsRemaining;
+  const mismatch = Math.abs(allocatedTotal - drawAmount) > 0.005;
+  const insufficientOutstanding = totalCandidateOutstanding + 0.005 < drawAmount;
+  const canSubmit =
+    !invalidDraw && !insufficientOutstanding && !mismatch && activeAllocations.length > 0 && !hasInvalidRow && !isPending;
 
   function setAllocation(candidateId: string, raw: string): void {
     setAllocationInputs((prev) => ({ ...prev, [candidateId]: raw }));
@@ -89,7 +103,7 @@ export function OffsetToPiutangSheet({
     if (!canSubmit) return;
     startTransition(async () => {
       try {
-        const result = await applyReturnOffsetAction({ returnId, allocations: activeAllocations });
+        const result = await applyReturnOffsetAction({ returnId, eventId, drawAmount, allocations: activeAllocations });
         if (result.ok) {
           toast.success(t("credit.offsetSuccessToast"));
           onApplied();
@@ -108,11 +122,45 @@ export function OffsetToPiutangSheet({
         <SheetHeader className="border-b pb-3">
           <SheetTitle>{t("credit.offsetSheetTitle")}</SheetTitle>
           <SheetDescription>
-            {t("credit.offsetSheetDescription", { amount: formatRupiahExact(totalValue) })}
+            {t("credit.offsetSheetDescription", { amount: formatRupiahExact(drawAmount) })}
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
+          <div className="space-y-1.5">
+            <label className="text-sm text-muted-foreground" htmlFor="draw-amount">
+              {t("credit.drawAmountLabel")}
+            </label>
+            <div className="flex items-center gap-2">
+              <Input
+                id="draw-amount"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                className="h-11 flex-1 text-right"
+                disabled={isPending}
+                value={drawInput}
+                onChange={(e) => setDrawInput(e.target.value)}
+                onBlur={() => setDrawInput(drawAmount !== 0 ? drawAmount.toFixed(2) : "")}
+                aria-invalid={invalidDraw}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-11"
+                disabled={isPending}
+                onClick={() => setDrawInput(remainingValue.toFixed(2))}
+              >
+                {t("credit.drawAll")}
+              </Button>
+            </div>
+            <p className={cn("text-xs", exceedsRemaining ? "text-destructive" : "text-muted-foreground")}>
+              {t("credit.remainingHint", { amount: formatRupiahExact(remainingValue) })}
+            </p>
+          </div>
+
           {/* candidates.length === 0 is checked FIRST: with no candidates the outstanding sum is
               always 0, so an insufficientOutstanding-first order made this branch unreachable and
               showed a numeric shortfall message where the real answer is "this store has no
@@ -125,7 +173,7 @@ export function OffsetToPiutangSheet({
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
               {t("credit.insufficientOutstanding", {
                 total: formatRupiahExact(totalCandidateOutstanding),
-                needed: formatRupiahExact(totalValue),
+                needed: formatRupiahExact(drawAmount),
               })}
             </div>
           ) : (
@@ -178,7 +226,7 @@ export function OffsetToPiutangSheet({
             <div className="flex items-center justify-between rounded-md border p-3 text-sm">
               <span className="text-muted-foreground">{t("credit.runningTotalLabel")}</span>
               <span className={cn("font-medium tabular-nums", mismatch && "text-destructive")}>
-                {formatRupiahExact(allocatedTotal)} / {formatRupiahExact(totalValue)}
+                {formatRupiahExact(allocatedTotal)} / {formatRupiahExact(drawAmount)}
               </span>
             </div>
           )}

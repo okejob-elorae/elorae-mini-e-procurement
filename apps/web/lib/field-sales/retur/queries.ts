@@ -209,13 +209,6 @@ export type FieldReturnDetail = {
    * list, not the single terminal payment the pre-draw-down shape used to hand back.
    */
   offsetPayments: { id: string; docNo: string }[];
-  /**
-   * True when at least one offset draw against this retur was later voided. Informational only —
-   * under the drawdown model each draw keys its idempotency on its own eventId
-   * (`returoffset-<returnId>-<eventId>`), so a voided draw does NOT block a further one the way
-   * it did before draws could be partial; do not read this as "cannot be offset again."
-   */
-  hasVoidedOffsetAttempt: boolean;
   lines: FieldReturnLineDetail[];
 };
 
@@ -294,20 +287,6 @@ export async function getFieldReturnById(
   const docNoByDeliveryLineId = new Map(deliveryLines.map((dl) => [dl.id, dl.delivery.docNo]));
 
   /*
-   * Reads directly off Payment.fieldReturnId now that the relation runs that direction (Task 1) —
-   * the old lookup keyed on a single fixed idempotencyKey (`returoffset-<returnId>`), which the
-   * drawdown writer no longer ever produces (each draw's key carries its own eventId), so that
-   * lookup would silently and permanently read as "never voided" post-drawdown. A voided draw can
-   * coexist with POSTED ones (an earlier draw voided, a later one re-applied), so this is a
-   * `findFirst`, not gated on the retur's current status — it is informational regardless of where
-   * offsetStatus currently sits.
-   */
-  const voidedOffsetAttempt = await prisma.payment.findFirst({
-    where: { fieldReturnId: r.id, status: "VOIDED" },
-    select: { id: true },
-  });
-
-  /*
    * Candidates are only meaningful while the retur can still be repriced by a viewer who is
    * actually allowed to reprice it. Gated on BOTH conditions LinePriceControls itself requires
    * (canManage + PRICEABLE_STATUS_SET), not just "not yet APPROVED" — a CANCELLED retur and a
@@ -364,7 +343,6 @@ export async function getFieldReturnById(
     valuationStatus: r.valuationStatus,
     offsetStatus: r.offsetStatus,
     offsetPayments: r.offsetPayments,
-    hasVoidedOffsetAttempt: voidedOffsetAttempt !== null,
     lines: r.lines.map((l) => {
       const priceCandidates = candidatesByLineId.get(l.id);
       const priceState: FieldReturnPriceState = l.priceSource

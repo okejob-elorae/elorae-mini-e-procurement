@@ -2933,7 +2933,6 @@
     "credit": {
       "cardTitle": "Kredit Retur",
       "neverOffsettable": "Valuasi retur ini tidak lengkap saat disetujui dan tidak akan pernah bisa dioffset — nilai sudah dibekukan dan tidak ada jalur repricing.",
-      "voidedOffsetBody": "Nilai retur ini pernah dioffset, tapi pembayaran itu sudah dibatalkan. Retur ini tidak bisa dioffset lagi — catat koreksinya sebagai pembayaran tunai atau transfer baru.",
       "availableBody": "Tersedia untuk diterapkan ke saldo piutang toko ini.",
       "appliedBody": "Diterapkan ke pembayaran",
       "offsetAction": "Offset ke Piutang",
@@ -2946,6 +2945,9 @@
       "colOutstanding": "Piutang",
       "colAllocation": "Alokasi",
       "allocateFull": "Penuh",
+      "drawAmountLabel": "Jumlah yang dipotong",
+      "drawAll": "Pakai semua",
+      "remainingHint": "Sisa nilai retur ini: {amount}",
       "negativeAmount": "Jumlah tidak boleh negatif.",
       "overAllocated": "Melebihi saldo piutang ini.",
       "runningTotalLabel": "Dialokasikan / Nilai Retur",

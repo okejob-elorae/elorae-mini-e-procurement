@@ -310,6 +310,8 @@ export async function postPaymentVoidJournalAction(paymentId: string): Promise<P
  */
 export async function applyReturnOffsetAction(input: {
   returnId: string;
+  eventId: string;
+  drawAmount: number;
   allocations: Array<{ receivableId: string; amount: number }>;
 }): Promise<PaymentActionResult & { alreadyApplied?: boolean }> {
   try {
@@ -317,12 +319,16 @@ export async function applyReturnOffsetAction(input: {
     if ("ok" in g) return g;
 
     if (typeof input.returnId !== "string" || input.returnId === "") return { ok: false, reason: "INVALID_REQUEST" };
+    if (typeof input.eventId !== "string" || input.eventId === "") return { ok: false, reason: "INVALID_REQUEST" };
+    if (!Number.isFinite(input.drawAmount) || input.drawAmount <= 0) return { ok: false, reason: "INVALID_REQUEST" };
     if (!Array.isArray(input.allocations) || !input.allocations.every(isValidAllocation)) {
       return { ok: false, reason: "INVALID_REQUEST" };
     }
 
     const result = await applyReturnOffset({
       returnId: input.returnId,
+      eventId: input.eventId,
+      drawAmount: input.drawAmount,
       allocations: input.allocations,
       appliedById: g.userId,
     });
