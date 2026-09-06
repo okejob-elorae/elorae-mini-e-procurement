@@ -115,6 +115,13 @@ export function getNotificationHref(
       }
       return base;
     }
+    case 'SETTLEMENT_REJECTED': {
+      const storeId = data.storeId;
+      if (typeof storeId === 'string') {
+        return `/pwa/pelunasan/${storeId}`;
+      }
+      return '/pwa/pelunasan';
+    }
     default:
       return null;
   }

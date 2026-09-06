@@ -4143,6 +4143,41 @@
       "ERROR": "Terjadi kesalahan. Silakan coba lagi."
     }
   },
+  "financeStoreSettlements": {
+    "err": {
+      "SETTLEMENT_NOT_FOUND": "Pelunasan tidak ditemukan.",
+      "NOT_PENDING": "Pelunasan ini sudah disetujui atau ditolak sebelumnya.",
+      "APPROVER_NOT_FOUND": "Akun Anda tidak ditemukan. Silakan masuk kembali.",
+      "VARIANCE_REQUIRES_REASON": "Jumlah yang diterima berbeda dari jumlah yang diharapkan — alasan override wajib diisi.",
+      "COMPONENT_EXCEEDS_HEADROOM": "Salah satu komponen pelunasan ini sudah tidak cocok lagi dengan faktur yang dialokasikan. Muat ulang dan periksa sisa piutang faktur tersebut.",
+      "COMPONENT_VOIDED": "Salah satu pembayaran pelunasan ini sudah dibatalkan. Pelunasan ini tidak bisa disetujui apa adanya.",
+      "OVER_TENDER": "Toko menyerahkan lebih dari jumlah yang diharapkan. Ini tidak bisa diatasi dengan override — tolak dokumen ini dan minta salesman mengajukan ulang dengan jumlah yang benar.",
+      "RETUR_OVERCLAIMED": "Salah satu retur yang dipilih sudah tidak memiliki sisa kredit yang cukup.",
+      "NO_INVOICES": "Pelunasan ini belum memilih faktur apa pun.",
+      "RECEIVABLE_NOT_FOUND": "Salah satu faktur pada pelunasan ini tidak ditemukan.",
+      "WRONG_STORE": "Salah satu faktur pada pelunasan ini bukan milik toko ini.",
+      "NOT_OUTSTANDING": "Salah satu faktur yang dipilih sudah tidak memiliki piutang terbuka.",
+      "MISSING_EVIDENCE": "Salah satu potongan belum melampirkan foto bukti.",
+      "MISSING_FIELD_RETURN_ID": "Salah satu potongan retur belum memiliki referensi retur.",
+      "FIELD_RETURN_NOT_FOUND": "Salah satu retur yang direferensikan tidak ditemukan.",
+      "RETUR_WRONG_STORE": "Salah satu retur yang direferensikan bukan milik toko ini.",
+      "RETURN_NOT_APPROVED": "Salah satu retur yang direferensikan belum disetujui.",
+      "NOT_VALUED": "Salah satu retur yang direferensikan belum dinilai.",
+      "INPUT_TOO_LARGE": "Salah satu nilai yang dimasukkan terlalu panjang.",
+      "EXCEEDS_REMAINING": "Kredit retur yang ditarik oleh pelunasan ini sudah tidak memiliki sisa saldo yang cukup.",
+      "OVER_ALLOCATED": "Salah satu pembayaran pelunasan ini melebihi sisa piutang faktur tersebut.",
+      "ALREADY_SETTLED": "Salah satu faktur pada pelunasan ini sudah lunas atau telah dihapusbukukan.",
+      "NOT_FOUND": "Salah satu data yang direferensikan pelunasan ini tidak ditemukan.",
+      "PAYMENT_VOIDED": "Salah satu pembayaran pelunasan ini sudah dibatalkan.",
+      "INSUFFICIENT_OUTSTANDING": "Faktur ini sudah tidak memiliki sisa piutang yang cukup untuk pembayaran ini.",
+      "ALLOCATION_MISMATCH": "Jumlah alokasi pembayaran tidak sesuai dengan jumlah pembayarannya.",
+      "INVALID_AMOUNT": "Salah satu jumlah yang dimasukkan tidak valid.",
+      "MISSING_REASON": "Alasan penolakan wajib diisi.",
+      "FORBIDDEN": "Anda tidak memiliki izin untuk menyetujui atau menolak pelunasan.",
+      "INVALID_REQUEST": "Permintaan tidak valid. Tutup dialog ini lalu buka kembali.",
+      "UNEXPECTED": "Terjadi kesalahan. Silakan coba lagi."
+    }
+  },
   "payments": {
     "pageTitle": "Pembayaran",
     "subtitle": "Pantau pembayaran yang dicatat terhadap piutang toko.",

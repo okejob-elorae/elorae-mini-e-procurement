@@ -4143,6 +4143,41 @@
       "ERROR": "Something went wrong. Please try again."
     }
   },
+  "financeStoreSettlements": {
+    "err": {
+      "SETTLEMENT_NOT_FOUND": "Settlement not found.",
+      "NOT_PENDING": "This settlement was already approved or rejected.",
+      "APPROVER_NOT_FOUND": "Your account could not be found. Please sign in again.",
+      "VARIANCE_REQUIRES_REASON": "The amount received differs from the expected amount — an override reason is required.",
+      "COMPONENT_EXCEEDS_HEADROOM": "One of this settlement's components no longer fits the invoices it was allocated against. Reload and check the invoice balances.",
+      "COMPONENT_VOIDED": "One of this settlement's payments was voided. It can no longer be approved as-is.",
+      "OVER_TENDER": "The store handed over more than the expected amount. This can't be fixed with an override — reject it and have the salesman refile with the correct amount.",
+      "RETUR_OVERCLAIMED": "One of the selected returs no longer has enough remaining credit.",
+      "NO_INVOICES": "This settlement has no invoices selected.",
+      "RECEIVABLE_NOT_FOUND": "One of this settlement's invoices could not be found.",
+      "WRONG_STORE": "One of this settlement's invoices doesn't belong to this store.",
+      "NOT_OUTSTANDING": "One of the selected invoices is no longer outstanding.",
+      "MISSING_EVIDENCE": "One of the deductions is missing its proof photo.",
+      "MISSING_FIELD_RETURN_ID": "One of the retur deductions is missing its retur reference.",
+      "FIELD_RETURN_NOT_FOUND": "One of the referenced returs could not be found.",
+      "RETUR_WRONG_STORE": "One of the referenced returs doesn't belong to this store.",
+      "RETURN_NOT_APPROVED": "One of the referenced returs is not yet approved.",
+      "NOT_VALUED": "One of the referenced returs has not been valued yet.",
+      "INPUT_TOO_LARGE": "One of the values entered is too long.",
+      "EXCEEDS_REMAINING": "The retur credit this settlement drew on no longer has enough remaining balance.",
+      "OVER_ALLOCATED": "One of this settlement's payments exceeds the invoice's outstanding balance.",
+      "ALREADY_SETTLED": "One of this settlement's invoices is already paid or written off.",
+      "NOT_FOUND": "One of this settlement's referenced records could not be found.",
+      "PAYMENT_VOIDED": "One of this settlement's payments was voided.",
+      "INSUFFICIENT_OUTSTANDING": "The invoice no longer has enough outstanding balance for this payment.",
+      "ALLOCATION_MISMATCH": "The payment's allocations don't add up to its amount.",
+      "INVALID_AMOUNT": "One of the amounts is invalid.",
+      "MISSING_REASON": "A reject reason is required.",
+      "FORBIDDEN": "You don't have permission to approve or reject settlements.",
+      "INVALID_REQUEST": "That request was not valid. Close this dialog and open it again.",
+      "UNEXPECTED": "Something went wrong. Please try again."
+    }
+  },
   "payments": {
     "pageTitle": "Payments",
     "subtitle": "Track payments recorded against store receivables.",

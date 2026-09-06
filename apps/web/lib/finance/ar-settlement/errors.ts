@@ -31,7 +31,8 @@ export type SettlementErrorCode =
   | "VARIANCE_REQUIRES_REASON"
   | "COMPONENT_EXCEEDS_HEADROOM"
   | "COMPONENT_VOIDED"
-  | "OVER_TENDER";
+  | "OVER_TENDER"
+  | "MISSING_REASON";
 
 export class SettlementError extends Error {
   code: SettlementErrorCode;
