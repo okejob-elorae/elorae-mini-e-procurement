@@ -505,7 +505,7 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       only an absent CTA. Post-seed verification must be done on a SALESMAN or COLLECTOR account —
       never an admin login, since `pwaAccessGuard` bounces any wildcard holder off `/pwa` entirely
       before a permission check ever runs (feat/settlement-document).
-      **Both seeds RUN ON PROD 2026-09-06** (PR #294 / PR #297), verified by reading the rows back:
+      **Both seeds RUN ON PROD 2026-09-06** (PR #295 / PR #297), verified by reading the rows back:
       `collections:amplop` and `settlements:submit` each granted to ADMIN, SALESMAN and COLLECTOR, with
       `permissionsVersion` bumped twice per role (ADMIN 1→3, SALESMAN 2→4, COLLECTOR 1→3) so live
       sessions pick both up without re-login. Worth recording WHY this needed catching: the amplop seed
