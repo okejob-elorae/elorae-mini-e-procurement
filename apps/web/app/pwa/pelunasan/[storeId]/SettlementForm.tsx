@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, CheckCircle2, Loader2, Plus, X } from "lucide-react";
 import { roundCents } from "@elorae/db/pricing";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { computeSettlementTotals, computeVariance, type SettlementDeductionInput } from "@/lib/finance/ar-settlement/calc";
 import {
   submitStoreSettlementAction,
@@ -28,6 +29,7 @@ export type SettlementInvoiceRow = {
   dueDateIso: string;
   outstandingAmount: number;
   daysOverdue: number;
+  pendingSubmittedAmount: number;
 };
 
 export type SettlementOffsettableReturn = {
@@ -63,6 +65,7 @@ const EPSILON = 1e-6;
  * about, so a code with no entry here fails safe onto the fallback instead of failing a build.
  */
 const REASON_KEY: Partial<Record<SettlementActionReason, string>> = {
+  UNAUTHENTICATED: "errUnauthenticated",
   FORBIDDEN: "errForbidden",
   NO_INVOICES: "errNoInvoices",
   INVALID_AMOUNT: "errInvalidAmount",
@@ -84,6 +87,22 @@ function formatRupiah(value: number): string {
     style: "currency",
     currency: "IDR",
     maximumFractionDigits: 0,
+  }).format(value);
+}
+
+/**
+ * Every input on this screen carries sen — `Decimal(15,2)` receivables and a documented
+ * sub-rupiah `PARTIAL` residue make a fractional expected/actual figure reachable. The totals
+ * panel and the variance line show this precision so a sub-rupiah mismatch is something the
+ * salesman can actually see and clear, instead of a whole-rupiah figure that always looks
+ * settled while the underlying amounts disagree by a few sen.
+ */
+function formatRupiahPrecise(value: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
@@ -113,14 +132,29 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
    * not carry that guarantee (React documents it as a performance hint the runtime may
    * re-invoke), so it is the wrong tool for a value this load-bearing. This route mounts a fresh
    * instance of this component every time a salesman opens a store's settlement screen, so
-   * "reseeded when the form opens" falls out of that mount for free — it is rotated again below,
-   * right after a successful submit, so a stray resubmit can never replay it.
+   * "reseeded when the form opens" falls out of that mount for free. It is never rotated after
+   * that — this form is not reused for a second submission the way `SubmitCollectionSheet`'s
+   * sheet is, so there is nothing later that a rotation would protect.
    */
-  const [draftId, setDraftId] = useState(() => crypto.randomUUID());
+  const [draftId] = useState(() => crypto.randomUUID());
 
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Record<string, boolean>>({});
+  /**
+   * Defaults to `outstanding − pendingSubmittedAmount`, not the full outstanding — a PENDING
+   * collection submission moves no money (`outstandingAmount` stays untouched until
+   * `verifyCollection` runs), and the two writers net only their own kind of PENDING claim.
+   * Prefilling the full outstanding here would let a salesman submit a settlement for the same
+   * money an unverified setoran already claims. This is a display/default fix only — the actual
+   * submit ceiling still checks against `outstandingAmount` below, matching what the writer
+   * itself enforces; the cross-writer netting is a `lib/finance` change out of scope here.
+   */
   const [invoiceAmountInputs, setInvoiceAmountInputs] = useState<Record<string, string>>(() =>
-    Object.fromEntries(invoices.map((inv) => [inv.receivableId, inv.outstandingAmount.toFixed(2)])),
+    Object.fromEntries(
+      invoices.map((inv) => [
+        inv.receivableId,
+        roundCents(Math.max(0, inv.outstandingAmount - inv.pendingSubmittedAmount)).toFixed(2),
+      ]),
+    ),
   );
 
   const [rows, setRows] = useState<DeductionRow[]>([]);
@@ -132,6 +166,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ docNo: string } | null>(null);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const selectedInvoiceRows = invoices.filter((inv) => selectedInvoiceIds[inv.receivableId] === true);
   const hasSelectedInvoice = selectedInvoiceRows.length > 0;
@@ -151,9 +186,14 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   const programRowsValid = programRows.every((row) => parseAmount(row.amountInput) > 0 && row.proof.status === "uploaded");
 
   const adminFeeRows = rows.filter((r): r is Extract<DeductionRow, { kind: "ADMIN_FEE" }> => r.kind === "ADMIN_FEE");
+  /**
+   * `toFiniteNumber` directly, not `parsePercent` — a blank box must fail this check, and
+   * `parsePercent` defaults a blank input to `0`, which would let an empty percent field pass as
+   * a genuine (if pointless) 0% fee and write a `Decimal 0.00` deduction with evidence attached.
+   */
   const adminFeeRowsValid = adminFeeRows.every((row) => {
-    const pct = parsePercent(row.percentInput);
-    return pct >= 0 && pct <= 100 && row.proof.status === "uploaded";
+    const pct = toFiniteNumber(row.percentInput);
+    return pct !== null && pct >= 0 && pct <= 100 && row.proof.status === "uploaded";
   });
 
   const anyProofBusy = rows.some((r) => r.kind !== "RETUR_OFFSET" && r.proof.status === "uploading");
@@ -283,6 +323,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   }
 
   function submit(): void {
+    setSubmitAttempted(true);
     if (!canSubmit) return;
     setSubmitError(null);
 
@@ -319,8 +360,14 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
         });
         if (result.ok) {
           toast.success(t("submitSuccess"));
-          /* Rotate before the success screen so a back-navigation replay can never resubmit. */
-          setDraftId(crypto.randomUUID());
+          /**
+           * No `draftId` rotation here, unlike `SubmitCollectionSheet`'s sheet, which stays open
+           * and reuses the same instance for a next submission. This screen never renders its
+           * form again after success — `success` is never cleared — so there is nothing left
+           * that could replay the old id. Rotating it here would only leave `rows` holding proof
+           * keys under a prefix `draftId` no longer matches, which is why that rotation was
+           * removed rather than kept "just in case".
+           */
           setSuccess({ docNo: result.docNo });
           return;
         }
@@ -412,9 +459,19 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {t("colOutstanding")}: {formatRupiah(inv.outstandingAmount)}
-                    </p>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                      <p>
+                        {t("colDueDate")}: {formatDateOnlyJakarta(new Date(inv.dueDateIso))}
+                      </p>
+                      <p className="text-right">
+                        {t("colOutstanding")}: {formatRupiah(inv.outstandingAmount)}
+                      </p>
+                    </div>
+                    {inv.pendingSubmittedAmount > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("pendingSubmittedLabel")}: {formatRupiah(inv.pendingSubmittedAmount)}
+                      </p>
+                    )}
                     {checked && (
                       <Input
                         type="number"
@@ -466,7 +523,16 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                   <Select
                     value={row.fieldReturnId}
                     disabled={isPending}
-                    onValueChange={(value) => updateRow(row.id, { ...row, fieldReturnId: value })}
+                    onValueChange={(value) => {
+                      /**
+                       * A changed retur must not keep the PREVIOUS retur's amount — that would
+                       * silently claim the new retur for a figure that has nothing to do with
+                       * its own remaining credit. Reset to the new option's own headroom.
+                       */
+                      const next = offsettableReturns.find((o) => o.fieldReturnId === value);
+                      const nextAmount = next && next.remainingValue > 0 ? next.remainingValue.toFixed(2) : "";
+                      updateRow(row.id, { ...row, fieldReturnId: value, amountInput: nextAmount });
+                    }}
                   >
                     <SelectTrigger className="h-10 flex-1">
                       <SelectValue />
@@ -485,6 +551,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                     size="icon"
                     className="h-10 w-10 shrink-0"
                     disabled={isPending}
+                    aria-label={t("removeButton")}
                     onClick={() => removeRow(row.id)}
                   >
                     <X className="h-4 w-4" />
@@ -496,6 +563,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                   step="0.01"
                   min="0"
                   className="h-10"
+                  placeholder={t("returAmountPlaceholder")}
                   disabled={isPending}
                   value={row.amountInput}
                   aria-invalid={invalid}
@@ -532,8 +600,9 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 shrink-0"
+                  className="h-10 w-10 shrink-0"
                   disabled={isPending}
+                  aria-label={t("removeButton")}
                   onClick={() => removeRow(row.id)}
                 >
                   <X className="h-4 w-4" />
@@ -558,29 +627,34 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                 value={row.note}
                 onChange={(e) => updateRow(row.id, { ...row, note: e.target.value })}
               />
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="h-10 flex-1"
-                  disabled={isPending || proofBusy}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    if (file) void uploadDeductionProof(row.id, row.slot, file);
-                  }}
-                />
-                {row.proof.status === "error" && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-10"
-                    disabled={isPending}
-                    onClick={() => void uploadDeductionProof(row.id, row.slot, row.proof.file)}
-                  >
-                    {t("retryButton")}
-                  </Button>
-                )}
+              <div className="space-y-1.5">
+                <Label htmlFor={`program-proof-${row.id}`}>{t("proofLabel")}</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    id={`program-proof-${row.id}`}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    capture="environment"
+                    className="h-10 flex-1"
+                    disabled={isPending || proofBusy}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      if (file) void uploadDeductionProof(row.id, row.slot, file);
+                    }}
+                  />
+                  {row.proof.status === "error" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-10"
+                      disabled={isPending}
+                      onClick={() => void uploadDeductionProof(row.id, row.slot, row.proof.file)}
+                    >
+                      {t("retryButton")}
+                    </Button>
+                  )}
+                </div>
               </div>
               {proofBusy && (
                 <p className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -590,7 +664,9 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
               )}
               {proofReady && <p className="text-xs text-emerald-600 dark:text-emerald-400">{t("proofUploaded")}</p>}
               {row.proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
-              {!proofReady && !proofBusy && <p className="text-xs text-destructive">{t("proofRequired")}</p>}
+              {row.proof.status === "idle" && submitAttempted && (
+                <p className="text-xs text-destructive">{t("proofRequired")}</p>
+              )}
             </div>
           );
         })}
@@ -611,11 +687,12 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
             {t("addAdminFeeButton")}
           </Button>
         </div>
+        {adminFeeRows.length === 0 && <p className="text-xs text-muted-foreground">{t("noAdminFeeRows")}</p>}
         {adminFeeRows.map((row) => {
           const proofBusy = row.proof.status === "uploading";
           const proofReady = row.proof.status === "uploaded";
-          const pct = parsePercent(row.percentInput);
-          const percentInvalid = !(pct >= 0 && pct <= 100);
+          const pct = toFiniteNumber(row.percentInput);
+          const percentInvalid = pct === null || !(pct >= 0 && pct <= 100);
           return (
             <div key={row.id} className="space-y-2 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">
@@ -624,8 +701,9 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 shrink-0"
+                  className="h-10 w-10 shrink-0"
                   disabled={isPending}
+                  aria-label={t("removeButton")}
                   onClick={() => removeRow(row.id)}
                 >
                   <X className="h-4 w-4" />
@@ -639,6 +717,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                   min="0"
                   max="100"
                   className="h-10"
+                  placeholder={t("adminFeePercentPlaceholder")}
                   disabled={isPending}
                   value={row.percentInput}
                   aria-invalid={percentInvalid}
@@ -647,29 +726,34 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                 <span className="shrink-0 text-sm text-muted-foreground">%</span>
               </div>
               {percentInvalid && <p className="text-xs text-destructive">{t("adminFeePercentInvalid")}</p>}
-              <div className="flex flex-wrap items-center gap-2">
-                <Input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="h-10 flex-1"
-                  disabled={isPending || proofBusy}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    if (file) void uploadDeductionProof(row.id, row.slot, file);
-                  }}
-                />
-                {row.proof.status === "error" && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-10"
-                    disabled={isPending}
-                    onClick={() => void uploadDeductionProof(row.id, row.slot, row.proof.file)}
-                  >
-                    {t("retryButton")}
-                  </Button>
-                )}
+              <div className="space-y-1.5">
+                <Label htmlFor={`adminfee-proof-${row.id}`}>{t("proofLabel")}</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    id={`adminfee-proof-${row.id}`}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    capture="environment"
+                    className="h-10 flex-1"
+                    disabled={isPending || proofBusy}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      if (file) void uploadDeductionProof(row.id, row.slot, file);
+                    }}
+                  />
+                  {row.proof.status === "error" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-10"
+                      disabled={isPending}
+                      onClick={() => void uploadDeductionProof(row.id, row.slot, row.proof.file)}
+                    >
+                      {t("retryButton")}
+                    </Button>
+                  )}
+                </div>
               </div>
               {proofBusy && (
                 <p className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -679,7 +763,9 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
               )}
               {proofReady && <p className="text-xs text-emerald-600 dark:text-emerald-400">{t("proofUploaded")}</p>}
               {row.proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
-              {!proofReady && !proofBusy && <p className="text-xs text-destructive">{t("proofRequired")}</p>}
+              {row.proof.status === "idle" && submitAttempted && (
+                <p className="text-xs text-destructive">{t("proofRequired")}</p>
+              )}
             </div>
           );
         })}
@@ -689,23 +775,23 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
         <CardContent className="space-y-1.5 p-4 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t("totalsInvoice")}</span>
-            <span className="tabular-nums font-medium">{formatRupiah(totals.invoiceTotal)}</span>
+            <span className="tabular-nums font-medium">{formatRupiahPrecise(totals.invoiceTotal)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t("totalsRetur")}</span>
-            <span className="tabular-nums">{`-${formatRupiah(totals.returTotal)}`}</span>
+            <span className="tabular-nums">{`-${formatRupiahPrecise(totals.returTotal)}`}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t("totalsProgram")}</span>
-            <span className="tabular-nums">{`-${formatRupiah(totals.programTotal)}`}</span>
+            <span className="tabular-nums">{`-${formatRupiahPrecise(totals.programTotal)}`}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t("totalsAdminFee")}</span>
-            <span className="tabular-nums">{`-${formatRupiah(totals.adminFee)}`}</span>
+            <span className="tabular-nums">{`-${formatRupiahPrecise(totals.adminFee)}`}</span>
           </div>
           <div className="flex justify-between border-t pt-1.5">
             <span className="font-semibold">{t("totalsExpected")}</span>
-            <span className="tabular-nums font-semibold">{formatRupiah(totals.expected)}</span>
+            <span className="tabular-nums font-semibold">{formatRupiahPrecise(totals.expected)}</span>
           </div>
           {deductionsExceedInvoices && <p className="text-xs text-destructive">{t("deductionsExceedInvoices")}</p>}
         </CardContent>
@@ -748,8 +834,8 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
             {Math.abs(variance) <= EPSILON
               ? t("varianceZero")
               : variance > 0
-                ? t("varianceOver", { amount: formatRupiah(variance) })
-                : t("varianceUnder", { amount: formatRupiah(Math.abs(variance)) })}
+                ? t("varianceOver", { amount: formatRupiahPrecise(variance) })
+                : t("varianceUnder", { amount: formatRupiahPrecise(Math.abs(variance)) })}
           </p>
         )}
       </div>

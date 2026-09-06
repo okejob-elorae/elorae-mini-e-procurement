@@ -35,7 +35,12 @@ export type SubmitStoreSettlementInput = {
  * and therefore nothing that can silently drift out of sync with it the way this repo's
  * most-repeated landmine does.
  */
-export type SettlementActionReason = SettlementErrorCode | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED";
+export type SettlementActionReason =
+  | SettlementErrorCode
+  | "UNAUTHENTICATED"
+  | "FORBIDDEN"
+  | "INVALID_REQUEST"
+  | "UNEXPECTED";
 
 export type SettlementActionResult =
   | { ok: true; settlementId: string; docNo: string; alreadySubmitted?: true }
@@ -108,9 +113,16 @@ function isValidInput(input: unknown): input is SubmitStoreSettlementInput {
   return true;
 }
 
-async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
+/**
+ * An expired session and a revoked permission are different problems for the salesman standing
+ * at a store's counter — the first is fixed by signing back in, the second by asking an admin
+ * for access. Conflating them into one `FORBIDDEN` sent a salesman whose session lapsed
+ * mid-form looking for an admin instead of logging back in.
+ */
+async function guard(): Promise<{ userId: string } | { ok: false; reason: "UNAUTHENTICATED" | "FORBIDDEN" }> {
   const session = await auth();
-  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_COLLECT)) {
+  if (!session?.user?.id) return { ok: false, reason: "UNAUTHENTICATED" };
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_COLLECT)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
   return { userId: session.user.id };

@@ -48,6 +48,7 @@ export default async function StoreSettlementPage({
         dueDateIso: row.dueDate.toISOString(),
         outstandingAmount: row.outstandingAmount,
         daysOverdue: row.daysOverdue,
+        pendingSubmittedAmount: row.pendingSubmittedAmount,
       }))}
       offsettableReturns={offsettable.rows.map((r) => ({
         fieldReturnId: r.id,
