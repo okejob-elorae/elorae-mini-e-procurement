@@ -244,6 +244,10 @@ One line per known trap: **the situation you are in — what bites — where the
 - **Why the code looks like that / what already bit us:** `docs/ARCHITECTURE-NOTES.md` (start from the landmine index above).
 - **Known debt, deferred work, open decisions:** `docs/FOLLOWUPS.md`.
 - **What shipped in which slice, and which PR:** `docs/EPIC-STATUS.md`.
-- **EPIC story details + status:** the GitHub project board — each EPIC has a tracking issue (`EPIC-NN` → issue #`NN+4`, e.g. EPIC-13 → #17, EPIC-15 → #19). `gh issue view <n>`. Update the issue's progress checklist on merge (the maintenance rule now applies to the board, not a local file).
+- **EPIC story details + status:** the GitHub project board — each EPIC has a tracking issue, but **do not compute the issue number**. `EPIC-NN` → issue #`NN+4` holds only up to EPIC-21 (EPIC-13 → #17, EPIC-15 → #19, EPIC-21 → #25); the last three epics were filed out of order and break the formula — **EPIC-22 → #27, EPIC-23 → #28, EPIC-24 → #26**. Resolve any epic by listing them instead of trusting the arithmetic:
+  ```
+  gh api "repos/okejob-elorae/elorae-mini-e-procurement/issues?state=all&per_page=100&labels=epic" --jq '.[] | "#\(.number)\t\(.state)\t\(.title)"'
+  ```
+  Read one with `gh api repos/okejob-elorae/elorae-mini-e-procurement/issues/<n>`. **`gh issue view` does not work in this repo** — it dies on a classic-Projects GraphQL deprecation error (`repository.issue.projectCards`) before printing anything, the same root cause that breaks `gh pr edit` (patch a PR body with `gh api ... -X PATCH -F body=@file`). Update the issue's progress checklist on merge (the maintenance rule now applies to the board, not a local file).
 - **Past designs/plans:** `docs/superpowers/specs/` and `docs/superpowers/plans/` (local-only, gitignored).
 - **What changed and why:** `git log --oneline` (commit messages are descriptive; bodies are rare by convention).
