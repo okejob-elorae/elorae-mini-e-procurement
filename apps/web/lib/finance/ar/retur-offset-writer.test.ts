@@ -35,7 +35,6 @@ d("applyReturnOffset (test bed only)", () => {
     valuationStatus: "PENDING" | "VALUED";
     offsetStatus: "AVAILABLE" | "APPLIED";
     totalValue: number | null;
-    offsetPaymentId: string | null;
   }> = {}): Promise<string> {
     const ret = await prisma.fieldReturn.create({
       data: {
@@ -44,7 +43,6 @@ d("applyReturnOffset (test bed only)", () => {
         valuationStatus: overrides.valuationStatus ?? "VALUED",
         offsetStatus: overrides.offsetStatus ?? "AVAILABLE",
         totalValue: overrides.totalValue === undefined ? 1000 : overrides.totalValue,
-        offsetPaymentId: overrides.offsetPaymentId ?? null,
         approvedAt: new Date(), approvedById: userId,
       },
     });
@@ -128,7 +126,7 @@ d("applyReturnOffset (test bed only)", () => {
     const payments = await prisma.payment.findMany({ where: { storeId: { in: [seededId(storeId), seededId(otherStoreId)] } }, select: { id: true } });
     const paymentIds = payments.map((p) => p.id);
     if (paymentIds.length) {
-      await prisma.fieldReturn.updateMany({ where: { offsetPaymentId: { in: paymentIds } }, data: { offsetPaymentId: null } });
+      await prisma.payment.updateMany({ where: { id: { in: paymentIds } }, data: { fieldReturnId: null } });
       await prisma.paymentAllocation.deleteMany({ where: { paymentId: { in: paymentIds } } });
       await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
     }
@@ -213,7 +211,7 @@ d("applyReturnOffset (test bed only)", () => {
 
     const ret = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
     expect(ret.offsetStatus).toBe("APPLIED");
-    expect(ret.offsetPaymentId).toBe(result.paymentId);
+    expect(payment.fieldReturnId).toBe(returId);
   });
 
   it("a second call for the same return returns the same payment and creates nothing new", async () => {
@@ -262,7 +260,7 @@ d("applyReturnOffset (test bed only)", () => {
 
     const ret = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
     expect(ret.offsetStatus).toBe("APPLIED");
-    expect(ret.offsetPaymentId).toBe(crashed.paymentId);
+    expect(payments[0].fieldReturnId).toBe(returId);
   });
 
   it("refuses re-application when the idempotency key resolves to a voided payment", async () => {
@@ -275,8 +273,8 @@ d("applyReturnOffset (test bed only)", () => {
      * AVAILABLE. Task 7 hasn't landed yet, so this manually reproduces its effect to prove THIS
      * writer's own re-application guard holds regardless of what releases the retur.
      */
-    await prisma.payment.update({ where: { id: first.paymentId }, data: { status: "VOIDED" } });
-    await prisma.fieldReturn.update({ where: { id: returId }, data: { offsetStatus: "AVAILABLE", offsetPaymentId: null } });
+    await prisma.payment.update({ where: { id: first.paymentId }, data: { status: "VOIDED", fieldReturnId: null } });
+    await prisma.fieldReturn.update({ where: { id: returId }, data: { offsetStatus: "AVAILABLE" } });
     await prisma.receivable.update({ where: { id: receivableId }, data: { outstandingAmount: 1000, status: "OUTSTANDING" } });
 
     const err = await applyReturnOffset({

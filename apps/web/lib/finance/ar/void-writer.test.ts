@@ -283,13 +283,20 @@ d("voidPayment (test bed only)", () => {
 
     const flipped = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
     expect(flipped.offsetStatus).toBe("APPLIED");
-    expect(flipped.offsetPaymentId).toBe(offset.paymentId);
+    const offsetPayment = await prisma.payment.findUniqueOrThrow({ where: { id: offset.paymentId } });
+    expect(offsetPayment.fieldReturnId).toBe(returId);
 
     await voidPayment({ paymentId: offset.paymentId, reason: "wrong retur applied", voidedById: userId });
 
     const released = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
     expect(released.offsetStatus).toBe("AVAILABLE");
-    expect(released.offsetPaymentId).toBeNull();
+    /*
+     * fieldReturnId is history now, not a live claim -- voidPayment resets offsetStatus/appliedValue
+     * but deliberately leaves the voided payment's own link alone, same as it leaves the voided
+     * payment's allocations alone.
+     */
+    const voidedPayment = await prisma.payment.findUniqueOrThrow({ where: { id: offset.paymentId } });
+    expect(voidedPayment.fieldReturnId).toBe(returId);
   });
 
   it("voiding a CASH payment leaves every retur untouched (zero-rows no-op)", async () => {
@@ -305,6 +312,7 @@ d("voidPayment (test bed only)", () => {
 
     const untouched = await prisma.fieldReturn.findUniqueOrThrow({ where: { id: returId } });
     expect(untouched.offsetStatus).toBe("AVAILABLE");
-    expect(untouched.offsetPaymentId).toBeNull();
+    const untouchedPayment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+    expect(untouchedPayment.fieldReturnId).toBeNull();
   });
 });

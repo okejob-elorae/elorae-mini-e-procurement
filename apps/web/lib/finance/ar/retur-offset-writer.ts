@@ -13,27 +13,26 @@ const EPSILON = 1e-6;
 
 /**
  * Flips offsetStatus AVAILABLE -> APPLIED via a guarded CAS, or confirms an already-flipped
- * retur points at OUR OWN paymentId (the safe race / retry-after-crash case). Shared by the
- * genuine-first-attempt path and the idempotency-key-replay path below — both end here.
+ * retur was flipped by a payment that still points at it (the safe race / retry-after-crash
+ * case). The payment's own fieldReturnId is the link now that a retur can back several payments.
  */
 async function finishFlip(
   returnId: string,
   paymentId: string,
+  totalValue: number,
 ): Promise<{ ok: true; paymentId: string; alreadyApplied?: true }> {
   const flipped = await prisma.fieldReturn.updateMany({
     where: { id: returnId, offsetStatus: "AVAILABLE" },
-    data: { offsetStatus: "APPLIED", offsetPaymentId: paymentId },
+    data: { offsetStatus: "APPLIED", appliedValue: totalValue },
   });
   if (flipped.count === 0) {
-    const current = await prisma.fieldReturn.findUnique({
-      where: { id: returnId },
-      select: { offsetStatus: true, offsetPaymentId: true },
+    const ours = await prisma.payment.findFirst({
+      where: { id: paymentId, fieldReturnId: returnId, status: "POSTED" },
+      select: { id: true },
     });
-    if (current?.offsetStatus === "APPLIED" && current.offsetPaymentId === paymentId) {
-      return { ok: true, paymentId, alreadyApplied: true };
-    }
+    if (ours) return { ok: true, paymentId, alreadyApplied: true };
     console.error(
-      `[applyReturnOffset] orphaned payment: return ${returnId} landed on offsetStatus=${current?.offsetStatus ?? "MISSING"} with offsetPaymentId=${current?.offsetPaymentId ?? "MISSING"} after payment ${paymentId} was posted (expected APPLIED with our payment id)`,
+      `[applyReturnOffset] orphaned payment: return ${returnId} was already APPLIED but payment ${paymentId} does not point at it`,
     );
     throw new PaymentError("ALREADY_APPLIED");
   }
@@ -88,7 +87,7 @@ export async function applyReturnOffset(
   });
   if (existingPayment) {
     if (existingPayment.status === "VOIDED") throw new PaymentError("PAYMENT_VOIDED");
-    return finishFlip(ret.id, existingPayment.id);
+    return finishFlip(ret.id, existingPayment.id, totalValue);
   }
 
   // No prior payment for this retur exists yet — this is a genuine first attempt.
@@ -127,6 +126,15 @@ export async function applyReturnOffset(
   });
 
   /*
+   * The fieldReturnId parameter on recordPayment does not exist yet (it arrives in Task 2) --
+   * this stamp will move inside recordPayment's own transaction in that follow-up.
+   */
+  await prisma.payment.update({
+    where: { id: paymentId },
+    data: { fieldReturnId: ret.id },
+  });
+
+  /*
    * recordPayment's own idempotency lookup can still resolve to a pre-existing VOIDED payment
    * that landed between this function's own lookup above and this call — a narrow race, but the
    * same "flipped APPLIED against a payment that moved zero money" outcome, so it stays guarded.
@@ -134,5 +142,5 @@ export async function applyReturnOffset(
   const posted = await prisma.payment.findUnique({ where: { id: paymentId }, select: { status: true } });
   if (posted?.status === "VOIDED") throw new PaymentError("PAYMENT_VOIDED");
 
-  return finishFlip(ret.id, paymentId);
+  return finishFlip(ret.id, paymentId, totalValue);
 }
