@@ -41,21 +41,23 @@ export async function POST(req: NextRequest) {
    * legitimate while keeping the id unguessable, and it bounds the length too.
    */
   if (!DRAFT_ID_PATTERN.test(draftId)) return NextResponse.json({ error: "invalid draftId" }, { status: 400 });
+  if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
+  if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
   /**
    * `draftId` is durable past this upload step — it becomes `StoreSettlement.idempotencyKey` on
    * submit, and the object key stays `settlement-proofs/${draftId}/${slot}.*` forever. Without
    * this check, any caller holding `settlements:submit` who learns a submitted draftId could
    * `PutObject` over the audited evidence of a PENDING settlement awaiting approval. Evidence for
    * an already-submitted document is immutable from this route; the error body deliberately does
-   * not name whose settlement it is.
+   * not name whose settlement it is. Runs AFTER the cheap in-memory type/size checks — a
+   * malformed upload should not pay a DB round trip, and a wrong-type or oversized upload against
+   * a submitted draftId must still surface as its own 400, not this route's 409.
    */
   const alreadySubmitted = await prisma.storeSettlement.findUnique({
     where: { idempotencyKey: draftId },
     select: { id: true },
   });
   if (alreadySubmitted) return NextResponse.json({ error: "evidence locked" }, { status: 409 });
-  if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
-  if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
 
   try {
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";

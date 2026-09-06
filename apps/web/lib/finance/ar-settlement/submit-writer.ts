@@ -164,17 +164,31 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
     const seenProofKeys = new Set<string>();
     const proofKeyPrefix = `settlement-proofs/${input.draftId}/`;
     for (const deduction of input.deductions) {
-      if (deduction.type === "RETUR_OFFSET") continue;
-      if (!deduction.proofUrl || !deduction.proofR2Key) throw new SettlementError("MISSING_EVIDENCE");
-      if (deduction.proofR2Key.length > MAX_PROOF_KEY_LENGTH) throw new SettlementError("INPUT_TOO_LARGE");
       /*
-       * The DERIVED url (what actually gets written below, never the caller's own `proofUrl`
-       * field) must independently clear the same VARCHAR(191) column — a key just under 191 can
-       * still yield a url over it once `PUBLIC_URL + "/"` is prepended.
+       * These two length checks run BEFORE the RETUR_OFFSET `continue` below and therefore apply
+       * to every deduction type, RETUR_OFFSET included. The create block at the bottom of this
+       * function persists proof columns unconditionally (`proofR2Key ? urlFromKey(...) :
+       * deduction.proofUrl`), so a RETUR_OFFSET deduction — exempt from `MISSING_EVIDENCE` and
+       * often submitted with no `proofR2Key` at all — still writes whatever `proofUrl` the caller
+       * supplied directly into the same VARCHAR(191) column. Checking only inside the
+       * evidence-required branch left that column unguarded for exactly this row type.
        */
-      if (urlFromKey(deduction.proofR2Key).length > MAX_PROOF_URL_LENGTH) {
+      if (deduction.proofR2Key !== undefined && deduction.proofR2Key.length > MAX_PROOF_KEY_LENGTH) {
         throw new SettlementError("INPUT_TOO_LARGE");
       }
+      /*
+       * The EFFECTIVE url — what actually gets written below, the DERIVED url when a
+       * `proofR2Key` is present, otherwise the caller's own `proofUrl` verbatim — must
+       * independently clear the same VARCHAR(191) column. A key just under 191 can still yield a
+       * derived url over it once `PUBLIC_URL + "/"` is prepended.
+       */
+      const effectiveProofUrl = deduction.proofR2Key ? urlFromKey(deduction.proofR2Key) : deduction.proofUrl;
+      if (effectiveProofUrl !== undefined && effectiveProofUrl.length > MAX_PROOF_URL_LENGTH) {
+        throw new SettlementError("INPUT_TOO_LARGE");
+      }
+
+      if (deduction.type === "RETUR_OFFSET") continue;
+      if (!deduction.proofUrl || !deduction.proofR2Key) throw new SettlementError("MISSING_EVIDENCE");
       /*
        * Unbound, reusable proof keys are exactly the POD-proof landmine this repo has already hit:
        * one uploaded photo satisfying every proof requirement at once. Binding the key to this

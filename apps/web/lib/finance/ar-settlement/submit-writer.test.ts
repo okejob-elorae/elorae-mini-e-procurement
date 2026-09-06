@@ -516,6 +516,21 @@ d("submitSettlement (test bed only)", () => {
     })).rejects.toMatchObject({ code: "INPUT_TOO_LARGE" });
   });
 
+  it("refuses a RETUR_OFFSET deduction with a proofUrl over the VARCHAR(191) column limit", async () => {
+    /*
+     * The two length checks used to sit AFTER the loop's `if (type === "RETUR_OFFSET") continue`,
+     * so this exact deduction skipped both entirely. The create block persists proof columns for
+     * every deduction type (`proofR2Key ? urlFromKey(...) : deduction.proofUrl`), and a
+     * RETUR_OFFSET deduction with no `proofR2Key` writes the caller's own `proofUrl` verbatim --
+     * without the hoist this would sail past every guard and die at insert with a MySQL 1406
+     * data-truncation error instead of this named, cheap-to-reject code.
+     */
+    await expect(submitSettlement({
+      ...baseInput, draftId: `returproof-${token}`,
+      deductions: [{ type: "RETUR_OFFSET", amount: 50, fieldReturnId: retId, proofUrl: "x".repeat(300) }],
+    })).rejects.toMatchObject({ code: "INPUT_TOO_LARGE" });
+  });
+
   it("refuses reusing the identical proof key across multiple deductions", async () => {
     /*
      * The POD-proof landmine, verbatim: one uploaded photo satisfying every proof requirement at

@@ -27,6 +27,12 @@ function offsettableReturnWhere(storeId?: string): Prisma.FieldReturnWhereInput 
  * `applyReturnOffset` itself enforces. Never widen this beyond `storeId` + `page`: a retur
  * cannot be hard-linked to one receivable (its lines price independently), so the store is the
  * only key that holds for every retur.
+ *
+ * Currently has NO production caller — the PWA settlement screen, its one caller at merge-base,
+ * switched to the unpaged `listAllOffsettableReturns` below (a counter-side picker cannot lose
+ * a retur to a second page). Kept, not deleted, because it is a real, independently-tested,
+ * correctly-paginated query that a genuine backoffice returns list would want as-is; there is no
+ * such list today. Confirm this is still true before reusing it for anything new.
  */
 export async function listOffsettableReturns(
   params: { storeId?: string; page?: number } = {},
@@ -112,12 +118,11 @@ export async function getStoreAvailableCreditMap(storeIds: string[]): Promise<Ma
 /**
  * The unpaged, store-scoped twin of `listOffsettableReturns` — built on the identical
  * `offsettableReturnWhere` conditions so the two can never drift on what "available" means, but
- * with no `skip`/`take`. `listOffsettableReturns` stays paginated for the backoffice list; a
- * counter-side picker (the PWA settlement screen) needs every available retur at a store or a
- * store with more than one page of credit silently loses the rest from the picker, and the
- * `Add retur` button reads its own disabled state off the same truncated count. Never call this
- * without a `storeId` — an unbounded, store-wide fetch here would be the "unpaginated fetch of
- * the whole book" this codebase already treats as a mistake elsewhere.
+ * with no `skip`/`take`. A counter-side picker (the PWA settlement screen) needs every available
+ * retur at a store, or a store with more than one page of credit silently loses the rest from the
+ * picker, and the `Add retur` button reads its own disabled state off the same truncated count.
+ * Never call this without a `storeId` — an unbounded, store-wide fetch here would be the
+ * "unpaginated fetch of the whole book" this codebase already treats as a mistake elsewhere.
  */
 export async function listAllOffsettableReturns(storeId: string): Promise<OffsettableReturnRow[]> {
   const rows = await prisma.fieldReturn.findMany({

@@ -153,13 +153,16 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   const [draftId] = useState(() => crypto.randomUUID());
 
   /**
-   * Every invoice starts ticked — each one already carries a prefilled amount below, so an
-   * unchecked-by-default list was a tap per nota at a counter and made "submit with nothing
-   * selected" the easy path. `useState`'s lazy initializer, not a plain `{}` computed once and
+   * Every invoice with headroom starts ticked — each one already carries a prefilled amount
+   * below, so leaving those unchecked was a tap per nota at a counter and made "submit with
+   * nothing selected" the easy path. An invoice with ZERO headroom (fully claimed by a
+   * colleague's PENDING settlement) starts UNTICKED instead — ticking it would seed a `0.00`
+   * amount that fails `invoiceAmountsValid` and blocks the whole form until the salesman works
+   * out which row to untick. `useState`'s lazy initializer, not a plain `{}` computed once and
    * mutated later, matching how `invoiceAmountInputs` below is seeded.
    */
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(invoices.map((inv) => [inv.receivableId, true])),
+    Object.fromEntries(invoices.map((inv) => [inv.receivableId, invoiceClaimable(inv) > 0])),
   );
   /**
    * Defaults to `min(outstanding − pendingSubmittedAmount, invoiceClaimable(inv))`, not the full
@@ -207,6 +210,17 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   });
 
   const returRows = rows.filter((r): r is Extract<DeductionRow, { kind: "RETUR_OFFSET" }> => r.kind === "RETUR_OFFSET");
+  /**
+   * Gates the Add-retur button below. `returRows.length >= offsettableReturns.length` alone is
+   * not it — with every offsettable retur already claimed by a PENDING settlement (headroom
+   * zero), that count can still be under the option total, the button stays enabled, and a tap
+   * appends a row with no valid amount that blocks submit until removed. This must agree with
+   * what `addReturRow` itself can actually place a row on.
+   */
+  const usedReturnIds = new Set(returRows.map((row) => row.fieldReturnId));
+  const canAddReturRow = offsettableReturns.some(
+    (option) => !usedReturnIds.has(option.fieldReturnId) && returClaimable(option) > 0,
+  );
   const returRowsValid = returRows.every((row) => {
     const option = offsettableReturns.find((o) => o.fieldReturnId === row.fieldReturnId);
     const amt = parseAmount(row.amountInput);
@@ -288,7 +302,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
           .filter((r): r is Extract<DeductionRow, { kind: "RETUR_OFFSET" }> => r.kind === "RETUR_OFFSET")
           .map((r) => r.fieldReturnId),
       );
-      const next = offsettableReturns.find((o) => !used.has(o.fieldReturnId));
+      const next = offsettableReturns.find((o) => !used.has(o.fieldReturnId) && returClaimable(o) > 0);
       if (!next) return prev;
       const claimable = returClaimable(next);
       return [
@@ -578,7 +592,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
             variant="outline"
             size="sm"
             className="h-8"
-            disabled={isPending || returRows.length >= offsettableReturns.length}
+            disabled={isPending || !canAddReturRow}
             onClick={addReturRow}
           >
             <Plus className="h-3.5 w-3.5" />

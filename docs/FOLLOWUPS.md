@@ -463,7 +463,9 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       — and neither sees the other, so both pass and both are collected against. The settlement screen
       narrows the window rather than closing it: it displays each row's `pendingSubmittedAmount` (the
       pending collection total, from `amplop-queries.ts`) and defaults the settle amount to
-      `outstanding − pending`, but a salesman can type over that default and the writer accepts it.
+      `min(outstanding − pending, outstanding − reserved)` — the second term nets a PENDING
+      settlement's own claim on the same receivable — but a salesman can type over that default
+      and the writer accepts it.
       Closing it properly is a `lib/finance` change — one shared "already claimed against this
       receivable" helper that both writers call, netting both row types inside their transactions
       (feat/settlement-document).

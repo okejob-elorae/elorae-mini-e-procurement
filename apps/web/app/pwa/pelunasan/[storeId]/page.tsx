@@ -29,9 +29,10 @@ export default async function StoreSettlementPage({
    * outstanding receivable assigned to this user simply has no matching card, and the form
    * below renders that as "no selectable invoices at this store" rather than a dead end.
    * `listAllOffsettableReturns` is store-wide by design (matches `getStoreAvailableCreditMap`'s
-   * own reasoning in `amplop-queries.ts`) and unpaged, unlike the backoffice-facing
-   * `listOffsettableReturns` — a store with more than one page of credit must not lose the rest
-   * from a counter-side picker. Two salesmen serving the same store see the same retur credit,
+   * own reasoning in `amplop-queries.ts`) and unpaged, unlike its paginated sibling
+   * `listOffsettableReturns` (currently unused in production — see its own JSDoc) — a store with
+   * more than one page of credit must not lose the rest from a counter-side picker. Two salesmen
+   * serving the same store see the same retur credit,
    * and the writer nets each submission's claim against every OTHER pending settlement
    * regardless of who raised it.
    */
