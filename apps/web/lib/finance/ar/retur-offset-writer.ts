@@ -1,5 +1,6 @@
 import { prisma, Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
+import { runSerializable } from "@/lib/db/tx-retry";
 import { recordPayment } from "./payment-writer";
 import { PaymentError } from "./errors";
 
@@ -14,18 +15,17 @@ export type ApplyReturnOffsetInput = {
 const EPSILON = 1e-6;
 
 /**
- * Recomputes appliedValue and offsetStatus from the payments that actually posted against this
- * retur. A projection, never a reservation: it is a SET rather than an increment, so replaying it
- * after a retry, a crash or a void converges on the same answer instead of double-counting. The
- * ceiling that makes over-draw impossible lives in recordPayment's own transaction, not here.
- *
- * Takes the client so a caller already inside a transaction (voidPayment) can project on `tx` and
- * have the release commit or roll back with the void itself. Defaults to the module client for the
- * ordinary post-commit call.
+ * The read-aggregate-then-write body of projectReturnOffset, run against whatever client the
+ * caller settled on — either the fresh serializable tx this function's own export opens, or the
+ * tx a caller (voidPayment) already holds. Never call this directly from outside the file: without
+ * serializable isolation around it, two concurrent projections (e.g. two draws against the same
+ * retur committing back to back) can each read the aggregate before the other's write lands, and
+ * the LAST write wins with a stale sum — permanently under-reporting appliedValue with nothing
+ * scheduling a re-projection to correct it.
  */
-export async function projectReturnOffset(
+async function projectReturnOffsetBody(
   returnId: string,
-  client: Prisma.TransactionClient | typeof prisma = prisma,
+  client: Prisma.TransactionClient | typeof prisma,
 ): Promise<void> {
   const ret = await client.fieldReturn.findUnique({
     where: { id: returnId },
@@ -47,6 +47,34 @@ export async function projectReturnOffset(
       offsetStatus: appliedValue + EPSILON >= totalValue ? "APPLIED" : "AVAILABLE",
     },
   });
+}
+
+/**
+ * Recomputes appliedValue and offsetStatus from the payments that actually posted against this
+ * retur. A projection, never a reservation: it is a SET rather than an increment, so replaying it
+ * after a retry, a crash or a void converges on the same answer instead of double-counting. The
+ * ceiling that makes over-draw impossible lives in recordPayment's own transaction, not here.
+ *
+ * The read (aggregate) and the write (update) must be atomic with each other, not just individually
+ * safe: two draws against the same retur can each call this function back to back, and without
+ * shared isolation the second one's aggregate can run before the first one's write lands, then the
+ * first one's write lands LAST and overwrites the second one's correct, larger sum with its own
+ * stale one — a retur can end up permanently under-reporting appliedValue, stuck at AVAILABLE with
+ * no re-projection ever scheduled to fix it. So when called WITHOUT a client (the ordinary
+ * post-commit call from applyReturnOffset), this wraps the body in its own runSerializable
+ * transaction. When called WITH a client, the caller (voidPayment) is already inside a transaction
+ * of its own — this must NOT open a nested one, so it runs the body directly against that client
+ * and lets the release commit or roll back with the void itself.
+ */
+export async function projectReturnOffset(
+  returnId: string,
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<void> {
+  if (client === prisma) {
+    await runSerializable((tx) => projectReturnOffsetBody(returnId, tx));
+    return;
+  }
+  await projectReturnOffsetBody(returnId, client);
 }
 
 /**
@@ -73,7 +101,7 @@ export async function applyReturnOffset(
     where: { id: input.returnId },
     select: {
       id: true, docNo: true, storeId: true, status: true,
-      valuationStatus: true, totalValue: true, appliedValue: true,
+      valuationStatus: true, totalValue: true,
     },
   });
   if (!ret) throw new PaymentError("NOT_FOUND");

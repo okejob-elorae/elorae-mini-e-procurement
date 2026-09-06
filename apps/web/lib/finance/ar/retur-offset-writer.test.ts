@@ -202,6 +202,44 @@ d("applyReturnOffset (test bed only)", () => {
     expect(err.code).toBe("INSUFFICIENT_OUTSTANDING");
   });
 
+  it("succeeds when the draw fits the store's outstanding even though it is less than the retur's totalValue", async () => {
+    /*
+     * Pins the guard to drawAmount rather than totalValue: totalOutstanding (50000) sits BELOW
+     * totalValue (100000, the default) but at or above drawAmount (40000). The pre-draw-down
+     * writer compared totalOutstanding against totalValue and would have wrongly refused this with
+     * INSUFFICIENT_OUTSTANDING; reverting the guard to totalValue makes this test fail while the
+     * "refuses when the draw exceeds..." test above keeps passing either way.
+     */
+    await prisma.receivable.update({ where: { id: receivableAId }, data: { outstandingAmount: 50000 } });
+    await prisma.receivable.update({ where: { id: receivableBId }, data: { outstandingAmount: 0 } });
+    returnId = await makeReturn();
+    const result = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 40000,
+      allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a draw amount of zero", async () => {
+    returnId = await makeReturn();
+    const err = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: 0,
+      allocations: [{ receivableId: receivableAId, amount: 0 }], appliedById: userId,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("INVALID_AMOUNT");
+  });
+
+  it("refuses a negative draw amount", async () => {
+    returnId = await makeReturn();
+    const err = await applyReturnOffset({
+      returnId, eventId: "evt-1", drawAmount: -1000,
+      allocations: [{ receivableId: receivableAId, amount: -1000 }], appliedById: userId,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("INVALID_AMOUNT");
+  });
+
   it("refuses a cross-store receivable via recordPayment's own guard", async () => {
     returnId = await makeReturn();
     const err = await applyReturnOffset({
@@ -371,5 +409,13 @@ d("applyReturnOffset (test bed only)", () => {
       allocations: [{ receivableId: receivableAId, amount: 40000 }], appliedById: userId,
     });
     expect(second.paymentId).not.toBe(first.paymentId);
+
+    /* The real claim here: the voided draw must not leak back into the aggregate and double-count
+       alongside the fresh one. Without this, a bug that let the VOIDED payment's amount stay in
+       the sum would still pass on paymentId alone while appliedValue silently read 80000. */
+    const ret = await prisma.fieldReturn.findUnique({
+      where: { id: returnId }, select: { appliedValue: true },
+    });
+    expect(Number(ret?.appliedValue)).toBe(40000);
   });
 });
