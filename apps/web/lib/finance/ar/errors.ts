@@ -12,6 +12,7 @@ export type PaymentErrorCode =
   | "NOT_VALUED"
   | "ALREADY_APPLIED"
   | "INSUFFICIENT_OUTSTANDING"
+  | "EXCEEDS_REMAINING"
   | "PAYMENT_VOIDED";
 
 export class PaymentError extends Error {
