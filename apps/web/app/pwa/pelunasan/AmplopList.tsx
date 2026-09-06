@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, CheckCircle2, Store } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Store, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import {
@@ -189,6 +189,13 @@ export function AmplopList({ stores, totalOutstanding, totalOverdue }: Props) {
                         );
                       })}
                     </ul>
+
+                    <Button asChild className="w-full" size="lg">
+                      <Link href={`/pwa/pelunasan/${store.storeId}`}>
+                        <Wallet className="h-4 w-4" />
+                        {t("settleButton")}
+                      </Link>
+                    </Button>
                   </CardContent>
                 </Card>
               </li>

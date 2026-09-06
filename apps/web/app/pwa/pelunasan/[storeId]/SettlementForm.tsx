@@ -1,0 +1,779 @@
+"use client";
+
+import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { toast } from "sonner";
+import { ArrowLeft, CheckCircle2, Loader2, Plus, X } from "lucide-react";
+import { roundCents } from "@elorae/db/pricing";
+import { computeSettlementTotals, computeVariance, type SettlementDeductionInput } from "@/lib/finance/ar-settlement/calc";
+import {
+  submitStoreSettlementAction,
+  type SettlementActionReason,
+  type StoreSettlementDeductionInput,
+} from "@/app/actions/store-settlements";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+
+export type SettlementInvoiceRow = {
+  receivableId: string;
+  docNo: string;
+  dueDateIso: string;
+  outstandingAmount: number;
+  daysOverdue: number;
+};
+
+export type SettlementOffsettableReturn = {
+  fieldReturnId: string;
+  docNo: string;
+  remainingValue: number;
+};
+
+type Props = {
+  storeId: string;
+  storeName: string;
+  invoices: SettlementInvoiceRow[];
+  offsettableReturns: SettlementOffsettableReturn[];
+};
+
+type ProofState =
+  | { status: "idle"; file: File | null }
+  | { status: "uploading"; file: File }
+  | { status: "uploaded"; file: File; url: string; key: string }
+  | { status: "error"; file: File };
+
+type DeductionRow =
+  | { id: string; kind: "RETUR_OFFSET"; fieldReturnId: string; amountInput: string }
+  | { id: string; kind: "PROGRAM"; slot: string; amountInput: string; note: string; proof: ProofState }
+  | { id: string; kind: "ADMIN_FEE"; slot: "adminfee"; percentInput: string; proof: ProofState };
+
+const EPSILON = 1e-6;
+
+/**
+ * The reasons a real submit attempt can plausibly hit get their own copy. Everything else
+ * `submitStoreSettlementAction` can return falls back to `errGeneric` — this is a `Partial`
+ * map, not the exhaustive `Record<SettlementErrorCode, …>` this codebase's landmine index warns
+ * about, so a code with no entry here fails safe onto the fallback instead of failing a build.
+ */
+const REASON_KEY: Partial<Record<SettlementActionReason, string>> = {
+  FORBIDDEN: "errForbidden",
+  NO_INVOICES: "errNoInvoices",
+  INVALID_AMOUNT: "errInvalidAmount",
+  INVALID_PERCENT: "errInvalidPercent",
+  DUPLICATE_INVOICE: "errDuplicateInvoice",
+  DUPLICATE_ADMIN_FEE: "errDuplicateAdminFee",
+  MISSING_EVIDENCE: "errMissingEvidence",
+  DRAFT_ID_CONFLICT: "errDraftIdConflict",
+  NOT_OUTSTANDING: "errNotOutstanding",
+  INVOICE_OVERCLAIMED: "errInvoiceOverclaimed",
+  RETURN_NOT_APPROVED: "errReturnNotApproved",
+  NOT_VALUED: "errNotValued",
+  RETUR_OVERCLAIMED: "errReturOverclaimed",
+  DEDUCTIONS_EXCEED_INVOICES: "errDeductionsExceedInvoices",
+};
+
+function formatRupiah(value: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function toFiniteNumber(raw: string): number | null {
+  if (raw.trim() === "") return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseAmount(raw: string): number {
+  const parsed = toFiniteNumber(raw);
+  return parsed !== null ? roundCents(parsed) : 0;
+}
+
+function parsePercent(raw: string): number {
+  return toFiniteNumber(raw) ?? 0;
+}
+
+export function SettlementForm({ storeId, storeName, invoices, offsettableReturns }: Props) {
+  const t = useTranslations("pwa.settlement");
+  const [isPending, startTransition] = useTransition();
+
+  /**
+   * `draftId` prefixes every proof upload key AND is submitted as `submitSettlement`'s own
+   * idempotency key — it is the only thing standing between a lost-response retry and a real
+   * double submission. `useState`'s lazy initializer runs exactly once per mount; `useMemo` does
+   * not carry that guarantee (React documents it as a performance hint the runtime may
+   * re-invoke), so it is the wrong tool for a value this load-bearing. This route mounts a fresh
+   * instance of this component every time a salesman opens a store's settlement screen, so
+   * "reseeded when the form opens" falls out of that mount for free — it is rotated again below,
+   * right after a successful submit, so a stray resubmit can never replay it.
+   */
+  const [draftId, setDraftId] = useState(() => crypto.randomUUID());
+
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Record<string, boolean>>({});
+  const [invoiceAmountInputs, setInvoiceAmountInputs] = useState<Record<string, string>>(() =>
+    Object.fromEntries(invoices.map((inv) => [inv.receivableId, inv.outstandingAmount.toFixed(2)])),
+  );
+
+  const [rows, setRows] = useState<DeductionRow[]>([]);
+  const [nextProgramSlot, setNextProgramSlot] = useState(0);
+
+  const [actualAmountInput, setActualAmountInput] = useState("0.00");
+  const [actualAmountTouched, setActualAmountTouched] = useState(false);
+  const [note, setNote] = useState("");
+
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<{ docNo: string } | null>(null);
+
+  const selectedInvoiceRows = invoices.filter((inv) => selectedInvoiceIds[inv.receivableId] === true);
+  const hasSelectedInvoice = selectedInvoiceRows.length > 0;
+  const invoiceAmountsValid = selectedInvoiceRows.every((inv) => {
+    const amt = parseAmount(invoiceAmountInputs[inv.receivableId] ?? "");
+    return amt > 0 && amt <= inv.outstandingAmount + EPSILON;
+  });
+
+  const returRows = rows.filter((r): r is Extract<DeductionRow, { kind: "RETUR_OFFSET" }> => r.kind === "RETUR_OFFSET");
+  const returRowsValid = returRows.every((row) => {
+    const option = offsettableReturns.find((o) => o.fieldReturnId === row.fieldReturnId);
+    const amt = parseAmount(row.amountInput);
+    return option !== undefined && amt > 0 && amt <= option.remainingValue + EPSILON;
+  });
+
+  const programRows = rows.filter((r): r is Extract<DeductionRow, { kind: "PROGRAM" }> => r.kind === "PROGRAM");
+  const programRowsValid = programRows.every((row) => parseAmount(row.amountInput) > 0 && row.proof.status === "uploaded");
+
+  const adminFeeRows = rows.filter((r): r is Extract<DeductionRow, { kind: "ADMIN_FEE" }> => r.kind === "ADMIN_FEE");
+  const adminFeeRowsValid = adminFeeRows.every((row) => {
+    const pct = parsePercent(row.percentInput);
+    return pct >= 0 && pct <= 100 && row.proof.status === "uploaded";
+  });
+
+  const anyProofBusy = rows.some((r) => r.kind !== "RETUR_OFFSET" && r.proof.status === "uploading");
+
+  /**
+   * This preview MUST run through `computeSettlementTotals` — the exact pure function
+   * `submitSettlement` recomputes server-side from its own trusted figures — never its own
+   * arithmetic. A screen with independent math here recreates the preview-vs-writer mismatch
+   * this codebase's landmine index already names twice.
+   */
+  const invoiceAmountValues = selectedInvoiceRows.map((inv) => parseAmount(invoiceAmountInputs[inv.receivableId] ?? ""));
+  const deductionInputsForCalc: SettlementDeductionInput[] = rows.map((row) => {
+    if (row.kind === "RETUR_OFFSET") return { type: "RETUR_OFFSET", amount: parseAmount(row.amountInput) };
+    if (row.kind === "PROGRAM") return { type: "PROGRAM", amount: parseAmount(row.amountInput) };
+    return { type: "ADMIN_FEE", percent: parsePercent(row.percentInput) };
+  });
+  const totals = computeSettlementTotals(invoiceAmountValues, deductionInputsForCalc);
+  const deductionsExceedInvoices = totals.expected < -EPSILON;
+
+  const rawActual = toFiniteNumber(actualAmountInput);
+  const actualAmountValid = rawActual !== null && rawActual >= 0;
+  const actualAmount = actualAmountValid && rawActual !== null ? roundCents(rawActual) : 0;
+  const variance = computeVariance(totals.expected, actualAmount);
+
+  useEffect(() => {
+    if (actualAmountTouched) return;
+    setActualAmountInput(totals.expected > 0 ? totals.expected.toFixed(2) : "0.00");
+  }, [totals.expected, actualAmountTouched]);
+
+  const canSubmit =
+    hasSelectedInvoice &&
+    invoiceAmountsValid &&
+    returRowsValid &&
+    programRowsValid &&
+    adminFeeRowsValid &&
+    actualAmountValid &&
+    !deductionsExceedInvoices &&
+    !anyProofBusy &&
+    !isPending;
+
+  function toggleInvoice(receivableId: string, checked: boolean): void {
+    setSelectedInvoiceIds((prev) => ({ ...prev, [receivableId]: checked }));
+  }
+
+  function returOptionsForRow(rowId: string, fieldReturnId: string): SettlementOffsettableReturn[] {
+    const usedByOthers = new Set(returRows.filter((r) => r.id !== rowId).map((r) => r.fieldReturnId));
+    return offsettableReturns.filter((o) => !usedByOthers.has(o.fieldReturnId) || o.fieldReturnId === fieldReturnId);
+  }
+
+  function addReturRow(): void {
+    const used = new Set(returRows.map((r) => r.fieldReturnId));
+    const next = offsettableReturns.find((o) => !used.has(o.fieldReturnId));
+    if (!next) return;
+    setRows((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        kind: "RETUR_OFFSET",
+        fieldReturnId: next.fieldReturnId,
+        amountInput: next.remainingValue > 0 ? next.remainingValue.toFixed(2) : "",
+      },
+    ]);
+  }
+
+  function addProgramRow(): void {
+    const slot = `program-${nextProgramSlot}`;
+    setNextProgramSlot((n) => n + 1);
+    setRows((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), kind: "PROGRAM", slot, amountInput: "", note: "", proof: { status: "idle", file: null } },
+    ]);
+  }
+
+  function addAdminFeeRow(): void {
+    setRows((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), kind: "ADMIN_FEE", slot: "adminfee", percentInput: "", proof: { status: "idle", file: null } },
+    ]);
+  }
+
+  function removeRow(id: string): void {
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  function updateRow(id: string, next: DeductionRow): void {
+    setRows((prev) => prev.map((r) => (r.id === id ? next : r)));
+  }
+
+  /**
+   * Every uploaded key is bound to THIS draft's own prefix (`settlement-proofs/${draftId}/`)
+   * and to a slot unique per row — a `program-N` counter that never reuses an index even after
+   * a row is removed, and the fixed `adminfee` slot since at most one such row can ever exist.
+   * That pairing is what stops one uploaded photo from satisfying two deductions at once; the
+   * writer independently re-checks both the prefix and cross-deduction uniqueness, so this is
+   * defense in depth, not the only guard.
+   */
+  async function uploadDeductionProof(rowId: string, slot: string, file: File): Promise<void> {
+    setRows((prev) =>
+      prev.map((r) => (r.id === rowId && r.kind !== "RETUR_OFFSET" ? { ...r, proof: { status: "uploading", file } } : r)),
+    );
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("draftId", draftId);
+      formData.append("slot", slot);
+      const res = await fetch("/pwa/api/upload/settlement-proof", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("upload failed");
+      const data = (await res.json()) as { url: string; key: string };
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === rowId && r.kind !== "RETUR_OFFSET"
+            ? { ...r, proof: { status: "uploaded", file, url: data.url, key: data.key } }
+            : r,
+        ),
+      );
+    } catch {
+      setRows((prev) =>
+        prev.map((r) => (r.id === rowId && r.kind !== "RETUR_OFFSET" ? { ...r, proof: { status: "error", file } } : r)),
+      );
+      toast.error(t("proofUploadError"));
+    }
+  }
+
+  function useExpectedAmount(): void {
+    setActualAmountTouched(false);
+    setActualAmountInput(totals.expected > 0 ? totals.expected.toFixed(2) : "0.00");
+  }
+
+  function submit(): void {
+    if (!canSubmit) return;
+    setSubmitError(null);
+
+    const deductions: StoreSettlementDeductionInput[] = rows.map((row) => {
+      if (row.kind === "RETUR_OFFSET") {
+        return { type: "RETUR_OFFSET", amount: parseAmount(row.amountInput), fieldReturnId: row.fieldReturnId };
+      }
+      const proofUrl = row.proof.status === "uploaded" ? row.proof.url : "";
+      const proofR2Key = row.proof.status === "uploaded" ? row.proof.key : "";
+      if (row.kind === "PROGRAM") {
+        return {
+          type: "PROGRAM",
+          amount: parseAmount(row.amountInput),
+          proofUrl,
+          proofR2Key,
+          note: row.note.trim() || undefined,
+        };
+      }
+      return { type: "ADMIN_FEE", percent: parsePercent(row.percentInput), proofUrl, proofR2Key };
+    });
+
+    startTransition(async () => {
+      try {
+        const result = await submitStoreSettlementAction({
+          draftId,
+          storeId,
+          invoices: selectedInvoiceRows.map((inv) => ({
+            receivableId: inv.receivableId,
+            amount: parseAmount(invoiceAmountInputs[inv.receivableId] ?? ""),
+          })),
+          deductions,
+          actualAmount,
+          note: note.trim() || undefined,
+        });
+        if (result.ok) {
+          toast.success(t("submitSuccess"));
+          /* Rotate before the success screen so a back-navigation replay can never resubmit. */
+          setDraftId(crypto.randomUUID());
+          setSuccess({ docNo: result.docNo });
+          return;
+        }
+        const key = REASON_KEY[result.reason] ?? "errGeneric";
+        setSubmitError(t(key));
+        toast.error(t(key));
+      } catch {
+        setSubmitError(t("errGeneric"));
+        toast.error(t("errGeneric"));
+      }
+    });
+  }
+
+  if (success) {
+    return (
+      <div className="p-4">
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="flex flex-col items-center gap-3 p-6 text-center">
+            <div className="rounded-full bg-primary p-3">
+              <CheckCircle2 className="h-8 w-8 text-primary-foreground" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">{t("submitSuccess")}</p>
+              <p className="mt-1 text-lg font-semibold">{storeName}</p>
+              <p className="text-xs text-muted-foreground">{success.docNo}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <div className="mt-4">
+          <Button asChild className="w-full" size="lg">
+            <Link href="/pwa/pelunasan">
+              <ArrowLeft className="h-4 w-4" />
+              {t("backToList")}
+            </Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4 p-4 pb-24">
+      <header className="-ml-2">
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/pwa/pelunasan">
+            <ArrowLeft className="h-4 w-4" />
+            {t("backToList")}
+          </Link>
+        </Button>
+      </header>
+
+      <div>
+        <h1 className="text-2xl font-bold leading-tight">{storeName}</h1>
+        <p className="text-xs text-muted-foreground">{t("subtitle")}</p>
+      </div>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{t("invoicesTitle")}</h2>
+        {invoices.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-2 p-6 text-center">
+              <p className="text-sm font-medium">{t("noInvoicesTitle")}</p>
+              <p className="text-xs text-muted-foreground">{t("noInvoicesHint")}</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <ul className="space-y-2">
+            {invoices.map((inv) => {
+              const checked = selectedInvoiceIds[inv.receivableId] === true;
+              const amt = parseAmount(invoiceAmountInputs[inv.receivableId] ?? "");
+              const invalid = checked && !(amt > 0 && amt <= inv.outstandingAmount + EPSILON);
+              return (
+                <li key={inv.receivableId} className="flex items-start gap-3 rounded-md border p-3">
+                  <Checkbox
+                    id={`invoice-${inv.receivableId}`}
+                    checked={checked}
+                    disabled={isPending}
+                    className="mt-1"
+                    onCheckedChange={(value) => toggleInvoice(inv.receivableId, value === true)}
+                  />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor={`invoice-${inv.receivableId}`} className="truncate text-sm font-medium">
+                        {inv.docNo}
+                      </Label>
+                      {inv.daysOverdue > 0 && (
+                        <Badge variant="destructive" className="shrink-0 text-[10px] px-1.5 py-0">
+                          {`${inv.daysOverdue}d`}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("colOutstanding")}: {formatRupiah(inv.outstandingAmount)}
+                    </p>
+                    {checked && (
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        className="h-10"
+                        disabled={isPending}
+                        value={invoiceAmountInputs[inv.receivableId] ?? ""}
+                        aria-invalid={invalid}
+                        onChange={(e) => setInvoiceAmountInputs((prev) => ({ ...prev, [inv.receivableId]: e.target.value }))}
+                      />
+                    )}
+                    {invalid && <p className="text-xs text-destructive">{t("invoiceAmountInvalid")}</p>}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{t("returSectionTitle")}</h2>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8"
+            disabled={isPending || returRows.length >= offsettableReturns.length}
+            onClick={addReturRow}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t("addReturButton")}
+          </Button>
+        </div>
+        {offsettableReturns.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t("noReturCredit")}</p>
+        ) : (
+          returRows.map((row) => {
+            const options = returOptionsForRow(row.id, row.fieldReturnId);
+            const option = offsettableReturns.find((o) => o.fieldReturnId === row.fieldReturnId);
+            const amt = parseAmount(row.amountInput);
+            const invalid = !option || !(amt > 0 && amt <= option.remainingValue + EPSILON);
+            return (
+              <div key={row.id} className="space-y-2 rounded-md border p-3">
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={row.fieldReturnId}
+                    disabled={isPending}
+                    onValueChange={(value) => updateRow(row.id, { ...row, fieldReturnId: value })}
+                  >
+                    <SelectTrigger className="h-10 flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.map((opt) => (
+                        <SelectItem key={opt.fieldReturnId} value={opt.fieldReturnId}>
+                          {`${opt.docNo} — ${formatRupiah(opt.remainingValue)}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    disabled={isPending}
+                    onClick={() => removeRow(row.id)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  className="h-10"
+                  disabled={isPending}
+                  value={row.amountInput}
+                  aria-invalid={invalid}
+                  onChange={(e) => updateRow(row.id, { ...row, amountInput: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("returRemainingLabel")}: {formatRupiah(option?.remainingValue ?? 0)}
+                </p>
+                {invalid && <p className="text-xs text-destructive">{t("returAmountInvalid")}</p>}
+              </div>
+            );
+          })
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{t("programSectionTitle")}</h2>
+          <Button type="button" variant="outline" size="sm" className="h-8" disabled={isPending} onClick={addProgramRow}>
+            <Plus className="h-3.5 w-3.5" />
+            {t("addProgramButton")}
+          </Button>
+        </div>
+        {programRows.length === 0 && <p className="text-xs text-muted-foreground">{t("noProgramRows")}</p>}
+        {programRows.map((row) => {
+          const proofBusy = row.proof.status === "uploading";
+          const proofReady = row.proof.status === "uploaded";
+          const amountInvalid = !(parseAmount(row.amountInput) > 0);
+          return (
+            <div key={row.id} className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">{t("programRowTitle")}</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  disabled={isPending}
+                  onClick={() => removeRow(row.id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <Input
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                className="h-10"
+                placeholder={t("programAmountPlaceholder")}
+                disabled={isPending}
+                value={row.amountInput}
+                aria-invalid={amountInvalid}
+                onChange={(e) => updateRow(row.id, { ...row, amountInput: e.target.value })}
+              />
+              <Input
+                className="h-10"
+                placeholder={t("programNotePlaceholder")}
+                disabled={isPending}
+                value={row.note}
+                onChange={(e) => updateRow(row.id, { ...row, note: e.target.value })}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="h-10 flex-1"
+                  disabled={isPending || proofBusy}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (file) void uploadDeductionProof(row.id, row.slot, file);
+                  }}
+                />
+                {row.proof.status === "error" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-10"
+                    disabled={isPending}
+                    onClick={() => void uploadDeductionProof(row.id, row.slot, row.proof.file)}
+                  >
+                    {t("retryButton")}
+                  </Button>
+                )}
+              </div>
+              {proofBusy && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t("proofUploading")}
+                </p>
+              )}
+              {proofReady && <p className="text-xs text-emerald-600 dark:text-emerald-400">{t("proofUploaded")}</p>}
+              {row.proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
+              {!proofReady && !proofBusy && <p className="text-xs text-destructive">{t("proofRequired")}</p>}
+            </div>
+          );
+        })}
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{t("adminFeeSectionTitle")}</h2>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8"
+            disabled={isPending || adminFeeRows.length >= 1}
+            onClick={addAdminFeeRow}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t("addAdminFeeButton")}
+          </Button>
+        </div>
+        {adminFeeRows.map((row) => {
+          const proofBusy = row.proof.status === "uploading";
+          const proofReady = row.proof.status === "uploaded";
+          const pct = parsePercent(row.percentInput);
+          const percentInvalid = !(pct >= 0 && pct <= 100);
+          return (
+            <div key={row.id} className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">{t("adminFeeRowTitle")}</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  disabled={isPending}
+                  onClick={() => removeRow(row.id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  className="h-10"
+                  disabled={isPending}
+                  value={row.percentInput}
+                  aria-invalid={percentInvalid}
+                  onChange={(e) => updateRow(row.id, { ...row, percentInput: e.target.value })}
+                />
+                <span className="shrink-0 text-sm text-muted-foreground">%</span>
+              </div>
+              {percentInvalid && <p className="text-xs text-destructive">{t("adminFeePercentInvalid")}</p>}
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="h-10 flex-1"
+                  disabled={isPending || proofBusy}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    if (file) void uploadDeductionProof(row.id, row.slot, file);
+                  }}
+                />
+                {row.proof.status === "error" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-10"
+                    disabled={isPending}
+                    onClick={() => void uploadDeductionProof(row.id, row.slot, row.proof.file)}
+                  >
+                    {t("retryButton")}
+                  </Button>
+                )}
+              </div>
+              {proofBusy && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t("proofUploading")}
+                </p>
+              )}
+              {proofReady && <p className="text-xs text-emerald-600 dark:text-emerald-400">{t("proofUploaded")}</p>}
+              {row.proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
+              {!proofReady && !proofBusy && <p className="text-xs text-destructive">{t("proofRequired")}</p>}
+            </div>
+          );
+        })}
+      </section>
+
+      <Card>
+        <CardContent className="space-y-1.5 p-4 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("totalsInvoice")}</span>
+            <span className="tabular-nums font-medium">{formatRupiah(totals.invoiceTotal)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("totalsRetur")}</span>
+            <span className="tabular-nums">{`-${formatRupiah(totals.returTotal)}`}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("totalsProgram")}</span>
+            <span className="tabular-nums">{`-${formatRupiah(totals.programTotal)}`}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("totalsAdminFee")}</span>
+            <span className="tabular-nums">{`-${formatRupiah(totals.adminFee)}`}</span>
+          </div>
+          <div className="flex justify-between border-t pt-1.5">
+            <span className="font-semibold">{t("totalsExpected")}</span>
+            <span className="tabular-nums font-semibold">{formatRupiah(totals.expected)}</span>
+          </div>
+          {deductionsExceedInvoices && <p className="text-xs text-destructive">{t("deductionsExceedInvoices")}</p>}
+        </CardContent>
+      </Card>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="actual-amount">{t("actualAmountLabel")}</Label>
+          <Button type="button" variant="outline" size="sm" className="h-8" disabled={isPending} onClick={useExpectedAmount}>
+            {t("useExpectedButton")}
+          </Button>
+        </div>
+        <Input
+          id="actual-amount"
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          min="0"
+          className="h-10"
+          disabled={isPending}
+          value={actualAmountInput}
+          aria-invalid={!actualAmountValid}
+          onChange={(e) => {
+            setActualAmountTouched(true);
+            setActualAmountInput(e.target.value);
+          }}
+        />
+        {!actualAmountValid && <p className="text-xs text-destructive">{t("actualAmountRequired")}</p>}
+        {actualAmountValid && (
+          <p
+            className={cn(
+              "text-xs",
+              Math.abs(variance) <= EPSILON
+                ? "text-muted-foreground"
+                : variance > 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-destructive",
+            )}
+          >
+            {Math.abs(variance) <= EPSILON
+              ? t("varianceZero")
+              : variance > 0
+                ? t("varianceOver", { amount: formatRupiah(variance) })
+                : t("varianceUnder", { amount: formatRupiah(Math.abs(variance)) })}
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="settlement-note">{t("noteLabel")}</Label>
+        <Textarea
+          id="settlement-note"
+          rows={2}
+          maxLength={500}
+          disabled={isPending}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
+
+      {submitError && <p className="text-sm text-destructive">{submitError}</p>}
+
+      <div className="sticky bottom-0 -mx-4 -mb-4 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <Button type="button" className="w-full" size="lg" disabled={!canSubmit} onClick={submit}>
+          {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isPending ? t("submitting") : t("submitButton")}
+        </Button>
+      </div>
+    </div>
+  );
+}
