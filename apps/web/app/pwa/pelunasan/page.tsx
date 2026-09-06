@@ -14,10 +14,12 @@ export default async function AmplopDigitalPage() {
   if (pwaAccessGuard(session.user.permissions) !== "render") redirect("/backoffice");
   if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_AMPLOP)) redirect("/pwa");
 
+  const canSubmitSettlement = hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTLEMENTS_SUBMIT);
   const amplop = await listAmplop(session.user.id);
 
   return (
     <AmplopList
+      canSubmitSettlement={canSubmitSettlement}
       stores={amplop.stores.map((store) => ({
         storeId: store.storeId,
         storeName: store.storeName,

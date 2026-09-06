@@ -72,4 +72,16 @@ export function keyFromUrl(url: string): string | null {
   return url.slice(PUBLIC_URL.length + 1); // +1 for the trailing "/"
 }
 
+/**
+ * Reconstructs the public URL for an already-uploaded object key — the inverse of `keyFromUrl`,
+ * and the same formula `uploadToR2` itself returns. Any writer that trusts a caller-supplied key
+ * (already validated against its own prefix/uniqueness rules) should derive the URL from it
+ * rather than accept a second, independently-supplied URL field: a raw caller could otherwise
+ * pair a valid key with an arbitrary URL and have a downstream screen render the attacker's URL
+ * while the audited key points elsewhere.
+ */
+export function urlFromKey(key: string): string {
+  return `${PUBLIC_URL}/${key}`;
+}
+
 export { isConfigured };

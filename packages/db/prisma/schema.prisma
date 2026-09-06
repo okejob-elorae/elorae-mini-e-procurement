@@ -102,6 +102,8 @@ model User {
   receivablesToCollect  Receivable[]           @relation("ReceivableCollector")
   collectionsSubmitted  CollectionSubmission[] @relation("CollectionSubmittedBy")
   collectionsVerified   CollectionSubmission[] @relation("CollectionVerifiedBy")
+  storeSettlementsAsSalesman StoreSettlement[] @relation("StoreSettlementSalesman")
+  storeSettlementsReviewed   StoreSettlement[] @relation("StoreSettlementReviewer")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   @@index([roleId])
@@ -336,6 +338,7 @@ model Store {
   assortmentLines StoreAssortmentLine[]
   receivables    Receivable[]
   payments       Payment[]
+  settlements    StoreSettlement[]
 
   @@index([isActive, name])
 }
@@ -620,6 +623,7 @@ model Receivable {
   collector          User?                  @relation("ReceivableCollector", fields: [collectorId], references: [id])
   submissions        CollectionSubmission[]
   allocations       PaymentAllocation[]
+  settlementInvoices StoreSettlementInvoice[]
 
   @@index([storeId, status])
   @@index([status, dueDate])
@@ -836,6 +840,7 @@ model FieldReturn {
   store           Store                      @relation(fields: [storeId], references: [id])
   visit           StoreVisit?                @relation(fields: [visitId], references: [id])
   lines           FieldReturnLine[]
+  settlementDeductions StoreSettlementDeduction[]
 
   @@index([storeId])
   @@index([status])
@@ -2352,6 +2357,7 @@ enum DocType {
   KONSITRF
   STOCKTAKE
   PAYMENT
+  BKM
 }
 
 enum OpnameScope {
@@ -2918,4 +2924,79 @@ model JournalAccountMapping {
   updatedAt      DateTime     @updatedAt
 
   @@index([chartAccountId])
+}
+
+// ==========================================
+// FINANCE — STORE SETTLEMENT
+// ==========================================
+enum StoreSettlementStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SettlementDeductionType {
+  RETUR_OFFSET
+  PROGRAM
+  ADMIN_FEE
+}
+
+model StoreSettlement {
+  id              String                @id @default(cuid())
+  docNo           String                @unique
+  storeId         String
+  salesmanId      String
+  expectedAmount  Decimal               @db.Decimal(15, 2)
+  actualAmount    Decimal               @db.Decimal(15, 2)
+  varianceAmount  Decimal               @db.Decimal(15, 2)
+  isFlagged       Boolean               @default(false)
+  status          StoreSettlementStatus @default(PENDING)
+  note            String?               @db.Text
+  rejectReason    String?               @db.Text
+  reviewedById    String?
+  reviewedAt      DateTime?
+  idempotencyKey  String?               @unique
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  store           Store                        @relation(fields: [storeId], references: [id])
+  salesman        User                         @relation("StoreSettlementSalesman", fields: [salesmanId], references: [id])
+  reviewedBy      User?                        @relation("StoreSettlementReviewer", fields: [reviewedById], references: [id])
+  invoices        StoreSettlementInvoice[]
+  deductions      StoreSettlementDeduction[]
+
+  @@index([storeId, status])
+  @@index([salesmanId, status])
+  @@index([status, createdAt])
+}
+
+model StoreSettlementInvoice {
+  id           String          @id @default(cuid())
+  settlementId String
+  receivableId String
+  amount       Decimal         @db.Decimal(15, 2)
+
+  settlement   StoreSettlement @relation(fields: [settlementId], references: [id])
+  receivable   Receivable      @relation(fields: [receivableId], references: [id])
+
+  @@unique([settlementId, receivableId])
+  @@index([receivableId])
+}
+
+model StoreSettlementDeduction {
+  id            String                  @id @default(cuid())
+  settlementId  String
+  type          SettlementDeductionType
+  amount        Decimal                 @db.Decimal(15, 2)
+  percent       Decimal?                @db.Decimal(5, 2)
+  fieldReturnId String?
+  note          String?                 @db.Text
+  proofUrl      String?
+  proofR2Key    String?
+
+  settlement    StoreSettlement @relation(fields: [settlementId], references: [id])
+  fieldReturn   FieldReturn?    @relation(fields: [fieldReturnId], references: [id])
+
+  @@index([settlementId])
+  @@index([fieldReturnId, type])
 }

@@ -448,11 +448,63 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       needs to be: it lights up for free the moment a konsi receivable exists. Worth stating because a
       salesman carrying both putus and konsi paperwork will notice half the envelope missing and read
       it as a bug (amplop-digital).
-- [ ] The amplop is READ-ONLY by design — no writer, no tap-through, no offline capture. The acting
-      surface is the settlement entry in the next slice, which is richer than the collection submit the
-      amplop would otherwise have linked into, so wiring it to the existing collection flow now would
-      have to be unpicked. Offline capture is absent for the same reason rather than as debt: the PWA
-      offline queue exists but a read surface has nothing to queue (amplop-digital).
+- [ ] The amplop LIST is still read-only — no writer of its own, no offline capture — but it is no
+      longer a dead end, so do not read this item as "no tap-through" any more. The settlement slice
+      added a Settle CTA on each store card through to `/pwa/pelunasan/[storeId]`, which is the acting
+      surface this item said the next slice would bring, and it is richer than the collection submit
+      the amplop would otherwise have linked into. Offline capture stays absent by design rather than
+      as debt: the amplop is a read surface with nothing to queue, and the settlement form behind the
+      CTA is deliberately online-only, a multi-attachment money document being the worst possible
+      candidate for silent offline drift (amplop-digital, feat/settlement-document).
+- [ ] `submitSettlement` and `submitCollection` do not net against each other, so one receivable can
+      carry a `PENDING` `CollectionSubmission` and a `PENDING` `StoreSettlement` at the same time, each
+      claiming its full outstanding. Each writer nets only its OWN kind inside its own transaction —
+      `submitCollection` sums `CollectionSubmission`, `submitSettlement` sums `StoreSettlementInvoice`
+      — and neither sees the other, so both pass and both are collected against. The settlement screen
+      narrows the window rather than closing it: it displays each row's `pendingSubmittedAmount` (the
+      pending collection total, from `amplop-queries.ts`) and defaults the settle amount to
+      `outstanding − pending`, but a salesman can type over that default and the writer accepts it.
+      Closing it properly is a `lib/finance` change — one shared "already claimed against this
+      receivable" helper that both writers call, netting both row types inside their transactions
+      (feat/settlement-document).
+- [ ] Settlement evidence uploaded under a `draftId` whose form is then abandoned is orphaned in R2
+      forever: `settlement-proofs/<draftId>/…` objects with no `StoreSettlement` row referencing them,
+      and no sweeper anywhere. Deliberate — the alternative was a `DRAFT` settlement row per opened
+      form, which would also hold a claim on a retur and an invoice for a document nobody ever
+      submitted. The cleanup is a scheduled job listing the prefix and deleting keys whose `draftId`
+      matches no `StoreSettlement.idempotencyKey`; it is not built (feat/settlement-document).
+- [ ] The settlement document is INERT until the finance approval slice exists. A submitted
+      `StoreSettlement` moves no money, posts no journal, touches no `Receivable` and does not draw the
+      returs it claims — it only reserves them against other settlements. There is no backoffice queue,
+      no approve/reject writer and no `/backoffice/finance/pelunasan` route yet, so a `PENDING`
+      settlement stays `PENDING` and its claims stay held indefinitely, including against a store that
+      pays some other way in the meantime. Anything reading AR must keep ignoring settlements until
+      then (feat/settlement-document).
+- [ ] A salesman has no way to see a settlement again after submitting it. The screen shows the BKM
+      number once on success and there is no PWA list, detail or history surface for `StoreSettlement`,
+      so a closed tab loses the number, and a re-open of the form mints a fresh `draftId` that would
+      create a SECOND document rather than being caught as a replay. The BKM print route is the next
+      slice; a read surface is scoped nowhere (feat/settlement-document).
+- [ ] Konsi stores can never appear in a settlement either, for exactly the reason they cannot appear
+      in an amplop (see the konsi item above): the settlement selects `Receivable` rows and a konsi
+      order creates none. Nothing in the settlement is konsi-aware and nothing needs to be — it lights
+      up for free the moment a konsi receivable exists (feat/settlement-document).
+- [ ] A `RETUR_OFFSET` deduction's `proofUrl`/`proofR2Key` are persisted from the caller unvalidated
+      — the writer's prefix/uniqueness/derive-from-key handling only runs for `PROGRAM`/`ADMIN_FEE`
+      rows (`if (deduction.type === "RETUR_OFFSET") continue;` skips it entirely, since a retur
+      offset auto-links its own nota and needs no separate evidence). No UI path ever sends these
+      fields on a `RETUR_OFFSET` row today, so nothing can currently satisfy an evidence requirement
+      through this hole. But the BKM print route in the next slice will render the full deduction
+      breakdown including this row, and it will follow whatever URL sits on it — so this stops being
+      inert the moment that route ships (feat/settlement-document).
+- [ ] The new `settlements:submit` permission (`packages/db/prisma/seed-settlements-permission.sql`)
+      must be hand-run on prod post-merge, same as every other permission seed in this repo — no
+      migration or deploy step seeds it. Until it runs, the settlement screen is silently unreachable
+      for SALESMAN and COLLECTOR: the amplop's Settle button simply does not render for them (it is
+      now gated on the same permission the next screen enforces), so there is no dead-end to notice,
+      only an absent CTA. Post-seed verification must be done on a SALESMAN or COLLECTOR account —
+      never an admin login, since `pwaAccessGuard` bounces any wildcard holder off `/pwa` entirely
+      before a permission check ever runs (feat/settlement-document).
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
