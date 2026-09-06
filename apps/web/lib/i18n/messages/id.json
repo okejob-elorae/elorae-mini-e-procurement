@@ -2948,6 +2948,8 @@
       "drawAmountLabel": "Jumlah yang dipotong",
       "drawAll": "Pakai semua",
       "remainingHint": "Sisa nilai retur ini: {amount}",
+      "drawAmountRequired": "Masukkan jumlah lebih dari nol.",
+      "drawExceedsRemaining": "Melebihi sisa nilai retur ini.",
       "negativeAmount": "Jumlah tidak boleh negatif.",
       "overAllocated": "Melebihi saldo piutang ini.",
       "runningTotalLabel": "Dialokasikan / Nilai Retur",

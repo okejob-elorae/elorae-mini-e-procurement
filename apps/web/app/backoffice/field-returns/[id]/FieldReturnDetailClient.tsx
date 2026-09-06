@@ -576,12 +576,11 @@ export function FieldReturnDetailClient({
         </AlertDialogContent>
       </AlertDialog>
 
-      {canOffsetPayments && r.offsetStatus === "AVAILABLE" && r.totalValue !== null && r.remainingValue !== null && (
+      {canOffsetPayments && r.offsetStatus === "AVAILABLE" && r.remainingValue !== null && (
         <OffsetToPiutangSheet
           open={offsetSheetOpen}
           onOpenChange={setOffsetSheetOpen}
           returnId={r.id}
-          totalValue={r.totalValue}
           remainingValue={r.remainingValue}
           candidates={allocationCandidates}
           suggestedAllocations={suggestedAllocations}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useState, useTransition } from "react";
+import { useLayoutEffect, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Loader2, Wallet } from "lucide-react";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { AllocationCandidate } from "@/lib/finance/ar/queries";
 
@@ -18,7 +19,6 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   returnId: string;
-  totalValue: number;
   remainingValue: number;
   candidates: AllocationCandidate[];
   suggestedAllocations: Array<{ receivableId: string; amount: number }>;
@@ -45,7 +45,7 @@ function formatRupiahExact(value: number): string {
  * the repo's own preference for small, focused files over one component branching on a mode prop.
  */
 export function OffsetToPiutangSheet({
-  open, onOpenChange, returnId, totalValue, remainingValue, candidates, suggestedAllocations, onApplied,
+  open, onOpenChange, returnId, remainingValue, candidates, suggestedAllocations, onApplied,
 }: Props) {
   const t = useTranslations("fieldReturns");
   const tCommon = useTranslations("common");
@@ -54,11 +54,14 @@ export function OffsetToPiutangSheet({
   const [allocationInputs, setAllocationInputs] = useState<Record<string, string>>({});
 
   /*
-   * One id per opening of the sheet, stable across retries of the same submission. It is the
-   * writer's idempotency key, so a double-click or a retried request resolves to the one payment
-   * already posted instead of drawing the retur twice.
+   * Minted with useState (not useMemo) and refreshed in the seeding effect below, matching
+   * RecordPaymentSheet, VanSellShell, SpgSaleShell and SubmitCollectionSheet — React's own
+   * contract only guarantees useMemo as a performance optimization, never as a semantic one, so a
+   * discarded memo cache could silently mint a second eventId mid-flow. This value is the writer's
+   * idempotency key: a double-click or a retried request must resolve to the one payment already
+   * posted, never draw the retur twice.
    */
-  const eventId = useMemo(() => crypto.randomUUID(), [open]);
+  const [eventId, setEventId] = useState(() => crypto.randomUUID());
   const [drawInput, setDrawInput] = useState("");
 
   useLayoutEffect(() => {
@@ -70,6 +73,7 @@ export function OffsetToPiutangSheet({
     }
     setAllocationInputs(seeded);
     setDrawInput(remainingValue.toFixed(2));
+    setEventId(crypto.randomUUID());
     /* eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per open */
   }, [open]);
 
@@ -128,9 +132,7 @@ export function OffsetToPiutangSheet({
 
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
           <div className="space-y-1.5">
-            <label className="text-sm text-muted-foreground" htmlFor="draw-amount">
-              {t("credit.drawAmountLabel")}
-            </label>
+            <Label htmlFor="draw-amount">{t("credit.drawAmountLabel")}</Label>
             <div className="flex items-center gap-2">
               <Input
                 id="draw-amount"
@@ -159,6 +161,10 @@ export function OffsetToPiutangSheet({
             <p className={cn("text-xs", exceedsRemaining ? "text-destructive" : "text-muted-foreground")}>
               {t("credit.remainingHint", { amount: formatRupiahExact(remainingValue) })}
             </p>
+            {!(drawAmount > 0) && <p className="text-xs text-destructive">{t("credit.drawAmountRequired")}</p>}
+            {drawAmount > 0 && exceedsRemaining && (
+              <p className="text-xs text-destructive">{t("credit.drawExceedsRemaining")}</p>
+            )}
           </div>
 
           {/* candidates.length === 0 is checked FIRST: with no candidates the outstanding sum is

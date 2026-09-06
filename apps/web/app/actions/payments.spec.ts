@@ -194,4 +194,20 @@ describe("payment action guards", () => {
     expect(res).toEqual({ ok: false, reason: "INVALID_REQUEST" });
     expect(mockApplyReturnOffset).not.toHaveBeenCalled();
   });
+
+  /*
+   * Discriminates Number.isFinite from the global isFinite, which the drawAmount <= 0 checks
+   * above cannot: both functions reject 0 and -500 identically. The global isFinite COERCES its
+   * argument, so isFinite("500") is true and "500" <= 0 is false — a hand-rolled POST with a
+   * string drawAmount would sail through both clauses and reach roundCents in the writer, the
+   * same shape of bug the delivery GPS gate shipped once already.
+   */
+  it("refuses INVALID_REQUEST when drawAmount is a numeric string rather than a number", async () => {
+    const coerced = await applyReturnOffsetAction({
+      returnId: "ret-1", eventId: "evt-1", drawAmount: "500" as unknown as number,
+      allocations: [{ receivableId: "r1", amount: 500 }],
+    });
+    expect(coerced).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(mockApplyReturnOffset).not.toHaveBeenCalled();
+  });
 });
