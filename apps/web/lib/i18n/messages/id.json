@@ -2539,6 +2539,8 @@
       "colDueDate": "Jatuh tempo",
       "pendingSubmittedLabel": "Setoran tertunda",
       "reservedByOtherSettlementLabel": "Sudah diklaim pelunasan tertunda lain",
+      "invoiceUnavailableReserved": "Tidak dipilih — pelunasan tertunda lain sudah mereservasi seluruh sisa piutang nota ini.",
+      "invoiceUnavailableSetoran": "Tidak dipilih — setoran tertunda sudah menutup seluruh sisa piutang nota ini.",
       "invoiceAmountLabel": "Jumlah yang dilunasi untuk nota ini",
       "invoiceAmountPlaceholder": "Jumlah pelunasan",
       "invoiceAmountInvalid": "Jumlah harus lebih besar dari nol dan tidak melebihi sisa piutang setelah dikurangi jumlah yang sudah diklaim pelunasan tertunda lain.",

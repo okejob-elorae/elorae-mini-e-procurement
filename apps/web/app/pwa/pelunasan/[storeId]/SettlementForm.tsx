@@ -127,6 +127,19 @@ function invoiceClaimable(inv: SettlementInvoiceRow): number {
 }
 
 /**
+ * The ONE place `selectedInvoiceIds` and `invoiceAmountInputs` both seed from. Before this helper
+ * existed the two seeds carried the same formula written out twice and drifted apart: selection
+ * gated on `invoiceClaimable(inv) > 0` alone while the amount prefill also netted
+ * `pendingSubmittedAmount`, so an invoice fully covered by a PENDING setoran (`invoiceClaimable`
+ * still positive, since `reservedAmount` is 0) started TICKED with a `0.00` prefill — the exact
+ * whole-form block this fix exists to close, just reachable through the setoran input instead of
+ * the settlement-reservation one. Selection must gate on THIS value, not on either input alone.
+ */
+function invoiceDefaultAmount(inv: SettlementInvoiceRow): number {
+  return roundCents(Math.max(0, Math.min(inv.outstandingAmount - inv.pendingSubmittedAmount, invoiceClaimable(inv))));
+}
+
+/**
  * The retur-side twin of `invoiceClaimable` — `option.remainingValue` alone is not the headroom
  * the writer honors either, for the identical reason (netted against other PENDING settlements'
  * `RETUR_OFFSET` claims, via `reservedAmount`).
@@ -153,33 +166,33 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   const [draftId] = useState(() => crypto.randomUUID());
 
   /**
-   * Every invoice with headroom starts ticked — each one already carries a prefilled amount
-   * below, so leaving those unchecked was a tap per nota at a counter and made "submit with
-   * nothing selected" the easy path. An invoice with ZERO headroom (fully claimed by a
-   * colleague's PENDING settlement) starts UNTICKED instead — ticking it would seed a `0.00`
-   * amount that fails `invoiceAmountsValid` and blocks the whole form until the salesman works
-   * out which row to untick. `useState`'s lazy initializer, not a plain `{}` computed once and
-   * mutated later, matching how `invoiceAmountInputs` below is seeded.
+   * Every invoice with a positive `invoiceDefaultAmount` starts ticked — each one already carries
+   * that same amount prefilled below, so leaving those unchecked was a tap per nota at a counter
+   * and made "submit with nothing selected" the easy path. An invoice whose default is ZERO
+   * starts UNTICKED instead — for either of two independent reasons: `invoiceClaimable(inv)` is
+   * zero (fully claimed by a colleague's PENDING settlement) or `outstandingAmount -
+   * pendingSubmittedAmount` is zero (a PENDING setoran already covers it). Gating on
+   * `invoiceDefaultAmount(inv) > 0` — the SAME expression the amount prefill below uses — is what
+   * keeps the two seeds from disagreeing; gating on `invoiceClaimable` alone (as this once did)
+   * still let the setoran case tick a row with a `0.00` prefill and block the whole form.
+   * `useState`'s lazy initializer, not a plain `{}` computed once and mutated later, matching how
+   * `invoiceAmountInputs` below is seeded.
    */
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(invoices.map((inv) => [inv.receivableId, invoiceClaimable(inv) > 0])),
+    Object.fromEntries(invoices.map((inv) => [inv.receivableId, invoiceDefaultAmount(inv) > 0])),
   );
   /**
-   * Defaults to `min(outstanding − pendingSubmittedAmount, invoiceClaimable(inv))`, not the full
-   * outstanding — a PENDING collection submission moves no money (`outstandingAmount` stays
-   * untouched until `verifyCollection` runs) and a PENDING settlement's own invoice claim reduces
-   * `invoiceClaimable` (via `reservedAmount`, computed at the props layer). Prefilling past
-   * either would let a salesman submit for money an unverified setoran or a colleague's pending
-   * settlement already claims. The actual submit ceiling below reads from the SAME
-   * `invoiceClaimable` figure, matching what the writer itself enforces.
+   * Seeded from the SAME `invoiceDefaultAmount` helper the selection above reads — not the
+   * formula re-typed here, which is exactly how the two seeds drifted apart before this fix. A
+   * PENDING collection submission moves no money (`outstandingAmount` stays untouched until
+   * `verifyCollection` runs) and a PENDING settlement's own invoice claim reduces
+   * `invoiceClaimable` (via `reservedAmount`, computed at the props layer); prefilling past either
+   * would let a salesman submit for money an unverified setoran or a colleague's pending
+   * settlement already claims. The actual submit ceiling below reads `invoiceClaimable` directly,
+   * matching what the writer itself enforces.
    */
   const [invoiceAmountInputs, setInvoiceAmountInputs] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      invoices.map((inv) => [
-        inv.receivableId,
-        roundCents(Math.max(0, Math.min(inv.outstandingAmount - inv.pendingSubmittedAmount, invoiceClaimable(inv)))).toFixed(2),
-      ]),
-    ),
+    Object.fromEntries(invoices.map((inv) => [inv.receivableId, invoiceDefaultAmount(inv).toFixed(2)])),
   );
 
   const [rows, setRows] = useState<DeductionRow[]>([]);
@@ -524,7 +537,21 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
             {invoices.map((inv) => {
               const checked = selectedInvoiceIds[inv.receivableId] === true;
               const amt = parseAmount(invoiceAmountInputs[inv.receivableId] ?? "");
-              const invalid = checked && !(amt > 0 && amt <= invoiceClaimable(inv) + EPSILON);
+              const claimable = invoiceClaimable(inv);
+              const invalid = checked && !(amt > 0 && amt <= claimable + EPSILON);
+              /**
+               * Only shown when this row starts UNTICKED because its own default amount is zero
+               * (never for a row the salesman manually unticked despite having room) — the two
+               * causes are independent and read differently to a salesman: `claimable <= 0` means
+               * another PENDING settlement already reserved the whole balance, while a positive
+               * `claimable` with a zero default means a PENDING setoran already covers it. Showing
+               * the wrong one points the salesman at the wrong colleague's document.
+               */
+              const unavailableReason = !checked && invoiceDefaultAmount(inv) <= 0
+                ? claimable <= 0
+                  ? "reserved"
+                  : "setoran"
+                : null;
               return (
                 <li key={inv.receivableId} className="flex items-start gap-3 rounded-md border p-3">
                   <Checkbox
@@ -561,6 +588,11 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
                     {inv.reservedAmount > 0 && (
                       <p className="text-xs text-muted-foreground">
                         {t("reservedByOtherSettlementLabel")}: {formatRupiahPrecise(inv.reservedAmount)}
+                      </p>
+                    )}
+                    {unavailableReason && (
+                      <p className="text-xs text-muted-foreground">
+                        {unavailableReason === "reserved" ? t("invoiceUnavailableReserved") : t("invoiceUnavailableSetoran")}
                       </p>
                     )}
                     {checked && (

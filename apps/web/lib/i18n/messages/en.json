@@ -2539,6 +2539,8 @@
       "colDueDate": "Due date",
       "pendingSubmittedLabel": "Pending submission",
       "reservedByOtherSettlementLabel": "Reserved by another pending settlement",
+      "invoiceUnavailableReserved": "Not selected — another pending settlement already reserved this invoice's full outstanding amount.",
+      "invoiceUnavailableSetoran": "Not selected — a pending collection already covers this invoice's full outstanding amount.",
       "invoiceAmountLabel": "Amount to settle for this invoice",
       "invoiceAmountPlaceholder": "Amount to settle",
       "invoiceAmountInvalid": "Amount must be greater than zero and not exceed the outstanding balance after subtracting any amount reserved by another pending settlement.",
