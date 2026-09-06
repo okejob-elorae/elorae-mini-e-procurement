@@ -232,6 +232,51 @@ d("getFieldReturnById — pricing fields (test bed only)", () => {
     expect(line.creditedQty).toBe(2);
   });
 
+  it("derives remainingValue from totalValue minus appliedValue, both coerced to numbers", async () => {
+    /*
+     * appliedValue 4000 against totalValue 10000 is neither 0 nor the full total, so the
+     * assertion below can actually discriminate remainingValue from totalValue — an
+     * implementation that returned totalValue for remainingValue, or read appliedValue as 0,
+     * would fail this the same way it would fail an operator trying to draw the real remainder.
+     */
+    await prisma.fieldReturn.update({
+      where: { id: returnId },
+      data: { totalValue: 10000, appliedValue: 4000, valuationStatus: "VALUED" },
+    });
+    const detail = await getFieldReturnById(returnId);
+    expect(typeof detail!.appliedValue).toBe("number");
+    expect(detail!.appliedValue).toBe(4000);
+    expect(detail!.remainingValue).toBe(6000);
+  });
+
+  it("reshapes posted offset payments into offsetPayments[], oldest first", async () => {
+    const paymentA = await prisma.payment.create({
+      data: {
+        docNo: `TEST-FRQ-PAY-A-${token}`, storeId, paidAt: new Date("2026-08-02T00:00:00.000Z"),
+        method: "RETUR_OFFSET", amount: 1000, recordedById: userId, fieldReturnId: returnId,
+      },
+    });
+    const paymentB = await prisma.payment.create({
+      data: {
+        docNo: `TEST-FRQ-PAY-B-${token}`, storeId, paidAt: new Date("2026-08-03T00:00:00.000Z"),
+        method: "RETUR_OFFSET", amount: 500, recordedById: userId, fieldReturnId: returnId,
+      },
+    });
+    try {
+      const detail = await getFieldReturnById(returnId);
+      expect(detail!.offsetPayments).toEqual([
+        { id: paymentA.id, docNo: paymentA.docNo },
+        { id: paymentB.id, docNo: paymentB.docNo },
+      ]);
+    } finally {
+      /*
+       * Not on the shared afterEach: only this test creates Payment rows, and deleting the
+       * FieldReturn afterward would just SetNull their fieldReturnId, not remove them.
+       */
+      await prisma.payment.deleteMany({ where: { id: { in: [paymentA.id, paymentB.id] } } });
+    }
+  });
+
   it("omits priceCandidates once the retur is APPROVED, even for a canManage viewer where real candidates exist", async () => {
     /*
      * The item/variant on this line genuinely has a delivery candidate (deliveryLineId) — an
@@ -753,7 +798,10 @@ d("listFieldReturns — origin + credit filters (test bed only)", () => {
      */
     await prisma.fieldReturn.update({
       where: { id: adminReturnId },
-      data: { status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE", totalValue: 500 },
+      data: {
+        status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE",
+        totalValue: 500, appliedValue: 200,
+      },
     });
     await prisma.fieldReturn.update({
       where: { id: fieldReturnId },
@@ -765,5 +813,11 @@ d("listFieldReturns — origin + credit filters (test bed only)", () => {
     expect(rows.map((r) => r.id)).toEqual([adminReturnId]);
     expect(rows[0].offsetStatus).toBe("AVAILABLE");
     expect(rows[0].valuationStatus).toBe("VALUED");
+    /*
+     * appliedValue 200 against totalValue 500 is neither 0 nor the full total, so this row can
+     * actually discriminate remainingValue (300) from totalValue (500).
+     */
+    expect(rows[0].appliedValue).toBe(200);
+    expect(rows[0].remainingValue).toBe(300);
   });
 });

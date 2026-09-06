@@ -65,6 +65,15 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
     throw new PaymentError("DUPLICATE_ALLOCATION");
   }
 
+  /*
+   * The coupling used to be structural — a `@unique FieldReturn.offsetPaymentId` plus an
+   * `offsetStatus` CAS made a stray retur-offset payment unreachable. Both were removed for
+   * partial draw-down, so it is enforced here instead: without a `fieldReturnId`, a
+   * RETUR_OFFSET payment would settle receivables and post the revenue reversal with no retur
+   * behind it, invisible to `projectReturnOffset`.
+   */
+  if (input.method === "RETUR_OFFSET" && !input.fieldReturnId) throw new PaymentError("NOT_FOUND");
+
   return runSerializable(async (tx) => {
     if (input.idempotencyKey) {
       const existing = await tx.payment.findUnique({

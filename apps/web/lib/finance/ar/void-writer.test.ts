@@ -88,12 +88,17 @@ d("voidPayment (test bed only)", () => {
   afterEach(async () => {
     await prisma.journalLine.deleteMany({ where: { journal: { sourceId: seededId(paymentId) } } });
     await prisma.journal.deleteMany({ where: { sourceId: seededId(paymentId) } });
-    await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returId) } });
-    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returId) } });
     await prisma.paymentAllocation.deleteMany({
       where: { receivableId: { in: [seededId(recA), seededId(recB)] } },
     });
+    /*
+     * Deleted BEFORE fieldReturn, not relying on Prisma's emulated SetNull (relationMode =
+     * "prisma") to clear Payment.fieldReturnId — a real FK would enforce that ordering, but under
+     * emulation a failed clear throws and leaks every fixture below onto the shared :3308 bed.
+     */
     await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returId) } });
+    await prisma.fieldReturn.deleteMany({ where: { id: seededId(returId) } });
     await prisma.receivable.deleteMany({
       where: { id: { in: [seededId(recA), seededId(recB)] } },
     });

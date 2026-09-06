@@ -477,4 +477,33 @@ d("recordPayment (test bed only)", () => {
     }).catch((e) => e);
     expect(err.code).toBe("NOT_FOUND");
   });
+
+  it("rejects a RETUR_OFFSET payment with no fieldReturnId", async () => {
+    /*
+     * fieldReturnId is entirely absent, so a guard scoped to "if fieldReturnId is present" never
+     * runs — this proves the method-level guard exists independently of it. Allocation is within
+     * recA's own outstanding balance, so without the guard this would post successfully.
+     */
+    const err = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 100,
+      recordedById: userId, allocations: [{ receivableId: recA, amount: 100 }],
+    }).catch((e) => e);
+    expect(err.code).toBe("NOT_FOUND");
+  });
+
+  it("rejects a retur-linked payment whose retur belongs to a different store than the payment", async () => {
+    /*
+     * storeId and the allocation's receivable (otherRec) both belong to otherStoreId, so the
+     * allocation loop's own WRONG_STORE guard cannot fire here — only the retur block's
+     * `ret.storeId !== input.storeId` comparison can. This is what F2 could not prove: the prior
+     * test always called recordPayment with storeId: ret.storeId, so this comparison always
+     * passed and any WRONG_STORE observed there came from the allocation loop instead.
+     */
+    const err = await recordPayment({
+      storeId: otherStoreId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 100,
+      recordedById: userId, allocations: [{ receivableId: otherRec, amount: 100 }],
+      fieldReturnId: returnId, idempotencyKey: `test-cross-store-${token}`,
+    }).catch((e) => e);
+    expect(err.code).toBe("WRONG_STORE");
+  });
 });

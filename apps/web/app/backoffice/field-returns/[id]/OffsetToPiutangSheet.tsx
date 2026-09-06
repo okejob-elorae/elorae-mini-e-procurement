@@ -109,7 +109,17 @@ export function OffsetToPiutangSheet({
       try {
         const result = await applyReturnOffsetAction({ returnId, eventId, drawAmount, allocations: activeAllocations });
         if (result.ok) {
-          toast.success(t("credit.offsetSuccessToast"));
+          /*
+           * A same-eventId replay (the earlier response was lost, the operator retyped a
+           * different amount and resubmitted) reports success too, but nothing new was drawn —
+           * the posted payment is the FIRST attempt's amount, not this one. Telling the operator
+           * "applied" here would misreport how much actually moved.
+           */
+          if (result.alreadyApplied) {
+            toast.info(t("credit.offsetAlreadyAppliedToast"));
+          } else {
+            toast.success(t("credit.offsetSuccessToast"));
+          }
           onApplied();
           return;
         }
