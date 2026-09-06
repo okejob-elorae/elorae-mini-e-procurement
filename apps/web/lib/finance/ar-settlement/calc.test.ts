@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { roundCents } from "@elorae/db/pricing";
 import { computeSettlementTotals, computeVariance } from "./calc";
 
 describe("computeSettlementTotals", () => {
@@ -40,7 +39,7 @@ describe("computeSettlementTotals", () => {
 
   it("rounds the admin fee to whole cents", () => {
     const t = computeSettlementTotals([333333], [{ type: "ADMIN_FEE", percent: 3 }]);
-    expect(t.adminFee).toBe(roundCents(333333 * 0.03));
+    expect(t.adminFee).toBe(9999.99);
   });
 
   it("treats a missing admin fee as zero rather than NaN", () => {
