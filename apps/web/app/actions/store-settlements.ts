@@ -31,7 +31,7 @@ export type SubmitStoreSettlementInput = {
  * `SettlementErrorCode` already reads as a stable, screen-facing reason on its own — every
  * member names exactly what went wrong. Passing `e.code` straight through below (the same shape
  * `toCollectionResult` uses in `app/actions/collections.ts`) means there is no second
- * `Record<SettlementErrorCode, …>` map to keep exhaustive against `errors.ts`'s 23-member union,
+ * `Record<SettlementErrorCode, …>` map to keep exhaustive against `errors.ts`'s 26-member union,
  * and therefore nothing that can silently drift out of sync with it the way this repo's
  * most-repeated landmine does.
  */

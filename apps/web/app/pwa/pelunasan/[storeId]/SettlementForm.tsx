@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -150,7 +150,16 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   );
 
   const [rows, setRows] = useState<DeductionRow[]>([]);
-  const [nextProgramSlot, setNextProgramSlot] = useState(0);
+  /**
+   * A ref, not `useState` — `addProgramRow` below reads and increments it directly inside the
+   * event handler, which runs exactly once per tap. A prior version of this file derived the slot
+   * inside `setNextProgramSlot`'s own state-updater function; StrictMode (on by default under the
+   * App Router) double-invokes state updaters, so two taps handled back-to-back could commit two
+   * PROGRAM rows sharing the same `program-N` slot — the same one-photo-satisfies-two-deductions
+   * hazard the comment on `addProgramRow` exists to rule out. Nothing outside `addProgramRow`
+   * reads this value, so it never needs to trigger a re-render.
+   */
+  const nextProgramSlotRef = useRef(0);
 
   const [actualAmountInput, setActualAmountInput] = useState("0.00");
   const [actualAmountTouched, setActualAmountTouched] = useState(false);
@@ -251,22 +260,19 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   }
 
   /**
-   * The slot number is derived INSIDE `setNextProgramSlot`'s own updater, not read from the
-   * render-time closure — two taps batched into the same event tick would otherwise both read the
-   * same stale `nextProgramSlot` value and mint the identical `program-N` slot, letting one
-   * uploaded photo satisfy both rows' evidence requirement. Functional updaters queued on the same
-   * piece of state run in order against the latest value, so nesting the `setRows` call inside
-   * this one guarantees each tap gets its own, never-reused index.
+   * The slot number is read from — and incremented on — the ref above, here in the event handler
+   * itself, never inside a `setRows` updater. A handler runs once per tap, so this can never mint
+   * the same `program-N` slot twice, and `setRows`'s own updater stays a pure function of `prev`.
+   * The counter only ever increases and is never reset when a row is removed, so a slot index is
+   * never reused for the life of this form.
    */
   function addProgramRow(): void {
-    setNextProgramSlot((n) => {
-      const slot = `program-${n}`;
-      setRows((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), kind: "PROGRAM", slot, amountInput: "", note: "", proof: { status: "idle", file: null } },
-      ]);
-      return n + 1;
-    });
+    const slot = `program-${nextProgramSlotRef.current}`;
+    nextProgramSlotRef.current += 1;
+    setRows((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), kind: "PROGRAM", slot, amountInput: "", note: "", proof: { status: "idle", file: null } },
+    ]);
   }
 
   function addAdminFeeRow(): void {
