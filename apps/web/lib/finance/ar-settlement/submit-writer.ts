@@ -36,21 +36,33 @@ const EPSILON = 1e-6;
  * Accepts a salesman's settlement document for a store's invoices. Moves no money and posts no
  * journal — a later slice's approval step is the only thing that reaches the ledger. What this
  * writer owes is that every rule is enforced server-side and that two salesmen can never both
- * claim the same retur credit.
+ * claim the same retur credit, or the same slice of the same invoice.
  *
  * A retur's remaining headroom is `totalValue - appliedValue - Σ(RETUR_OFFSET deduction amounts
- * on OTHER PENDING settlements for that retur)`, and that sum is computed with the TRANSACTION
- * client, inside this same `runSerializable` call — the identical shape as
- * `submitCollection`'s over-collection guard in `lib/finance/collections/submit-writer.ts`. A read
- * taken before the transaction (or against the top-level `prisma` singleton) would let two
- * settlements race through the same headroom, both collect cash from a store, and leave the loser
- * refused only later, at approval, after the money already changed hands.
+ * on OTHER PENDING settlements for that retur)`, and an invoice's remaining headroom is
+ * `outstandingAmount - Σ(invoice amounts on OTHER PENDING settlements for that receivable)` — both
+ * sums computed with the TRANSACTION client, inside this same `runSerializable` call, the
+ * identical shape as `submitCollection`'s over-collection guard in
+ * `lib/finance/collections/submit-writer.ts`. A read taken before the transaction (or against the
+ * top-level `prisma` singleton) would let two settlements race through the same headroom, both
+ * collect cash from a store, and leave the loser refused only later, at approval, after the money
+ * already changed hands.
  *
- * The claim is DERIVED, never stored: a settlement that stops being PENDING (rejected, or later
- * approved into something else) stops contributing to the sum by construction. There is no
+ * Both claims are DERIVED, never stored: a settlement that stops being PENDING (rejected, or later
+ * approved into something else) stops contributing to either sum by construction. There is no
  * `claimedValue` column to keep in sync and no release path to forget on reject.
  */
 export async function submitSettlement(input: SubmitSettlementInput): Promise<SubmitSettlementResult> {
+  /*
+   * `draftId` is a GLOBAL unique key (`StoreSettlement.idempotencyKey`) used as the very first
+   * lookup below. An empty string is not "no draft id" here, it is a valid-looking key that a
+   * stale client build could send for every submission — the second such submission from a
+   * DIFFERENT store would hit the first submission's row in the idempotency lookup and be told it
+   * succeeded, while holding cash for invoices no settlement document actually names. This must be
+   * rejected before that lookup ever runs, not merely before the eventual write.
+   */
+  if (!input.draftId) throw new SettlementError("INVALID_DRAFT_ID");
+
   return runSerializable(async (tx) => {
     /*
      * Step 1: the idempotency lookup runs FIRST, ahead of every guard below. A replay of a
@@ -65,15 +77,24 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       return { settlementId: existing.id, docNo: existing.docNo, alreadySubmitted: true };
     }
 
-    /* Step 2: validate shapes — positive amounts, percent in range, at most one ADMIN_FEE, and
-     * evidence for every deduction type except RETUR_OFFSET (which auto-links the retur's own
-     * nota instead of a fresh upload). */
+    /*
+     * Step 2: validate shapes — positive amounts, percent in range, at most one ADMIN_FEE,
+     * required evidence per type (RETUR_OFFSET exempt), and evidence keys that are both scoped to
+     * this submission and never reused within it.
+     */
     if (!Array.isArray(input.invoices) || input.invoices.length === 0) {
       throw new SettlementError("NO_INVOICES");
     }
+    if (!(input.actualAmount >= 0)) throw new SettlementError("INVALID_AMOUNT");
+
+    const seenReceivableIds = new Set<string>();
     for (const invoice of input.invoices) {
       if (!(invoice.amount > 0)) throw new SettlementError("INVALID_AMOUNT");
+      if (seenReceivableIds.has(invoice.receivableId)) throw new SettlementError("DUPLICATE_INVOICE");
+      seenReceivableIds.add(invoice.receivableId);
     }
+
+    if (!Array.isArray(input.deductions)) throw new SettlementError("INVALID_DEDUCTIONS");
 
     let adminFeeCount = 0;
     for (const deduction of input.deductions) {
@@ -87,27 +108,45 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
           throw new SettlementError("INVALID_AMOUNT");
         }
         if (deduction.type === "RETUR_OFFSET" && !deduction.fieldReturnId) {
-          throw new SettlementError("FIELD_RETURN_NOT_FOUND");
+          throw new SettlementError("MISSING_FIELD_RETURN_ID");
         }
       }
     }
     if (adminFeeCount > 1) throw new SettlementError("DUPLICATE_ADMIN_FEE");
 
+    const seenProofKeys = new Set<string>();
+    const proofKeyPrefix = `settlement-proofs/${input.draftId}/`;
     for (const deduction of input.deductions) {
       if (deduction.type === "RETUR_OFFSET") continue;
       if (!deduction.proofUrl || !deduction.proofR2Key) throw new SettlementError("MISSING_EVIDENCE");
+      /*
+       * Unbound, reusable proof keys are exactly the POD-proof landmine this repo has already hit:
+       * one uploaded photo satisfying every proof requirement at once. Binding the key to this
+       * submission's own `draftId` prefix stops evidence from a different (or future) submission
+       * being pointed at, and the per-submission uniqueness check stops the SAME key covering more
+       * than one deduction inside this one document.
+       */
+      if (!deduction.proofR2Key.startsWith(proofKeyPrefix)) throw new SettlementError("INVALID_PROOF_KEY");
+      if (seenProofKeys.has(deduction.proofR2Key)) throw new SettlementError("DUPLICATE_PROOF_KEY");
+      seenProofKeys.add(deduction.proofR2Key);
     }
 
     /*
-     * Step 3: load every selected receivable and verify it belongs to this store and is still
-     * collectible. `relationMode = "prisma"` means there is no database FK behind
-     * `StoreSettlementInvoice.receivableId` — a dangling id is genuinely reachable and must be
-     * caught here, not assumed away.
+     * Step 3: verify the salesman is a real row — `StoreSettlement.salesman` is a REQUIRED
+     * relation, and under `relationMode = "prisma"` there is no FK behind it, so a dangling id
+     * would commit a row that throws `Inconsistent query result` on every future query selecting
+     * through it, with no UI repair path. Then load every selected receivable, verify it belongs
+     * to this store and is still collectible, and net this submission's claim on it against
+     * OTHER PENDING settlements' claims on the same receivable — the invoice-side twin of the
+     * retur claim guard below.
      */
+    const salesman = await tx.user.findUnique({ where: { id: input.salesmanId }, select: { id: true } });
+    if (!salesman) throw new SettlementError("SALESMAN_NOT_FOUND");
+
     const receivableIds = input.invoices.map((invoice) => invoice.receivableId);
     const receivables = await tx.receivable.findMany({
       where: { id: { in: receivableIds } },
-      select: { id: true, storeId: true, status: true },
+      select: { id: true, storeId: true, status: true, outstandingAmount: true },
     });
     const receivableById = new Map(receivables.map((r) => [r.id, r]));
     for (const invoice of input.invoices) {
@@ -117,6 +156,22 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       if (receivable.status !== "OUTSTANDING" && receivable.status !== "PARTIAL") {
         throw new SettlementError("NOT_OUTSTANDING");
       }
+
+      /*
+       * Netted against PENDING settlements' `StoreSettlementInvoice` rows, computed inside this
+       * transaction via `tx` — the same reasoning as the retur guard below. Without this, two
+       * salesmen could each select the same receivable for its full outstanding amount, both pass
+       * every other guard, and both collect cash at the counter before either settlement reaches
+       * approval.
+       */
+      const outstanding = roundCents(Number(receivable.outstandingAmount));
+      const otherInvoiceClaims = await tx.storeSettlementInvoice.aggregate({
+        where: { receivableId: invoice.receivableId, settlement: { status: "PENDING" } },
+        _sum: { amount: true },
+      });
+      const claimedByOthers = roundCents(Number(otherInvoiceClaims._sum.amount ?? 0));
+      const remaining = roundCents(outstanding - claimedByOthers);
+      if (roundCents(invoice.amount) - remaining > EPSILON) throw new SettlementError("INVOICE_OVERCLAIMED");
     }
 
     /*
@@ -141,7 +196,7 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
         },
       });
       if (!fieldReturn) throw new SettlementError("FIELD_RETURN_NOT_FOUND");
-      if (fieldReturn.storeId !== input.storeId) throw new SettlementError("WRONG_STORE");
+      if (fieldReturn.storeId !== input.storeId) throw new SettlementError("RETUR_WRONG_STORE");
       if (fieldReturn.status !== "APPROVED") throw new SettlementError("RETURN_NOT_APPROVED");
       if (fieldReturn.valuationStatus !== "VALUED" || fieldReturn.totalValue === null) {
         throw new SettlementError("NOT_VALUED");
@@ -173,8 +228,10 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       if (requestedForThisReturn - remaining > EPSILON) throw new SettlementError("RETUR_OVERCLAIMED");
     }
 
-    /* Step 5: recompute totals with the SERVER's own figures — the client never supplies an
-     * `expected` amount, and this is never trusted from anywhere else either. */
+    /*
+     * Step 5: recompute totals with the SERVER's own figures — the client never supplies an
+     * `expected` amount, and this is never trusted from anywhere else either.
+     */
     const totals = computeSettlementTotals(
       input.invoices.map((invoice) => invoice.amount),
       input.deductions,
@@ -187,9 +244,11 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
      * non-zero variance flags, so there is exactly one place that ever hardcodes a threshold. */
     const isFlagged = Math.abs(varianceAmount) > EPSILON;
 
-    /* Step 6: mint the document number and create the settlement with its invoice and deduction
+    /*
+     * Step 6: mint the document number and create the settlement with its invoice and deduction
      * rows. The ADMIN_FEE deduction row stores the computed rupiah amount (`totals.adminFee`),
-     * never the client's bare percent, since the schema's `amount` column is non-nullable. */
+     * never the client's bare percent, since the schema's `amount` column is non-nullable.
+     */
     const docNo = await generateDocNumber("BKM", tx);
 
     const settlement = await tx.storeSettlement.create({

@@ -24,6 +24,7 @@ d("submitSettlement (test bed only)", () => {
   let retNotApprovedId = "";
   let retNotValuedId = "";
   let retWrongStoreId = "";
+  let retAppliedId = "";
   let recA = "";
   let recB = "";
   let recWrongStore = "";
@@ -91,7 +92,7 @@ d("submitSettlement (test bed only)", () => {
     storeId = ""; storeOtherId = "";
     salesmanAId = ""; salesmanBId = "";
     itemId = ""; uomId = "";
-    retId = ""; retNotApprovedId = ""; retNotValuedId = ""; retWrongStoreId = "";
+    retId = ""; retNotApprovedId = ""; retNotValuedId = ""; retWrongStoreId = ""; retAppliedId = "";
     recA = ""; recB = ""; recWrongStore = ""; recPaid = ""; recWrittenOff = ""; recSmall = "";
     orderIds = []; deliveryIds = [];
 
@@ -164,6 +165,19 @@ d("submitSettlement (test bed only)", () => {
     });
     retWrongStoreId = retWrongStore.id;
 
+    /* Headroom after appliedValue: 300 - 200 = 100. Distinct from retId (appliedValue 0) so a
+     * regression that drops the `- appliedValue` term from the headroom formula cannot hide
+     * behind every other retur fixture sharing appliedValue: 0. */
+    const retApplied = await prisma.fieldReturn.create({
+      data: {
+        docNo: `TEST-STL-RETAP-${token}`, storeId, raisedById: salesmanAId,
+        status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE",
+        totalValue: 300, appliedValue: 200,
+        lines: { create: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }] },
+      },
+    });
+    retAppliedId = retApplied.id;
+
     baseInput = {
       draftId: `base-${token}`,
       storeId,
@@ -194,6 +208,7 @@ d("submitSettlement (test bed only)", () => {
 
     const returIds = [
       seededId(retId), seededId(retNotApprovedId), seededId(retNotValuedId), seededId(retWrongStoreId),
+      seededId(retAppliedId),
     ];
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returIds } } });
     await prisma.fieldReturn.deleteMany({ where: { id: { in: returIds } } });
@@ -215,8 +230,8 @@ d("submitSettlement (test bed only)", () => {
       draftId: `create-${token}`,
       deductions: [
         returDeduction(100),
-        { type: "PROGRAM", amount: 100, proofUrl: "u1", proofR2Key: "k1" },
-        { type: "ADMIN_FEE", percent: 5, proofUrl: "u2", proofR2Key: "k2" },
+        { type: "PROGRAM", amount: 100, proofUrl: "u1", proofR2Key: `settlement-proofs/create-${token}/program` },
+        { type: "ADMIN_FEE", percent: 5, proofUrl: "u2", proofR2Key: `settlement-proofs/create-${token}/adminfee` },
       ],
       actualAmount: 760,
     });
@@ -290,8 +305,8 @@ d("submitSettlement (test bed only)", () => {
 
   it("refuses more than one admin fee", async () => {
     await expect(submitSettlement({ ...baseInput, draftId: `dupfee-${token}`, deductions: [
-      { type: "ADMIN_FEE", percent: 5, proofUrl: "u", proofR2Key: "k" },
-      { type: "ADMIN_FEE", percent: 5, proofUrl: "u2", proofR2Key: "k2" },
+      { type: "ADMIN_FEE", percent: 5, proofUrl: "u", proofR2Key: `settlement-proofs/dupfee-${token}/fee1` },
+      { type: "ADMIN_FEE", percent: 5, proofUrl: "u2", proofR2Key: `settlement-proofs/dupfee-${token}/fee2` },
     ] })).rejects.toMatchObject({ code: "DUPLICATE_ADMIN_FEE" });
   });
 
@@ -310,7 +325,7 @@ d("submitSettlement (test bed only)", () => {
   it("refuses a retur belonging to a different store than the settlement", async () => {
     await expect(
       submitSettlement({ ...baseInput, draftId: `retwrongstore-${token}`, deductions: [returDeduction(50, retWrongStoreId)] }),
-    ).rejects.toMatchObject({ code: "WRONG_STORE" });
+    ).rejects.toMatchObject({ code: "RETUR_WRONG_STORE" });
   });
 
   it("refuses a receivable belonging to a different store", async () => {
@@ -341,12 +356,79 @@ d("submitSettlement (test bed only)", () => {
     })).rejects.toMatchObject({ code: "FIELD_RETURN_NOT_FOUND" });
   });
 
+  it("refuses a RETUR_OFFSET deduction missing a fieldReturnId", async () => {
+    /* Malformed payload (no fieldReturnId at all) is a distinct failure from a fieldReturnId that
+     * was provided but does not resolve to a row (FIELD_RETURN_NOT_FOUND, above). */
+    await expect(submitSettlement({
+      ...baseInput, draftId: `noreturid-${token}`, deductions: [{ type: "RETUR_OFFSET", amount: 50 }],
+    })).rejects.toMatchObject({ code: "MISSING_FIELD_RETURN_ID" });
+  });
+
+  it("refuses an empty draftId", async () => {
+    await expect(submitSettlement({ ...baseInput, draftId: "" })).rejects.toMatchObject({ code: "INVALID_DRAFT_ID" });
+  });
+
+  it("refuses a salesmanId that does not exist", async () => {
+    /* StoreSettlement.salesman is a REQUIRED relation with no FK under relationMode = "prisma" —
+     * a dangling id would otherwise commit a row that throws on every later read through it. */
+    await expect(submitSettlement({
+      ...baseInput, draftId: `nosalesman-${token}`, salesmanId: `missing-${token}`,
+    })).rejects.toMatchObject({ code: "SALESMAN_NOT_FOUND" });
+  });
+
+  it("refuses a negative actualAmount", async () => {
+    await expect(submitSettlement({
+      ...baseInput, draftId: `negamt-${token}`, actualAmount: -1,
+    })).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
+  });
+
+  it("refuses a non-array deductions payload", async () => {
+    /* A "use server" export is independently callable by a raw request that never went through
+     * TypeScript at all, so a malformed (non-array) deductions field must fail closed rather than
+     * crash on the first .filter/.reduce call. */
+    await expect(submitSettlement({
+      ...baseInput, draftId: `baddeductions-${token}`, deductions: null,
+    } as unknown as SubmitSettlementInput)).rejects.toMatchObject({ code: "INVALID_DEDUCTIONS" });
+  });
+
+  it("refuses a duplicate receivableId across invoices", async () => {
+    await expect(submitSettlement({
+      ...baseInput, draftId: `dupinv-${token}`,
+      invoices: [{ receivableId: recA, amount: 500 }, { receivableId: recA, amount: 500 }],
+    })).rejects.toMatchObject({ code: "DUPLICATE_INVOICE" });
+  });
+
+  it("refuses a proof key that isn't scoped to this submission's draftId", async () => {
+    await expect(submitSettlement({
+      ...baseInput, draftId: `badprefix-${token}`,
+      deductions: [{ type: "PROGRAM", amount: 100, proofUrl: "u", proofR2Key: "wrong-prefix/key" }],
+    })).rejects.toMatchObject({ code: "INVALID_PROOF_KEY" });
+  });
+
+  it("refuses reusing the identical proof key across multiple deductions", async () => {
+    /*
+     * The POD-proof landmine, verbatim: one uploaded photo satisfying every proof requirement at
+     * once. Three PROGRAM deductions pointing at the same key would otherwise each individually
+     * pass MISSING_EVIDENCE and drop the invoice total by three times a single upload's worth.
+     */
+    const draftId = `dupekey-${token}`;
+    const key = `settlement-proofs/${draftId}/nota`;
+    await expect(submitSettlement({
+      ...baseInput, draftId,
+      deductions: [
+        { type: "PROGRAM", amount: 300, proofUrl: "u", proofR2Key: key },
+        { type: "PROGRAM", amount: 300, proofUrl: "u", proofR2Key: key },
+        { type: "PROGRAM", amount: 300, proofUrl: "u", proofR2Key: key },
+      ],
+    })).rejects.toMatchObject({ code: "DUPLICATE_PROOF_KEY" });
+  });
+
   it("refuses when deductions exceed the selected invoices", async () => {
     await expect(submitSettlement({
       ...baseInput,
       draftId: `exceed-${token}`,
       invoices: [{ receivableId: recSmall, amount: 100 }],
-      deductions: [{ type: "PROGRAM", amount: 500, proofUrl: "u", proofR2Key: "k" }],
+      deductions: [{ type: "PROGRAM", amount: 500, proofUrl: "u", proofR2Key: `settlement-proofs/exceed-${token}/program` }],
     })).rejects.toMatchObject({ code: "DEDUCTIONS_EXCEED_INVOICES" });
   });
 
@@ -366,6 +448,63 @@ d("submitSettlement (test bed only)", () => {
     await prisma.storeSettlement.updateMany({ where: { idempotencyKey: `d1-${token}` }, data: { status: "REJECTED" } });
     /* the same 200 is claimable again now that the first claim is not PENDING */
     const second = await submitSettlement({ ...otherInput, draftId: `d2-${token}`, deductions: [returDeduction(200)], actualAmount: 800 });
+    expect(second.settlementId).toBeTruthy();
+  });
+
+  it("refuses a claim that exceeds headroom once appliedValue is subtracted", async () => {
+    /* retAppliedId: totalValue 300, appliedValue 200 -> remaining 100. A claim of 150 must be
+     * refused; deleting the `- appliedValue` term from the headroom formula would leave 300 of
+     * apparent room and let every test in this file (all of which use appliedValue: 0 elsewhere)
+     * stay green while this one alone catches it. */
+    await expect(
+      submitSettlement({ ...baseInput, draftId: `applied-${token}`, deductions: [returDeduction(150, retAppliedId)] }),
+    ).rejects.toMatchObject({ code: "RETUR_OVERCLAIMED" });
+  });
+
+  it("does not count an APPROVED settlement's claim against retur headroom", async () => {
+    /* Manually seeded rather than reached through submitSettlement, since the writer only ever
+     * creates PENDING rows itself. This settlement claims 250 of retId's 300 headroom but is
+     * already APPROVED -- if the netting query's PENDING filter were dropped (or widened to any
+     * non-REJECTED status), the second claim below would see only 50 of room and be refused. */
+    await prisma.storeSettlement.create({
+      data: {
+        docNo: `TEST-STL-APPR-${token}`,
+        storeId, salesmanId: salesmanAId,
+        expectedAmount: 800, actualAmount: 800, varianceAmount: 0,
+        status: "APPROVED",
+        deductions: { create: [{ type: "RETUR_OFFSET", amount: 250, fieldReturnId: retId }] },
+        invoices: { create: [{ receivableId: recA, amount: 1000 }] },
+      },
+    });
+
+    const result = await submitSettlement({
+      ...otherInput, draftId: `appr-check-${token}`, deductions: [returDeduction(200)], actualAmount: 800,
+    });
+    expect(result.settlementId).toBeTruthy();
+  });
+
+  /*
+   * The invoice-side twin of the retur pair above. recA's outstandingAmount is 1000; a first
+   * settlement claims 900 of it and stays PENDING. A second settlement claiming 900 must be
+   * refused -- 1000 - 900 already claimed leaves only 100.
+   */
+  it("nets a PENDING settlement's invoice claim against the receivable's outstanding amount", async () => {
+    await submitSettlement({
+      ...baseInput, draftId: `inv-d1-${token}`, invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
+    });
+    await expect(submitSettlement({
+      ...otherInput, draftId: `inv-d2-${token}`, invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
+    })).rejects.toMatchObject({ code: "INVOICE_OVERCLAIMED" });
+  });
+
+  it("stops counting a REJECTED settlement's invoice claim", async () => {
+    await submitSettlement({
+      ...baseInput, draftId: `inv-d1-${token}`, invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
+    });
+    await prisma.storeSettlement.updateMany({ where: { idempotencyKey: `inv-d1-${token}` }, data: { status: "REJECTED" } });
+    const second = await submitSettlement({
+      ...otherInput, draftId: `inv-d2-${token}`, invoices: [{ receivableId: recA, amount: 900 }], actualAmount: 900,
+    });
     expect(second.settlementId).toBeTruthy();
   });
 });
