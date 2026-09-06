@@ -228,8 +228,10 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
      * salesman actually has a relationship to it (its collector, or its order's salesman). Without
      * this a raw request naming a receivable assigned to a DIFFERENT salesman/collector at a
      * shared store would still pass every other guard and stamp a PENDING settlement over money
-     * that isn't this caller's to claim, with no release path until an approval slice that does
-     * not yet exist. Same shape as `submitCollection`'s `NOT_ASSIGNED_COLLECTOR` guard in
+     * that isn't this caller's to claim. The only release path is a `collections:manage` holder
+     * noticing it in the finance queue and rejecting it by hand — nothing chases a PENDING
+     * settlement — so the guard is the real defence, not a first line of one. Same shape as
+     * `submitCollection`'s `NOT_ASSIGNED_COLLECTOR` guard in
      * `lib/finance/collections/submit-writer.ts`. Finally net this submission's claim against
      * OTHER PENDING settlements' claims on the same receivable — the invoice-side twin of the
      * retur claim guard below.
