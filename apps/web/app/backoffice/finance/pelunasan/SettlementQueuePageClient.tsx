@@ -2,9 +2,10 @@
 
 import { useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { AlertCircle, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -22,25 +23,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Pagination } from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
-import type { listPayments } from "@/lib/finance/ar/queries";
-import { paymentMethodLabelKey, type PaymentMethodValue } from "@/lib/finance/ar/payment-method-display";
+import type {
+  SettlementQueueRow,
+  SettlementStatusValue,
+} from "@/lib/finance/ar-settlement/queries";
 
-type PaymentRow = Awaited<ReturnType<typeof listPayments>>["rows"][number];
-type MethodFilter = PaymentMethodValue | "ALL";
-type PaymentStatusValue = "POSTED" | "VOIDED";
-type StatusFilter = PaymentStatusValue | "ALL";
+type StatusFilter = SettlementStatusValue | "ALL";
 
 type Props = {
-  rows: PaymentRow[];
+  rows: SettlementQueueRow[];
   total: number;
+  salesmen: { id: string; name: string }[];
   storeOptions: { id: string; name: string }[];
   storeId: string;
-  method: MethodFilter;
+  salesmanId: string;
   status: StatusFilter;
   dateFrom: string;
   dateTo: string;
@@ -49,26 +48,39 @@ type Props = {
   loadError: boolean;
 };
 
-const BASE_PATH = "/backoffice/finance/payments";
+const BASE_PATH = "/backoffice/finance/pelunasan";
 const ALL_STORES = "__all__";
+const ALL_SALESMEN = "__all__";
 
-const STATUS_BADGE_CLASS: Record<PaymentStatusValue, string> = {
-  POSTED: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  VOIDED: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+const SETTLEMENT_STATUS_BADGE_CLASS: Record<SettlementStatusValue, string> = {
+  PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  APPROVED: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  REJECTED: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
 };
 
-function formatRupiah(value: number): string {
+const SETTLEMENT_STATUS_LABEL_KEY: Record<
+  SettlementStatusValue,
+  "statusPending" | "statusApproved" | "statusRejected"
+> = {
+  PENDING: "statusPending",
+  APPROVED: "statusApproved",
+  REJECTED: "statusRejected",
+};
+
+function formatRupiahExact(value: number): string {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
-export function PaymentsPageClient(props: Props) {
+export function SettlementQueuePageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
-  const t = useTranslations("payments");
+  const t = useTranslations("financeStoreSettlements");
+  const locale = useLocale();
   const [isPending, startTransition] = useTransition();
 
   function pushParams(next: Record<string, string | undefined>): void {
@@ -91,8 +103,21 @@ export function PaymentsPageClient(props: Props) {
     startTransition(() => router.push(`${BASE_PATH}?${params.toString()}`));
   }
 
+  const formatFiledAt = (date: Date) =>
+    new Intl.DateTimeFormat(locale, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+
   const hasFilters =
-    !!props.storeId || props.method !== "ALL" || props.status !== "ALL" || !!props.dateFrom || !!props.dateTo;
+    !!props.storeId ||
+    !!props.salesmanId ||
+    props.status !== "PENDING" ||
+    !!props.dateFrom ||
+    !!props.dateTo;
 
   return (
     <div className="space-y-6">
@@ -131,27 +156,27 @@ export function PaymentsPageClient(props: Props) {
               emptyMessage={t("storeSearchEmpty")}
               triggerClassName="h-10 w-full sm:w-[220px]"
             />
-            <Select value={props.method} onValueChange={(v) => pushParams({ method: v === "ALL" ? undefined : v })}>
+            <SearchableCombobox
+              options={[
+                { value: ALL_SALESMEN, label: t("allSalesmen") },
+                ...props.salesmen.map((s) => ({ value: s.id, label: s.name })),
+              ]}
+              value={props.salesmanId || ALL_SALESMEN}
+              onValueChange={(v) => pushParams({ salesmanId: v === ALL_SALESMEN ? undefined : v })}
+              placeholder={t("allSalesmen")}
+              searchPlaceholder={t("salesmanSearchPlaceholder")}
+              emptyMessage={t("salesmanSearchEmpty")}
+              triggerClassName="h-10 w-full sm:w-[220px]"
+            />
+            <Select value={props.status} onValueChange={(v) => pushParams({ status: v })}>
               <SelectTrigger className="h-10 w-full sm:w-[160px]">
-                <SelectValue placeholder={t("allMethods")} />
+                <SelectValue placeholder={t("statusPending")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">{t("allMethods")}</SelectItem>
-                <SelectItem value="CASH">{t("methodCash")}</SelectItem>
-                <SelectItem value="TRANSFER">{t("methodTransfer")}</SelectItem>
-                <SelectItem value="RETUR_OFFSET">{t("methodReturOffset")}</SelectItem>
-                <SelectItem value="PROGRAM_DEDUCTION">{t("methodProgramDeduction")}</SelectItem>
-                <SelectItem value="ADMIN_FEE">{t("methodAdminFee")}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={props.status} onValueChange={(v) => pushParams({ status: v === "ALL" ? undefined : v })}>
-              <SelectTrigger className="h-10 w-full sm:w-[160px]">
-                <SelectValue placeholder={t("allStatus")} />
-              </SelectTrigger>
-              <SelectContent>
+                <SelectItem value="PENDING">{t("statusPending")}</SelectItem>
+                <SelectItem value="APPROVED">{t("statusApproved")}</SelectItem>
+                <SelectItem value="REJECTED">{t("statusRejected")}</SelectItem>
                 <SelectItem value="ALL">{t("allStatus")}</SelectItem>
-                <SelectItem value="POSTED">{t("statusPosted")}</SelectItem>
-                <SelectItem value="VOIDED">{t("statusVoided")}</SelectItem>
               </SelectContent>
             </Select>
             <Input
@@ -198,39 +223,48 @@ export function PaymentsPageClient(props: Props) {
                         <TableRow>
                           <TableHead>{t("colDocNo")}</TableHead>
                           <TableHead>{t("colStore")}</TableHead>
-                          <TableHead>{t("colDate")}</TableHead>
-                          <TableHead>{t("colMethod")}</TableHead>
-                          <TableHead className="text-right">{t("colAmount")}</TableHead>
-                          <TableHead className="text-right">{t("colAllocations")}</TableHead>
+                          <TableHead>{t("colSalesman")}</TableHead>
+                          <TableHead className="text-right">{t("colInvoices")}</TableHead>
+                          <TableHead className="text-right">{t("colExpected")}</TableHead>
+                          <TableHead className="text-right">{t("colActual")}</TableHead>
+                          <TableHead className="text-right">{t("colVariance")}</TableHead>
                           <TableHead>{t("colStatus")}</TableHead>
+                          <TableHead>{t("colFiledAt")}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {props.rows.map((row) => {
-                          const status = row.status as PaymentStatusValue;
-                          const voided = status === "VOIDED";
-                          return (
-                            <TableRow
-                              key={row.id}
-                              className={cn("cursor-pointer hover:bg-muted/50", voided && "text-muted-foreground")}
-                              onClick={() => startTransition(() => router.push(`${BASE_PATH}/${row.id}`))}
+                        {props.rows.map((row) => (
+                          <TableRow
+                            key={row.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => startTransition(() => router.push(`${BASE_PATH}/${row.id}`))}
+                          >
+                            <TableCell className="whitespace-nowrap font-mono text-xs">{row.docNo}</TableCell>
+                            <TableCell className="max-w-[180px] truncate font-medium">{row.storeName}</TableCell>
+                            <TableCell className="max-w-[160px] truncate">{row.salesmanName}</TableCell>
+                            <TableCell className="text-right tabular-nums">{row.invoiceCount}</TableCell>
+                            <TableCell className="text-right whitespace-nowrap tabular-nums">
+                              {formatRupiahExact(row.expectedAmount)}
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap tabular-nums font-medium">
+                              {formatRupiahExact(row.actualAmount)}
+                            </TableCell>
+                            <TableCell
+                              className={cn(
+                                "text-right whitespace-nowrap tabular-nums",
+                                row.varianceAmount !== 0 && "text-destructive font-medium",
+                              )}
                             >
-                              <TableCell className="whitespace-nowrap font-mono text-xs">{row.docNo}</TableCell>
-                              <TableCell className="max-w-[180px] truncate font-medium">{row.storeName}</TableCell>
-                              <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(row.paidAt)}</TableCell>
-                              <TableCell>{t(paymentMethodLabelKey(row.method))}</TableCell>
-                              <TableCell className="text-right whitespace-nowrap tabular-nums font-medium">
-                                {formatRupiah(row.amount)}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">{row.allocationCount}</TableCell>
-                              <TableCell>
-                                <Badge className={STATUS_BADGE_CLASS[status]}>
-                                  {t(status === "POSTED" ? "statusPosted" : "statusVoided")}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
+                              {formatRupiahExact(row.varianceAmount)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={SETTLEMENT_STATUS_BADGE_CLASS[row.status]}>
+                                {t(SETTLEMENT_STATUS_LABEL_KEY[row.status])}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">{formatFiledAt(row.createdAt)}</TableCell>
+                          </TableRow>
+                        ))}
                       </TableBody>
                     </Table>
                   </div>

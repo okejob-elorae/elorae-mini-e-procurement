@@ -20,7 +20,7 @@ export type ApproveSettlementResult = {
   alreadyApproved?: true;
 };
 
-const EPSILON = 1e-6;
+export const EPSILON = 1e-6;
 
 /**
  * `AuditLog.reason` is a bare `String?` in the Prisma schema — no `@db.Text` — which is MySQL
@@ -43,9 +43,9 @@ const DEDUCTION_TYPE_TO_PAYMENT_METHOD = {
   ADMIN_FEE: "ADMIN_FEE",
 } as const satisfies Record<"RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE", string>;
 
-type SettlementPaymentMethod = "CASH" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE";
+export type SettlementPaymentMethod = "CASH" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE";
 
-type InvoiceRow = { receivableId: string; amount: number };
+export type InvoiceRow = { receivableId: string; amount: number };
 
 /**
  * What `allocateOldestFirst` needs, plus the raw `agreedRemaining` term behind
@@ -54,7 +54,7 @@ type InvoiceRow = { receivableId: string; amount: number };
  * `NOT_OUTSTANDING` re-validation has to distinguish, or a resumed approval refuses itself over
  * the very receivables its own earlier components closed.
  */
-type HeadroomRow = AllocationInput & { agreedRemaining: number };
+export type HeadroomRow = AllocationInput & { agreedRemaining: number };
 
 type Component =
   | {
@@ -79,11 +79,11 @@ type Component =
  * by key to decide what a resumed approval still owes, and a key that does not match the one
  * `applyReturnOffset` actually wrote would make every resume re-draw the retur.
  */
-function returComponentKey(returnId: string, deductionId: string): string {
+export function returComponentKey(returnId: string, deductionId: string): string {
   return `returoffset-${returnId}-${deductionId}`;
 }
 
-function simpleComponentKey(settlementId: string, method: SettlementPaymentMethod): string {
+export function simpleComponentKey(settlementId: string, method: SettlementPaymentMethod): string {
   return `settlement-${settlementId}-${method}`;
 }
 
@@ -130,7 +130,7 @@ function allocateForComponent(amount: number, headroom: HeadroomRow[]): Allocati
  * remaining agreed amount. VOIDED payments are excluded, symmetrically with the live balance,
  * which a void has already restored.
  */
-async function computeComponentHeadroom(
+export async function computeComponentHeadroom(
   invoiceRows: InvoiceRow[],
   componentKeys: string[],
 ): Promise<HeadroomRow[]> {

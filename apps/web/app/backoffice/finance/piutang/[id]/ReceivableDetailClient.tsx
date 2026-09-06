@@ -10,6 +10,7 @@ import type { getReceivable, AllocationCandidate } from "@/lib/finance/ar/querie
 import { postFieldDeliveryJournalsAction } from "@/app/actions/field-sales-deliveries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { AGING_BUCKET_LABELS } from "@/lib/finance/ar/aging";
+import { paymentMethodLabelKey } from "@/lib/finance/ar/payment-method-display";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -93,12 +94,6 @@ function formatRupiahExact(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function methodLabelKey(method: string): "methodCash" | "methodTransfer" | "methodReturOffset" {
-  if (method === "CASH") return "methodCash";
-  if (method === "TRANSFER") return "methodTransfer";
-  return "methodReturOffset";
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -385,7 +380,7 @@ export function ReceivableDetailClient({
                           {formatDateOnlyJakarta(a.payment.paidAt)}
                         </TableCell>
                         <TableCell className={cn(voided && "text-muted-foreground line-through")}>
-                          {t(methodLabelKey(a.payment.method))}
+                          {t(paymentMethodLabelKey(a.payment.method))}
                         </TableCell>
                         <TableCell
                           className={cn(
