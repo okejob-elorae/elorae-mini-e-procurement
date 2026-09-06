@@ -4130,6 +4130,7 @@
       "NOT_VALUED": "Nilai retur ini belum lengkap dan tidak bisa dioffset.",
       "ALREADY_APPLIED": "Nilai retur ini sudah diterapkan ke pembayaran lain.",
       "INSUFFICIENT_OUTSTANDING": "Saldo piutang toko ini tidak cukup untuk menyerap seluruh nilai retur.",
+      "EXCEEDS_REMAINING": "Jumlah potongan melebihi sisa nilai retur.",
       "PAYMENT_VOIDED": "Offset sebelumnya untuk retur ini sudah dibatalkan. Catat koreksinya sebagai pembayaran baru.",
       "NOT_RETRYABLE": "Jurnal pembayaran ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
       "STILL_PENDING": "Jurnal masih gagal diposting. Periksa pemetaan akun, lalu coba lagi.",

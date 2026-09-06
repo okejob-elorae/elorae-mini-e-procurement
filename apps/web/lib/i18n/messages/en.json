@@ -4130,6 +4130,7 @@
       "NOT_VALUED": "This return's value is incomplete and can't be offset.",
       "ALREADY_APPLIED": "This return's value has already been applied to a payment.",
       "INSUFFICIENT_OUTSTANDING": "This store doesn't have enough outstanding balance to absorb the return's full value.",
+      "EXCEEDS_REMAINING": "This draw is larger than the value left on the retur.",
       "PAYMENT_VOIDED": "The prior offset for this return was voided. Record the correction as a new payment instead.",
       "NOT_RETRYABLE": "This payment's journal was never flagged as failed, so there is nothing to retry.",
       "STILL_PENDING": "The journal still failed to post. Check the account mapping, then try again.",

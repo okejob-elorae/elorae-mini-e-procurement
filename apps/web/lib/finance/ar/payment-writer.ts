@@ -84,9 +84,17 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
     if (input.fieldReturnId) {
       const ret = await tx.fieldReturn.findUnique({
         where: { id: input.fieldReturnId },
-        select: { totalValue: true },
+        select: { storeId: true, totalValue: true },
       });
-      if (!ret || ret.totalValue === null) throw new PaymentError("NOT_FOUND");
+      if (!ret) throw new PaymentError("NOT_FOUND");
+      /*
+       * Every guard lives here, not in the form: without this, a payment can draw down store A's
+       * retur credit while settling store B's receivables — the ceiling check and the allocation
+       * loop's WRONG_STORE both pass, since neither compares the retur's own store against the
+       * other.
+       */
+      if (ret.storeId !== input.storeId) throw new PaymentError("WRONG_STORE");
+      if (ret.totalValue === null) throw new PaymentError("NOT_VALUED");
       const drawn = await tx.payment.aggregate({
         where: { fieldReturnId: input.fieldReturnId, status: "POSTED" },
         _sum: { amount: true },

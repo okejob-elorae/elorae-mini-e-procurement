@@ -411,14 +411,14 @@ d("recordPayment (test bed only)", () => {
     await recordPayment({
       storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 60000,
       recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 60000 }],
-      fieldReturnId: returnId, idempotencyKey: "test-draw-1",
+      fieldReturnId: returnId, idempotencyKey: `test-draw-1-${token}`,
     });
 
     await expect(
       recordPayment({
         storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 40001,
         recordedById: userId, allocations: [{ receivableId: receivableBId, amount: 40001 }],
-        fieldReturnId: returnId, idempotencyKey: "test-draw-2",
+        fieldReturnId: returnId, idempotencyKey: `test-draw-2-${token}`,
       }),
     ).rejects.toMatchObject({ code: "EXCEEDS_REMAINING" });
   });
@@ -427,13 +427,13 @@ d("recordPayment (test bed only)", () => {
     await recordPayment({
       storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 60000,
       recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 60000 }],
-      fieldReturnId: returnId, idempotencyKey: "test-draw-1",
+      fieldReturnId: returnId, idempotencyKey: `test-draw-1-${token}`,
     });
 
     const { paymentId } = await recordPayment({
       storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 40000,
       recordedById: userId, allocations: [{ receivableId: receivableBId, amount: 40000 }],
-      fieldReturnId: returnId, idempotencyKey: "test-draw-2",
+      fieldReturnId: returnId, idempotencyKey: `test-draw-2-${token}`,
     });
 
     const row = await prisma.payment.findUnique({
@@ -447,15 +447,34 @@ d("recordPayment (test bed only)", () => {
     const first = await recordPayment({
       storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 100000,
       recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 100000 }],
-      fieldReturnId: returnId, idempotencyKey: "test-draw-1",
+      fieldReturnId: returnId, idempotencyKey: `test-draw-1-${token}`,
     });
     await voidPayment({ paymentId: first.paymentId, reason: "test", voidedById: userId });
 
     const second = await recordPayment({
       storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 100000,
       recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 100000 }],
-      fieldReturnId: returnId, idempotencyKey: "test-draw-2",
+      fieldReturnId: returnId, idempotencyKey: `test-draw-2-${token}`,
     });
     expect(second.paymentId).not.toBe(first.paymentId);
+  });
+
+  it("rejects a draw against a retur with no frozen value yet", async () => {
+    await prisma.fieldReturn.update({ where: { id: returnId }, data: { totalValue: null } });
+    const err = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 1000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 1000 }],
+      fieldReturnId: returnId,
+    }).catch((e) => e);
+    expect(err.code).toBe("NOT_VALUED");
+  });
+
+  it("rejects a draw naming a retur that does not exist", async () => {
+    const err = await recordPayment({
+      storeId, paidAt: new Date(), method: "RETUR_OFFSET", amount: 1000,
+      recordedById: userId, allocations: [{ receivableId: receivableAId, amount: 1000 }],
+      fieldReturnId: `does-not-exist-${token}`,
+    }).catch((e) => e);
+    expect(err.code).toBe("NOT_FOUND");
   });
 });
