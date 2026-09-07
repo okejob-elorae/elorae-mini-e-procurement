@@ -269,13 +269,17 @@ describe("buildHeadroomCheck", () => {
     expect(buildHeadroomCheck([{ outstandingAmount: 60000 }], specs, new Set<string>()).status).toBe("FAIL");
   });
 
+  /**
+   * The headroom here is deliberately smaller than the unkeyed component alone. Sizing it to match
+   * would pass whether that component is counted or dropped, which is what the first version of
+   * this spec did — a null-keyed retur deduction excluded alongside the posted `k1` would leave
+   * `totalOwed` at zero and still read PASS.
+   */
   it("always counts a component with no idempotency key, since it can never have posted", () => {
-    const check = buildHeadroomCheck(
-      [{ outstandingAmount: 60000 }],
-      [spec({ amount: 60000, key: "k1" }), spec({ amount: 60000, key: null })],
-      new Set(["k1"]),
-    );
-    expect(check.status).toBe("FAIL");
+    const posted = spec({ amount: 60000, key: "k1" });
+    const unkeyed = spec({ amount: 60000, key: null });
+    expect(buildHeadroomCheck([{ outstandingAmount: 30000 }], [posted, unkeyed], new Set(["k1"])).status).toBe("FAIL");
+    expect(buildHeadroomCheck([{ outstandingAmount: 30000 }], [posted], new Set(["k1"])).status).toBe("PASS");
   });
 
   it("ignores zero-amount components", () => {
