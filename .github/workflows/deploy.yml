@@ -252,6 +252,14 @@ jobs:
           script: |
             set -euo pipefail
             cd /srv/elorae
+            # Reclaim BEFORE pulling, not only after. The post-deploy prune below cannot
+            # recover a disk that is already full: the pull fails, the job exits, and the
+            # prune never runs — so every out-of-space failure guarantees the next one and
+            # only a manual SSH breaks the loop. That deadlock cost three consecutive
+            # deploys (2026-09-07). This copy runs unconditionally and keeps a shorter
+            # window than the post-deploy one, because at this point the disk has already
+            # proven too small for 14 days of sha-tagged images.
+            docker image prune -a --filter "until=72h" -f || true
             docker compose -f docker-compose.prod.yml pull api
             docker compose -f docker-compose.prod.yml up -d --no-build --wait --wait-timeout 180 api
             # Assert the deployed image is the one we asked for. `up -d` is a no-op
@@ -316,6 +324,10 @@ jobs:
           script: |
             set -euo pipefail
             cd /srv/elorae
+            # See deploy-api: reclaim before the pull, because a post-deploy prune cannot
+            # rescue a disk that is already full. The web image is the larger of the two,
+            # so this job is the one that hits the wall first.
+            docker image prune -a --filter "until=72h" -f || true
             docker compose -f docker-compose.prod.yml pull web
             docker compose -f docker-compose.prod.yml up -d --no-build --wait --wait-timeout 180 web
             # Assert the deployed image is the one we asked for. `up -d` is a no-op
