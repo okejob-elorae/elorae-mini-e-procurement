@@ -1,7 +1,17 @@
-/** Match the white overlay box in PackerCameraKiosk (86% × 38%, centered). */
-const CROP_WIDTH_RATIO = 0.86;
-const CROP_HEIGHT_RATIO = 0.38;
-const UPSCALE = 3;
+import { extractTrackingCandidate, isAcceptableScanCode } from "@/lib/packer/barcode";
+
+/**
+ * Keep barcode bars sharp — Code128 on Shopee labels dies if we downscale too hard.
+ * Target: reliable read in <2s on a focused webcam frame.
+ */
+const CROP_VARIANTS = [
+  { w: 0.92, h: 0.32 }, // guide-box style (wide barcode strip)
+  { w: 0.8, h: 0.22 }, // tighter on bars only
+  { w: 0.98, h: 0.45 }, // looser fallback
+] as const;
+
+const MAX_DECODE_W = 1400;
+const MAX_DECODE_H = 700;
 
 type NativeDetector = {
   detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue?: string }>>;
@@ -9,6 +19,11 @@ type NativeDetector = {
 
 type ZxingReader = {
   decodeFromCanvas: (canvas: HTMLCanvasElement) => { getText: () => string };
+};
+
+type ZbarSymbol = {
+  decode: () => string;
+  typeName?: string;
 };
 
 function createNativeDetector(): NativeDetector | null {
@@ -19,19 +34,7 @@ function createNativeDetector(): NativeDetector | null {
   if (typeof Ctor !== "function") return null;
   try {
     return new Ctor({
-      formats: [
-        "code_128",
-        "code_39",
-        "ean_13",
-        "ean_8",
-        "upc_a",
-        "upc_e",
-        "codabar",
-        "itf",
-        "qr_code",
-        "pdf417",
-        "data_matrix",
-      ],
+      formats: ["code_128", "code_39", "codabar", "itf"],
     });
   } catch {
     try {
@@ -42,77 +45,36 @@ function createNativeDetector(): NativeDetector | null {
   }
 }
 
-function drawVideoToCanvas(
-  video: HTMLVideoElement,
-  canvas: HTMLCanvasElement,
-  crop: boolean,
-): void {
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  if (!vw || !vh) return;
-
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return;
-
-  if (!crop) {
-    canvas.width = Math.min(1920, vw);
-    canvas.height = Math.min(1080, vh);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(video, 0, 0, vw, vh, 0, 0, canvas.width, canvas.height);
-    return;
-  }
-
-  const cw = Math.floor(vw * CROP_WIDTH_RATIO);
-  const ch = Math.floor(vh * CROP_HEIGHT_RATIO);
-  const sx = Math.floor((vw - cw) / 2);
-  const sy = Math.floor((vh - ch) / 2);
-  canvas.width = Math.min(1920, cw * UPSCALE);
-  canvas.height = Math.min(1080, ch * UPSCALE);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(video, sx, sy, cw, ch, 0, 0, canvas.width, canvas.height);
+function toScanCode(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const token = extractTrackingCandidate(raw);
+  if (!token || !isAcceptableScanCode(token)) return null;
+  return token;
 }
 
-/** Grayscale + contrast stretch helps barcodes on glossy phone screens. */
-function enhanceForBarcode(source: HTMLCanvasElement): HTMLCanvasElement {
-  const out = document.createElement("canvas");
-  out.width = source.width;
-  out.height = source.height;
-  const ctx = source.getContext("2d", { willReadFrequently: true });
-  const outCtx = out.getContext("2d", { willReadFrequently: true });
-  if (!ctx || !outCtx) return source;
-
-  const img = ctx.getImageData(0, 0, source.width, source.height);
-  const d = img.data;
-  let min = 255;
-  let max = 0;
-
-  for (let i = 0; i < d.length; i += 4) {
-    const g = (d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114) | 0;
-    d[i] = d[i + 1] = d[i + 2] = g;
-    if (g < min) min = g;
-    if (g > max) max = g;
+function pickBestRaw(values: Array<string | undefined | null>): string | null {
+  let best: string | null = null;
+  let bestDigits = 0;
+  for (const raw of values) {
+    const token = toScanCode(raw);
+    if (!token) continue;
+    const digits = (token.match(/\d/g) ?? []).length;
+    if (!best || digits > bestDigits || (digits === bestDigits && token.length > best.length)) {
+      best = token;
+      bestDigits = digits;
+    }
   }
-
-  const range = Math.max(1, max - min);
-  for (let i = 0; i < d.length; i += 4) {
-    const v = (((d[i]! - min) * 255) / range) | 0;
-    d[i] = d[i + 1] = d[i + 2] = v;
-    d[i + 3] = 255;
-  }
-
-  outCtx.putImageData(img, 0, 0);
-  return out;
+  return best;
 }
 
 async function tryNative(
   detector: NativeDetector | null,
-  canvas: HTMLCanvasElement,
+  source: ImageBitmapSource,
 ): Promise<string | null> {
   if (!detector) return null;
   try {
-    const codes = await detector.detect(canvas);
-    const value = codes[0]?.rawValue?.trim();
-    return value || null;
+    const codes = await detector.detect(source);
+    return pickBestRaw(codes.map((c) => c.rawValue));
   } catch {
     return null;
   }
@@ -125,89 +87,208 @@ function tryZxing(
 ): string | null {
   try {
     const result = reader.decodeFromCanvas(canvas);
-    const text = result.getText()?.trim();
-    return text || null;
+    return toScanCode(result.getText()?.trim());
   } catch (e) {
     if (e instanceof NotFoundException) return null;
     return null;
   }
 }
 
-async function decodeCanvas(
-  native: NativeDetector | null,
-  zxing: ZxingReader,
-  NotFoundException: new (...args: never[]) => Error,
+async function tryZbar(
+  scanImageData: (data: ImageData) => Promise<ZbarSymbol[]>,
   canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
 ): Promise<string | null> {
-  const plain =
-    (await tryNative(native, canvas)) || tryZxing(zxing, canvas, NotFoundException);
-  if (plain) return plain;
+  try {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const symbols = await scanImageData(imageData);
+    return pickBestRaw(symbols.map((s) => {
+      try {
+        return s.decode();
+      } catch {
+        return null;
+      }
+    }));
+  } catch {
+    return null;
+  }
+}
 
-  const enhanced = enhanceForBarcode(canvas);
-  return (
-    (await tryNative(native, enhanced)) ||
-    tryZxing(zxing, enhanced, NotFoundException)
-  );
+function enhanceContrast(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D): void {
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  let min = 255;
+  let max = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const g = (d[i]! * 0.299 + d[i + 1]! * 0.587 + d[i + 2]! * 0.114) | 0;
+    d[i] = g;
+    if (g < min) min = g;
+    if (g > max) max = g;
+  }
+  const range = Math.max(1, max - min);
+  for (let i = 0; i < d.length; i += 4) {
+    const v = (((d[i]! - min) * 255) / range) | 0;
+    // Soft threshold helps Code128 under uneven light.
+    const bin = v > 140 ? 255 : v < 90 ? 0 : v;
+    d[i] = d[i + 1] = d[i + 2] = bin;
+    d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function drawCropVariant(
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  ratioW: number,
+  ratioH: number,
+): boolean {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return false;
+
+  const cw = Math.floor(vw * ratioW);
+  const ch = Math.floor(vh * ratioH);
+  const sx = Math.floor((vw - cw) / 2);
+  const sy = Math.floor((vh - ch) / 2);
+
+  // Preserve resolution — only shrink if larger than max.
+  const outW = Math.min(MAX_DECODE_W, cw);
+  const outH = Math.min(MAX_DECODE_H, ch);
+  if (canvas.width !== outW) canvas.width = outW;
+  if (canvas.height !== outH) canvas.height = outH;
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(video, sx, sy, cw, ch, 0, 0, outW, outH);
+  return outW > 40 && outH > 20;
 }
 
 async function loadZxingReader(): Promise<{
   reader: ZxingReader;
   NotFoundException: new (...args: never[]) => Error;
-}> {
-  const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType, NotFoundException }] =
-    await Promise.all([import("@zxing/browser"), import("@zxing/library")]);
+} | null> {
+  try {
+    const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType, NotFoundException }] =
+      await Promise.all([import("@zxing/browser"), import("@zxing/library")]);
 
-  const hints = new Map();
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-    BarcodeFormat.CODE_128,
-    BarcodeFormat.CODE_39,
-    BarcodeFormat.EAN_13,
-    BarcodeFormat.EAN_8,
-    BarcodeFormat.ITF,
-    BarcodeFormat.CODABAR,
-    BarcodeFormat.UPC_A,
-    BarcodeFormat.UPC_E,
-    BarcodeFormat.QR_CODE,
-    BarcodeFormat.DATA_MATRIX,
-    BarcodeFormat.PDF_417,
-  ]);
-  hints.set(DecodeHintType.TRY_HARDER, true);
+    const hints = new Map();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.CODABAR,
+      BarcodeFormat.ITF,
+    ]);
+    hints.set(DecodeHintType.TRY_HARDER, true);
 
-  return {
-    reader: new BrowserMultiFormatReader(hints),
-    NotFoundException,
-  };
+    return {
+      reader: new BrowserMultiFormatReader(hints),
+      NotFoundException,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadZbarScanner(): Promise<
+  ((data: ImageData) => Promise<ZbarSymbol[]>) | null
+> {
+  try {
+    // Inlined WASM build — avoids separate .wasm fetch issues under Next/Turbopack.
+    const mod = await import("@undecaf/zbar-wasm/dist/inlined/index.mjs");
+    return mod.scanImageData as (data: ImageData) => Promise<ZbarSymbol[]>;
+  } catch {
+    try {
+      const mod = await import("@undecaf/zbar-wasm");
+      return mod.scanImageData as (data: ImageData) => Promise<ZbarSymbol[]>;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export async function createVideoBarcodeScanner(video: HTMLVideoElement) {
   const native = createNativeDetector();
-  const { reader, NotFoundException } = await loadZxingReader();
+  let zxing: {
+    reader: ZxingReader;
+    NotFoundException: new (...args: never[]) => Error;
+  } | null = null;
+  let zbarScan: ((data: ImageData) => Promise<ZbarSymbol[]>) | null = null;
+  let zxingLoading: Promise<typeof zxing> | null = null;
+  let zbarLoading: Promise<typeof zbarScan> | null = null;
+
   const crop = document.createElement("canvas");
-  const full = document.createElement("canvas");
+  const cropCtx = crop.getContext("2d", { willReadFrequently: true });
   let busy = false;
+  let variantIdx = 0;
+
+  async function ensureZxing() {
+    if (zxing) return zxing;
+    if (!zxingLoading) {
+      zxingLoading = loadZxingReader().then((loaded) => {
+        zxing = loaded;
+        return loaded;
+      });
+    }
+    return zxingLoading;
+  }
+
+  async function ensureZbar() {
+    if (zbarScan) return zbarScan;
+    if (!zbarLoading) {
+      zbarLoading = loadZbarScanner().then((loaded) => {
+        zbarScan = loaded;
+        return loaded;
+      });
+    }
+    return zbarLoading;
+  }
+
+  // Preload both heavy decoders so first focused frame can hit <2s.
+  void ensureZbar();
+  void ensureZxing();
 
   return {
     async scan(): Promise<string | null> {
-      if (busy || video.readyState < 2 || !video.videoWidth) return null;
+      if (busy || video.readyState < 2 || !video.videoWidth || !cropCtx) return null;
       busy = true;
       try {
-        drawVideoToCanvas(video, crop, true);
-        if (crop.width > 0 && crop.height > 0) {
-          const cropHit = await decodeCanvas(native, reader, NotFoundException, crop);
-          if (cropHit) return cropHit;
+        // Fast native pass on live video.
+        const liveHit = await tryNative(native, video);
+        if (liveHit) return liveHit;
+
+        const variant = CROP_VARIANTS[variantIdx % CROP_VARIANTS.length]!;
+        variantIdx += 1;
+        if (!drawCropVariant(video, crop, cropCtx, variant.w, variant.h)) return null;
+
+        const cropNative = await tryNative(native, crop);
+        if (cropNative) return cropNative;
+
+        // ZBar first — usually strongest on 1D Code128 shipping labels.
+        const zbar = await ensureZbar();
+        if (zbar) {
+          const z1 = await tryZbar(zbar, crop, cropCtx);
+          if (z1) return z1;
+
+          // Contrast + soft threshold, then ZBar again.
+          enhanceContrast(crop, cropCtx);
+          const z2 = await tryZbar(zbar, crop, cropCtx);
+          if (z2) return z2;
         }
 
-        drawVideoToCanvas(video, full, false);
-        if (full.width > 0 && full.height > 0) {
-          return decodeCanvas(native, reader, NotFoundException, full);
+        // ZXing last resort on the (possibly enhanced) canvas.
+        const loaded = await ensureZxing();
+        if (loaded) {
+          const zx = tryZxing(loaded.reader, crop, loaded.NotFoundException);
+          if (zx) return zx;
         }
+
         return null;
       } finally {
         busy = false;
       }
     },
-    stop() {
-      // decodeFromCanvas is stateless per frame; no continuous stream to tear down.
+    async stop() {
+      // nothing persistent to tear down
     },
   };
 }

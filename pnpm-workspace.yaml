@@ -14,5 +14,5 @@ allowBuilds:
   prisma: true
   protobufjs: false
   sharp: true
-  tesseract.js: set this to true or false
+  tesseract.js: true
   unrs-resolver: true

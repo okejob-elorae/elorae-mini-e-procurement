@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { pickBestTrackingMatch } from "@/lib/packer/barcode";
 
 export type PackingVideoListItem = {
   id: string;
@@ -81,6 +82,91 @@ export type PackerOrderOption = {
   grandTotal: string;
   itemCount: number;
 };
+
+/** Orders waiting to be packed/recorded: have resi, not canceled, no packing video yet. */
+export type PackerPoolOrder = {
+  id: string;
+  salesorderNo: string;
+  channelOrderNo: string | null;
+  customerName: string | null;
+  trackingNumber: string;
+  courier: string | null;
+  transactionDate: Date;
+  channel: string;
+};
+
+export async function listPackerPoolOrders(take = 200): Promise<PackerPoolOrder[]> {
+  const rows = await prisma.salesOrder.findMany({
+    where: {
+      isCanceled: false,
+      packingVideo: null,
+      AND: [
+        { trackingNumber: { not: null } },
+        { NOT: { trackingNumber: "" } },
+      ],
+    },
+    orderBy: { transactionDate: "desc" },
+    take,
+    select: {
+      id: true,
+      salesorderNo: true,
+      channelOrderNo: true,
+      customerName: true,
+      trackingNumber: true,
+      courier: true,
+      transactionDate: true,
+      channel: true,
+    },
+  });
+
+  return rows
+    .filter((r): r is typeof r & { trackingNumber: string } => Boolean(r.trackingNumber?.trim()))
+    .map((r) => ({
+      id: r.id,
+      salesorderNo: r.salesorderNo,
+      channelOrderNo: r.channelOrderNo,
+      customerName: r.customerName,
+      trackingNumber: r.trackingNumber.trim(),
+      courier: r.courier,
+      transactionDate: r.transactionDate,
+      channel: String(r.channel),
+    }));
+}
+
+/** Resolve order by scanned tracking / resi (exact or LIKE / contains). */
+export async function findSalesOrderByTrackingNumber(
+  trackingRaw: string,
+): Promise<{ id: string; trackingNumber: string; salesorderNo: string } | null> {
+  const key = trackingRaw.trim();
+  if (!key) return null;
+
+  const rows = await prisma.salesOrder.findMany({
+    where: {
+      isCanceled: false,
+      AND: [
+        { trackingNumber: { not: null } },
+        { NOT: { trackingNumber: "" } },
+      ],
+    },
+    select: {
+      id: true,
+      trackingNumber: true,
+      salesorderNo: true,
+    },
+    take: 500,
+  });
+
+  const candidates = rows.filter(
+    (r): r is typeof r & { trackingNumber: string } => Boolean(r.trackingNumber?.trim()),
+  );
+  const hit = pickBestTrackingMatch(candidates, key, (r) => r.trackingNumber);
+  if (!hit) return null;
+  return {
+    id: hit.id,
+    trackingNumber: hit.trackingNumber.trim(),
+    salesorderNo: hit.salesorderNo,
+  };
+}
 
 /** Orders that do not yet have a packing video. */
 export async function listOrdersWithoutPackingVideo(

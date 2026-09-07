@@ -52,6 +52,7 @@ type Props = {
   shippedByName: string | null;
   trackingNumber: string | null;
   courierName: string | null;
+  packingVideoUrl?: string | null;
 };
 
 export function FulfillmentCard(props: Props) {
@@ -137,14 +138,42 @@ export function FulfillmentCard(props: Props) {
       </div>
 
       {props.trackingNumber && (
-        <div className="text-sm pt-2 border-t">
-          <span className="text-muted-foreground">{t("tracking")}: </span>
-          <span className="font-mono">
-            {props.courierName ? `${props.courierName} · ` : ""}
-            {props.trackingNumber}
-          </span>
+        <div className="text-sm pt-2 border-t space-y-1">
+          <div>
+            <span className="text-muted-foreground">{t("tracking")}: </span>
+            <span className="font-mono">
+              {props.courierName ? `${props.courierName} · ` : ""}
+              {props.trackingNumber}
+            </span>
+          </div>
+          {props.packingVideoUrl ? (
+            <div>
+              <span className="text-muted-foreground">Video packing: </span>
+              <a
+                href={props.packingVideoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
+              >
+                Buka / unduh video
+              </a>
+            </div>
+          ) : null}
         </div>
       )}
+      {!props.trackingNumber && props.packingVideoUrl ? (
+        <div className="text-sm pt-2 border-t">
+          <span className="text-muted-foreground">Video packing: </span>
+          <a
+            href={props.packingVideoUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
+          >
+            Buka / unduh video
+          </a>
+        </div>
+      ) : null}
 
       {props.isLocked ? (
         <div className="text-sm text-muted-foreground italic">{t("cancelledLocked")}</div>

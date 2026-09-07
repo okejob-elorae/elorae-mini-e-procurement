@@ -1,7 +1,7 @@
-import { PackerCameraKiosk } from "./PackerCameraKiosk";
+import { PackerDashboard } from "./PackerDashboard";
 
 export const dynamic = "force-dynamic";
 
 export default function PackerHomePage() {
-  return <PackerCameraKiosk />;
+  return <PackerDashboard />;
 }

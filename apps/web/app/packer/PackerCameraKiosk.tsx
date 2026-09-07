@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { barcodesMatch, normalizeBarcode } from "@/lib/packer/barcode";
+import { barcodesMatch, isAcceptableScanCode, normalizeScanCode } from "@/lib/packer/barcode";
 import { PackerSignOutButton } from "./PackerSignOutButton";
 
 type Phase = "ready" | "recording" | "uploading" | "upload_failed";
@@ -15,8 +15,8 @@ type PendingUpload = {
 
 /** Debounce duplicate start scans (camera may read the same label repeatedly). */
 const READY_SCAN_COOLDOWN_MS = 1500;
-/** Ignore end scans right after start — label often still in frame. */
-const MIN_RECORD_BEFORE_END_MS = 1500;
+/** Silent: ignore end scans for 10s after start (avoids multi-scan stop). */
+const MIN_RECORD_BEFORE_END_MS = 10_000;
 /** Debounce mismatch toasts while recording. */
 const MISMATCH_DEBOUNCE_MS = 2000;
 /** 720p cap so packing clips stay small enough to upload on warehouse uplink. */
@@ -156,6 +156,29 @@ export function PackerCameraKiosk() {
     toast.message("Rekaman dibuang");
   }, [clearPendingUpload]);
 
+  const restartRecording = useCallback(() => {
+    if (phaseRef.current !== "recording") return;
+    stopDurationTick();
+    stopInProgressRef.current = false;
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      try {
+        recorder.stop();
+      } catch {
+        // ignore
+      }
+    }
+    recorderRef.current = null;
+    chunksRef.current = [];
+    startBarcodeRef.current = "";
+    setDurationSec(0);
+    setError("");
+    setPhaseBoth("ready");
+    focusScannerInput();
+  }, []);
+
   const stopAndSubmit = useCallback(() => {
     if (stopInProgressRef.current) return;
     const recorder = recorderRef.current;
@@ -191,8 +214,8 @@ export function PackerCameraKiosk() {
 
   const onBarcode = useCallback(
     (raw: string) => {
-      const code = normalizeBarcode(raw);
-      if (!code) return;
+      const code = normalizeScanCode(raw);
+      if (!isAcceptableScanCode(raw)) return;
 
       const current = phaseRef.current;
       if (current === "uploading" || current === "upload_failed") return;
@@ -204,19 +227,21 @@ export function PackerCameraKiosk() {
         lastReadyScanAtRef.current = now;
         setError("");
         startRecording(code);
+        toast.message(`Start: ${code}`);
         return;
       }
 
       if (current === "recording") {
+        // Silent gate: block end-scan until min duration (no UI message).
         if (now - startedAtRef.current < MIN_RECORD_BEFORE_END_MS) return;
 
         if (!barcodesMatch(startBarcodeRef.current, code)) {
           if (now - lastMismatchAtRef.current < MISMATCH_DEBOUNCE_MS) return;
           lastMismatchAtRef.current = now;
           setError(
-            `Barcode tidak sama. Awal: "${startBarcodeRef.current}" · Scan: "${code}"`,
+            `Resi tidak sama. Awal: "${startBarcodeRef.current}" · Scan: "${code}"`,
           );
-          toast.error("Barcode tidak sama");
+          toast.error("Resi tidak sama");
           return;
         }
 
@@ -270,7 +295,8 @@ export function PackerCameraKiosk() {
     const video = videoRef.current;
     if (!video) return;
     let alive = true;
-    let scanner: { scan: () => Promise<string | null>; stop: () => void } | null = null;
+    let scanner: { scan: () => Promise<string | null>; stop: () => void | Promise<void> } | null =
+      null;
 
     void import("@/lib/packer/scan-frame")
       .then(({ createVideoBarcodeScanner }) => createVideoBarcodeScanner(video))
@@ -307,7 +333,7 @@ export function PackerCameraKiosk() {
     return () => {
       alive = false;
       if (detectTimerRef.current != null) window.clearTimeout(detectTimerRef.current);
-      scanner?.stop();
+      void scanner?.stop();
     };
   }, [onBarcode]);
 
@@ -352,7 +378,7 @@ export function PackerCameraKiosk() {
             <div className="h-[38%] w-[86%] max-w-4xl rounded-xl border-2 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
           </div>
           <p className="pointer-events-none absolute bottom-28 left-1/2 w-[min(90vw,28rem)] -translate-x-1/2 text-center text-sm text-white/90 drop-shadow">
-            Luruskan barcode Code128 di dalam kotak. Naikkan brightness HP, hindari silau.
+            Arahkan barcode resi ke kotak. Scan 1 → pool · Scan 2 (resi sama) → rekam.
             {scanning ? " Mencari…" : ""} Scanner USB juga didukung.
           </p>
         </>
@@ -372,7 +398,16 @@ export function PackerCameraKiosk() {
         >
           {statusLabel}
         </div>
-        <div className="pointer-events-auto rounded-full bg-black/50 px-3 py-2">
+        <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-black/50 px-3 py-2">
+          {phase === "recording" && (
+            <button
+              type="button"
+              onClick={restartRecording}
+              className="text-xs text-white/80 underline-offset-2 hover:text-white hover:underline"
+            >
+              Mulai ulang
+            </button>
+          )}
           <PackerSignOutButton />
         </div>
       </div>

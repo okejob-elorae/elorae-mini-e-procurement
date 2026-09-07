@@ -68,6 +68,7 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
         shippedByName={order.shippedByName}
         trackingNumber={order.trackingNumber}
         courierName={order.courierName}
+        packingVideoUrl={order.packingVideoUrl}
       />
 
       {(order.status === "SHIPPED" || order.status === "COMPLETED" || order.fulfillmentStatus === "SHIPPED") && (
@@ -115,6 +116,19 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
           <Field label={t("detail.field.paymentDate")} value={order.paymentDate ? formatDateTime(order.paymentDate, locale) : null} />
           <Field label={t("detail.field.courier")} value={order.courier} />
           <Field label={t("detail.field.trackingNumber")} value={order.trackingNumber} />
+          {order.packingVideoUrl ? (
+            <div>
+              <div className="text-sm text-muted-foreground">Video packing</div>
+              <a
+                href={order.packingVideoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="break-all text-sm font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
+              >
+                {order.packingVideoUrl}
+              </a>
+            </div>
+          ) : null}
         </Card>
       </div>
 

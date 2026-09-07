@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, isConfigured } from "@/lib/r2";
 import { prisma } from "@elorae/db";
-import { getFallbackSalesOrderId } from "@/lib/packer/queries";
+import { getFallbackSalesOrderId, findSalesOrderByTrackingNumber } from "@/lib/packer/queries";
 import {
   upsertPackingVideo,
   PackerOrderNotFoundError,
@@ -41,12 +41,17 @@ export async function POST(req: NextRequest) {
 
   const file = form.get("file") as File | null;
   let salesOrderId = (form.get("salesOrderId") as string | null)?.trim() || "";
+  const barcode = (form.get("barcode") as string | null)?.trim() || "";
   const durationRaw = form.get("durationSec") as string | null;
 
   if (!file) {
     return NextResponse.json({ error: "file required" }, { status: 400 });
   }
 
+  if (!salesOrderId && barcode) {
+    const matched = await findSalesOrderByTrackingNumber(barcode);
+    if (matched) salesOrderId = matched.id;
+  }
   if (!salesOrderId) {
     salesOrderId = (await getFallbackSalesOrderId()) ?? "";
   }
