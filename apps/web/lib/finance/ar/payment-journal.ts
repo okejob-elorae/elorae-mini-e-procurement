@@ -7,12 +7,18 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * CASH lands in the cash account, TRANSFER in the bank account, RETUR_OFFSET reverses the
  * revenue leg it never really collected — the store settled with goods, not money, so the
  * "receipt" here is a revenue counter-entry (DR SALES_REVENUE / CR AR), the same shape a
- * marketplace sales-return revenue leg already posts. Both callers below route through this
- * one function, so the void reversal is correct for free.
+ * marketplace sales-return revenue leg already posts. PROGRAM_DEDUCTION and ADMIN_FEE are
+ * settlement deductions the business absorbs as a cost against revenue rather than cash or
+ * bank. Both callers below route through this one function, so the void reversal is correct
+ * for free.
  */
-function debitRole(method: "CASH" | "TRANSFER" | "RETUR_OFFSET"): "CASH" | "BANK" | "SALES_REVENUE" {
+function debitRole(
+  method: "CASH" | "TRANSFER" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE",
+): "CASH" | "BANK" | "SALES_REVENUE" | "TRADE_PROGRAM_EXPENSE" | "ADMIN_FEE_EXPENSE" {
   if (method === "CASH") return "CASH";
   if (method === "TRANSFER") return "BANK";
+  if (method === "PROGRAM_DEDUCTION") return "TRADE_PROGRAM_EXPENSE";
+  if (method === "ADMIN_FEE") return "ADMIN_FEE_EXPENSE";
   return "SALES_REVENUE";
 }
 

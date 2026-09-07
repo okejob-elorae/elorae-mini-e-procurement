@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { agingBucket, AGING_BUCKETS, daysOverdue, type AgingBucket } from "./aging";
+import type { PaymentMethodValue } from "./payment-method-display";
 
 export type ReceivableFilters = {
   storeId?: string;
@@ -350,7 +351,7 @@ export async function getStorePiutangSummary(
 
 export type PaymentFilters = {
   storeId?: string;
-  method?: "CASH" | "TRANSFER" | "RETUR_OFFSET";
+  method?: PaymentMethodValue;
   status?: "POSTED" | "VOIDED";
   dateFrom?: Date;
   dateTo?: Date;

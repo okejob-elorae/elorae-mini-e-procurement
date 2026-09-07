@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, ExternalLink, Loader2, Receipt, XCircle } from "lucide-react";
 import type { getPayment } from "@/lib/finance/ar/queries";
+import { paymentMethodLabelKey } from "@/lib/finance/ar/payment-method-display";
 import {
   voidPaymentAction,
   postPaymentJournalAction,
@@ -60,12 +61,6 @@ function formatRupiahExact(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function methodLabelKey(method: string): "methodCash" | "methodTransfer" | "methodReturOffset" {
-  if (method === "CASH") return "methodCash";
-  if (method === "TRANSFER") return "methodTransfer";
-  return "methodReturOffset";
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -256,7 +251,7 @@ export function PaymentDetailClient({ payment: p, receiptJournalRetryable, voidJ
         <h2 className="font-semibold">{t("detail.factsTitle")}</h2>
         <Field label={t("colStore")} value={p.store.name} />
         <Field label={t("detail.paidAtLabel")} value={formatDateOnlyJakarta(p.paidAt)} />
-        <Field label={t("colMethod")} value={t(methodLabelKey(p.method))} />
+        <Field label={t("colMethod")} value={t(paymentMethodLabelKey(p.method))} />
         <Field label={t("detail.amountLabel")} value={formatRupiahExact(p.amount)} />
         <Field label={t("detail.referenceLabel")} value={p.reference} />
         {p.returOffsetFor && (

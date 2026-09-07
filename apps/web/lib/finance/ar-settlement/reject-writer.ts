@@ -1,0 +1,205 @@
+import { prisma } from "@elorae/db";
+import { runSerializable } from "@/lib/db/tx-retry";
+import { sendNotificationToUsers } from "@/lib/notifications/recipients";
+import { SettlementError } from "./errors";
+
+/**
+ * `AuditLog.reason` is a bare `String?` in the Prisma schema — no `@db.Text` — which is MySQL
+ * `VARCHAR(191)`. `StoreSettlement.rejectReason` is `@db.Text` and has no such ceiling on its own,
+ * but this writer persists the same reason into a `SETTLEMENT_REJECT` `AuditLog` row inside its own
+ * transaction (see the write below for why it lives here rather than in the action), so 191 is the
+ * real ceiling regardless of which column is checked first. See `approve-writer.ts`'s identical
+ * comment for the override reason, which shares the same constraint for the same reason.
+ */
+const MAX_REASON_LENGTH = 191;
+
+/**
+ * `NotificationQueue.body` is a bare `String` too, i.e. `VARCHAR(191)` again — and the rejection
+ * body DERIVES from a reason that is itself allowed all 191 characters, with `Pelunasan <docNo>
+ * ditolak: ` prepended. A `BKM/`-prefixed docNo costs roughly 33 characters, so the body overflows
+ * well before either input does. The failure is silent in the worst way: the truncation error lands
+ * inside this writer's best-effort notification catch, the action still returns `{ ok: true }`, the
+ * operator sees a successful rejection, and the salesman is never told. Bound the derived value
+ * rather than widening the column — the full reason is already durable on
+ * `StoreSettlement.rejectReason`, which is `@db.Text`.
+ */
+const MAX_NOTIFICATION_BODY_LENGTH = 191;
+
+/**
+ * Fits the rejection notice inside `NotificationQueue.body`, cutting the REASON rather than the
+ * sentence around it, and marking the cut with an ellipsis — a reason that just stops mid-word
+ * reads as the whole reason, which on a rejection notice is the difference between "refile without
+ * the program deduction" and "refile".
+ *
+ * The reason is dropped entirely in the degenerate case where the prefix alone fills the column, so
+ * the salesman still learns WHICH document was rejected and can open it for the full text.
+ */
+export function buildRejectionBody(docNo: string, reason: string): string {
+  const prefix = `Pelunasan ${docNo} ditolak: `;
+  const room = MAX_NOTIFICATION_BODY_LENGTH - prefix.length;
+  if (room <= 0) return `Pelunasan ${docNo} ditolak`.slice(0, MAX_NOTIFICATION_BODY_LENGTH);
+  if (reason.length <= room) return `${prefix}${reason}`;
+  return `${prefix}${sliceCodeUnitsWholeCharacters(reason, room - 1)}…`;
+}
+
+/**
+ * `String.prototype.slice` cuts on UTF-16 code units, so a character outside the BMP — an emoji,
+ * most obviously — straddling the boundary is left as a lone high surrogate. Node's UTF-8 encoder
+ * has nothing valid to write for one and substitutes U+FFFD, so the salesman's rejection notice
+ * ends in a replacement character.
+ *
+ * The budget stays in CODE UNITS rather than code points, because it exists to protect a
+ * `VARCHAR(191)` column that this codebase measures with `.length` everywhere else; dropping the
+ * orphaned surrogate can only make the result shorter, never longer, so the bound still holds.
+ *
+ * A lone high surrogate can only end up last here by having been split off its pair, or by having
+ * been unpaired in the input already — both are dropped, and the second was never renderable.
+ */
+function sliceCodeUnitsWholeCharacters(value: string, maxCodeUnits: number): string {
+  const cut = value.slice(0, maxCodeUnits);
+  if (cut.length === 0) return cut;
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
+export type RejectSettlementInput = {
+  settlementId: string;
+  rejectedById: string;
+  reason: string;
+};
+
+export type RejectSettlementResult = { ok: true };
+
+/**
+ * Guarded exactly like `notifyCollectorOfOverdue` in `lib/finance/ar/overdue-sweep.ts` —
+ * `sendNotificationToUsers` carries no VITEST guard of its own, and this writer's specs share
+ * the `:3308` dev bed with real data and the real `FIREBASE_ADMIN_*` credentials
+ * `vitest.config.ts` loads from `apps/web/.env`. Without this a test run would write a real
+ * `NotificationQueue` row and attempt a real FCM push.
+ */
+async function notifySalesmanOfRejection(
+  salesman: { id: string; fcmToken: string | null },
+  payload: { title: string; body: string; data: Record<string, string> },
+): Promise<void> {
+  if (process.env.VITEST) return;
+  await sendNotificationToUsers([salesman], { type: "SETTLEMENT_REJECTED", ...payload });
+}
+
+/**
+ * Rejects a submitted store settlement: CAS-flips `PENDING -> REJECTED` and tells the salesman
+ * why, surfaced on the existing `/pwa/notifications` bell.
+ *
+ * Posts no journal and moves no money ITSELF, and reverses nothing either — there is no
+ * compensating path here for a `Payment` that already exists. The usual case is that none does: a
+ * settlement that never reached approval never posted a component. But `approveSettlement` is a
+ * resumable sequence rather than one transaction, so a run that posts a component and then throws
+ * leaves the document `PENDING` with a real `Payment` behind it, and rejecting it from there
+ * strands that payment attached to a `REJECTED` document. The finance approval screen surfaces
+ * exactly this case (`componentsTitleOrphaned` in `app/backoffice/finance/pelunasan/[id]`) and
+ * tells an admin to void the payments by hand; nothing here does it for them.
+ *
+ * A second call against a settlement that is no longer `PENDING` (already `REJECTED`, or since
+ * `APPROVED`) throws `NOT_PENDING`, the same shape as `rejectCollection`
+ * (`lib/finance/collections/reject-writer.ts`) — there is no crash-recovery concern to make this
+ * idempotent for: the whole state change is one serializable transaction, so a crash mid-flight
+ * leaves nothing partially applied. Only the notification runs after the transaction commits, and
+ * it is deliberately best-effort — wrapped so a delivery failure never turns an already-successful
+ * rejection into a thrown error, matching every other push notification in this codebase (none of
+ * which replay themselves on retry either).
+ */
+export async function rejectSettlement(input: RejectSettlementInput): Promise<RejectSettlementResult> {
+  const reason = input.reason.trim();
+  /*
+   * Same visible-content check as `approveSettlement`'s override reason, `rejectCollection` and
+   * `voidPayment`: a reason made only of zero-width/format characters (Unicode `Cf`, e.g. U+200B)
+   * or U+2800 BRAILLE PATTERN BLANK survives `.trim()` unchanged and would otherwise persist as a
+   * reject reason that renders blank.
+   */
+  const hasVisibleContent = /[^\s\p{Cf}⠀]/u.test(reason);
+  if (!hasVisibleContent) throw new SettlementError("MISSING_REASON", "A reject reason is required");
+  if (reason.length > MAX_REASON_LENGTH) throw new SettlementError("INPUT_TOO_LARGE");
+
+  const settlement = await runSerializable(async (tx) => {
+    const row = await tx.storeSettlement.findUnique({
+      where: { id: input.settlementId },
+      select: { id: true, docNo: true, status: true, salesmanId: true, storeId: true },
+    });
+    if (!row) throw new SettlementError("SETTLEMENT_NOT_FOUND");
+    if (row.status !== "PENDING") throw new SettlementError("NOT_PENDING");
+
+    /**
+     * The same guard `approveSettlement` runs before its own audit write, for the same reason.
+     * `StoreSettlement.reviewedBy` is an optional relation but `AuditLog.user` is a REQUIRED one,
+     * and under `relationMode = "prisma"` there is no database foreign key behind either — a
+     * dangling rejecter id would commit an audit row that throws `Inconsistent query result` on
+     * every later read through it. The blast radius is what earns the check rather than any live
+     * path to it: `getAuditLogs` and the dashboard's recent-activity feed both `include: { user }`
+     * across ALL audit rows, so one poisoned row takes the whole audit screen down, not just this
+     * settlement's history.
+     */
+    const rejecter = await tx.user.findUnique({
+      where: { id: input.rejectedById },
+      select: { id: true },
+    });
+    if (!rejecter) throw new SettlementError("REJECTER_NOT_FOUND");
+
+    const flipped = await tx.storeSettlement.updateMany({
+      where: { id: row.id, status: "PENDING" },
+      data: {
+        status: "REJECTED",
+        rejectReason: reason,
+        reviewedById: input.rejectedById,
+        reviewedAt: new Date(),
+      },
+    });
+    /*
+     * Zero rows matched means a concurrent call already moved this settlement off PENDING between
+     * the read above and this CAS — refuse rather than report success for a status flip that
+     * never happened.
+     */
+    if (flipped.count === 0) throw new SettlementError("NOT_PENDING");
+
+    /**
+     * Written here, not in the action, so it can never go missing. A process death between this
+     * transaction committing and the action's own `auditLog.create` would otherwise leave the
+     * rejection with no audit row and no way back to writing one: a retry against this settlement
+     * throws `NOT_PENDING` (there is no replay branch for reject — see the docstring above), so
+     * nothing past this transaction ever gets a second chance to create it. The CAS above
+     * guarantees this line runs at most once per rejection.
+     */
+    await tx.auditLog.create({
+      data: {
+        userId: input.rejectedById,
+        action: "SETTLEMENT_REJECT",
+        entityType: "StoreSettlement",
+        entityId: row.id,
+        reason,
+      },
+    });
+
+    return row;
+  });
+
+  const salesman = await prisma.user.findUnique({
+    where: { id: settlement.salesmanId },
+    select: { id: true, fcmToken: true },
+  });
+  if (salesman) {
+    try {
+      await notifySalesmanOfRejection(salesman, {
+        title: "Pelunasan ditolak",
+        body: buildRejectionBody(settlement.docNo, reason),
+        data: { settlementId: settlement.id, docNo: settlement.docNo, storeId: settlement.storeId },
+      });
+    } catch (e) {
+      /*
+       * Best-effort, mirroring `postArJournalSafely`'s own notification catch: the rejection
+       * already committed, so a delivery failure here must never surface as a thrown error and
+       * undo a state change that already happened.
+       */
+      console.error(`[rejectSettlement] notification delivery failed for settlement ${settlement.id}`, e);
+    }
+  }
+
+  return { ok: true };
+}

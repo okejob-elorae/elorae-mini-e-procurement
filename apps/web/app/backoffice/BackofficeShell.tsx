@@ -276,6 +276,11 @@ const navItems: NavItem[] = [
         href: "/backoffice/finance/payments",
         permission: PERMISSIONS.PAYMENTS_MANAGE,
       },
+      {
+        labelKey: "navFinanceStoreSettlements",
+        href: "/backoffice/finance/pelunasan",
+        permission: PERMISSIONS.COLLECTIONS_MANAGE,
+      },
     ],
   },
   {

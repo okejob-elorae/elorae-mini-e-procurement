@@ -337,10 +337,14 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       hole now that a consumer of retur value exists.
 - [ ] AR journals are not GL-cutover gated. `postPaymentReceiptJournal`
       (`apps/web/lib/finance/ar/payment-journal.ts`) credits `AR` unconditionally, so any payment —
-      cash or retur-offset, both routing through `debitRole` — against a backfilled receivable with
-      no revenue journal drives AR negative. Same shape as the settlement item already logged
-      above. The fix is one pass applying `classifySaleLeg`'s counterpart-journal gate across the
-      AR journals, covering both paths together.
+      cash, transfer, retur-offset, program-deduction or admin-fee, all five routing through the one
+      `debitRole` seam — against a backfilled receivable with no revenue journal drives AR negative.
+      Same shape as the settlement item already logged above. The hole got wider with the store
+      settlement approval slice, which posts one payment per retur deduction row plus up to three more
+      (trade-program, admin fee, cash) from a single approval, each with its own `PAYMENT_RECEIPT`
+      journal. The fix is one pass applying
+      `classifySaleLeg`'s counterpart-journal gate across the AR journals, covering every path
+      together.
 - [x] ~~No partial retur draw-down. A retur is consumed all-or-nothing~~ — `FieldReturn.appliedValue`
       now exists and `applyReturnOffset` takes a `drawAmount` plus a per-event idempotency key
       (`returoffset-<returnId>-<eventId>`), so a retur's frozen value is consumed in parts across
@@ -467,21 +471,126 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       settlement's own claim on the same receivable — but a salesman can type over that default
       and the writer accepts it.
       Closing it properly is a `lib/finance` change — one shared "already claimed against this
-      receivable" helper that both writers call, netting both row types inside their transactions
-      (feat/settlement-document).
+      receivable" helper that both writers call, netting both row types inside their transactions.
+      **Still open after the approval slice, and approval does not close it** — `approveSettlement`
+      re-checks the live `Receivable.outstandingAmount` at the moment it posts, so the loser is
+      refused rather than over-collecting, but that refusal lands after both salesmen took cash at
+      their respective counters, which is exactly the failure the netting exists to prevent
+      (feat/settlement-document, feat/settlement-approval).
 - [ ] Settlement evidence uploaded under a `draftId` whose form is then abandoned is orphaned in R2
       forever: `settlement-proofs/<draftId>/…` objects with no `StoreSettlement` row referencing them,
       and no sweeper anywhere. Deliberate — the alternative was a `DRAFT` settlement row per opened
       form, which would also hold a claim on a retur and an invoice for a document nobody ever
       submitted. The cleanup is a scheduled job listing the prefix and deleting keys whose `draftId`
       matches no `StoreSettlement.idempotencyKey`; it is not built (feat/settlement-document).
-- [ ] The settlement document is INERT until the finance approval slice exists. A submitted
-      `StoreSettlement` moves no money, posts no journal, touches no `Receivable` and does not draw the
-      returs it claims — it only reserves them against other settlements. There is no backoffice queue,
-      no approve/reject writer and no `/backoffice/finance/pelunasan` route yet, so a `PENDING`
-      settlement stays `PENDING` and its claims stay held indefinitely, including against a store that
-      pays some other way in the meantime. Anything reading AR must keep ignoring settlements until
-      then (feat/settlement-document).
+- [x] ~~The settlement document is INERT until the finance approval slice exists~~ — CLOSED by the
+      approval slice (branch `feat/settlement-approval`). `/backoffice/finance/pelunasan` (list +
+      detail), `approveSettlement` and `rejectSettlement` all exist now, so a `PENDING` settlement is
+      no longer held indefinitely: finance approves it into real payments or rejects it and releases
+      the claims. **The residue this item leaves behind is a READING rule, not a gap** — a `PENDING`
+      settlement still moves no money, an `APPROVED` one has moved all of it, and a settlement
+      stranded `PENDING` after a crash mid-approval may have real payments behind it, so nothing may
+      read `StoreSettlement` without reading its status. Nothing schedules or chases a `PENDING`
+      settlement either: it sits until a `collections:manage` holder opens the queue
+      (feat/settlement-document, feat/settlement-approval).
+- [ ] Rejecting a settlement whose approval already posted some components strands those payments on
+      a `REJECTED` document, and nothing cleans them up. Reachable because approval is a resumable
+      sequence rather than one transaction: a run that posts a component and then throws leaves the
+      document `PENDING` with a real `Payment` behind it, and rejecting from there is allowed. The
+      approval screen surfaces the case (the components card reframes to "orphaned" on a `REJECTED`
+      document and lists only the rows that actually posted), and `approveSettlement` logs loudly
+      when its own CAS loses to a concurrent reject — but the only remedy is voiding each payment by
+      hand from `/backoffice/finance/payments`. Closing it properly means either refusing a reject
+      once any component has posted, or a void-the-components path on the reject writer
+      (feat/settlement-approval).
+- [ ] Voiding ONE component payment of an APPROVED settlement silently desynchronises the document —
+      the other half of the same missing "unapprove" concept as the item above. `voidPayment` has no
+      settlement awareness: nothing refuses the void, the `StoreSettlement` stays `APPROVED`, and
+      re-running approval takes `approveSettlement`'s write-free `alreadyApproved` branch, which
+      reports the same `paymentIds` and re-posts nothing. So the document claims a settled amount the
+      ledger no longer carries, and the only way to re-close the hole is recording a payment by hand.
+      The approval screen does render the component as Voided, which is the sole signal anywhere. The
+      two halves want the same answer: a concept for taking an approved settlement back apart, rather
+      than a guard bolted onto `voidPayment` (feat/settlement-approval).
+- [ ] `approveSettlement` throws `MISSING_FIELD_RETURN_ID` while building its component list, which is
+      AHEAD of the `APPROVED` replay branch — so an already-approved settlement carrying a retur
+      deduction with a null `fieldReturnId` throws instead of replaying, and the journal-gap re-post on
+      the approval screen cannot reach it either. Only constructible via raw SQL today (the action
+      validates the field and `submitSettlement` requires it), so this is ordering hygiene rather than
+      a live defect — but the file's own comment argues the replay lookup runs "FIRST, ahead of every
+      guard below", and this construction step is not below it. Moving the status read and the replay
+      return ahead of the component build would make the comment true (feat/settlement-approval).
+- [ ] Two concurrent approvals of the same settlement collide on `Payment.idempotencyKey @unique`
+      inside `recordPayment`, and the loser sees a generic `UNEXPECTED`: `isRetryableTxError` returns
+      false for P2002, so `withRetry` rethrows it unwrapped instead of re-running the callback onto the
+      now-existing row. Benign — a second click resolves it, because the retry finds the payment and
+      takes the idempotent path — but the operator is told nothing useful in the meantime. Pre-existing
+      in `recordPayment` rather than introduced here; the new finance queue makes it plausible, since
+      two admins can open the same document. The fix is treating a P2002 on `idempotencyKey`
+      specifically as retryable, not widening `isRetryableTxError` to P2002 generally
+      (feat/settlement-approval).
+- [ ] The two settlement posting roles `TRADE_PROGRAM_EXPENSE` and `ADMIN_FEE_EXPENSE` have no
+      `JournalAccountMapping` row on production, and nothing on the deploy path creates one — the role
+      column is a plain `String`, so there is no migration and no seed involved; finance maps them in
+      Settings → Account Mapping to a `BEBAN` account. Until that happens the first approval carrying an
+      admin fee (essentially every settlement) has `resolveAccount` throw `UnmappedRoleError`, degrading
+      that payment's journal to `JOURNAL_PENDING` and needing a hand-mapping plus a retry. Tracked here
+      as a GO-LIVE step rather than debt: it is a one-time action on the day the queue is first used,
+      and `docs/EPIC-STATUS.md`'s slice-5 row now names it (feat/settlement-approval).
+- [ ] Nothing tells the salesman a settlement was APPROVED. Rejection pushes a `SETTLEMENT_REJECTED`
+      notification with a click-through to `/pwa/pelunasan/${storeId}`; approval sends nothing, on the
+      grounds that the money already changed hands at the counter and the approval is a back-office
+      formality. That is defensible but asymmetric, and combines with the item below (no PWA read
+      surface for a filed settlement) into a salesman having no way to learn the outcome of a document
+      he filed unless it was rejected (feat/settlement-approval).
+- [ ] The PWA settlement form's `varianceOver` copy ("{amount} more than expected") does not warn that
+      approval will refuse an over-tender outright with `OVER_TENDER`, which no override can clear. A
+      salesman can therefore file a document nobody can approve and only learn at rejection. Deliberately
+      not fixed in the approval slice: refusing or re-wording at submit moves a boundary on already-merged
+      filing code, and the ruling was that approval is the right place to refuse. The cheap fix is copy
+      on the salesman's screen naming the consequence, not a new guard (feat/settlement-approval).
+- [ ] `StoreSettlement.expectedAmount` and `varianceAmount` are stored columns nothing reconciles.
+      `approveSettlement` recomputes both from the live child rows through `computeSettlementTotals`
+      and never reads the columns; the queue and detail screens do the same and raise a destructive
+      alert when the two disagree. So the columns are display-only history that can silently drift
+      from the truth if any child row is ever edited. Either drop them, or recompute them on read
+      (feat/settlement-approval).
+- [ ] `DEDUCTION_TYPE_TO_PAYMENT_METHOD` in `approve-writer.ts` `satisfies` a HAND-WRITTEN
+      `"RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE"` union rather than Prisma's `SettlementDeductionType`,
+      following the barrel-free policy the rest of `lib/finance/ar-settlement/` keeps so a
+      `"use client"` importer never drags Prisma into the browser bundle. The cost is that a fourth
+      `SettlementDeductionType` member would NOT break this map at compile time — it would fall
+      through to `undefined` and die at the `ENUM` column mid-approval. Same class as every other
+      hand-written union in this directory (feat/settlement-approval).
+- [ ] Nothing seeds `settlement.varianceToleranceRupiah` and there is no settings-screen entry for it,
+      so the shipped tolerance is the parser's default of 0 — every non-zero variance demands an
+      override reason from finance. Changing it means a hand-run `SystemSetting` insert. Worth a row on
+      the Settings screen alongside `ar.overdueThresholdDays`, which has the same shape and the same
+      gap (feat/settlement-approval).
+- [ ] No `<img>` anywhere in `apps/web` has an `onError` handler except the settlement approval
+      screen's deduction evidence thumbnail. A dead or expired R2 URL therefore renders the browser's
+      broken-image glyph with no explanation on the collections queue's proof photo, the delivery POD
+      proofs, and every other image surface — "the photo will not load" and "there is no photo" read
+      identically to an operator. Fixed on the settlement screen only, because evidence is load-bearing
+      on a money screen; the rest is a repo-wide gap, not a local one (feat/settlement-approval).
+- [ ] `components/QuickActionFAB.tsx` is an undocumented layout constraint on every backoffice route:
+      `fixed bottom-6 right-6 z-50`, `h-14 w-14`, rendered unconditionally and permission-free by
+      `BackofficeShell`, so it owns a 24-80px box in the bottom-right plus ~12px of shadow reach. The
+      settlement approval action bar is the FIRST `fixed inset-x-0 bottom-0` bar in `app/backoffice`
+      and had to clear it with `pr-28`; the collision was invisible until then because nothing else had
+      ever been bottom-anchored there. The next such bar will hit it too. Either the FAB documents its
+      own reserved area in the shell, or a shared `bottom-bar` primitive owns the clearance once
+      (feat/settlement-approval).
+- [ ] `/backoffice/finance/collections` has no nav entry in `BackofficeShell.tsx` and is reachable only
+      by typing the URL. Noticed while adding the `/backoffice/finance/pelunasan` entry beside it: the
+      two screens are siblings, gate on the same `collections:manage`, and now one is discoverable and
+      the other is not. Fixing it needs its own `navigation` key in both locales and nothing else
+      (feat/settlement-approval).
+- [ ] Eight pre-existing flat-opener block comments (`/*` with a starred body) remain in
+      `approve-writer.ts` (5) and `reject-writer.ts` (3). Deliberately unswept: they sit on lines the UI
+      task never touched, and sweeping untouched lines inflates the branch diff for the whole-branch
+      review fleet, which is the review that most needs to stay readable. Everything written in this
+      slice uses the starred `/**` form (feat/settlement-approval).
 - [ ] A salesman has no way to see a settlement again after submitting it. The screen shows the BKM
       number once on success and there is no PWA list, detail or history surface for `StoreSettlement`,
       so a closed tab loses the number, and a re-open of the form mints a fresh `draftId` that would
@@ -496,9 +605,12 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       rows (`if (deduction.type === "RETUR_OFFSET") continue;` skips it entirely, since a retur
       offset auto-links its own nota and needs no separate evidence). No UI path ever sends these
       fields on a `RETUR_OFFSET` row today, so nothing can currently satisfy an evidence requirement
-      through this hole. But the BKM print route in the next slice will render the full deduction
+      through this hole. But the BKM print route in the remaining slice will render the full deduction
       breakdown including this row, and it will follow whatever URL sits on it — so this stops being
-      inert the moment that route ships (feat/settlement-document).
+      inert the moment that route ships. The settlement approval screen deliberately does NOT: its
+      evidence thumbnail and its direct link are both gated on `deduction.type !== "RETUR_OFFSET"`,
+      matching the writer's own skip, so the first consumer built after this item was logged did not
+      widen it (feat/settlement-document, feat/settlement-approval).
 - [x] The new `settlements:submit` permission (`packages/db/prisma/seed-settlements-permission.sql`)
       must be hand-run on prod post-merge, same as every other permission seed in this repo — no
       migration or deploy step seeds it. Until it runs, the settlement screen is silently unreachable
@@ -610,7 +722,7 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] Field retur receiving: the approve button and the resolution controls use independent `useTransition` flags, so an operator can confirm a resolution and click the still-enabled approve before the first round trip resolves, firing approve against a soon-stale settled-read. The server transaction guards correctness; the UI does not prevent the double-fire (feat/field-retur-receiving).
 - [ ] Field retur receiving: no inline error text when a required note is left blank on `INVESTIGATE`/`ACCEPT_SURPLUS` — only a disabled confirm button and a "(Wajib)" label signal it (feat/field-retur-receiving).
 - [ ] Field retur receiving: the latest-resolution ordering `[{ createdAt: "desc" }, { id: "desc" }]` is spelled in three places (the resolve writer, the approve writer, and `getFieldReturnById`) with no shared home, because the one module that could hold it must stay import-free. Each copy is now covered by a test; the duplication is not (feat/field-retur-receiving).
-- [ ] Field retur mismatch notification: only the ADMIN half is built. The salesman half is unbuilt because **the PWA has no notification surface whatsoever** — the bell (`NotificationIcon`) and `FcmRegistration` are mounted only in `BackofficeShell.tsx`, so a salesman has nowhere to see a notification and no registered FCM token. Separately, `fanOutAdminNotification` resolves recipients by PERMISSION, not by user, so "tell the salesman who raised this document" has no existing mechanism either — `sendNotificationToUsers` in `lib/notifications/recipients.ts` can target a user list, but nothing calls it that way. Building it means a PWA notification list, FCM registration plus its browser permission prompt, and a targeted-send path. It would unblock several other "tell the salesman" stories: order approved or rejected, store change request decided, retur received (feat/field-retur-mismatch-notification).
+- [ ] Field retur mismatch notification: only the ADMIN half is built. The salesman half is still unbuilt, but **two of the three things this item said were missing now exist, and the remaining gap is narrower than the original wording**. `/pwa/notifications` shipped (`cb00a98f`, 2026-09-01) with a bell and unread badge on `HomeShell`, so a salesman DOES have somewhere to read a notification; and `sendNotificationToUsers` is now genuinely called with a targeted user list, by `rejectSettlement` (`SETTLEMENT_REJECTED`) and by `notifyCollectorOfOverdue`, so the targeted-send path exists too and the pattern to copy is those two. What remains missing is **FCM registration in the PWA** — `FcmRegistration` is still mounted only in `BackofficeShell.tsx`, so a salesman never has an `fcmToken` and never gets a PUSH. That is survivable rather than silent, because `sendNotificationToUsers` writes the `NotificationQueue` row unconditionally and only the `messaging.send` is skipped, so every targeted notification reaches the in-app list even with no token; it just will not surface while the app is closed. Building the last piece means mounting `FcmRegistration` (plus its browser permission prompt) in the PWA shell. `fanOutAdminNotification` still resolves recipients by PERMISSION rather than by user and is the wrong tool for "tell the salesman who raised this document" — use `sendNotificationToUsers` and guard your own caller on `process.env.VITEST`, which that helper does not do for you (feat/field-retur-mismatch-notification, feat/settlement-approval).
 - [ ] Field retur mismatch notification: this new `FIELD_RETURN_MISMATCH` category feeds a bell with a known hard ceiling — `app/api/notifications/route.ts` has `LIMIT = 50` with no cursor and no load-more, there is no mark-all-read, and nothing prunes `NotificationQueue`, so past 50 unread rows everything older is unreachable and the badge can never return to zero. That ceiling is pre-existing recorded debt (see Notifications follow-ups); adding a category feeds it (feat/field-retur-mismatch-notification).
 - [ ] Field retur value: the register's "incomplete" marker only fires on `APPROVED + PENDING` rows (a permanent, un-fixable gap) — a still-open retur whose lines are `AMBIGUOUS`/`UNPRICEABLE` and COULD be fixed via `LinePriceControls` right now gives no signal from the list at all; an admin only discovers it by opening the retur. Worth a second, distinguishable marker for the actionable case (feat/field-retur-value).
 - [ ] Field retur value: once a retur is `APPROVED`, `priceState` can no longer distinguish `AMBIGUOUS` from `UNPRICEABLE` on a line that never got priced — `getFieldReturnById` stops computing `priceCandidates` for a closed retur, so both collapse to `UNPRICEABLE`. The unpriced count stays numerically correct, but the reason (deliveries disagreed vs. never delivered at all) is lost the moment approval happens (feat/field-retur-value).

@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { submitSettlement } from "@/lib/finance/ar-settlement/submit-writer";
+import { approveSettlement, type ApproveSettlementResult } from "@/lib/finance/ar-settlement/approve-writer";
+import { rejectSettlement } from "@/lib/finance/ar-settlement/reject-writer";
 import { SettlementError, type SettlementErrorCode } from "@/lib/finance/ar-settlement/errors";
+import { PaymentError, type PaymentErrorCode } from "@/lib/finance/ar/errors";
+import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
+import { postPaymentReceiptJournal } from "@/lib/finance/ar/payment-journal";
 
 /**
  * Named `store-settlements.ts`, not `settlements.ts` — that path already exists and belongs to
@@ -165,4 +170,142 @@ export async function submitStoreSettlementAction(input: unknown): Promise<Settl
   } catch (e) {
     return toResult(e);
   }
+}
+
+/**
+ * `approveSettlement` throws `SettlementError` for everything it refuses itself, and propagates
+ * `PaymentError` unmodified from `recordPayment`/`applyReturnOffset` — two error classes with
+ * overlapping code strings (`WRONG_STORE` means "this receivable isn't this store's" in both, but
+ * they are still distinct types) and different `instanceof`. Passing `e.code` straight through,
+ * same shape as `toResult` above and `toCollectionResult` in `app/actions/collections.ts`, needs
+ * no second `Record<…>` map that could drift out of sync with either `errors.ts` union — but it
+ * does need the `instanceof` check to run for BOTH classes, in order, rather than assuming every
+ * thrown error is a `SettlementError`.
+ */
+export type SettlementApprovalActionReason =
+  | SettlementErrorCode
+  | PaymentErrorCode
+  | "FORBIDDEN"
+  | "INVALID_REQUEST"
+  | "UNEXPECTED";
+
+export type ApproveSettlementActionResult =
+  | { ok: true; paymentIds: string[]; alreadyApproved?: true }
+  | { ok: false; reason: SettlementApprovalActionReason };
+
+export type RejectSettlementActionResult =
+  | { ok: true }
+  | { ok: false; reason: SettlementApprovalActionReason };
+
+/**
+ * Both the approve and reject actions gate on `collections:manage` — it already exists, is
+ * already seeded on production, and is ADMIN-only (see `PERMISSIONS.COLLECTIONS_MANAGE`'s other
+ * callers in `app/actions/collections.ts`), so this ships working with no hand-run seed. A single
+ * `FORBIDDEN` for both a missing session and a missing permission mirrors `guardManage` in that
+ * same file — an ADMIN-only backoffice action, unlike the salesman-facing submit guard above,
+ * which distinguishes an expired session from a missing permission for a very different audience.
+ */
+async function guardManage(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_MANAGE)) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  return { userId: session.user.id };
+}
+
+function toApprovalResult(e: unknown): { ok: false; reason: SettlementApprovalActionReason } {
+  if (e instanceof SettlementError) return { ok: false, reason: e.code };
+  if (e instanceof PaymentError) return { ok: false, reason: e.code };
+  return { ok: false, reason: "UNEXPECTED" };
+}
+
+function isValidApproveSettlementInput(
+  input: unknown,
+): input is { settlementId: string; overrideReason?: string } {
+  if (typeof input !== "object" || input === null) return false;
+  const i = input as Record<string, unknown>;
+  if (typeof i.settlementId !== "string" || i.settlementId === "") return false;
+  if (i.overrideReason !== undefined && typeof i.overrideReason !== "string") return false;
+  return true;
+}
+
+function isValidRejectSettlementInput(input: unknown): input is { settlementId: string; reason: string } {
+  if (typeof input !== "object" || input === null) return false;
+  const i = input as Record<string, unknown>;
+  if (typeof i.settlementId !== "string" || i.settlementId === "") return false;
+  if (typeof i.reason !== "string") return false;
+  return true;
+}
+
+/**
+ * Approves a submitted settlement for the finance queue.
+ *
+ * `approveSettlement` posts NO journal itself and returns every payment id it created —
+ * `paymentIds` holds one retur DRAW per retur deduction row plus up to three singleton components
+ * (trade-program, admin fee, cash), never just one. `RETUR_OFFSET` is one of the four component
+ * KINDS, not a fourth singleton standing beside the draws, and the writer's own `Component` union
+ * says so: `kind: "SIMPLE"` is `Exclude<SettlementPaymentMethod, "RETUR_OFFSET">`. This loops
+ * `postArJournalSafely` over the WHOLE array — copying `recordPaymentAction`'s single-payment shape
+ * here is the exact mistake this task exists to avoid, since a settlement can post several payments
+ * where a plain payment posts one.
+ *
+ * The loop stays correct on an `alreadyApproved` resume: `postArJournalSafely` never throws, and
+ * `generateAutoJournal`'s own `Journal @@unique([sourceType, sourceId])` makes a repeat call
+ * report `created: false` instead of double-posting, so re-running the loop over the same ids is
+ * safe rather than merely tolerated.
+ */
+export async function approveSettlementAction(input: unknown): Promise<ApproveSettlementActionResult> {
+  const g = await guardManage();
+  if ("ok" in g) return g;
+  if (!isValidApproveSettlementInput(input)) return { ok: false, reason: "INVALID_REQUEST" };
+
+  let result: ApproveSettlementResult;
+  try {
+    result = await approveSettlement({
+      settlementId: input.settlementId,
+      approvedById: g.userId,
+      overrideReason: input.overrideReason,
+    });
+  } catch (e) {
+    return toApprovalResult(e);
+  }
+
+  for (const paymentId of result.paymentIds) {
+    await postArJournalSafely("ar_payment", paymentId, () => postPaymentReceiptJournal(paymentId, g.userId));
+  }
+
+  /*
+   * `SETTLEMENT_APPROVE` is written inside `approveSettlement`'s own status-flip transaction, not
+   * here — a process death between that transaction committing and this action's next statement
+   * would otherwise leave the approval with no audit row and no way back to writing one, since a
+   * retry lands on the `alreadyApproved` replay branch, which is write-free by design. See that
+   * writer's own comment beside the write for the full reasoning.
+   */
+  revalidatePath("/pwa/pelunasan");
+  revalidatePath("/backoffice/finance/pelunasan");
+
+  return { ok: true, paymentIds: result.paymentIds, alreadyApproved: result.alreadyApproved };
+}
+
+/**
+ * Rejects a submitted settlement for the finance queue. `rejectSettlement` itself CAS-flips
+ * `PENDING -> REJECTED`, writes its own `SETTLEMENT_REJECT` audit row inside that same
+ * transaction, and enqueues the salesman's `NotificationQueue` row — see that writer's comment
+ * beside the audit write for why it lives there rather than in this action.
+ */
+export async function rejectSettlementAction(input: unknown): Promise<RejectSettlementActionResult> {
+  const g = await guardManage();
+  if ("ok" in g) return g;
+  if (!isValidRejectSettlementInput(input)) return { ok: false, reason: "INVALID_REQUEST" };
+
+  try {
+    await rejectSettlement({ settlementId: input.settlementId, rejectedById: g.userId, reason: input.reason });
+  } catch (e) {
+    return toApprovalResult(e);
+  }
+
+  revalidatePath("/pwa/pelunasan");
+  revalidatePath("/backoffice/finance/pelunasan");
+
+  return { ok: true };
 }

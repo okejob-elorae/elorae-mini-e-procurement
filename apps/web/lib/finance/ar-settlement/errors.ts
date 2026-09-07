@@ -24,7 +24,16 @@ export type SettlementErrorCode =
   | "NOT_VALUED"
   | "RETUR_OVERCLAIMED"
   | "DEDUCTIONS_EXCEED_INVOICES"
-  | "INPUT_TOO_LARGE";
+  | "INPUT_TOO_LARGE"
+  | "SETTLEMENT_NOT_FOUND"
+  | "NOT_PENDING"
+  | "APPROVER_NOT_FOUND"
+  | "REJECTER_NOT_FOUND"
+  | "VARIANCE_REQUIRES_REASON"
+  | "COMPONENT_EXCEEDS_HEADROOM"
+  | "COMPONENT_VOIDED"
+  | "OVER_TENDER"
+  | "MISSING_REASON";
 
 export class SettlementError extends Error {
   code: SettlementErrorCode;

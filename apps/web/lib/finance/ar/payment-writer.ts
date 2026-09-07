@@ -6,7 +6,13 @@ import { PaymentError } from "./errors";
 export type RecordPaymentInput = {
   storeId: string;
   paidAt: Date;
-  method: "CASH" | "TRANSFER" | "RETUR_OFFSET";
+  /**
+   * A hand-written union, NOT Prisma's `PaymentMethod` — widening the schema enum does not widen
+   * this, and a method missing here simply cannot be posted. `PROGRAM_DEDUCTION` and `ADMIN_FEE`
+   * are the settlement's non-cash components; `debitRole` in `payment-journal.ts` already maps
+   * both to their expense roles.
+   */
+  method: "CASH" | "TRANSFER" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE";
   amount: number;
   recordedById: string;
   allocations: Array<{ receivableId: string; amount: number }>;
