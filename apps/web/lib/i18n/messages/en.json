@@ -4368,7 +4368,8 @@
     "print": "Print",
     "share": "Share",
     "shareText": "{docNo} — Total {amount}",
-    "shareError": "Failed to share the receipt."
+    "shareError": "Failed to share the receipt.",
+    "printBkm": "Print BKM"
   },
   "payments": {
     "pageTitle": "Payments",

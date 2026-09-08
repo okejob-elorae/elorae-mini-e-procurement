@@ -754,6 +754,7 @@ export type SettlementPrintDetail = {
   docNo: string;
   status: SettlementStatusValue;
   storeName: string;
+  salesmanId: string;
   salesmanName: string;
   createdAt: Date;
   note: string | null;
@@ -903,6 +904,7 @@ export async function getSettlementForPrint(
     docNo: settlement.docNo,
     status: settlement.status,
     storeName: store.name,
+    salesmanId: settlement.salesmanId,
     salesmanName: salesman.name ?? salesman.email,
     createdAt: settlement.createdAt,
     note: settlement.note,

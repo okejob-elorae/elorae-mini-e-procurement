@@ -1,5 +1,4 @@
 import { notFound, redirect } from "next/navigation";
-import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
@@ -31,20 +30,12 @@ export default async function SettlementBkmPage({ params }: PageProps) {
   if (!settlement) notFound();
 
   /**
-   * `getSettlementForPrint` carries no `salesmanId` — it is a lean read for the document itself,
-   * and ownership is this page's own concern. A `settlements:submit`-only viewer (a salesman) may
-   * only print a settlement they filed; `collections:manage` (finance) admits any. `notFound()`
-   * rather than a message, matching the `!settlement` branch above and the delivery POD page's own
-   * `NOT_CARRIER` fail-fast: a settlement that is not yours should not be distinguishable from one
-   * that does not exist.
+   * A `settlements:submit`-only viewer (a salesman) may only print a settlement they filed;
+   * `collections:manage` (finance) admits any. `notFound()` rather than a message, matching the
+   * `!settlement` branch above and the delivery POD page's own `NOT_CARRIER` fail-fast: a
+   * settlement that is not yours should not be distinguishable from one that does not exist.
    */
-  if (!canManage) {
-    const owner = await prisma.storeSettlement.findUnique({
-      where: { id: settlementId },
-      select: { salesmanId: true },
-    });
-    if (owner?.salesmanId !== session.user.id) notFound();
-  }
+  if (!canManage && settlement.salesmanId !== session.user.id) notFound();
 
   return <BkmView settlement={settlement} />;
 }

@@ -4368,7 +4368,8 @@
     "print": "Cetak",
     "share": "Bagikan",
     "shareText": "{docNo} — Total {amount}",
-    "shareError": "Gagal membagikan bukti."
+    "shareError": "Gagal membagikan bukti.",
+    "printBkm": "Cetak BKM"
   },
   "payments": {
     "pageTitle": "Pembayaran",
