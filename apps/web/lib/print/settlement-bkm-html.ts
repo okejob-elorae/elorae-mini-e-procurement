@@ -1,7 +1,29 @@
 import { esc, fmtDocDate, printCssBase, printPagePortrait } from "@/lib/print/print-theme";
 
-/* Nullable money renders as an em dash rather than "null" or "NaN" — never reaches arithmetic. */
-const idr = (n: number | null): string => (n == null ? "—" : `Rp ${Math.round(n).toLocaleString("id-ID")}`);
+/**
+ * Money on the BKM renders at TWO DECIMALS. It was copied in at whole rupiah from
+ * `field-sales-nota-tagihan-html.ts` and that was wrong here — and the "family convention" it
+ * was following turns out to be the minority spelling anyway: with this one converted, three
+ * builders in the directory still hold a `Math.round` rupiah formatter, and every other one
+ * goes through `print-theme.ts`'s `money()`, which is already 2dp.
+ *
+ * Every figure on this document carries sen: the receivables behind it are `Decimal(15,2)` and
+ * a sub-rupiah `PARTIAL` residue is a documented state, and the settlement screens this
+ * document is the paper artifact of already render the same figures at 2dp for a written reason
+ * (`SettlementForm.tsx`: a sub-rupiah mismatch has to be something the salesman can see and
+ * clear). Rounding breaks the document in two visible ways — two invoices at 500000.50 print as
+ * Rp 500.001 twice against a Rp 1.000.001 total, so the column does not add up on a page the
+ * store owner signs; and a −0,40 variance prints as −Rp 0, asserting balance on the copy the
+ * store KEEPS while the system holds an unbalanced document. Do not "harmonise" this back to
+ * whole rupiah, and change ALL of it or none: whole-rupiah rows under 2dp totals is worse than
+ * either.
+ *
+ * Nullable money renders as an em dash rather than "null" or "NaN" — never reaches arithmetic.
+ */
+const idr = (n: number | null): string =>
+  n == null
+    ? "—"
+    : `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /* Percent renders with two decimals (matches inventory-report-html.ts); em dash for null. */
 const pct = (n: number | null): string => (n == null ? "—" : `${Number(n).toFixed(2)}%`);
@@ -167,6 +189,16 @@ export function buildSettlementBkmPrintHtml(opts: BuildSettlementBkmOptions): st
    * and must still show, and `adminFeePercent !== null` is equally wrong since percent is
    * nullable on the underlying model independent of whether a fee was charged. Existence of the
    * deduction row is the only honest signal; the amount and percent are just what it says.
+   *
+   * That leaves a deliberate ASYMMETRY worth naming, because it is the same fact pattern
+   * resolved the other way. A zero-value ADMIN_FEE gets BOTH an itemised row and a totals row;
+   * a zero-value PROGRAM or RETUR_OFFSET gets the itemised row only, because the two totals
+   * lines below are gated on `> 0`. The itemised table is the record of what the store
+   * negotiated, so every deduction it agreed to belongs there whatever it came to. The totals
+   * column is arithmetic, and a `Potongan Program: −Rp 0,00` line subtracts nothing while
+   * reading like a real deduction. The admin fee's totals line is the exception because it also
+   * carries the PERCENT that was applied — a term of the arrangement rather than a subtraction,
+   * and a 0.00% fee is a fact about the store's account rather than noise.
    */
   const hasAdminFee = deductions.some((d) => d.type === "ADMIN_FEE");
 

@@ -81,15 +81,15 @@ describe("buildSettlementBkmPrintHtml", () => {
     expect(html).toContain("Pelunasan penuh minggu ini");
     expect(html).toContain("FSD/2608/0010");
     expect(html).toContain("FSD/2608/0011");
-    expect(html).toContain("Rp 500.000");
+    expect(html).toContain("Rp 500.000,00");
     expect(html).toContain("RET/2608/0005");
     expect(html).toContain("Retur barang rusak");
-    expect(html).toContain("Rp 1.000.000");
-    expect(html).toContain("Rp 100.000");
-    expect(html).toContain("Rp 900.000");
-    expect(html).toContain("Rp 45.000");
+    expect(html).toContain("Rp 1.000.000,00");
+    expect(html).toContain("Rp 100.000,00");
+    expect(html).toContain("Rp 900.000,00");
+    expect(html).toContain("Rp 45.000,00");
     expect(html).toContain("5.00%");
-    expect(html).toContain("Rp 855.000");
+    expect(html).toContain("Rp 855.000,00");
     expect(html).toContain("Elorae");
   });
 
@@ -102,7 +102,7 @@ describe("buildSettlementBkmPrintHtml", () => {
   it("renders a deduction's percent alongside its amount", () => {
     const html = buildSettlementBkmPrintHtml(baseFixture());
     /* The ADMIN_FEE deduction row: percent cell then amount cell, back to back. */
-    expect(html).toMatch(/<td class="right">5\.00%<\/td>\s*<td class="right">Rp 45\.000<\/td>/);
+    expect(html).toMatch(/<td class="right">5\.00%<\/td>\s*<td class="right">Rp 45\.000,00<\/td>/);
   });
 
   it("shows the linked retur docNo for a RETUR_OFFSET deduction", () => {
@@ -139,7 +139,7 @@ describe("buildSettlementBkmPrintHtml", () => {
     const nonZeroHtml = buildSettlementBkmPrintHtml(nonZeroFixture);
     expect(varianceDivClass(nonZeroHtml)).toBe("variance-nonzero");
     /* Negative variance renders with the minus sign and the magnitude, never a raw negative number. */
-    expect(nonZeroHtml).toContain("−Rp 5.000");
+    expect(nonZeroHtml).toContain("−Rp 5.000,00");
     expect(nonZeroHtml).not.toContain("Rp -5.000");
   });
 
@@ -178,8 +178,8 @@ describe("buildSettlementBkmPrintHtml", () => {
      */
     const html = buildSettlementBkmPrintHtml(baseFixture());
     const baseRowMatch = html.match(/<div class="tot-row subtotal-row"><span class="tk">[^<]*<\/span><span class="tv">([^<]*)<\/span><\/div>/);
-    expect(baseRowMatch?.[1]).toBe("Rp 900.000");
-    expect(html).not.toContain("Rp 50.000");
+    expect(baseRowMatch?.[1]).toBe("Rp 900.000,00");
+    expect(html).not.toContain("Rp 50.000,00");
   });
 
   it("omits the admin fee row entirely when no ADMIN_FEE deduction exists on the settlement", () => {
@@ -212,5 +212,41 @@ describe("buildSettlementBkmPrintHtml", () => {
     fixture.adminFeePercent = 0;
     const html = buildSettlementBkmPrintHtml(fixture);
     expect(html).toContain(`${labels.adminFee} (0.00%)`);
+  });
+
+  it("renders sen on every money figure so the invoice column visibly adds up", () => {
+    /*
+     * The receivables behind a settlement are `Decimal(15,2)` and a sub-rupiah `PARTIAL` residue
+     * is a documented state, so fractional figures are reachable on this document. Rounding to
+     * whole rupiah — the spelling this builder was originally copied in with — prints two
+     * 500.000,50 invoices as "Rp 500.001" each against a "Rp 1.000.001" total, so the column
+     * does not add up on a page the store owner is asked to sign. This pins the invoice rows and
+     * their total together; a regression to `Math.round` fails on both.
+     */
+    const fixture = baseFixture();
+    fixture.invoices = [
+      { docNo: "FSD/2608/0010", agreedAmount: 500000.5 },
+      { docNo: "FSD/2608/0011", agreedAmount: 500000.5 },
+    ];
+    fixture.invoiceTotal = 1000001;
+    const html = buildSettlementBkmPrintHtml(fixture);
+    expect(html).toContain("Rp 500.000,50");
+    expect(html).toContain("Rp 1.000.001,00");
+    expect(html).not.toContain("Rp 500.001<");
+  });
+
+  it("renders a sub-rupiah variance rather than rounding it away to zero", () => {
+    /*
+     * The worst rounding case on this document: a −0,40 variance printed as "−Rp 0" asserts the
+     * settlement balanced on the copy the STORE keeps, while the system holds an unbalanced one.
+     * The variance line stays the non-zero variant either way — this pins the FIGURE.
+     */
+    const fixture = baseFixture();
+    fixture.actualAmount = 854999.6;
+    fixture.varianceAmount = -0.4;
+    const html = buildSettlementBkmPrintHtml(fixture);
+    expect(html).toContain("−Rp 0,40");
+    expect(html).toContain("Rp 854.999,60");
+    expect(html).not.toContain("−Rp 0<");
   });
 });

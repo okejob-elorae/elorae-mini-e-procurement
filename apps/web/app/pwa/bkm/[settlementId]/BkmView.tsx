@@ -10,7 +10,12 @@ import { Button } from "@/components/ui/button";
 import { buildSettlementBkmPrintHtml } from "@/lib/print/settlement-bkm-html";
 import type { SettlementPrintDetail } from "@/lib/finance/ar-settlement/queries";
 
-const rupiah = (n: number): string => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+/**
+ * 2dp, matching the document below it — a share message quoting a rounded figure contradicts the
+ * paper the store was just handed. Same reasoning as the builder's own `idr`.
+ */
+const rupiah = (n: number): string =>
+  `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /* Caps the readiness-poll below — guards against a document that never finishes loading at all. */
 const MAX_IFRAME_READY_ATTEMPTS = 300;
@@ -19,7 +24,7 @@ const MAX_IFRAME_READY_ATTEMPTS = 300;
  * Mirrors `apps/web/app/pwa/spg/[saleId]/nota/NotaView.tsx`'s shape (Card + sticky bottom bar +
  * `print:hidden` chrome), with deliberate differences: the copy fed to the builder's `labels`
  * comes from the `settlementBkm` locale namespace rather than being hardcoded, since the
- * backoffice caller in Task 4 needs the identical string set; and the document renders inside an
+ * backoffice approval screen needs the identical string set; and the document renders inside an
  * `<iframe srcDoc>` rather than a `dangerouslySetInnerHTML` div. `spgSaleNotaHtml` returns a bare,
  * class-scoped `<div>` fragment, safe to inject directly — `buildSettlementBkmPrintHtml` is from
  * the A4-document family instead (`print-theme.ts`'s `printPagePortrait`) and returns a FULL
