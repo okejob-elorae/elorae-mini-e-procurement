@@ -158,7 +158,8 @@ describe("buildSettlementBkmPrintHtml", () => {
 
   it("renders an em dash, never null or NaN, when adminFeePercent is null", () => {
     const fixture = baseFixture();
-    fixture.deductions = [{ type: "PROGRAM", amount: 20000, percent: null, note: null, returDocNo: null }];
+    /* An ADMIN_FEE deduction must exist for its row to render at all (see the two tests above) — percent is nullable independent of that. */
+    fixture.deductions = [{ type: "ADMIN_FEE", amount: 0, percent: null, note: null, returDocNo: null }];
     fixture.adminFeePercent = null;
     fixture.adminFee = 0;
     const html = buildSettlementBkmPrintHtml(fixture);
@@ -167,16 +168,49 @@ describe("buildSettlementBkmPrintHtml", () => {
     expect(html).not.toMatch(/>null</);
   });
 
-  it("computes the admin fee on the netted base, not the gross invoice total", () => {
+  it("renders the netted adminFeeBase, not the gross invoiceTotal, in the base row", () => {
     /*
      * invoiceTotal (gross) is 1.000.000; adminFeeBase (netted, after the 100.000 retur credit) is
      * 900.000. The fee is 5% of the netted 900.000 = 45.000 — 5% of the gross would be 50.000.
-     * If the builder ever started rendering the base as the gross figure, "Rp 900.000" would
+     * The builder computes nothing itself — this pins that the base-row SLOT is filled with
+     * `adminFeeBase`, not `invoiceTotal`. If a future edit swapped them, "Rp 900.000" would
      * disappear from the base row and "Rp 50.000" would appear where the fee is shown instead.
      */
     const html = buildSettlementBkmPrintHtml(baseFixture());
     const baseRowMatch = html.match(/<div class="tot-row subtotal-row"><span class="tk">[^<]*<\/span><span class="tv">([^<]*)<\/span><\/div>/);
     expect(baseRowMatch?.[1]).toBe("Rp 900.000");
     expect(html).not.toContain("Rp 50.000");
+  });
+
+  it("omits the admin fee row entirely when no ADMIN_FEE deduction exists on the settlement", () => {
+    const fixture = baseFixture();
+    fixture.deductions = [
+      { type: "RETUR_OFFSET", amount: 100000, percent: null, note: null, returDocNo: "RET/2608/0005" },
+    ];
+    fixture.adminFee = 0;
+    fixture.adminFeePercent = null;
+    fixture.adminFeeBase = 900000;
+    const html = buildSettlementBkmPrintHtml(fixture);
+    /*
+     * Checked as "label + opening paren", not the bare label: `labels.adminFeeBase` ("Dasar Biaya
+     * Admin") legitimately contains `labels.adminFee` ("Biaya Admin") as a substring, and that
+     * base row always renders — a bare `not.toContain(labels.adminFee)` would false-fail on it.
+     */
+    expect(html).not.toContain(`${labels.adminFee} (`);
+  });
+
+  it("still shows the admin fee row for a zero-amount ADMIN_FEE deduction", () => {
+    /*
+     * The row's presence is driven by the deduction EXISTING, never by `adminFee > 0` — a
+     * settlement can carry a genuine zero-value fee arrangement, and hiding it on `> 0` would
+     * make that indistinguishable from no fee arrangement at all. This is the case a future
+     * "simplify to `adminFee > 0`" would silently break.
+     */
+    const fixture = baseFixture();
+    fixture.deductions = [{ type: "ADMIN_FEE", amount: 0, percent: 0, note: null, returDocNo: null }];
+    fixture.adminFee = 0;
+    fixture.adminFeePercent = 0;
+    const html = buildSettlementBkmPrintHtml(fixture);
+    expect(html).toContain(`${labels.adminFee} (0.00%)`);
   });
 });

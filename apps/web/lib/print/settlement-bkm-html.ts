@@ -161,6 +161,15 @@ export function buildSettlementBkmPrintHtml(opts: BuildSettlementBkmOptions): st
   const noteHtml =
     note && note.trim() !== "" ? `<div class="footnote">${esc(note).replace(/\n/g, "<br>")}</div>` : "";
 
+  /*
+   * The admin fee row renders when an ADMIN_FEE deduction EXISTS on the settlement, never on
+   * `adminFee > 0` — a genuine zero-value fee arrangement is a real thing the store agreed to
+   * and must still show, and `adminFeePercent !== null` is equally wrong since percent is
+   * nullable on the underlying model independent of whether a fee was charged. Existence of the
+   * deduction row is the only honest signal; the amount and percent are just what it says.
+   */
+  const hasAdminFee = deductions.some((d) => d.type === "ADMIN_FEE");
+
   const varianceIsZero = varianceAmount === 0;
   const varianceClass = varianceIsZero ? "variance-zero" : "variance-nonzero";
   const varianceSign = varianceAmount > 0 ? "+" : varianceAmount < 0 ? "−" : "";
@@ -181,8 +190,6 @@ export function buildSettlementBkmPrintHtml(opts: BuildSettlementBkmOptions): st
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
   .status-pending { border: 1px solid #92400e; background: #fef3c7; color: #78350f; }
   .status-approved { border: 1px solid #166534; background: #bbf7d0; color: #14532d; }
@@ -191,6 +198,12 @@ export function buildSettlementBkmPrintHtml(opts: BuildSettlementBkmOptions): st
   .variance-row { padding-top:10px; margin-top:6px; border-top:1px dashed var(--border); font-weight:600; }
   .variance-zero .tv { color: #374151; }
   .variance-nonzero .tv { color: #991b1b; }
+  @media print {
+    .status-pill {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
 </style></head>
 <body>
   <div class="doc-top">
@@ -218,7 +231,7 @@ export function buildSettlementBkmPrintHtml(opts: BuildSettlementBkmOptions): st
       ${returTotal > 0 ? `<div class="tot-row"><span class="tk">${esc(labels.returTotal)}</span><span class="tv">−${idr(returTotal)}</span></div>` : ""}
       ${programTotal > 0 ? `<div class="tot-row"><span class="tk">${esc(labels.programTotal)}</span><span class="tv">−${idr(programTotal)}</span></div>` : ""}
       <div class="tot-row subtotal-row"><span class="tk">${esc(labels.adminFeeBase)}</span><span class="tv">${idr(adminFeeBase)}</span></div>
-      <div class="tot-row"><span class="tk">${esc(labels.adminFee)} (${pct(adminFeePercent)})</span><span class="tv">−${idr(adminFee)}</span></div>
+      ${hasAdminFee ? `<div class="tot-row"><span class="tk">${esc(labels.adminFee)} (${pct(adminFeePercent)})</span><span class="tv">−${idr(adminFee)}</span></div>` : ""}
       <div class="grand-row"><span class="gk">${esc(labels.expected)}</span><span class="gv">${idr(expectedAmount)}</span></div>
     </div>
   </div>
