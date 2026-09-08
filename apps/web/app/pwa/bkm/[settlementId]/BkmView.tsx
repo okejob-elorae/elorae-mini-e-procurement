@@ -12,6 +12,9 @@ import type { SettlementPrintDetail } from "@/lib/finance/ar-settlement/queries"
 
 const rupiah = (n: number): string => `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 
+/* Caps the readiness-poll below — guards against a document that never finishes loading at all. */
+const MAX_IFRAME_READY_ATTEMPTS = 300;
+
 /**
  * Mirrors `apps/web/app/pwa/spg/[saleId]/nota/NotaView.tsx`'s shape (Card + sticky bottom bar +
  * `print:hidden` chrome), with deliberate differences: the copy fed to the builder's `labels`
@@ -32,7 +35,7 @@ export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
   const t = useTranslations("settlementBkm");
   const [canShare, setCanShare] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  /* A placeholder while the iframe loads; replaced with the document's real height on `onLoad`. */
+  /* A placeholder while the iframe loads; the effect below replaces it once measured. */
   const [iframeHeight, setIframeHeight] = useState(480);
 
   /**
@@ -100,16 +103,50 @@ export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
   });
 
   /**
-   * `srcDoc` is same-origin (`about:srcdoc` inherits the parent's origin), so the frame's own
-   * `contentDocument` is reachable without a CORS trip. Sized from `documentElement.scrollHeight`
-   * — the document's real rendered height — rather than a guessed constant, so a long settlement
-   * (many invoices or deductions) is neither cut off nor padded with dead space below it.
+   * Sizes the iframe from its own content rather than a single `onLoad` firing once.
+   * `srcDoc` iframes have known `load`-reliability quirks on some older WebKit/iOS builds, and
+   * the print document has no fixed width of its own, so its real height changes whenever the
+   * available width does — rotating the phone included. Polling `readyState` (instead of waiting
+   * for the `load` EVENT, which is exactly what can silently fail to dispatch) is what makes this
+   * independent of that quirk: `contentDocument` is reachable immediately (`srcdoc` is
+   * same-origin, `about:srcdoc` inherits the parent's origin, no CORS trip), but its
+   * `documentElement` is a throwaway node until the real navigation finishes, so this waits for
+   * `readyState` to leave `"loading"` before treating the reference as stable. Once stable, a
+   * single `ResizeObserver` on that element covers every later width-driven reflow — rotation
+   * included — with no further dependency on any one-shot event. `MAX_IFRAME_READY_ATTEMPTS` only
+   * guards against a document that never finishes loading at all; ordinary content (no external
+   * resources here) settles within the first frame or two.
    */
-  function handleIframeLoad(): void {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc?.documentElement) return;
-    setIframeHeight(doc.documentElement.scrollHeight);
-  }
+  useEffect(() => {
+    let observer: ResizeObserver | undefined;
+    let rafId: number | undefined;
+    let attempts = 0;
+    let cancelled = false;
+
+    function attach(): void {
+      if (cancelled) return;
+      const doc = iframeRef.current?.contentDocument;
+      if (!doc?.documentElement || doc.readyState === "loading") {
+        attempts += 1;
+        if (attempts > MAX_IFRAME_READY_ATTEMPTS) return;
+        rafId = requestAnimationFrame(attach);
+        return;
+      }
+      const target = doc.documentElement;
+      setIframeHeight(target.scrollHeight);
+      if (typeof ResizeObserver === "undefined") return;
+      observer = new ResizeObserver(() => setIframeHeight(target.scrollHeight));
+      observer.observe(target);
+    }
+
+    attach();
+
+    return () => {
+      cancelled = true;
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
+      observer?.disconnect();
+    };
+  }, [html]);
 
   /* Prints only the iframe's own document — the sticky bar and header never enter the dialog. */
   function handlePrint(): void {
@@ -149,7 +186,6 @@ export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
           ref={iframeRef}
           srcDoc={html}
           title={t("title")}
-          onLoad={handleIframeLoad}
           className="block w-full border-0"
           style={{ height: iframeHeight }}
         />
