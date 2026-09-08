@@ -185,9 +185,12 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
   const t = useTranslations("financeStoreSettlements");
   const tCommon = useTranslations("common");
   const tMapping = useTranslations("financeAccountMapping");
-  /* Reuses task 1/3's 33 builder-`labels` keys only — this screen's own chrome (the button
-     itself) reads from `financeStoreSettlements` instead, never from the PWA-navigation keys
-     (`back`/`print`/`share`/…) that also live in this namespace. */
+  /**
+   * Reuses only the 34 builder-`labels` keys the PWA BKM route already feeds the same builder —
+   * this screen's own chrome (the button itself) reads from `financeStoreSettlements` instead,
+   * never from the six PWA-navigation keys (`back`/`print`/`share`/`shareText`/`shareError`/
+   * `printBkm`) that also live in the `settlementBkm` namespace and assume the Web Share API.
+   */
   const tBkm = useTranslations("settlementBkm");
   const locale = useLocale();
   const router = useRouter();

@@ -20,7 +20,7 @@ An ERP for textile and garment manufacturing, covering three domains: **procurem
 - **Internationalization** — `next-intl` with messages under `lib/i18n/messages/`.
 - **Offline-first** — Dexie (IndexedDB), pending-operation queue, sync via `POST /api/sync` when online.
 - **PWA** — **Serwist** (`@serwist/next`, source `app/pwa/sw.ts`) generates the service worker, and it only exists in a **production build** — a 404 on `sw.js` in dev is expected. Never commit a generated `public/**/sw.js` or `workbox-*.js`; it poisons the precache manifest and kills SW install. `next.config.ts` still also wraps the config in the older `next-pwa` plugin; Serwist is the outer wrapper and the one that produces the shipped SW.
-- **Print / export** — HTML helpers under `lib/print/` for PO, stock card, inventory reports, and related documents.
+- **Print / export** — HTML builders under `lib/print/` for PO, stock card, inventory reports, the field-sales notas, the settlement BKM and related documents. Two families live in that one directory and they are **not** interchangeable: almost every builder returns a complete `<!DOCTYPE html>` document carrying `print-theme.ts`'s stylesheet and must be handed to an iframe (`printHtmlInIframe` for print-only, `<iframe srcDoc>` for a preview), while `spg-sale-nota-html.ts` and `van-sale-nota-html.ts` alone return bare class-scoped fragments safe to inject into the page. See the landmine index in `AGENTS.md`. Analytical *reports* are a separate pattern again — `app/print/**` + `components/print/PrintLayout.tsx` + `print.css`.
 
 ## Tech stack
 
