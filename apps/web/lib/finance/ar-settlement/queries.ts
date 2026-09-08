@@ -278,8 +278,16 @@ export async function getSettlementForApproval(
       store: { select: { name: true } },
       salesman: { select: { name: true, email: true } },
       reviewedBy: { select: { name: true, email: true } },
-      invoices: { select: { receivableId: true, amount: true } },
+      /**
+       * Ordered by id like `getSettlementForPrint`'s identical selects, and for its sake: both
+       * queries feed the SAME `buildSettlementBkmPrintHtml`, which numbers its invoice and
+       * deduction rows by array position. Left unordered, one settlement printed from the
+       * backoffice button and from the PWA route could number the same rows differently — the
+       * figures agree, the paper does not.
+       */
+      invoices: { orderBy: { id: "asc" }, select: { receivableId: true, amount: true } },
       deductions: {
+        orderBy: { id: "asc" },
         select: {
           id: true,
           type: true,
