@@ -112,8 +112,9 @@ export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
    * same-origin, `about:srcdoc` inherits the parent's origin, no CORS trip), but its
    * `documentElement` is a throwaway node until the real navigation finishes, so this waits for
    * `readyState` to leave `"loading"` before treating the reference as stable. Once stable, a
-   * single `ResizeObserver` on that element covers every later width-driven reflow — rotation
-   * included — with no further dependency on any one-shot event. `MAX_IFRAME_READY_ATTEMPTS` only
+   * single `ResizeObserver` on the BODY covers every later width-driven reflow — rotation
+   * included — with no further dependency on any one-shot event. See the measurement below
+   * for why the observed element is body rather than `documentElement`. `MAX_IFRAME_READY_ATTEMPTS` only
    * guards against a document that never finishes loading at all; ordinary content (no external
    * resources here) settles within the first frame or two.
    */
@@ -132,7 +133,17 @@ export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
         rafId = requestAnimationFrame(attach);
         return;
       }
-      const target = doc.documentElement;
+      /**
+       * Measure BODY, never `documentElement`. The root element's box fills the initial
+       * containing block, so `documentElement.scrollHeight` reports at least the viewport
+       * height and the measurement can only ever grow: a settlement shorter than the
+       * placeholder would keep its dead space forever, and rotating to a WIDER viewport —
+       * where the document reflows SHORTER — could never shrink the frame back. Body hugs
+       * its own content here (`printCssBase` gives it no height), so its `scrollHeight` is
+       * the real document height, padding included, and converges from both directions.
+       */
+      const target = doc.body;
+      if (!target) return;
       setIframeHeight(target.scrollHeight);
       if (typeof ResizeObserver === "undefined") return;
       observer = new ResizeObserver(() => setIframeHeight(target.scrollHeight));
