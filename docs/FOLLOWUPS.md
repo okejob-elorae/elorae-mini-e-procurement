@@ -591,11 +591,15 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       task never touched, and sweeping untouched lines inflates the branch diff for the whole-branch
       review fleet, which is the review that most needs to stay readable. Everything written in this
       slice uses the starred `/**` form (feat/settlement-approval).
-- [ ] A salesman has no way to see a settlement again after submitting it. The screen shows the BKM
-      number once on success and there is no PWA list, detail or history surface for `StoreSettlement`,
-      so a closed tab loses the number, and a re-open of the form mints a fresh `draftId` that would
-      create a SECOND document rather than being caught as a replay. The BKM print route is the next
-      slice; a read surface is scoped nowhere (feat/settlement-document).
+- [ ] A salesman still has no way to return to a settlement he filed EARLIER. `/pwa/bkm/[settlementId]`
+      shipped (feat/settlement-bkm-print) and is a real read surface for one settlement, but it is
+      reachable only from the success screen that just filed it or by knowing the id — there is no PWA
+      list, index or history surface for `StoreSettlement`, so a closed tab still loses the id and
+      yesterday's BKM cannot be reprinted from the phone. A re-open of the filing form still mints a
+      fresh `draftId` that would create a SECOND document rather than being caught as a replay (a true
+      duplicate re-file is refused by `INVOICE_OVERCLAIMED`, so the exposure is a wasted document
+      number and a confusing dead end, not double-collected money) (feat/settlement-document,
+      feat/settlement-bkm-print).
 - [ ] Konsi stores can never appear in a settlement either, for exactly the reason they cannot appear
       in an amplop (see the konsi item above): the settlement selects `Receivable` rows and a konsi
       order creates none. Nothing in the settlement is konsi-aware and nothing needs to be — it lights
@@ -605,12 +609,17 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       rows (`if (deduction.type === "RETUR_OFFSET") continue;` skips it entirely, since a retur
       offset auto-links its own nota and needs no separate evidence). No UI path ever sends these
       fields on a `RETUR_OFFSET` row today, so nothing can currently satisfy an evidence requirement
-      through this hole. But the BKM print route in the remaining slice will render the full deduction
-      breakdown including this row, and it will follow whatever URL sits on it — so this stops being
-      inert the moment that route ships. The settlement approval screen deliberately does NOT: its
-      evidence thumbnail and its direct link are both gated on `deduction.type !== "RETUR_OFFSET"`,
-      matching the writer's own skip, so the first consumer built after this item was logged did not
-      widen it (feat/settlement-document, feat/settlement-approval).
+      through this hole. This item originally predicted that the BKM print route would make the hole
+      live, because a receipt rendering the full deduction breakdown would follow whatever URL sat on
+      the row. **That route has now shipped and the prediction was wrong in the good direction:**
+      `getSettlementForPrint`'s deduction select carries no proof fields at all and
+      `settlement-bkm-html.ts` contains zero occurrences of `proof`, so the BKM neither renders a URL
+      nor follows one. The settlement approval screen declined the same way — its evidence thumbnail
+      and its direct link are both gated on `deduction.type !== "RETUR_OFFSET"`, matching the writer's
+      own skip. Two consecutive consumers built after this item was logged have now both declined to
+      widen it, which is this item's own success criterion; it stays open because nothing STOPS a
+      third from widening it, not because anything is currently exposed (feat/settlement-document,
+      feat/settlement-approval, feat/settlement-bkm-print).
 - [x] The new `settlements:submit` permission (`packages/db/prisma/seed-settlements-permission.sql`)
       must be hand-run on prod post-merge, same as every other permission seed in this repo — no
       migration or deploy step seeds it. Until it runs, the settlement screen is silently unreachable
@@ -627,8 +636,33 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
       — and because the Settle button lives on an amplop store card, seeding `settlements:submit` alone
       would have granted a permission for a screen nobody could navigate to. A pre-flight read of the
       live `Permission` rows is what surfaced it; running the named seed and stopping would not have.
-- [ ] `Receivable.delivery` is a REQUIRED relation with no database FK (`relationMode = "prisma"`, `deliveryId String @unique` onto `FieldSalesDelivery`), so a dangling `deliveryId` throws `Inconsistent query result` inside the read itself rather than resolving to null. Both `getSettlementForApproval` and `getSettlementForPrint` traverse it to fetch each invoice's `docNo`, so one orphaned receivable 500s the approval detail AND the printed BKM with no UI repair path. **Pre-existing and shared — deliberately not fixed in one caller only**, since patching the print path alone would suggest the data is sound while the approval screen still crashes on the same row. The fix that works is the one the `store`/`salesman` lookups in `getSettlementForPrint` already use: select the `deliveryId` scalar and look the deliveries up with their own `findMany`, where a missing row genuinely returns null. Costs one extra query per read on both surfaces (settlement-bkm-print).
+- [ ] `Receivable.delivery` is a REQUIRED relation with no database FK (`relationMode = "prisma"`, `deliveryId String @unique` onto `FieldSalesDelivery`), so a dangling `deliveryId` throws `Inconsistent query result` inside the read itself rather than resolving to null. Both `getSettlementForApproval` and `getSettlementForPrint` traverse it to fetch each invoice's `docNo`, so one orphaned receivable 500s the approval detail AND the printed BKM with no UI repair path. **Pre-existing and shared — deliberately not fixed in one caller only**, since patching the print path alone would suggest the data is sound while the approval screen still crashes on the same row. The fix that works is the one the `store`/`salesman` lookups in `getSettlementForPrint` already use: select the `deliveryId` scalar and look the deliveries up with their own `findMany`, where a missing row genuinely returns null. Costs one extra query per read on both surfaces. **The exposure did not change in KIND on this branch but it widened in AUDIENCE, which is the part worth weighing when this gets prioritised**: before the BKM route, only a finance admin on the approval screen could hit that throw, in an office, with someone to ask. Now a salesman standing at a counter with the store owner watching gets a 500 instead of the receipt he just promised. `app/pwa/error.tsx` (added on this branch) turns that from an unescapable dead end into a retry-plus-way-back, which is mitigation, not a fix (settlement-bkm-print).
 - [ ] `apps/web/lib/tax-invoices/queries.ts` appears to carry the OPPOSITE assumption and its guard is therefore probably dead code. `TaxInvoice.delivery` is required (`deliveryId String @unique`, `FieldSalesDelivery @relation`), but the comment above the row mapper states that "a dangling row comes back with `delivery` null at runtime" and the `if (!delivery) return null` below it claims to skip orphans so one does not blank the queue page. Everything else in this repo — `docs/ARCHITECTURE-NOTES.md`'s note on `submitSettlement`'s write-time guards, and the same finding re-derived on the settlement print query — says a dangling REQUIRED relation throws instead, which would mean the queue page dies rather than skipping. Unverified against a live orphan; worth reproducing on the `:3308` bed before either fixing the code or rewriting the comment, because the two possible truths need opposite changes (settlement-bkm-print).
+- [ ] `apps/web/lib/print/field-sales-nota-tagihan-html.ts` renders money at WHOLE RUPIAH (`Math.round`)
+      while the figure behind it carries sen. `FieldSalesDelivery.total` is `Decimal(15,2)` and the AR
+      entry in `docs/ARCHITECTURE-NOTES.md` documents a sub-rupiah `PARTIAL` residue as a reachable
+      state, so the same two defects fixed on the BKM apply: a line column that visibly does not add up
+      on a document the store signs, and a sub-rupiah figure printed as a round one. Fixed on
+      `settlement-bkm-html.ts` (2dp, matching the settlement screens the BKM is the paper artifact of)
+      and deliberately NOT fixed here — changing a shipped document's appearance from a slice about a
+      different document is out of scope, and the nota tagihan travels in the same envelope, so the two
+      should be decided together rather than drifting one at a time. Scope is exactly ONE file, not a
+      directory sweep: with the BKM converted, three builders in `lib/print/` still hold a `Math.round`
+      rupiah formatter, and the other two — `spg-sale-nota-html.ts` and `van-sale-nota-html.ts` — are
+      CORRECT as they stand,
+      because `VanSale.total`/`SpgSale.total` are rounded to whole rupiah by `roundToWholeRupiah` in the
+      writer. Every remaining builder formats through `print-theme.ts`'s `money()` and is untouched by
+      this. So the question is per-document and the nota tagihan is the only open case
+      (settlement-bkm-print).
+- [ ] Browser-back from `/pwa/bkm/[settlementId]` lands on the filing form for the same store, remounted
+      with a fresh `draftId` and a blank form — it looks like an invitation to file the settlement again.
+      Not a regression (the old primary action on the success screen also navigated away, and the same
+      remount happens by any other route back), and a true duplicate re-file is refused by
+      `INVOICE_OVERCLAIMED` because the first settlement's `PENDING` claims already net out the invoices'
+      headroom. But the BKM is now the PRIMARY button on that success screen, so the path is far more
+      likely to be walked. A read-only "already filed" state on the form for a store with a live PENDING
+      settlement would close it; so would the PWA list surface the item above wants, which the salesman
+      could land on instead (settlement-bkm-print).
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
@@ -844,7 +878,7 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 - [ ] Delivery shipment: `listMyDeliveries`'s negative test asserts an empty result for a NONEXISTENT carrier id, which proves only that an unmatched filter returns nothing. The property worth proving is cross-carrier isolation: seed a SECOND real carrier with their own shipment and assert each carrier's query returns only their own row (salesman-carry-pod).
 - [ ] Delivery shipment: `DeliveryShipment` has no `@@index([carriedById])`, and `listMyDeliveries` filters on it on every PWA list load (the model indexes `orderId` and `status` only). Perf note, not urgent at current row counts (salesman-carry-pod).
 - [ ] Delivery shipment: `apps/web/app/pwa/api/upload/delivery-pod-proof/route.ts` interpolates `shipmentId` and `clientId` into the R2 object key without sanitising either, so a crafted value can shape the key path. Pre-existing family pattern, not introduced here — the sibling `collection-proof` and `visit-photo` routes do the same — so the fix belongs at the family level (one shared key-builder that validates its fragments), not in this route alone (salesman-carry-pod).
-- [ ] `apps/web/app/pwa/not-found.tsx` is new and now backstops EVERY `notFound()` under `/pwa`, not just the BKM route that needed it. Before it, no `not-found.tsx` existed anywhere in `apps/web/app`, so all of them dead-ended on Next's bare 404 — and in an installed PWA there is no browser chrome, so no back button and no URL bar to escape with. Deliberately segment-scoped to `/pwa` rather than the app root, and a deliberate improvement beyond the print slice's scope. The residue: its copy (`pwa.notFound.*`) is generic by necessity, so the other routes that call `notFound()` should be walked once to confirm the generic message is right for each — a POD shipment that is not yours and a settlement that does not exist read the same to the salesman today (settlement-bkm-print).
+- [ ] `apps/web/app/pwa/not-found.tsx` is new and now backstops EVERY `notFound()` under `/pwa`, not just the BKM route that needed it. Before it, no `not-found.tsx` existed anywhere in `apps/web/app`, so all of them dead-ended on Next's bare 404 — and in an installed PWA there is no browser chrome, so no back button and no URL bar to escape with. Deliberately segment-scoped to `/pwa` rather than the app root, and a deliberate improvement beyond the print slice's scope. `apps/web/app/pwa/error.tsx` is its sibling, added in the same review pass and for the same reason: a THROWN error was the identical unescapable dead end (Next's default error page, no chrome, no way out), and it is reachable on the BKM route specifically because `Receivable.delivery` is a required FK-less relation whose dangling id throws inside the read — see that item above. It offers `reset()` first and a link to `/pwa` second. The residue applies to both: their copy (`pwa.notFound.*`, `pwa.error.*`) is generic by necessity, so the other routes that call `notFound()` or can throw should be walked once to confirm the generic message is right for each — a POD shipment that is not yours and a settlement that does not exist read the same to the salesman today (settlement-bkm-print).
 - [ ] The BKM preview's back button is `size="sm"` (32px) against the ≥40px thumb-target standard the rest of the PWA is supposed to meet. Not this route's defect — it is a PWA-wide pattern copied from every other PWA header — so fixing it is a sweep across the PWA headers, or a change to the shared shell, not a one-file edit (settlement-bkm-print).
 - [ ] Using the BROWSER's own print menu on `/pwa/bkm/[settlementId]` (rather than the page's Print button) can clip a long BKM, because an iframe does not paginate inside a parent print job. Inherent to choosing a visible preview over the hidden print-only iframe, and accepted: the Print button calls `contentWindow.print()` on the iframe's own document and paginates correctly, and an installed standalone PWA has no browser print menu at all — the same fact that made the not-found page necessary. Only reachable in a browser tab (settlement-bkm-print).
 - [ ] Print: `printHtmlInIframe` was extracted to `apps/web/lib/print/print-html-in-iframe.ts` from the two verbatim copies in `backoffice/supplier-payments/page.tsx` and `backoffice/inventory/stock-card/page.tsx`, which had already drifted — supplier-payments removed the iframe on an unconditional 1s `setTimeout` with no error path at all, stock-card returned early with a toast; the shared helper keeps the more defensive behaviour, which also makes the supplier-payments fallback IMMEDIATE rather than 1s-delayed. **TEN further hand-rolled copies of the same hidden-iframe dance survive** across `app/backoffice` — `work-orders/[id]`, `work-orders/[id]/reconciliation`, `work-orders/nota-register`, `inventory/InventoryPageClient`, `field-sales-orders/[id]/FieldSalesOrderDetailClient`, `field-sales-orders/[id]/DeliveriesCard`, `purchase-orders/[id]`, `canvassing/[canvasserId]/VanDetailClient`, `canvassing/reconcile/[id]/ReconcileDetailClient`, `vendor-returns/[id]` — each free to drift the same way. Repointing them is mechanical but touches ten client components, so it wants its own change rather than riding along on a feature branch (settlement-bkm-print).
