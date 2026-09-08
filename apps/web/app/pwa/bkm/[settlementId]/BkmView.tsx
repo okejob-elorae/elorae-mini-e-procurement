@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -14,16 +14,26 @@ const rupiah = (n: number): string => `Rp ${Math.round(n).toLocaleString("id-ID"
 
 /**
  * Mirrors `apps/web/app/pwa/spg/[saleId]/nota/NotaView.tsx`'s shape (Card + sticky bottom bar +
- * `print:hidden` chrome), with two deliberate differences: the copy fed to the builder's `labels`
+ * `print:hidden` chrome), with deliberate differences: the copy fed to the builder's `labels`
  * comes from the `settlementBkm` locale namespace rather than being hardcoded, since the
- * backoffice caller in Task 4 needs the identical string set; and the document itself is a full
- * A4 portrait receipt (`print-theme.ts`'s `printPagePortrait`), not a thermal-width nota, so the
- * on-screen card is not clamped to a receipt-narrow `max-w-[320px]` and wraps the injected HTML
- * in its own horizontal-scroll container as a safety net on the narrowest phones.
+ * backoffice caller in Task 4 needs the identical string set; and the document renders inside an
+ * `<iframe srcDoc>` rather than a `dangerouslySetInnerHTML` div. `spgSaleNotaHtml` returns a bare,
+ * class-scoped `<div>` fragment, safe to inject directly — `buildSettlementBkmPrintHtml` is from
+ * the A4-document family instead (`print-theme.ts`'s `printPagePortrait`) and returns a FULL
+ * `<html><head><style>…` document. Fragment parsing drops the stray `<html>`/`<head>`/`<body>`
+ * wrapper but still attaches its `<style>` to the LIVE document — and that style's bare
+ * `body { padding; background; font-size; … }` is unlayered, so per the cascade-layers spec it
+ * beats every rule the app's own `globals.css` puts under `@layer base`, regardless of order or
+ * specificity. Injected as a div, the whole app would carry the print document's padding,
+ * background and font size for as long as this route stayed mounted. An iframe is a real,
+ * separate document, so its styles cannot leak.
  */
 export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
   const t = useTranslations("settlementBkm");
   const [canShare, setCanShare] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  /* A placeholder while the iframe loads; replaced with the document's real height on `onLoad`. */
+  const [iframeHeight, setIframeHeight] = useState(480);
 
   /**
    * Feature-detect after mount only — navigator is undefined during SSR and checking it during
@@ -89,8 +99,21 @@ export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
     },
   });
 
+  /**
+   * `srcDoc` is same-origin (`about:srcdoc` inherits the parent's origin), so the frame's own
+   * `contentDocument` is reachable without a CORS trip. Sized from `documentElement.scrollHeight`
+   * — the document's real rendered height — rather than a guessed constant, so a long settlement
+   * (many invoices or deductions) is neither cut off nor padded with dead space below it.
+   */
+  function handleIframeLoad(): void {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc?.documentElement) return;
+    setIframeHeight(doc.documentElement.scrollHeight);
+  }
+
+  /* Prints only the iframe's own document — the sticky bar and header never enter the dialog. */
   function handlePrint(): void {
-    window.print();
+    iframeRef.current?.contentWindow?.print();
   }
 
   async function handleShare(): Promise<void> {
@@ -122,9 +145,14 @@ export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
       </div>
 
       <Card className="mx-auto w-full max-w-2xl gap-0 overflow-hidden py-0">
-        <div className="overflow-x-auto">
-          <div dangerouslySetInnerHTML={{ __html: html }} />
-        </div>
+        <iframe
+          ref={iframeRef}
+          srcDoc={html}
+          title={t("title")}
+          onLoad={handleIframeLoad}
+          className="block w-full border-0"
+          style={{ height: iframeHeight }}
+        />
       </Card>
 
       <div className="sticky bottom-0 -mx-4 -mb-4 flex gap-2 border-t bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] print:hidden">

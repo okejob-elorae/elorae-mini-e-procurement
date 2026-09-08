@@ -2473,6 +2473,11 @@
     "nav": {
       "home": "Beranda"
     },
+    "notFound": {
+      "title": "Halaman tidak ditemukan",
+      "message": "Halaman ini tidak ada atau Anda tidak memiliki akses ke sana.",
+      "backHome": "Kembali ke Beranda"
+    },
     "stores": {
       "title": "Toko",
       "count": "{count, plural, =0 {Tidak ada toko} other {# toko}}",
