@@ -785,10 +785,15 @@ export type SettlementPrintDetail = {
  * approval enforces.
  *
  * `relationMode = "prisma"` means neither `storeId` nor `salesmanId` is backed by a real foreign
- * key, so a dangling one is genuinely reachable. Prisma types both relations as always present;
- * a dangling row comes back with the field `null` at runtime instead of throwing, so the casts
- * below are what let this function see that and return `null` rather than let a required-relation
- * throw reach a print route with no repair path.
+ * key, so a dangling one is genuinely reachable — `docs/ARCHITECTURE-NOTES.md`'s note on
+ * `submitSettlement`'s `STORE_NOT_FOUND`/`SALESMAN_NOT_FOUND` guards names the same field: a
+ * `StoreSettlement` pointing at a deleted store "throws `Inconsistent query result` on every later
+ * read through it." That throw happens INSIDE the read that traverses the required relation, before
+ * any application code runs, so nesting `store`/`salesman` selects under the settlement and then
+ * null-checking the result is not a guard — the throw already happened by the time that check would
+ * run. The only way to make the check real is to never traverse the relation: read `storeId` /
+ * `salesmanId` as plain scalars, then look each up on its own table with its own `findUnique`,
+ * which resolves to `null` on a missing row instead of throwing.
  */
 export async function getSettlementForPrint(
   settlementId: string,
@@ -802,8 +807,8 @@ export async function getSettlementForPrint(
       note: true,
       createdAt: true,
       actualAmount: true,
-      store: { select: { name: true } },
-      salesman: { select: { name: true, email: true } },
+      storeId: true,
+      salesmanId: true,
       invoices: { orderBy: { id: "asc" }, select: { receivableId: true, amount: true } },
       deductions: {
         orderBy: { id: "asc" },
@@ -813,8 +818,13 @@ export async function getSettlementForPrint(
   });
   if (!settlement) return null;
 
-  const store: (typeof settlement)["store"] | null = settlement.store;
-  const salesman: (typeof settlement)["salesman"] | null = settlement.salesman;
+  const [store, salesman] = await Promise.all([
+    prisma.store.findUnique({ where: { id: settlement.storeId }, select: { name: true } }),
+    prisma.user.findUnique({
+      where: { id: settlement.salesmanId },
+      select: { name: true, email: true },
+    }),
+  ]);
   if (!store || !salesman) return null;
 
   const receivableIds = settlement.invoices.map((invoice) => invoice.receivableId);
@@ -825,8 +835,18 @@ export async function getSettlementForPrint(
           select: { id: true, delivery: { select: { docNo: true } } },
         })
       : [];
+  /**
+   * `receivable.delivery.docNo` is read without `?.` on purpose: `Receivable.delivery` is a
+   * required, FK-less relation under `relationMode = "prisma"`, so a dangling `deliveryId` would
+   * throw inside this `findMany` before this line runs — `?.` here would only pretend the row
+   * could resolve with `delivery` absent, which it cannot without a throw already having happened.
+   * This traversal is a pre-existing exposure shared with `getSettlementForApproval`'s equivalent
+   * lookup; splitting it into a `deliveryId`-scalar-plus-separate-`findMany` shape (as the
+   * `store`/`salesman` guard above now does) would cost an extra query for a case not in this
+   * task's scope, so it is left as is and logged as a follow-up rather than fixed here.
+   */
   const docNoByReceivableId = new Map(
-    receivables.map((receivable) => [receivable.id, receivable.delivery?.docNo ?? null] as const),
+    receivables.map((receivable) => [receivable.id, receivable.delivery.docNo] as const),
   );
 
   /**
