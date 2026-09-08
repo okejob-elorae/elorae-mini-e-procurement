@@ -15,6 +15,7 @@ import {
   ImageOff,
   ListChecks,
   Loader2,
+  Printer,
   Receipt,
   Scissors,
   Wallet,
@@ -60,6 +61,9 @@ import type {
   SettlementJournalGapCause,
   SettlementStatusValue,
 } from "@/lib/finance/ar-settlement/queries";
+import { logPrint } from "@/app/actions/audit";
+import { buildSettlementBkmPrintHtml } from "@/lib/print/settlement-bkm-html";
+import { printHtmlInIframe } from "@/lib/print/print-html-in-iframe";
 
 type Props = {
   settlement: SettlementApprovalDetail;
@@ -181,6 +185,10 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
   const t = useTranslations("financeStoreSettlements");
   const tCommon = useTranslations("common");
   const tMapping = useTranslations("financeAccountMapping");
+  /* Reuses task 1/3's 33 builder-`labels` keys only — this screen's own chrome (the button
+     itself) reads from `financeStoreSettlements` instead, never from the PWA-navigation keys
+     (`back`/`print`/`share`/…) that also live in this namespace. */
+  const tBkm = useTranslations("settlementBkm");
   const locale = useLocale();
   const router = useRouter();
 
@@ -191,6 +199,7 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [postingJournals, setPostingJournals] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   const busy = approving || rejecting;
   const isPending = s.status === "PENDING";
@@ -390,6 +399,93 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
     }
   }
 
+  /**
+   * Prints the BKM (Bukti Kas Masuk) from the approval detail — the only way finance can print
+   * one at all, since `pwaAccessGuard` redirects any wildcard/ADMIN holder off `/pwa` before the
+   * PWA route's own permission check ever runs. Renders regardless of `s.status`: a rejected
+   * settlement's BKM is still a real document that was handed to the store at the counter.
+   *
+   * Goes through the hidden-iframe print path (`printHtmlInIframe`), never `window.print()` —
+   * this is a full application page, and printing it directly would emit the whole screen, not
+   * just the receipt.
+   */
+  async function handlePrintBkm(): Promise<void> {
+    if (printing) return;
+    setPrinting(true);
+    try {
+      await logPrint("StoreSettlementBkm", s.id);
+      const html = buildSettlementBkmPrintHtml({
+        docNo: s.docNo,
+        status: s.status,
+        storeName: s.storeName,
+        salesmanName: s.salesmanName,
+        createdAt: s.createdAt,
+        note: s.note,
+        invoices: s.invoices.map((invoice) => ({
+          docNo: invoice.docNo ?? invoice.receivableId,
+          agreedAmount: invoice.agreedAmount,
+        })),
+        deductions: s.deductions.map((deduction) => ({
+          type: deduction.type,
+          amount: deduction.amount,
+          percent: deduction.percent,
+          note: deduction.note,
+          returDocNo: deduction.fieldReturn?.docNo ?? null,
+        })),
+        invoiceTotal: s.invoiceTotal,
+        returTotal: s.returTotal,
+        programTotal: s.programTotal,
+        adminFeeBase: s.adminFeeBase,
+        adminFee: s.adminFee,
+        adminFeePercent: s.adminFeePercent,
+        expectedAmount: s.expectedAmount,
+        actualAmount: s.actualAmount,
+        varianceAmount: s.varianceAmount,
+        labels: {
+          title: tBkm("title"),
+          doc: tBkm("doc"),
+          date: tBkm("date"),
+          status: tBkm("status"),
+          statusPending: tBkm("statusPending"),
+          statusApproved: tBkm("statusApproved"),
+          statusRejected: tBkm("statusRejected"),
+          store: tBkm("store"),
+          salesman: tBkm("salesman"),
+          invoiceSection: tBkm("invoiceSection"),
+          no: tBkm("no"),
+          invoiceNo: tBkm("invoiceNo"),
+          agreedAmount: tBkm("agreedAmount"),
+          deductionSection: tBkm("deductionSection"),
+          type: tBkm("type"),
+          percent: tBkm("percent"),
+          amount: tBkm("amount"),
+          deductionNote: tBkm("deductionNote"),
+          typeReturOffset: tBkm("typeReturOffset"),
+          typeProgram: tBkm("typeProgram"),
+          typeAdminFee: tBkm("typeAdminFee"),
+          invoiceTotal: tBkm("invoiceTotal"),
+          returTotal: tBkm("returTotal"),
+          programTotal: tBkm("programTotal"),
+          adminFeeBase: tBkm("adminFeeBase"),
+          adminFee: tBkm("adminFee"),
+          expected: tBkm("expected"),
+          actual: tBkm("actual"),
+          variance: tBkm("variance"),
+          regards: tBkm("regards"),
+          receivedBy: tBkm("receivedBy"),
+          issuedBy: tBkm("issuedBy"),
+          footerTitle: tBkm("footerTitle"),
+          footerNote: tBkm("footerNote"),
+        },
+      });
+      printHtmlInIframe(html, t("printBkmButton"));
+    } catch {
+      toast.error(t("err.UNEXPECTED"));
+    } finally {
+      setPrinting(false);
+    }
+  }
+
   return (
     <div className={cn("space-y-6", isPending && "pb-40 lg:pb-6")}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -405,11 +501,21 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
             {t("headerSubtitle", { store: s.storeName, salesman: s.salesmanName })}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Badge className={STATUS_BADGE_CLASS[s.status]}>{t(STATUS_LABEL_KEY[s.status])}</Badge>
           <span className="text-sm text-muted-foreground whitespace-nowrap">
             {formatTimestamp(s.createdAt)}
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10"
+            disabled={printing}
+            onClick={() => void handlePrintBkm()}
+          >
+            {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+            {t("printBkmButton")}
+          </Button>
         </div>
       </div>
 

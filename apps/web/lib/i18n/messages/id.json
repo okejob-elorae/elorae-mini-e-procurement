@@ -4262,6 +4262,7 @@
     },
     "approveButton": "Setujui",
     "rejectButton": "Tolak",
+    "printBkmButton": "Cetak BKM",
     "approveBlockedHint": "Persetujuan terkunci sampai semua pemeriksaan di atas lolos.",
     "approveDialogTitle": "Setujui pelunasan ini?",
     "approveDialogDescription": "{docNo} akan memposting potongannya dan uang tunai {amount} ke faktur toko ini. Tindakan ini tidak bisa dibatalkan dari sini.",

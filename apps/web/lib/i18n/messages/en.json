@@ -4262,6 +4262,7 @@
     },
     "approveButton": "Approve",
     "rejectButton": "Reject",
+    "printBkmButton": "Print BKM",
     "approveBlockedHint": "Approval is blocked until every check above passes.",
     "approveDialogTitle": "Approve this settlement?",
     "approveDialogDescription": "{docNo} will post its deductions and {amount} in cash against this store's invoices. This cannot be undone from here.",
