@@ -2478,6 +2478,12 @@
       "message": "This page doesn't exist or you don't have access to it.",
       "backHome": "Back to Home"
     },
+    "error": {
+      "title": "Something went wrong",
+      "message": "This page couldn't be loaded. Try again, or go back to the home screen.",
+      "retry": "Try Again",
+      "backHome": "Back to Home"
+    },
     "stores": {
       "title": "Stores",
       "count": "{count, plural, =0 {No stores} one {# store} other {# stores}}",

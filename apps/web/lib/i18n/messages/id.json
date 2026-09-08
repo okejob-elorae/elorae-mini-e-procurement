@@ -2478,6 +2478,12 @@
       "message": "Halaman ini tidak ada atau Anda tidak memiliki akses ke sana.",
       "backHome": "Kembali ke Beranda"
     },
+    "error": {
+      "title": "Terjadi kesalahan",
+      "message": "Halaman ini tidak dapat dimuat. Coba lagi, atau kembali ke beranda.",
+      "retry": "Coba Lagi",
+      "backHome": "Kembali ke Beranda"
+    },
     "stores": {
       "title": "Toko",
       "count": "{count, plural, =0 {Tidak ada toko} other {# toko}}",
