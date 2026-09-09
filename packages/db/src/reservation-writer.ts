@@ -20,10 +20,15 @@ function hasTx(client: AnyClient): client is PrismaClient {
 }
 
 async function findFieldSalesInventory(tx: Prisma.TransactionClient, itemId: string, variantSku: string) {
-  // Variantless rows use variantSku: null in this codebase (not ""); tolerate both.
-  return variantSku === ""
-    ? tx.inventoryValue.findFirst({ where: { itemId, OR: [{ variantSku: null }, { variantSku: "" }] } })
-    : tx.inventoryValue.findFirst({ where: { itemId, variantSku } });
+  // Variantless rows may key on null OR "". Prefer the caller's exact spelling when both
+  // exist — a bare OR findFirst can decrement the sibling row and orphan reservedQty
+  // (dual-key fork on FG items that also have a Jubelio "" row).
+  if (variantSku !== "") {
+    return tx.inventoryValue.findFirst({ where: { itemId, variantSku } });
+  }
+  const exactEmpty = await tx.inventoryValue.findFirst({ where: { itemId, variantSku: "" } });
+  if (exactEmpty) return exactEmpty;
+  return tx.inventoryValue.findFirst({ where: { itemId, variantSku: null } });
 }
 
 export async function reserveOrder(client: AnyClient, input: ReserveOrderInput): Promise<ReserveOrderResult> {
