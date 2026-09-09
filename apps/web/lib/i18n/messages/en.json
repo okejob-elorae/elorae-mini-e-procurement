@@ -2473,6 +2473,17 @@
     "nav": {
       "home": "Home"
     },
+    "notFound": {
+      "title": "Page not found",
+      "message": "This page doesn't exist or you don't have access to it.",
+      "backHome": "Back to Home"
+    },
+    "error": {
+      "title": "Something went wrong",
+      "message": "This page couldn't be loaded. Try again, or go back to the home screen.",
+      "retry": "Try Again",
+      "backHome": "Back to Home"
+    },
     "stores": {
       "title": "Stores",
       "count": "{count, plural, =0 {No stores} one {# store} other {# stores}}",
@@ -4257,6 +4268,7 @@
     },
     "approveButton": "Approve",
     "rejectButton": "Reject",
+    "printBkmButton": "Print BKM",
     "approveBlockedHint": "Approval is blocked until every check above passes.",
     "approveDialogTitle": "Approve this settlement?",
     "approveDialogDescription": "{docNo} will post its deductions and {amount} in cash against this store's invoices. This cannot be undone from here.",
@@ -4328,6 +4340,48 @@
       "DUPLICATE_ALLOCATION": "One of this settlement's payments allocates to the same invoice twice.",
       "ALREADY_APPLIED": "That retur credit has already been fully applied."
     }
+  },
+  "settlementBkm": {
+    "title": "Settlement Receipt (BKM)",
+    "doc": "Doc No.",
+    "date": "Date",
+    "status": "Status",
+    "statusPending": "Pending",
+    "statusApproved": "Approved",
+    "statusRejected": "Rejected",
+    "store": "Store",
+    "salesman": "Salesperson",
+    "invoiceSection": "Invoices",
+    "no": "No",
+    "invoiceNo": "Invoice No.",
+    "agreedAmount": "Agreed Amount",
+    "deductionSection": "Deductions",
+    "type": "Type",
+    "percent": "Percent",
+    "amount": "Amount",
+    "deductionNote": "Note",
+    "typeReturOffset": "Retur credit",
+    "typeProgram": "Trade program",
+    "typeAdminFee": "Admin fee",
+    "invoiceTotal": "Invoices",
+    "returTotal": "Retur credit",
+    "programTotal": "Trade program",
+    "adminFeeBase": "Fee charged on",
+    "adminFee": "Admin fee",
+    "expected": "Expected",
+    "actual": "Received",
+    "variance": "Variance",
+    "regards": "Regards",
+    "receivedBy": "Received by",
+    "issuedBy": "Issued by",
+    "footerTitle": "Notice",
+    "footerNote": "This receipt reflects the settlement recorded in Elorae. Keep it as proof of what was handed over at the counter.",
+    "back": "Back",
+    "print": "Print",
+    "share": "Share",
+    "shareText": "{docNo} — Total {amount}",
+    "shareError": "Failed to share the receipt.",
+    "printBkm": "Print BKM"
   },
   "payments": {
     "pageTitle": "Payments",

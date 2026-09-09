@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, CheckCircle2, Loader2, Plus, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Plus, Printer, X } from "lucide-react";
 import { roundCents } from "@elorae/db/pricing";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { computeSettlementTotals, computeVariance, type SettlementDeductionInput } from "@/lib/finance/ar-settlement/calc";
@@ -150,6 +150,7 @@ function returClaimable(option: SettlementOffsettableReturn): number {
 
 export function SettlementForm({ storeId, storeName, invoices, offsettableReturns }: Props) {
   const t = useTranslations("pwa.settlement");
+  const tBkm = useTranslations("settlementBkm");
   const [isPending, startTransition] = useTransition();
 
   /**
@@ -212,7 +213,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   const [note, setNote] = useState("");
 
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<{ docNo: string } | null>(null);
+  const [success, setSuccess] = useState<{ settlementId: string; docNo: string } | null>(null);
   const [submitAttempted, setSubmitAttempted] = useState(false);
 
   const selectedInvoiceRows = invoices.filter((inv) => selectedInvoiceIds[inv.receivableId] === true);
@@ -467,7 +468,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
            * keys under a prefix `draftId` no longer matches, which is why that rotation was
            * removed rather than kept "just in case".
            */
-          setSuccess({ docNo: result.docNo });
+          setSuccess({ settlementId: result.settlementId, docNo: result.docNo });
           return;
         }
         const key = REASON_KEY[result.reason] ?? "errGeneric";
@@ -495,8 +496,14 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
             </div>
           </CardContent>
         </Card>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-col gap-2">
           <Button asChild className="w-full" size="lg">
+            <Link href={`/pwa/bkm/${success.settlementId}`}>
+              <Printer className="h-4 w-4" />
+              {tBkm("printBkm")}
+            </Link>
+          </Button>
+          <Button asChild variant="outline" className="w-full" size="lg">
             <Link href="/pwa/pelunasan">
               <ArrowLeft className="h-4 w-4" />
               {t("backToList")}

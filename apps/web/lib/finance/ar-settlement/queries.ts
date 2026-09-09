@@ -15,6 +15,7 @@ import {
   type SettlementComponentDetail,
   type SettlementComponentSpec,
   type SettlementDeductionDetail,
+  type SettlementDeductionTypeValue,
   type SettlementInvoiceDetail,
   type SettlementReturDetail,
   type SettlementStatusValue,
@@ -277,8 +278,16 @@ export async function getSettlementForApproval(
       store: { select: { name: true } },
       salesman: { select: { name: true, email: true } },
       reviewedBy: { select: { name: true, email: true } },
-      invoices: { select: { receivableId: true, amount: true } },
+      /**
+       * Ordered by id like `getSettlementForPrint`'s identical selects, and for its sake: both
+       * queries feed the SAME `buildSettlementBkmPrintHtml`, which numbers its invoice and
+       * deduction rows by array position. Left unordered, one settlement printed from the
+       * backoffice button and from the PWA route could number the same rows differently — the
+       * figures agree, the paper does not.
+       */
+      invoices: { orderBy: { id: "asc" }, select: { receivableId: true, amount: true } },
       deductions: {
+        orderBy: { id: "asc" },
         select: {
           id: true,
           type: true,
@@ -732,5 +741,191 @@ async function readVarianceOverride(settlementId: string): Promise<SettlementVar
     reason: row.reason,
     byName: row.user.name ?? row.user.email,
     at: row.createdAt,
+  };
+}
+
+export type SettlementPrintInvoiceRow = {
+  docNo: string;
+  agreedAmount: number;
+};
+
+export type SettlementPrintDeductionRow = {
+  type: SettlementDeductionTypeValue;
+  amount: number;
+  percent: number | null;
+  note: string | null;
+  returDocNo: string | null;
+};
+
+export type SettlementPrintDetail = {
+  id: string;
+  docNo: string;
+  status: SettlementStatusValue;
+  storeName: string;
+  salesmanId: string;
+  salesmanName: string;
+  createdAt: Date;
+  note: string | null;
+  invoices: SettlementPrintInvoiceRow[];
+  deductions: SettlementPrintDeductionRow[];
+  invoiceTotal: number;
+  returTotal: number;
+  programTotal: number;
+  adminFeeBase: number;
+  adminFee: number;
+  adminFeePercent: number | null;
+  expectedAmount: number;
+  actualAmount: number;
+  varianceAmount: number;
+};
+
+/**
+ * Reads one settlement for the BKM print view — a lean sibling of `getSettlementForApproval`, not
+ * a reuse of it. That query's checklist block (`buildCollectibilityCheck`,
+ * `computeComponentHeadroom` and its own two queries, the journal-gap lookup) exists to preview
+ * what `approveSettlement` would refuse, and its own doc comment records that the block is skipped
+ * on a closed document. A `PENDING` settlement — the BKM's main case — would pay the full cost of
+ * that block for data a receipt never renders. This function reads only what
+ * `buildSettlementBkmPrintHtml` (`lib/print/settlement-bkm-html.ts`) consumes.
+ *
+ * Totals are derived through `deriveTotals`, never read off `StoreSettlement.expectedAmount` /
+ * `varianceAmount` — those columns are written once at submit time and `approveSettlement` never
+ * reconciles them, so a printed receipt built from the stored figures could disagree with what
+ * approval enforces.
+ *
+ * `relationMode = "prisma"` means neither `storeId` nor `salesmanId` is backed by a real foreign
+ * key, so a dangling one is genuinely reachable — `docs/ARCHITECTURE-NOTES.md`'s note on
+ * `submitSettlement`'s `STORE_NOT_FOUND`/`SALESMAN_NOT_FOUND` guards names the same field: a
+ * `StoreSettlement` pointing at a deleted store "throws `Inconsistent query result` on every later
+ * read through it." That throw happens INSIDE the read that traverses the required relation, before
+ * any application code runs, so nesting `store`/`salesman` selects under the settlement and then
+ * null-checking the result is not a guard — the throw already happened by the time that check would
+ * run. The only way to make the check real is to never traverse the relation: read `storeId` /
+ * `salesmanId` as plain scalars, then look each up on its own table with its own `findUnique`,
+ * which resolves to `null` on a missing row instead of throwing.
+ */
+export async function getSettlementForPrint(
+  settlementId: string,
+): Promise<SettlementPrintDetail | null> {
+  const settlement = await prisma.storeSettlement.findUnique({
+    where: { id: settlementId },
+    select: {
+      id: true,
+      docNo: true,
+      status: true,
+      note: true,
+      createdAt: true,
+      actualAmount: true,
+      storeId: true,
+      salesmanId: true,
+      invoices: { orderBy: { id: "asc" }, select: { receivableId: true, amount: true } },
+      deductions: {
+        orderBy: { id: "asc" },
+        select: { type: true, amount: true, percent: true, note: true, fieldReturnId: true },
+      },
+    },
+  });
+  if (!settlement) return null;
+
+  const [store, salesman] = await Promise.all([
+    prisma.store.findUnique({ where: { id: settlement.storeId }, select: { name: true } }),
+    prisma.user.findUnique({
+      where: { id: settlement.salesmanId },
+      select: { name: true, email: true },
+    }),
+  ]);
+  if (!store || !salesman) return null;
+
+  const receivableIds = settlement.invoices.map((invoice) => invoice.receivableId);
+  const receivables =
+    receivableIds.length > 0
+      ? await prisma.receivable.findMany({
+          where: { id: { in: receivableIds } },
+          select: { id: true, delivery: { select: { docNo: true } } },
+        })
+      : [];
+  /**
+   * `receivable.delivery.docNo` is read without `?.` on purpose: `Receivable.delivery` is a
+   * required, FK-less relation under `relationMode = "prisma"`, so a dangling `deliveryId` would
+   * throw inside this `findMany` before this line runs — `?.` here would only pretend the row
+   * could resolve with `delivery` absent, which it cannot without a throw already having happened.
+   * This traversal is a pre-existing exposure shared with `getSettlementForApproval`'s equivalent
+   * lookup; splitting it into a `deliveryId`-scalar-plus-separate-`findMany` shape (as the
+   * `store`/`salesman` guard above now does) would cost an extra query for a case not in this
+   * task's scope, so it is left as is and logged as a follow-up rather than fixed here.
+   */
+  const docNoByReceivableId = new Map(
+    receivables.map((receivable) => [receivable.id, receivable.delivery.docNo] as const),
+  );
+
+  /**
+   * The retur `docNo` a `RETUR_OFFSET` deduction credits, so the printed receipt lets the store
+   * look up the physical return behind the credit. `fieldReturnId` is nullable — most deductions
+   * carry none — so its absence is a normal case, not an error.
+   */
+  const returIds = Array.from(
+    new Set(
+      settlement.deductions
+        .filter((deduction) => deduction.fieldReturnId !== null)
+        .map((deduction) => deduction.fieldReturnId as string),
+    ),
+  );
+  const returns =
+    returIds.length > 0
+      ? await prisma.fieldReturn.findMany({
+          where: { id: { in: returIds } },
+          select: { id: true, docNo: true },
+        })
+      : [];
+  const docNoByReturnId = new Map(returns.map((fieldReturn) => [fieldReturn.id, fieldReturn.docNo]));
+
+  const totals = deriveTotals(
+    settlement.invoices.map((invoice) => roundCents(Number(invoice.amount))),
+    settlement.deductions.map((deduction) => ({
+      type: deduction.type,
+      amount: Number(deduction.amount),
+      percent: deduction.percent === null ? null : Number(deduction.percent),
+    })),
+  );
+  const actualAmount = roundCents(Number(settlement.actualAmount));
+  const varianceAmount = computeVariance(totals.expected, actualAmount);
+
+  const adminFeeDeduction = settlement.deductions.find((deduction) => deduction.type === "ADMIN_FEE");
+  const adminFeePercent =
+    adminFeeDeduction && adminFeeDeduction.percent !== null ? Number(adminFeeDeduction.percent) : null;
+
+  const invoices: SettlementPrintInvoiceRow[] = settlement.invoices.map((invoice) => ({
+    docNo: docNoByReceivableId.get(invoice.receivableId) ?? invoice.receivableId,
+    agreedAmount: roundCents(Number(invoice.amount)),
+  }));
+
+  const deductions: SettlementPrintDeductionRow[] = settlement.deductions.map((deduction) => ({
+    type: deduction.type,
+    amount: roundCents(Number(deduction.amount)),
+    percent: deduction.percent === null ? null : Number(deduction.percent),
+    note: deduction.note,
+    returDocNo: deduction.fieldReturnId ? docNoByReturnId.get(deduction.fieldReturnId) ?? null : null,
+  }));
+
+  return {
+    id: settlement.id,
+    docNo: settlement.docNo,
+    status: settlement.status,
+    storeName: store.name,
+    salesmanId: settlement.salesmanId,
+    salesmanName: salesman.name ?? salesman.email,
+    createdAt: settlement.createdAt,
+    note: settlement.note,
+    invoices,
+    deductions,
+    invoiceTotal: totals.invoiceTotal,
+    returTotal: totals.returTotal,
+    programTotal: totals.programTotal,
+    adminFeeBase: totals.adminFeeBase,
+    adminFee: totals.adminFee,
+    adminFeePercent,
+    expectedAmount: totals.expected,
+    actualAmount,
+    varianceAmount,
   };
 }
