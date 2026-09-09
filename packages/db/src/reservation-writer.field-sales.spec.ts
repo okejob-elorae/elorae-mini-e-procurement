@@ -148,6 +148,59 @@ d("field-sales reservation fns (test bed only)", () => {
       expect(Number(inv!.reservedQty)).toBe(0);
     });
   });
+
+  describe("dual null + empty InventoryValue rows (Jubelio fork)", () => {
+    let dualItemId = "";
+    let dualUomId = "";
+    const dualSku = `TEST-FS-DUAL-${Math.random().toString(36).slice(2, 10)}`;
+
+    beforeEach(async () => {
+      dualItemId = "";
+      dualUomId = "";
+      const uom = await prisma.uOM.create({
+        data: { code: `TEST-UOM-${dualSku}`, nameId: "test", nameEn: "test" },
+      });
+      dualUomId = uom.id;
+      const item = await prisma.item.create({
+        data: { sku: dualSku, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId: dualUomId },
+      });
+      dualItemId = item.id;
+      await prisma.inventoryValue.create({
+        data: { itemId: dualItemId, variantSku: null, qtyOnHand: 1000, reservedQty: 12, avgCost: 1000, totalValue: 1000000 },
+      });
+      await prisma.inventoryValue.create({
+        data: { itemId: dualItemId, variantSku: "", qtyOnHand: 999, reservedQty: 0, avgCost: 1000, totalValue: 999000 },
+      });
+    });
+
+    afterEach(async () => {
+      await prisma.stockReservation.deleteMany({ where: { itemId: seededId(dualItemId) } });
+      await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(dualItemId) } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(dualItemId) } });
+      await prisma.item.deleteMany({ where: { id: seededId(dualItemId) } });
+      await prisma.uOM.deleteMany({ where: { id: seededId(dualUomId) } });
+    });
+
+    it("reserve + release bump the empty-string row, not the null sibling", async () => {
+      const lineId = `line-${dualSku}-1`;
+      const r1 = await reserveFieldSalesOrder(prisma, {
+        orderNo: "PUTUS-T-DUAL-1",
+        lines: [{ fieldSalesLineId: lineId, itemId: dualItemId, variantSku: "", qty: 6 }],
+      });
+      expect(r1.reserved).toBe(1);
+      const empty = await prisma.inventoryValue.findFirst({ where: { itemId: dualItemId, variantSku: "" } });
+      const nullRow = await prisma.inventoryValue.findFirst({ where: { itemId: dualItemId, variantSku: null } });
+      expect(Number(empty!.reservedQty)).toBe(6);
+      expect(Number(nullRow!.reservedQty)).toBe(12);
+
+      const releaseRes = await releaseFieldSalesOrder(prisma, { fieldSalesLineIds: [lineId] });
+      expect(releaseRes.released).toBe(1);
+      const emptyAfter = await prisma.inventoryValue.findFirst({ where: { itemId: dualItemId, variantSku: "" } });
+      const nullAfter = await prisma.inventoryValue.findFirst({ where: { itemId: dualItemId, variantSku: null } });
+      expect(Number(emptyAfter!.reservedQty)).toBe(0);
+      expect(Number(nullAfter!.reservedQty)).toBe(12);
+    });
+  });
 });
 
 d("reserveKonsiFieldSalesOrder (test bed only)", () => {
