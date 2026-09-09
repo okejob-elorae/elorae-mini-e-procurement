@@ -125,10 +125,14 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
   }
 
   const statusVariant = (status: string): "default" | "secondary" =>
-    status === "MATCHED" ? "default" : "secondary";
+    status === "MATCHED" || status === "RECONCILED" ? "default" : "secondary";
 
   const statusLabel = (status: string): string =>
-    status === "MATCHED" ? t("statusMatched") : t("statusParsed");
+    status === "RECONCILED"
+      ? t("statusReconciled")
+      : status === "MATCHED"
+        ? t("statusMatched")
+        : t("statusParsed");
 
   return (
     <div className="space-y-6">
