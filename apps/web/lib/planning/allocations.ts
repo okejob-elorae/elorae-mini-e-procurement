@@ -83,6 +83,20 @@ export function stageNameFromAllocation(
   return `${categoryCode} · M${String(month).padStart(2, "0")} · ${variantSku} · ${supplierName}`;
 }
 
+export const VARIANTLESS_FG_FOR_PLAN_MESSAGE =
+  "Finished good has no SKU variants. Plan Kerja cannot process variantless items — add variants on the item, then link it again.";
+
+export const STAGE_MISSING_VARIANT_SKU_MESSAGE =
+  "Stage has no variant SKU. Assign a variant on this Plan Kerja stage before creating a Work Order.";
+
+export function assertVariantSkuForPlanWo(variantSku: string | null | undefined): string {
+  const sku = (variantSku ?? "").trim();
+  if (!sku) {
+    throw new Error(STAGE_MISSING_VARIANT_SKU_MESSAGE);
+  }
+  return sku;
+}
+
 export function buildWoPayloadFromCmtRow(
   category: PlanCategoryForWo,
   cmtRow: CmtAllocationRow,
@@ -94,6 +108,7 @@ export function buildWoPayloadFromCmtRow(
   if (cmtRow.allocatedQty <= 0) {
     throw new Error("CMT allocation quantity must be positive");
   }
+  const variantSku = assertVariantSkuForPlanWo(cmtRow.variantSku);
 
   const { endExclusive } = getJakartaMonthBounds(planYear, cmtRow.month);
   const targetDate = new Date(endExclusive.getTime() - 1);
@@ -102,7 +117,7 @@ export function buildWoPayloadFromCmtRow(
     finishedGoodId: category.itemId,
     vendorId: cmtRow.supplierId,
     plannedQty: cmtRow.allocatedQty,
-    variantSku: cmtRow.variantSku,
+    variantSku,
     targetDate,
     outputMode: "SKU",
   };

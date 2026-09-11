@@ -64,6 +64,8 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/sales-orders/[id]/packing-slip': 'sales_orders:view',
   '/backoffice/fulfillment': 'sales_orders:view',
   '/backoffice/field-sales-orders': 'field_sales_orders:view',
+  '/backoffice/field-returns': 'field_sales_orders:view',
+  '/backoffice/field-returns/[id]': 'field_sales_orders:view',
   '/backoffice/promos': 'promos:view',
   '/backoffice/canvassing': 'canvassing:manage',
   '/backoffice/canvassing/reconcile/[id]': 'canvassing:manage',
@@ -91,19 +93,24 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/settings/uom': 'settings_uom:view',
   '/backoffice/settings/security': 'settings_security:view',
   '/backoffice/settings/rbac': 'settings_rbac:view',
+  '/backoffice/profile-accounts': 'settings_rbac:view',
   '/backoffice/jubelio/admin': 'jubelio_admin:view',
   '/backoffice/jubelio/settings': 'settings_security:view',
   '/backoffice/jubelio/categories': 'settings_security:view',
   '/backoffice/jubelio/migration': 'settings_security:view',
   '/backoffice/jubelio/couriers': 'settings_security:view',
   '/backoffice/finance/coa': 'coa:view',
+  '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
+  '/backoffice/finance/piutang': 'receivables:view',
+  '/backoffice/finance/payments': 'payments:manage',
+  '/backoffice/finance/collections': 'collections:manage',
+  '/backoffice/settings/piutang': 'collections:manage',
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
   '/api/items': 'items:view',
   '/api/uoms': 'settings_uom:view',
   '/api/production/colors': 'production_colors:view',
-  '/api/notifications': 'dashboard:view', // All authenticated users can view their notifications
 };
 
 /**
@@ -138,7 +145,9 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/settings/tax',
   '/backoffice/settings/uom',
   '/backoffice/settings/security',
-  '/backoffice/settings/rbac',
+  // Profile Accounts / legacy RBAC are ADMIN-gated in the page — omit from
+  // first-allowed so a non-ADMIN with settings_rbac:view cannot loop
+  // /backoffice → settings/rbac → profile-accounts → /backoffice.
 ];
 
 /**
@@ -205,6 +214,11 @@ export const PERMISSIONS = {
   // Field Sales Orders
   FIELD_SALES_ORDERS_VIEW: 'field_sales_orders:view',
   FIELD_SALES_ORDERS_APPROVE: 'field_sales_orders:approve',
+  FIELD_SALES_ORDERS_DELIVER: 'field_sales_orders:deliver',
+  FIELD_SALES_ORDERS_CREDIT_OVERRIDE: 'field_sales_orders:credit_override',
+  // Delivery Shipments
+  DELIVERIES_SHIP: 'deliveries:ship',
+  DELIVERIES_POD: 'deliveries:pod',
   // Purchase Orders
   PURCHASE_ORDERS_VIEW: 'purchase_orders:view',
   PURCHASE_ORDERS_CREATE: 'purchase_orders:create',
@@ -285,9 +299,24 @@ export const PERMISSIONS = {
   JOURNALS_MANAGE: "journals:manage",
   // Finance — Financial Reports
   FINANCE_REPORTS_VIEW: "finance_reports:view",
+  // Finance — Faktur Pajak
+  TAX_INVOICES_VIEW: "tax_invoices:view",
+  TAX_INVOICES_MANAGE: "tax_invoices:manage",
   // Lead Time
   LEAD_TIME_VIEW: "lead_time:view",
   LEAD_TIME_MANAGE: "lead_time:manage",
+  // Field Returns
+  FIELD_RETURNS_MANAGE: "field_returns:manage",
+  FIELD_RETURNS_WRITEOFF: "field_returns:writeoff",
+  // Finance — AR (Piutang) + Payments
+  RECEIVABLES_VIEW: "receivables:view",
+  PAYMENTS_MANAGE: "payments:manage",
+  // Finance — Collections
+  COLLECTIONS_COLLECT: "collections:collect",
+  COLLECTIONS_MANAGE: "collections:manage",
+  COLLECTIONS_AMPLOP: "collections:amplop",
+  // Finance — Settlements
+  SETTLEMENTS_SUBMIT: "settlements:submit",
   // Record Packer
   PACKER_MENU: "packer:menu",
   PACKER_RECORD: "packer:record",

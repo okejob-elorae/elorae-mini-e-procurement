@@ -1,0 +1,193 @@
+import { generateDocNumber } from "@/lib/docNumber";
+import { runSerializable } from "@/lib/db/tx-retry";
+import { roundCents } from "@elorae/db/pricing";
+import { PaymentError } from "./errors";
+
+export type RecordPaymentInput = {
+  storeId: string;
+  paidAt: Date;
+  /**
+   * A hand-written union, NOT Prisma's `PaymentMethod` — widening the schema enum does not widen
+   * this, and a method missing here simply cannot be posted. `PROGRAM_DEDUCTION` and `ADMIN_FEE`
+   * are the settlement's non-cash components; `debitRole` in `payment-journal.ts` already maps
+   * both to their expense roles.
+   */
+  method: "CASH" | "TRANSFER" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE";
+  amount: number;
+  recordedById: string;
+  allocations: Array<{ receivableId: string; amount: number }>;
+  reference?: string;
+  note?: string;
+  proofUrl?: string;
+  proofR2Key?: string;
+  idempotencyKey?: string;
+  fieldReturnId?: string;
+};
+
+/**
+ * Amounts are `Decimal(15,2)`, so every incoming figure is normalised to 2dp BEFORE any comparison
+ * and every comparison is then effectively exact.
+ *
+ * The tolerance must be far below one cent, not half of one. Half a cent is a STORABLE magnitude
+ * here, so a 0.005 tolerance lets a real mismatch through: `amount = 1500.008` against allocations
+ * `1000.004 + 500.004` passes both the sum check and the per-line balance check, then MariaDB rounds
+ * the header to 1500.01 and the lines to 1500.00 independently. The receipt journal reads
+ * `Payment.amount`, so the GL moves a sen more than the AR subledger — permanent AR-control drift,
+ * and a payment header that does not equal its own allocation lines. Actual float summation error at
+ * rupiah magnitudes is ~1e-7 at 1e9, some 500x smaller than 0.005, so nothing needs that slack.
+ */
+const EPSILON = 1e-6;
+
+/**
+ * Records one payment against one or more receivables of the same store.
+ *
+ * Every guard lives here rather than in the form. Each `"use server"` export is an independently
+ * callable endpoint, so a control the UI withholds is not a guarantee about what reaches the writer.
+ */
+export async function recordPayment(input: RecordPaymentInput): Promise<{ paymentId: string; docNo: string }> {
+  const amount = roundCents(input.amount);
+  const allocations = input.allocations.map((a) => ({ ...a, amount: roundCents(a.amount) }));
+
+  if (!(amount > 0)) throw new PaymentError("INVALID_AMOUNT");
+  if (allocations.length === 0) throw new PaymentError("NO_ALLOCATIONS");
+  if (allocations.some((a) => !(a.amount > 0))) throw new PaymentError("INVALID_AMOUNT");
+
+  /*
+   * No unapplied credit in this slice: a payment is fully allocated the moment it is recorded. An
+   * on-account balance is its own feature with its own GL treatment.
+   */
+  const allocated = allocations.reduce((s, a) => s + a.amount, 0);
+  if (Math.abs(allocated - amount) > EPSILON) throw new PaymentError("ALLOCATION_MISMATCH");
+
+  /*
+   * Two entries naming the SAME receivable would each be checked against that receivable's
+   * pre-payment balance, so 600 + 600 against a 1000 balance passes both per-line checks. The
+   * `@@unique([paymentId, receivableId])` constraint does then reject the create, so nothing wrong
+   * persists — but it surfaces as a raw Prisma P2002 the caller cannot classify, and it is only
+   * fail-closed by accident, via a constraint that exists for a different reason. Reject it here so
+   * the per-line check is correct on its own terms rather than constraint-rescued.
+   */
+  if (new Set(allocations.map((a) => a.receivableId)).size !== allocations.length) {
+    throw new PaymentError("DUPLICATE_ALLOCATION");
+  }
+
+  /*
+   * The coupling used to be structural — a `@unique FieldReturn.offsetPaymentId` plus an
+   * `offsetStatus` CAS made a stray retur-offset payment unreachable. Both were removed for
+   * partial draw-down, so it is enforced here instead: without a `fieldReturnId`, a
+   * RETUR_OFFSET payment would settle receivables and post the revenue reversal with no retur
+   * behind it, invisible to `projectReturnOffset`.
+   */
+  if (input.method === "RETUR_OFFSET" && !input.fieldReturnId) throw new PaymentError("NOT_FOUND");
+
+  return runSerializable(async (tx) => {
+    if (input.idempotencyKey) {
+      const existing = await tx.payment.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        select: { id: true, docNo: true },
+      });
+      if (existing) return { paymentId: existing.id, docNo: existing.docNo };
+    }
+
+    /*
+     * The retur draw ceiling. This lives inside the same serializable transaction that creates the
+     * payment, for the same reason OVER_ALLOCATED does: a check that commits separately from the
+     * fact it checks is not a check. Two concurrent draws against one retur are serialised here,
+     * so the sum of POSTED payments carrying this fieldReturnId can never pass the retur's frozen
+     * totalValue. VOIDED payments are excluded — a voided draw released its value.
+     */
+    if (input.fieldReturnId) {
+      const ret = await tx.fieldReturn.findUnique({
+        where: { id: input.fieldReturnId },
+        select: { storeId: true, totalValue: true },
+      });
+      if (!ret) throw new PaymentError("NOT_FOUND");
+      /*
+       * Every guard lives here, not in the form: without this, a payment can draw down store A's
+       * retur credit while settling store B's receivables — the ceiling check and the allocation
+       * loop's WRONG_STORE both pass, since neither compares the retur's own store against the
+       * other.
+       */
+      if (ret.storeId !== input.storeId) throw new PaymentError("WRONG_STORE");
+      if (ret.totalValue === null) throw new PaymentError("NOT_VALUED");
+      const drawn = await tx.payment.aggregate({
+        where: { fieldReturnId: input.fieldReturnId, status: "POSTED" },
+        _sum: { amount: true },
+      });
+      const alreadyDrawn = roundCents(Number(drawn._sum.amount ?? 0));
+      const totalValue = roundCents(Number(ret.totalValue));
+      if (alreadyDrawn + amount > totalValue + EPSILON) throw new PaymentError("EXCEEDS_REMAINING");
+    }
+
+    for (const a of allocations) {
+      const receivable = await tx.receivable.findUnique({
+        where: { id: a.receivableId },
+        select: { id: true, storeId: true, outstandingAmount: true, status: true },
+      });
+      if (!receivable) throw new PaymentError("NOT_FOUND");
+      /*
+       * A cross-store allocation is data corruption, not a user mistake — the store picker scopes
+       * the form, so reaching here means the request did not come from it.
+       */
+      if (receivable.storeId !== input.storeId) throw new PaymentError("WRONG_STORE");
+      if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF") {
+        throw new PaymentError("ALREADY_SETTLED");
+      }
+      if (a.amount - Number(receivable.outstandingAmount) > EPSILON) {
+        throw new PaymentError("OVER_ALLOCATED");
+      }
+    }
+
+    const docNo = await generateDocNumber("PAYMENT", tx);
+
+    const payment = await tx.payment.create({
+      data: {
+        docNo,
+        storeId: input.storeId,
+        paidAt: input.paidAt,
+        method: input.method,
+        amount,
+        reference: input.reference,
+        note: input.note,
+        proofUrl: input.proofUrl,
+        proofR2Key: input.proofR2Key,
+        recordedById: input.recordedById,
+        idempotencyKey: input.idempotencyKey ?? null,
+        fieldReturnId: input.fieldReturnId ?? null,
+        allocations: {
+          create: allocations.map((a) => ({ receivableId: a.receivableId, amount: a.amount })),
+        },
+      },
+      select: { id: true, docNo: true },
+    });
+
+    for (const a of allocations) {
+      /*
+       * Atomic increment/decrement, never read-modify-write: two payments against the same
+       * receivable would otherwise lose one of the two writes. Same rule, same reason, as
+       * InventoryValue.reservedQty.
+       */
+      const updated = await tx.receivable.update({
+        where: { id: a.receivableId },
+        data: {
+          paidAmount: { increment: a.amount },
+          outstandingAmount: { decrement: a.amount },
+        },
+        select: { outstandingAmount: true },
+      });
+      /*
+       * Status is recomputed from the RETURNED value, not from the pre-read one. PAID requires exact
+       * zero: a delivery total can carry sen (unlike a van sale, which rounds to whole rupiah), so a
+       * receivable can be settled in cash and legitimately sit at PARTIAL with sub-rupiah residue.
+       * Declaring PAID early would write money off with no journal behind it.
+       */
+      const outstanding = Number(updated.outstandingAmount);
+      await tx.receivable.update({
+        where: { id: a.receivableId },
+        data: { status: outstanding === 0 ? "PAID" : "PARTIAL" },
+      });
+    }
+
+    return { paymentId: payment.id, docNo: payment.docNo };
+  });
+}

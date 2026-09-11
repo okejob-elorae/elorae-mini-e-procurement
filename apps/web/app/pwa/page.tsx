@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getActiveVisit, getStore, listActiveStoresForPwa, listRecentVisitsForUser } from "@/lib/stores/queries";
 import { HomeShell } from "./HomeShell";
 import { SpgHomeShell } from "./SpgHomeShell";
@@ -15,6 +16,9 @@ export default async function PwaHome() {
   if (!session?.user?.id) throw new Error("Unauthorized");
 
   const userName = session.user.name ?? session.user.email ?? "";
+  const canCollect = hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_COLLECT);
+  const canCompletePod = hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_POD);
+  const canViewAmplop = hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_AMPLOP);
 
   /**
    * SPG is a fixed-store role (User.assignedStoreId) — detect it before
@@ -73,6 +77,7 @@ export default async function PwaHome() {
           name: store.name,
           code: store.code,
           address: store.address,
+          termsType: store.termsType,
           lat: store.lat,
           lng: store.lng,
         }}
@@ -118,6 +123,9 @@ export default async function PwaHome() {
       } : null}
       stores={stores.map(s => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng }))}
       recentStores={recentStores}
+      canCollect={canCollect}
+      canCompletePod={canCompletePod}
+      canViewAmplop={canViewAmplop}
       onLogout={logout}
     />
   );

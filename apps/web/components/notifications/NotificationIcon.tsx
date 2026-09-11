@@ -57,8 +57,9 @@ function NotificationInbox({
                 type="button"
                 onClick={() => onItemClick(item)}
                 className={cn(
-                  'w-full border-b px-4 py-3 text-left transition-colors hover:bg-accent',
-                  isUnread && 'bg-accent/50'
+                  "w-full border-b px-4 py-3 text-left transition-colors",
+                  "hover:bg-accent focus-visible:bg-accent focus-visible:outline-none",
+                  isUnread && "bg-muted",
                 )}
               >
                 <p className="font-medium text-foreground">{item.title}</p>
@@ -82,6 +83,7 @@ export function NotificationIcon() {
   const [data, setData] = useState<NotificationsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [sendTestLoading, setSendTestLoading] = useState(false);
+  const [markAllLoading, setMarkAllLoading] = useState(false);
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -136,6 +138,26 @@ export function NotificationIcon() {
     }
   };
 
+  const handleMarkAllRead = async () => {
+    setMarkAllLoading(true);
+    try {
+      const res = await fetch('/api/notifications/read-all', { method: 'POST' });
+      if (res.ok) {
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.map((i) => ({ ...i, readAt: new Date().toISOString() })),
+                unreadCount: 0,
+              }
+            : null
+        );
+      }
+    } finally {
+      setMarkAllLoading(false);
+    }
+  };
+
   const handleSendTest = async () => {
     setSendTestLoading(true);
     try {
@@ -170,7 +192,19 @@ export function NotificationIcon() {
       </SheetTrigger>
       <SheetContent side="right" className="flex h-full w-full flex-col sm:max-w-sm">
         <SheetHeader>
-          <SheetTitle>{t('notifications.title')}</SheetTitle>
+          <div className="flex items-center justify-between gap-2">
+            <SheetTitle>{t('notifications.title')}</SheetTitle>
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleMarkAllRead}
+                disabled={markAllLoading}
+              >
+                {t('notifications.markAllRead')}
+              </Button>
+            )}
+          </div>
         </SheetHeader>
         <div className="min-h-0 flex-1">
           {loading ? (

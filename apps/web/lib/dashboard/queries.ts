@@ -481,19 +481,38 @@ export type SalesmenSalesSummary = {
 };
 
 /**
+ * Row shape of the realised-deliveries aggregate. `COUNT(*)` arrives as a BigInt and a summed
+ * DECIMAL as a string or a Decimal depending on the driver, so both go through `Number()`.
+ */
+type RealisedDeliveryRow = {
+  salesmanId: string;
+  deliveryCount: bigint | number;
+  totalAmount: string | number | null;
+};
+
+/**
  * All-time per-salesman realised vs outstanding sales.
- * Realised = APPROVED PUTUS FieldSalesOrder.total + all VanSale.total.
+ * Realised = sum of FieldSalesDelivery.total on PUTUS orders + all VanSale.total.
  * Outstanding = PENDING_APPROVAL PUTUS FieldSalesOrder.total.
  * KONSI excluded from every bucket; REJECTED never counts.
+ *
+ * Realised counts DELIVERIES, not approved orders. Approval stopped moving stock once delivery
+ * became its own document, and nothing recomputes FieldSalesOrder.total when only part of an order
+ * ships or a remainder is closed — so an approved order's total permanently overstates what the
+ * store actually received. Known gap this leaves: an approved order still awaiting its first
+ * delivery lands in NEITHER bucket, because outstanding still means "awaiting approval" only.
  */
 export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
-  const [realisedPutus, realisedVan, outstandingPutus] = await Promise.all([
-    prisma.fieldSalesOrder.groupBy({
-      by: ['salesmanId'],
-      where: { orderType: 'PUTUS', status: 'APPROVED' },
-      _count: true,
-      _sum: { total: true },
-    }),
+  const [realisedDeliveries, realisedVan, outstandingPutus] = await Promise.all([
+    prisma.$queryRaw<RealisedDeliveryRow[]>`
+      SELECT o.salesmanId AS salesmanId,
+             COUNT(*) AS deliveryCount,
+             SUM(d.total) AS totalAmount
+      FROM FieldSalesDelivery d
+      JOIN FieldSalesOrder o ON o.id = d.orderId
+      WHERE o.orderType = 'PUTUS'
+      GROUP BY o.salesmanId
+    `,
     prisma.vanSale.groupBy({
       by: ['salesmanId'],
       _count: true,
@@ -520,10 +539,10 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     return rec;
   };
 
-  for (const r of realisedPutus) {
+  for (const r of realisedDeliveries) {
     const rec = ensure(r.salesmanId);
-    rec.realised.count += Number(r._count ?? 0);
-    rec.realised.amount += Number(r._sum.total ?? 0);
+    rec.realised.count += Number(r.deliveryCount ?? 0);
+    rec.realised.amount += Number(r.totalAmount ?? 0);
   }
   for (const r of realisedVan) {
     const rec = ensure(r.salesmanId);

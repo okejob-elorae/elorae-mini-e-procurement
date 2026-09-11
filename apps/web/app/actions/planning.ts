@@ -25,6 +25,8 @@ import {
   type PlanningMonthlyRow,
 } from "@/lib/planning/calculations";
 import {
+  VARIANTLESS_FG_FOR_PLAN_MESSAGE,
+  assertVariantSkuForPlanWo,
   buildWoPayloadFromCmtRow,
   stageNameFromAllocation,
   validateCmtAllocations,
@@ -32,7 +34,7 @@ import {
 } from "@/lib/planning/allocations";
 import { buildPlanTemplateWorkbook, parsePlanExcelBuffer } from "@/lib/planning/excel-parser";
 import { planCodeFromItemCategory } from "@/lib/planning/item-category";
-import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
+import { itemHasSkuVariants, parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
 import {
   createPlanCategorySchema,
   createPlanStageSchema,
@@ -136,11 +138,14 @@ async function validateFinishedGoodItem(itemId: string | null | undefined) {
   if (!itemId) return;
   const item = await prisma.item.findUnique({
     where: { id: itemId },
-    select: { type: true },
+    select: { type: true, variants: true },
   });
   if (!item) throw new Error("Item not found");
   if (item.type !== ItemType.FINISHED_GOOD) {
     throw new Error("Item must be a finished good");
+  }
+  if (!itemHasSkuVariants(item.variants)) {
+    throw new Error(VARIANTLESS_FG_FOR_PLAN_MESSAGE);
   }
 }
 
@@ -1307,6 +1312,7 @@ export async function upsertMonthlyColorAllocations(
   if (!category.itemId) {
     throw new Error("Category must be linked to a finished good before color allocation");
   }
+  await validateFinishedGoodItem(category.itemId);
 
   const planningNode: PlanningCategoryNode = {
     id: category.id,
@@ -1803,6 +1809,24 @@ async function validatePlanYearForActivation(planYearId: string) {
   });
   if (!planYear) throw new Error("Plan year not found");
 
+  const linkedItemIds = [
+    ...new Set(
+      planYear.categories
+        .map((c) => c.itemId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    ),
+  ];
+  if (linkedItemIds.length > 0) {
+    const linkedItems = await prisma.item.findMany({
+      where: { id: { in: linkedItemIds } },
+      select: { id: true, sku: true, variants: true },
+    });
+    const variantless = linkedItems.find((item) => !itemHasSkuVariants(item.variants));
+    if (variantless) {
+      throw new Error(`${variantless.sku}: ${VARIANTLESS_FG_FOR_PLAN_MESSAGE}`);
+    }
+  }
+
   const leaves = planYear.categories.filter((c) => {
     const hasChildren = planYear.categories.some((child) => child.parentId === c.id);
     return !hasChildren;
@@ -1922,6 +1946,8 @@ export async function generateWorkOrderFromCmtAllocation(cmtAllocationId: string
       };
     }
   }
+
+  await validateFinishedGoodItem(cmt.planCategory.itemId);
 
   const woPayload = buildWoPayloadFromCmtRow(
     { itemId: cmt.planCategory.itemId, code: cmt.planCategory.code },
@@ -2085,16 +2111,17 @@ export async function createWorkOrderFromStage(stageId: string) {
     }
   }
 
+  await validateFinishedGoodItem(stage.planCategory.itemId);
+  const stageVariantSku = assertVariantSkuForPlanWo(stage.variantSku);
+
   const result = await createWorkOrder(
     {
       vendorId: stage.supplierId,
       finishedGoodId: stage.planCategory.itemId,
-      outputMode: stage.variantSku ? "SKU" : "GENERIC",
+      outputMode: "SKU",
       plannedQty: stage.targetQty,
       targetDate: undefined,
-      ...(stage.variantSku
-        ? { skuBreakdown: [{ variantSku: stage.variantSku, ratioPercent: 100 }] }
-        : {}),
+      skuBreakdown: [{ variantSku: stageVariantSku, ratioPercent: 100 }],
       notes: `Created from Plan Kerja stage: ${stage.name}`,
     },
     session.user.id,

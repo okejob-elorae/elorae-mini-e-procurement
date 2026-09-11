@@ -60,14 +60,15 @@ export async function buildSmartRequestAction(input: unknown): Promise<BuildSmar
     where: { id: { in: itemIds } },
     select: { id: true, nameId: true, sellingPrice: true, variants: true },
   });
-  const store = await prisma.store.findUnique({ where: { id: parsed.data.storeId }, select: { termsType: true, marginPercent: true } });
+  const store = await prisma.store.findUnique({ where: { id: parsed.data.storeId }, select: { termsType: true, marginPercent: true, priceDiscountPercent: true } });
   const margin = store?.marginPercent == null ? null : Number(store.marginPercent);
+  const priceDiscount = store?.priceDiscountPercent == null ? null : Number(store.priceDiscountPercent);
   const itemById = new Map(items.map((i) => [i.id, i]));
 
   const lines: SmartRequestLine[] = plan.lines.map((l) => {
     const it = itemById.get(l.itemId);
     const sellingPrice = it?.sellingPrice == null ? null : Number(it.sellingPrice);
-    const unitPrice = computeStorePrice({ sellingPrice, termsType: "PUTUS", marginPercent: margin }).price ?? 0;
+    const unitPrice = computeStorePrice({ sellingPrice, termsType: "PUTUS", marginPercent: margin, priceDiscountPercent: priceDiscount }).price ?? 0;
     return {
       itemId: l.itemId,
       variantSku: l.variantSku,
@@ -103,7 +104,7 @@ export async function submitSmartRequestOrder(input: unknown): Promise<SubmitRes
   const parsed = submitSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "EMPTY" };
   try {
-    const { orderNo } = await createFieldSalesOrder({
+    const { orderNo, creditHold } = await createFieldSalesOrder({
       storeId: parsed.data.storeId,
       salesmanId: session.user.id,
       visitId: parsed.data.visitId,
@@ -113,7 +114,7 @@ export async function submitSmartRequestOrder(input: unknown): Promise<SubmitRes
       skipMinQty: true,
     });
     revalidatePath(`/pwa/stores/${parsed.data.storeId}`);
-    return { ok: true, orderNo };
+    return { ok: true, orderNo, creditHold };
   } catch (e) {
     if (e instanceof NoActiveVisitError) return { ok: false, code: "NO_ACTIVE_VISIT" };
     if (e instanceof MinQtyViolationError) return { ok: false, code: "MIN_QTY", violations: e.violations };

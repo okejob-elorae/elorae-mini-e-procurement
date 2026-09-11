@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Minus, Plus } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +42,7 @@ export function SpgVariantSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const t = useTranslations("spgSale");
   const [q, setQ] = useState("");
 
   const filtered = useMemo(() => {
@@ -86,7 +88,7 @@ export function SpgVariantSheet({
                       <div key={key} className="flex items-center gap-3 rounded-lg border p-3">
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{label}</p>
-                          <div className="mt-1">
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             {v.price !== null ? (
                               <span className="text-xs text-muted-foreground tabular-nums">{rupiah(v.price)}</span>
                             ) : (
@@ -94,6 +96,9 @@ export function SpgVariantSheet({
                                 Harga belum diset
                               </Badge>
                             )}
+                            <Badge variant={v.onCounterQty < 0 ? "destructive" : "outline"} className="text-xs">
+                              {t("onCounterQty", { qty: v.onCounterQty })}
+                            </Badge>
                           </div>
                         </div>
                         {canSell && (

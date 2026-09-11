@@ -39,12 +39,20 @@ export function VanVariantSheet({
   setQty,
   open,
   onOpenChange,
+  disabled = false,
 }: {
   group: VanGroup | null;
   cart: Map<string, { qty: number }>;
   setQty: (row: VanStockRow, qty: number) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * True while a reprice is in flight, OR the on-screen prices are stale/unknown (a reprice that
+   * failed, or hasn't yet landed for the current buyer). The sheet's `group` is a snapshot taken
+   * at open-time (see VanSellShell's openSheet) — a stepper tap here would write that snapshot's
+   * price into the cart, which may not match what recordVanSale will actually charge.
+   */
+  disabled?: boolean;
 }) {
   const t = useTranslations("vanSale");
   const [q, setQ] = useState("");
@@ -109,7 +117,7 @@ export function VanVariantSheet({
                               type="button"
                               variant="outline"
                               size="icon-lg"
-                              disabled={qty <= 0}
+                              disabled={qty <= 0 || disabled}
                               onClick={() => setQty(v, qty - 1)}
                               aria-label={t("decrease", { name: label })}
                             >
@@ -120,7 +128,7 @@ export function VanVariantSheet({
                               type="button"
                               variant="outline"
                               size="icon-lg"
-                              disabled={qty >= v.qtyOnVan}
+                              disabled={qty >= v.qtyOnVan || disabled}
                               onClick={() => setQty(v, qty + 1)}
                               aria-label={t("increase", { name: label })}
                             >

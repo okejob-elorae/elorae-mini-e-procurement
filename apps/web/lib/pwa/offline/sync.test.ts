@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { classifyResult } from "./classify";
 
 describe("classifyResult", () => {
-  it("evicts on success", () => { expect(classifyResult({ ok: true, orderNo: "X" })).toBe("evict"); });
+  it("evicts on success", () => { expect(classifyResult({ ok: true, orderNo: "X", creditHold: false })).toBe("evict"); });
   it("terminal on MIN_QTY / NO_ACTIVE_VISIT / EMPTY / UNAUTHORIZED", () => {
     for (const code of ["EMPTY", "NO_ACTIVE_VISIT", "UNAUTHORIZED"] as const) expect(classifyResult({ ok: false, code })).toBe("terminal");
     expect(classifyResult({ ok: false, code: "MIN_QTY", violations: [] })).toBe("terminal");

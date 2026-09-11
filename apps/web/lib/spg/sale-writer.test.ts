@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { recordSpgSale } from "./sale-writer";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -9,8 +9,10 @@ const d = isProd ? describe.skip : describe;
 d("recordSpgSale (test bed only)", () => {
   const tag = `SPGSALE-${Math.random().toString(36).slice(2, 10)}`;
   let uomId = ""; let itemId = ""; let salesmanId = ""; let storeId = "";
+  let putusStoreId = ""; let shortItemId = ""; let neverHeldItemId = ""; let discountStoreId = "";
 
   beforeEach(async () => {
+    uomId = ""; itemId = ""; salesmanId = ""; storeId = ""; putusStoreId = ""; shortItemId = ""; neverHeldItemId = ""; discountStoreId = "";
     const uom = await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({ data: { sku: tag, nameId: "T", nameEn: "T", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
@@ -20,16 +22,40 @@ d("recordSpgSale (test bed only)", () => {
     salesmanId = s.id;
     const store = await prisma.store.create({ data: { code: tag, name: "Toko SPG Test", address: "Jl. Test", termsType: "KONSI", marginPercent: 20, isActive: true } });
     storeId = store.id;
+
+    const shortItem = await prisma.item.create({ data: { sku: `${tag}-SHORT`, nameId: "TS", nameEn: "TS", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
+    shortItemId = shortItem.id;
+    const neverHeldItem = await prisma.item.create({ data: { sku: `${tag}-NEVER`, nameId: "TN", nameEn: "TN", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 5000 } });
+    neverHeldItemId = neverHeldItem.id;
+
+    const putusStore = await prisma.store.create({ data: { code: `${tag}-PUTUS`, name: "Toko SPG Putus Test", address: "Jl. Test", termsType: "PUTUS", isActive: true } });
+    putusStoreId = putusStore.id;
+
+    const discountStore = await prisma.store.create({
+      data: { code: `${tag}-DISC`, name: "Toko SPG Diskon Test", address: "Jl. Test", termsType: "PUTUS", priceDiscountPercent: 12, isActive: true },
+    });
+    discountStoreId = discountStore.id;
+
+    /* StoreStock seeds — the itemId row and the shortItemId row back the KONSI decrement tests;
+       the PUTUS row is seeded DELIBERATELY on the exact key this sale would hit, so the
+       "writes NO StoreStock row at a PUTUS store" test fails loudly if the KONSI gate is
+       dropped rather than passing against an implementation that simply never writes. */
+    await prisma.storeStock.create({ data: { storeId, itemId, variantSku: "", qty: 10, avgCost: 12500 } });
+    await prisma.storeStock.create({ data: { storeId, itemId: shortItemId, variantSku: "", qty: 2, avgCost: 5000 } });
+    await prisma.storeStock.create({ data: { storeId: putusStoreId, itemId, variantSku: "", qty: 10, avgCost: 12500 } });
+    /* Deliberately no StoreStock row for (storeId, neverHeldItemId) — the store never held it. */
   });
 
   afterEach(async () => {
-    await prisma.salesHistory.deleteMany({ where: { itemId } });
-    await prisma.spgSaleLine.deleteMany({ where: { itemId } });
-    await prisma.spgSale.deleteMany({ where: { salesmanId, storeId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
-    await prisma.store.deleteMany({ where: { id: storeId } });
+    const storeIds = [seededId(storeId), seededId(putusStoreId), seededId(discountStoreId)];
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
+    await prisma.spgSaleLine.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
+    await prisma.spgSale.deleteMany({ where: { salesmanId: seededId(salesmanId), storeId: { in: storeIds } } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.store.deleteMany({ where: { id: { in: storeIds } } });
   });
 
   const line = (qty: number) => ({ itemId, variantSku: null, qty });
@@ -46,6 +72,40 @@ d("recordSpgSale (test bed only)", () => {
     expect(Number(sale!.total)).toBe(20000);
     const sh = await prisma.salesHistory.findFirst({ where: { itemId, orderId: res.docNo } });
     expect(sh).not.toBeNull();
+  });
+
+  it("applies the store's priceDiscountPercent on top of PUTUS pricing", async () => {
+    // 5000 * (1 - 12/100) = 4400; 4 * 4400 = 17600
+    const res = await recordSpgSale({ salesmanId, storeId: discountStoreId, lines: [line(4)], cashReceived: 17600 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.changeGiven).toBe(0);
+    const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId }, include: { lines: true } });
+    expect(Number(sale!.lines[0].unitPrice)).toBe(4400);
+    expect(Number(sale!.total)).toBe(17600);
+  });
+
+  it("rounds the charged total to whole rupiah at the cash boundary; subtotal stays the exact sum", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 33333 } });
+    // 33333 * (1 - 12/100) = 29333.04 exact; the whole-rupiah charged total rounds DOWN to 29333.
+    // Paying exactly 29333 previously dead-ended as INSUFFICIENT_PAYMENT (29333 < 29333.04).
+    const res = await recordSpgSale({ salesmanId, storeId: discountStoreId, lines: [line(1)], cashReceived: 29333 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    expect(res.changeGiven).toBe(0);
+    const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId } });
+    expect(Number(sale!.subtotal)).toBe(29333.04); // exact 2dp sum — unrounded
+    expect(Number(sale!.total)).toBe(29333); // whole-rupiah charged figure
+    expect(Number(sale!.total) - Number(sale!.subtotal)).toBeCloseTo(-0.04, 5); // derivable adjustment
+  });
+
+  it("leaves total equal to subtotal when the line sum has no fraction", async () => {
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(4)], cashReceived: 20000 });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    const sale = await prisma.spgSale.findUnique({ where: { id: res.spgSaleId } });
+    expect(Number(sale!.total)).toBe(20000);
+    expect(Number(sale!.subtotal)).toBe(Number(sale!.total));
   });
 
   it("does not touch VanStock, InventoryValue, or write a StockAdjustment (record-only)", async () => {
@@ -133,7 +193,72 @@ d("recordSpgSale (test bed only)", () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: vItem.id } });
     await prisma.spgSaleLine.deleteMany({ where: { itemId: vItem.id } });
     await prisma.spgSale.deleteMany({ where: { id: res.spgSaleId } });
-    await prisma.item.deleteMany({ where: { id: vItem.id } });
-    await prisma.uOM.deleteMany({ where: { id: vUom.id } });
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId), itemId: seededId(vItem.id) } });
+    await prisma.item.deleteMany({ where: { id: seededId(vItem.id) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(vUom.id) } });
+  });
+
+  it("decrements the store's stock at a KONSI store", async () => {
+    await recordSpgSale({ salesmanId, storeId, lines: [line(4)] });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
+    expect(Number(ss.qty)).toBe(6);
+  });
+
+  it("writes NO StoreStock row at a PUTUS store", async () => {
+    /*
+     * The putus fixture deliberately seeds a StoreStock row on exactly the key this sale would
+     * hit, so the case fails loudly if the KONSI gate is dropped rather than passing against an
+     * implementation that simply never writes.
+     */
+    const before = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(putusStoreId), itemId: seededId(itemId) } });
+    await recordSpgSale({ salesmanId, storeId: putusStoreId, lines: [line(4)] });
+    const after = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(putusStoreId), itemId: seededId(itemId) } });
+    expect(Number(after.qty)).toBe(Number(before.qty));
+  });
+
+  it("creates a NEGATIVE row when the store has never held the item", async () => {
+    await recordSpgSale({ salesmanId, storeId, lines: [{ itemId: neverHeldItemId, variantSku: null, qty: 3 }] });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(neverHeldItemId) } });
+    expect(Number(ss.qty)).toBe(-3);
+    expect(Number(ss.avgCost)).toBe(0);
+  });
+
+  it("drives an existing row negative rather than clamping or refusing", async () => {
+    await recordSpgSale({ salesmanId, storeId, lines: [{ itemId: shortItemId, variantSku: null, qty: 5 }] });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(shortItemId) } });
+    expect(Number(ss.qty)).toBe(-3);
+  });
+
+  it("leaves avgCost untouched on an existing row", async () => {
+    await recordSpgSale({ salesmanId, storeId, lines: [line(4)] });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
+    expect(Number(ss.avgCost)).toBe(12500);
+  });
+
+  it("decrements ONCE by the merged quantity when a client sends the same line twice", async () => {
+    /*
+     * Pins that a single merged entry (qty 6) is decremented via ONE fresh findUnique + upsert,
+     * not a naive implementation that reads prevQty once outside a per-key loop and reuses that
+     * stale snapshot across entries (which would decrement using the same starting value more
+     * than once and corrupt the result once a sale carries more than one distinct item/variant
+     * key). It does NOT prove the decrement is built from `priced` rather than raw
+     * `input.lines`: since each key here is re-read fresh, two decrements of 3 land on the same
+     * final total as one decrement of 6, so that distinction is not observable from the final
+     * StoreStock balance — see the comment at the decrement site in sale-writer.ts for why
+     * `priced` is used anyway (structural agreement with the SpgSaleLine document, not a
+     * different final number).
+     */
+    await recordSpgSale({ salesmanId, storeId, lines: [line(3), line(3)] });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
+    expect(Number(ss.qty)).toBe(4); // seeded 10 − 6
+  });
+
+  it("does not decrement a second time when an idempotencyKey is replayed", async () => {
+    const key = `${tag}-store-stock-replay`;
+    await recordSpgSale({ salesmanId, storeId, lines: [line(4)], idempotencyKey: key });
+    await recordSpgSale({ salesmanId, storeId, lines: [line(4)], idempotencyKey: key });
+    const ss = await prisma.storeStock.findFirstOrThrow({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
+    expect(Number(ss.qty)).toBe(6);
+    expect(await prisma.spgSale.count({ where: { idempotencyKey: key } })).toBe(1);
   });
 });

@@ -37,6 +37,7 @@ import { supplierPaymentJournalErrorKey } from '@/lib/purchasing/supplier-paymen
 import { logPrint } from '@/app/actions/audit';
 import { buildPOPrintHtml } from '@/lib/print/po-html';
 import { buildPOPaymentReceiptHtml } from '@/lib/print/po-payment-receipt-html';
+import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { variantDetailForSku } from '@/lib/items/variants';
 import { POStatus } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
@@ -56,25 +57,6 @@ const statusLabels: Record<POStatus, string> = {
   OVER: 'Over-received',
   CANCELLED: 'Cancelled',
 };
-
-function printHtmlInIframe(html: string, iframeTitle: string) {
-  const iframe = document.createElement('iframe');
-  iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
-  iframe.setAttribute('title', iframeTitle);
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow?.document;
-  if (doc) {
-    doc.open();
-    doc.write(html);
-    doc.close();
-    setTimeout(() => {
-      iframe.contentWindow?.print();
-    }, 350);
-  }
-  setTimeout(() => {
-    document.body.removeChild(iframe);
-  }, 1000);
-}
 
 interface POForPayment {
   id: string;

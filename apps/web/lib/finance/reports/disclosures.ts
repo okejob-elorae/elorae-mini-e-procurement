@@ -35,3 +35,28 @@ export function formatOpeningDate(iso: string): string {
     year: "numeric",
   }).format(new Date(iso));
 }
+
+export const CASH_FLOW_COVERAGE_TITLE = "Cakupan data";
+
+export const CASH_FLOW_COVERAGE_BODY =
+  "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung. Cakupannya sama dengan Laba Rugi: BELUM termasuk penjualan lapangan (putus/konsi) dan penjualan SPG.";
+
+/**
+ * Shown in place of the statement when no account is classified KAS. Without a
+ * cash account every section computes to zero, which would otherwise ship as a
+ * statement reporting no cash movement — carrying the reconciled note, since
+ * zero does equal zero. Refusing is the only honest output.
+ */
+export const CASH_FLOW_NO_CASH_ACCOUNT_NOTE =
+  "Akun kas belum ditetapkan, sehingga laporan arus kas tidak dapat disusun. Petakan peran BANK atau CASH di Keuangan → Pemetaan Akun, atau tetapkan sebuah akun sebagai Kas di Klasifikasi Arus Kas.";
+
+export const CASH_FLOW_RECONCILED_NOTE =
+  "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.";
+
+export const CASH_FLOW_UNRECONCILED_NOTE =
+  "Perubahan kas hasil perhitungan TIDAK sama dengan pergerakan saldo kas sebenarnya. Ini menandakan data jurnal rusak — periksa buku besar.";
+
+export const CASH_FLOW_UNCLASSIFIED_TITLE = "Ada akun yang belum diklasifikasi";
+
+export const CASH_FLOW_UNCLASSIFIED_BODY =
+  "Sebagian akun belum ditetapkan masuk aktivitas operasional, investasi, atau pendanaan, sehingga ditampilkan terpisah. Total tetap benar. Tetapkan lewat Keuangan → Klasifikasi Arus Kas.";

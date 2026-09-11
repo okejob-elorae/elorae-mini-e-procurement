@@ -24,6 +24,7 @@ import {
 import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
+import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
@@ -170,10 +171,21 @@ function serializeWorkOrder(wo: {
     updatedAt: wo.updatedAt,
     vendor: wo.vendor ?? undefined,
     finishedGood: serializeIncludedItemForClient(wo.finishedGood) as typeof wo.finishedGood,
-    issues: (wo.issues ?? []).map((iss) => ({
-      ...iss,
-      totalCost: Number(iss.totalCost),
-    })),
+    issues: (wo.issues ?? []).map((iss) => {
+      const row = iss as Record<string, unknown>;
+      return {
+        id: iss.id,
+        docNumber: iss.docNumber,
+        woId: typeof row.woId === "string" ? row.woId : "",
+        issueType: iss.issueType,
+        isPartial: Boolean(row.isPartial),
+        items: row.items ?? null,
+        totalCost: Number(iss.totalCost),
+        issuedAt: iss.issuedAt,
+        notes: typeof row.notes === "string" ? row.notes : null,
+        acknowledged: Boolean(row.acknowledged),
+      };
+    }),
     receipts: (wo.receipts ?? []).map((r) => ({
       id: r.id,
       docNumber: r.docNumber,
@@ -608,7 +620,8 @@ const issueSchema = z.object({
   issueType: z.enum(['FABRIC', 'ACCESSORIES']),
   isPartial: z.boolean().default(false),
   parentIssueId: idStr.optional(),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  rollBreakdown: z.array(rollBreakdownItemSchema).optional(),
 });
 
 export type IssueFormData = z.infer<typeof issueSchema>;
@@ -750,19 +763,36 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       });
     }
 
-    // Deduct from fabric rolls when the issued item is the WO consumption material and rollBreakdown exists
+    // Deduct from this issue's rolls, or the WO plan if the picker was left empty.
+    // Do not overwrite WorkOrder.rollBreakdown — that field is the planned allocation.
     const consumptionMaterialId = (wo as { consumptionMaterialId?: string | null }).consumptionMaterialId ?? null;
-    const rawRollBreakdown = (wo as { rollBreakdown?: unknown }).rollBreakdown;
-    const rollBreakdown = (() => {
-      if (rawRollBreakdown == null) return null;
-      const arr = typeof rawRollBreakdown === 'string' ? (() => { try { return JSON.parse(rawRollBreakdown); } catch { return null; } })() : rawRollBreakdown;
+    const parseRolls = (raw: unknown): Array<{ rollRef: string; qty: number }> | null => {
+      if (raw == null) return null;
+      const arr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
       return Array.isArray(arr) ? arr as Array<{ rollRef: string; qty: number }> : null;
-    })();
+    };
+    const explicitRolls = validated.rollBreakdown;
+    const payloadRolls = explicitRolls != null && explicitRolls.length > 0 ? explicitRolls : null;
+    const rollsToDeduct = explicitRolls !== undefined
+      ? payloadRolls
+      : parseRolls((wo as { rollBreakdown?: unknown }).rollBreakdown);
+
+    if (payloadRolls && consumptionMaterialId) {
+      const fabricQty = validated.items
+        .filter((item) => item.itemId === consumptionMaterialId)
+        .reduce((sum, item) => sum + item.qty, 0);
+      const rollSum = payloadRolls.reduce((sum, row) => sum + row.qty, 0);
+      if (fabricQty > 0 && rollSum + 1e-6 < fabricQty) {
+        throw new Error(
+          `Total roll (${rollSum}) is less than issued fabric qty (${fabricQty})`
+        );
+      }
+    }
 
     for (const item of validated.items) {
-      if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && rollBreakdown != null && rollBreakdown.length > 0) {
+      if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && rollsToDeduct != null && rollsToDeduct.length > 0) {
         let remainingToAllocate = item.qty;
-        for (const entry of rollBreakdown) {
+        for (const entry of rollsToDeduct) {
           if (remainingToAllocate <= 0) break;
           const roll = await tx.fabricRoll.findFirst({
             where: {
@@ -786,6 +816,11 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
             data: { remainingLength: newRemaining }
           });
           remainingToAllocate -= deduct;
+        }
+        if (payloadRolls != null && remainingToAllocate > 1e-6) {
+          throw new Error(
+            `Selected rolls cannot cover issued fabric qty (short ${remainingToAllocate})`
+          );
         }
       }
     }
@@ -840,7 +875,11 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
     });
 
     revalidatePath(`/backoffice/work-orders/${data.woId}`);
-    return issue;
+    return {
+      id: issue.id,
+      docNumber: issue.docNumber,
+      totalCost: Number(issue.totalCost),
+    };
   });
 
   const wo = await prisma.workOrder.findUnique({
@@ -1269,7 +1308,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
   try {
     const jr = await postFgReceiptJournal(receiveResult.receipt.id, userId);
     if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
-      await prisma.adminNotification.create({
+      const fgReceiptJournalPendingNotification = await prisma.adminNotification.create({
         data: {
           category: "JOURNAL_PENDING",
           severity: "WARNING",
@@ -1278,10 +1317,11 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: jr.code, role: jr.role ?? null },
         },
       });
+      void fanOutAdminNotification(fgReceiptJournalPendingNotification);
     }
   } catch (e) {
     try {
-      await prisma.adminNotification.create({
+      const fgReceiptJournalErrorNotification = await prisma.adminNotification.create({
         data: {
           category: "JOURNAL_PENDING",
           severity: "WARNING",
@@ -1290,12 +1330,16 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: "ERROR", role: null },
         },
       });
+      void fanOutAdminNotification(fgReceiptJournalErrorNotification);
     } catch {
       // best-effort: never fail receiveFG on a journal/notification error
     }
   }
 
-  return receiveResult.receipt;
+  return {
+    id: receiveResult.receipt.id,
+    docNumber: receiveResult.receipt.docNumber,
+  };
 }
 
 export async function postFgReceiptJournalAction(

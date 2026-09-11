@@ -232,7 +232,11 @@ export function CatalogShell({
           idempotencyKey: localId,
         });
         if (res.ok) {
-          toast.success(`Pesanan ${res.orderNo} terkirim`);
+          if (res.creditHold) {
+            toast.success(`Pesanan ${res.orderNo} terkirim — toko melebihi limit kredit, menunggu review admin.`);
+          } else {
+            toast.success(`Pesanan ${res.orderNo} terkirim`);
+          }
           setCart(new Map());
           router.push(`/pwa/stores/${storeId}`);
           return;

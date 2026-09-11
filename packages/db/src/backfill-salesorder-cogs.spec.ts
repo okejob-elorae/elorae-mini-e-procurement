@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "./index";
 import { resolveBackfillCogs } from "../prisma/backfill-salesorder-cogs";
+import { seededId } from "./spec-teardown";
 
 // Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -8,9 +9,9 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 d("resolveBackfillCogs (test bed only)", () => {
-  let itemId: string;
-  let uomId: string;
-  let salesOrderId: string;
+  let itemId = "";
+  let uomId = "";
+  let salesOrderId = "";
   const sku = `TEST-BACKFILL-COGS-${Math.random().toString(36).slice(2, 10)}`;
   // Random (not Date.now()/1000) so parallel specs can't collide on SalesOrder_salesorderId_key.
   const salesorderId = Math.floor(Math.random() * 2_000_000_000);
@@ -21,6 +22,11 @@ d("resolveBackfillCogs (test bed only)", () => {
   const QTY = 3;
 
   beforeEach(async () => {
+    /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
+    itemId = "";
+    uomId = "";
+    salesOrderId = "";
+
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-${sku}`, nameId: "test", nameEn: "test" },
     });
@@ -105,15 +111,22 @@ d("resolveBackfillCogs (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.salesOrderItem.deleteMany({ where: { salesOrderId } });
-    await prisma.salesOrder.deleteMany({ where: { id: salesOrderId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: seededId(salesOrderId) } });
+    await prisma.salesOrder.deleteMany({ where: { id: seededId(salesOrderId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
+  /*
+   * Every call is scoped to this spec's own order. Unscoped, this helper stamps
+   * `cogs` on ANY line in the shared bed that has a matching FULFILLMENT_CONSUME
+   * adjustment — a write teardown never reverses, made before the assertion that
+   * would notice. Blast radius happens to be zero today only because no real
+   * consumed line currently has null cogs; that is state, not safety.
+   */
   it("backfills cogs from the consume adjustment; leaves unconsumed lines null", async () => {
-    const res = await resolveBackfillCogs(prisma, { apply: true });
+    const res = await resolveBackfillCogs(prisma, { apply: true, salesOrderIds: [seededId(salesOrderId)] });
 
     const l1 = await prisma.salesOrderItem.findUnique({ where: { salesorderDetailId: salesorderDetailId1 } });
     const l2 = await prisma.salesOrderItem.findUnique({ where: { salesorderDetailId: salesorderDetailId2 } });
@@ -124,7 +137,7 @@ d("resolveBackfillCogs (test bed only)", () => {
   });
 
   it("dry-run reports the would-update count without writing", async () => {
-    const res = await resolveBackfillCogs(prisma, { apply: false });
+    const res = await resolveBackfillCogs(prisma, { apply: false, salesOrderIds: [seededId(salesOrderId)] });
 
     const l1 = await prisma.salesOrderItem.findUnique({ where: { salesorderDetailId: salesorderDetailId1 } });
 

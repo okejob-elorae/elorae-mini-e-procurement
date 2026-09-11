@@ -118,14 +118,15 @@ contract for the migrations that will introduce them.
 | `PlanCmtAllocation`, `PlanStage` | web — WO creation via `createWorkOrder` in `apps/web`; `PlanStage` auto-synced when generating from CMT rows (`planCmtAllocationId`) | — | ✅ |
 | `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
 | `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
-| `StockReservation`             | **both** — see §3.1         |                             | ✅ schema + writer — api (Jubelio salesorder webhook via `reserveOrder`/`consumeOrder`/`releaseOrder` with `source=JUBELIO`), web (ship button `consumeOrder`, field-sales putus orders via `reserveFieldSalesOrder`/`consumeFieldSalesOrder`/`releaseFieldSalesOrder` with `source=FIELD_SALES`). Written ONLY through `@elorae/db/reservation-writer.ts` — never bare prisma. |
+| `StockReservation`             | **both** — see §3.1         |                             | ✅ schema + writer — api (Jubelio salesorder webhook via `reserveOrder`/`consumeOrder`/`releaseOrder` with `source=JUBELIO`), web (ship button `consumeOrder`, field-sales putus orders via `reserveFieldSalesOrder` at create and `consumeFieldSalesOrderPartial` per **delivery** / `releaseFieldSalesOrder` on reject or close-remainder, with `source=FIELD_SALES`). `consumeFieldSalesOrder` (whole-order) still exists but has NO production caller — reaching for it bypasses the delivery document. Written ONLY through `@elorae/db/reservation-writer.ts` — never bare prisma. |
 | `SalesOrder`                   | **both** — see §3.2         | —                           | ✅ api owns Jubelio-derived cols; web owns fulfillment cols via helper |
 | `SalesOrderItem`               | api                         | web (read)                  | ✅ schema + api writer |
-| `SalesHistory`                 | web                         | api (read)                  | ✅ Excel import (`channel=MARKETPLACE`) + putus approval (`channel=OFFLINE`); identity fields (`itemId`, `erpVariantSku`, `jubelioItemId`, `resolutionStatus`) stamped at import via `marketplace-sku-resolver` — see §3.7 |
+| `SalesHistory`                 | web                         | api (read)                  | ✅ Excel import (`channel=MARKETPLACE`) + putus **delivery** (`channel=OFFLINE`, keyed by `FieldSalesDelivery.docNo` so repeat deliveries of a variant don't collide — approval writes none since delivery became its own document); identity fields (`itemId`, `erpVariantSku`, `jubelioItemId`, `resolutionStatus`) stamped at import via `marketplace-sku-resolver` — see §3.7 |
 | `SalesHistoryImport`           | web                         | —                           | ✅ |
 | `ForecastConfig`, `ForecastResult` | web                     | —                           | ✅ `ForecastResult.itemId` for item-centric grouping |
 | `SalesReturn`                  | api ingest; web decision (planned) | —                    | 🟡 webhook stub shipped; EPIC-05 will introduce web-side Accept/Reject writer + new outbox type `salesreturn_decision_push` |
 | `FieldSalesOrder`, `FieldSalesOrderLine` | web           | api (read)                  | ✅ schema; web-written putus orders (ERP-originated), api never writes |
+| `FieldSalesDelivery`, `FieldSalesDeliveryLine` | web     | —                           | ✅ schema + writer — `recordFieldSalesDelivery` / `closeFieldSalesOrderRemainder` in `apps/web/lib/field-sales/delivery/writer.ts`. Putus only; api never writes. `docNo` is NOT always `DLV/`-prefixed — rows written by the backfill migration carry the order number instead. |
 | `JubelioProductMapping`        | api                         | web (read)                  | ✅ |
 | `JubelioCategoryMapping`       | api                         | web (read)                  | ✅ schema; writer ⏳ (currently seed-only, no runtime writer) |
 | `JubelioOutbox`                | web insert, api consume/update | — | ✅; `entityType` MUST come from `@elorae/db/jubelio-outbox` registry — see §4.2.1 |
@@ -303,7 +304,12 @@ transaction. api outbox poller + router + handlers drain. See
   must accept this key (or be naturally idempotent).
 - **No sync HTTP call** from a Prisma transaction. Always outbox.
 - **Already-in-state Jubelio responses** are skipped (not retried) — see
-  `OUTBOX_SKIP_REASONS.ALREADY_IN_STATE`.
+  `OUTBOX_SKIP_REASONS.JUBELIO_ALREADY_IN_STATE`. Detection is a phrase match on
+  the response body, in `outbox/handlers/already-in-state.ts`, because Jubelio
+  returns these as a generic HTTP 500 with the reason in free text rather than as
+  a status code. This contract was **unmet in code** from the pick/pack/ship slice
+  until 2026-09-02 (the handlers tested for a marker nothing ever set); see
+  `docs/ARCHITECTURE-NOTES.md`.
 
 #### 4.2.1 `entityType` registry
 
@@ -354,12 +360,18 @@ Avoid otherwise. Prefer api owning its own data and web fetching from api.
 ### 4.5 Scheduled jobs — cron home rule
 
 When a scheduled job needs to read from Jubelio or call Jubelio, it lives in
-**apps/api**. Web cron (Vercel) does not have access to the Jubelio token
-cascade and must not be tempted to import the api's Jubelio HTTP client.
+**apps/api**. Web cron does not have access to the Jubelio token cascade and
+must not be tempted to import the api's Jubelio HTTP client.
 
 When a scheduled job is pure-ERP (no Jubelio touch — e.g. nightly settlement
 parser, AR aging recomputation, FCM cleanup), it lives in **apps/web** via
-Vercel cron, calling a server action.
+in-process **node-cron** (`apps/web/lib/cron/jobs.ts`, registered from
+`instrumentation.ts` on server boot), calling a server action. Vercel cron was
+the original home and is gone — Vercel was decommissioned 2026-06-18 and both
+services now run as long-lived processes on the VPS, which is what makes an
+in-process scheduler viable at all. Some jobs also keep a matching `/api/cron/*`
+route as a manual smoke-test trigger, but not all of them do, and such a route
+is never what fires the job in normal operation.
 
 Cross-service writes from scheduled jobs use the same `@elorae/db` helpers as
 on-demand writes. An api cron that writes a web-owned table goes through the

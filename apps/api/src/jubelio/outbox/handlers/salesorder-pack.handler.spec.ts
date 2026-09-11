@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import { SalesOrderPackHandler } from "./salesorder-pack.handler";
 import { PRISMA } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
+import { JubelioError } from "../../jubelio.types";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
 
 describe("SalesOrderPackHandler", () => {
@@ -56,7 +57,13 @@ describe("SalesOrderPackHandler", () => {
 
   it("returns skipped on already-in-state error", async () => {
     prisma.salesOrder.findUnique.mockResolvedValue({ id: "so1", salesorderId: 23043 });
-    http.post.mockRejectedValue(Object.assign(new Error("already packed"), { code: "ALREADY_IN_STATE" }));
+    http.post.mockRejectedValue(
+      new JubelioError("An internal server error occurred", 500, {
+        code:
+          "error: Pesanan sudah dipakai di transaksi lain. " +
+          "Status Dituju: FINISH_PACK",
+      }),
+    );
     const result = await handler.handle(baseRow() as any);
     expect(result).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.JUBELIO_ALREADY_IN_STATE });
   });

@@ -8,6 +8,10 @@ import {
   getPositionDrift,
   type SnapshotStep,
 } from "@/lib/leadtime/calculations";
+import {
+  shouldCollapseToCompletedSummary,
+  shouldHideLiveStrip,
+} from "@/lib/leadtime/strip-visibility";
 import { confirmChainPosition, getProcessMetaByNames } from "@/app/actions/lead-time";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,13 +48,6 @@ type Props = {
   /** @deprecated use clockStart */
   createdAt?: Date;
 };
-
-function shouldHideLiveStrip(docType: DocType, status: string): boolean {
-  if (docType === "PO") {
-    return status === "CLOSED" || status === "OVER" || status === "CANCELLED";
-  }
-  return status === "DRAFT" || status === "CANCELLED";
-}
 
 export function ChainPositionStrip({
   docType: docTypeProp,
@@ -91,16 +88,11 @@ export function ChainPositionStrip({
     return null;
   }
 
-  const showCollapsed =
-    actualLeadDays != null ||
-    (docType === "WO" && status === "COMPLETED" && actualLeadDays != null);
-
-  if (actualLeadDays != null) {
-    const deltaOk = actualLeadDays <= chainTotalDays;
-    return (
+  const completedBanner =
+    actualLeadDays != null ? (
       <div
         className={`rounded-md border px-3 py-2 text-sm ${
-          deltaOk
+          actualLeadDays <= chainTotalDays
             ? "border-green-500/40 bg-green-50 dark:bg-green-950/20"
             : "border-red-500/40 bg-red-50 dark:bg-red-950/20"
         }`}
@@ -110,21 +102,18 @@ export function ChainPositionStrip({
           estimated: chainTotalDays,
         })}
       </div>
-    );
-  }
-
-  if (docType === "WO" && status === "COMPLETED") {
-    return (
+    ) : shouldCollapseToCompletedSummary(docType, status) ? (
       <div className="rounded-md border px-3 py-2 text-sm text-muted-foreground">
         {t("completedSummary", {
           actual: "—",
           estimated: chainTotalDays,
         })}
       </div>
-    );
-  }
+    ) : null;
 
-  void showCollapsed;
+  if (shouldCollapseToCompletedSummary(docType, status)) {
+    return completedBanner;
+  }
 
   const expected = getExpectedPosition(snapshot, clockStart, new Date());
   const drift = getPositionDrift(expected, confirmedIndex);
@@ -151,6 +140,7 @@ export function ChainPositionStrip({
 
   return (
     <div className="rounded-md border px-3 py-3 space-y-3">
+      {completedBanner}
       <div className="text-sm font-medium">
         {expected.status === "PAST_DUE"
           ? t("stripOverdue", { days: expected.overdueDays })

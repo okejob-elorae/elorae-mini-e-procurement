@@ -203,12 +203,23 @@ export function FieldSalesOrdersPageClient(props: Props) {
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate">{o.storeName}</TableCell>
                   <TableCell className="max-w-[160px] truncate">{o.salesmanName}</TableCell>
-                  <TableCell className="text-right">{formatRupiah(o.total)}</TableCell>
+                  <TableCell className="text-right">
+                    {/* Pending/rejected KONSI has no finalized retail price — the writer keeps
+                      * total at 0 until approve. Showing "Rp 0" reads as a real zero invoice. */}
+                    {o.orderType === "KONSI" && o.status !== "APPROVED"
+                      ? "—"
+                      : formatRupiah(o.total)}
+                  </TableCell>
                   <TableCell className="whitespace-nowrap">{formatDate(o.createdAt)}</TableCell>
                   <TableCell>
                     <Badge variant={STATUS_BADGE_VARIANT[o.status]}>
                       {t(STATUS_LABEL_KEY[o.status])}
                     </Badge>
+                    {o.creditHoldAtCreate && (
+                      <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-700">
+                        {t("creditHoldBadge")}
+                      </Badge>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

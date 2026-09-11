@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -630,20 +631,22 @@ export function POForm({
                         />
                       </TableCell>
                       <TableCell>
-                        <Select
-                          value={lineItem.ppnIncluded ? 'include' : 'exclude'}
-                          onValueChange={(value) =>
-                            updateLineItem(lineItem.id, 'ppnIncluded', value === 'include')
-                          }
-                        >
-                          <SelectTrigger className="max-w-40">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="include">Include PPN</SelectItem>
-                            <SelectItem value="exclude">Exclude PPN</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id={`ppn-${lineItem.id}`}
+                            checked={lineItem.ppnIncluded}
+                            onCheckedChange={(checked) =>
+                              updateLineItem(lineItem.id, "ppnIncluded", checked)
+                            }
+                            aria-label="Include PPN"
+                          />
+                          <Label
+                            htmlFor={`ppn-${lineItem.id}`}
+                            className="cursor-pointer text-xs text-muted-foreground whitespace-nowrap"
+                          >
+                            {lineItem.ppnIncluded ? "Include" : "Exclude"}
+                          </Label>
+                        </div>
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         Rp {lineTotal.toLocaleString('id-ID')}

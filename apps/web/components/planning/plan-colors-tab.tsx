@@ -124,6 +124,15 @@ function ColorSection({
     );
   }
 
+  if (category.itemVariants.length === 0) {
+    return (
+      <section className="space-y-2 rounded-md border border-dashed p-4">
+        <h3 className="text-sm font-medium">{label}</h3>
+        <p className="text-sm text-muted-foreground">{t("needsSkuVariants")}</p>
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">

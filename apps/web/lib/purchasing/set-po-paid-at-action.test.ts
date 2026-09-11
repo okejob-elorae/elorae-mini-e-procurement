@@ -21,6 +21,9 @@ vi.mock("@/app/actions/notifications", () => ({
   notifyPOPaymentToggled: async () => {},
 }));
 
+/* The second route past that invariant: a JOURNAL_PENDING flag now fans out to the bell too. */
+vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+
 import { setPOPaidAt } from "@/app/actions/purchase-orders";
 
 /*

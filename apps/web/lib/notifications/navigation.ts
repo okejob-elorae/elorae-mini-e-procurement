@@ -3,7 +3,8 @@
  */
 export function getNotificationHref(
   type: string,
-  data: Record<string, unknown> | null
+  data: Record<string, unknown> | null,
+  context: 'backoffice' | 'pwa' = 'backoffice',
 ): string | null {
   if (!data || typeof data !== 'object') return null;
 
@@ -96,6 +97,31 @@ export function getNotificationHref(
     }
     case 'DOC_NUMBER_ALTERED':
       return '/backoffice/settings/documents';
+    case 'TAX_INVOICE_PENDING': {
+      return '/backoffice/finance/faktur-pajak';
+    }
+    case 'FIELD_RETURN_MISMATCH': {
+      const returnId = data.returnId;
+      if (typeof returnId === 'string') {
+        return `/backoffice/field-returns/${returnId}`;
+      }
+      return '/backoffice/field-returns';
+    }
+    case 'AR_OVERDUE': {
+      const receivableId = data.receivableId;
+      const base = context === 'pwa' ? '/pwa/collections' : '/backoffice/finance/piutang';
+      if (typeof receivableId === 'string') {
+        return `${base}/${receivableId}`;
+      }
+      return base;
+    }
+    case 'SETTLEMENT_REJECTED': {
+      const storeId = data.storeId;
+      if (typeof storeId === 'string') {
+        return `/pwa/pelunasan/${storeId}`;
+      }
+      return '/pwa/pelunasan';
+    }
     default:
       return null;
   }

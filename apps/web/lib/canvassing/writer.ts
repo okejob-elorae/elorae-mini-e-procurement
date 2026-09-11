@@ -1,7 +1,7 @@
 import { prisma, Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
-import { weightedAvgCost } from "./cost";
+import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
 
 export type LoadVanLine = { itemId: string; variantSku: string | null; qty: number };
 export type LoadVanResult =

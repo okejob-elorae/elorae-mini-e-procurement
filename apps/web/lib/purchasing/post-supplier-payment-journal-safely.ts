@@ -1,7 +1,8 @@
-import { prisma } from "@elorae/db";
+import { prisma, type AdminNotification } from "@elorae/db";
 import { isRetryableTxError } from "@/lib/db/tx-retry";
 import type { PostSupplierPaymentResult, PostSupplierPaymentReversalResult } from "./supplier-payment-journal";
 import type { SupplierPaymentDirection } from "./supplier-payment-journal-message";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 /* Re-exported, not redeclared: the canonical definition lives in the client-safe
    message module so the toast mapper can take it without importing Prisma. */
@@ -301,9 +302,10 @@ async function notify(
   role: string | null,
   detail?: string,
 ): Promise<void> {
+  let supplierPaymentJournalNotification: AdminNotification | null = null;
   try {
     if (await alreadyFlagged(direction, poId, reason)) return;
-    await prisma.adminNotification.create({
+    supplierPaymentJournalNotification = await prisma.adminNotification.create({
       data: {
         category: "JOURNAL_PENDING",
         severity: "WARNING",
@@ -326,4 +328,15 @@ async function notify(
       e,
     );
   }
+
+  /**
+   * Below the try/catch, not inside it: reaching here means the `AdminNotification` row is
+   * committed, so the catch above — which reports that nothing was recorded and the operator
+   * must journal by hand — would be describing a state that no longer holds.
+   *
+   * Not awaited either. The paid toggle has already committed and the operator is waiting on the
+   * response; delivery walks recipients with an FCM call each, and the seam swallows its own
+   * failures, so there is nothing here for the caller to wait for.
+   */
+  if (supplierPaymentJournalNotification) void fanOutAdminNotification(supplierPaymentJournalNotification);
 }

@@ -9,34 +9,79 @@ export type SpgCatalogRow = {
   variantSku: string | null;
   variantLabel: string | null;
   price: number | null;
+  onCounterQty: number;
 };
 
 /**
  * SPG record-sale catalog — active finished goods, priced PUTUS (retail),
- * mirroring the pricing recordSpgSale itself applies (store-independent:
- * PUTUS ignores marginPercent, so this never needs the store's own
- * consignment terms). No stock/available field — SpgSale is record-only, no
- * inventory ledger backs it (see recordSpgSale doc comment), so nothing here
- * should imply a stock gate. Every variant defined on the item is offered
- * (not just ones with an InventoryValue row) since there is no stock check.
+ * mirroring the pricing recordSpgSale itself applies (PUTUS ignores
+ * marginPercent, so this never needs the store's own consignment terms —
+ * but it DOES need the store's priceDiscountPercent, since that applies to
+ * every PUTUS-priced line regardless of the store's own consignment terms;
+ * looked up below so this preview matches what recordSpgSale actually
+ * charges). The set stays UNRESTRICTED — every active finished good
+ * is offered, including one with no StoreStock row at all (reports 0).
+ * recordSpgSale is no longer fully record-only — it decrements StoreStock at
+ * a KONSI store (see its doc comment) — but this query still enforces NO
+ * stock gate: the set below is never filtered, capped, or ordered by
+ * onCounterQty.
+ *
+ * onCounterQty is an ON-COUNTER LOCATION figure read from StoreStock only. It
+ * is NOT available-for-sale (that stays InventoryValue.qtyOnHand - reservedQty,
+ * main-only) and it must never gate, cap, or clamp anything — it is
+ * information the SPG sees alongside a row they can already sell regardless
+ * of what it says, including negative (the ledger missed something; the sale
+ * already happened and the cash is in the till).
+ *
+ * Batched: one findMany for the store's StoreStock rows, folded into a map —
+ * not a query per catalog row.
+ *
+ * Variant-key hazard: SpgCatalogRow.variantSku is `string | null` (a
+ * variantless row carries null) while StoreStock.variantSku is non-nullable
+ * `@default("")`. The CATALOG side is normalised with `?? ""` before the map
+ * lookup, exactly as recordSpgSale's own StoreStock key does — matching null
+ * against "" finds nothing and would silently report 0 for every variantless
+ * item. Every variant defined on the item is still offered (not just ones
+ * with a StoreStock row) since there is no stock check.
  */
-export async function getSellableCatalogForSpg(): Promise<SpgCatalogRow[]> {
+export async function getSellableCatalogForSpg(storeId: string): Promise<SpgCatalogRow[]> {
+  const store = await prisma.store.findUnique({ where: { id: storeId }, select: { priceDiscountPercent: true } });
+  const priceDiscountPercent = store?.priceDiscountPercent == null ? null : Number(store.priceDiscountPercent);
+
   const rows = await prisma.item.findMany({
     where: { isActive: true, type: "FINISHED_GOOD" },
     orderBy: { nameId: "asc" },
     select: { id: true, sku: true, nameId: true, sellingPrice: true, variants: true },
   });
 
+  const stockRows = await prisma.storeStock.findMany({
+    where: { storeId },
+    select: { itemId: true, variantSku: true, qty: true },
+  });
+  const stockByKey = new Map<string, number>();
+  for (const s of stockRows) {
+    stockByKey.set(`${s.itemId}::${s.variantSku}`, s.qty.toNumber());
+  }
+  const onCounterQtyFor = (itemId: string, variantSku: string | null) => stockByKey.get(`${itemId}::${variantSku ?? ""}`) ?? 0;
+
   const out: SpgCatalogRow[] = [];
   for (const r of rows) {
     const sp = r.sellingPrice === null ? null : Number(r.sellingPrice);
-    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null });
+    const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", marginPercent: null, priceDiscountPercent });
     const variantSkus = parseItemVariants(r.variants)
       .map((v) => (v.sku ?? "").trim())
       .filter(Boolean);
 
     if (variantSkus.length === 0) {
-      out.push({ itemId: r.id, sku: r.sku, productName: r.nameId, variantSku: null, variantLabel: null, price });
+      out.push({
+        itemId: r.id,
+        sku: r.sku,
+        productName: r.nameId,
+        variantSku: null,
+        variantLabel: null,
+        price,
+        onCounterQty: onCounterQtyFor(r.id, null),
+      });
       continue;
     }
     for (const vSku of variantSkus) {
@@ -47,6 +92,7 @@ export async function getSellableCatalogForSpg(): Promise<SpgCatalogRow[]> {
         variantSku: vSku,
         variantLabel: variantDetailForSku(r.variants, vSku) ?? vSku,
         price,
+        onCounterQty: onCounterQtyFor(r.id, vSku),
       });
     }
   }

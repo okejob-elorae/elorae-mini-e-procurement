@@ -328,7 +328,14 @@ export function PurchaseOrdersPageClient({
                 <TableBody>
                   {filteredPOs.map((po) => (
                     <TableRow key={po.id}>
-                      <TableCell className="font-medium">{po.docNumber}</TableCell>
+                      <TableCell className="font-medium">
+                        <Link
+                          href={`/backoffice/purchase-orders/${po.id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {po.docNumber}
+                        </Link>
+                      </TableCell>
                       <TableCell>
                         <div>
                           <p className="font-medium">{po.supplier.name}</p>

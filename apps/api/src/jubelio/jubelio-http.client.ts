@@ -81,7 +81,7 @@ export class JubelioHttpClient {
    * directly. Both this and the bucket `q` search are undocumented (the OpenAPI
    * spec lists only page/pageSize on the list endpoints, and its purpose-built
    * `POST /wms/order/getOrderByNo/` is pick-flow-scoped → empty for settled
-   * orders). See CLAUDE.md "Before using or adding ANY Jubelio endpoint".
+   * orders). See docs/ARCHITECTURE-NOTES.md "Before using or adding ANY Jubelio endpoint".
    */
   async listOrders(q: string, page = 1, pageSize = 20): Promise<JubelioSalesOrderListRow[]> {
     const body = await this.http.get<{ data: JubelioSalesOrderListRow[]; totalCount?: number }>(

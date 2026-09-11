@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { prisma, seededId } from "@elorae/db";
 import { createFieldSalesOrder, approveFieldSalesOrder, rejectFieldSalesOrder } from "./writer";
-import { NoActiveVisitError, MinQtyViolationError, InsufficientStockError } from "./errors";
+import { NoActiveVisitError, MinQtyViolationError, InsufficientStockError, CreditLimitExceededError } from "./errors";
+
+vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -40,6 +42,43 @@ d("field-sales lifecycle writers (test bed only)", () => {
     if (itemId2) {
       await prisma.salesHistory.deleteMany({ where: { itemId: itemId2 } });
       await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: itemId2 } });
+    }
+    /**
+     * The "a konsi order is never gated regardless of the store's limit" test issues a real
+     * KonsiTransfer; clean it up before the FieldSalesOrder/Store deletes below, both of which
+     * it holds a required FK against.
+     */
+    await prisma.konsiTransferLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.konsiTransfer.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
+    /**
+     * AuditLog has no FK/cascade back to FieldSalesOrder — it just carries entityId as a plain
+     * String — so the credit-override test's CREDIT_LIMIT_OVERRIDE row would otherwise leak into
+     * the shared :3308 bed once its order is deleted below. Scoped to this store's actual order
+     * ids, never to `action` alone, so it can't sweep unrelated rows on the shared bed.
+     */
+    const orderIds = (await prisma.fieldSalesOrder.findMany({ where: { storeId: seededId(storeId) }, select: { id: true } })).map((o) => o.id);
+    if (orderIds.length > 0) {
+      await prisma.auditLog.deleteMany({ where: { entityType: "FieldSalesOrder", entityId: { in: orderIds } } });
+    }
+    /**
+     * createFieldSalesOrder writes one AdminNotification (PENDING_ORDER_APPROVAL, always) and
+     * one more (CREDIT_LIMIT_HOLD, only on a hold) INSIDE its transaction — mocking
+     * fanOutAdminNotification above only suppresses the FCM push, not the row. Neither carries an
+     * FK back to FieldSalesOrder (just a Json metadata blob), so they'd leak into the shared
+     * :3308 bed once the order below is deleted. Prisma's JSON path filtering is unreliable on
+     * this MariaDB adapter, so read the candidate rows and match orderId in JS against our own
+     * seeded ids, same pattern as konsi-transfer/writer.test.ts.
+     */
+    if (orderIds.length > 0) {
+      const candidateNotifs = await prisma.adminNotification.findMany({
+        where: { category: { in: ["PENDING_ORDER_APPROVAL", "CREDIT_LIMIT_HOLD"] } },
+        select: { id: true, metadata: true },
+      });
+      const leakedNotifIds = candidateNotifs
+        .filter((n) => orderIds.includes((n.metadata as { orderId?: string } | null)?.orderId ?? ""))
+        .map((n) => n.id);
+      if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds } } });
     }
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
     await prisma.storeVisit.deleteMany({ where: { id: visitId } });
@@ -82,20 +121,19 @@ d("field-sales lifecycle writers (test bed only)", () => {
       .rejects.toBeInstanceOf(NoActiveVisitError);
   });
 
-  it("approve consumes stock and writes OFFLINE SalesHistory rows", async () => {
+  it("approve flips to APPROVED without consuming stock or writing SalesHistory (moved to delivery)", async () => {
     const { orderId, orderNo } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
     const inv = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku: "" } } });
-    expect(Number(inv!.qtyOnHand)).toBe(94);
-    expect(Number(inv!.reservedQty)).toBe(0);
+    expect(Number(inv!.qtyOnHand)).toBe(100);
+    expect(Number(inv!.reservedQty)).toBe(6);
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
-    expect(hist).toHaveLength(1);
-    expect(hist[0].channel).toBe("OFFLINE");
-    expect(hist[0].orderStatus).toBe("COMPLETED");
-    expect(hist[0].importBatchId).toBeNull();
+    expect(hist).toHaveLength(0);
   });
 
-  it("approve of a 2-line order (two distinct non-variant items) writes 2 SalesHistory rows", async () => {
+  it("approve of a 2-line order (two distinct non-variant items) flips to APPROVED and writes no SalesHistory", async () => {
     const sku2 = `${sku}-B`;
     const item2 = await prisma.item.create({ data: { sku: sku2, nameId: "T2", nameEn: "T2", type: "FINISHED_GOOD", uomId, isActive: true, sellingPrice: 40000 } });
     itemId2 = item2.id;
@@ -109,10 +147,10 @@ d("field-sales lifecycle writers (test bed only)", () => {
     });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
 
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
-    expect(hist).toHaveLength(2);
-    expect(hist.map((h) => h.variantSku).sort()).toEqual([sku, sku2].sort());
-    expect(hist.every((h) => h.channel === "OFFLINE" && h.orderStatus === "COMPLETED")).toBe(true);
+    expect(hist).toHaveLength(0);
   });
 
   it("reject releases the hold", async () => {
@@ -154,7 +192,155 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.total)).toBe(180);
   });
 
-  it("putus approve writes net SalesHistory (discounted unit + line total)", async () => {
+  it("create stamps creditHoldAtCreate and snapshots when the order pushes the store over its limit", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 35000 }] });
+    // 6 * 35000 = 210000, over the 100000 limit, no prior exposure.
+    expect(res.creditHold).toBe(true);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    expect(order!.creditHoldAtCreate).toBe(true);
+    expect(Number(order!.creditExposureAtCreate)).toBe(0);
+    expect(Number(order!.creditLimitAtCreate)).toBe(100_000);
+  });
+
+  it("create over the store's credit limit writes both PENDING_ORDER_APPROVAL and CREDIT_LIMIT_HOLD notifications", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 35000 }] });
+    expect(res.creditHold).toBe(true);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    const notifs = await prisma.adminNotification.findMany({ where: { message: { contains: order!.orderNo } } });
+    expect(notifs.find((n) => n.category === "PENDING_ORDER_APPROVAL")).toBeTruthy();
+    expect(notifs.find((n) => n.category === "CREDIT_LIMIT_HOLD")).toBeTruthy();
+  });
+
+  it("create within the store's credit limit writes only PENDING_ORDER_APPROVAL, no CREDIT_LIMIT_HOLD", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 1_000_000 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    expect(res.creditHold).toBe(false);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    const notifs = await prisma.adminNotification.findMany({ where: { message: { contains: order!.orderNo } } });
+    expect(notifs.find((n) => n.category === "PENDING_ORDER_APPROVAL")).toBeTruthy();
+    expect(notifs.find((n) => n.category === "CREDIT_LIMIT_HOLD")).toBeUndefined();
+  });
+
+  it("create with a null creditLimit skips the check entirely", async () => {
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    expect(res.creditHold).toBe(false);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    expect(order!.creditHoldAtCreate).toBe(false);
+    expect(order!.creditExposureAtCreate).toBeNull();
+    expect(order!.creditLimitAtCreate).toBeNull();
+  });
+
+  it("create still writes the order and reserves stock even when over limit — no over-limit branch", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 1 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    expect(order!.status).toBe("PENDING_APPROVAL");
+    const inv = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku: "" } } });
+    expect(Number(inv!.reservedQty)).toBe(6);
+  });
+
+  it("a konsi order is never flagged even when the store is over its limit", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI", creditLimit: 1 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    expect(res.creditHold).toBe(false);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: res.orderId } });
+    expect(order!.creditHoldAtCreate).toBe(false);
+  });
+
+  it("the flag is computed on the post-promo total, not the pre-discount subtotal", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100_000 } });
+    // Store price discount brings the true total under the limit even though qty*price alone would exceed it.
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 50_000, priceDiscountPercent: 50 } });
+    const res = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 1, unitPrice: 100_000 }] });
+    // Server-priced at create: unitPrice is server-computed from sellingPrice + discount, so the
+    // salesman-supplied unitPrice above is ignored — net total should land at 50000, not over the limit.
+    expect(res.creditHold).toBe(false);
+  });
+
+  it("approve refuses with CreditLimitExceededError when live exposure is over limit and no reason given", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 100_000 }] });
+    await expect(approveFieldSalesOrder({ orderId, approvedById: salesmanId }))
+      .rejects.toBeInstanceOf(CreditLimitExceededError);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("PENDING_APPROVAL");
+  });
+
+  it("approve succeeds and stamps all five approve-side columns when a reason is given", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 100_000 }] });
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId, creditOverrideReason: "Toko sudah komunikasi akan bayar minggu ini" });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
+    expect(order!.creditOverrideReason).toBe("Toko sudah komunikasi akan bayar minggu ini");
+    expect(order!.creditOverrideById).toBe(salesmanId);
+    expect(order!.creditOverrideAt).not.toBeNull();
+    // Number(null) is also 0 in this scenario (no receivables, no other approved orders) — assert
+    // non-null so this doesn't pass identically whether the column was actually written or left
+    // null.
+    expect(order!.creditExposureAtApprove).not.toBeNull();
+    expect(Number(order!.creditExposureAtApprove)).toBe(0);
+    expect(Number(order!.creditLimitAtApprove)).toBe(100_000);
+    const auditLog = await prisma.auditLog.findFirst({ where: { action: "CREDIT_LIMIT_OVERRIDE", entityId: orderId } });
+    expect(auditLog).not.toBeNull();
+  });
+
+  it("an order flagged over-limit at create but back within limit by approve time needs no override reason", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 100_000 }] });
+    // Store paid down / raised its limit between create and approve.
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 1_000_000 } });
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
+    expect(order!.creditOverrideReason).toBeNull();
+  });
+
+  it("an order clean at create but live-over-limit by approve time is refused (the case a snapshot gate would miss)", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 1_000_000 } });
+    const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 100_000 }] });
+    // Store's limit dropped between create and approve.
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    await expect(approveFieldSalesOrder({ orderId, approvedById: salesmanId }))
+      .rejects.toBeInstanceOf(CreditLimitExceededError);
+  });
+
+  it("a whitespace-only override reason is treated as absent", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [{ ...line(), qty: 6, unitPrice: 100_000 }] });
+    await expect(approveFieldSalesOrder({ orderId, approvedById: salesmanId, creditOverrideReason: "   " }))
+      .rejects.toBeInstanceOf(CreditLimitExceededError);
+  });
+
+  it("a refused approve leaves finalPrices unwritten (throw-not-return guarantee)", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 100_000 } });
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const { orderId } = await createFieldSalesOrder({
+      storeId, salesmanId, visitId,
+      lines: [{ ...line(), qty: 6, unitPrice: 100_000, requestedUnitPrice: 90_000, appealReason: "nego" }],
+    });
+    const lineRow = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId }, select: { id: true, unitPrice: true } });
+    const originalUnitPrice = Number(lineRow.unitPrice);
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: salesmanId, finalPrices: [{ lineId: lineRow.id, finalUnitPrice: 90_000 }] }),
+    ).rejects.toBeInstanceOf(CreditLimitExceededError);
+    const lineAfter = await prisma.fieldSalesOrderLine.findUniqueOrThrow({ where: { id: lineRow.id } });
+    expect(Number(lineAfter.unitPrice)).toBe(originalUnitPrice);
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("PENDING_APPROVAL");
+  });
+
+  it("a konsi order is never gated regardless of the store's limit", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI", creditLimit: 1 } });
+    const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
+  });
+
+  it("putus approve carries the create-time line discount through to APPROVED without writing SalesHistory", async () => {
     await prisma.item.update({ where: { id: itemId }, data: { minOrderQty: 1, sellingPrice: 100 } });
     const promo = await prisma.promo.create({
       data: {
@@ -178,11 +364,11 @@ d("field-sales lifecycle writers (test bed only)", () => {
     });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
 
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } });
+    expect(order!.status).toBe("APPROVED");
+    expect(Number(order!.total)).toBe(180); /* 200 subtotal - 20 line discount (10%), unchanged by approve */
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
-    expect(hist).toHaveLength(1);
-    expect(Number(hist[0].unitPriceAfterDiscount)).toBe(90);
-    expect(Number(hist[0].lineTotal)).toBe(180);
-    expect(Number(hist[0].orderTotal)).toBe(180);
+    expect(hist).toHaveLength(0);
   });
 
   it("createFieldSalesOrder dedups on idempotencyKey", async () => {
@@ -279,6 +465,31 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.subtotal)).toBe(6 * 35000);
   });
 
+  it("putus create persists the store's discounted, rounded unitPrice onto the order line", async () => {
+    // 45678 * (1 - 10/100) = 41110.200000000004 unrounded, but unitPrice/lineTotal/subtotal are
+    // Decimal(15,2), so MariaDB rounds on persistence regardless of whether roundCents ran — this
+    // case does NOT discriminate that (packages/db/src/pricing.spec.ts is the actual guard for the
+    // round). What it guards is the discount itself: that computeStorePrice applied the store's
+    // 10% off 45678 and this writer persisted the discounted price onto the order line.
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 45678 } });
+    await prisma.store.update({ where: { id: storeId }, data: { priceDiscountPercent: 10 } });
+
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      // client-sent unitPrice is ignored; the server recomputes off item.sellingPrice + the store's discount.
+      lines: [{ itemId, variantSku: "", productName: "T", qty: 6, unitPrice: 1 }],
+    });
+
+    const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    expect(Number(order!.lines[0].unitPrice)).toBe(41110.2);
+    // NOT `6 * 41110.2` — that JS expression is 246661.19999999998, but lineTotal/subtotal are
+    // Decimal(15,2), so MariaDB stores/returns 246661.20 and Number(...) reads back 246661.2.
+    expect(Number(order!.lines[0].lineTotal)).toBe(246661.2);
+    expect(Number(order!.subtotal)).toBe(246661.2);
+  });
+
   it("putus create with no appeal stores null requestedUnitPrice/appealReason", async () => {
     const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
     const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
@@ -325,11 +536,9 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(Number(order!.subtotal)).toBe(6 * 30000 + 6 * 40000);
     expect(Number(order!.total)).toBe(6 * 30000 + 6 * 40000); // no promo active → discounts stay 0
 
+    /* Stock consumption and SalesHistory happen at delivery now, not at approve. */
     const hist = await prisma.salesHistory.findMany({ where: { orderId: orderNo } });
-    expect(hist).toHaveLength(2);
-    const histAppealed = hist.find((h) => h.itemId === itemId)!;
-    expect(Number(histAppealed.lineTotal)).toBe(6 * 30000);
-    expect(Number(histAppealed.orderTotal)).toBe(6 * 30000 + 6 * 40000);
+    expect(hist).toHaveLength(0);
   });
 });
 
@@ -425,6 +634,9 @@ d("approveFieldSalesOrder — konsi", () => {
 
   afterEach(async () => {
     await prisma.salesHistory.deleteMany({ where: { itemId } });
+    await prisma.konsiTransferLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.konsiTransfer.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId } });
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId } });
     await prisma.storeVisit.deleteMany({ where: { id: visitId } });
@@ -436,7 +648,7 @@ d("approveFieldSalesOrder — konsi", () => {
     await prisma.uOM.deleteMany({ where: { id: uomId } });
   });
 
-  it("reserves (not consumes), stores gross-up, writes NO SalesHistory", async () => {
+  it("moves stock to the store's virtual warehouse at approve, stores gross-up, writes NO SalesHistory", async () => {
     await seedItemWithStock(10, 10000);
     const { orderId } = await createFieldSalesOrder({
       storeId,
@@ -454,14 +666,18 @@ d("approveFieldSalesOrder — konsi", () => {
     expect(Number(order!.lines[0].unitPrice)).toBe(12500);
     expect(Number(order!.lines[0].lineTotal)).toBe(50000);
     expect(Number(order!.total)).toBe(50000);
-    // reserved, NOT consumed
+    // stock moves out of main and into the store's virtual warehouse — reserve (+4) then
+    // consume (-4) both run inside this one approve() call, so reservedQty nets back to 0.
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId } });
-    expect(Number(inv!.reservedQty)).toBe(4);
-    expect(Number(inv!.qtyOnHand)).toBe(10); // unchanged — no consume
+    expect(Number(inv!.reservedQty)).toBe(0);
+    expect(Number(inv!.qtyOnHand)).toBe(6); // 10 - 4
     const rsv = await prisma.stockReservation.findUnique({ where: { fieldSalesLineId: order!.lines[0].id } });
     expect(rsv!.source).toBe("FIELD_SALES_KONSI");
-    expect(rsv!.state).toBe("RESERVED");
-    // NO SalesHistory written
+    expect(rsv!.state).toBe("CONSUMED");
+    expect(Number(rsv!.consumedQty)).toBe(4);
+    const ss = await prisma.storeStock.findFirst({ where: { storeId, itemId } });
+    expect(Number(ss!.qty)).toBe(4);
+    // NO SalesHistory written — a transfer is not a sale
     expect(await prisma.salesHistory.count()).toBe(before);
   });
 

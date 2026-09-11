@@ -123,6 +123,26 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /*
+   * Radix Select renders a visually-hidden native <select> with
+   * position:absolute. Inside a nested overflow:auto scroller that
+   * element still contributes to document scrollHeight, so the whole
+   * app chrome (header/sidebar) can scroll away. Pin it to the viewport.
+   * Scoped to backoffice — the scroll bug is shell-specific.
+   */
+  html.backoffice-shell select[aria-hidden="true"] {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+  }
+}
+
+/* Backoffice app shell: only <main> scrolls, never the document. */
+html.backoffice-shell,
+html.backoffice-shell body {
+  height: 100%;
+  overflow: hidden;
 }
 
 @keyframes global-loading-bar {
@@ -146,6 +166,12 @@
   [data-slot="sheet-overlay"],
   [data-slot="sheet-content"] {
     display: none !important;
+  }
+
+  html.backoffice-shell,
+  html.backoffice-shell body {
+    height: auto !important;
+    overflow: visible !important;
   }
 
   body {

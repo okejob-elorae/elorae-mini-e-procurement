@@ -1,7 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma } from "@elorae/db";
 import { createFieldSalesOrder } from "./writer";
 import { MinQtyViolationError } from "./errors";
+
+/* Stubbed so the writer's post-commit fan-out cannot queue push notifications on the shared dev DB. */
+vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");

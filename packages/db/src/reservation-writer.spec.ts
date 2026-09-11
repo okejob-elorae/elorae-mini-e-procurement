@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "./index";
 import { consumeOrder } from "./reservation-writer";
+import { seededId } from "./spec-teardown";
 
 // Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -8,18 +9,24 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 d("consumeOrder (test bed only)", () => {
-  let itemId: string;
-  let uomId: string;
-  let salesOrderId: string;
+  let itemId = "";
+  let uomId = "";
+  let salesOrderId = "";
   const variantSku = "";
   const sku = `TEST-CONSUME-${Math.random().toString(36).slice(2, 10)}`;
-  const salesorderId = Math.floor(Date.now() / 1000);
+  // Random (not Date.now()/1000) so a re-run within the same second can't collide on SalesOrder_salesorderId_key.
+  const salesorderId = Math.floor(Math.random() * 2_000_000_000);
   const salesorderDetailId = salesorderId + 1;
 
   const AVG_COST = 1000;
   const QTY = 3;
 
   beforeEach(async () => {
+    /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
+    itemId = "";
+    uomId = "";
+    salesOrderId = "";
+
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-${sku}`, nameId: "test", nameEn: "test" },
     });
@@ -89,13 +96,13 @@ d("consumeOrder (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.salesOrderItem.deleteMany({ where: { salesOrderId } });
-    await prisma.salesOrder.deleteMany({ where: { id: salesOrderId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: seededId(salesOrderId) } });
+    await prisma.salesOrder.deleteMany({ where: { id: seededId(salesOrderId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("stamps cogs = avgCost × qty on the SalesOrderItem when the line is consumed", async () => {

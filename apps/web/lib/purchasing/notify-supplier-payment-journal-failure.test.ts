@@ -1,6 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma } from "@elorae/db";
 import { notifySupplierPaymentJournalFailure } from "./post-supplier-payment-journal-safely";
+
+/* Stubbed so the flag's fan-out cannot queue push notifications on the shared dev DB. */
+vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
 /* Writes AdminNotification rows — never run against the shared prod DB. */
 const url = process.env.DATABASE_URL ?? "";

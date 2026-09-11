@@ -11,7 +11,18 @@ import { JubelioError } from "./jubelio.types";
 export type JubelioRequestInit = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
   query?: Record<string, string | number | boolean | undefined>;
+  /**
+   * Keep this call's response body out of BOTH sinks — the `JubelioApiCall` row
+   * and the Nest error log. Every call otherwise records its raw body verbatim
+   * for debugging, which is the right default, but some Jubelio endpoints return
+   * contact details (a location's street address, phone, email and warehouse PIC
+   * email) that we have no business retaining. A caller shaping them out of ITS
+   * OWN return value stops neither sink: both run before any caller mapping.
+   */
+  redactResponseBody?: boolean;
 };
+
+const REDACTED_BODY = "[redacted: response body withheld from the call log]";
 
 @Injectable()
 export class JubelioHttpService {
@@ -61,7 +72,7 @@ export class JubelioHttpService {
         method, path, body: bodyStr, statusCode: status,
         latencyMs: Date.now() - start, ok: true, rateLimited,
         requestBody: bodyStr,
-        responseBody: result === undefined ? undefined : JSON.stringify(result),
+        responseBody: this.logBody(init, result === undefined ? undefined : JSON.stringify(result)),
       });
       return result;
     } catch (err) {
@@ -70,15 +81,16 @@ export class JubelioHttpService {
       const responseBody = err instanceof JubelioError
         ? (typeof err.cause === "string" ? err.cause : JSON.stringify(err.cause))
         : undefined;
+      const loggableBody = this.logBody(init, responseBody);
       this.apiLog.record({
         method, path, body: bodyStr, statusCode,
         latencyMs: Date.now() - start, ok: false, rateLimited, errorMessage: message,
         requestBody: bodyStr,
-        responseBody,
+        responseBody: loggableBody,
       });
       if (err instanceof JubelioError) {
         this.logger.error(
-          `Jubelio ${method} ${path} ${err.status}\n  REQ: ${bodyStr ?? "<no body>"}\n  RES: ${responseBody ?? "<no body>"}`,
+          `Jubelio ${method} ${path} ${err.status}\n  REQ: ${bodyStr ?? "<no body>"}\n  RES: ${loggableBody ?? "<no body>"}`,
         );
       }
       throw err;
@@ -163,6 +175,11 @@ export class JubelioHttpService {
       throw new JubelioError(message, response.status, data);
     }
     return data as T;
+  }
+
+  private logBody(init: JubelioRequestInit, body: string | undefined): string | undefined {
+    if (!init.redactResponseBody) return body;
+    return body === undefined ? undefined : REDACTED_BODY;
   }
 
   private tryJson(text: string): unknown {

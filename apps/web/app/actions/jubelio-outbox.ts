@@ -22,7 +22,15 @@ export type JubelioOutboxFilters = {
   offset?: number;
   status?: Status | Status[];
   entityType?: string;
+  q?: string;
 };
+
+/**
+ * Caps the term length so a pasted payload does not become a multi-KB LIKE
+ * pattern. The leading-wildcard `contains` match is still a full table scan on
+ * every search — fine at this table's size, not a substitute for a real bound.
+ */
+const MAX_SEARCH_LENGTH = 200;
 
 export async function pushItemStockToJubelio(itemId: string): Promise<{ ok: boolean; outboxId?: string }> {
   if (!(await isAdmin())) return { ok: false };
@@ -68,6 +76,21 @@ export async function getJubelioOutboxRows(filters: JubelioOutboxFilters = {}) {
     where.status = Array.isArray(filters.status) ? { in: filters.status } : filters.status;
   }
   if (filters.entityType) where.entityType = filters.entityType;
+
+  /**
+   * Free-text search across the four columns an operator actually has to hand
+   * when chasing a stuck push: the outbox row id from a log line, the entity id
+   * or type from a notification, and the Jubelio error text itself.
+   */
+  const q = filters.q?.trim().slice(0, MAX_SEARCH_LENGTH);
+  if (q) {
+    where.OR = [
+      { id: { contains: q } },
+      { entityId: { contains: q } },
+      { entityType: { contains: q } },
+      { lastError: { contains: q } },
+    ];
+  }
 
   const [rows, total] = await Promise.all([
     prisma.jubelioOutbox.findMany({

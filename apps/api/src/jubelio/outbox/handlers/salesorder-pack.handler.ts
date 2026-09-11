@@ -3,6 +3,7 @@ import type { JubelioOutbox } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
+import { isAlreadyInStateError } from "./already-in-state";
 import type { HandlerOutcome, OutboxHandler } from "./handler.types";
 
 type PackPayload = { salesOrderId: string; jubelioSalesorderId: number };
@@ -38,10 +39,4 @@ export class SalesOrderPackHandler implements OutboxHandler {
     this.logger.log(`Pushed Pack for salesorder ${order.salesorderId}`);
     return { kind: "processed" };
   }
-}
-
-function isAlreadyInStateError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const code = (err as { code?: unknown }).code;
-  return code === "ALREADY_IN_STATE";
 }

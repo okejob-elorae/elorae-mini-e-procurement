@@ -3,16 +3,18 @@ import { esc, fmtDocDate, printCssBase, printPagePortrait } from "@/lib/print/pr
 export type FsPrintLine = { productName: string; variantSku: string | null; variantLabel: string | null; qty: number };
 
 export interface BuildNotaGudangOptions {
+  docNo: string;
   orderNo: string;
   storeName: string;
   salesmanName: string;
-  approvedAt: Date | string | null;
+  deliveredAt: Date | string | null;
   status: string;
   lines: FsPrintLine[];
   issuerName?: string;
   labels: {
     title: string;
     doc: string;
+    orderRef: string;
     store: string;
     salesman: string;
     date: string;
@@ -27,7 +29,7 @@ export interface BuildNotaGudangOptions {
 }
 
 export function buildNotaGudangPrintHtml(opts: BuildNotaGudangOptions): string {
-  const { orderNo, storeName, salesmanName, approvedAt, status, lines, issuerName = "Elorae", labels } = opts;
+  const { docNo, orderNo, storeName, salesmanName, deliveredAt, status, lines, issuerName = "Elorae", labels } = opts;
   const variantBit = (l: FsPrintLine) => l.variantLabel ? ` · ${esc(l.variantLabel)}` : (l.variantSku && l.variantSku !== "") ? ` · ${esc(l.variantSku)}` : "";
   const rows = lines.map((l, i) => `<tr>
       <td class="uom">${i + 1}</td>
@@ -35,7 +37,7 @@ export function buildNotaGudangPrintHtml(opts: BuildNotaGudangOptions): string {
       <td class="right">${Number(l.qty).toLocaleString("id-ID")}</td>
     </tr>`).join("");
   return `<!DOCTYPE html>
-<html lang="id"><head><meta charset="utf-8"><title>${esc(labels.title)} — ${esc(orderNo)}</title>
+<html lang="id"><head><meta charset="utf-8"><title>${esc(labels.title)} — ${esc(docNo)}</title>
 <style>${printCssBase}${printPagePortrait}
   .sign-row { display:flex; justify-content:space-between; gap:48px; margin-top:56px; }
   .sign-box { flex:1; text-align:center; }
@@ -44,8 +46,9 @@ export function buildNotaGudangPrintHtml(opts: BuildNotaGudangOptions): string {
 <body>
   <div class="doc-top">
     <div><h1 class="doc-title">${esc(labels.title)}</h1><p class="doc-sub">${esc(labels.issuedBy)} ${esc(issuerName)}</p></div>
-    <div class="doc-ref"><span class="lbl">${esc(labels.doc)}</span><span class="val">${esc(orderNo)}</span>
-      <span class="lbl">${esc(labels.date)}</span><span class="val">${esc(fmtDocDate(approvedAt))}</span>
+    <div class="doc-ref"><span class="lbl">${esc(labels.doc)}</span><span class="val">${esc(docNo)}</span>
+      <span class="lbl">${esc(labels.orderRef)}</span><span class="val">${esc(orderNo)}</span>
+      <span class="lbl">${esc(labels.date)}</span><span class="val">${esc(fmtDocDate(deliveredAt))}</span>
       <span class="lbl">${esc(labels.status)}</span><span class="val">${esc(status)}</span></div>
   </div>
   <div class="two-col">

@@ -2,15 +2,14 @@
 
 Monorepo: `apps/web` (Next.js ERP), `apps/api` (NestJS Jubelio integration), `packages/db` (shared Prisma + MariaDB adapter).
 
-This README covers running the stack on your laptop and exposing `apps/api` publicly via ngrok for client demos. For the ERP feature list, see `apps/web/README.md`. For the service-boundary contract, see `docs/BOUNDARY.md`.
+This README covers running the stack on your laptop and deploying it to the VPS. For the ERP feature list, see `apps/web/README.md`. For the service-boundary contract, see `docs/BOUNDARY.md`.
 
 ---
 
 ## Prereqs
 
 - Node `>=22`, pnpm `>=11` (declared in root `package.json` `engines`)
-- A MySQL/MariaDB-compatible database. Production runs **MariaDB 11.4** in the docker-compose stack on the VPS; local dev reaches the same DB through an SSH tunnel (see Local-dev DB access below).
-- ngrok account (free, no card) — only needed for client demos
+- A MySQL/MariaDB-compatible database. Production runs **MariaDB 11.4** in the docker-compose stack on the VPS. Local dev runs its own **MariaDB 11.4 container on port 3308** (`docker compose -f docker-compose.dev.yml up -d db`) — a test bed, not prod (see Local-dev DB access below).
 - Jubelio account credentials — only needed to test integration
 
 ## Repo layout
@@ -33,6 +32,10 @@ docs/
 | `apps/api/.env` | api-only keys (`JUBELIO_*`, `SWAGGER_*`, `CORS_ORIGINS`, `PORT`). No `DATABASE_URL` — cascades from `apps/web/.env` via `apps/api/src/bootstrap-env.ts` |
 
 Both `.env` files are gitignored. Templates: `apps/web/.env.example`, `apps/api/.env.example`.
+
+Web keys worth knowing:
+- `INTERNAL_API_URL` — where `apps/web` reaches `apps/api` for HMAC-signed internal calls. `http://localhost:3001` locally; the VPS env store sets the internal compose address in prod. Web features that call the api error out if it points at nothing listening.
+- `SERPAPI_KEY` — optional. Enables **Find on map** place search on the backoffice store form (SerpAPI Google Maps). Map pin + paste-coords work without it.
 
 The api env-load cascade: `apps/api/.env` → `<root>/.env` → `apps/web/.env`. Earlier wins per key (dotenv default no-override). Lets api omit shared keys.
 
@@ -96,47 +99,38 @@ pnpm --filter @elorae/api prod:start
 
 `prod:start` sets `NODE_ENV=production` and runs `node dist/main.js`. cwd must be `apps/api` so `bootstrap-env.ts` resolves the env cascade — `pnpm --filter` handles this automatically.
 
-## Client demo via ngrok
+## Local-dev DB access
 
-Pattern: `apps/api` runs on your laptop and is exposed publicly via ngrok with a stable free domain so Jubelio can reach it. Same TiDB cluster as the VPS-deployed web.
+Day to day you do not need prod at all — the default `DATABASE_URL` in `apps/web/.env` points at the local 3308 test bed:
 
 ```bash
-# 1. start apps/api locally (dev or prod-mode)
-pnpm --filter @elorae/api dev
-
-# 2. start ngrok tunnel pointing at api port
-ngrok http --domain=<your-name>.ngrok-free.app 3001
+docker compose -f docker-compose.dev.yml up -d db
+# apps/web/.env (default)
+DATABASE_URL=mysql://elorae:elorae@127.0.0.1:3308/elorae
 ```
 
-Set `INTERNAL_API_URL=https://<your-name>.ngrok-free.app` in `apps/web/.env` (or VPS env) so web reaches your local api.
-
-Set `CORS_ORIGINS=https://<your-web-origin>` in `apps/api/.env` so the api accepts cross-origin requests from the web.
-
-Jubelio webhooks (optional): in the Jubelio dashboard set URL to `https://<your-name>.ngrok-free.app/webhooks/jubelio/<event>` and `JUBELIO_WEBHOOK_SECRET` to match. Only enable during demo windows — when your laptop is off, webhooks drop after 3 Jubelio retries.
-
-### Demo caveats
-
-- Laptop off = api down → web features that call `INTERNAL_API_URL` error out (local demo only; VPS is unaffected).
-- The VPS MariaDB is shared between local-dev (via SSH tunnel) and the VPS-deployed web. A local `prisma migrate dev` or destructive query hits the same data the client sees. Use a separate database (`CREATE DATABASE elorae_demo`) on the same MariaDB instance if you need isolation.
-- ngrok free tier: 1 reserved domain, 40 connections/min, 20k req/month. Plenty for demos.
-
-### Local-dev DB access
+Reaching prod is a deliberate act. The tunnel uses local port **3307** so it can never be confused with the 3308 bed:
 
 ```bash
 # Persistent tunnel — leave running in the background.
-ssh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud
+ssh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud
 # or with autossh for auto-reconnect:
-autossh -fNL 3306:127.0.0.1:3306 elorae@api.elorae.cloud
-
-# apps/web/.env
-DATABASE_URL=mysql://elorae:<DB_PASSWORD>@127.0.0.1:3306/elorae
+autossh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud
 ```
+
+`apps/web/.env` carries `DATABASE_URL_PROD` (3307) as an inert bookmark — **no code reads it**. To actually target prod you must set `DATABASE_URL` yourself, or pass an explicit `SRC_DATABASE_URL`/`DEST_DATABASE_URL` to the scripts that clone prod data down. See `docs/local-db-testbed.md`.
+
+**If you do override it, that override is the hazard.** Every later command in that shell — a migration, a seed, a backfill, a stray `deleteMany` in a spec — hits prod with no prompt and no marker. Check what `DATABASE_URL` resolves to before any write, and prefer passing the prod URL explicitly to the one command that needs it over exporting it into the shell.
 
 The MariaDB port is bound to `127.0.0.1` on the VPS — no public reach, tunnel is mandatory.
 
 ## Production deploy — Hostinger VPS
 
 Both `apps/web` and `apps/api` run on the same Hostinger VPS alongside MariaDB + Redis + Caddy, all via Docker Compose. Vercel is no longer used (decommissioned 2026-06-18). Public URLs: `https://elorae.cloud` (web) and `https://api.elorae.cloud` (api).
+
+**Deploys are automatic and the VPS never builds.** A push to `master` runs `.github/workflows/deploy.yml`: GitHub Actions builds both images, pushes them to `ghcr.io/okejob-elorae/elorae-{web,api}` (tagged with the commit SHA and `master`), then SSHes in and makes the VPS *pull* them. The `migrate` job is gated on both image builds, so a broken build blocks the migration rather than racing it. The manual commands below are for first-time setup and rollback — for a normal deploy you push and watch the workflow. A rollback to a known SHA can also be driven from Actions → Deploy to VPS → Run workflow with an `image_tag`.
+
+**A green workflow is not proof your code is running.** Check the `Deploy api` / `Deploy web` jobs specifically and the container's image tag — a skipped deploy job leaves prod on the previous image while the overall run still reads success.
 
 **Server side prereqs** (one-time per VPS):
 
@@ -172,7 +166,11 @@ nano .env.production.web   # fill: NEXTAUTH_*, ENCRYPTION_KEY, FIREBASE_*, R2_*,
 chmod 600 .env.production .env.production.web
 
 # 3. Bring the stack up. db starts first, api/web wait for db health.
-docker compose -f docker-compose.prod.yml up -d --build
+#    The VPS does NOT build — docker-compose.prod.yml declares `image:` only
+#    (ghcr.io/okejob-elorae/elorae-{api,web}), so pull first, then start with
+#    --no-build. `--build` here is a no-op: there is no build context.
+docker compose -f docker-compose.prod.yml pull api web
+docker compose -f docker-compose.prod.yml up -d --no-build
 docker compose -f docker-compose.prod.yml ps        # all should show "Up (healthy)"
 
 # 4. Apply Prisma migrations into the fresh MariaDB.
@@ -188,6 +186,11 @@ curl -fsS https://api.elorae.cloud/health           # 200 OK
 
 Caddy obtains a Let's Encrypt cert automatically on first HTTPS request to the domain. First boot may take ~30 s for cert issuance.
 
+> **Rebuilding this VPS? Set up backups as part of the build, not afterwards.** Nothing in
+> the repo installs the crontab, so a freshly provisioned host comes up healthy, serving
+> traffic, with zero backups and no signal that anything is missing. See
+> §Database backups below.
+
 ### apps/web on VPS
 
 `apps/web` runs as a Docker Compose service (`web`) alongside `apps/api`, exposed by the same Caddy instance at `https://elorae.cloud`.
@@ -198,7 +201,8 @@ Caddy obtains a Let's Encrypt cert automatically on first HTTPS request to the d
 ssh elorae@api.elorae.cloud
 cd /srv/elorae
 # Ensure .env.production contains NEXTAUTH_SECRET, NEXTAUTH_URL, DATABASE_URL, INTERNAL_API_SECRET
-docker compose -f docker-compose.prod.yml up -d --build web
+docker compose -f docker-compose.prod.yml pull web
+docker compose -f docker-compose.prod.yml up -d --no-build web
 docker compose -f docker-compose.prod.yml ps        # web should show "Up"
 curl -fsS https://elorae.cloud/                     # 200 OK
 ```
@@ -208,20 +212,22 @@ curl -fsS https://elorae.cloud/                     # 200 OK
 ```bash
 ssh elorae@api.elorae.cloud
 cd /srv/elorae
-git pull
-docker compose -f docker-compose.prod.yml up -d --build web
+git pull                                                 # picks up compose/Caddy config changes only
+IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml pull web
+IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml up -d --no-build web
 docker compose -f docker-compose.prod.yml logs -f web    # tail for boot errors
 ```
 
-Both services share the same `docker compose -f docker-compose.prod.yml` workflow. To rebuild both in one pass: `docker compose -f docker-compose.prod.yml up -d --build api web`.
+Omit `IMAGE_TAG` to take `:master`, the tag CI moves on every push. Both services share the same workflow — to move both in one pass: `docker compose -f docker-compose.prod.yml pull api web && docker compose -f docker-compose.prod.yml up -d --no-build api web`.
 
 **Subsequent deploys** (after a merged PR):
 
 ```bash
 ssh elorae@api.elorae.cloud
 cd /srv/elorae
-git pull
-docker compose -f docker-compose.prod.yml up -d --build api
+git pull                                                 # picks up compose/Caddy config changes only
+IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml pull api
+IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml up -d --no-build api
 docker compose -f docker-compose.prod.yml logs -f api    # tail for boot errors
 ```
 
@@ -309,6 +315,137 @@ Flags explained:
 
 After migration, verify counts match between source and target on a few tables (`Item`, `JubelioOutbox`, `User`, etc.) before pointing local dev or DNS at the new DB.
 
+## Database backups (VPS → Cloudflare R2)
+
+`scripts/backup-db.sh` takes a nightly encrypted dump and uploads it to a **private** R2
+bucket. Retention is 14 daily plus the 1st of each month for 6 months, pruned by the date
+in the object key.
+
+**It verifies before it uploads.** The script decrypts the archive it just wrote and looks
+for the `Dump completed on` trailer that `mariadb-dump` emits only after a complete run.
+That single check proves the passphrase works, the gzip stream is intact and the dump is
+not truncated. Exit statuses prove none of it: `mariadb-dump | gzip` returns *gzip's*
+status, so a dump that fails outright still exits 0 and leaves a valid ~120-byte archive
+that looks fine in `ls`. That happened on 2026-08-08, twice, from two different causes.
+
+Two things that will bite anyone writing similar scripts against this server:
+
+- **`--skip-ssl` is required.** MariaDB 11.4's client demands TLS by default; this server
+  offers none, so a bare `mariadb`/`mariadb-dump` dies with `error 2026`.
+- **The application's R2 bucket is public-read** — it serves item images and visit photos
+  over a `pub-*.r2.dev` URL. A database dump there would expose every customer's name,
+  address, phone and order history to anyone who guesses a key. Backups need their own
+  private bucket and a token scoped to it.
+
+### Setup (once, on the VPS)
+
+Create the private bucket in Cloudflare first (suggested name `elorae-backups`) with an API
+token scoped to **that bucket only**, Object Read & Write. The script refuses to run if the
+bucket is named `elorae-erp` or `elorae-uploads`, because those are the application's
+public-read buckets.
+
+**The AWS CLI is not installable from apt on this host.** Ubuntu 24.04 keeps `awscli` in
+`universe`, which is not enabled here — `apt-get install awscli` fails with *"no installation
+candidate"*, and because apt aborts the whole transaction, `gnupg` in the same command does
+not install either. `unzip` is also absent. Install the official v2 CLI into the user's own
+tree instead; it needs no sudo and no extra packages:
+
+```bash
+cd /tmp && rm -rf awscli-inst && mkdir awscli-inst && cd awscli-inst
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o awscliv2.zip
+python3 -m zipfile -e awscliv2.zip .          # python3 stands in for the missing unzip
+chmod +x aws/install aws/dist/aws
+./aws/install -i "$HOME/.local/aws-cli" -b "$HOME/.local/bin"
+"$HOME/.local/bin/aws" --version
+```
+
+`python3 -m zipfile` does not preserve the executable bit, hence the `chmod`. Installing to
+`~/.local/bin` means **cron will not find it** unless the crontab sets `PATH` — see below.
+
+`gpg`, `openssl`, `curl` and `flock` are already present on this host; verify with
+`command -v` before assuming.
+
+```bash
+install -m 700 -d ~/.elorae-backup
+
+# Generated, not typed: a passphrase typed on the command line lives in
+# ~/.bash_history forever, surviving any later rotation.
+umask 077
+openssl rand -base64 48 > ~/.elorae-backup/passphrase
+
+cp /srv/elorae/scripts/backup-db.env.example ~/.elorae-backup/env
+chmod 600 ~/.elorae-backup/env
+$EDITOR ~/.elorae-backup/env            # fill in account id, bucket, token
+
+# The script refuses to start unless both are 600 — verify rather than assume.
+stat -c '%a %n' ~/.elorae-backup/passphrase ~/.elorae-backup/env
+```
+
+**Then copy the passphrase somewhere off this machine** — a password manager, not this
+server and not that bucket. It is the only way to read these backups; lose it and every
+backup is permanently unreadable, and you will not find out until you need one.
+
+Note the nightly verify proves the *local* passphrase file decrypts the archive. It cannot
+prove your off-site copy is correct — a transcription error there passes every night and
+surfaces only at restore. Verify the off-site copy once, by hand, against a real archive.
+
+### Schedule
+
+```bash
+crontab -e
+```
+```
+# Required: the AWS CLI lives in ~/.local/bin, which cron's default PATH omits.
+# Without this the nightly run dies at "aws cli not installed" while a manual run
+# from an interactive shell keeps working — the worst kind of divergence.
+PATH=/home/elorae/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# 02:15 WIB — the VPS runs UTC, so 19:15 UTC the previous day
+15 19 * * * /srv/elorae/scripts/backup-db.sh >> /home/elorae/backup.log 2>&1
+```
+
+Run it once by hand first. The last line is `OK — backup complete, verified and uploaded`
+with a byte count.
+
+**Monitor the exit status, not the log text.** A `set -e` abort exits nonzero without
+printing `FAILED`, so grepping for that word misses a whole failure class. Nothing renders
+these anywhere yet, so until the `AdminNotification` feed exists an unread `backup.log` and
+the cron exit status are the only signals there are.
+
+### Restore
+
+The decrypted dump is plaintext customer PII. Restore it in a private temp directory —
+never in `/srv/elorae`, which is a git working tree where a later `git add -A` would commit
+it — and delete it when finished.
+
+```bash
+set -a; . ~/.elorae-backup/env; set +a          # aws needs the token from here
+umask 077
+WORK=$(mktemp -d); cd "$WORK"
+
+# Same endpoint the script uses: explicit when set, default-jurisdiction otherwise.
+aws s3 cp "s3://$R2_BACKUP_BUCKET/daily/<file>" . \
+  --endpoint-url "${R2_ENDPOINT:-https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com}"
+
+gpg --batch --decrypt --passphrase-file ~/.elorae-backup/passphrase <file> | gunzip > restore.sql
+```
+
+Load it into a **scratch database** and inspect it before going anywhere near prod:
+
+```bash
+docker compose -f /srv/elorae/docker-compose.prod.yml exec -T db \
+  sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --skip-ssl -u root -e "CREATE DATABASE elorae_restore_check"'
+docker compose -f /srv/elorae/docker-compose.prod.yml exec -T db \
+  sh -c 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --skip-ssl -u root elorae_restore_check' < restore.sql
+
+# When done:
+cd / && rm -rf "$WORK"
+```
+
+A restore straight over the live database is how a bad backup becomes a bad outage.
+`MYSQL_PWD` rather than `-p` for the same reason the script uses it: `-p` with no TTY
+silently becomes a password *prompt*, and `/proc/<pid>/cmdline` is world-readable.
+
 ## Common scripts
 
 | Command | What it does |
@@ -325,6 +462,6 @@ After migration, verify counts match between source and target on a few tables (
 
 - **`Cannot read properties of undefined (reading 'prepareCacheLength')`** — `DATABASE_URL` not loaded. Check `apps/web/.env` exists and contains the URL. Cascade only reads existing files.
 - **`UOM with code PCS not found. Run db seed first.`** — catalog sync needs the `PCS` UOM seeded: `pnpm --filter @elorae/db seed`.
-- **`CORS_ORIGINS not set` warn on api boot** — fine in pure-local dev. Set to the web origin when deploying to VPS or exposing via ngrok.
+- **`CORS_ORIGINS not set` warn on api boot** — fine in pure-local dev. Set to the web origin when deploying to the VPS.
 - **`SWAGGER_USER / SWAGGER_PASS not set` warn** — `/docs` is disabled. Set both in `apps/api/.env` to enable Swagger.
 - **api boots but DB queries fail** — confirm migrations ran against the same `DATABASE_URL` you booted with. Check `_prisma_migrations` table.

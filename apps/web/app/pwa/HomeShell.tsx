@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowRight, ChevronRight, Clock, LogOut, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck } from "lucide-react";
+import { ArrowRight, Bell, ChevronRight, Clock, LogOut, Mail, MapPin, Loader2, ShoppingBag, Sparkles, Store, CloudUpload, Truck, Wallet } from "lucide-react";
 import { rankStoresByDistance, formatDistance, type StoreWithCoords } from "@/lib/pwa/nearest-stores";
 import { listPendingOrders } from "@/lib/pwa/offline/queue";
+import { listPendingCompletions } from "@/lib/pwa/offline/completion-queue";
 import { setupOrderSync } from "@/lib/pwa/offline/sync";
 import { CheckOutButton } from "./stores/[id]/CheckOutButton";
 import { Button } from "@/components/ui/button";
@@ -25,19 +26,37 @@ type Props = {
   } | null;
   stores: StoreWithCoords[];
   recentStores: Array<{ storeId: string; storeName: string }>;
+  canCollect: boolean;
+  canCompletePod: boolean;
+  canViewAmplop: boolean;
   onLogout: () => Promise<void>;
 };
 
-export function HomeShell({ userName, activeVisit, stores, recentStores, onLogout }: Props) {
+export function HomeShell({
+  userName,
+  activeVisit,
+  stores,
+  recentStores,
+  canCollect,
+  canCompletePod,
+  canViewAmplop,
+  onLogout,
+}: Props) {
   const t = useTranslations("pwa.nearest");
   const tAuth = useTranslations("auth");
   const tOffline = useTranslations("pwa.offline");
   const tVanSale = useTranslations("vanSale");
   const tSmartRequest = useTranslations("pwa.smartRequest");
+  const tCollections = useTranslations("pwa.collections");
+  const tAmplop = useTranslations("pwa.amplop");
+  const tDeliveries = useTranslations("pwa.deliveries");
+  const tNotifications = useTranslations("pwa.notifications");
   const [perm, setPerm] = useState<PermState>("unknown");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [fetchingOrigin, setFetchingOrigin] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingCompletionsCount, setPendingCompletionsCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,12 +64,31 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
       listPendingOrders().then(orders => {
         if (!cancelled) setPendingCount(orders.length);
       });
+      listPendingCompletions().then(completions => {
+        if (!cancelled) setPendingCompletionsCount(completions.length);
+      });
     };
     refresh();
     const cleanup = setupOrderSync(refresh);
     return () => {
       cancelled = true;
       cleanup();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/notifications")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { unreadCount: number } | null) => {
+        if (!cancelled && json) setUnreadCount(json.unreadCount);
+      })
+      .catch(() => {
+        // Best-effort badge — a failed fetch just means no badge shows this load, not an error state.
+        // The dedicated /pwa/notifications page (not this badge) is where a real offline state lives.
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -92,11 +130,27 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
         <p className="text-xs text-muted-foreground">{t("greeting")}</p>
         <p className="text-lg font-semibold">{userName}</p>
       </div>
-      <form action={onLogout}>
-        <Button type="submit" variant="ghost" size="icon" aria-label={tAuth("logout")}>
-          <LogOut className="h-5 w-5" />
+      <div className="flex items-center gap-1">
+        <Button asChild variant="ghost" size="icon" className="relative" aria-label={tNotifications("title")}>
+          <Link href="/pwa/notifications">
+            <Bell className="h-5 w-5" />
+            {unreadCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -right-1 -top-1 h-5 min-w-5 px-1 text-xs"
+                aria-label={`${unreadCount}`}
+              >
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Badge>
+            )}
+          </Link>
         </Button>
-      </form>
+        <form action={onLogout}>
+          <Button type="submit" variant="ghost" size="icon" aria-label={tAuth("logout")}>
+            <LogOut className="h-5 w-5" />
+          </Button>
+        </form>
+      </div>
     </header>
   );
 
@@ -109,6 +163,33 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
     </Button>
   );
 
+  const collectionsCta = canCollect ? (
+    <Button asChild variant="outline" className="w-full">
+      <Link href="/pwa/collections">
+        <Wallet className="h-4 w-4" />
+        {tCollections("homeCta")}
+      </Link>
+    </Button>
+  ) : null;
+
+  const amplopCta = canViewAmplop ? (
+    <Button asChild variant="outline" className="w-full">
+      <Link href="/pwa/pelunasan">
+        <Mail className="h-4 w-4" />
+        {tAmplop("homeCta")}
+      </Link>
+    </Button>
+  ) : null;
+
+  const deliveriesCta = canCompletePod ? (
+    <Button asChild variant="outline" className="w-full">
+      <Link href="/pwa/deliveries">
+        <Truck className="h-4 w-4" />
+        {tDeliveries("homeCta")}
+      </Link>
+    </Button>
+  ) : null;
+
   const pendingChip = pendingCount > 0 ? (
     <Link
       href="/pwa/orders/pending"
@@ -120,11 +201,23 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
     </Link>
   ) : null;
 
+  const pendingCompletionsChip = canCompletePod && pendingCompletionsCount > 0 ? (
+    <Link
+      href="/pwa/deliveries/pending"
+      className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400 transition-colors hover:bg-amber-500/20"
+    >
+      <Truck className="h-4 w-4 shrink-0" />
+      <span className="flex-1">{tDeliveries("pending.homeChipCount", { count: pendingCompletionsCount })}</span>
+      <ChevronRight className="h-4 w-4 shrink-0" />
+    </Link>
+  ) : null;
+
   if (activeVisit) {
     return (
       <div className="p-4 space-y-4">
         {header}
         {pendingChip}
+        {pendingCompletionsChip}
         <Card className="border-primary/40 bg-primary/5">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-2">
@@ -162,6 +255,9 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
           )}
         </div>
         {vanSaleCta}
+        {collectionsCta}
+        {amplopCta}
+        {deliveriesCta}
         <CheckOutButton visitId={activeVisit.id} />
       </div>
     );
@@ -173,7 +269,11 @@ export function HomeShell({ userName, activeVisit, stores, recentStores, onLogou
     <div className="p-4 space-y-5">
       {header}
       {pendingChip}
+      {pendingCompletionsChip}
       {vanSaleCta}
+      {collectionsCta}
+      {amplopCta}
+      {deliveriesCta}
 
       <Card>
         <CardContent className="p-4 flex items-start gap-3">

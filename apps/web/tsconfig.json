@@ -31,6 +31,8 @@
     "app/pwa/sw.ts",
     "scripts/import-legacy-master.ts",
     "scripts/import-legacy-suppliers.ts",
-    "scripts/reconcile-legacy-beli.ts"
+    "scripts/reconcile-legacy-beli.ts",
+    "scripts/dry-run-legacy-bom.ts",
+    "scripts/dry-run-legacy-hpp.ts"
   ]
 }

@@ -21,7 +21,7 @@ export type CatalogItem = {
 };
 
 export type CatalogPayload = {
-  store: { id: string; termsType: "PUTUS" | "KONSI"; marginPercent: number | null };
+  store: { id: string; termsType: "PUTUS" | "KONSI"; marginPercent: number | null; priceDiscountPercent: number | null };
   items: CatalogItem[];
 };
 
@@ -41,7 +41,7 @@ const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
 export function serializeCatalogItem(
   row: CatalogRow,
-  store: { termsType: "PUTUS" | "KONSI"; marginPercent: number | null },
+  store: { termsType: "PUTUS" | "KONSI"; marginPercent: number | null; priceDiscountPercent: number | null },
   imageUrl: string | null,
   neverSent: boolean,
   globalMin: number,
@@ -56,6 +56,7 @@ export function serializeCatalogItem(
         sellingPrice: toNum(row.sellingPrice),
         termsType: store.termsType,
         marginPercent: store.marginPercent,
+        priceDiscountPercent: store.priceDiscountPercent,
       });
   const labelBySku = new Map(
     variantSelectOptions(parseItemVariants(row.variants)).map((o) => [o.sku, o.label]),
@@ -86,10 +87,13 @@ export function serializeCatalogItem(
   };
 }
 
-export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload | null> {
+export async function listCatalogForPwa(
+  storeId: string,
+  options?: { includeInactive?: boolean },
+): Promise<CatalogPayload | null> {
   const store = await prisma.store.findUnique({
     where: { id: storeId },
-    select: { id: true, isActive: true, termsType: true, marginPercent: true },
+    select: { id: true, isActive: true, termsType: true, marginPercent: true, priceDiscountPercent: true },
   });
   if (!store || !store.isActive) return null;
 
@@ -97,6 +101,7 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
     id: store.id,
     termsType: store.termsType,
     marginPercent: store.marginPercent ? store.marginPercent.toNumber() : null,
+    priceDiscountPercent: store.priceDiscountPercent ? store.priceDiscountPercent.toNumber() : null,
   };
 
   const sentSet = store.termsType === "KONSI" ? await sentItemIds(store.id) : new Set<string>();
@@ -104,8 +109,12 @@ export async function listCatalogForPwa(storeId: string): Promise<CatalogPayload
   const g = await prisma.systemSetting.findUnique({ where: { key: "putus.minOrderQty" } });
   const globalMin = g ? Number(g.value) : 6;
 
+  // Retur capture opts in to also list discontinued items — a discontinued item is
+  // exactly the "Tidak Laku"/"Kadaluarsa" case a store returns, and the writer imposes
+  // no active check, so hiding it here would make a real return unfileable. The sell
+  // catalog (no option passed) keeps its existing active-only behavior untouched.
   const rows = await prisma.item.findMany({
-    where: { isActive: true, type: "FINISHED_GOOD" },
+    where: { isActive: options?.includeInactive ? undefined : true, type: "FINISHED_GOOD" },
     orderBy: { nameId: "asc" },
     select: {
       id: true,

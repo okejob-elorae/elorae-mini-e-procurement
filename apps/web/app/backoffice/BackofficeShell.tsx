@@ -7,11 +7,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard,
   Building2,
-  ShoppingCart,
-  DollarSign,
   Package,
-  ClipboardList,
-  RotateCcw,
   FileText,
   Settings,
   Menu,
@@ -22,14 +18,14 @@ import {
   Moon,
   Monitor,
   Check,
-  BarChart2,
   CalendarDays,
   Activity,
   Store,
   Wallet,
-  MapPin,
-  Timer,
-  Tag,
+  BarChart2,
+  PanelLeftClose,
+  PanelLeft,
+  Users,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -42,6 +38,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
@@ -59,10 +61,32 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 
+const SIDEBAR_COLLAPSED_KEY = 'elorae.sidebar.collapsed';
+
 interface NavChild {
   labelKey: string;
   href: string;
   permission?: string;
+  /**
+   * Visible when the user holds ANY ONE of these, for a page whose actors legitimately hold
+   * different permissions — the deliveries register is reachable by both `deliveries:ship` (pack,
+   * track, ship, cancel) and `deliveries:pod` (close against proof), and its server page admits
+   * either. Checked in addition to `permission`, so a child carrying both is visible when either
+   * matches.
+   */
+  anyPermissions?: string[];
+}
+
+/**
+ * Single spelling of a child's visibility rule, shared by the top-level filter and
+ * `visibleChildrenOf` — two copies of it is how one list starts hiding what the other shows.
+ */
+function isChildVisible(permissions: string[], child: NavChild): boolean {
+  if (child.anyPermissions?.length) {
+    if (child.anyPermissions.some((code) => hasPermission(permissions, code))) return true;
+  }
+  if (!child.permission) return !child.anyPermissions?.length;
+  return hasPermission(permissions, child.permission);
 }
 
 interface NavItem {
@@ -71,6 +95,8 @@ interface NavItem {
   icon: React.ElementType;
   permission: string; // Permission code required to view this nav item
   children?: NavChild[];
+  /** When true, only users with legacy User.role ADMIN see this item */
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -86,8 +112,31 @@ const navItems: NavItem[] = [
     icon: Building2,
     permission: PERMISSIONS.SUPPLIERS_VIEW,
     children: [
-      { labelKey: 'masterSuppliers', href: '/backoffice/suppliers' },
-      { labelKey: 'supplierType', href: '/backoffice/suppliers/types' },
+      {
+        labelKey: 'masterSuppliers',
+        href: '/backoffice/suppliers',
+        permission: PERMISSIONS.SUPPLIERS_VIEW,
+      },
+      {
+        labelKey: 'supplierType',
+        href: '/backoffice/suppliers/types',
+        permission: PERMISSIONS.SUPPLIER_TYPES_VIEW,
+      },
+      {
+        labelKey: 'masterStores',
+        href: '/backoffice/stores',
+        permission: PERMISSIONS.STORES_VIEW,
+      },
+      {
+        labelKey: "storeStocktakes",
+        href: "/backoffice/store-stocktakes",
+        permission: PERMISSIONS.STORES_MANAGE,
+      },
+      {
+        labelKey: 'leadTime',
+        href: '/backoffice/lead-time',
+        permission: PERMISSIONS.LEAD_TIME_VIEW,
+      },
     ],
   },
   {
@@ -99,30 +148,6 @@ const navItems: NavItem[] = [
       { labelKey: 'navItemsAll', href: '/backoffice/items' },
       { labelKey: 'navItemsCategory', href: '/backoffice/items/categories' },
     ],
-  },
-  {
-    labelKey: 'stores',
-    href: '/backoffice/stores',
-    icon: MapPin,
-    permission: PERMISSIONS.STORES_VIEW,
-  },
-  {
-    labelKey: 'leadTime',
-    href: '/backoffice/lead-time',
-    icon: Timer,
-    permission: PERMISSIONS.LEAD_TIME_VIEW,
-  },
-  {
-    labelKey: 'purchaseOrders',
-    href: '/backoffice/purchase-orders',
-    icon: ShoppingCart,
-    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-  },
-  {
-    labelKey: 'supplierPayment',
-    href: '/backoffice/supplier-payments',
-    icon: DollarSign,
-    permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
   },
   {
     labelKey: 'inventory',
@@ -158,6 +183,16 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
       },
       {
+        labelKey: 'navFieldReturns',
+        href: '/backoffice/field-returns',
+        permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+      },
+      {
+        labelKey: 'navDeliveries',
+        href: '/backoffice/deliveries',
+        anyPermissions: [PERMISSIONS.DELIVERIES_SHIP, PERMISSIONS.DELIVERIES_POD],
+      },
+      {
         labelKey: 'navCanvassing',
         href: '/backoffice/canvassing',
         permission: PERMISSIONS.CANVASSING_MANAGE,
@@ -173,17 +208,16 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.SPG_SALES_VIEW,
       },
       {
+        labelKey: 'promos',
+        href: '/backoffice/promos',
+        permission: PERMISSIONS.PROMOS_VIEW,
+      },
+      {
         labelKey: 'navRecordPacker',
         href: '/packer',
         permission: PERMISSIONS.PACKER_MENU,
       },
     ],
-  },
-  {
-    labelKey: 'promos',
-    href: '/backoffice/promos',
-    icon: Tag,
-    permission: PERMISSIONS.PROMOS_VIEW,
   },
   {
     labelKey: 'finance',
@@ -222,16 +256,36 @@ const navItems: NavItem[] = [
         href: '/backoffice/finance/reports/balance-sheet',
         permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
       },
-    ],
-  },
-  {
-    labelKey: 'workOrders',
-    href: '/backoffice/work-orders',
-    icon: ClipboardList,
-    permission: PERMISSIONS.WORK_ORDERS_VIEW,
-    children: [
-      { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders' },
-      { labelKey: 'registerNotaCmt', href: '/backoffice/work-orders/nota-register' },
+      {
+        labelKey: 'navFinanceCashFlow',
+        href: '/backoffice/finance/reports/cash-flow',
+        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
+      },
+      {
+        labelKey: 'navFinanceCashFlowSections',
+        href: '/backoffice/finance/cash-flow-sections',
+        permission: PERMISSIONS.JOURNALS_VIEW,
+      },
+      {
+        labelKey: 'navFakturPajak',
+        href: '/backoffice/finance/faktur-pajak',
+        permission: PERMISSIONS.TAX_INVOICES_VIEW,
+      },
+      {
+        labelKey: "navFinancePiutang",
+        href: "/backoffice/finance/piutang",
+        permission: PERMISSIONS.RECEIVABLES_VIEW,
+      },
+      {
+        labelKey: "navFinancePayments",
+        href: "/backoffice/finance/payments",
+        permission: PERMISSIONS.PAYMENTS_MANAGE,
+      },
+      {
+        labelKey: "navFinanceStoreSettlements",
+        href: "/backoffice/finance/pelunasan",
+        permission: PERMISSIONS.COLLECTIONS_MANAGE,
+      },
     ],
   },
   {
@@ -255,13 +309,32 @@ const navItems: NavItem[] = [
         href: '/backoffice/production/colors',
         permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
       },
+      {
+        labelKey: 'purchaseOrders',
+        href: '/backoffice/purchase-orders',
+        permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+      },
+      {
+        labelKey: 'supplierPayment',
+        href: '/backoffice/supplier-payments',
+        permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
+      },
+      {
+        labelKey: 'navWorkOrdersList',
+        href: '/backoffice/work-orders',
+        permission: PERMISSIONS.WORK_ORDERS_VIEW,
+      },
+      {
+        labelKey: 'registerNotaCmt',
+        href: '/backoffice/work-orders/nota-register',
+        permission: PERMISSIONS.NOTA_REGISTER_VIEW,
+      },
+      {
+        labelKey: 'vendorReturns',
+        href: '/backoffice/vendor-returns',
+        permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
+      },
     ],
-  },
-  {
-    labelKey: 'vendorReturns',
-    href: '/backoffice/vendor-returns',
-    icon: RotateCcw,
-    permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
   },
   {
     labelKey: 'reports',
@@ -290,6 +363,13 @@ const navItems: NavItem[] = [
       { labelKey: 'navJubelioMigration', href: '/backoffice/jubelio/migration', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: 'navJubelioCouriers', href: '/backoffice/jubelio/couriers', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
     ],
+  },
+  {
+    labelKey: 'profileAccounts',
+    href: '/backoffice/profile-accounts',
+    icon: Users,
+    permission: PERMISSIONS.SETTINGS_RBAC_VIEW,
+    adminOnly: true,
   },
   {
     labelKey: 'settings',
@@ -329,33 +409,55 @@ function ThemeDropdownItems() {
 function Sidebar({
   className,
   permissions,
+  userRole,
   onClose,
+  collapsed = false,
+  onToggleCollapse,
 }: {
   className?: string;
   permissions: string[];
+  userRole: Role;
   onClose?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
   const getOpenKeyFromPath = (path: string) => {
-    if (path.startsWith('/backoffice/suppliers')) return '/backoffice/suppliers';
+    if (
+      path.startsWith('/backoffice/suppliers') ||
+      path.startsWith('/backoffice/lead-time') ||
+      path.startsWith('/backoffice/stores') ||
+      path.startsWith('/backoffice/store-stocktakes')
+    ) {
+      return '/backoffice/suppliers';
+    }
     if (path.startsWith('/backoffice/items')) return '/backoffice/items';
     if (path.startsWith('/backoffice/inventory')) return '/backoffice/inventory';
-    if (path.startsWith('/backoffice/work-orders')) return '/backoffice/work-orders';
-    if (path.startsWith('/backoffice/forecast')) return '/backoffice/production/planning';
-    if (path.startsWith('/backoffice/forecast') || path.startsWith('/backoffice/production')) {
+    if (
+      path.startsWith('/backoffice/forecast') ||
+      path.startsWith('/backoffice/production') ||
+      path.startsWith('/backoffice/purchase-orders') ||
+      path.startsWith('/backoffice/supplier-payments') ||
+      path.startsWith('/backoffice/work-orders') ||
+      path.startsWith('/backoffice/vendor-returns')
+    ) {
       return '/backoffice/production/planning';
     }
     if (path.startsWith('/backoffice/jubelio')) return '/backoffice/jubelio/admin';
     if (path.startsWith('/backoffice/finance')) return '#';
+    if (path.startsWith('/backoffice/reports')) return '/backoffice/reports/hpp';
     if (
       path.startsWith('/backoffice/sales-orders') ||
       path.startsWith('/backoffice/fulfillment') ||
       path.startsWith('/backoffice/returns') ||
       path.startsWith('/backoffice/field-sales-orders') ||
+      path.startsWith('/backoffice/field-returns') ||
+      path.startsWith('/backoffice/deliveries') ||
       path.startsWith('/backoffice/canvassing') ||
       path.startsWith('/backoffice/van-sales') ||
-      path.startsWith('/backoffice/spg-sales')
+      path.startsWith('/backoffice/spg-sales') ||
+      path.startsWith('/backoffice/promos')
     ) {
       return '/backoffice/sales-orders';
     }
@@ -370,124 +472,220 @@ function Sidebar({
   }, [pathname]);
 
   const filteredItems = navItems.filter((item) => {
+    if (item.adminOnly && userRole !== Role.ADMIN) return false;
     if (item.children?.length) {
-      const visibleChildren = item.children.filter(
-        (child) => !child.permission || hasPermission(permissions, child.permission)
-      );
+      const visibleChildren = item.children.filter((child) => isChildVisible(permissions, child));
       if (visibleChildren.length === 0) return false;
       if (hasPermission(permissions, item.permission)) return true;
       return visibleChildren.some(
-        (child) => child.permission && hasPermission(permissions, child.permission)
+        (child) => (child.permission || child.anyPermissions?.length) && isChildVisible(permissions, child)
       );
     }
     return hasPermission(permissions, item.permission);
   });
 
+  function visibleChildrenOf(item: NavItem): NavChild[] {
+    return (item.children ?? []).filter((child) => isChildVisible(permissions, child));
+  }
+
+  function isChildActive(child: NavChild, siblings: NavChild[]): boolean {
+    const matching = siblings
+      .filter((c) => pathname === c.href || pathname.startsWith(`${c.href}/`))
+      .sort((a, b) => b.href.length - a.href.length);
+    return matching[0]?.href === child.href;
+  }
+
   return (
-    <div className={cn('flex flex-col h-full text-primary-foreground', className)}>
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-primary-foreground/20">
-        <div className="w-10 h-10 bg-primary-foreground rounded-lg flex items-center justify-center">
-          <span className="text-primary font-bold text-lg">E</span>
+    <TooltipProvider delayDuration={0}>
+      <div className={cn('flex flex-col h-full text-sidebar-foreground', className)}>
+        <div
+          className={cn(
+            'flex items-center border-b border-sidebar-foreground/20',
+            collapsed ? 'flex-col gap-2 px-2 py-3' : 'gap-3 px-4 py-4'
+          )}
+        >
+          <div className="w-10 h-10 bg-sidebar-foreground rounded-lg flex items-center justify-center shrink-0">
+            <span className="text-sidebar font-bold text-lg">E</span>
+          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <h1 className="font-bold text-lg truncate">Elorae ERP</h1>
+              <p className="text-xs text-sidebar-foreground/60">v1.0.0</p>
+            </div>
+          )}
+          {onToggleCollapse && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
+              onClick={onToggleCollapse}
+              aria-label={collapsed ? tNav('expandSidebar') : tNav('collapseSidebar')}
+              title={collapsed ? tNav('expandSidebar') : tNav('collapseSidebar')}
+            >
+              {collapsed ? (
+                <PanelLeft className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+            </Button>
+          )}
         </div>
-        <div>
-          <h1 className="font-bold text-lg">Elorae ERP</h1>
-          <p className="text-xs text-primary-foreground/60">v1.0.0</p>
-        </div>
-      </div>
 
-      <nav className="flex-1 overflow-auto py-4 px-3 space-y-1">
-        {filteredItems.map((item) => {
-          const Icon = item.icon;
-          const hasChildren = item.children && item.children.length > 0;
-          const isParentActive =
-            pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
+        <nav
+          className={cn(
+            'flex-1 min-h-0 overflow-y-auto py-4 space-y-1',
+            collapsed ? 'px-2' : 'px-3'
+          )}
+        >
+          {filteredItems.map((item) => {
+            const Icon = item.icon;
+            const hasChildren = item.children && item.children.length > 0;
+            const pathOpenKey = getOpenKeyFromPath(pathname);
+            const isParentActive = hasChildren
+              ? pathOpenKey === item.href
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const label = tNav(item.labelKey as any);
 
-          if (hasChildren) {
-            return (
-              <Collapsible
-                key={item.href}
-                open={openNavKey === item.href}
-                onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
-                className="group/collapsible"
-              >
-                <CollapsibleTrigger
-                  className={cn(
-                    'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg:last-of-type]:rotate-90',
-                    isParentActive
-                      ? 'bg-primary-foreground text-primary'
-                      : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
-                  )}
+            if (hasChildren) {
+              const children = visibleChildrenOf(item);
+
+              if (collapsed) {
+                return (
+                  <DropdownMenu key={item.href}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          'w-full h-10 text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground',
+                          isParentActive && 'bg-sidebar-foreground text-sidebar hover:bg-sidebar-foreground hover:text-sidebar'
+                        )}
+                        aria-label={label}
+                      >
+                        <Icon className="w-5 h-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="right" align="start" className="w-56">
+                      <DropdownMenuLabel>{label}</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {children.map((child) => (
+                        <DropdownMenuItem key={child.href} asChild>
+                          <Link
+                            href={child.href}
+                            onClick={onClose}
+                            className={cn(
+                              isChildActive(child, children) && 'font-medium'
+                            )}
+                          >
+                            {tNav(child.labelKey as any)}
+                          </Link>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              }
+
+              return (
+                <Collapsible
+                  key={item.href}
+                  open={openNavKey === item.href}
+                  onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
+                  className="group/collapsible"
                 >
-                  <Icon className="w-5 h-5 shrink-0" />
-                  <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
-                  <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="ml-4 mt-1 space-y-0.5 border-l border-primary-foreground/20 pl-3">
-                    {item
-                      .children!.filter(
-                        (child) =>
-                          !child.permission || hasPermission(permissions, child.permission)
-                      )
-                      .map((child) => {
-                      const isChildActive = (() => {
-                        if (child.href === '/backoffice/items') {
-                          return (
-                            pathname === '/backoffice/items' ||
-                            (pathname.startsWith('/backoffice/items/') &&
-                              !pathname.startsWith('/backoffice/items/categories'))
-                          );
-                        }
-                        return (
-                          pathname === child.href || pathname.startsWith(`${child.href}/`)
-                        );
-                      })();
-                      return (
+                  <CollapsibleTrigger
+                    className={cn(
+                      'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg:last-of-type]:rotate-90',
+                      isParentActive
+                        ? 'bg-sidebar-foreground text-sidebar'
+                        : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
+                    )}
+                  >
+                    <Icon className="w-5 h-5 shrink-0" />
+                    <span className="flex-1 text-left">{label}</span>
+                    <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-foreground/20 pl-3">
+                      {children.map((child) => (
                         <Link
                           key={child.href}
                           href={child.href}
                           onClick={onClose}
                           className={cn(
                             'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-                            isChildActive
-                              ? 'font-medium text-primary-foreground'
-                              : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
+                            isChildActive(child, children)
+                              ? 'font-medium text-sidebar-foreground'
+                              : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
                           )}
                         >
                           {tNav(child.labelKey as any)}
                         </Link>
-                      );
-                    })}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            }
+
+            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+            if (collapsed) {
+              return (
+                <Tooltip key={item.href}>
+                  <TooltipTrigger asChild>
+                    <Link
+                      href={item.href}
+                      onClick={onClose}
+                      aria-label={label}
+                      className={cn(
+                        'flex h-10 w-full items-center justify-center rounded-lg transition-colors',
+                        isActive
+                          ? 'bg-sidebar-foreground text-sidebar'
+                          : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
+                      )}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{label}</TooltipContent>
+                </Tooltip>
+              );
+            }
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-sidebar-foreground text-sidebar'
+                    : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
+                )}
+              >
+                <Icon className="w-5 h-5" />
+                {label}
+              </Link>
             );
-          }
+          })}
+        </nav>
 
-          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-primary-foreground text-primary'
-                  : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
-              )}
-            >
-              <Icon className="w-5 h-5" />
-              {tNav(item.labelKey as any)}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="p-4 border-t border-primary-foreground/20 [&_button]:text-primary-foreground [&_button]:hover:bg-primary-foreground/10 [&_button]:hover:text-primary-foreground">
-        <OfflineIndicator />
+        <div
+          className={cn(
+            'border-t border-sidebar-foreground/20 [&_button]:text-sidebar-foreground [&_button]:hover:bg-sidebar-foreground/10 [&_button]:hover:text-sidebar-foreground',
+            collapsed
+              ? 'p-2 [&_button]:justify-center [&_button_span]:hidden [&_button_svg:last-child]:hidden'
+              : 'p-4'
+          )}
+        >
+          <OfflineIndicator />
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
 
@@ -501,6 +699,28 @@ export function BackofficeShell({
   const { data: session, status } = useSession();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (stored === '1') setSidebarCollapsed(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -511,6 +731,13 @@ export function BackofficeShell({
   useEffect(() => {
     setupSyncListeners();
     syncReferenceData();
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.add("backoffice-shell");
+    return () => {
+      document.documentElement.classList.remove("backoffice-shell");
+    };
   }, []);
 
   if (status === 'loading') {
@@ -539,23 +766,37 @@ export function BackofficeShell({
     : session.user.email?.[0].toUpperCase() || 'U';
 
   return (
-    <div className="h-screen flex overflow-hidden">
+    <div className="h-dvh flex overflow-hidden">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:block w-64 border-r border-primary-foreground/10 bg-primary">
-        <Sidebar permissions={session.user.permissions} />
+      <aside
+        className={cn(
+          'hidden lg:flex lg:flex-col shrink-0 border-r border-sidebar-border bg-sidebar min-h-0 transition-[width] duration-200 ease-in-out',
+          sidebarCollapsed ? 'w-[4.25rem]' : 'w-64'
+        )}
+      >
+        <Sidebar
+          permissions={session.user.permissions}
+          userRole={userRole}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapsed}
+        />
       </aside>
 
       {/* Mobile Sidebar */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="p-0 w-64 bg-primary border-primary-foreground/10">
-          <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
+        <SheetContent side="left" className="p-0 w-64 bg-sidebar border-sidebar-border">
+          <Sidebar
+            permissions={session.user.permissions}
+            userRole={userRole}
+            onClose={() => setMobileMenuOpen(false)}
+          />
         </SheetContent>
       </Sheet>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* Main Content — min-h-0 so flex-1 + overflow-auto actually scroll inside the viewport */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Header */}
-        <header className="h-16 border-b bg-card flex items-center justify-between px-4 lg:px-6">
+        <header className="h-16 shrink-0 border-b bg-card flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
             <Sheet>
               <SheetTrigger asChild className="lg:hidden">
@@ -563,8 +804,12 @@ export function BackofficeShell({
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64 bg-primary border-primary-foreground/10">
-                <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
+              <SheetContent side="left" className="p-0 w-64 bg-sidebar border-sidebar-border">
+                <Sidebar
+                  permissions={session.user.permissions}
+                  userRole={userRole}
+                  onClose={() => setMobileMenuOpen(false)}
+                />
               </SheetContent>
             </Sheet>
             <h2 className="text-lg font-semibold hidden sm:block">
@@ -615,7 +860,7 @@ export function BackofficeShell({
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 lg:p-6">{children}</main>
         <QuickActionFAB />
         <FcmRegistration />
       </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { recordVanSale } from "./sale-writer";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -90,6 +90,70 @@ d("recordVanSale (test bed only)", () => {
     expect(Number(sale!.total)).toBe(25000);
     const van = await prisma.vanStock.findFirst({ where: { userId: salesmanId, itemId } });
     expect(Number(van!.qty)).toBe(15);                 // 20 - 5
+  });
+
+  it("persists the store's discounted, rounded unitPrice for a store sale; list price for a walk-in", async () => {
+    const store = await prisma.store.create({
+      data: { code: `${tag}-S`, name: "Disc Store", address: "x", termsType: "PUTUS", priceDiscountPercent: 15 },
+    });
+    const storeId = store.id;
+    let storeSaleId = "";
+    try {
+      // 5000 * (1 - 15/100) = 4250; 2 * 4250 = 8500
+      const storeRes = await recordVanSale({ salesmanId, storeId, lines: [line(2)], amountPaid: 8500 });
+      expect(storeRes.ok).toBe(true);
+      if (!storeRes.ok) throw new Error("expected ok");
+      storeSaleId = storeRes.saleId;
+      const storeSale = await prisma.vanSale.findUnique({ where: { id: storeRes.saleId }, include: { lines: true } });
+      expect(Number(storeSale!.lines[0].unitPrice)).toBe(4250);
+      expect(Number(storeSale!.total)).toBe(8500);
+
+      const walkinRes = await recordVanSale({ salesmanId, lines: [line(2)], amountPaid: 10000, buyerName: "Walk-in" });
+      expect(walkinRes.ok).toBe(true);
+      if (!walkinRes.ok) throw new Error("expected ok");
+      const walkinSale = await prisma.vanSale.findUnique({ where: { id: walkinRes.saleId }, include: { lines: true } });
+      expect(Number(walkinSale!.lines[0].unitPrice)).toBe(5000); // no discount for a walk-in sale
+      // walkinRes's VanSale (storeId: null) is cleaned by the shared afterEach below.
+    } finally {
+      // Runs regardless of an assertion throwing above — otherwise a failed expect() leaks this
+      // store (and its store-tied VanSale) on the shared :3308 bed instead of just failing loudly.
+      await prisma.vanSale.deleteMany({ where: { id: seededId(storeSaleId) } }); // cascades its VanSaleLine
+      await prisma.store.delete({ where: { id: storeId } });
+    }
+  });
+
+  it("rounds the charged total to whole rupiah at the cash boundary; subtotal stays the exact sum", async () => {
+    await prisma.item.update({ where: { id: itemId }, data: { sellingPrice: 33333 } });
+    const store = await prisma.store.create({
+      data: { code: `${tag}-FRAC`, name: "Frac Store", address: "x", termsType: "PUTUS", priceDiscountPercent: 20 },
+    });
+    const storeId = store.id;
+    let saleId = "";
+    try {
+      // 33333 * (1 - 20/100) = 26666.4 exact; the whole-rupiah charged total rounds DOWN to 26666.
+      // Paying exactly 26666 previously dead-ended as INSUFFICIENT_PAYMENT (26666 < 26666.4).
+      const res = await recordVanSale({ salesmanId, storeId, lines: [line(1)], amountPaid: 26666 });
+      expect(res.ok).toBe(true);
+      if (!res.ok) throw new Error("expected ok");
+      saleId = res.saleId;
+      expect(res.changeAmount).toBe(0);
+      const sale = await prisma.vanSale.findUnique({ where: { id: res.saleId } });
+      expect(Number(sale!.subtotal)).toBe(26666.4); // exact 2dp sum — unrounded
+      expect(Number(sale!.total)).toBe(26666); // whole-rupiah charged figure
+      expect(Number(sale!.total) - Number(sale!.subtotal)).toBeCloseTo(-0.4, 5); // derivable adjustment
+    } finally {
+      await prisma.vanSale.deleteMany({ where: { id: seededId(saleId) } });
+      await prisma.store.delete({ where: { id: storeId } });
+    }
+  });
+
+  it("leaves total equal to subtotal when the line sum has no fraction", async () => {
+    const res = await recordVanSale({ salesmanId, lines: [line(4)], amountPaid: 20000, buyerName: "Walk-in" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("expected ok");
+    const sale = await prisma.vanSale.findUnique({ where: { id: res.saleId } });
+    expect(Number(sale!.total)).toBe(20000);
+    expect(Number(sale!.subtotal)).toBe(Number(sale!.total));
   });
 
   it("stamps the variant label into productName on van sale + sales history", async () => {

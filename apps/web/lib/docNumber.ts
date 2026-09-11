@@ -19,6 +19,12 @@ const DEFAULT_CONFIGS: Record<
   VANSALE: { prefix: 'VSALE/', resetPeriod: 'YEARLY', padding: 4 },
   VANRECON: { prefix: 'VRCN/', resetPeriod: 'YEARLY', padding: 4 },
   SPGSALE: { prefix: 'SPG/', resetPeriod: 'YEARLY', padding: 4 },
+  DELIVERY: { prefix: 'DLV/', resetPeriod: 'MONTHLY', padding: 4 },
+  FIELDRET: { prefix: 'FRET/', resetPeriod: 'MONTHLY', padding: 4 },
+  KONSITRF: { prefix: 'KTRF/', resetPeriod: 'YEARLY', padding: 4 },
+  STOCKTAKE: { prefix: 'STK/', resetPeriod: 'MONTHLY', padding: 4 },
+  PAYMENT: { prefix: 'KWT/', resetPeriod: 'MONTHLY', padding: 4 },
+  BKM: { prefix: 'BKM/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
 type ConfigRow = {

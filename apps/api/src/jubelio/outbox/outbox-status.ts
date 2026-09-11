@@ -24,5 +24,6 @@ export const OUTBOX_SKIP_REASONS = {
   CATEGORY_UNMAPPED: "category_unmapped",
   CANNOT_CREATE_FROM_INGESTED: "cannot_create_from_ingested",
   JUBELIO_ALREADY_IN_STATE: "jubelio_already_in_state",
+  NO_PUSHABLE_LINES: "no_pushable_lines",
   HANDLER_NOT_WIRED: "handler_not_wired",
 } as const;

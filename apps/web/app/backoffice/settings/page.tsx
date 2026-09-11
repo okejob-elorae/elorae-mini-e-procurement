@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import {
+  AlarmClock,
   FileDigit,
   Layers,
   Loader2,
@@ -21,7 +22,6 @@ import {
   Percent,
   Ruler,
   Shield,
-  Users,
 } from 'lucide-react';
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import {
@@ -60,8 +60,8 @@ export default function SettingsPage() {
     { titleKey: 'itemCodes.title' as const, descriptionKey: 'itemCodes.description' as const, href: '/backoffice/settings/item-codes', icon: FileDigit },
     { titleKey: 'tax.title' as const, descriptionKey: 'tax.description' as const, href: '/backoffice/settings/tax', icon: Percent },
     { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
-    { titleKey: 'rbac.title' as const, descriptionKey: 'rbac.description' as const, href: '/backoffice/settings/rbac', icon: Users },
     { titleKey: 'packRatio.title' as const, descriptionKey: 'packRatio.description' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
+    { titleKey: 'overdueThresholds.title' as const, descriptionKey: 'overdueThresholds.description' as const, href: '/backoffice/settings/piutang', icon: AlarmClock },
   ];
 
   const userId = session?.user?.id ?? null;

@@ -9,8 +9,10 @@ export default async function VanSellPage() {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Unauthorized");
 
-  // Van-sale price = PUTUS = item sellingPrice (buyer-independent — store margin only
-  // affects KONSI, which van sales never are), so a single fetch prices every row.
+  // Initial load has no buyer selected yet (VanSellShell defaults to walk-in/"adhoc"), so this
+  // prices at list (no storeId → no priceDiscountPercent). Once the salesman picks a store buyer
+  // in the shell, it re-prices client-side via getVanStockForStoreAction (apps/web/app/actions/van-sale.ts)
+  // to reflect that store's discount — the same discount recordVanSale will actually charge.
   const [stock, stores] = await Promise.all([
     getSellableVanStock(session.user.id),
     listActiveStoresForPwa(),

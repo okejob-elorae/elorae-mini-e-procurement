@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "./index";
 import { postJournal } from "./journal-writer";
+import { seededId } from "./spec-teardown";
 
 // Ledger-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -8,14 +9,21 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 d("postJournal (test bed only)", () => {
-  let token: string; // unique per test → no cross-test / leaked-row collision on email or code
-  let adminId: string;
-  let kasParentId: string;
-  let aId: string; // postable leaf under Kas/Bank
-  let bebanParentId: string;
-  let bId: string; // postable leaf under Beban
+  let token = ""; // unique per test → no cross-test / leaked-row collision on email or code
+  let adminId = "";
+  let kasParentId = "";
+  let aId = ""; // postable leaf under Kas/Bank
+  let bebanParentId = "";
+  let bId = ""; // postable leaf under Beban
 
   beforeEach(async () => {
+    /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
+    adminId = "";
+    kasParentId = "";
+    aId = "";
+    bebanParentId = "";
+    bId = "";
+
     token = Math.floor(Math.random() * 10_000_000).toString(); // digits only — CoA codes are numeric
     const user = await prisma.user.create({
       data: { email: `test-journal-${token}@test.local`, name: "Test Admin" },
@@ -42,12 +50,22 @@ d("postJournal (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.journalLine.deleteMany({ where: { chartAccountId: { in: [aId, bId] } } });
-    await prisma.journal.deleteMany({ where: { postedById: adminId } });
+    await prisma.journalLine.deleteMany({ where: { chartAccountId: { in: [seededId(aId), seededId(bId)] } } });
+    await prisma.journal.deleteMany({ where: { postedById: seededId(adminId) } });
     // Delete leaf children BEFORE their parents — the CoaParent self-FK (onDelete: NoAction)
     // blocks removing a parent while a child still references it.
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [aId, bId] } } });
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [kasParentId, bebanParentId] } } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(aId), seededId(bId)] } } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(kasParentId), seededId(bebanParentId)] } } });
+    /*
+     * Guarded `delete`, not `deleteMany`. On master this line was a `delete`,
+     * which Prisma REJECTS outright when the id is undefined — fail-closed by
+     * construction. `deleteMany` is fail-open: Prisma drops the undefined term
+     * and the call becomes an unfiltered delete of the whole `User` table on the
+     * shared bed, seeded logins included. `seededId` prevents that, but it would
+     * be the only thing preventing it, so the guard is kept structural: no id,
+     * no call. Last statement in the hook, so an early return skips nothing.
+     */
+    if (!adminId) return;
     await prisma.user.delete({ where: { id: adminId } });
   });
 

@@ -130,7 +130,7 @@ d("van journals (test bed only)", () => {
    * cannot be fully closed from inside this fixture (a zombie hook writing
    * after `afterAll` has already returned is beyond any afterAll's reach —
    * the real fix is DB-spec isolation, tracked as a follow-up in
-   * CLAUDE.md) — but it must not pass quietly, so a restore failure is
+   * docs/FOLLOWUPS.md) — but it must not pass quietly, so a restore failure is
    * loudly logged and rethrown after the rest of cleanup has run.
    */
   afterAll(async () => {

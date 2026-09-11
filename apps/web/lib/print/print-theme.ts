@@ -12,30 +12,43 @@ export function esc(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Business timezone (WIB, no DST). Both formatters pin it rather than taking the ambient one.
+ *
+ * A printed document is the copy that leaves the building, so its dates must read the same as
+ * the screen the operator entered them on. Without a timeZone these format in the browser's
+ * zone: a nota tagihan whose invoice date is stored as WIB midnight (`…T00:00+07:00`) renders
+ * one calendar day EARLIER on any machine west of WIB, and would do so unconditionally if any
+ * of these documents were ever built server-side, since prod runs UTC.
+ */
+const PRINT_TIME_ZONE = "Asia/Jakarta";
+
 export function fmtDocDate(d: Date | string | null | undefined): string {
-  if (d == null) return '—';
+  if (d == null) return "—";
   const x = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(x.getTime())) return '—';
+  if (Number.isNaN(x.getTime())) return "—";
   return x
-    .toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
+    .toLocaleDateString("en-US", {
+      timeZone: PRINT_TIME_ZONE,
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     })
     .toUpperCase();
 }
 
 /** Date + time for operational timestamps (mono-friendly). */
 export function fmtDocDateTime(d: Date | string | null | undefined): string {
-  if (d == null || d === '') return '';
+  if (d == null || d === "") return "";
   const x = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(x.getTime())) return '';
-  return x.toLocaleString('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+  if (Number.isNaN(x.getTime())) return "";
+  return x.toLocaleString("id-ID", {
+    timeZone: PRINT_TIME_ZONE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 

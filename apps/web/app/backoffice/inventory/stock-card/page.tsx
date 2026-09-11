@@ -31,6 +31,7 @@ import { getItemCategories } from '@/app/actions/item-categories';
 import { logPrint } from '@/app/actions/audit';
 import { buildStockCardPrintHtml } from '@/lib/print/stock-card-html';
 import type { StockCardPrintLabels } from '@/lib/print/stock-card-html';
+import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { toast } from 'sonner';
 
 const stockCardPrintLabelsId: Partial<StockCardPrintLabels> = {
@@ -53,28 +54,6 @@ const stockCardPrintLabelsId: Partial<StockCardPrintLabels> = {
   colBalanceValue: 'Nilai persediaan',
   noMovements: 'Tidak ada mutasi pada periode ini.',
 };
-
-function printHtmlInIframe(html: string, iframeTitle: string) {
-  const iframe = document.createElement('iframe');
-  iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
-  iframe.setAttribute('title', iframeTitle);
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow?.document;
-  if (!doc) {
-    iframe.remove();
-    toast.error('Failed to load for print');
-    return;
-  }
-  doc.open();
-  doc.write(html);
-  doc.close();
-  setTimeout(() => {
-    iframe.contentWindow?.print();
-  }, 350);
-  setTimeout(() => {
-    iframe.remove();
-  }, 1000);
-}
 
 const defaultFrom = startOfDay(subDays(new Date(), 30));
 const defaultTo = endOfDay(new Date());

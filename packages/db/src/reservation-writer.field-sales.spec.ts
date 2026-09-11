@@ -6,6 +6,7 @@ import {
   releaseFieldSalesOrder,
   reserveKonsiFieldSalesOrder,
 } from "./reservation-writer";
+import { seededId } from "./spec-teardown";
 
 // Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host).
 const url = process.env.DATABASE_URL ?? "";
@@ -13,12 +14,16 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 d("field-sales reservation fns (test bed only)", () => {
-  let itemId: string;
-  let uomId: string;
+  let itemId = "";
+  let uomId = "";
   const variantSku = "";
   const sku = `TEST-FS-${Math.random().toString(36).slice(2, 10)}`;
 
   beforeEach(async () => {
+    /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
+    itemId = "";
+    uomId = "";
+
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-${sku}`, nameId: "test", nameEn: "test" },
     });
@@ -33,11 +38,11 @@ d("field-sales reservation fns (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("reserve increments reservedQty and is idempotent per fieldSalesLineId", async () => {
@@ -74,11 +79,15 @@ d("field-sales reservation fns (test bed only)", () => {
   });
 
   describe("variantless InventoryValue row keyed with variantSku: null (real-world convention)", () => {
-    let nullItemId: string;
-    let nullUomId: string;
+    let nullItemId = "";
+    let nullUomId = "";
     const nullSku = `TEST-FS-NULL-${Math.random().toString(36).slice(2, 10)}`;
 
     beforeEach(async () => {
+      /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
+      nullItemId = "";
+      nullUomId = "";
+
       const uom = await prisma.uOM.create({
         data: { code: `TEST-UOM-${nullSku}`, nameId: "test", nameEn: "test" },
       });
@@ -93,11 +102,11 @@ d("field-sales reservation fns (test bed only)", () => {
     });
 
     afterEach(async () => {
-      await prisma.stockReservation.deleteMany({ where: { itemId: nullItemId } });
-      await prisma.stockAdjustment.deleteMany({ where: { itemId: nullItemId } });
-      await prisma.inventoryValue.deleteMany({ where: { itemId: nullItemId } });
-      await prisma.item.deleteMany({ where: { id: nullItemId } });
-      await prisma.uOM.deleteMany({ where: { id: nullUomId } });
+      await prisma.stockReservation.deleteMany({ where: { itemId: seededId(nullItemId) } });
+      await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(nullItemId) } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(nullItemId) } });
+      await prisma.item.deleteMany({ where: { id: seededId(nullItemId) } });
+      await prisma.uOM.deleteMany({ where: { id: seededId(nullUomId) } });
     });
 
     it("reserve, consume, and release all succeed against a variantSku: null row", async () => {
@@ -139,15 +148,72 @@ d("field-sales reservation fns (test bed only)", () => {
       expect(Number(inv!.reservedQty)).toBe(0);
     });
   });
+
+  describe("dual null + empty InventoryValue rows (Jubelio fork)", () => {
+    let dualItemId = "";
+    let dualUomId = "";
+    const dualSku = `TEST-FS-DUAL-${Math.random().toString(36).slice(2, 10)}`;
+
+    beforeEach(async () => {
+      dualItemId = "";
+      dualUomId = "";
+      const uom = await prisma.uOM.create({
+        data: { code: `TEST-UOM-${dualSku}`, nameId: "test", nameEn: "test" },
+      });
+      dualUomId = uom.id;
+      const item = await prisma.item.create({
+        data: { sku: dualSku, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId: dualUomId },
+      });
+      dualItemId = item.id;
+      await prisma.inventoryValue.create({
+        data: { itemId: dualItemId, variantSku: null, qtyOnHand: 1000, reservedQty: 12, avgCost: 1000, totalValue: 1000000 },
+      });
+      await prisma.inventoryValue.create({
+        data: { itemId: dualItemId, variantSku: "", qtyOnHand: 999, reservedQty: 0, avgCost: 1000, totalValue: 999000 },
+      });
+    });
+
+    afterEach(async () => {
+      await prisma.stockReservation.deleteMany({ where: { itemId: seededId(dualItemId) } });
+      await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(dualItemId) } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(dualItemId) } });
+      await prisma.item.deleteMany({ where: { id: seededId(dualItemId) } });
+      await prisma.uOM.deleteMany({ where: { id: seededId(dualUomId) } });
+    });
+
+    it("reserve + release bump the empty-string row, not the null sibling", async () => {
+      const lineId = `line-${dualSku}-1`;
+      const r1 = await reserveFieldSalesOrder(prisma, {
+        orderNo: "PUTUS-T-DUAL-1",
+        lines: [{ fieldSalesLineId: lineId, itemId: dualItemId, variantSku: "", qty: 6 }],
+      });
+      expect(r1.reserved).toBe(1);
+      const empty = await prisma.inventoryValue.findFirst({ where: { itemId: dualItemId, variantSku: "" } });
+      const nullRow = await prisma.inventoryValue.findFirst({ where: { itemId: dualItemId, variantSku: null } });
+      expect(Number(empty!.reservedQty)).toBe(6);
+      expect(Number(nullRow!.reservedQty)).toBe(12);
+
+      const releaseRes = await releaseFieldSalesOrder(prisma, { fieldSalesLineIds: [lineId] });
+      expect(releaseRes.released).toBe(1);
+      const emptyAfter = await prisma.inventoryValue.findFirst({ where: { itemId: dualItemId, variantSku: "" } });
+      const nullAfter = await prisma.inventoryValue.findFirst({ where: { itemId: dualItemId, variantSku: null } });
+      expect(Number(emptyAfter!.reservedQty)).toBe(0);
+      expect(Number(nullAfter!.reservedQty)).toBe(12);
+    });
+  });
 });
 
 d("reserveKonsiFieldSalesOrder (test bed only)", () => {
-  let itemId: string;
-  let uomId: string;
+  let itemId = "";
+  let uomId = "";
   const variantSku = "";
   const sku = `TEST-KONSI-${Math.random().toString(36).slice(2, 10)}`;
 
   beforeEach(async () => {
+    /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
+    itemId = "";
+    uomId = "";
+
     const uom = await prisma.uOM.create({
       data: { code: `TEST-UOM-${sku}`, nameId: "test", nameEn: "test" },
     });
@@ -162,11 +228,11 @@ d("reserveKonsiFieldSalesOrder (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.stockReservation.deleteMany({ where: { itemId } });
-    await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.deleteMany({ where: { id: itemId } });
-    await prisma.uOM.deleteMany({ where: { id: uomId } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
   });
 
   it("reserves qty item-level with source FIELD_SALES_KONSI and increments reservedQty", async () => {

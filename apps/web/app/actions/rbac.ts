@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import type { Session } from 'next-auth';
 import { prisma } from '@elorae/db';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
@@ -16,13 +17,18 @@ const _updateRolePermissionsSchema = z.object({
 });
 void _updateRolePermissionsSchema;
 
+function requireAdminSession(session: Session | null) {
+  if (!session) throw new Error("Unauthorized");
+  if (session.user.role !== "ADMIN") throw new Error("Forbidden");
+}
+
 /**
  * Get all roles with their permissions and user counts
  */
 export async function getRoles() {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
 
   const roles = await prisma.roleDefinition.findMany({
     include: {
@@ -64,8 +70,8 @@ export async function getRoles() {
  */
 export async function getPermissions() {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
 
   const permissions = await prisma.permission.findMany({
     orderBy: [
@@ -94,8 +100,8 @@ export async function createRole(
   permissionIds: string[]
 ) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
 
   const validated = roleSchema.parse(data);
 
@@ -135,6 +141,7 @@ export async function createRole(
     },
   });
 
+  revalidatePath('/backoffice/profile-accounts');
   revalidatePath('/backoffice/settings/rbac');
   return role;
 }
@@ -147,8 +154,8 @@ export async function updateRolePermissions(
   permissionIds: string[]
 ) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
 
   // Check if role exists and is not a system role
   const role = await prisma.roleDefinition.findUnique({
@@ -196,6 +203,8 @@ export async function updateRolePermissions(
     });
   });
 
+  revalidatePath('/backoffice/profile-accounts');
+  revalidatePath(`/backoffice/profile-accounts/roles/${roleId}`);
   revalidatePath('/backoffice/settings/rbac');
 }
 
@@ -204,8 +213,8 @@ export async function updateRolePermissions(
  */
 export async function deleteRole(roleId: string) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_MANAGE);
 
   const role = await prisma.roleDefinition.findUnique({
     where: { id: roleId },
@@ -232,7 +241,51 @@ export async function deleteRole(roleId: string) {
     where: { id: roleId },
   });
 
+  revalidatePath('/backoffice/profile-accounts');
   revalidatePath('/backoffice/settings/rbac');
+}
+
+/**
+ * Get a single role with permissions (for the dedicated edit page)
+ */
+export async function getRole(roleId: string) {
+  const session = await auth();
+  requireAdminSession(session);
+  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
+
+  const role = await prisma.roleDefinition.findUnique({
+    where: { id: roleId },
+    include: {
+      permissions: {
+        include: {
+          permission: true,
+        },
+      },
+      _count: {
+        select: {
+          users: true,
+        },
+      },
+    },
+  });
+
+  if (!role) return null;
+
+  return {
+    id: role.id,
+    name: role.name,
+    description: role.description,
+    isSystem: role.isSystem,
+    permissionsVersion: role.permissionsVersion,
+    userCount: role._count.users,
+    permissions: role.permissions.map((rp) => ({
+      id: rp.permission.id,
+      code: rp.permission.code,
+      module: rp.permission.module,
+      action: rp.permission.action,
+      description: rp.permission.description,
+    })),
+  };
 }
 
 /**
@@ -257,5 +310,6 @@ export async function assignUserRole(userId: string, roleId: string) {
     data: { roleId },
   });
 
+  revalidatePath('/backoffice/profile-accounts');
   revalidatePath('/backoffice/settings/security');
 }

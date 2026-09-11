@@ -1,7 +1,7 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
-import { weightedAvgCost } from "./cost";
+import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
 
 export type ReconcileCountInput = { itemId: string; variantSku: string | null; countedQty: number };
 export type RecordVanReconcileResult =

@@ -162,7 +162,7 @@ export function SmartRequestShell({
           idempotencyKey: crypto.randomUUID(),
         });
         if (res.ok) {
-          toast.success(t("sentSuccess", { orderNo: res.orderNo }));
+          toast.success(res.creditHold ? t("creditHoldNote", { orderNo: res.orderNo }) : t("sentSuccess", { orderNo: res.orderNo }));
           router.push(`/pwa/stores/${storeId}`);
           return;
         }

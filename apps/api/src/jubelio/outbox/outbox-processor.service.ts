@@ -56,9 +56,26 @@ export class OutboxProcessor extends WorkerHost<Worker<JobPayload>> {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      /**
+       * Release the claim so the NEXT attempt can win it. The claim above only
+       * wins from PENDING, so a row left PROCESSING made every BullMQ retry lose
+       * the claim and take the guard's early-return arm — which completes the job
+       * successfully, so attempts froze at 1, onJobFailed never fired, and the row
+       * never reached DEAD nor raised the admin notification.
+       *
+       * Only release while a retry is still coming. On the final attempt the job
+       * lands in `failed` (a state the poller treats as free to reuse) while
+       * onJobFailed's markDead is still in flight, so a PENDING row there gives a
+       * poller tick a window to re-enqueue and push a sixth time — after which
+       * markDone would overwrite the DEAD that alert just fired for.
+       */
+      const retryComing = (job.attemptsMade ?? 0) + 1 < OUTBOX_QUEUE_DEFAULTS.JOB_ATTEMPTS;
       await this.prisma.jubelioOutbox.update({
         where: { id: row.id },
-        data: { lastError: msg },
+        data: {
+          lastError: msg,
+          ...(retryComing ? { status: OUTBOX_STATUS.PENDING } : {}),
+        },
       });
       if (err instanceof NonRetryableError) {
         await this.markDead(row.id, msg);

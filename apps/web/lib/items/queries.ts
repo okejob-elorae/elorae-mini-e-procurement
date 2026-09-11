@@ -1,5 +1,6 @@
 import { prisma } from '@elorae/db';
 import { ItemType, Prisma } from '@elorae/db';
+import { itemHasSkuVariants } from '@/lib/items/variants';
 
 export type ListItemsFilters = {
   type?: ItemType | 'raw';
@@ -391,6 +392,7 @@ export async function getItemsByType(type: ItemType) {
       nameId: true,
       nameEn: true,
       uomId: true,
+      variants: true,
       uom: {
         select: {
           id: true,
@@ -418,6 +420,7 @@ export async function getItemsByType(type: ItemType) {
       uomId: item.uomId,
       uom: item.uom,
       inventoryValue: { qtyOnHand: qty },
+      hasSkuVariants: itemHasSkuVariants(item.variants),
     };
   });
 }

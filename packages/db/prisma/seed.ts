@@ -119,6 +119,7 @@ async function main() {
     { code: 'sales_orders:fulfill', module: 'sales_orders', action: 'fulfill', description: 'Pick, pack, ship marketplace orders' },
     { code: 'field_sales_orders:view', module: 'field_sales_orders', action: 'view', description: 'View field-sales (putus) orders' },
     { code: 'field_sales_orders:approve', module: 'field_sales_orders', action: 'approve', description: 'Approve or reject field-sales (putus) orders' },
+    { code: 'field_sales_orders:deliver', module: 'field_sales_orders', action: 'deliver', description: 'Record deliveries and close the remainder on field-sales (putus) orders' },
     { code: 'items:create', module: 'items', action: 'create', description: 'Create items' },
     { code: 'items:edit', module: 'items', action: 'edit', description: 'Edit items' },
     { code: 'items:delete', module: 'items', action: 'delete', description: 'Delete items' },
@@ -194,6 +195,9 @@ async function main() {
     { code: 'journals:manage', module: 'journals', action: 'manage', description: 'Create manual journals + post auto-journals' },
     // Finance — Financial Reports
     { code: 'finance_reports:view', module: 'finance_reports', action: 'view', description: 'View financial reports (trial balance, income statement, balance sheet)' },
+    // Finance — Faktur Pajak
+    { code: 'tax_invoices:view', module: 'tax_invoices', action: 'view', description: 'View the faktur pajak queue for issued nota tagihan' },
+    { code: 'tax_invoices:manage', module: 'tax_invoices', action: 'manage', description: 'Record faktur pajak numbers and dismiss nota that need no faktur' },
     // Lead Time
     { code: 'lead_time:view', module: 'lead_time', action: 'view', description: 'View process library and supplier chains' },
     { code: 'lead_time:manage', module: 'lead_time', action: 'manage', description: 'Manage process library and supplier chains' },
@@ -203,6 +207,9 @@ async function main() {
     // Pack Ratio (global putus pack rules)
     { code: 'settings_pack_ratio:view', module: 'settings_pack_ratio', action: 'view', description: 'View global pack ratio' },
     { code: 'settings_pack_ratio:manage', module: 'settings_pack_ratio', action: 'manage', description: 'Manage global pack ratio' },
+    // Field Returns
+    { code: 'field_returns:manage', module: 'field_returns', action: 'manage', description: 'Receive field returns, resolve discrepancies and approve them' },
+    { code: 'field_returns:writeoff', module: 'field_returns', action: 'writeoff', description: 'Absorb a field retur shortage as a company loss' },
     // Record Packer
     { code: 'packer:menu', module: 'packer', action: 'menu', description: 'Access Record Packer menu and list' },
     { code: 'packer:record', module: 'packer', action: 'record', description: 'Record packing videos' },
