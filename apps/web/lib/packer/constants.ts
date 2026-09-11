@@ -1,12 +1,13 @@
-/** 720p cap so packing clips stay small enough to upload on warehouse uplink. */
+/** Prefer 1080p; browsers fall back if the camera cannot deliver it. */
 export const PACKER_VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   facingMode: { ideal: "environment" },
-  width: { ideal: 1280, max: 1920 },
-  height: { ideal: 720, max: 1080 },
+  width: { ideal: 1920, max: 1920 },
+  height: { ideal: 1080, max: 1080 },
   frameRate: { ideal: 30, max: 30 },
 };
 
-export const PACKER_VIDEO_BITS_PER_SECOND = 1_200_000;
+/** ~4 Mbps @ 1080p30 — sharp enough for packing detail without huge uploads. */
+export const PACKER_VIDEO_BITS_PER_SECOND = 4_000_000;
 
 /** Debounce duplicate scans on the same camera. */
 export const SCAN_COOLDOWN_MS = 900;

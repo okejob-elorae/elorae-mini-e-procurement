@@ -14,6 +14,7 @@ import {
   MIN_RECORD_BEFORE_END_MS,
   MISMATCH_DEBOUNCE_MS,
   PACKER_VIDEO_BITS_PER_SECOND,
+  PACKER_VIDEO_CONSTRAINTS,
   SCAN_COOLDOWN_MS,
   SCAN_SUCCESS_FLASH_MS,
   SCAN_TICK_HIDDEN_MS,
@@ -366,10 +367,8 @@ export const PackerCameraPanel = forwardRef<PackerCameraPanelHandle, PackerCamer
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
             video: {
+              ...PACKER_VIDEO_CONSTRAINTS,
               deviceId: { exact: deviceId },
-              width: { ideal: 1280, max: 1920 },
-              height: { ideal: 720, max: 1080 },
-              frameRate: { ideal: 30, max: 30 },
             },
             audio: false,
           });

@@ -5,9 +5,25 @@ export type WatermarkLabels = {
   packingDate: string;
 };
 
+const MONTHS_MMM = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+/** Format: DD-MMM-YYYY hh:mm (e.g. 11-Sep-2026 10:16) */
 export function formatPackingDate(d: Date = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(d.getDate())}-${MONTHS_MMM[d.getMonth()]}-${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export type WatermarkedRecorder = {
@@ -28,22 +44,25 @@ export function startWatermarkedRecorder(
 ): WatermarkedRecorder {
   const track = cameraStream.getVideoTracks()[0];
   const settings = track?.getSettings() ?? {};
+  // Prefer the live frame size so we don't upscale a soft camera feed.
   const width = Math.min(
     1920,
-    Math.max(640, settings.width || video.videoWidth || 1280),
+    Math.max(640, video.videoWidth || settings.width || 1280),
   );
   const height = Math.min(
     1080,
-    Math.max(360, settings.height || video.videoHeight || 720),
+    Math.max(360, video.videoHeight || settings.height || 720),
   );
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { alpha: false });
   if (!ctx) {
     throw new Error("Canvas 2D tidak tersedia");
   }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
 
   const line1 = `RESI : ${labels.resi}`;
   const line2 = `PACKING DATE : ${labels.packingDate}`;

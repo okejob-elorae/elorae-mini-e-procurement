@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { barcodesMatch, isAcceptableScanCode, normalizeScanCode } from "@/lib/packer/barcode";
+import {
+  MIN_RECORD_BEFORE_END_MS,
+  MISMATCH_DEBOUNCE_MS,
+  PACKER_VIDEO_BITS_PER_SECOND,
+  PACKER_VIDEO_CONSTRAINTS,
+} from "@/lib/packer/constants";
 import { PackerSignOutButton } from "./PackerSignOutButton";
 
 type Phase = "ready" | "recording" | "uploading" | "upload_failed";
@@ -15,18 +21,6 @@ type PendingUpload = {
 
 /** Debounce duplicate start scans (camera may read the same label repeatedly). */
 const READY_SCAN_COOLDOWN_MS = 1500;
-/** Silent: ignore end scans for 10s after start (avoids multi-scan stop). */
-const MIN_RECORD_BEFORE_END_MS = 10_000;
-/** Debounce mismatch toasts while recording. */
-const MISMATCH_DEBOUNCE_MS = 2000;
-/** 720p cap so packing clips stay small enough to upload on warehouse uplink. */
-const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
-  facingMode: { ideal: "environment" },
-  width: { ideal: 1280, max: 1920 },
-  height: { ideal: 720, max: 1080 },
-  frameRate: { ideal: 30, max: 30 },
-};
-const VIDEO_BITS_PER_SECOND = 1_200_000;
 
 export function PackerCameraKiosk() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -91,7 +85,7 @@ export function PackerCameraKiosk() {
           : undefined;
     const recorder = new MediaRecorder(stream, {
       ...(mime ? { mimeType: mime } : {}),
-      videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+      videoBitsPerSecond: PACKER_VIDEO_BITS_PER_SECOND,
     });
     recorderRef.current = recorder;
     recorder.ondataavailable = (ev) => {
@@ -259,7 +253,7 @@ export function PackerCameraKiosk() {
       setCameraError("");
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: VIDEO_CONSTRAINTS,
+          video: PACKER_VIDEO_CONSTRAINTS,
           audio: false,
         });
         if (cancelled) {
