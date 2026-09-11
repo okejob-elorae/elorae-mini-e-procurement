@@ -6,7 +6,14 @@ export async function getSalesReturnById(id: string) {
   const salesReturn = await prisma.salesReturn.findUnique({
     where: { id },
     include: {
-      salesOrder: { select: { id: true, salesorderNo: true } },
+      salesOrder: {
+        select: {
+          id: true,
+          salesorderNo: true,
+          trackingNumber: true,
+          packingVideo: { select: { videoUrl: true } },
+        },
+      },
       decidedBy: { select: { name: true, email: true } },
       items: {
         orderBy: { createdAt: "asc" },
@@ -28,7 +35,12 @@ export async function getSalesReturnById(id: string) {
 
   // Serialize Prisma Decimals (and Dates) so the raw row can cross the
   // server→client boundary into ReturnDecisionCard (Decimals aren't supported).
-  return serializeForClient({ ...salesReturn, revenueJournalId, cogsJournalId });
+  return serializeForClient({
+    ...salesReturn,
+    revenueJournalId,
+    cogsJournalId,
+    packingVideoUrl: salesReturn.salesOrder?.packingVideo?.videoUrl ?? null,
+  });
 }
 
 export type SalesReturnDetail = NonNullable<Awaited<ReturnType<typeof getSalesReturnById>>>;

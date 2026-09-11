@@ -73,6 +73,9 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/van-sales/[id]': 'canvassing:manage',
   '/backoffice/spg-sales': 'spg_sales:view',
   '/backoffice/spg-sales/[id]': 'spg_sales:view',
+  '/packer': 'packer:menu',
+  '/packer/record': 'packer:menu',
+  '/api/packer': 'packer:menu',
   '/backoffice/work-orders': 'work_orders:view',
   '/backoffice/work-orders/nota-register': 'nota_register:view',
   '/backoffice/forecast': 'forecast:view',
@@ -314,4 +317,8 @@ export const PERMISSIONS = {
   COLLECTIONS_AMPLOP: "collections:amplop",
   // Finance — Settlements
   SETTLEMENTS_SUBMIT: "settlements:submit",
+  // Record Packer
+  PACKER_MENU: "packer:menu",
+  PACKER_RECORD: "packer:record",
+  PACKER_EDIT: "packer:edit",
 } as const;

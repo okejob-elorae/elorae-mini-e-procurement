@@ -210,6 +210,10 @@ async function main() {
     // Field Returns
     { code: 'field_returns:manage', module: 'field_returns', action: 'manage', description: 'Receive field returns, resolve discrepancies and approve them' },
     { code: 'field_returns:writeoff', module: 'field_returns', action: 'writeoff', description: 'Absorb a field retur shortage as a company loss' },
+    // Record Packer
+    { code: 'packer:menu', module: 'packer', action: 'menu', description: 'Access Record Packer menu and list' },
+    { code: 'packer:record', module: 'packer', action: 'record', description: 'Record packing videos' },
+    { code: 'packer:edit', module: 'packer', action: 'edit', description: 'Replace existing packing videos' },
   ];
 
   // Upsert all permissions
@@ -285,6 +289,16 @@ async function main() {
     create: {
       name: 'SPG',
       description: 'In-store promoter — PWA-only access, fixed to one store',
+      isSystem: false,
+    },
+  });
+
+  const packerRole = await prisma.roleDefinition.upsert({
+    where: { name: 'PACKER' },
+    update: { isSystem: false },
+    create: {
+      name: 'PACKER',
+      description: 'Packer — Record Packer video packing surface',
       isSystem: false,
     },
   });
@@ -437,6 +451,27 @@ async function main() {
       });
     }
   }
+
+  // PACKER permissions
+  const packerPermissions = ["packer:menu", "packer:record", "packer:edit"];
+  for (const code of packerPermissions) {
+    const perm = permissionMap.get(code);
+    if (perm) {
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: {
+            roleId: packerRole.id,
+            permissionId: perm.id,
+          },
+        },
+        update: {},
+        create: {
+          roleId: packerRole.id,
+          permissionId: perm.id,
+        },
+      });
+    }
+  }
   console.log('Role permissions assigned');
 
   // Migrate existing users to use roleId
@@ -483,6 +518,18 @@ async function main() {
       passwordHash: await bcrypt.hash("spg123", 10),
       pinHash: await bcrypt.hash("123456", 10),
       roleId: spgRole.id,
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: "packer@elorae.com" },
+    update: { roleId: packerRole.id },
+    create: {
+      email: "packer@elorae.com",
+      name: "Packer",
+      passwordHash: await bcrypt.hash("packer123", 10),
+      pinHash: await bcrypt.hash("123456", 10),
+      roleId: packerRole.id,
     },
   });
   console.log('Users migrated to roleId');
@@ -1727,6 +1774,7 @@ async function main() {
   console.log("      purchaser@elorae.com / purchaser123 (PIN: 123456 after seed)");
   console.log("      warehouse@elorae.com / warehouse123");
   console.log("      production@elorae.com / production123");
+  console.log("      packer@elorae.com / packer123");
 }
 
 main()

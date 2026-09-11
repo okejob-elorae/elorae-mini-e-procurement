@@ -70,6 +70,7 @@ export type SalesOrderDetail = {
   shipmentJubelioId: number | null;
   revenueJournalId: string | null;
   cogsJournalId: string | null;
+  packingVideoUrl: string | null;
 };
 
 export type SalesOrderItemRow = {
@@ -154,7 +155,10 @@ export async function getSalesOrderById(
 ): Promise<{ order: SalesOrderDetail; items: SalesOrderItemRow[] } | null> {
   const row = await prisma.salesOrder.findUnique({
     where: { id },
-    include: { items: true },
+    include: {
+      items: true,
+      packingVideo: { select: { videoUrl: true } },
+    },
   });
   if (!row) return null;
 
@@ -232,6 +236,7 @@ export async function getSalesOrderById(
     shipmentJubelioId: row.shipmentJubelioId,
     revenueJournalId,
     cogsJournalId,
+    packingVideoUrl: row.packingVideo?.videoUrl ?? null,
   };
 
   const items: SalesOrderItemRow[] = row.items.map((it: any) => ({

@@ -1,13 +1,16 @@
 /**
  * Post-login destination.
  *
- * Wildcard admins (`permissions: ["*"]`) intentionally land on `/backoffice`
- * — the PWA UX is field-salesman-scoped, not a "test everything" surface.
+ * Wildcard admins (`permissions: ["*"]`) land on `/backoffice`.
+ * Field salesmen with `pwa:access` land on `/pwa`.
+ * Packers with `packer:menu` land on `/packer`.
  */
 export function computePostLoginRedirect(
   permissions: string[],
-): "/pwa" | "/backoffice" {
+): "/pwa" | "/packer" | "/backoffice" {
   const hasWildcard = permissions.includes("*");
-  const hasPwaAccess = permissions.includes("pwa:access");
-  return !hasWildcard && hasPwaAccess ? "/pwa" : "/backoffice";
+  if (hasWildcard) return "/backoffice";
+  if (permissions.includes("pwa:access")) return "/pwa";
+  if (permissions.includes("packer:menu")) return "/packer";
+  return "/backoffice";
 }

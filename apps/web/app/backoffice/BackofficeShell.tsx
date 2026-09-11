@@ -212,6 +212,11 @@ const navItems: NavItem[] = [
         href: '/backoffice/promos',
         permission: PERMISSIONS.PROMOS_VIEW,
       },
+      {
+        labelKey: 'navRecordPacker',
+        href: '/packer',
+        permission: PERMISSIONS.PACKER_MENU,
+      },
     ],
   },
   {
