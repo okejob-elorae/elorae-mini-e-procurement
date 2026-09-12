@@ -18,14 +18,13 @@ import {
   SCAN_COOLDOWN_MS,
   SCAN_SUCCESS_FLASH_MS,
   SCAN_TICK_HIDDEN_MS,
+  SCAN_TICK_RECORDING_MS,
   SCAN_TICK_VISIBLE_MS,
+  pickPackerRecorderMimeType,
 } from "@/lib/packer/constants";
 import { playScanSuccessBeep } from "@/lib/packer/scan-feedback";
 import type { PackerPoolItem } from "@/lib/packer/pool";
-import {
-  formatPackingDate,
-  startWatermarkedRecorder,
-} from "@/lib/packer/video-watermark";
+import { startPackerRecorder } from "@/lib/packer/video-watermark";
 
 type Phase = "ready" | "recording" | "uploading" | "upload_failed";
 
@@ -136,36 +135,28 @@ export const PackerCameraPanel = forwardRef<PackerCameraPanelHandle, PackerCamer
     const startRecording = useCallback(
       (code: string, salesOrderId: string) => {
         const stream = streamRef.current;
-        const videoEl = videoRef.current;
-        if (!stream || !videoEl) {
+        if (!stream) {
           setError("Kamera belum siap");
           return;
         }
         chunksRef.current = [];
-        const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-          ? "video/webm;codecs=vp9"
-          : MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
-            ? "video/webm;codecs=vp8"
-            : MediaRecorder.isTypeSupported("video/webm")
-              ? "video/webm"
-              : undefined;
+        const mime = pickPackerRecorderMimeType();
 
         try {
           stopOverlayRef.current?.();
-          const { recorder, stopOverlay } = startWatermarkedRecorder(
-            videoEl,
-            stream,
-            { resi: code, packingDate: formatPackingDate() },
-            { mimeType: mime, videoBitsPerSecond: PACKER_VIDEO_BITS_PER_SECOND },
-          );
-          stopOverlayRef.current = stopOverlay;
+          const { recorder, stop } = startPackerRecorder(stream, {
+            mimeType: mime,
+            videoBitsPerSecond: PACKER_VIDEO_BITS_PER_SECOND,
+          });
+          stopOverlayRef.current = stop;
           recorderRef.current = recorder;
           recorder.ondataavailable = (ev) => {
             if (ev.data.size > 0) chunksRef.current.push(ev.data);
           };
-          recorder.start(1000);
+          // Single cluster on stop — steadier framerate than 1s timeslices.
+          recorder.start();
         } catch {
-          setError("Gagal mulai rekaman ber-watermark");
+          setError("Gagal mulai rekaman");
           toast.error("Gagal mulai rekaman");
           return;
         }
@@ -287,12 +278,11 @@ export const PackerCameraPanel = forwardRef<PackerCameraPanelHandle, PackerCamer
       stopInProgressRef.current = true;
       stopDurationTick();
       const duration = (Date.now() - startedAtRef.current) / 1000;
+      const mimeType = recorder.mimeType || "video/webm";
       recorder.onstop = () => {
         stopOverlayRef.current?.();
         stopOverlayRef.current = null;
-        const blob = new Blob(chunksRef.current, {
-          type: recorder.mimeType || "video/webm",
-        });
+        const blob = new Blob(chunksRef.current, { type: mimeType });
         recorderRef.current = null;
         if (blob.size === 0) {
           stopInProgressRef.current = false;
@@ -433,9 +423,10 @@ export const PackerCameraPanel = forwardRef<PackerCameraPanelHandle, PackerCamer
 
           const tick = async () => {
             if (!alive || !scanner) return;
-            const canScan =
-              phaseRef.current === "ready" || phaseRef.current === "recording";
-            // Hidden tabs: skip decode entirely to free CPU for the active camera.
+            const phase = phaseRef.current;
+            // Start (ready) + end (recording) both use barcode. While recording,
+            // tick is throttled (SCAN_TICK_RECORDING_MS) so encode stays smooth.
+            const canScan = phase === "ready" || phase === "recording";
             if (canScan && visibleRef.current) {
               setScanningUi(true);
               try {
@@ -448,9 +439,11 @@ export const PackerCameraPanel = forwardRef<PackerCameraPanelHandle, PackerCamer
               setScanningUi(false);
             }
             if (alive) {
-              const delay = visibleRef.current
-                ? SCAN_TICK_VISIBLE_MS
-                : SCAN_TICK_HIDDEN_MS;
+              const delay = !visibleRef.current
+                ? SCAN_TICK_HIDDEN_MS
+                : phase === "recording"
+                  ? SCAN_TICK_RECORDING_MS
+                  : SCAN_TICK_VISIBLE_MS;
               detectTimerRef.current = window.setTimeout(tick, delay);
             }
           };
@@ -501,6 +494,11 @@ export const PackerCameraPanel = forwardRef<PackerCameraPanelHandle, PackerCamer
             {phase === "ready" && (
               <p className="pointer-events-none absolute bottom-4 left-1/2 w-[min(92%,24rem)] -translate-x-1/2 text-center text-xs text-white/85">
                 Scan resi yang ada di pool → rekam · Scan lagi (sama) → selesai
+              </p>
+            )}
+            {phase === "recording" && (
+              <p className="pointer-events-none absolute bottom-4 left-1/2 w-[min(92%,24rem)] -translate-x-1/2 text-center text-xs text-white/85">
+                Scan resi yang sama untuk selesai
               </p>
             )}
           </>

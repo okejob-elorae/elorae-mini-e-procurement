@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FulfillmentCard } from "./FulfillmentCard";
+import { PackingVideoActions } from "@/components/packing-video-actions";
 
 type Props = {
   order: SalesOrderDetail;
@@ -119,14 +120,11 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
           {order.packingVideoUrl ? (
             <div>
               <div className="text-sm text-muted-foreground">Video packing</div>
-              <a
-                href={order.packingVideoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="break-all text-sm font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
-              >
-                {order.packingVideoUrl}
-              </a>
+              <PackingVideoActions
+                videoUrl={order.packingVideoUrl}
+                salesOrderId={order.id}
+                showFullUrl
+              />
             </div>
           ) : null}
         </Card>
