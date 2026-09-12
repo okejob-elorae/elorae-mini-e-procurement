@@ -8,6 +8,7 @@ import {
   MISMATCH_DEBOUNCE_MS,
   PACKER_VIDEO_BITS_PER_SECOND,
   PACKER_VIDEO_CONSTRAINTS,
+  pickPackerRecorderMimeType,
 } from "@/lib/packer/constants";
 import { PackerSignOutButton } from "./PackerSignOutButton";
 
@@ -76,13 +77,7 @@ export function PackerCameraKiosk() {
       return;
     }
     chunksRef.current = [];
-    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-      ? "video/webm;codecs=vp9"
-      : MediaRecorder.isTypeSupported("video/webm;codecs=vp8")
-        ? "video/webm;codecs=vp8"
-        : MediaRecorder.isTypeSupported("video/webm")
-          ? "video/webm"
-          : undefined;
+    const mime = pickPackerRecorderMimeType();
     const recorder = new MediaRecorder(stream, {
       ...(mime ? { mimeType: mime } : {}),
       videoBitsPerSecond: PACKER_VIDEO_BITS_PER_SECOND,

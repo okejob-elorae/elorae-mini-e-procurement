@@ -37,4 +37,7 @@ apps/web/lib/**/*.js.map
 *.sql.gz.gpg
 restore.sql
 
-test-run
+test-run.local/
+
+# Local MySQL datadir (no-Docker local bed on :3308)
+.local/

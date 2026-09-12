@@ -31,6 +31,7 @@ import {
   type CourierOption,
   type FulfillmentActionResult,
 } from "@/lib/sales-orders/fulfillment-result";
+import { PackingVideoActions } from "@/components/packing-video-actions";
 
 const STATUS_TAILWIND: Record<SalesOrderFulfillmentStatus, string> = {
   PENDING: "bg-zinc-100 text-zinc-700 border-zinc-200",
@@ -147,31 +148,25 @@ export function FulfillmentCard(props: Props) {
             </span>
           </div>
           {props.packingVideoUrl ? (
-            <div>
-              <span className="text-muted-foreground">Video packing: </span>
-              <a
-                href={props.packingVideoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
-              >
-                Buka / unduh video
-              </a>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-muted-foreground">Video packing:</span>
+              <PackingVideoActions
+                videoUrl={props.packingVideoUrl}
+                salesOrderId={props.orderId}
+                openLabel="Buka video"
+              />
             </div>
           ) : null}
         </div>
       )}
       {!props.trackingNumber && props.packingVideoUrl ? (
-        <div className="text-sm pt-2 border-t">
-          <span className="text-muted-foreground">Video packing: </span>
-          <a
-            href={props.packingVideoUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="break-all font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
-          >
-            Buka / unduh video
-          </a>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm pt-2 border-t">
+          <span className="text-muted-foreground">Video packing:</span>
+          <PackingVideoActions
+            videoUrl={props.packingVideoUrl}
+            salesOrderId={props.orderId}
+            openLabel="Buka video"
+          />
         </div>
       ) : null}
 
