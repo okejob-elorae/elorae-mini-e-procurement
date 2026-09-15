@@ -1,4 +1,4 @@
-import { InventoryValueMissingError, type Prisma } from "@elorae/db";
+import { InventoryValueMissingError, moveStoreStock, type Prisma } from "@elorae/db";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
 import { generateDocNumber } from "@/lib/docNumber";
 import { KonsiTransferReservationMismatchError } from "../errors";
@@ -77,11 +77,15 @@ export async function issueKonsiTransfer(
       },
     });
 
-    /* StoreStock keys on "" for variantless, never null — the composite unique must be DB-enforced. */
+    /*
+     * StoreStock keys on "" for variantless, never null — the composite unique must be DB-enforced.
+     * moveStoreStock applies whatever avgCost it is handed; it does not compute the blend itself,
+     * so the weighted-average read + blend stays here exactly as before.
+     */
     const storeKey = { storeId_itemId_variantSku: { storeId: input.order.storeId, itemId: l.itemId, variantSku: l.variantSku } };
-    const existing = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true, avgCost: true } });
-    const prevStoreQty = existing ? existing.qty.toNumber() : 0;
-    const prevStoreAvg = existing ? existing.avgCost.toNumber() : 0;
+    const existingStoreStock = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true, avgCost: true } });
+    const prevStoreQty = existingStoreStock ? existingStoreStock.qty.toNumber() : 0;
+    const prevStoreAvg = existingStoreStock ? existingStoreStock.avgCost.toNumber() : 0;
     /*
      * A negative StoreStock qty (e.g. a konsi retur that credited back more than the store's
      * ledger held — see approve-writer.ts) represents units that are not physically there.
@@ -89,14 +93,27 @@ export async function issueKonsiTransfer(
      * a negative weight on the existing side and inflate the blended average well past the true
      * cost. Clamped to 0 for the BLEND only: you cannot meaningfully average a cost against units
      * that are not there, so the incoming cost simply becomes the new average. The actual qty
-     * written below still uses the real (possibly negative) prevStoreQty — this guard is about
+     * moved below still uses the real (possibly negative) prevStoreQty — this guard is about
      * the cost blend, not the quantity.
      */
     const blendQty = Math.max(prevStoreQty, 0);
-    await tx.storeStock.upsert({
-      where: storeKey,
-      create: { storeId: input.order.storeId, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty, avgCost },
-      update: { qty: prevStoreQty + l.qty, avgCost: weightedAvgCost(blendQty, prevStoreAvg, l.qty, avgCost) },
+    const nextStoreAvgCost = existingStoreStock ? weightedAvgCost(blendQty, prevStoreAvg, l.qty, avgCost) : avgCost;
+
+    await moveStoreStock(tx, {
+      storeId: input.order.storeId,
+      itemId: l.itemId,
+      variantSku: l.variantSku,
+      qtyDelta: l.qty,
+      avgCost: nextStoreAvgCost,
+      /*
+       * The KonsiTransfer row is created after this loop (its lines are built from lineData
+       * below), so its id does not exist yet at this point — docNo is generated up front and is
+       * unique, so it stands in for both refId and refDocNumber here.
+       */
+      refType: "KonsiTransfer",
+      refId: docNo,
+      refDocNumber: docNo,
+      createdById: input.transferredById,
     });
 
     /*

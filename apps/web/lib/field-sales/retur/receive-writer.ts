@@ -1,4 +1,4 @@
-import type { AdminNotification } from "@elorae/db";
+import { moveStoreStock, type AdminNotification } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { FieldReturnError } from "./errors";
@@ -79,19 +79,17 @@ export async function receiveFieldReturn(input: {
         const c = byLineId.get(l.id)!;
         if (c.receivedQty === 0) continue;
 
-        const variantSku = l.variantSku ?? "";
-        const storeKey = {
-          storeId_itemId_variantSku: { storeId: ret.storeId, itemId: l.itemId, variantSku },
-        };
-        const existingStock = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true } });
-        const prevStoreQty = existingStock ? existingStock.qty.toNumber() : 0;
-
         /* A drifted or negative StoreStock row must never refuse a return — bookkeeping does
            not get to veto physical reality. */
-        await tx.storeStock.upsert({
-          where: storeKey,
-          create: { storeId: ret.storeId, itemId: l.itemId, variantSku, qty: -c.receivedQty, avgCost: 0 },
-          update: { qty: prevStoreQty - c.receivedQty },
+        await moveStoreStock(tx, {
+          storeId: ret.storeId,
+          itemId: l.itemId,
+          variantSku: l.variantSku,
+          qtyDelta: -c.receivedQty,
+          refType: "FieldReturn",
+          refId: ret.id,
+          refDocNumber: ret.docNo,
+          createdById: input.receivedById,
         });
       }
     }

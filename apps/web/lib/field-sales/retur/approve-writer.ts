@@ -1,3 +1,4 @@
+import { moveStoreStock } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { FieldReturnError } from "./errors";
@@ -334,16 +335,15 @@ export async function approveFieldReturn(input: {
         const decrementQty = ret.origin === "ADMIN" ? creditedQty - (line.receivedQty ?? 0) : creditedQty;
         if (decrementQty === 0) continue;
 
-        const storeKey = {
-          storeId_itemId_variantSku: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku },
-        };
-        const existingStock = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true } });
-        const prevStoreQty = existingStock ? existingStock.qty.toNumber() : 0;
-
-        await tx.storeStock.upsert({
-          where: storeKey,
-          create: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku, qty: -decrementQty, avgCost: 0 },
-          update: { qty: prevStoreQty - decrementQty },
+        await moveStoreStock(tx, {
+          storeId: ret.storeId,
+          itemId: line.itemId,
+          variantSku: line.variantSku,
+          qtyDelta: -decrementQty,
+          refType: "FieldReturn",
+          refId: ret.id,
+          refDocNumber: ret.docNo,
+          createdById: input.approvedById,
         });
       }
     }

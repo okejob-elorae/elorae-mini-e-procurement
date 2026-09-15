@@ -1,4 +1,4 @@
-import { prisma, Prisma } from "@elorae/db";
+import { moveStoreStock, prisma, Prisma } from "@elorae/db";
 import { computeStorePrice, roundToWholeRupiah } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
@@ -155,10 +155,6 @@ export async function recordSpgSale(input: {
      */
     if (store.termsType === "KONSI") {
       for (const p of priced) {
-        const variantSku = p.line.variantSku ?? "";
-        const storeKey = { storeId_itemId_variantSku: { storeId: input.storeId, itemId: p.line.itemId, variantSku } };
-        const existing = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true } });
-        const prevQty = existing ? existing.qty.toNumber() : 0;
         /*
          * Never clamped and never refused: the sale already happened and the cash is in the
          * till. A negative row is the signal that the ledger missed something, and it is
@@ -171,10 +167,15 @@ export async function recordSpgSale(input: {
          * clamps a negative previous quantity to zero, so that zero is absorbed correctly by
          * the next transfer in.
          */
-        await tx.storeStock.upsert({
-          where: storeKey,
-          create: { storeId: input.storeId, itemId: p.line.itemId, variantSku, qty: -p.line.qty, avgCost: 0 },
-          update: { qty: prevQty - p.line.qty },
+        await moveStoreStock(tx, {
+          storeId: input.storeId,
+          itemId: p.line.itemId,
+          variantSku: p.line.variantSku,
+          qtyDelta: -p.line.qty,
+          refType: "SpgSale",
+          refId: sale.id,
+          refDocNumber: docNo,
+          createdById: input.createdById ?? input.salesmanId,
         });
       }
     }
