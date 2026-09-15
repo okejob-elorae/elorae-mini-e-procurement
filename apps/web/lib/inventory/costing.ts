@@ -43,8 +43,12 @@ const compositeKey = (itemId: string, variantSku?: string | null) => ({
  * spelling misses a real null row, so this mirrors moveMainStock's own OR-tolerant lookup
  * exactly (same orderBy tie-break), and the resolved row's id is passed back to moveMainStock as
  * `inventoryValueId` so the write is guaranteed to land on the same row this read found.
+ *
+ * Exported so any other on-hand-stock pre-check reuses this exact lookup instead of a fourth
+ * hand-rolled spelling — e.g. apps/web/app/actions/grn.ts's declineGRNByOwner insufficient-stock
+ * guard, which must agree with reverseMovingAverage's own internal use of this same helper.
  */
-async function findExistingInventoryValueRow(
+export async function findExistingInventoryValueRow(
   prismaClient: any,
   itemId: string,
   variantSku: string | null | undefined
@@ -131,11 +135,8 @@ export async function reverseInventoryValue(
   ref: StockRef
 ): Promise<{ newQty: Decimal; newAvgCost: Decimal; newTotalValue: Decimal }> {
   const prismaClient = tx || prisma;
-  const where = compositeKey(itemId, variantSku);
 
-  const current = await prismaClient.inventoryValue.findUnique({
-    where,
-  });
+  const current = await findExistingInventoryValueRow(prismaClient, itemId, variantSku);
 
   if (!current) throw new Error('No inventory record found');
 
@@ -154,14 +155,17 @@ export async function reverseInventoryValue(
     ? newTotalValue.div(newQty)
     : new Decimal(0);
 
-  // The `if (!current) throw` above already guards the missing-row case, so this never
-  // legitimately creates a row — no createIfMissing.
+  // The `if (!current) throw` above already guards the missing-row case (now correctly — the
+  // OR-tolerant read finds the row regardless of null/"" spelling, so it fires only when neither
+  // spelling exists), so this never legitimately creates a row — no createIfMissing.
+  // inventoryValueId pins the write to the exact row `current` was just read from.
   await moveMainStock(prismaClient, {
     itemId,
     variantSku,
     qtyDelta: outgoingQty.neg().toNumber(),
     avgCost: newAvgCost.toNumber(),
     totalValue: newTotalValue.toNumber(),
+    inventoryValueId: current.id,
     ...ref,
   });
 

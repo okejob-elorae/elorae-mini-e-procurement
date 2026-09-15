@@ -3,7 +3,7 @@
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
-import { calculateMovingAverage, reverseMovingAverage } from '@/lib/inventory/costing';
+import { calculateMovingAverage, reverseMovingAverage, findExistingInventoryValueRow } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { getActorName, notifyGRNCreated, notifyMaterialArrivedForPo } from '@/app/actions/notifications';
 import { logAudit } from '@/lib/audit';
@@ -727,14 +727,11 @@ export async function declineGRNByOwner(id: string, userId: string) {
       }
       const variantKey = line.variantSku?.trim() ? line.variantSku.trim() : null;
 
-      const inv = await tx.inventoryValue.findUnique({
-        where: {
-          itemId_variantSku: {
-            itemId,
-            variantSku: variantKey ?? '',
-          },
-        },
-      });
+      // OR-tolerant — reuses costing.ts's own lookup so this pre-check and reverseMovingAverage's
+      // internal read below resolve the identical row (same deterministic orderBy tie-break),
+      // rather than this strict spelling missing a real variantSku: null row and wrongly
+      // reporting 0 on-hand for an item that has plenty.
+      const inv = await findExistingInventoryValueRow(tx, itemId, variantKey);
       const onHand = inv ? new Decimal(inv.qtyOnHand.toString()) : new Decimal(0);
       if (onHand.lt(qty)) {
         throw new Error(
