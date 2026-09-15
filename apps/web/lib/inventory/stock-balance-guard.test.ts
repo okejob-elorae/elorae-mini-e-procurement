@@ -10,8 +10,15 @@ const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
  * movers in packages/db/src/stock-balance.ts, which append a ledger entry in the same
  * transaction.
  *
- * reservation-writer.ts is the one real exception: its raw guarded UPDATE is the cross-process
- * race guard and cannot be expressed as a Prisma update, so it calls appendStockLedger directly.
+ * reservation-writer.ts is the one file exempt in FULL, and it takes BOTH of these reasons to
+ * justify it. Its raw guarded UPDATE is a cross-process race guard that cannot be expressed as a
+ * Prisma call at all. And its two plain Prisma qtyOnHand updates decrement reservedQty in the
+ * SAME statement, which no mover can express — splitting that pair strands stock reserved
+ * against nothing, permanently. Both append to the ledger by hand instead.
+ *
+ * That pair is also the BAR for any new entry here: a write the movers CANNOT express, never one
+ * where routing through a mover was merely inconvenient. An exemption granted on the weaker
+ * reason reopens the drift this whole file exists to catch, through its own documentation.
  *
  * opname-snapshot.ts provisions an InventoryValue row that does not yet exist and appends an
  * OPENING entry for it, so its create is allowed while its quantity changes go through setMainStock.
