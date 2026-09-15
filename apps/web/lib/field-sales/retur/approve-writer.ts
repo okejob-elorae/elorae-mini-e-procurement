@@ -1,4 +1,4 @@
-import { moveStoreStock } from "@elorae/db";
+import { moveMainStock, moveStoreStock } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { FieldReturnError } from "./errors";
@@ -103,31 +103,25 @@ export async function approveFieldReturn(input: {
          */
         const newAvgCost = avgCost;
 
-        if (main) {
-          await tx.inventoryValue.update({
-            where: { id: main.id },
-            data: {
-              qtyOnHand: newQty,
-              avgCost: newAvgCost,
-              totalValue: newQty * newAvgCost,
-              lastUpdated: new Date(),
-            },
-          });
-        } else {
-          await tx.inventoryValue.create({
-            data: {
-              itemId: line.itemId,
-              /* Same null-for-variantless normalisation as the RejectedGoodsLedger create
-                 below — a fresh row must land in the shape the OR-tolerant lookup above (and
-                 every other writer) expects, not fork a "" row alongside a null one. */
-              variantSku: line.variantSku || null,
-              qtyOnHand: newQty,
-              reservedQty: 0,
-              avgCost: newAvgCost,
-              totalValue: newQty * newAvgCost,
-            },
-          });
-        }
+        /*
+         * createIfMissing mirrors the create-branch this replaced: no inventory row exists yet
+         * for an item that has never been stocked, so the restored stock opens one at newAvgCost
+         * (which is 0 here, same as the removed create's own fallback). inventoryValueId pins the
+         * write to the exact row `main` was just read from when one exists.
+         */
+        await moveMainStock(tx, {
+          itemId: line.itemId,
+          variantSku: line.variantSku,
+          qtyDelta: sellableQty,
+          avgCost: newAvgCost,
+          totalValue: newQty * newAvgCost,
+          createIfMissing: true,
+          inventoryValueId: main?.id,
+          refType: "FieldReturn",
+          refId: ret.id,
+          refDocNumber: ret.docNo,
+          createdById: input.approvedById,
+        });
 
         await tx.stockAdjustment.create({
           data: {

@@ -1,4 +1,4 @@
-import { prisma, Prisma, moveVanStock } from "@elorae/db";
+import { prisma, Prisma, moveMainStock, moveVanStock } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
@@ -74,9 +74,16 @@ export async function loadVan(input: {
       const avgCost = inv.avgCost.toNumber();
       const newQty = prevQty - l.qty;
 
-      await tx.inventoryValue.update({
-        where: { id: inv.id },
-        data: { qtyOnHand: newQty, totalValue: newQty * avgCost },
+      await moveMainStock(tx, {
+        itemId: l.itemId,
+        variantSku: l.variantSku,
+        qtyDelta: -l.qty,
+        totalValue: newQty * avgCost,
+        inventoryValueId: inv.id,
+        refType: "VanLoad",
+        refId: load.id,
+        refDocNumber: docNo,
+        createdById: input.loadedById,
       });
 
       await tx.stockAdjustment.create({

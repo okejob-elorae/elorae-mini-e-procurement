@@ -1,4 +1,4 @@
-import { InventoryValueMissingError, moveStoreStock, type Prisma } from "@elorae/db";
+import { InventoryValueMissingError, moveMainStock, moveStoreStock, type Prisma } from "@elorae/db";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
 import { generateDocNumber } from "@/lib/docNumber";
 import { KonsiTransferReservationMismatchError } from "../errors";
@@ -61,13 +61,28 @@ export async function issueKonsiTransfer(
     const avgCost = main.avgCost.toNumber();
     const newQty = prevQty - l.qty;
 
-    // qtyOnHand and reservedQty decrement TOGETHER in this one write — see the module doc above.
+    /*
+     * qtyOnHand and reservedQty decrement TOGETHER — see the module doc above. moveMainStock
+     * only moves qtyOnHand (and records the ledger entry for it); reservedQty is not a stock
+     * movement and gets no ledger entry, so it stays a separate atomic decrement immediately
+     * after, pinned to the same row moveMainStock just wrote.
+     */
+    await moveMainStock(tx, {
+      itemId: l.itemId,
+      variantSku: l.variantSku,
+      qtyDelta: -l.qty,
+      totalValue: newQty * avgCost,
+      inventoryValueId: main.id,
+      refType: "KonsiTransfer",
+      refId: transfer.id,
+      refDocNumber: docNo,
+      createdById: input.transferredById,
+    });
+
     await tx.inventoryValue.update({
       where: { id: main.id },
       data: {
-        qtyOnHand: newQty,
-        reservedQty: main.reservedQty.toNumber() - l.qty,
-        totalValue: newQty * avgCost,
+        reservedQty: { decrement: l.qty },
         lastUpdated: new Date(),
       },
     });

@@ -1,4 +1,4 @@
-import { moveVanStock } from "@elorae/db";
+import { moveMainStock, moveVanStock } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
@@ -81,11 +81,25 @@ export async function recordVanReconcile(input: {
         const newQty = prevQty + l.counted;
         const newAvg = weightedAvgCost(prevQty, prevAvg, l.counted, l.avgCost);
 
-        if (main) {
-          await tx.inventoryValue.update({ where: { id: main.id }, data: { qtyOnHand: newQty, avgCost: newAvg, totalValue: newQty * newAvg, lastUpdated: new Date() } });
-        } else {
-          await tx.inventoryValue.create({ data: { itemId: l.itemId, variantSku: l.variantSku ?? "", qtyOnHand: newQty, reservedQty: 0, avgCost: newAvg, totalValue: newQty * newAvg } });
-        }
+        /*
+         * createIfMissing mirrors the create-branch this replaced. inventoryValueId pins the
+         * write to the exact row `main` was just read from when one exists — a genuinely missing
+         * row opens one at newAvg via moveMainStock's own create, spelled null for variantless
+         * (the mover's convention) rather than this branch's former "" spelling.
+         */
+        await moveMainStock(tx, {
+          itemId: l.itemId,
+          variantSku: l.variantSku,
+          qtyDelta: l.counted,
+          avgCost: newAvg,
+          totalValue: newQty * newAvg,
+          createIfMissing: true,
+          inventoryValueId: main?.id,
+          refType: "VanReconcile",
+          refId: rec.id,
+          refDocNumber: docNo,
+          createdById: input.reconciledById,
+        });
 
         await tx.stockAdjustment.create({
           data: {

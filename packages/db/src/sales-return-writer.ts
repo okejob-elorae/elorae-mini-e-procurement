@@ -1,4 +1,5 @@
 import type { Prisma } from "../generated/prisma/client";
+import { moveMainStock } from "./stock-balance";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 import type { JubelioOutboxEntityType } from "./jubelio-outbox";
 
@@ -54,7 +55,7 @@ export async function acceptReturnItem(
 ): Promise<AcceptReturnItemResult> {
   const item = await tx.salesReturnItem.findUnique({
     where: { id: input.returnItemId },
-    include: { salesReturn: { select: { pushOutboxRowId: true } } },
+    include: { salesReturn: { select: { pushOutboxRowId: true, jubelioReturnNo: true } } },
   });
   if (!item) return { applied: false, skipped: "already_decided" };
   if (item.salesReturn.pushOutboxRowId !== null) {
@@ -104,13 +105,16 @@ export async function acceptReturnItem(
     select: { id: true },
   });
 
-  await tx.inventoryValue.update({
-    where: { id: inv.id },
-    data: {
-      qtyOnHand: newQty,
-      totalValue: newQty * avgCost,
-      lastUpdated: new Date(),
-    },
+  await moveMainStock(tx, {
+    itemId: item.itemId,
+    variantSku: item.variantSku,
+    qtyDelta: qty,
+    totalValue: newQty * avgCost,
+    inventoryValueId: inv.id,
+    refType: "SalesReturn",
+    refId: item.salesReturnId,
+    refDocNumber: item.salesReturn.jubelioReturnNo ?? undefined,
+    createdById: input.changedById,
   });
 
   await tx.salesReturnItem.update({
