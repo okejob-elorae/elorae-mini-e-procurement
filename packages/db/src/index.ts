@@ -122,3 +122,11 @@ export {
   type JournalLineInput,
   type PostJournalInput,
 } from "./journal-writer";
+export {
+  appendStockLedger,
+  normaliseVariantKey,
+  resolveLocationKey,
+  type AppendStockLedgerInput,
+  type StockLedgerEntryType,
+  type StockLocation,
+} from "./stock-ledger";
