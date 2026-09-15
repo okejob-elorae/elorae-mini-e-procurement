@@ -1,5 +1,6 @@
 import { InventoryValueMissingError, moveMainStock, moveStoreStock, type Prisma } from "@elorae/db";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
 import { KonsiTransferReservationMismatchError } from "../errors";
 
@@ -48,15 +49,15 @@ export async function issueKonsiTransfer(
 
   for (const l of input.order.lines) {
     /*
-     * OR-tolerant: a variantless InventoryValue row keys on null, not "". A strict ""-keyed
-     * lookup misses the real row and forks a phantom one — that has already happened once on
-     * the canvassing reconcile path.
+     * findExistingInventoryValueRow is THE spelling of this lookup: OR-tolerant, because a
+     * variantless InventoryValue row keys on null OR "" and a strict ""-keyed lookup misses the
+     * real row and forks a phantom one — that has already happened once on the canvassing
+     * reconcile path. Its orderBy id asc tie-break is load-bearing rather than cosmetic: the
+     * resolved id is pinned into moveMainStock below AND into the reservedQty decrement after it,
+     * so without it two paths reading the same null/"" bucket can pin different rows and
+     * interleave two independent balances under one ledger key.
      */
-    const isVariantless = l.variantSku === "";
-    const select = { id: true, qtyOnHand: true, reservedQty: true, avgCost: true } as const;
-    const main = isVariantless
-      ? await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, OR: [{ variantSku: null }, { variantSku: "" }] }, select })
-      : await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, variantSku: l.variantSku }, select });
+    const main = await findExistingInventoryValueRow(tx, l.itemId, l.variantSku);
     if (!main) throw new InventoryValueMissingError(l.itemId, l.variantSku);
 
     const prevQty = main.qtyOnHand.toNumber();

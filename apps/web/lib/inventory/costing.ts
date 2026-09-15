@@ -44,9 +44,17 @@ const compositeKey = (itemId: string, variantSku?: string | null) => ({
  * exactly (same orderBy tie-break), and the resolved row's id is passed back to moveMainStock as
  * `inventoryValueId` so the write is guaranteed to land on the same row this read found.
  *
- * Exported so any other on-hand-stock pre-check reuses this exact lookup instead of a fourth
- * hand-rolled spelling — e.g. apps/web/app/actions/grn.ts's declineGRNByOwner insufficient-stock
- * guard, which must agree with reverseMovingAverage's own internal use of this same helper.
+ * Exported so every on-hand-stock pre-check in apps/web reuses this exact lookup instead of a
+ * hand-rolled spelling of it. The whole point is the tie-break, not just the OR: callers pass the
+ * resolved id straight back into moveMainStock as inventoryValueId, so two callers reading the
+ * same null/"" bucket must land on the same row or they interleave two independent balances under
+ * one ledger key. Current callers: grn.ts's declineGRNByOwner insufficient-stock guard,
+ * inventory.ts, reconciliation-runner.ts, opname-snapshot.ts, opname-approve.ts,
+ * canvassing/writer.ts, canvassing/reconcile-writer.ts, konsi-transfer/writer.ts, and
+ * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below.
+ *
+ * packages/db cannot import this (it sits above apps/web), so moveMainStock and setMainStock
+ * restate the same shape inline — tie-break included. Change one, change those two.
  */
 export async function findExistingInventoryValueRow(
   prismaClient: any,

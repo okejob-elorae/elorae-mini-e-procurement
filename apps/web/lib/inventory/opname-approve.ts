@@ -8,6 +8,7 @@ import {
   normalizeVariantKey,
   shouldApplyAdjustment,
 } from "./opname";
+import { findExistingInventoryValueRow } from "./costing";
 import { syncFabricAggregateQty } from "./opname-snapshot";
 
 type Tx = Prisma.TransactionClient;
@@ -26,15 +27,6 @@ function toNum(v: unknown): number {
   return typeof v === "number" ? v : Number(v);
 }
 
-// Jubelio-ingested items store InventoryValue with variantSku = NULL, while
-// normalizeVariantKey maps null/empty to "". A strict lookup on "" misses those NULL
-// rows. For the pooled key, match both "" and NULL; for a real variant, match exactly.
-function inventoryLookupWhere(itemId: string, variantKey: string) {
-  return variantKey === ""
-    ? { itemId, OR: [{ variantSku: "" }, { variantSku: null }] }
-    : { itemId, variantSku: variantKey };
-}
-
 export async function detectItemDrift(
   tx: Tx,
   opnameId: string,
@@ -43,9 +35,7 @@ export async function detectItemDrift(
   const drift: DriftRow[] = [];
   for (const row of items) {
     const variantKey = normalizeVariantKey(row.variantSku);
-    const inv = await tx.inventoryValue.findFirst({
-      where: inventoryLookupWhere(row.itemId, variantKey),
-    });
+    const inv = await findExistingInventoryValueRow(tx, row.itemId, variantKey);
     const currentQty = inv ? toNum(inv.qtyOnHand) : 0;
     const snapshotQty = toNum(row.snapshotQty);
     if (hasQtyDrift(currentQty, snapshotQty)) {
@@ -114,9 +104,7 @@ export async function applyFgAccessoriesAdjustments(
   for (const row of items) {
     const countedQty = toNum(row.countedQty);
     const variantKey = normalizeVariantKey(row.variantSku);
-    const inv = await tx.inventoryValue.findFirst({
-      where: inventoryLookupWhere(row.itemId, variantKey),
-    });
+    const inv = await findExistingInventoryValueRow(tx, row.itemId, variantKey);
     const currentQty = inv ? toNum(inv.qtyOnHand) : 0;
     const snapshotQty = toNum(row.snapshotQty);
     const hadDrift = hasQtyDrift(currentQty, snapshotQty);
@@ -270,9 +258,13 @@ export async function applyFabricAdjustments(
       refId: opnameId,
       refDocNumber: docNumber,
     });
-    const inv = await tx.inventoryValue.findFirst({
-      where: { itemId, OR: [{ variantSku: "" }, { variantSku: null }] },
-    });
+    /*
+     * Same helper syncFabricAggregateQty just resolved and wrote through, tie-break included.
+     * This re-resolve used to hand-roll the OR without the orderBy, so on an item carrying both a
+     * null-spelled and a ""-spelled row it could read a DIFFERENT row than the one the line above
+     * had just set — and the StockMovement.balanceQty below is derived from what comes back here.
+     */
+    const inv = await findExistingInventoryValueRow(tx, itemId, "");
     const prevQty = inv ? toNum(inv.qtyOnHand) - netDelta : newAggregate - netDelta;
     const avgCost = inv ? toNum(inv.avgCost) : 0;
 

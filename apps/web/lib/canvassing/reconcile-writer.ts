@@ -3,6 +3,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 
 export type ReconcileCountInput = { itemId: string; variantSku: string | null; countedQty: number };
 export type RecordVanReconcileResult =
@@ -69,12 +70,15 @@ export async function recordVanReconcile(input: {
 
     for (const l of lines) {
       if (l.counted > 0) {
-        // Return to main. Variantless main rows use variantSku: null (not ""), so use an
-        // OR-tolerant lookup (same as loadVan) — calculateMovingAverage's strict ""-key lookup
-        // would miss the real row and fork a phantom "" row.
-        const main = (l.variantSku ?? "") === ""
-          ? await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, OR: [{ variantSku: null }, { variantSku: "" }] }, select: { id: true, qtyOnHand: true, avgCost: true } })
-          : await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, variantSku: l.variantSku }, select: { id: true, qtyOnHand: true, avgCost: true } });
+        /*
+         * Return to main through findExistingInventoryValueRow, THE spelling of this lookup: a
+         * variantless main row keys on null OR "", and calculateMovingAverage's strict ""-key
+         * lookup would miss a real null row and fork a phantom one. Its orderBy id asc tie-break
+         * is load-bearing rather than cosmetic — the resolved id is pinned into moveMainStock
+         * below, so without it two paths reading the same null/"" bucket can pin different rows
+         * and interleave two independent balances under one ledger key.
+         */
+        const main = await findExistingInventoryValueRow(tx, l.itemId, l.variantSku);
 
         const prevQty = main ? main.qtyOnHand.toNumber() : 0;
         const prevAvg = main ? main.avgCost.toNumber() : 0;
