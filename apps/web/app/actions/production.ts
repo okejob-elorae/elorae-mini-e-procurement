@@ -666,6 +666,25 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       totalSellingPrice?: number;
     }> = [];
 
+    // Created ahead of the deduction loop so its id is a real ledger ref for the moveMainStock
+    // calls below — the same read-then-write ordering per row as before this row existed, so a
+    // duplicate item/variant in one payload still re-reads post-deduction stock on its second
+    // occurrence. items/totalCost are placeholders patched in below once the loop has computed
+    // them (mirrors the tx.gRN.update patch in grn.ts for the same reason).
+    const issue = await tx.materialIssue.create({
+      data: {
+        docNumber,
+        woId: data.woId,
+        issueType: data.issueType,
+        isPartial: data.isPartial,
+        parentIssueId: data.parentIssueId ?? undefined,
+        notes: data.notes ?? undefined,
+        items: JSON.stringify([]),
+        totalCost: 0,
+        issuedById: userId
+      }
+    });
+
     for (const item of validated.items) {
       const variantKey = item.variantSku != null && item.variantSku !== '' ? item.variantSku : '';
       const itemRow = await tx.item.findUnique({
@@ -712,11 +731,19 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         if (take <= 0) continue;
         const newQty = row.qtyOnHand - take;
         const newValue = newQty * row.avgCost;
-        // The actual write is deferred to after tx.materialIssue.create below, so the ledger
-        // entry can carry the issue's own id as its ref instead of a stand-in doc number.
+        const effectiveSku = row.variantSku ?? '';
+        await moveMainStock(tx, {
+          itemId: item.itemId,
+          variantSku: effectiveSku,
+          qtyDelta: -take,
+          totalValue: newValue,
+          refType: 'MaterialIssue',
+          refId: issue.id,
+          refDocNumber: docNumber,
+          createdById: session.user.id,
+        });
         weightedCostSum += take * row.avgCost;
         remainingToDeduct -= take;
-        const effectiveSku = row.variantSku ?? '';
         movementData.push({
           itemId: item.itemId,
           variantSku: effectiveSku,
@@ -823,32 +850,15 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       }
     }
 
-    const issue = await tx.materialIssue.create({
+    // Patches in the real snapshot now that the loop above has computed it — the row itself
+    // (and every moveMainStock ledger entry's refId) was already created before that loop.
+    await tx.materialIssue.update({
+      where: { id: issue.id },
       data: {
-        docNumber,
-        woId: data.woId,
-        issueType: data.issueType,
-        isPartial: data.isPartial,
-        parentIssueId: data.parentIssueId ?? undefined,
-        notes: data.notes ?? undefined,
         items: JSON.stringify(issueItemsForJson),
         totalCost: totalCost.toNumber(),
-        issuedById: userId
-      }
+      },
     });
-
-    for (const mov of movementData) {
-      await moveMainStock(tx, {
-        itemId: mov.itemId,
-        variantSku: mov.variantSku,
-        qtyDelta: mov.qty,
-        totalValue: mov.balanceValue,
-        refType: 'MaterialIssue',
-        refId: issue.id,
-        refDocNumber: docNumber,
-        createdById: session.user.id,
-      });
-    }
 
     for (const mov of movementData) {
       await tx.stockMovement.create({
@@ -889,7 +899,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
     return {
       id: issue.id,
       docNumber: issue.docNumber,
-      totalCost: Number(issue.totalCost),
+      // issue.totalCost (from the early create) is the 0 placeholder — the row was patched via
+      // tx.materialIssue.update above, so read the local accumulator instead of the stale field.
+      totalCost: totalCost.toNumber(),
     };
   });
 
