@@ -19,7 +19,8 @@ export async function getStockAcrossLocations(itemIds: string[]): Promise<Map<st
   const out = new Map<string, StockAcrossLocationsRow>();
   if (itemIds.length === 0) return out;
 
-  /* InventoryValue is the only one of the three with a nullable variantSku, so normalise here. */
+  /* InventoryValue AND VanStock both have a nullable variantSku (StoreStock does not), so the
+     key normalises here — folding the null/"" bucket into the one spelling the ledger uses. */
   const key = (itemId: string, variantSku: string | null) => `${itemId}::${variantSku ?? ""}`;
   const bump = (k: string, field: "main" | "van" | "store", n: number) => {
     const row = out.get(k) ?? { main: 0, van: 0, store: 0, total: 0 };

@@ -120,6 +120,7 @@ async function applyMatchJubelio(
     refType: "Reconciliation",
     refId: adjustment.id,
     refDocNumber: adjDoc,
+    createdById: params.userId ?? null,
   });
 
   await tx.stockMovement.create({

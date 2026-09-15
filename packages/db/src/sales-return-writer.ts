@@ -71,18 +71,28 @@ export async function acceptReturnItem(
     return { applied: false, skipped: "unmapped_sku" };
   }
 
-  const inv = await tx.inventoryValue.findFirst({
-    where: {
-      itemId: item.itemId,
-      OR: [
-        { variantSku: item.variantSku ?? null },
-        ...(item.variantSku == null
-          ? [{ variantSku: "" as string | null }]
-          : []),
-      ],
-    },
-    select: { id: true, qtyOnHand: true, avgCost: true },
-  });
+  /*
+   * The canonical OR-tolerant lookup, restated: findExistingInventoryValueRow lives in
+   * apps/web/lib/inventory/costing.ts and packages/db sits below apps/web, so it cannot be
+   * imported here — the shape is copied instead, tie-break included. Change it there, change it
+   * here and in stock-balance.ts's two movers.
+   *
+   * Tolerance keys on FALSY, not on null. This used to widen the OR only when variantSku was
+   * null, which made a Jubelio-sourced variantless item arriving with "" strict: it missed a
+   * null-spelled InventoryValue row and returned skipped: "no_inventory_row" with the stock
+   * sitting right there, silently declining to restore it.
+   */
+  const invSelect = { id: true, qtyOnHand: true, avgCost: true } as const;
+  const inv = item.variantSku
+    ? await tx.inventoryValue.findFirst({
+        where: { itemId: item.itemId, variantSku: item.variantSku },
+        select: invSelect,
+      })
+    : await tx.inventoryValue.findFirst({
+        where: { itemId: item.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+        orderBy: { id: "asc" },
+        select: invSelect,
+      });
   if (!inv) return { applied: false, skipped: "no_inventory_row" };
 
   const qty = toNum(item.qty);

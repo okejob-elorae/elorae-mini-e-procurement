@@ -584,6 +584,7 @@ export async function applyUmkmManifest(
           refType: "OpeningStock",
           refId: adjustment.id,
           refDocNumber: adjustment.docNumber,
+          createdById: userId,
         });
 
         const totalCostAdj =
