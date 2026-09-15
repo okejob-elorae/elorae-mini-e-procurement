@@ -50,11 +50,21 @@ const compositeKey = (itemId: string, variantSku?: string | null) => ({
  * same null/"" bucket must land on the same row or they interleave two independent balances under
  * one ledger key. Current callers: grn.ts's declineGRNByOwner insufficient-stock guard,
  * inventory.ts, reconciliation-runner.ts, opname-snapshot.ts, opname-approve.ts,
- * canvassing/writer.ts, canvassing/reconcile-writer.ts, konsi-transfer/writer.ts, and
- * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below.
+ * canvassing/writer.ts, canvassing/reconcile-writer.ts, konsi-transfer/writer.ts,
+ * field-sales/retur/approve-writer.ts, and reverseMovingAverage / calculateMovingAverage /
+ * reverseInventoryValue below. The one apps/web lookup NOT routed through here is
+ * field-sales/writer.ts's hasInventoryRow, an existence check that pins no id.
  *
- * packages/db cannot import this (it sits above apps/web), so moveMainStock and setMainStock
- * restate the same shape inline — tie-break included. Change one, change those two.
+ * packages/db cannot import this (it sits above apps/web), so it carries its own copies — and
+ * there are FOUR, not two. moveMainStock and setMainStock in stock-balance.ts, the return-accept
+ * restore in sales-return-writer.ts, and applyJubelioStockAdjustment in stock-writer.ts all
+ * restate this shape inline, tie-break included. Change this helper, change all four.
+ *
+ * Two further packages/db lookups are deliberately a DIFFERENT shape and must not be
+ * "harmonised" onto this one: reservation-writer.ts's findFieldSalesInventory prefers an exact
+ * "" row and only falls back to null, because a bare OR can decrement the sibling row and orphan
+ * reservedQty on an item carrying both spellings; and item-price-writer.ts reads avgCost only,
+ * item-level with no variant input at all, so it pins no row and needs no tie-break.
  */
 export async function findExistingInventoryValueRow(
   prismaClient: any,
