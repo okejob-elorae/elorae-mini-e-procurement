@@ -14,3 +14,19 @@ describe("ledgerTypeForDelta", () => {
     expect(ledgerTypeForDelta(0)).toBe("ADJUSTMENT");
   });
 });
+
+import { deltaForSet } from "./stock-balance";
+
+describe("deltaForSet", () => {
+  it("returns the signed difference when a count is higher", () => {
+    expect(deltaForSet(3, 10)).toBe(7);
+  });
+
+  it("returns a negative difference when a count is lower", () => {
+    expect(deltaForSet(10, 3)).toBe(-7);
+  });
+
+  it("returns zero when the count matches", () => {
+    expect(deltaForSet(5, 5)).toBe(0);
+  });
+});

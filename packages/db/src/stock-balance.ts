@@ -22,7 +22,14 @@ type MoveCommon = {
   createdById?: string | null;
 };
 
-export type MoveMainStockInput = MoveCommon;
+export type MoveMainStockInput = MoveCommon & {
+  /*
+   * When no InventoryValue row exists yet, create one at this delta instead of throwing. The
+   * movement is the row's opening balance, so the ledger entry carries balanceQty === qtyDelta.
+   * Only the paths that legitimately receive stock for a not-yet-stocked item set this.
+   */
+  createIfMissing?: boolean;
+};
 export type MoveStoreStockInput = MoveCommon & { storeId: string };
 export type MoveVanStockInput = MoveCommon & { userId: string };
 
@@ -55,9 +62,38 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
       });
 
   if (!existing) {
-    throw new Error(
-      `moveMainStock: no InventoryValue row for item ${input.itemId} variant ${normaliseVariantKey(input.variantSku)}`,
-    );
+    if (!input.createIfMissing) {
+      throw new Error(
+        `moveMainStock: no InventoryValue row for item ${input.itemId} variant ${normaliseVariantKey(input.variantSku)}`,
+      );
+    }
+
+    await tx.inventoryValue.create({
+      data: {
+        itemId: input.itemId,
+        variantSku: input.variantSku || null,
+        qtyOnHand: input.qtyDelta,
+        reservedQty: 0,
+        avgCost: input.avgCost ?? 0,
+        totalValue: input.totalValue ?? 0,
+      },
+    });
+
+    await appendStockLedger(tx, {
+      location: { type: "MAIN" },
+      itemId: input.itemId,
+      variantSku: input.variantSku,
+      type: ledgerTypeForDelta(input.qtyDelta),
+      qty: input.qtyDelta,
+      balanceQty: input.qtyDelta,
+      unitCost: input.unitCost,
+      refType: input.refType,
+      refId: input.refId,
+      refDocNumber: input.refDocNumber,
+      createdById: input.createdById,
+    });
+
+    return { balanceQty: input.qtyDelta };
   }
 
   const updated = await tx.inventoryValue.update({
@@ -178,4 +214,123 @@ export async function moveVanStock(tx: Tx, input: MoveVanStockInput): Promise<{ 
   });
 
   return { balanceQty };
+}
+
+type SetCommon = {
+  itemId: string;
+  variantSku: string | null | undefined;
+  nextQty: number;
+  refType: string;
+  refId: string;
+  refDocNumber?: string;
+  createdById?: string | null;
+};
+
+export type SetMainStockInput = SetCommon;
+export type SetStoreStockInput = SetCommon & { storeId: string };
+
+export function deltaForSet(previousQty: number, nextQty: number): number {
+  return nextQty - previousQty;
+}
+
+/**
+ * Sets an absolute main-warehouse quantity, as a physical count does, and records the difference
+ * as one ADJUSTMENT entry.
+ *
+ * Reading before writing is safe here in a way it is not for the delta movers: a count is
+ * authoritative by definition, so the last writer legitimately wins and there is no concurrent
+ * increment semantics to preserve. A set that changes nothing writes no ledger entry at all.
+ */
+export async function setMainStock(
+  tx: Tx,
+  input: SetMainStockInput,
+): Promise<{ balanceQty: number; changed: boolean }> {
+  const existing = input.variantSku
+    ? await tx.inventoryValue.findFirst({
+        where: { itemId: input.itemId, variantSku: input.variantSku },
+        select: { id: true, qtyOnHand: true },
+      })
+    : await tx.inventoryValue.findFirst({
+        where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+        select: { id: true, qtyOnHand: true },
+      });
+
+  if (!existing) {
+    throw new Error(
+      `setMainStock: no InventoryValue row for item ${input.itemId} variant ${normaliseVariantKey(input.variantSku)}`,
+    );
+  }
+
+  const previousQty = Number(existing.qtyOnHand);
+  const delta = deltaForSet(previousQty, input.nextQty);
+
+  if (delta === 0) return { balanceQty: previousQty, changed: false };
+
+  await tx.inventoryValue.update({
+    where: { id: existing.id },
+    data: { qtyOnHand: input.nextQty, lastUpdated: new Date() },
+  });
+
+  await appendStockLedger(tx, {
+    location: { type: "MAIN" },
+    itemId: input.itemId,
+    variantSku: input.variantSku,
+    type: "ADJUSTMENT",
+    qty: delta,
+    balanceQty: input.nextQty,
+    refType: input.refType,
+    refId: input.refId,
+    refDocNumber: input.refDocNumber,
+    createdById: input.createdById,
+  });
+
+  return { balanceQty: input.nextQty, changed: true };
+}
+
+/**
+ * The store counterpart, used by the store stocktake approval, which sets the counted figure
+ * rather than adjusting by a delta. A stocktake-created row lands at avgCost 0 by existing
+ * convention; this does not change that.
+ */
+export async function setStoreStock(
+  tx: Tx,
+  input: SetStoreStockInput,
+): Promise<{ balanceQty: number; changed: boolean }> {
+  const variantSku = normaliseVariantKey(input.variantSku);
+  const key = {
+    storeId_itemId_variantSku: { storeId: input.storeId, itemId: input.itemId, variantSku },
+  };
+
+  const existing = await tx.storeStock.findUnique({ where: key, select: { qty: true } });
+  const previousQty = existing ? Number(existing.qty) : 0;
+  const delta = deltaForSet(previousQty, input.nextQty);
+
+  if (delta === 0) return { balanceQty: previousQty, changed: false };
+
+  await tx.storeStock.upsert({
+    where: key,
+    create: {
+      storeId: input.storeId,
+      itemId: input.itemId,
+      variantSku,
+      qty: input.nextQty,
+      avgCost: 0,
+    },
+    update: { qty: input.nextQty },
+  });
+
+  await appendStockLedger(tx, {
+    location: { type: "STORE", storeId: input.storeId },
+    itemId: input.itemId,
+    variantSku,
+    type: "ADJUSTMENT",
+    qty: delta,
+    balanceQty: input.nextQty,
+    refType: input.refType,
+    refId: input.refId,
+    refDocNumber: input.refDocNumber,
+    createdById: input.createdById,
+  });
+
+  return { balanceQty: input.nextQty, changed: true };
 }

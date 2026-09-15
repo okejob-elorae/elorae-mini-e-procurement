@@ -139,3 +139,10 @@ export {
   type MoveStoreStockInput,
   type MoveVanStockInput,
 } from "./stock-balance";
+export {
+  deltaForSet,
+  setMainStock,
+  setStoreStock,
+  type SetMainStockInput,
+  type SetStoreStockInput,
+} from "./stock-balance";
