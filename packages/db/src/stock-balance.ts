@@ -198,20 +198,19 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     }
 
     /*
-     * The variantless spelling here is the normalised empty string, NOT null, and that is
-     * deliberate: InventoryValue carries @@unique([itemId, variantSku]), which MySQL enforces for
-     * "" but NOT for NULL (it treats NULLs as distinct). Two concurrent first-receipts of the same
-     * unstocked item would both be allowed to insert a null-spelled row and fork the pair this
-     * whole file works around; "" makes the second one fail on the index instead. "" is also found
-     * by every OR-tolerant reader AND by the strict-"" readers still catalogued in
-     * docs/FOLLOWUPS.md, which a null row silently breaks. Do not "correct" this back to null to
-     * match items/mutations.ts — this branch only fires when NO row exists under either spelling,
-     * so writing "" forks nothing.
+     * The variantless spelling here is NULL, matching items/mutations.ts and every other writer
+     * that opens an InventoryValue row — it is the repo's decided convention and two specs pin it
+     * by name. Writing "" instead was tried and reverted: it buys the @@unique([itemId, variantSku])
+     * index as a fork guard (MySQL enforces the constraint for "" and treats NULLs as distinct),
+     * but it pays for that by minting a second spelling for the same logical row, which is the
+     * phantom-"" problem the OR-tolerant lookups exist to survive. The concurrent double-create it
+     * would have guarded is narrow — this branch only fires when NO row exists under either
+     * spelling — and is logged in docs/FOLLOWUPS.md rather than bought at that price.
      */
     await tx.inventoryValue.create({
       data: {
         itemId: input.itemId,
-        variantSku: normaliseVariantKey(input.variantSku),
+        variantSku: input.variantSku || null,
         qtyOnHand: input.qtyDelta,
         reservedQty: 0,
         avgCost: input.avgCost ?? 0,
