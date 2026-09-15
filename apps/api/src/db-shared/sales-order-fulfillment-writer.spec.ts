@@ -27,11 +27,17 @@ describe("sales-order-fulfillment-writer", () => {
           update: jest.fn().mockResolvedValue({ qtyOnHand: "7" }),
         },
         stockAdjustment: { create: jest.fn().mockResolvedValue({ id: "a1" }) },
+        // markOrderShipped consumes via consumeOrder, which appends one ledger entry per line via
+        // appendStockLedger — tx.stockLedgerEntry.create is called unconditionally on that path.
+        stockLedgerEntry: { create: jest.fn().mockResolvedValue({}) },
       };
       const prisma: any = { $transaction: (fn: any) => fn(inner) };
       await markOrderShipped(prisma, { orderId: "o1", userId: "u1", courierId: 7 });
       expect(inner.stockReservation.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ state: "CONSUMED" }) }),
+      );
+      expect(inner.stockLedgerEntry.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ itemId: "i1", qty: -3, balanceQty: 7 }) }),
       );
     });
   });
