@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
-import { prisma, recalcItemSellingPrice } from '@elorae/db';
+import { prisma, recalcItemSellingPrice, moveMainStock } from '@elorae/db';
 import { apiFetch } from "@/lib/internal-api";
 import { generateDocNumber } from '@/lib/docNumber';
 import { generateMaterialPlan } from '@/lib/production/planning';
@@ -712,10 +712,8 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         if (take <= 0) continue;
         const newQty = row.qtyOnHand - take;
         const newValue = newQty * row.avgCost;
-        await tx.inventoryValue.update({
-          where: { id: row.id },
-          data: { qtyOnHand: newQty, totalValue: newValue }
-        });
+        // The actual write is deferred to after tx.materialIssue.create below, so the ledger
+        // entry can carry the issue's own id as its ref instead of a stand-in doc number.
         weightedCostSum += take * row.avgCost;
         remainingToDeduct -= take;
         const effectiveSku = row.variantSku ?? '';
@@ -838,6 +836,19 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         issuedById: userId
       }
     });
+
+    for (const mov of movementData) {
+      await moveMainStock(tx, {
+        itemId: mov.itemId,
+        variantSku: mov.variantSku,
+        qtyDelta: mov.qty,
+        totalValue: mov.balanceValue,
+        refType: 'MaterialIssue',
+        refId: issue.id,
+        refDocNumber: docNumber,
+        createdById: session.user.id,
+      });
+    }
 
     for (const mov of movementData) {
       await tx.stockMovement.create({
@@ -1179,7 +1190,8 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
             new Decimal(row.qty),
             avgCostPerUnit,
             tx,
-            row.variantSku
+            row.variantSku,
+            { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: session.user.id }
           );
           const rowCost = avgCostPerUnit.mul(row.qty).toNumber();
           await tx.stockMovement.create({
@@ -1213,7 +1225,8 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           new Decimal(qtyAccepted),
           avgCostPerUnit,
           tx,
-          fgVariantSku
+          fgVariantSku,
+          { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: session.user.id }
         );
         await tx.stockMovement.create({
           data: {

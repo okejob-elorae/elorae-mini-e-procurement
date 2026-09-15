@@ -2,7 +2,7 @@
 
 import { Decimal } from 'decimal.js';
 import { Prisma } from '@elorae/db';
-import { prisma } from '@elorae/db';
+import { prisma, moveMainStock } from '@elorae/db';
 import {
   filterAndSortStockItems,
   summarizeStockHealth,
@@ -23,6 +23,13 @@ export interface CostCalculationResult {
   newTotalValue: Decimal;
 }
 
+export type StockRef = {
+  refType: string;
+  refId: string;
+  refDocNumber?: string;
+  createdById?: string | null;
+};
+
 // Prisma compound unique keys don't accept null; use '' for non-variant items.
 const normalizeVariantSku = (variantSku?: string | null) => variantSku ?? '';
 
@@ -34,8 +41,9 @@ export async function calculateMovingAverage(
   itemId: string,
   incomingQty: Decimal,
   incomingCost: Decimal,
-  tx?: any,
-  variantSku?: string | null
+  tx: any,
+  variantSku: string | null | undefined,
+  ref: StockRef
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
   const where = compositeKey(itemId, variantSku);
@@ -63,23 +71,16 @@ export async function calculateMovingAverage(
     newAvgCost = new Decimal(0);
   }
 
-  // Update or create inventory record
-  await prismaClient.inventoryValue.upsert({
-    where,
-    create: {
-      itemId,
-      variantSku: normalizeVariantSku(variantSku),
-      qtyOnHand: newTotalQty.toNumber(),
-      avgCost: newAvgCost.toNumber(),
-      totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date(),
-    },
-    update: {
-      qtyOnHand: newTotalQty.toNumber(),
-      avgCost: newAvgCost.toNumber(),
-      totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date(),
-    },
+  // A never-before-stocked item legitimately has no InventoryValue row yet — the upsert this
+  // replaced already created one in that case, so this is the one costing path allowed to.
+  await moveMainStock(prismaClient, {
+    itemId,
+    variantSku,
+    qtyDelta: incomingQty.toNumber(),
+    avgCost: newAvgCost.toNumber(),
+    totalValue: newTotalValue.toNumber(),
+    createIfMissing: true,
+    ...ref,
   });
 
   return {
@@ -103,8 +104,9 @@ export async function reverseInventoryValue(
   itemId: string,
   outgoingQty: Decimal,
   outgoingUnitCost: Decimal,
-  tx?: any,
-  variantSku?: string | null
+  tx: any,
+  variantSku: string | null | undefined,
+  ref: StockRef
 ): Promise<{ newQty: Decimal; newAvgCost: Decimal; newTotalValue: Decimal }> {
   const prismaClient = tx || prisma;
   const where = compositeKey(itemId, variantSku);
@@ -130,14 +132,15 @@ export async function reverseInventoryValue(
     ? newTotalValue.div(newQty)
     : new Decimal(0);
 
-  await prismaClient.inventoryValue.update({
-    where,
-    data: {
-      qtyOnHand: newQty.toNumber(),
-      avgCost: newAvgCost.toNumber(),
-      totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date(),
-    },
+  // The `if (!current) throw` above already guards the missing-row case, so this never
+  // legitimately creates a row — no createIfMissing.
+  await moveMainStock(prismaClient, {
+    itemId,
+    variantSku,
+    qtyDelta: outgoingQty.neg().toNumber(),
+    avgCost: newAvgCost.toNumber(),
+    totalValue: newTotalValue.toNumber(),
+    ...ref,
   });
 
   return { newQty, newAvgCost, newTotalValue };
@@ -148,8 +151,9 @@ export async function reverseMovingAverage(
   itemId: string,
   outgoingQty: Decimal,
   outgoingCost: Decimal,
-  tx?: any,
-  variantSku?: string | null
+  tx: any,
+  variantSku: string | null | undefined,
+  ref: StockRef
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
   const where = compositeKey(itemId, variantSku);
@@ -171,15 +175,15 @@ export async function reverseMovingAverage(
   // Average cost remains the same for outgoing (FIFO-like behavior)
   const newAvgCost = previousAvgCost;
 
-  // Update inventory record
-  await prismaClient.inventoryValue.update({
-    where,
-    data: {
-      qtyOnHand: newTotalQty.toNumber(),
-      avgCost: newAvgCost.toNumber(),
-      totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date(),
-    },
+  // A missing row makes the Prisma update this replaced throw "Record to update not found" —
+  // moveMainStock's default (no createIfMissing) throws too, so behavior is preserved.
+  await moveMainStock(prismaClient, {
+    itemId,
+    variantSku,
+    qtyDelta: outgoingQty.neg().toNumber(),
+    avgCost: newAvgCost.toNumber(),
+    totalValue: newTotalValue.toNumber(),
+    ...ref,
   });
 
   return {

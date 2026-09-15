@@ -432,7 +432,8 @@ export async function processReturn(id: string, userId: string) {
           qty,
           unitCost,
           tx,
-          variantKey
+          variantKey,
+          { refType: 'VendorReturn', refId: ret.id, refDocNumber: ret.docNumber, createdById: userId }
         );
         const outgoingValue = qty.mul(unitCost);
         await tx.stockMovement.create({
