@@ -96,13 +96,18 @@ If your use case doesn't fit any of these, add to the registry first (see "Addin
 ### Code (ERP-side, e.g. opname)
 
 ```ts
-import { prisma } from "@elorae/db";
+import { prisma, setMainStock } from "@elorae/db";
 import type { StockAdjustmentSource } from "@elorae/db";
 import type { AdjustmentType } from "@elorae/db";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 
 const opnameSource = "ERP_OPNAME" satisfies StockAdjustmentSource;
 
 await prisma.$transaction(async (tx) => {
+  // OR-tolerant + tie-broken: a variantless row keys on null OR "". See the notes below.
+  const inv = await findExistingInventoryValueRow(tx, itemId, variantSku);
+  if (!inv) throw new Error(`no InventoryValue row for ${itemId}`);
+
   await tx.stockAdjustment.create({
     data: {
       docNumber,             // unique; format per your feature
@@ -120,13 +125,21 @@ await prisma.$transaction(async (tx) => {
     },
   });
 
-  await tx.inventoryValue.update({
-    where: { itemId_variantSku: { itemId, variantSku } },
-    data: {
-      qtyOnHand: newQty,
-      totalValue: newQty * avgCost,
-      lastUpdated: new Date(),
-    },
+  // NEVER write InventoryValue directly. A balance move goes through a mover in
+  // packages/db/src/stock-balance.ts, which moves the balance AND appends the StockLedgerEntry
+  // in the same transaction. A guard test (apps/web/lib/inventory/stock-balance-guard.test.ts)
+  // fails the suite on a direct write it can see.
+  await setMainStock(tx, {
+    itemId,
+    variantSku,
+    nextQty: newQty,          // an opname is an absolute COUNT — setMainStock, not moveMainStock
+    totalValue: newQty * avgCost,
+    unitCost: avgCost,
+    inventoryValueId: inv.id, // pins the write to the row the lookup above resolved
+    refType: "StockOpname",
+    refId: opnameId,
+    refDocNumber: docNumber,
+    createdById: userId,
   });
 
   // Optional: enqueue a JubelioOutbox row to push the adjustment outbound
@@ -134,7 +147,15 @@ await prisma.$transaction(async (tx) => {
 });
 ```
 
-**Why a transaction.** `StockAdjustment` and `InventoryValue` must move together. If one succeeds and the other doesn't, the audit trail diverges from the actual on-hand and you'll see "Jubelio shows 100, ERP shows 98 but the audit log says we adjusted to 100" — exactly the kind of mismatch reconcile is supposed to catch, except now reconcile thinks they're aligned because the wrong row wrote.
+**Three things that example is doing deliberately, each of which has broken something here.**
+
+*Resolve the row first, and with `findExistingInventoryValueRow`.* A variantless `InventoryValue` row keys on `null` OR `""` — both legitimately, and one item can hold both — so a strict `findUnique` on the composite `itemId_variantSku` key misses a real row. That is the worst defect the stock-ledger branch produced: the strict read found nothing, `previousAvgCost` fell back to `0`, and the write then SET `avgCost` from that zeroed base, destroying the moving average on every receipt of a variantless item. Nine sites still carry the strict form (catalogued in `docs/FOLLOWUPS.md`). The helper is also the only spelling carrying the `orderBy: { id: "asc" }` tie-break, which is what makes two callers over one dual bucket resolve the SAME row.
+
+*Pass `inventoryValueId`.* OR-tolerance on the read is not enough on its own — without pinning, the mover re-resolves independently and can land on the other row of the bucket.
+
+*Pick the mover that matches the shape of the change.* `setMainStock`/`setStoreStock` take an absolute `nextQty` and are for physical counts; `moveMainStock`/`moveStoreStock`/`moveVanStock` take a signed `qtyDelta` and apply it as an atomic increment, and are for everything else. Routing a count through the delta mover lands the row at `previous + delta` rather than the counted figure, and types the ledger entry `IN`/`OUT` where a count must be `ADJUSTMENT` — permanently, because the ledger is append-only. Never write an absolute quantity computed from a pre-read through the delta mover; `moveMainStock` also refuses a decrement that would cross zero, throwing `MainStockNegativeError`.
+
+**Why a transaction.** `StockAdjustment`, `InventoryValue` and `StockLedgerEntry` must move together. If one succeeds and the others don't, the audit trail diverges from the actual on-hand and you'll see "Jubelio shows 100, ERP shows 98 but the audit log says we adjusted to 100" — exactly the kind of mismatch reconcile is supposed to catch, except now reconcile thinks they're aligned because the wrong row wrote. The movers append the ledger entry inside the caller's transaction for exactly this reason: it is never best-effort.
 
 ### Code (Jubelio webhook ingest, api-side)
 
@@ -214,7 +235,9 @@ When EPIC-08 introduces `InventoryValue.reservedQty`:
 |---|---|---|
 | Hardcode `entityType: "stock_push"` without `satisfies` | Typo compiles, runtime skip with `unknown_entity_type:…`. Silent drop. | Use `satisfies JubelioOutboxEntityType`. |
 | Call `fetch("https://api.jubelio.com/...")` from a server action | No token, no rate budget, leaks credentials, bypasses outbox retry logic. | Enqueue `JubelioOutbox` row. |
+| Update `InventoryValue`, `StoreStock` or `VanStock` with bare Prisma | No `StockLedgerEntry` is appended, so the movement is invisible to the ledger — and it is the ledger, not the balance, that the read side will trust. A guard test fails the suite on any direct write it can see. | Use a mover from `packages/db/src/stock-balance.ts`. |
 | Update `InventoryValue` without writing `StockAdjustment` | Audit trail breaks. Reconcile can't tell what moved. | Always pair the two writes in one transaction. |
+| Look an `InventoryValue` row up on the strict `itemId_variantSku` key | A variantless row keys on `null` OR `""`; the strict key misses it, and the caller then treats a real stocked item as having none. | `findExistingInventoryValueRow`, then pass the resolved `id` to the mover as `inventoryValueId`. |
 | Write `StockAdjustment` with a free-form `source: "manual"` | Audit dashboard filters won't find it; reconcile will treat it as `ERP`. | Add to registry or use `ERP`. |
 | Skip `idempotencyKey` | Webhook replays produce duplicate adjustments. | Always set it. Format: `<source-prefix>:<external-id>:<version>` (e.g. `jbl-stock:webhook-uuid`, `opname:session-id:line-id`). |
 | Push konsi (virtual warehouse) stock to Jubelio | Marketplace oversells real stock. | Subtract virtual qty in the push formula. EPIC-19 will provide the warehouse helper. |
@@ -230,6 +253,10 @@ When EPIC-08 introduces `InventoryValue.reservedQty`:
 |---|---|
 | Outbox entityType registry | `packages/db/src/jubelio-outbox.ts` |
 | Stock adjustment source registry | `packages/db/src/stock-adjustment-source.ts` |
+| Stock balance movers (the ONLY way to move a balance) | `packages/db/src/stock-balance.ts` |
+| Stock ledger append primitive | `packages/db/src/stock-ledger.ts` |
+| Direct-balance-write guard test | `apps/web/lib/inventory/stock-balance-guard.test.ts` |
+| OR-tolerant `InventoryValue` lookup (web) | `apps/web/lib/inventory/costing.ts` |
 | Jubelio webhook stock writer | `packages/db/src/stock-writer.ts` |
 | Item dual-write helper (api-side) | `packages/db/src/item-writer.ts` |
 | Sales order fulfillment writer | `packages/db/src/sales-order-fulfillment-writer.ts` |

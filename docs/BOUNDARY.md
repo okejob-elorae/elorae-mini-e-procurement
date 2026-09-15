@@ -116,8 +116,9 @@ contract for the migrations that will introduce them.
 | `Production*`                  | web                         | api (read FG receipts)      | ✅ |
 | `PlanYear`, `PlanCategory`, `PlanMonthly`, `PlanColorAllocation`, `PlanAccessory` | web | — | ✅ |
 | `PlanCmtAllocation`, `PlanStage` | web — WO creation via `createWorkOrder` in `apps/web`; `PlanStage` auto-synced when generating from CMT rows (`planCmtAllocationId`) | — | ✅ |
-| `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
-| `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; 🟡 dual-write helper ⏳ |
+| `InventoryValue`               | **both** — see §3.1         |                             | ✅ schema + shared writer — quantity moves ONLY through the movers in `packages/db/src/stock-balance.ts` (`moveMainStock`/`setMainStock`), which append a `StockLedgerEntry` in the same transaction; `stock-writer.ts`'s `applyJubelioStockAdjustment` (the api-side webhook path) already routes through them, and a guard test fails the suite on a bare-prisma balance write. `reservedQty` is the documented exception — it is not a stock movement and is written by `reservation-writer.ts`. |
+| `StockAdjustment`              | **both** — see §3.1         |                             | ✅ schema; written by each side's own action beside the balance move, in the same transaction. `source` MUST come from the `@elorae/db` registry — see §3.1. |
+| `StockLedgerEntry`             | **both** — see §3.1         |                             | ✅ schema + writer — append-only movement ledger, written through `appendStockLedger` and (almost always) via the `stock-balance.ts` movers. **api** writes it on two paths: `stock.handler.ts` → `applyJubelioStockAdjustment` → `moveMainStock`, and `salesorder.handler.ts` → `reserveOrder`/`consumeOrder` → `appendStockLedger`. **web** writes it from every ERP path that moves a balance. Never write it outside a transaction that also moves the balance it describes, and never UPDATE or DELETE a row. |
 | `StockReservation`             | **both** — see §3.1         |                             | ✅ schema + writer — api (Jubelio salesorder webhook via `reserveOrder`/`consumeOrder`/`releaseOrder` with `source=JUBELIO`), web (ship button `consumeOrder`, field-sales putus orders via `reserveFieldSalesOrder` at create and `consumeFieldSalesOrderPartial` per **delivery** / `releaseFieldSalesOrder` on reject or close-remainder, with `source=FIELD_SALES`). `consumeFieldSalesOrder` (whole-order) still exists but has NO production caller — reaching for it bypasses the delivery document. Written ONLY through `@elorae/db/reservation-writer.ts` — never bare prisma. |
 | `SalesOrder`                   | **both** — see §3.2         | —                           | ✅ api owns Jubelio-derived cols; web owns fulfillment cols via helper |
 | `SalesOrderItem`               | api                         | web (read)                  | ✅ schema + api writer |
@@ -449,10 +450,21 @@ Only `health.controller.ts` and `webhooks.controller.ts` opt out via
   (including `FULFILLMENT_CONSUME`) without `satisfies` against the registry
   types. A typo becomes a silent runtime drop — the router skips with
   `unknown_entity_type:…`. See §4.2.1 and §3.1.
+- ❌ Moving a stock QUANTITY — `InventoryValue.qtyOnHand`, `StoreStock.qty`,
+  `VanStock.qty` — via bare `prisma.*.update/upsert/create`. Always go through
+  a mover in `packages/db/src/stock-balance.ts`, which moves the balance and
+  appends the `StockLedgerEntry` in one transaction; a direct write leaves the
+  movement invisible to the ledger, which is the table the read side will
+  trust. `apps/web/lib/inventory/stock-balance-guard.test.ts` fails the suite
+  on any such write it can see (it greps Prisma model calls, so raw SQL is
+  invisible to it) and carries the documented `ALLOWED` exemptions. Creating a
+  row at quantity 0 is provisioning, not a movement, and is exempt.
 - ❌ Writing `StockReservation` rows or `InventoryValue.reservedQty` via bare
   `prisma.stockReservation.*` / `prisma.inventoryValue.update`. Always go
   through `reserveOrder`/`consumeOrder`/`releaseOrder` in
-  `@elorae/db/reservation-writer.ts` — see D6.
+  `@elorae/db/reservation-writer.ts` — see D6. A reservation is NOT a stock
+  movement: it writes no ledger entry, which is exactly why it is a separate
+  rule from the one above rather than covered by it.
 - ❌ Comparing Jubelio-reported stock against raw `InventoryValue.qtyOnHand`
   in any reconcile/audit logic. Use `available` (`qtyOnHand - reservedQty`) or
   it will "correct" quantity that is intentionally held by an open
