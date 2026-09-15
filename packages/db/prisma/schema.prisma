@@ -3059,7 +3059,7 @@ model StockLedgerEntry {
   createdById  String?
   createdAt    DateTime          @default(now())
 
-  @@index([locationType, locationId, itemId, variantSku, createdAt])
+  @@index([locationType, locationId, itemId, variantSku, createdAt], map: "StockLedgerEntry_location_item_idx")
   @@index([itemId, createdAt])
   @@index([refType, refId])
 }
