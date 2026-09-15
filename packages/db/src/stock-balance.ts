@@ -51,6 +51,47 @@ export function ledgerTypeForDelta(qtyDelta: number): StockLedgerEntryType {
 }
 
 /**
+ * Thrown when a main-warehouse decrement would take qtyOnHand below zero.
+ *
+ * Distinct and greppable on purpose: every caller that decrements main stock has its own
+ * advisory pre-check, and this is what fires when that pre-check was computed against a balance
+ * that moved before the write landed. It is never clamped and never swallowed — a negative main
+ * row has no repair path short of an opname, and `available = qtyOnHand - reservedQty` is derived
+ * at read time, so the bad figure propagates straight into loadVan, konsi reservation and the
+ * Jubelio stock push.
+ */
+export class MainStockNegativeError extends Error {
+  readonly itemId: string;
+  readonly qtyDelta: number;
+  readonly currentQty: number;
+
+  constructor(itemId: string, qtyDelta: number, currentQty: number) {
+    super(
+      `moveMainStock: refusing to move item ${itemId} by ${qtyDelta} — qtyOnHand is ${currentQty} and the result would be negative`,
+    );
+    this.name = "MainStockNegativeError";
+    this.itemId = itemId;
+    this.qtyDelta = qtyDelta;
+    this.currentQty = currentQty;
+  }
+}
+
+/*
+ * The floor lives in the UPDATE's own where clause, never in a preceding read. Every decrementing
+ * caller in this repo reads the row, checks the figure, and then issues an atomic decrement — so
+ * the check and the write see different states across the concurrent webhook workers, and all of
+ * these run in a plain $transaction rather than runSerializable. Expressing the floor as a filter
+ * makes the refusal atomic with the decrement itself: the row either still has the units or the
+ * statement matches nothing.
+ *
+ * Positive deltas add no condition: a receipt can never drive a balance negative, and an empty
+ * object keeps the filter shape identical for both directions.
+ */
+function negativeFloorFilter(qtyDelta: number): { qtyOnHand?: { gte: number } } {
+  return qtyDelta < 0 ? { qtyOnHand: { gte: -qtyDelta } } : {};
+}
+
+/**
  * Moves main-warehouse stock and records the movement, in one call, inside the caller's
  * transaction.
  *
@@ -60,6 +101,11 @@ export function ledgerTypeForDelta(qtyDelta: number): StockLedgerEntryType {
  *
  * InventoryValue keys variantless rows as null OR "", both legitimately, so the row lookup stays
  * OR-tolerant. The ledger normalises to "" on the way out; the balance table is left alone.
+ *
+ * A negative result is refused here, atomically, on both paths. Main differs from store and van
+ * on purpose: moveStoreStock documents a store balance legitimately going negative with a
+ * stocktake as the correction path, but main has no such routine correction — its balance feeds
+ * available-for-sale everywhere, and nothing schedules a count against it.
  */
 export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<{ balanceQty: number }> {
   if (input.inventoryValueId) {
@@ -69,7 +115,11 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     // an id resolved for a different item matches zero rows here instead of silently moving the
     // wrong balance under a ledger entry that lies about which item moved.
     const result = await tx.inventoryValue.updateMany({
-      where: { id: input.inventoryValueId, itemId: input.itemId },
+      where: {
+        id: input.inventoryValueId,
+        itemId: input.itemId,
+        ...negativeFloorFilter(input.qtyDelta),
+      },
       data: {
         qtyOnHand: { increment: input.qtyDelta },
         lastUpdated: new Date(),
@@ -79,6 +129,18 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     });
 
     if (result.count !== 1) {
+      // Two conditions can miss now, and they are not the same defect: a wrong-item id is a
+      // caller bug, an insufficient balance is a live race. Diagnose by re-reading without the
+      // floor rather than reporting one as the other.
+      const row = await tx.inventoryValue.findFirst({
+        where: { id: input.inventoryValueId, itemId: input.itemId },
+        select: { qtyOnHand: true },
+      });
+
+      if (row) {
+        throw new MainStockNegativeError(input.itemId, input.qtyDelta, Number(row.qtyOnHand));
+      }
+
       throw new Error(
         `moveMainStock: inventoryValueId ${input.inventoryValueId} does not belong to item ${input.itemId}`,
       );
@@ -128,10 +190,28 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
       );
     }
 
+    // A row opened at a negative delta is a negative main balance by another name, so it is
+    // refused on the same terms as a decrement that would cross zero. The create paths are
+    // receipts, which never get here with a negative delta.
+    if (input.qtyDelta < 0) {
+      throw new MainStockNegativeError(input.itemId, input.qtyDelta, 0);
+    }
+
+    /*
+     * The variantless spelling here is the normalised empty string, NOT null, and that is
+     * deliberate: InventoryValue carries @@unique([itemId, variantSku]), which MySQL enforces for
+     * "" but NOT for NULL (it treats NULLs as distinct). Two concurrent first-receipts of the same
+     * unstocked item would both be allowed to insert a null-spelled row and fork the pair this
+     * whole file works around; "" makes the second one fail on the index instead. "" is also found
+     * by every OR-tolerant reader AND by the strict-"" readers still catalogued in
+     * docs/FOLLOWUPS.md, which a null row silently breaks. Do not "correct" this back to null to
+     * match items/mutations.ts — this branch only fires when NO row exists under either spelling,
+     * so writing "" forks nothing.
+     */
     await tx.inventoryValue.create({
       data: {
         itemId: input.itemId,
-        variantSku: input.variantSku || null,
+        variantSku: normaliseVariantKey(input.variantSku),
         qtyOnHand: input.qtyDelta,
         reservedQty: 0,
         avgCost: input.avgCost ?? 0,
@@ -156,14 +236,37 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     return { balanceQty: input.qtyDelta };
   }
 
-  const updated = await tx.inventoryValue.update({
-    where: { id: existing.id },
+  // updateMany rather than update, for the floor filter alone: `update` would have to express the
+  // refusal as a P2025 the caller cannot tell apart from a vanished row.
+  const result = await tx.inventoryValue.updateMany({
+    where: { id: existing.id, ...negativeFloorFilter(input.qtyDelta) },
     data: {
       qtyOnHand: { increment: input.qtyDelta },
       lastUpdated: new Date(),
       ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
       ...(input.totalValue == null ? {} : { totalValue: input.totalValue }),
     },
+  });
+
+  if (result.count !== 1) {
+    const row = await tx.inventoryValue.findUnique({
+      where: { id: existing.id },
+      select: { qtyOnHand: true },
+    });
+
+    if (row) {
+      throw new MainStockNegativeError(input.itemId, input.qtyDelta, Number(row.qtyOnHand));
+    }
+
+    throw new Error(
+      `moveMainStock: InventoryValue row ${existing.id} for item ${input.itemId} vanished mid-transaction`,
+    );
+  }
+
+  // updateMany returns only a count, never the row. Re-reading it here is safe for the same reason
+  // the pinned path's read-back is: the row is already locked by the update that just succeeded.
+  const updated = await tx.inventoryValue.findUniqueOrThrow({
+    where: { id: existing.id },
     select: { qtyOnHand: true },
   });
 

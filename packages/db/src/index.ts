@@ -132,6 +132,7 @@ export {
 } from "./stock-ledger";
 export {
   ledgerTypeForDelta,
+  MainStockNegativeError,
   moveMainStock,
   moveStoreStock,
   moveVanStock,
