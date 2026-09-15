@@ -143,7 +143,7 @@ export async function moveStoreStock(tx: Tx, input: MoveStoreStockInput): Promis
       itemId: input.itemId,
       variantSku,
       qty: input.qtyDelta,
-      avgCost: 0,
+      avgCost: input.avgCost ?? 0,
     },
     update: {
       qty: { increment: input.qtyDelta },
@@ -188,7 +188,7 @@ export async function moveVanStock(tx: Tx, input: MoveVanStockInput): Promise<{ 
       itemId: input.itemId,
       variantSku,
       qty: input.qtyDelta,
-      avgCost: 0,
+      avgCost: input.avgCost ?? 0,
     },
     update: {
       qty: { increment: input.qtyDelta },

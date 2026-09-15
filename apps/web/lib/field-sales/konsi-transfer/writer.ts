@@ -31,7 +31,18 @@ export async function issueKonsiTransfer(
   },
 ): Promise<{ transferId: string; docNo: string }> {
   const docNo = await generateDocNumber("KONSITRF", tx);
-  const lineData: Array<{ orderLineId: string; itemId: string; variantSku: string; productName: string; qty: number; unitCost: number }> = [];
+
+  const transfer = await tx.konsiTransfer.create({
+    data: {
+      docNo,
+      orderId: input.order.id,
+      storeId: input.order.storeId,
+      transferredById: input.transferredById,
+    },
+    select: { id: true },
+  });
+
+  const lineData: Array<{ transferId: string; orderLineId: string; itemId: string; variantSku: string; productName: string; qty: number; unitCost: number }> = [];
 
   for (const l of input.order.lines) {
     /*
@@ -105,13 +116,8 @@ export async function issueKonsiTransfer(
       variantSku: l.variantSku,
       qtyDelta: l.qty,
       avgCost: nextStoreAvgCost,
-      /*
-       * The KonsiTransfer row is created after this loop (its lines are built from lineData
-       * below), so its id does not exist yet at this point — docNo is generated up front and is
-       * unique, so it stands in for both refId and refDocNumber here.
-       */
       refType: "KonsiTransfer",
-      refId: docNo,
+      refId: transfer.id,
       refDocNumber: docNo,
       createdById: input.transferredById,
     });
@@ -139,19 +145,18 @@ export async function issueKonsiTransfer(
     });
     if (resolved.count !== 1) throw new KonsiTransferReservationMismatchError(l.id, resolved.count);
 
-    lineData.push({ orderLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, productName: l.productName, qty: l.qty, unitCost: avgCost });
+    lineData.push({
+      transferId: transfer.id,
+      orderLineId: l.id,
+      itemId: l.itemId,
+      variantSku: l.variantSku,
+      productName: l.productName,
+      qty: l.qty,
+      unitCost: avgCost,
+    });
   }
 
-  const transfer = await tx.konsiTransfer.create({
-    data: {
-      docNo,
-      orderId: input.order.id,
-      storeId: input.order.storeId,
-      transferredById: input.transferredById,
-      lines: { create: lineData },
-    },
-    select: { id: true },
-  });
+  await tx.konsiTransferLine.createMany({ data: lineData });
 
   return { transferId: transfer.id, docNo };
 }
