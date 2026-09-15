@@ -737,10 +737,14 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
           variantSku: effectiveSku,
           qtyDelta: -take,
           totalValue: newValue,
+          // Pins the write to the exact row this iteration just read — two rows in the same
+          // null/"" bucket would otherwise let moveMainStock's own re-resolution collapse both
+          // iterations onto one row, double-decrementing it.
+          inventoryValueId: row.id,
           refType: 'MaterialIssue',
           refId: issue.id,
           refDocNumber: docNumber,
-          createdById: session.user.id,
+          createdById: userId,
         });
         weightedCostSum += take * row.avgCost;
         remainingToDeduct -= take;
@@ -852,12 +856,13 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
 
     // Patches in the real snapshot now that the loop above has computed it — the row itself
     // (and every moveMainStock ledger entry's refId) was already created before that loop.
-    await tx.materialIssue.update({
+    const patchedIssue = await tx.materialIssue.update({
       where: { id: issue.id },
       data: {
         items: JSON.stringify(issueItemsForJson),
         totalCost: totalCost.toNumber(),
       },
+      select: { totalCost: true },
     });
 
     for (const mov of movementData) {
@@ -899,9 +904,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
     return {
       id: issue.id,
       docNumber: issue.docNumber,
-      // issue.totalCost (from the early create) is the 0 placeholder — the row was patched via
-      // tx.materialIssue.update above, so read the local accumulator instead of the stale field.
-      totalCost: totalCost.toNumber(),
+      // Reads the value as persisted (Decimal(15,2), rounded by the DB) from the patch update's
+      // own return, not the unrounded totalCost accumulator — the two can differ past 2dp.
+      totalCost: Number(patchedIssue.totalCost),
     };
   });
 
@@ -1203,7 +1208,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
             avgCostPerUnit,
             tx,
             row.variantSku,
-            { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: session.user.id }
+            { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: userId }
           );
           const rowCost = avgCostPerUnit.mul(row.qty).toNumber();
           await tx.stockMovement.create({
@@ -1238,7 +1243,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           avgCostPerUnit,
           tx,
           fgVariantSku,
-          { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: session.user.id }
+          { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: userId }
         );
         await tx.stockMovement.create({
           data: {

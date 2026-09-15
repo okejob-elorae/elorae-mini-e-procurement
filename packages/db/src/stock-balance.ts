@@ -32,6 +32,14 @@ export type MoveMainStockInput = MoveCommon & {
    * Only the paths that legitimately receive stock for a not-yet-stocked item set this.
    */
   createIfMissing?: boolean;
+  /*
+   * When the caller already resolved the exact row itself — under the same OR-tolerant null/""
+   * rule this mover uses below — pass its id here to skip the lookup entirely and update that row
+   * directly. This guarantees the write lands on the row the caller read, rather than this mover
+   * re-resolving independently and potentially landing on a different row in the same null/""
+   * bucket (an item can legitimately have both a null and a "" row).
+   */
+  inventoryValueId?: string;
 };
 export type MoveStoreStockInput = MoveCommon & { storeId: string };
 export type MoveVanStockInput = MoveCommon & { userId: string };
@@ -54,15 +62,18 @@ export function ledgerTypeForDelta(qtyDelta: number): StockLedgerEntryType {
  * OR-tolerant. The ledger normalises to "" on the way out; the balance table is left alone.
  */
 export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<{ balanceQty: number }> {
-  const existing = input.variantSku
-    ? await tx.inventoryValue.findFirst({
-        where: { itemId: input.itemId, variantSku: input.variantSku },
-        select: { id: true },
-      })
-    : await tx.inventoryValue.findFirst({
-        where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-        select: { id: true },
-      });
+  const existing = input.inventoryValueId
+    ? { id: input.inventoryValueId }
+    : input.variantSku
+      ? await tx.inventoryValue.findFirst({
+          where: { itemId: input.itemId, variantSku: input.variantSku },
+          select: { id: true },
+        })
+      : await tx.inventoryValue.findFirst({
+          where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+          orderBy: { id: "asc" },
+          select: { id: true },
+        });
 
   if (!existing) {
     if (!input.createIfMissing) {

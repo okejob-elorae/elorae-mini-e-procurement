@@ -175,55 +175,72 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
       },
     });
 
-    // Pass 2: run the moving-average cost calc now that grn.id is a real ledger ref. The
-    // stockMovement.create call below is untouched from before this migration.
-    const processedItems = await Promise.all(
-      baseItems.map(async (item) => {
-        const qty = new Decimal(item.qty);
-        const unitCost = new Decimal(item.unitCost);
-        const costCalc = await calculateMovingAverage(
-          item.itemId,
-          qty,
-          unitCost,
-          tx,
-          item.variantKey,
-          { refType: 'GRN', refId: grn.id, refDocNumber: docNumber, createdById: session.user.id }
-        );
+    // Pass 2: run the moving-average cost calc now that grn.id is a real ledger ref. Sequential
+    // (not Promise.all) — the schema doesn't forbid the same itemId twice in one payload, and
+    // interleaved awaits on a never-before-stocked item could otherwise fork a duplicate
+    // InventoryValue row (MySQL treats variantSku null as distinct in the unique index, so the
+    // @@unique([itemId, variantSku]) constraint doesn't catch it). The stockMovement.create call
+    // below is untouched from before this migration.
+    const processedItems: Array<{
+      itemId: string;
+      variantSku: string | null;
+      qty: number;
+      unitCost: number;
+      itemType: string;
+      uomId: string;
+      overReceiveThreshold: number | null;
+      rolls: (typeof baseItems)[number]["rolls"];
+      totalCost: number;
+      prevAvgCost: number;
+      newAvgCost: number;
+      prevQty: number;
+      newQty: number;
+    }> = [];
+    for (const item of baseItems) {
+      const qty = new Decimal(item.qty);
+      const unitCost = new Decimal(item.unitCost);
+      const costCalc = await calculateMovingAverage(
+        item.itemId,
+        qty,
+        unitCost,
+        tx,
+        item.variantKey,
+        { refType: 'GRN', refId: grn.id, refDocNumber: docNumber, createdById: userId }
+      );
 
-        await tx.stockMovement.create({
-          data: {
-            itemId: item.itemId,
-            variantSku: item.variantKey,
-            type: 'IN',
-            refType: 'GRN',
-            refId: 'temp',
-            refDocNumber: docNumber,
-            qty: item.qty,
-            unitCost: item.unitCost,
-            totalCost: item.totalCost,
-            balanceQty: costCalc.newQty.toNumber(),
-            balanceValue: costCalc.newTotalValue.toNumber(),
-            notes: validated.notes ?? undefined,
-          },
-        });
-
-        return {
+      await tx.stockMovement.create({
+        data: {
           itemId: item.itemId,
-          variantSku: item.variantSku,
+          variantSku: item.variantKey,
+          type: 'IN',
+          refType: 'GRN',
+          refId: 'temp',
+          refDocNumber: docNumber,
           qty: item.qty,
           unitCost: item.unitCost,
-          itemType: item.itemType,
-          uomId: item.uomId,
-          overReceiveThreshold: item.overReceiveThreshold,
-          rolls: item.rolls,
           totalCost: item.totalCost,
-          prevAvgCost: costCalc.previousAvgCost.toNumber(),
-          newAvgCost: costCalc.newAvgCost.toNumber(),
-          prevQty: costCalc.previousQty.toNumber(),
-          newQty: costCalc.newQty.toNumber(),
-        };
-      })
-    );
+          balanceQty: costCalc.newQty.toNumber(),
+          balanceValue: costCalc.newTotalValue.toNumber(),
+          notes: validated.notes ?? undefined,
+        },
+      });
+
+      processedItems.push({
+        itemId: item.itemId,
+        variantSku: item.variantSku,
+        qty: item.qty,
+        unitCost: item.unitCost,
+        itemType: item.itemType,
+        uomId: item.uomId,
+        overReceiveThreshold: item.overReceiveThreshold,
+        rolls: item.rolls,
+        totalCost: item.totalCost,
+        prevAvgCost: costCalc.previousAvgCost.toNumber(),
+        newAvgCost: costCalc.newAvgCost.toNumber(),
+        prevQty: costCalc.previousQty.toNumber(),
+        newQty: costCalc.newQty.toNumber(),
+      });
+    }
 
     await tx.gRN.update({
       where: { id: grn.id },

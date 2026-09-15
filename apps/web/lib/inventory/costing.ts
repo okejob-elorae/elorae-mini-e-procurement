@@ -37,6 +37,28 @@ const compositeKey = (itemId: string, variantSku?: string | null) => ({
   itemId_variantSku: { itemId, variantSku: normalizeVariantSku(variantSku) },
 });
 
+/*
+ * InventoryValue keys a variantless row as null OR "" — apps/web/lib/items/mutations.ts creates
+ * ERP items with null, while some writers use "". A strict findUnique on the normalized ""
+ * spelling misses a real null row, so this mirrors moveMainStock's own OR-tolerant lookup
+ * exactly (same orderBy tie-break), and the resolved row's id is passed back to moveMainStock as
+ * `inventoryValueId` so the write is guaranteed to land on the same row this read found.
+ */
+async function findExistingInventoryValueRow(
+  prismaClient: any,
+  itemId: string,
+  variantSku: string | null | undefined
+) {
+  return variantSku
+    ? prismaClient.inventoryValue.findFirst({
+        where: { itemId, variantSku },
+      })
+    : prismaClient.inventoryValue.findFirst({
+        where: { itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+        orderBy: { id: "asc" },
+      });
+}
+
 export async function calculateMovingAverage(
   itemId: string,
   incomingQty: Decimal,
@@ -46,12 +68,9 @@ export async function calculateMovingAverage(
   ref: StockRef
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
-  const where = compositeKey(itemId, variantSku);
 
   // Get current inventory state
-  const current = await prismaClient.inventoryValue.findUnique({
-    where,
-  });
+  const current = await findExistingInventoryValueRow(prismaClient, itemId, variantSku);
 
   const previousQty = current?.qtyOnHand ? new Decimal(current.qtyOnHand.toString()) : new Decimal(0);
   const previousAvgCost = current?.avgCost ? new Decimal(current.avgCost.toString()) : new Decimal(0);
@@ -71,8 +90,10 @@ export async function calculateMovingAverage(
     newAvgCost = new Decimal(0);
   }
 
-  // A never-before-stocked item legitimately has no InventoryValue row yet — the upsert this
-  // replaced already created one in that case, so this is the one costing path allowed to.
+  // createIfMissing only fires when the OR-tolerant read above found no row at all (a genuine
+  // never-before-stocked item, matching the upsert this replaced). When it did find a row,
+  // inventoryValueId pins the write to that exact row instead of letting moveMainStock
+  // re-resolve independently and potentially land on a sibling null/"" row.
   await moveMainStock(prismaClient, {
     itemId,
     variantSku,
@@ -80,6 +101,7 @@ export async function calculateMovingAverage(
     avgCost: newAvgCost.toNumber(),
     totalValue: newTotalValue.toNumber(),
     createIfMissing: true,
+    inventoryValueId: current?.id,
     ...ref,
   });
 
@@ -156,12 +178,9 @@ export async function reverseMovingAverage(
   ref: StockRef
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
-  const where = compositeKey(itemId, variantSku);
 
   // Get current inventory state
-  const current = await prismaClient.inventoryValue.findUnique({
-    where,
-  });
+  const current = await findExistingInventoryValueRow(prismaClient, itemId, variantSku);
 
   const previousQty = current?.qtyOnHand ? new Decimal(current.qtyOnHand.toString()) : new Decimal(0);
   const previousAvgCost = current?.avgCost ? new Decimal(current.avgCost.toString()) : new Decimal(0);
@@ -175,14 +194,17 @@ export async function reverseMovingAverage(
   // Average cost remains the same for outgoing (FIFO-like behavior)
   const newAvgCost = previousAvgCost;
 
-  // A missing row makes the Prisma update this replaced throw "Record to update not found" —
-  // moveMainStock's default (no createIfMissing) throws too, so behavior is preserved.
+  // The OR-tolerant read above resolves the real row regardless of whether it was created with
+  // variantSku null or "" — inventoryValueId pins moveMainStock's write to that same row. A
+  // genuinely missing row (neither spelling exists) still reaches moveMainStock's own lookup
+  // with no createIfMissing set, so it still throws — that part is unchanged.
   await moveMainStock(prismaClient, {
     itemId,
     variantSku,
     qtyDelta: outgoingQty.neg().toNumber(),
     avgCost: newAvgCost.toNumber(),
     totalValue: newTotalValue.toNumber(),
+    inventoryValueId: current?.id,
     ...ref,
   });
 
