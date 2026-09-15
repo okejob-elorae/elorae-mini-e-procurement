@@ -101,13 +101,19 @@ export async function syncFabricAggregateQty(
   const existing = await findExistingInventoryValueRow(tx, itemId, variantKey);
   if (existing) {
     // A freshly counted aggregate is an absolute figure, not a delta — setMainStock is the set
-    // mover. It recomputes totalValue nowhere itself (it only ever moves qtyOnHand), which
-    // matches this call site: avgCost/totalValue for a fabric aggregate row are intentionally
-    // left untouched by opname sync, same as before this migration.
+    // mover. avgCost itself is not recomputed here (unchanged from before this migration), but
+    // totalValue must stay consistent with the new qtyOnHand at the existing avgCost, so it is
+    // recomputed and passed through in the SAME update setMainStock performs — not as a
+    // follow-up write, which would reintroduce the read-then-write-twice pattern this branch
+    // exists to remove. inventoryValueId pins the write to the exact row `existing` was just
+    // read from.
+    const avgCost = Number(existing.avgCost);
     await setMainStock(tx, {
       itemId,
       variantSku: variantKey,
       nextQty: total,
+      totalValue: total * avgCost,
+      inventoryValueId: existing.id,
       refType: "StockOpname",
       refId: ref.refId,
       refDocNumber: ref.refDocNumber,

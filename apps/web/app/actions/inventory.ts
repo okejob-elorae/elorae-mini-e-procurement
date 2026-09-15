@@ -160,7 +160,7 @@ export async function createStockAdjustment(
       refType: "StockAdjustment",
       refId: adjustment.id,
       refDocNumber: adjustment.docNumber,
-      createdById: session.user.id,
+      createdById: effectiveUserId,
     });
 
     // Create stock movement (in base UOM)

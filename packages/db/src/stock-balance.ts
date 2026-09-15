@@ -286,7 +286,21 @@ type SetCommon = {
   createdById?: string | null;
 };
 
-export type SetMainStockInput = SetCommon;
+export type SetMainStockInput = SetCommon & {
+  /*
+   * Cost moves in the SAME update as quantity, mirroring moveMainStock's own contract exactly.
+   * Omit both to move quantity without touching cost.
+   */
+  avgCost?: number | null;
+  totalValue?: number | null;
+  /*
+   * When the caller already resolved the exact row itself — under the same OR-tolerant null/""
+   * rule moveMainStock uses — pass its id here to pin the write to that row instead of letting
+   * this mover re-resolve independently and potentially landing on a different row in the same
+   * null/"" bucket. Mirrors moveMainStock's inventoryValueId contract exactly.
+   */
+  inventoryValueId?: string;
+};
 export type SetStoreStockInput = SetCommon & { storeId: string };
 
 export function deltaForSet(previousQty: number, nextQty: number): number {
@@ -305,6 +319,72 @@ export async function setMainStock(
   tx: Tx,
   input: SetMainStockInput,
 ): Promise<{ balanceQty: number; changed: boolean }> {
+  if (input.inventoryValueId) {
+    // Mirrors moveMainStock's pinned path: ownership is enforced on the write itself (the
+    // updateMany's own itemId filter), not on a separate read, so a resolved-but-wrong-item id
+    // can never silently move the wrong row's balance under a ledger entry that lies about which
+    // item moved. A pre-read is still needed here (unlike moveMainStock) because a set's delta —
+    // and its zero-delta short-circuit — depend on knowing the previous quantity before deciding
+    // whether to write at all; the same id+itemId filter doubles as the pre-read's ownership
+    // check, so a wrong-item id throws here with the real previous data rather than computing a
+    // delta against a row that was never the caller's to move.
+    const existing = await tx.inventoryValue.findFirst({
+      where: { id: input.inventoryValueId, itemId: input.itemId },
+      select: { qtyOnHand: true },
+    });
+
+    if (!existing) {
+      throw new Error(
+        `setMainStock: inventoryValueId ${input.inventoryValueId} does not belong to item ${input.itemId}`,
+      );
+    }
+
+    const previousQty = Number(existing.qtyOnHand);
+    const delta = deltaForSet(previousQty, input.nextQty);
+
+    if (delta === 0) return { balanceQty: previousQty, changed: false };
+
+    const result = await tx.inventoryValue.updateMany({
+      where: { id: input.inventoryValueId, itemId: input.itemId },
+      data: {
+        qtyOnHand: input.nextQty,
+        lastUpdated: new Date(),
+        ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
+        ...(input.totalValue == null ? {} : { totalValue: input.totalValue }),
+      },
+    });
+
+    if (result.count !== 1) {
+      throw new Error(
+        `setMainStock: inventoryValueId ${input.inventoryValueId} does not belong to item ${input.itemId}`,
+      );
+    }
+
+    // updateMany returns only a count, never the row. Re-reading it here is safe for the same
+    // reason moveMainStock's pinned-path read-back is: the row is already locked by the update
+    // that just succeeded above, inside this same transaction.
+    const reread = await tx.inventoryValue.findUniqueOrThrow({
+      where: { id: input.inventoryValueId },
+      select: { qtyOnHand: true },
+    });
+    const balanceQty = Number(reread.qtyOnHand);
+
+    await appendStockLedger(tx, {
+      location: { type: "MAIN" },
+      itemId: input.itemId,
+      variantSku: input.variantSku,
+      type: "ADJUSTMENT",
+      qty: delta,
+      balanceQty,
+      refType: input.refType,
+      refId: input.refId,
+      refDocNumber: input.refDocNumber,
+      createdById: input.createdById,
+    });
+
+    return { balanceQty, changed: true };
+  }
+
   const existing = input.variantSku
     ? await tx.inventoryValue.findFirst({
         where: { itemId: input.itemId, variantSku: input.variantSku },
@@ -329,7 +409,12 @@ export async function setMainStock(
 
   await tx.inventoryValue.update({
     where: { id: existing.id },
-    data: { qtyOnHand: input.nextQty, lastUpdated: new Date() },
+    data: {
+      qtyOnHand: input.nextQty,
+      lastUpdated: new Date(),
+      ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
+      ...(input.totalValue == null ? {} : { totalValue: input.totalValue }),
+    },
   });
 
   await appendStockLedger(tx, {
