@@ -1,5 +1,6 @@
 import type { ItemType, OpnameScope, Prisma } from "@elorae/db";
-import { prisma } from "@elorae/db";
+import { appendStockLedger, prisma, setMainStock } from "@elorae/db";
+import { findExistingInventoryValueRow } from "./costing";
 import { normalizeVariantKey } from "./opname";
 
 type Tx = Prisma.TransactionClient;
@@ -89,6 +90,7 @@ export async function freezeFabricRollSnapshot(
 export async function syncFabricAggregateQty(
   tx: Tx,
   itemId: string,
+  ref: { refId: string; refDocNumber?: string },
 ): Promise<number> {
   const agg = await tx.fabricRoll.aggregate({
     where: { itemId, isClosed: false },
@@ -96,18 +98,19 @@ export async function syncFabricAggregateQty(
   });
   const total = Number(agg._sum.remainingLength ?? 0);
   const variantKey = "";
-  const existing = await tx.inventoryValue.findUnique({
-    where: { itemId_variantSku: { itemId, variantSku: variantKey } },
-  });
+  const existing = await findExistingInventoryValueRow(tx, itemId, variantKey);
   if (existing) {
-    const avgCost = Number(existing.avgCost);
-    await tx.inventoryValue.update({
-      where: { id: existing.id },
-      data: {
-        qtyOnHand: total,
-        totalValue: total * avgCost,
-        lastUpdated: new Date(),
-      },
+    // A freshly counted aggregate is an absolute figure, not a delta — setMainStock is the set
+    // mover. It recomputes totalValue nowhere itself (it only ever moves qtyOnHand), which
+    // matches this call site: avgCost/totalValue for a fabric aggregate row are intentionally
+    // left untouched by opname sync, same as before this migration.
+    await setMainStock(tx, {
+      itemId,
+      variantSku: variantKey,
+      nextQty: total,
+      refType: "StockOpname",
+      refId: ref.refId,
+      refDocNumber: ref.refDocNumber,
     });
   } else if (total > 0) {
     await tx.inventoryValue.create({
@@ -118,6 +121,21 @@ export async function syncFabricAggregateQty(
         avgCost: 0,
         totalValue: 0,
       },
+    });
+
+    // A freshly created row at the snapshot total has no prior balance to move from — it is a
+    // row-provisioning event, not a movement, so it is appended directly rather than through
+    // setMainStock (which throws when no row exists).
+    await appendStockLedger(tx, {
+      location: { type: "MAIN" },
+      itemId,
+      variantSku: variantKey,
+      type: "OPENING",
+      qty: total,
+      balanceQty: total,
+      refType: "StockOpname",
+      refId: ref.refId,
+      refDocNumber: ref.refDocNumber,
     });
   }
   return total;

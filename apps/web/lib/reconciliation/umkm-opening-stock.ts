@@ -1,5 +1,5 @@
 import { Decimal } from "decimal.js";
-import { Role, SalesHistoryStatus, type PrismaClient } from "@elorae/db";
+import { moveMainStock, Role, SalesHistoryStatus, type PrismaClient } from "@elorae/db";
 import {
   aggregateUmkmExcelByParent,
   parseUmkmExcelFile,
@@ -572,16 +572,20 @@ export async function applyUmkmManifest(
         });
 
         const newTotalValue = newQty.mul(prevAvgCost);
-        await tx.inventoryValue.update({
-          where: compositeWhere,
-          data: {
-            qtyOnHand: newQty.toNumber(),
-            totalValue: newTotalValue.toNumber(),
-            lastUpdated: new Date(),
-          },
+        const adjQty = type === "POSITIVE" ? qtyChange : -qtyChange;
+
+        await moveMainStock(tx, {
+          itemId,
+          variantSku: variantKey,
+          qtyDelta: adjQty,
+          totalValue: newTotalValue.toNumber(),
+          unitCost: prevAvgCost.toNumber(),
+          inventoryValueId: current.id,
+          refType: "OpeningStock",
+          refId: adjustment.id,
+          refDocNumber: adjustment.docNumber,
         });
 
-        const adjQty = type === "POSITIVE" ? qtyChange : -qtyChange;
         const totalCostAdj =
           type === "POSITIVE"
             ? qtyDecimal.mul(prevAvgCost).toNumber()

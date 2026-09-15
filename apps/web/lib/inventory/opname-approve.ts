@@ -1,5 +1,5 @@
 import type { Prisma, StockAdjustmentSource } from "@elorae/db";
-import { prisma } from "@elorae/db";
+import { moveMainStock, prisma } from "@elorae/db";
 import { Decimal } from "decimal.js";
 import { generateDocNumber } from "@/lib/docNumber";
 import { apiFetch } from "@/lib/internal-api";
@@ -171,16 +171,21 @@ export async function applyFgAccessoriesAdjustments(
     });
 
     const newTotalValue = newQty.mul(prevAvgCost);
-    await tx.inventoryValue.update({
-      where: { id: inv.id },
-      data: {
-        qtyOnHand: newQty.toNumber(),
-        totalValue: newTotalValue.toNumber(),
-        lastUpdated: new Date(),
-      },
+    const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
+
+    await moveMainStock(tx, {
+      itemId: row.itemId,
+      variantSku: variantKey,
+      qtyDelta: adjQty,
+      totalValue: newTotalValue.toNumber(),
+      unitCost: prevAvgCost.toNumber(),
+      inventoryValueId: inv.id,
+      refType: "StockOpname",
+      refId: opnameId,
+      refDocNumber: docNumber,
+      createdById: userId,
     });
 
-    const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
     const totalCostAdj =
       type === "POSITIVE"
         ? qtyChange.mul(prevAvgCost).toNumber()
@@ -261,7 +266,10 @@ export async function applyFabricAdjustments(
   }
 
   for (const [itemId, netDelta] of itemDeltas) {
-    const newAggregate = await syncFabricAggregateQty(tx, itemId);
+    const newAggregate = await syncFabricAggregateQty(tx, itemId, {
+      refId: opnameId,
+      refDocNumber: docNumber,
+    });
     const inv = await tx.inventoryValue.findFirst({
       where: { itemId, OR: [{ variantSku: "" }, { variantSku: null }] },
     });

@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
-import { prisma } from '@elorae/db';
+import { moveMainStock, prisma } from '@elorae/db';
+import { findExistingInventoryValueRow } from '@/lib/inventory/costing';
 import { variantDetailForSku } from '@/lib/items/variants';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
@@ -53,19 +54,16 @@ export async function createStockAdjustment(
     // Keep variantSku consistent with inventory costing helpers:
     // compound keys use '' for non-variant items (no nulls).
     const variantKey = data.variantSku ?? '';
-    const compositeWhere = {
-      itemId_variantSku: { itemId: data.itemId, variantSku: variantKey },
-    };
 
-    // Get item (for base UOM) and current inventory for (itemId, variantSku)
+    // Get item (for base UOM) and current inventory for (itemId, variantSku). The inventory
+    // lookup is OR-tolerant on the pooled "" bucket -- ERP-created rows are spelled null, so a
+    // strict compound-key lookup on '' would miss them.
     const [item, current] = await Promise.all([
       tx.item.findUnique({
         where: { id: data.itemId },
         select: { uomId: true },
       }),
-      tx.inventoryValue.findUnique({
-        where: compositeWhere,
-      }),
+      findExistingInventoryValueRow(tx, data.itemId, variantKey),
     ]);
 
     if (!item) throw new Error('Item not found');
@@ -148,20 +146,24 @@ export async function createStockAdjustment(
     });
     
     const newTotalValue = newQty.mul(prevAvgCost);
+    const adjQtyNum = qtyChange.toNumber();
+    const adjQty = data.type === 'POSITIVE' ? adjQtyNum : -adjQtyNum;
 
     // Update inventory (avg cost unchanged)
-    await tx.inventoryValue.update({
-      where: compositeWhere,
-      data: {
-        qtyOnHand: newQty.toNumber(),
-        totalValue: newTotalValue.toNumber(),
-        lastUpdated: new Date(),
-      },
+    await moveMainStock(tx, {
+      itemId: data.itemId,
+      variantSku: variantKey,
+      qtyDelta: adjQty,
+      totalValue: newTotalValue.toNumber(),
+      unitCost: prevAvgCost.toNumber(),
+      inventoryValueId: current.id,
+      refType: "StockAdjustment",
+      refId: adjustment.id,
+      refDocNumber: adjustment.docNumber,
+      createdById: session.user.id,
     });
 
     // Create stock movement (in base UOM)
-    const adjQtyNum = qtyChange.toNumber();
-    const adjQty = data.type === 'POSITIVE' ? adjQtyNum : -adjQtyNum;
     const totalCostAdj =
       data.type === 'POSITIVE'
         ? qtyChange.mul(prevAvgCost).toNumber()
