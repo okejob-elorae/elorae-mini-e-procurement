@@ -26,6 +26,20 @@ type ZbarSymbol = {
   typeName?: string;
 };
 
+/**
+ * Named rather than reached for with `typeof zxing` / `typeof zbarScan` at the loading-handle
+ * declarations below. A `typeof` query on a `let` that was just initialised to `null` picks up
+ * the control-flow-NARROWED type, not the declared union, so `Promise<typeof zbarScan>` resolved
+ * to `Promise<null>` and every assignment from a loader was a type error. Naming the two shapes
+ * also gives the loaders a single definition to share with their callers.
+ */
+type ZxingLoaded = {
+  reader: ZxingReader;
+  NotFoundException: new (...args: never[]) => Error;
+};
+
+type ZbarScanFn = (data: ImageData) => Promise<ZbarSymbol[]>;
+
 function createNativeDetector(): NativeDetector | null {
   if (typeof window === "undefined") return null;
   const Ctor = (window as Window & {
@@ -163,10 +177,7 @@ function drawCropVariant(
   return outW > 40 && outH > 20;
 }
 
-async function loadZxingReader(): Promise<{
-  reader: ZxingReader;
-  NotFoundException: new (...args: never[]) => Error;
-} | null> {
+async function loadZxingReader(): Promise<ZxingLoaded | null> {
   try {
     const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType, NotFoundException }] =
       await Promise.all([import("@zxing/browser"), import("@zxing/library")]);
@@ -189,32 +200,36 @@ async function loadZxingReader(): Promise<{
   }
 }
 
-async function loadZbarScanner(): Promise<
-  ((data: ImageData) => Promise<ZbarSymbol[]>) | null
-> {
+async function loadZbarScanner(): Promise<ZbarScanFn | null> {
   try {
-    // Inlined WASM build — avoids separate .wasm fetch issues under Next/Turbopack.
-    const mod = await import("@undecaf/zbar-wasm/dist/inlined/index.mjs");
-    return mod.scanImageData as (data: ImageData) => Promise<ZbarSymbol[]>;
+    /**
+     * Bare specifier, never a deep path. `@undecaf/zbar-wasm` ships an `exports` map, which
+     * SEALS the package: its only subpaths are ".", "./package.json" and "./dist/zbar.wasm",
+     * so `@undecaf/zbar-wasm/dist/inlined/index.mjs` cannot resolve however real that file is
+     * on disk. That failure lands at BUILD time — webpack module resolution, then `tsc` — so
+     * no `try`/`catch` around it can absorb it; wrapping it only made the breakage look
+     * guarded.
+     *
+     * The inlined WASM build is still what we want (it avoids a separate .wasm fetch under
+     * Next/Turbopack), and it is reachable — through the package's own `zbar-inlined` export
+     * CONDITION rather than a path. `next.config.ts` enables that condition for the webpack
+     * production build. Without it this resolves to the non-inlined build, which works but
+     * fetches the .wasm separately, so a green build alone does not prove the condition is
+     * still wired up.
+     */
+    const mod = await import("@undecaf/zbar-wasm");
+    return mod.scanImageData as ZbarScanFn;
   } catch {
-    try {
-      const mod = await import("@undecaf/zbar-wasm");
-      return mod.scanImageData as (data: ImageData) => Promise<ZbarSymbol[]>;
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
 export async function createVideoBarcodeScanner(video: HTMLVideoElement) {
   const native = createNativeDetector();
-  let zxing: {
-    reader: ZxingReader;
-    NotFoundException: new (...args: never[]) => Error;
-  } | null = null;
-  let zbarScan: ((data: ImageData) => Promise<ZbarSymbol[]>) | null = null;
-  let zxingLoading: Promise<typeof zxing> | null = null;
-  let zbarLoading: Promise<typeof zbarScan> | null = null;
+  let zxing: ZxingLoaded | null = null;
+  let zbarScan: ZbarScanFn | null = null;
+  let zxingLoading: Promise<ZxingLoaded | null> | null = null;
+  let zbarLoading: Promise<ZbarScanFn | null> | null = null;
 
   const crop = document.createElement("canvas");
   const cropCtx = crop.getContext("2d", { willReadFrequently: true });
