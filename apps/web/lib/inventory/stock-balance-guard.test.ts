@@ -40,6 +40,16 @@ const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
  * and it is not a pattern to copy: a live writer touching qtyOnHand without appending is exactly
  * the drift this whole file exists to catch.
  *
+ * cleanup-test-stores.ts is the same shape and was invisible here until apps/web/scripts was
+ * added to the grep roots below: it restores qtyOnHand and totalValue with an atomic increment
+ * while deleting a test store's field-sales rows, and appends NOTHING to the ledger. It is a
+ * test-fixture TEARDOWN script — it moves quantity to undo fixtures, never as part of a business
+ * flow — and it is emphatically not a pattern to copy. Anything that runs against real data and
+ * moves quantity goes through a mover.
+ *
+ * import-legacy-master.ts provisions an InventoryValue row at qtyOnHand: 0 alongside a new Item.
+ * A create at zero moves nothing, same as opname-snapshot.ts and items/mutations.ts above.
+ *
  * The rest are row provisioning (a create at qty 0 moves nothing), fixtures, and one-off scripts.
  */
 const ALLOWED = [
@@ -53,6 +63,8 @@ const ALLOWED = [
   "packages/db/prisma/seed.ts",
   "packages/db/prisma/clone-to-local.ts",
   "packages/db/prisma/backfill-reservations.ts",
+  "apps/web/scripts/cleanup-test-stores.ts",
+  "apps/web/scripts/import-legacy-master.ts",
 ];
 
 const FORBIDDEN = String.raw`(inventoryValue|storeStock|vanStock)\.(update|upsert|create|updateMany|createMany)`;
@@ -79,14 +91,14 @@ function offendingFiles(): string[] {
   try {
     out = execFileSync(
       "grep",
-      ["-rlE", FORBIDDEN, "--include=*.ts", "apps/web/lib", "apps/web/app", "apps/api/src", "packages/db/src", "packages/db/prisma"],
+      ["-rlE", FORBIDDEN, "--include=*.ts", "apps/web/lib", "apps/web/app", "apps/web/scripts", "apps/api/src", "packages/db/src", "packages/db/prisma"],
       { cwd: REPO_ROOT, encoding: "utf8" },
     );
   } catch (err) {
     /*
      * grep exits 1 for "no matches" — the expected, healthy outcome — and a different nonzero
      * status (2+) for a real error, e.g. a search root that does not exist. Swallowing both
-     * identically makes the guard fail OPEN: renaming or moving any of the five roots above would
+     * identically makes the guard fail OPEN: renaming or moving any of the six roots above would
      * silently report zero offending files forever, with the suite still green. Only status 1
      * means "nothing found"; anything else must fail loudly instead of manufacturing a false pass.
      */
@@ -99,10 +111,14 @@ function offendingFiles(): string[] {
     .map((l) => l.trim())
     .filter(Boolean)
     .filter((f) => !f.includes(".test.ts") && !f.includes(".spec.ts"))
-    /* Defensive, not currently load-bearing: neither path is reachable from the five grep roots
-       above (apps/web/scripts and any generated/ directory both sit outside them), so both
-       filters are no-ops today. Left in in case a root above ever widens to include either. */
-    .filter((f) => !f.startsWith("apps/web/scripts/"))
+    /* Defensive, not currently load-bearing: no generated/ directory sits under any of the six
+       grep roots above (packages/db's generated client lives outside src/), so this filter is a
+       no-op today. Left in in case a root ever widens to include one.
+
+       There is deliberately NO blanket apps/web/scripts/ filter. One used to sit here, annotated
+       as unreachable — which was the opposite of the truth once that root was added: it would
+       have hidden cleanup-test-stores.ts's real quantity move. Scripts are exempted one file at
+       a time, in ALLOWED, with the reason written down. */
     .filter((f) => !f.includes("/generated/"))
     .filter((f) => !ALLOWED.includes(f));
 }
