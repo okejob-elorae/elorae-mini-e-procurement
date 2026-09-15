@@ -193,16 +193,25 @@ async function loadZbarScanner(): Promise<
   ((data: ImageData) => Promise<ZbarSymbol[]>) | null
 > {
   try {
-    // Inlined WASM build — avoids separate .wasm fetch issues under Next/Turbopack.
-    const mod = await import("@undecaf/zbar-wasm/dist/inlined/index.mjs");
+    /**
+     * Bare specifier, never a deep path. `@undecaf/zbar-wasm` ships an `exports` map, which
+     * SEALS the package: its only subpaths are ".", "./package.json" and "./dist/zbar.wasm",
+     * so `@undecaf/zbar-wasm/dist/inlined/index.mjs` cannot resolve however real that file is
+     * on disk. That failure lands at BUILD time — webpack module resolution, then `tsc` — so
+     * no `try`/`catch` around it can absorb it; wrapping it only made the breakage look
+     * guarded.
+     *
+     * The inlined WASM build is still what we want (it avoids a separate .wasm fetch under
+     * Next/Turbopack), and it is reachable — through the package's own `zbar-inlined` export
+     * CONDITION rather than a path. `next.config.ts` enables that condition for the webpack
+     * production build. Without it this resolves to the non-inlined build, which works but
+     * fetches the .wasm separately, so a green build alone does not prove the condition is
+     * still wired up.
+     */
+    const mod = await import("@undecaf/zbar-wasm");
     return mod.scanImageData as (data: ImageData) => Promise<ZbarSymbol[]>;
   } catch {
-    try {
-      const mod = await import("@undecaf/zbar-wasm");
-      return mod.scanImageData as (data: ImageData) => Promise<ZbarSymbol[]>;
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
