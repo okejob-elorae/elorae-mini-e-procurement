@@ -51,6 +51,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.konsiTransfer.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     /**
      * AuditLog has no FK/cascade back to FieldSalesOrder — it just carries entityId as a plain
      * String — so the credit-override test's CREDIT_LIMIT_OVERRIDE row would otherwise leak into
@@ -643,6 +644,7 @@ d("approveFieldSalesOrder — konsi", () => {
     await prisma.store.deleteMany({ where: { id: storeId } });
     await prisma.stockReservation.deleteMany({ where: { itemId } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId } });
     await prisma.item.deleteMany({ where: { id: itemId } });
     await prisma.uOM.deleteMany({ where: { id: uomId } });

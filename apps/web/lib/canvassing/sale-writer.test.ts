@@ -24,6 +24,7 @@ d("recordVanSale (test bed only)", () => {
     await prisma.salesHistory.deleteMany({ where: { itemId } });
     await prisma.vanSaleLine.deleteMany({ where: { itemId } });
     await prisma.vanSale.deleteMany({ where: { salesmanId, storeId: null } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.vanStock.deleteMany({ where: { itemId } });
     await prisma.item.deleteMany({ where: { id: itemId } });
     await prisma.uOM.deleteMany({ where: { id: uomId } });
@@ -178,6 +179,7 @@ d("recordVanSale (test bed only)", () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: vItem.id } });
     await prisma.vanSaleLine.deleteMany({ where: { itemId: vItem.id } });
     await prisma.vanSale.deleteMany({ where: { id: res.saleId } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: vItem.id } });
     await prisma.vanStock.deleteMany({ where: { itemId: vItem.id } });
     await prisma.item.deleteMany({ where: { id: vItem.id } });
     await prisma.uOM.deleteMany({ where: { id: vUom.id } });

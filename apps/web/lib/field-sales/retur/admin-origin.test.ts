@@ -302,6 +302,7 @@ d("admin-origin field returns (test bed only)", () => {
       await prisma.adminNotification.deleteMany({ where: { id: { in: notifications.map((n) => n.id) } } });
     }
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.rejectedGoodsLedger.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
     await prisma.fieldReturnResolution.deleteMany({ where: { line: { returnId: { in: returnIds } } } });

@@ -496,6 +496,7 @@ describe("completeDeliveryShipment", () => {
     await prisma.deliveryShipment.deleteMany({ where: { id: seededId(shipmentId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
@@ -1258,10 +1259,11 @@ describe("cancelDeliveryShipment", () => {
     }
     await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: seededId(shipmentId) } });
     await prisma.deliveryShipment.deleteMany({ where: { id: seededId(shipmentId) } });
-    /* The DELIVERED test's completion moves stock, so the same three side-effect tables the
+    /* The DELIVERED test's completion moves stock, so the same side-effect tables the
      * completeDeliveryShipment describe cleans up are in play here too. */
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });

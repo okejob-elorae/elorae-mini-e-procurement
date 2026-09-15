@@ -669,6 +669,7 @@ d("getInTransitAdminReturnQty (test bed only)", () => {
       await prisma.adminNotification.deleteMany({ where: { id: { in: notifications.map((n) => n.id) } } });
     }
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: returnIds } } });
     await prisma.fieldReturn.deleteMany({ where: { id: { in: returnIds } } });
     await prisma.store.deleteMany({ where: { id: { in: storeIds } } });

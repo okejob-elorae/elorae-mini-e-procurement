@@ -98,6 +98,7 @@ d("consumeOrder (test bed only)", () => {
   afterEach(async () => {
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.salesOrderItem.deleteMany({ where: { salesOrderId: seededId(salesOrderId) } });
     await prisma.salesOrder.deleteMany({ where: { id: seededId(salesOrderId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });

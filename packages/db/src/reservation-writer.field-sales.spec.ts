@@ -40,6 +40,7 @@ d("field-sales reservation fns (test bed only)", () => {
   afterEach(async () => {
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -104,6 +105,7 @@ d("field-sales reservation fns (test bed only)", () => {
     afterEach(async () => {
       await prisma.stockReservation.deleteMany({ where: { itemId: seededId(nullItemId) } });
       await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(nullItemId) } });
+      await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(nullItemId) } });
       await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(nullItemId) } });
       await prisma.item.deleteMany({ where: { id: seededId(nullItemId) } });
       await prisma.uOM.deleteMany({ where: { id: seededId(nullUomId) } });

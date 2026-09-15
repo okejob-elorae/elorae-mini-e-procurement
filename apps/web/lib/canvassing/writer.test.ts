@@ -30,6 +30,7 @@ d("loadVan (test bed only)", () => {
     await prisma.vanLoad.deleteMany({ where: { canvasserId } });
     await prisma.vanStock.deleteMany({ where: { itemId } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId } });
     await prisma.inventoryValue.deleteMany({ where: { itemId } });
     await prisma.item.deleteMany({ where: { id: itemId } });
     await prisma.uOM.deleteMany({ where: { id: uomId } });
@@ -105,6 +106,7 @@ d("loadVan (test bed only)", () => {
     await prisma.vanLoad.deleteMany({ where: { canvasserId } });
     await prisma.vanStock.deleteMany({ where: { itemId: vItem.id } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: vItem.id } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: vItem.id } });
     await prisma.item.deleteMany({ where: { id: vItem.id } });
     await prisma.uOM.deleteMany({ where: { id: vUom.id } });
