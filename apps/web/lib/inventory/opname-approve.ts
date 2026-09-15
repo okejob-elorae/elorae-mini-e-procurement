@@ -1,5 +1,5 @@
 import type { Prisma, StockAdjustmentSource } from "@elorae/db";
-import { moveMainStock, prisma } from "@elorae/db";
+import { prisma, setMainStock } from "@elorae/db";
 import { Decimal } from "decimal.js";
 import { generateDocNumber } from "@/lib/docNumber";
 import { apiFetch } from "@/lib/internal-api";
@@ -161,10 +161,19 @@ export async function applyFgAccessoriesAdjustments(
     const newTotalValue = newQty.mul(prevAvgCost);
     const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
 
-    await moveMainStock(tx, {
+    /*
+     * setMainStock, not moveMainStock: an opname line is an absolute physical count, and the
+     * counted figure is what must land. Routed as a delta the row ends at prevActual + adjQty —
+     * which is NOT countedQty if anything moved between the read above and the write — while the
+     * StockAdjustment row created just above records newQty: countedQty, so the two disagree with
+     * nothing to reconcile them. The ledger type is wrong the same way: ledgerTypeForDelta types a
+     * count IN or OUT, where every other count in this system writes ADJUSTMENT, and the ledger is
+     * append-only so that spelling would be permanent.
+     */
+    await setMainStock(tx, {
       itemId: row.itemId,
       variantSku: variantKey,
-      qtyDelta: adjQty,
+      nextQty: newQty.toNumber(),
       totalValue: newTotalValue.toNumber(),
       unitCost: prevAvgCost.toNumber(),
       inventoryValueId: inv.id,

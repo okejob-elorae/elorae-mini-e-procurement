@@ -383,6 +383,12 @@ type SetCommon = {
   itemId: string;
   variantSku: string | null | undefined;
   nextQty: number;
+  /*
+   * Recorded on the ledger entry only — a count does not reprice stock, so this never reaches the
+   * balance table. It exists so a set-mover entry carries the same unit cost a delta-mover entry
+   * would for the identical movement; omit it and the entry is simply costless.
+   */
+  unitCost?: number | null;
   refType: string;
   refId: string;
   refDocNumber?: string;
@@ -479,6 +485,7 @@ export async function setMainStock(
       type: "ADJUSTMENT",
       qty: delta,
       balanceQty,
+      unitCost: input.unitCost,
       refType: input.refType,
       refId: input.refId,
       refDocNumber: input.refDocNumber,
@@ -527,6 +534,7 @@ export async function setMainStock(
     type: "ADJUSTMENT",
     qty: delta,
     balanceQty: input.nextQty,
+    unitCost: input.unitCost,
     refType: input.refType,
     refId: input.refId,
     refDocNumber: input.refDocNumber,
@@ -575,6 +583,7 @@ export async function setStoreStock(
     type: "ADJUSTMENT",
     qty: delta,
     balanceQty: input.nextQty,
+    unitCost: input.unitCost,
     refType: input.refType,
     refId: input.refId,
     refDocNumber: input.refDocNumber,
