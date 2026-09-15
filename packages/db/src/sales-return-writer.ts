@@ -46,9 +46,12 @@ function toNum(v: unknown): number {
 }
 
 // Concurrency note: callers must serialize concurrent acceptReturnItem calls
-// that resolve to the same (itemId, variantSku). Without serialization the
-// read-then-write on InventoryValue.qtyOnHand can lose updates. Sub-B server
-// actions handle this with row-level locking or per-return-id serialization.
+// that resolve to the same (itemId, variantSku). qtyOnHand itself is safe now —
+// moveMainStock moves it with an atomic increment — but totalValue is still
+// computed from this function's own pre-read of prevQty/avgCost and then written
+// absolutely, so two concurrent calls can still race on totalValue and lose an
+// update. Sub-B server actions handle this with row-level locking or
+// per-return-id serialization.
 export async function acceptReturnItem(
   tx: Prisma.TransactionClient,
   input: AcceptReturnItemInput,

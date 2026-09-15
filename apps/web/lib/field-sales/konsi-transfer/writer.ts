@@ -17,11 +17,13 @@ export type IssueKonsiTransferLine = {
  * Moves konsi stock out of the main warehouse and into a store's virtual warehouse, inside the
  * caller's transaction.
  *
- * This touches InventoryValue directly rather than going through a packages/db helper, following
- * loadVan. The reason is a single invariant: qtyOnHand and reservedQty must decrement TOGETHER.
- * reserveKonsiFieldSalesOrder has already reserved these exact quantities earlier in this same
- * transaction, so decrementing one without the other would leave stock reserved against nothing,
- * forever. Splitting that across two modules is how it would eventually drift apart.
+ * qtyOnHand and reservedQty must decrement TOGETHER. reserveKonsiFieldSalesOrder has already
+ * reserved these exact quantities earlier in this same transaction, so decrementing one without
+ * the other would leave stock reserved against nothing, forever. The quantity goes through
+ * moveMainStock, pinned to the row id resolved below; the reservedQty decrement follows
+ * immediately after on that same id, as a plain atomic update outside the mover — it writes no
+ * ledger entry, because a reservation resolving is not a stock movement. A future edit must not
+ * separate the two writes or let anything run between them.
  */
 export async function issueKonsiTransfer(
   tx: TxClient,
