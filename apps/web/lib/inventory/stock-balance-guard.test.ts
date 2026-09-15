@@ -52,8 +52,10 @@ const FORBIDDEN = String.raw`(inventoryValue|storeStock|vanStock)\.(update|upser
 
 /*
  * This guard sees ONLY Prisma model calls matched by the regex above — it cannot see raw SQL.
- * reservation-writer.ts itself performs balance writes through tx.$executeRaw three times (its
- * cross-process race guards), and none of those are visible to this test at all, matched or not.
+ * reservation-writer.ts itself carries three raw guarded UPDATEs (its cross-process race guards).
+ * TWO of them touch InventoryValue — one moves qtyOnHand (and appends a ledger entry by hand), one
+ * moves only reservedQty (and appends nothing) — and the third updates StockReservation, which is
+ * not a balance table. None of the three is visible to this test at all, matched or not.
  * A new file that reaches for tx.$executeRaw/tx.$queryRaw to touch InventoryValue, StoreStock or
  * VanStock is therefore completely invisible here, whether or not it appends to the ledger.
  *
