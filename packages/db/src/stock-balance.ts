@@ -62,18 +62,64 @@ export function ledgerTypeForDelta(qtyDelta: number): StockLedgerEntryType {
  * OR-tolerant. The ledger normalises to "" on the way out; the balance table is left alone.
  */
 export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<{ balanceQty: number }> {
-  const existing = input.inventoryValueId
-    ? { id: input.inventoryValueId }
-    : input.variantSku
-      ? await tx.inventoryValue.findFirst({
-          where: { itemId: input.itemId, variantSku: input.variantSku },
-          select: { id: true },
-        })
-      : await tx.inventoryValue.findFirst({
-          where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-          orderBy: { id: "asc" },
-          select: { id: true },
-        });
+  if (input.inventoryValueId) {
+    // The caller resolved this row itself and is trusting us to write to exactly that row — but
+    // appendStockLedger below records input.itemId/input.variantSku, not whatever the row we'd
+    // blindly update actually belongs to. updateMany's own itemId filter is the ownership check:
+    // an id resolved for a different item matches zero rows here instead of silently moving the
+    // wrong balance under a ledger entry that lies about which item moved.
+    const result = await tx.inventoryValue.updateMany({
+      where: { id: input.inventoryValueId, itemId: input.itemId },
+      data: {
+        qtyOnHand: { increment: input.qtyDelta },
+        lastUpdated: new Date(),
+        ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
+        ...(input.totalValue == null ? {} : { totalValue: input.totalValue }),
+      },
+    });
+
+    if (result.count !== 1) {
+      throw new Error(
+        `moveMainStock: inventoryValueId ${input.inventoryValueId} does not belong to item ${input.itemId}`,
+      );
+    }
+
+    // updateMany returns only a count, never the row. Re-reading it here is safe for the same
+    // reason the reservation-writer read-back is: the row is already locked by the update that
+    // just succeeded above, inside this same transaction.
+    const reread = await tx.inventoryValue.findUniqueOrThrow({
+      where: { id: input.inventoryValueId },
+      select: { qtyOnHand: true },
+    });
+    const balanceQty = Number(reread.qtyOnHand);
+
+    await appendStockLedger(tx, {
+      location: { type: "MAIN" },
+      itemId: input.itemId,
+      variantSku: input.variantSku,
+      type: ledgerTypeForDelta(input.qtyDelta),
+      qty: input.qtyDelta,
+      balanceQty,
+      unitCost: input.unitCost,
+      refType: input.refType,
+      refId: input.refId,
+      refDocNumber: input.refDocNumber,
+      createdById: input.createdById,
+    });
+
+    return { balanceQty };
+  }
+
+  const existing = input.variantSku
+    ? await tx.inventoryValue.findFirst({
+        where: { itemId: input.itemId, variantSku: input.variantSku },
+        select: { id: true },
+      })
+    : await tx.inventoryValue.findFirst({
+        where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+        orderBy: { id: "asc" },
+        select: { id: true },
+      });
 
   if (!existing) {
     if (!input.createIfMissing) {
@@ -266,6 +312,7 @@ export async function setMainStock(
       })
     : await tx.inventoryValue.findFirst({
         where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+        orderBy: { id: "asc" },
         select: { id: true, qtyOnHand: true },
       });
 
