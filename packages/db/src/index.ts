@@ -130,3 +130,12 @@ export {
   type StockLedgerEntryType,
   type StockLocation,
 } from "./stock-ledger";
+export {
+  ledgerTypeForDelta,
+  moveMainStock,
+  moveStoreStock,
+  moveVanStock,
+  type MoveMainStockInput,
+  type MoveStoreStockInput,
+  type MoveVanStockInput,
+} from "./stock-balance";
