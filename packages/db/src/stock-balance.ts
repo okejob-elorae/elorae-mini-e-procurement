@@ -11,8 +11,11 @@ type MoveCommon = {
   /*
    * Cost moves in the SAME update as quantity. Callers that previously recomputed a weighted
    * average and issued their own follow-up update pass the result here instead, so a balance
-   * table is never written outside a mover and the write guard needs no extra exceptions.
-   * Omit both to move quantity without touching cost.
+   * table is written only through a mover. The one exception is reservation-writer.ts, which
+   * decrements qtyOnHand and reservedQty in a single statement (once as a raw guarded UPDATE)
+   * and so calls appendStockLedger directly — the movers do not touch reservedQty, and giving
+   * them a parameter that moves no stock would blur the qtyOnHand-is-a-movement rule the ledger
+   * rests on. Omit both to move quantity without touching cost.
    */
   avgCost?: number | null;
   totalValue?: number | null;

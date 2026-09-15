@@ -1,5 +1,6 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
+import { ledgerTypeForDelta } from "./stock-balance";
 import { appendStockLedger } from "./stock-ledger";
 import { InventoryValueMissingError } from "./stock-writer";
 
@@ -139,7 +140,7 @@ export async function consumeOrder(
         location: { type: "MAIN" },
         itemId: row.itemId,
         variantSku: row.variantSku,
-        type: "OUT",
+        type: ledgerTypeForDelta(-qty),
         qty: -qty,
         balanceQty: newOnHand,
         unitCost: avgCost,
@@ -385,7 +386,7 @@ export async function consumeFieldSalesOrderPartial(
         location: { type: "MAIN" },
         itemId: p.line.itemId,
         variantSku: p.line.variantSku,
-        type: "OUT",
+        type: ledgerTypeForDelta(-qty),
         qty: -qty,
         balanceQty: newOnHand,
         unitCost: p.avgCost,
@@ -459,7 +460,7 @@ export async function consumeFieldSalesOrder(
         location: { type: "MAIN" },
         itemId: row.itemId,
         variantSku: row.variantSku,
-        type: "OUT",
+        type: ledgerTypeForDelta(-qty),
         qty: -qty,
         balanceQty: newOnHand,
         unitCost: avgCost,
