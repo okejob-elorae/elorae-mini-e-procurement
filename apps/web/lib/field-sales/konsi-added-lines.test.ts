@@ -164,6 +164,7 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.konsiTransfer.deleteMany({ where: { orderId: { in: allOrderIds } } });
     await prisma.storeStock.deleteMany({ where: { itemId: { in: allItemIds } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: allItemIds } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds } } });

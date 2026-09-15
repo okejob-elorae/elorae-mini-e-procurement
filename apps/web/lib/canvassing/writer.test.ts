@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { loadVan } from "./writer";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -30,7 +30,7 @@ d("loadVan (test bed only)", () => {
     await prisma.vanLoad.deleteMany({ where: { canvasserId } });
     await prisma.vanStock.deleteMany({ where: { itemId } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId } });
-    await prisma.stockLedgerEntry.deleteMany({ where: { itemId } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId } });
     await prisma.item.deleteMany({ where: { id: itemId } });
     await prisma.uOM.deleteMany({ where: { id: uomId } });
