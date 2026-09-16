@@ -30,6 +30,10 @@ describe("sales-order-fulfillment-writer", () => {
         // markOrderShipped consumes via consumeOrder, which appends one ledger entry per line via
         // appendStockLedger — tx.stockLedgerEntry.create is called unconditionally on that path.
         stockLedgerEntry: { create: jest.fn().mockResolvedValue({}) },
+        // consumeOrder also back-fills the line's COGS when the reservation row carries a
+        // salesorderDetailId, which this fixture's does. Pre-existing gap in the mock, unrelated
+        // to the ledger work above.
+        salesOrderItem: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       };
       const prisma: any = { $transaction: (fn: any) => fn(inner) };
       await markOrderShipped(prisma, { orderId: "o1", userId: "u1", courierId: 7 });

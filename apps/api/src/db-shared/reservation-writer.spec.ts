@@ -101,6 +101,10 @@ describe("consumeOrder", () => {
       // calls tx.stockLedgerEntry.create unconditionally — without this the real consume path
       // below throws on tx.stockLedgerEntry being undefined.
       stockLedgerEntry: { create: jest.fn().mockResolvedValue({}) },
+      // The fixture row carries salesorderDetailId, so consumeOrder also back-fills that line's
+      // COGS. Pre-existing gap: this mock never declared salesOrderItem, so the call threw here
+      // long before the ledger work — the ledger entry above just moved the throw one line later.
+      salesOrderItem: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     const r = await consumeOrder(tx, { salesorderId: 100, salesorderNo: "SO-100" });
     expect(r.consumed).toBe(1);
