@@ -1,5 +1,6 @@
-import { InventoryValueMissingError, type Prisma } from "@elorae/db";
+import { InventoryValueMissingError, moveMainStock, moveStoreStock, type Prisma } from "@elorae/db";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
 import { KonsiTransferReservationMismatchError } from "../errors";
 
@@ -17,11 +18,13 @@ export type IssueKonsiTransferLine = {
  * Moves konsi stock out of the main warehouse and into a store's virtual warehouse, inside the
  * caller's transaction.
  *
- * This touches InventoryValue directly rather than going through a packages/db helper, following
- * loadVan. The reason is a single invariant: qtyOnHand and reservedQty must decrement TOGETHER.
- * reserveKonsiFieldSalesOrder has already reserved these exact quantities earlier in this same
- * transaction, so decrementing one without the other would leave stock reserved against nothing,
- * forever. Splitting that across two modules is how it would eventually drift apart.
+ * qtyOnHand and reservedQty must decrement TOGETHER. reserveKonsiFieldSalesOrder has already
+ * reserved these exact quantities earlier in this same transaction, so decrementing one without
+ * the other would leave stock reserved against nothing, forever. The quantity goes through
+ * moveMainStock, pinned to the row id resolved below; the reservedQty decrement follows
+ * immediately after on that same id, as a plain atomic update outside the mover — it writes no
+ * ledger entry, because a reservation resolving is not a stock movement. A future edit must not
+ * separate the two writes or let anything run between them.
  */
 export async function issueKonsiTransfer(
   tx: TxClient,
@@ -31,32 +34,58 @@ export async function issueKonsiTransfer(
   },
 ): Promise<{ transferId: string; docNo: string }> {
   const docNo = await generateDocNumber("KONSITRF", tx);
-  const lineData: Array<{ orderLineId: string; itemId: string; variantSku: string; productName: string; qty: number; unitCost: number }> = [];
+
+  const transfer = await tx.konsiTransfer.create({
+    data: {
+      docNo,
+      orderId: input.order.id,
+      storeId: input.order.storeId,
+      transferredById: input.transferredById,
+    },
+    select: { id: true },
+  });
+
+  const lineData: Array<{ transferId: string; orderLineId: string; itemId: string; variantSku: string; productName: string; qty: number; unitCost: number }> = [];
 
   for (const l of input.order.lines) {
     /*
-     * OR-tolerant: a variantless InventoryValue row keys on null, not "". A strict ""-keyed
-     * lookup misses the real row and forks a phantom one — that has already happened once on
-     * the canvassing reconcile path.
+     * findExistingInventoryValueRow is THE spelling of this lookup: OR-tolerant, because a
+     * variantless InventoryValue row keys on null OR "" and a strict ""-keyed lookup misses the
+     * real row and forks a phantom one — that has already happened once on the canvassing
+     * reconcile path. Its orderBy id asc tie-break is load-bearing rather than cosmetic: the
+     * resolved id is pinned into moveMainStock below AND into the reservedQty decrement after it,
+     * so without it two paths reading the same null/"" bucket can pin different rows and
+     * interleave two independent balances under one ledger key.
      */
-    const isVariantless = l.variantSku === "";
-    const select = { id: true, qtyOnHand: true, reservedQty: true, avgCost: true } as const;
-    const main = isVariantless
-      ? await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, OR: [{ variantSku: null }, { variantSku: "" }] }, select })
-      : await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, variantSku: l.variantSku }, select });
+    const main = await findExistingInventoryValueRow(tx, l.itemId, l.variantSku);
     if (!main) throw new InventoryValueMissingError(l.itemId, l.variantSku);
 
     const prevQty = main.qtyOnHand.toNumber();
     const avgCost = main.avgCost.toNumber();
     const newQty = prevQty - l.qty;
 
-    // qtyOnHand and reservedQty decrement TOGETHER in this one write — see the module doc above.
+    /*
+     * qtyOnHand and reservedQty decrement TOGETHER — see the module doc above. moveMainStock
+     * only moves qtyOnHand (and records the ledger entry for it); reservedQty is not a stock
+     * movement and gets no ledger entry, so it stays a separate atomic decrement immediately
+     * after, pinned to the same row moveMainStock just wrote.
+     */
+    await moveMainStock(tx, {
+      itemId: l.itemId,
+      variantSku: l.variantSku,
+      qtyDelta: -l.qty,
+      totalValue: newQty * avgCost,
+      inventoryValueId: main.id,
+      refType: "KonsiTransfer",
+      refId: transfer.id,
+      refDocNumber: docNo,
+      createdById: input.transferredById,
+    });
+
     await tx.inventoryValue.update({
       where: { id: main.id },
       data: {
-        qtyOnHand: newQty,
-        reservedQty: main.reservedQty.toNumber() - l.qty,
-        totalValue: newQty * avgCost,
+        reservedQty: { decrement: l.qty },
         lastUpdated: new Date(),
       },
     });
@@ -77,11 +106,15 @@ export async function issueKonsiTransfer(
       },
     });
 
-    /* StoreStock keys on "" for variantless, never null — the composite unique must be DB-enforced. */
+    /*
+     * StoreStock keys on "" for variantless, never null — the composite unique must be DB-enforced.
+     * moveStoreStock applies whatever avgCost it is handed; it does not compute the blend itself,
+     * so the weighted-average read + blend stays here exactly as before.
+     */
     const storeKey = { storeId_itemId_variantSku: { storeId: input.order.storeId, itemId: l.itemId, variantSku: l.variantSku } };
-    const existing = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true, avgCost: true } });
-    const prevStoreQty = existing ? existing.qty.toNumber() : 0;
-    const prevStoreAvg = existing ? existing.avgCost.toNumber() : 0;
+    const existingStoreStock = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true, avgCost: true } });
+    const prevStoreQty = existingStoreStock ? existingStoreStock.qty.toNumber() : 0;
+    const prevStoreAvg = existingStoreStock ? existingStoreStock.avgCost.toNumber() : 0;
     /*
      * A negative StoreStock qty (e.g. a konsi retur that credited back more than the store's
      * ledger held — see approve-writer.ts) represents units that are not physically there.
@@ -89,14 +122,22 @@ export async function issueKonsiTransfer(
      * a negative weight on the existing side and inflate the blended average well past the true
      * cost. Clamped to 0 for the BLEND only: you cannot meaningfully average a cost against units
      * that are not there, so the incoming cost simply becomes the new average. The actual qty
-     * written below still uses the real (possibly negative) prevStoreQty — this guard is about
+     * moved below still uses the real (possibly negative) prevStoreQty — this guard is about
      * the cost blend, not the quantity.
      */
     const blendQty = Math.max(prevStoreQty, 0);
-    await tx.storeStock.upsert({
-      where: storeKey,
-      create: { storeId: input.order.storeId, itemId: l.itemId, variantSku: l.variantSku, qty: l.qty, avgCost },
-      update: { qty: prevStoreQty + l.qty, avgCost: weightedAvgCost(blendQty, prevStoreAvg, l.qty, avgCost) },
+    const nextStoreAvgCost = existingStoreStock ? weightedAvgCost(blendQty, prevStoreAvg, l.qty, avgCost) : avgCost;
+
+    await moveStoreStock(tx, {
+      storeId: input.order.storeId,
+      itemId: l.itemId,
+      variantSku: l.variantSku,
+      qtyDelta: l.qty,
+      avgCost: nextStoreAvgCost,
+      refType: "KonsiTransfer",
+      refId: transfer.id,
+      refDocNumber: docNo,
+      createdById: input.transferredById,
     });
 
     /*
@@ -122,19 +163,18 @@ export async function issueKonsiTransfer(
     });
     if (resolved.count !== 1) throw new KonsiTransferReservationMismatchError(l.id, resolved.count);
 
-    lineData.push({ orderLineId: l.id, itemId: l.itemId, variantSku: l.variantSku, productName: l.productName, qty: l.qty, unitCost: avgCost });
+    lineData.push({
+      transferId: transfer.id,
+      orderLineId: l.id,
+      itemId: l.itemId,
+      variantSku: l.variantSku,
+      productName: l.productName,
+      qty: l.qty,
+      unitCost: avgCost,
+    });
   }
 
-  const transfer = await tx.konsiTransfer.create({
-    data: {
-      docNo,
-      orderId: input.order.id,
-      storeId: input.order.storeId,
-      transferredById: input.transferredById,
-      lines: { create: lineData },
-    },
-    select: { id: true },
-  });
+  await tx.konsiTransferLine.createMany({ data: lineData });
 
   return { transferId: transfer.id, docNo };
 }

@@ -1,7 +1,9 @@
+import { moveMainStock, moveVanStock } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 
 export type ReconcileCountInput = { itemId: string; variantSku: string | null; countedQty: number };
 export type RecordVanReconcileResult =
@@ -49,30 +51,59 @@ export async function recordVanReconcile(input: {
     const canvasserLabel = canvasser?.name ?? canvasser?.email ?? input.canvasserId;
     const docNo = await generateDocNumber("VANRECON", tx);
 
-    let totalReturned = 0;
-    let totalVarianceQty = 0;
-    for (const l of lines) {
-      totalReturned += l.counted;
-      totalVarianceQty += l.variance;
+    const totalReturned = lines.reduce((s, l) => s + l.counted, 0);
+    const totalVarianceQty = lines.reduce((s, l) => s + l.variance, 0);
 
+    // Created ahead of the loop so its id is a real refId for the ledger entries below, not the
+    // doc number. The line rows are appended via createMany once the loop finishes.
+    const rec = await tx.vanReconcile.create({
+      data: {
+        docNo,
+        canvasserId: input.canvasserId,
+        reconciledById: input.reconciledById,
+        note: input.note ?? null,
+        totalReturnedQty: totalReturned,
+        totalVarianceQty,
+      },
+      select: { id: true },
+    });
+
+    for (const l of lines) {
       if (l.counted > 0) {
-        // Return to main. Variantless main rows use variantSku: null (not ""), so use an
-        // OR-tolerant lookup (same as loadVan) — calculateMovingAverage's strict ""-key lookup
-        // would miss the real row and fork a phantom "" row.
-        const main = (l.variantSku ?? "") === ""
-          ? await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, OR: [{ variantSku: null }, { variantSku: "" }] }, select: { id: true, qtyOnHand: true, avgCost: true } })
-          : await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, variantSku: l.variantSku }, select: { id: true, qtyOnHand: true, avgCost: true } });
+        /*
+         * Return to main through findExistingInventoryValueRow, THE spelling of this lookup: a
+         * variantless main row keys on null OR "", and calculateMovingAverage's strict ""-key
+         * lookup would miss a real null row and fork a phantom one. Its orderBy id asc tie-break
+         * is load-bearing rather than cosmetic — the resolved id is pinned into moveMainStock
+         * below, so without it two paths reading the same null/"" bucket can pin different rows
+         * and interleave two independent balances under one ledger key.
+         */
+        const main = await findExistingInventoryValueRow(tx, l.itemId, l.variantSku);
 
         const prevQty = main ? main.qtyOnHand.toNumber() : 0;
         const prevAvg = main ? main.avgCost.toNumber() : 0;
         const newQty = prevQty + l.counted;
         const newAvg = weightedAvgCost(prevQty, prevAvg, l.counted, l.avgCost);
 
-        if (main) {
-          await tx.inventoryValue.update({ where: { id: main.id }, data: { qtyOnHand: newQty, avgCost: newAvg, totalValue: newQty * newAvg, lastUpdated: new Date() } });
-        } else {
-          await tx.inventoryValue.create({ data: { itemId: l.itemId, variantSku: l.variantSku ?? "", qtyOnHand: newQty, reservedQty: 0, avgCost: newAvg, totalValue: newQty * newAvg } });
-        }
+        /*
+         * createIfMissing mirrors the create-branch this replaced. inventoryValueId pins the
+         * write to the exact row `main` was just read from when one exists — a genuinely missing
+         * row opens one at newAvg via moveMainStock's own create, spelled null for variantless
+         * (the mover's convention) rather than this branch's former "" spelling.
+         */
+        await moveMainStock(tx, {
+          itemId: l.itemId,
+          variantSku: l.variantSku,
+          qtyDelta: l.counted,
+          avgCost: newAvg,
+          totalValue: newQty * newAvg,
+          createIfMissing: true,
+          inventoryValueId: main?.id,
+          refType: "VanReconcile",
+          refId: rec.id,
+          refDocNumber: docNo,
+          createdById: input.reconciledById,
+        });
 
         await tx.stockAdjustment.create({
           data: {
@@ -91,34 +122,30 @@ export async function recordVanReconcile(input: {
         });
       }
 
-      // Empty the van for this row (regardless of counted).
-      await tx.vanStock.update({
-        where: { userId_itemId_variantSku: { userId: input.canvasserId, itemId: l.itemId, variantSku: l.variantSku ?? "" } },
-        data: { qty: 0 },
+      // Empty the van for this row (regardless of counted) — a delta to zero, never a set; the
+      // spec is explicit that emptying the van is a delta, not an absolute set mover.
+      await moveVanStock(tx, {
+        userId: input.canvasserId,
+        itemId: l.itemId,
+        variantSku: l.variantSku,
+        qtyDelta: -l.expected,
+        refType: "VanReconcile",
+        refId: rec.id,
+        refDocNumber: docNo,
       });
     }
 
-    const rec = await tx.vanReconcile.create({
-      data: {
-        docNo,
-        canvasserId: input.canvasserId,
-        reconciledById: input.reconciledById,
-        note: input.note ?? null,
-        totalReturnedQty: totalReturned,
-        totalVarianceQty,
-        lines: {
-          create: lines.map((l) => ({
-            itemId: l.itemId,
-            variantSku: l.variantSku ?? "",
-            productName: l.productName,
-            expectedQty: l.expected,
-            countedQty: l.counted,
-            varianceQty: l.variance,
-            unitCost: l.avgCost,
-          })),
-        },
-      },
-      select: { id: true },
+    await tx.vanReconcileLine.createMany({
+      data: lines.map((l) => ({
+        vanReconcileId: rec.id,
+        itemId: l.itemId,
+        variantSku: l.variantSku ?? "",
+        productName: l.productName,
+        expectedQty: l.expected,
+        countedQty: l.counted,
+        varianceQty: l.variance,
+        unitCost: l.avgCost,
+      })),
     });
 
     return { ok: true, reconcileId: rec.id, docNo, totalReturned, totalVarianceQty };

@@ -3029,3 +3029,37 @@ model StoreSettlementDeduction {
   @@index([settlementId])
   @@index([fieldReturnId, type])
 }
+
+enum StockLocationType {
+  MAIN
+  STORE
+  VAN
+}
+
+enum StockLedgerType {
+  OPENING
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+model StockLedgerEntry {
+  id           String            @id @default(cuid())
+  locationType StockLocationType
+  locationId   String            @default("")
+  itemId       String
+  variantSku   String            @default("")
+  type         StockLedgerType
+  qty          Decimal           @db.Decimal(10, 2)
+  unitCost     Decimal?          @db.Decimal(15, 2)
+  balanceQty   Decimal           @db.Decimal(10, 2)
+  refType      String
+  refId        String
+  refDocNumber String            @default("")
+  createdById  String?
+  createdAt    DateTime          @default(now())
+
+  @@index([locationType, locationId, itemId, variantSku, createdAt], map: "StockLedgerEntry_location_item_idx")
+  @@index([itemId, createdAt])
+  @@index([refType, refId])
+}

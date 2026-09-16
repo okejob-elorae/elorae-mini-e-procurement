@@ -122,3 +122,28 @@ export {
   type JournalLineInput,
   type PostJournalInput,
 } from "./journal-writer";
+export {
+  appendStockLedger,
+  normaliseVariantKey,
+  resolveLocationKey,
+  type AppendStockLedgerInput,
+  type StockLedgerEntryType,
+  type StockLocation,
+} from "./stock-ledger";
+export {
+  ledgerTypeForDelta,
+  MainStockNegativeError,
+  moveMainStock,
+  moveStoreStock,
+  moveVanStock,
+  type MoveMainStockInput,
+  type MoveStoreStockInput,
+  type MoveVanStockInput,
+} from "./stock-balance";
+export {
+  deltaForSet,
+  setMainStock,
+  setStoreStock,
+  type SetMainStockInput,
+  type SetStoreStockInput,
+} from "./stock-balance";

@@ -143,6 +143,7 @@ d("issueKonsiTransfer via approveFieldSalesOrder (test bed only)", () => {
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: itemIds } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: orderIds } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds } } });

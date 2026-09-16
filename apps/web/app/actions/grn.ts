@@ -3,7 +3,7 @@
 import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
-import { calculateMovingAverage, reverseMovingAverage } from '@/lib/inventory/costing';
+import { calculateMovingAverage, reverseMovingAverage, findExistingInventoryValueRow } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { getActorName, notifyGRNCreated, notifyMaterialArrivedForPo } from '@/app/actions/notifications';
 import { logAudit } from '@/lib/audit';
@@ -96,7 +96,10 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
 
     let totalAmount = new Decimal(0);
 
-    const processedItems = await Promise.all(
+    // Pass 1: resolve item metadata and derive quantities/costs without touching InventoryValue.
+    // calculateMovingAverage needs the GRN's own id as the ledger ref, so it can only run once
+    // the GRN row exists — see the cost pass below, after tx.gRN.create.
+    const baseItems = await Promise.all(
       validated.items.map(async (item) => {
         const itemRow = await tx.item.findUnique({
           where: { id: item.itemId },
@@ -115,34 +118,11 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
         const lineTotal = qty.mul(unitCost);
         totalAmount = totalAmount.plus(lineTotal);
 
-        const variantKey = item.variantSku ?? null;
-        const costCalc = await calculateMovingAverage(
-          item.itemId,
-          qty,
-          unitCost,
-          tx,
-          variantKey
-        );
-
-        await tx.stockMovement.create({
-          data: {
-            itemId: item.itemId,
-            variantSku: variantKey,
-            type: 'IN',
-            refType: 'GRN',
-            refId: 'temp',
-            refDocNumber: docNumber,
-            qty: derivedQty,
-            unitCost: item.unitCost,
-            totalCost: lineTotal.toNumber(),
-            balanceQty: costCalc.newQty.toNumber(),
-            balanceValue: costCalc.newTotalValue.toNumber(),
-            notes: validated.notes ?? undefined,
-          },
-        });
-
         return {
           itemId: item.itemId,
+          // Raw (untrimmed) key used for the cost calc / stock movement; kept separate from the
+          // trimmed `variantSku` snapshot field below, matching the original behavior.
+          variantKey: item.variantSku ?? null,
           variantSku: item.variantSku?.trim() || null,
           qty: derivedQty,
           unitCost: item.unitCost,
@@ -151,10 +131,6 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
           overReceiveThreshold: itemRow.overReceiveThreshold != null ? Number(itemRow.overReceiveThreshold) : null,
           rolls,
           totalCost: lineTotal.toNumber(),
-          prevAvgCost: costCalc.previousAvgCost.toNumber(),
-          newAvgCost: costCalc.newAvgCost.toNumber(),
-          prevQty: costCalc.previousQty.toNumber(),
-          newQty: costCalc.newQty.toNumber(),
         };
       })
     );
@@ -171,7 +147,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
           poItem,
         ])
       );
-      for (const item of processedItems) {
+      for (const item of baseItems) {
         const poItem = poMap.get(grnPoLineKey(item.itemId, item.variantSku));
         if (!poItem) continue;
         const nextReceivedQty = Number(poItem.receivedQty) + Number(item.qty);
@@ -193,9 +169,82 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
         totalAmount: totalAmount.toNumber(),
         requiresOwnerApproval,
         photoUrls: validated.photoUrls ? JSON.stringify(validated.photoUrls) : null,
-        items: JSON.stringify(processedItems),
+        // Placeholder — patched below with the cost-calc results once grn.id exists to ref.
+        items: JSON.stringify(baseItems),
         notes: validated.notes ?? null,
       },
+    });
+
+    // Pass 2: run the moving-average cost calc now that grn.id is a real ledger ref. Sequential
+    // (not Promise.all) — the schema doesn't forbid the same itemId twice in one payload, and
+    // interleaved awaits on a never-before-stocked item could otherwise fork a duplicate
+    // InventoryValue row (MySQL treats variantSku null as distinct in the unique index, so the
+    // @@unique([itemId, variantSku]) constraint doesn't catch it). The stockMovement.create call
+    // below is untouched from before this migration.
+    const processedItems: Array<{
+      itemId: string;
+      variantSku: string | null;
+      qty: number;
+      unitCost: number;
+      itemType: string;
+      uomId: string;
+      overReceiveThreshold: number | null;
+      rolls: (typeof baseItems)[number]["rolls"];
+      totalCost: number;
+      prevAvgCost: number;
+      newAvgCost: number;
+      prevQty: number;
+      newQty: number;
+    }> = [];
+    for (const item of baseItems) {
+      const qty = new Decimal(item.qty);
+      const unitCost = new Decimal(item.unitCost);
+      const costCalc = await calculateMovingAverage(
+        item.itemId,
+        qty,
+        unitCost,
+        tx,
+        item.variantKey,
+        { refType: 'GRN', refId: grn.id, refDocNumber: docNumber, createdById: userId }
+      );
+
+      await tx.stockMovement.create({
+        data: {
+          itemId: item.itemId,
+          variantSku: item.variantKey,
+          type: 'IN',
+          refType: 'GRN',
+          refId: 'temp',
+          refDocNumber: docNumber,
+          qty: item.qty,
+          unitCost: item.unitCost,
+          totalCost: item.totalCost,
+          balanceQty: costCalc.newQty.toNumber(),
+          balanceValue: costCalc.newTotalValue.toNumber(),
+          notes: validated.notes ?? undefined,
+        },
+      });
+
+      processedItems.push({
+        itemId: item.itemId,
+        variantSku: item.variantSku,
+        qty: item.qty,
+        unitCost: item.unitCost,
+        itemType: item.itemType,
+        uomId: item.uomId,
+        overReceiveThreshold: item.overReceiveThreshold,
+        rolls: item.rolls,
+        totalCost: item.totalCost,
+        prevAvgCost: costCalc.previousAvgCost.toNumber(),
+        newAvgCost: costCalc.newAvgCost.toNumber(),
+        prevQty: costCalc.previousQty.toNumber(),
+        newQty: costCalc.newQty.toNumber(),
+      });
+    }
+
+    await tx.gRN.update({
+      where: { id: grn.id },
+      data: { items: JSON.stringify(processedItems) },
     });
 
     let rollSeq = 0;
@@ -318,7 +367,9 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
       receivedBy: grn.receivedBy,
       totalAmount: Number(grn.totalAmount),
       photoUrls: grn.photoUrls,
-      items: grn.items,
+      // grn.items (from the create call) is the pre-cost-calc placeholder — the real value was
+      // patched into the row by tx.gRN.update above once processedItems carried the cost fields.
+      items: JSON.stringify(processedItems),
       notes: grn.notes,
       grnDate: grn.grnDate,
       createdAt: grn.createdAt,
@@ -676,14 +727,11 @@ export async function declineGRNByOwner(id: string, userId: string) {
       }
       const variantKey = line.variantSku?.trim() ? line.variantSku.trim() : null;
 
-      const inv = await tx.inventoryValue.findUnique({
-        where: {
-          itemId_variantSku: {
-            itemId,
-            variantSku: variantKey ?? '',
-          },
-        },
-      });
+      // OR-tolerant — reuses costing.ts's own lookup so this pre-check and reverseMovingAverage's
+      // internal read below resolve the identical row (same deterministic orderBy tie-break),
+      // rather than this strict spelling missing a real variantSku: null row and wrongly
+      // reporting 0 on-hand for an item that has plenty.
+      const inv = await findExistingInventoryValueRow(tx, itemId, variantKey);
       const onHand = inv ? new Decimal(inv.qtyOnHand.toString()) : new Decimal(0);
       if (onHand.lt(qty)) {
         throw new Error(
@@ -696,7 +744,8 @@ export async function declineGRNByOwner(id: string, userId: string) {
         new Decimal(qty),
         new Decimal(unitCost),
         tx,
-        variantKey
+        variantKey,
+        { refType: 'GRN', refId: grn.id, refDocNumber: grn.docNumber, createdById: userId }
       );
 
       const lineTotal = new Decimal(qty).mul(unitCost).toNumber();

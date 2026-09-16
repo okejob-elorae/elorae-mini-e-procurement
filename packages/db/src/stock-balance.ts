@@ -1,0 +1,593 @@
+import type { Prisma } from "../generated/prisma/client";
+import { appendStockLedger, normaliseVariantKey, type StockLedgerEntryType } from "./stock-ledger";
+
+type Tx = Prisma.TransactionClient;
+
+type MoveCommon = {
+  itemId: string;
+  variantSku: string | null | undefined;
+  qtyDelta: number;
+  unitCost?: number | null;
+  /*
+   * Cost moves in the SAME update as quantity. Callers that previously recomputed a weighted
+   * average and issued their own follow-up update pass the result here instead, so a balance
+   * table is written only through a mover. The one exception is reservation-writer.ts, which
+   * decrements qtyOnHand and reservedQty in a single statement (once as a raw guarded UPDATE)
+   * and so calls appendStockLedger directly — the movers do not touch reservedQty, and giving
+   * them a parameter that moves no stock would blur the qtyOnHand-is-a-movement rule the ledger
+   * rests on. Omit both to move quantity without touching cost.
+   */
+  avgCost?: number | null;
+  totalValue?: number | null;
+  refType: string;
+  refId: string;
+  refDocNumber?: string;
+  createdById?: string | null;
+};
+
+export type MoveMainStockInput = MoveCommon & {
+  /*
+   * When no InventoryValue row exists yet, create one at this delta instead of throwing. The
+   * movement is the row's opening balance, so the ledger entry carries balanceQty === qtyDelta.
+   * Only the paths that legitimately receive stock for a not-yet-stocked item set this.
+   */
+  createIfMissing?: boolean;
+  /*
+   * When the caller already resolved the exact row itself — under the same OR-tolerant null/""
+   * rule this mover uses below — pass its id here to skip the lookup entirely and update that row
+   * directly. This guarantees the write lands on the row the caller read, rather than this mover
+   * re-resolving independently and potentially landing on a different row in the same null/""
+   * bucket (an item can legitimately have both a null and a "" row).
+   */
+  inventoryValueId?: string;
+};
+export type MoveStoreStockInput = MoveCommon & { storeId: string };
+export type MoveVanStockInput = MoveCommon & { userId: string };
+
+export function ledgerTypeForDelta(qtyDelta: number): StockLedgerEntryType {
+  if (qtyDelta > 0) return "IN";
+  if (qtyDelta < 0) return "OUT";
+  return "ADJUSTMENT";
+}
+
+/**
+ * Thrown when a main-warehouse decrement would take qtyOnHand below zero.
+ *
+ * Distinct and greppable on purpose: every caller that decrements main stock has its own
+ * advisory pre-check, and this is what fires when that pre-check was computed against a balance
+ * that moved before the write landed. It is never clamped and never swallowed — a negative main
+ * row has no repair path short of an opname, and `available = qtyOnHand - reservedQty` is derived
+ * at read time, so the bad figure propagates straight into loadVan, konsi reservation and the
+ * Jubelio stock push.
+ */
+export class MainStockNegativeError extends Error {
+  readonly itemId: string;
+  readonly qtyDelta: number;
+  readonly currentQty: number;
+
+  constructor(itemId: string, qtyDelta: number, currentQty: number) {
+    super(
+      `moveMainStock: refusing to move item ${itemId} by ${qtyDelta} — qtyOnHand is ${currentQty} and the result would be negative`,
+    );
+    this.name = "MainStockNegativeError";
+    this.itemId = itemId;
+    this.qtyDelta = qtyDelta;
+    this.currentQty = currentQty;
+  }
+}
+
+/*
+ * The floor lives in the UPDATE's own where clause, never in a preceding read. Every decrementing
+ * caller in this repo reads the row, checks the figure, and then issues an atomic decrement — so
+ * the check and the write see different states across the concurrent webhook workers, and all of
+ * these run in a plain $transaction rather than runSerializable. Expressing the floor as a filter
+ * makes the refusal atomic with the decrement itself: the row either still has the units or the
+ * statement matches nothing.
+ *
+ * Positive deltas add no condition: a receipt can never drive a balance negative, and an empty
+ * object keeps the filter shape identical for both directions.
+ */
+function negativeFloorFilter(qtyDelta: number): { qtyOnHand?: { gte: number } } {
+  return qtyDelta < 0 ? { qtyOnHand: { gte: -qtyDelta } } : {};
+}
+
+/**
+ * Moves main-warehouse stock and records the movement, in one call, inside the caller's
+ * transaction.
+ *
+ * The balance for the ledger row comes from the atomic update's own return value. Reading it
+ * back separately would race the concurrent webhook workers, which is exactly the class of bug
+ * the atomic increment rule exists to prevent.
+ *
+ * InventoryValue keys variantless rows as null OR "", both legitimately, so the row lookup stays
+ * OR-tolerant. The ledger normalises to "" on the way out; the balance table is left alone.
+ *
+ * A negative result is refused here, atomically, on both paths. Main differs from store and van
+ * on purpose: moveStoreStock documents a store balance legitimately going negative with a
+ * stocktake as the correction path, but main has no such routine correction — its balance feeds
+ * available-for-sale everywhere, and nothing schedules a count against it.
+ */
+export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<{ balanceQty: number }> {
+  if (input.inventoryValueId) {
+    // The caller resolved this row itself and is trusting us to write to exactly that row — but
+    // appendStockLedger below records input.itemId/input.variantSku, not whatever the row we'd
+    // blindly update actually belongs to. updateMany's own itemId filter is the ownership check:
+    // an id resolved for a different item matches zero rows here instead of silently moving the
+    // wrong balance under a ledger entry that lies about which item moved.
+    const result = await tx.inventoryValue.updateMany({
+      where: {
+        id: input.inventoryValueId,
+        itemId: input.itemId,
+        ...negativeFloorFilter(input.qtyDelta),
+      },
+      data: {
+        qtyOnHand: { increment: input.qtyDelta },
+        lastUpdated: new Date(),
+        ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
+        ...(input.totalValue == null ? {} : { totalValue: input.totalValue }),
+      },
+    });
+
+    if (result.count !== 1) {
+      // Two conditions can miss now, and they are not the same defect: a wrong-item id is a
+      // caller bug, an insufficient balance is a live race. Diagnose by re-reading without the
+      // floor rather than reporting one as the other.
+      const row = await tx.inventoryValue.findFirst({
+        where: { id: input.inventoryValueId, itemId: input.itemId },
+        select: { qtyOnHand: true },
+      });
+
+      if (row) {
+        throw new MainStockNegativeError(input.itemId, input.qtyDelta, Number(row.qtyOnHand));
+      }
+
+      throw new Error(
+        `moveMainStock: inventoryValueId ${input.inventoryValueId} does not belong to item ${input.itemId}`,
+      );
+    }
+
+    // updateMany returns only a count, never the row. Re-reading it here is safe for the same
+    // reason the reservation-writer read-back is: the row is already locked by the update that
+    // just succeeded above, inside this same transaction.
+    const reread = await tx.inventoryValue.findUniqueOrThrow({
+      where: { id: input.inventoryValueId },
+      select: { qtyOnHand: true },
+    });
+    const balanceQty = Number(reread.qtyOnHand);
+
+    await appendStockLedger(tx, {
+      location: { type: "MAIN" },
+      itemId: input.itemId,
+      variantSku: input.variantSku,
+      type: ledgerTypeForDelta(input.qtyDelta),
+      qty: input.qtyDelta,
+      balanceQty,
+      unitCost: input.unitCost,
+      refType: input.refType,
+      refId: input.refId,
+      refDocNumber: input.refDocNumber,
+      createdById: input.createdById,
+    });
+
+    return { balanceQty };
+  }
+
+  const existing = input.variantSku
+    ? await tx.inventoryValue.findFirst({
+        where: { itemId: input.itemId, variantSku: input.variantSku },
+        select: { id: true },
+      })
+    : await tx.inventoryValue.findFirst({
+        where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+        orderBy: { id: "asc" },
+        select: { id: true },
+      });
+
+  if (!existing) {
+    if (!input.createIfMissing) {
+      throw new Error(
+        `moveMainStock: no InventoryValue row for item ${input.itemId} variant ${normaliseVariantKey(input.variantSku)}`,
+      );
+    }
+
+    // A row opened at a negative delta is a negative main balance by another name, so it is
+    // refused on the same terms as a decrement that would cross zero. The create paths are
+    // receipts, which never get here with a negative delta.
+    if (input.qtyDelta < 0) {
+      throw new MainStockNegativeError(input.itemId, input.qtyDelta, 0);
+    }
+
+    /*
+     * The variantless spelling here is NULL, matching items/mutations.ts and every other writer
+     * that opens an InventoryValue row — it is the repo's decided convention and two specs pin it
+     * by name. Writing "" instead was tried and reverted: it buys the @@unique([itemId, variantSku])
+     * index as a fork guard (MySQL enforces the constraint for "" and treats NULLs as distinct),
+     * but it pays for that by minting a second spelling for the same logical row, which is the
+     * phantom-"" problem the OR-tolerant lookups exist to survive. The concurrent double-create it
+     * would have guarded is narrow — this branch only fires when NO row exists under either
+     * spelling — and is logged in docs/FOLLOWUPS.md rather than bought at that price.
+     */
+    await tx.inventoryValue.create({
+      data: {
+        itemId: input.itemId,
+        variantSku: input.variantSku || null,
+        qtyOnHand: input.qtyDelta,
+        reservedQty: 0,
+        avgCost: input.avgCost ?? 0,
+        totalValue: input.totalValue ?? 0,
+      },
+    });
+
+    await appendStockLedger(tx, {
+      location: { type: "MAIN" },
+      itemId: input.itemId,
+      variantSku: input.variantSku,
+      type: ledgerTypeForDelta(input.qtyDelta),
+      qty: input.qtyDelta,
+      balanceQty: input.qtyDelta,
+      unitCost: input.unitCost,
+      refType: input.refType,
+      refId: input.refId,
+      refDocNumber: input.refDocNumber,
+      createdById: input.createdById,
+    });
+
+    return { balanceQty: input.qtyDelta };
+  }
+
+  // updateMany rather than update, for the floor filter alone: `update` would have to express the
+  // refusal as a P2025 the caller cannot tell apart from a vanished row.
+  const result = await tx.inventoryValue.updateMany({
+    where: { id: existing.id, ...negativeFloorFilter(input.qtyDelta) },
+    data: {
+      qtyOnHand: { increment: input.qtyDelta },
+      lastUpdated: new Date(),
+      ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
+      ...(input.totalValue == null ? {} : { totalValue: input.totalValue }),
+    },
+  });
+
+  if (result.count !== 1) {
+    const row = await tx.inventoryValue.findUnique({
+      where: { id: existing.id },
+      select: { qtyOnHand: true },
+    });
+
+    if (row) {
+      throw new MainStockNegativeError(input.itemId, input.qtyDelta, Number(row.qtyOnHand));
+    }
+
+    throw new Error(
+      `moveMainStock: InventoryValue row ${existing.id} for item ${input.itemId} vanished mid-transaction`,
+    );
+  }
+
+  // updateMany returns only a count, never the row. Re-reading it here is safe for the same reason
+  // the pinned path's read-back is: the row is already locked by the update that just succeeded.
+  const updated = await tx.inventoryValue.findUniqueOrThrow({
+    where: { id: existing.id },
+    select: { qtyOnHand: true },
+  });
+
+  const balanceQty = Number(updated.qtyOnHand);
+
+  await appendStockLedger(tx, {
+    location: { type: "MAIN" },
+    itemId: input.itemId,
+    variantSku: input.variantSku,
+    type: ledgerTypeForDelta(input.qtyDelta),
+    qty: input.qtyDelta,
+    balanceQty,
+    unitCost: input.unitCost,
+    refType: input.refType,
+    refId: input.refId,
+    refDocNumber: input.refDocNumber,
+    createdById: input.createdById,
+  });
+
+  return { balanceQty };
+}
+
+/**
+ * StoreStock.variantSku is non-nullable, so the key normalises on write. A store balance may go
+ * negative on purpose — a stocktake is the correction path — so there is no floor guard here.
+ */
+export async function moveStoreStock(tx: Tx, input: MoveStoreStockInput): Promise<{ balanceQty: number }> {
+  const variantSku = normaliseVariantKey(input.variantSku);
+  const key = {
+    storeId_itemId_variantSku: { storeId: input.storeId, itemId: input.itemId, variantSku },
+  };
+
+  const updated = await tx.storeStock.upsert({
+    where: key,
+    create: {
+      storeId: input.storeId,
+      itemId: input.itemId,
+      variantSku,
+      qty: input.qtyDelta,
+      avgCost: input.avgCost ?? 0,
+    },
+    update: {
+      qty: { increment: input.qtyDelta },
+      ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
+    },
+    select: { qty: true },
+  });
+
+  const balanceQty = Number(updated.qty);
+
+  await appendStockLedger(tx, {
+    location: { type: "STORE", storeId: input.storeId },
+    itemId: input.itemId,
+    variantSku,
+    type: ledgerTypeForDelta(input.qtyDelta),
+    qty: input.qtyDelta,
+    balanceQty,
+    unitCost: input.unitCost,
+    refType: input.refType,
+    refId: input.refId,
+    refDocNumber: input.refDocNumber,
+    createdById: input.createdById,
+  });
+
+  return { balanceQty };
+}
+
+/**
+ * VanStock.variantSku is nullable, and its writers insert "". The upsert key must therefore match
+ * what the existing writers use — the normalised empty string — or a second row forks alongside.
+ */
+export async function moveVanStock(tx: Tx, input: MoveVanStockInput): Promise<{ balanceQty: number }> {
+  const variantSku = normaliseVariantKey(input.variantSku);
+  const key = {
+    userId_itemId_variantSku: { userId: input.userId, itemId: input.itemId, variantSku },
+  };
+
+  const updated = await tx.vanStock.upsert({
+    where: key,
+    create: {
+      userId: input.userId,
+      itemId: input.itemId,
+      variantSku,
+      qty: input.qtyDelta,
+      avgCost: input.avgCost ?? 0,
+    },
+    update: {
+      qty: { increment: input.qtyDelta },
+      ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
+    },
+    select: { qty: true },
+  });
+
+  const balanceQty = Number(updated.qty);
+
+  await appendStockLedger(tx, {
+    location: { type: "VAN", userId: input.userId },
+    itemId: input.itemId,
+    variantSku,
+    type: ledgerTypeForDelta(input.qtyDelta),
+    qty: input.qtyDelta,
+    balanceQty,
+    unitCost: input.unitCost,
+    refType: input.refType,
+    refId: input.refId,
+    refDocNumber: input.refDocNumber,
+    createdById: input.createdById,
+  });
+
+  return { balanceQty };
+}
+
+type SetCommon = {
+  itemId: string;
+  variantSku: string | null | undefined;
+  nextQty: number;
+  /*
+   * Recorded on the ledger entry only — a count does not reprice stock, so this never reaches the
+   * balance table. It exists so a set-mover entry carries the same unit cost a delta-mover entry
+   * would for the identical movement; omit it and the entry is simply costless.
+   */
+  unitCost?: number | null;
+  refType: string;
+  refId: string;
+  refDocNumber?: string;
+  createdById?: string | null;
+};
+
+export type SetMainStockInput = SetCommon & {
+  /*
+   * Cost moves in the SAME update as quantity, mirroring moveMainStock's own contract exactly.
+   * Omit both to move quantity without touching cost.
+   */
+  avgCost?: number | null;
+  totalValue?: number | null;
+  /*
+   * When the caller already resolved the exact row itself — under the same OR-tolerant null/""
+   * rule moveMainStock uses — pass its id here to pin the write to that row instead of letting
+   * this mover re-resolve independently and potentially landing on a different row in the same
+   * null/"" bucket. Mirrors moveMainStock's inventoryValueId contract exactly.
+   */
+  inventoryValueId?: string;
+};
+export type SetStoreStockInput = SetCommon & { storeId: string };
+
+export function deltaForSet(previousQty: number, nextQty: number): number {
+  return nextQty - previousQty;
+}
+
+/**
+ * Sets an absolute main-warehouse quantity, as a physical count does, and records the difference
+ * as one ADJUSTMENT entry.
+ *
+ * Reading before writing is safe here in a way it is not for the delta movers: a count is
+ * authoritative by definition, so the last writer legitimately wins and there is no concurrent
+ * increment semantics to preserve. A set that changes nothing writes no ledger entry at all.
+ */
+export async function setMainStock(
+  tx: Tx,
+  input: SetMainStockInput,
+): Promise<{ balanceQty: number; changed: boolean }> {
+  if (input.inventoryValueId) {
+    // Mirrors moveMainStock's pinned path: ownership is enforced on the write itself (the
+    // updateMany's own itemId filter), not on a separate read, so a resolved-but-wrong-item id
+    // can never silently move the wrong row's balance under a ledger entry that lies about which
+    // item moved. A pre-read is still needed here (unlike moveMainStock) because a set's delta —
+    // and its zero-delta short-circuit — depend on knowing the previous quantity before deciding
+    // whether to write at all; the same id+itemId filter doubles as the pre-read's ownership
+    // check, so a wrong-item id throws here with the real previous data rather than computing a
+    // delta against a row that was never the caller's to move.
+    const existing = await tx.inventoryValue.findFirst({
+      where: { id: input.inventoryValueId, itemId: input.itemId },
+      select: { qtyOnHand: true },
+    });
+
+    if (!existing) {
+      throw new Error(
+        `setMainStock: inventoryValueId ${input.inventoryValueId} does not belong to item ${input.itemId}`,
+      );
+    }
+
+    const previousQty = Number(existing.qtyOnHand);
+    const delta = deltaForSet(previousQty, input.nextQty);
+
+    if (delta === 0) return { balanceQty: previousQty, changed: false };
+
+    const result = await tx.inventoryValue.updateMany({
+      where: { id: input.inventoryValueId, itemId: input.itemId },
+      data: {
+        qtyOnHand: input.nextQty,
+        lastUpdated: new Date(),
+        ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
+        ...(input.totalValue == null ? {} : { totalValue: input.totalValue }),
+      },
+    });
+
+    if (result.count !== 1) {
+      throw new Error(
+        `setMainStock: inventoryValueId ${input.inventoryValueId} does not belong to item ${input.itemId}`,
+      );
+    }
+
+    // updateMany returns only a count, never the row. Re-reading it here is safe for the same
+    // reason moveMainStock's pinned-path read-back is: the row is already locked by the update
+    // that just succeeded above, inside this same transaction.
+    const reread = await tx.inventoryValue.findUniqueOrThrow({
+      where: { id: input.inventoryValueId },
+      select: { qtyOnHand: true },
+    });
+    const balanceQty = Number(reread.qtyOnHand);
+
+    await appendStockLedger(tx, {
+      location: { type: "MAIN" },
+      itemId: input.itemId,
+      variantSku: input.variantSku,
+      type: "ADJUSTMENT",
+      qty: delta,
+      balanceQty,
+      unitCost: input.unitCost,
+      refType: input.refType,
+      refId: input.refId,
+      refDocNumber: input.refDocNumber,
+      createdById: input.createdById,
+    });
+
+    return { balanceQty, changed: true };
+  }
+
+  const existing = input.variantSku
+    ? await tx.inventoryValue.findFirst({
+        where: { itemId: input.itemId, variantSku: input.variantSku },
+        select: { id: true, qtyOnHand: true },
+      })
+    : await tx.inventoryValue.findFirst({
+        where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+        orderBy: { id: "asc" },
+        select: { id: true, qtyOnHand: true },
+      });
+
+  if (!existing) {
+    throw new Error(
+      `setMainStock: no InventoryValue row for item ${input.itemId} variant ${normaliseVariantKey(input.variantSku)}`,
+    );
+  }
+
+  const previousQty = Number(existing.qtyOnHand);
+  const delta = deltaForSet(previousQty, input.nextQty);
+
+  if (delta === 0) return { balanceQty: previousQty, changed: false };
+
+  await tx.inventoryValue.update({
+    where: { id: existing.id },
+    data: {
+      qtyOnHand: input.nextQty,
+      lastUpdated: new Date(),
+      ...(input.avgCost == null ? {} : { avgCost: input.avgCost }),
+      ...(input.totalValue == null ? {} : { totalValue: input.totalValue }),
+    },
+  });
+
+  await appendStockLedger(tx, {
+    location: { type: "MAIN" },
+    itemId: input.itemId,
+    variantSku: input.variantSku,
+    type: "ADJUSTMENT",
+    qty: delta,
+    balanceQty: input.nextQty,
+    unitCost: input.unitCost,
+    refType: input.refType,
+    refId: input.refId,
+    refDocNumber: input.refDocNumber,
+    createdById: input.createdById,
+  });
+
+  return { balanceQty: input.nextQty, changed: true };
+}
+
+/**
+ * The store counterpart, used by the store stocktake approval, which sets the counted figure
+ * rather than adjusting by a delta. A stocktake-created row lands at avgCost 0 by existing
+ * convention; this does not change that.
+ */
+export async function setStoreStock(
+  tx: Tx,
+  input: SetStoreStockInput,
+): Promise<{ balanceQty: number; changed: boolean }> {
+  const variantSku = normaliseVariantKey(input.variantSku);
+  const key = {
+    storeId_itemId_variantSku: { storeId: input.storeId, itemId: input.itemId, variantSku },
+  };
+
+  const existing = await tx.storeStock.findUnique({ where: key, select: { qty: true } });
+  const previousQty = existing ? Number(existing.qty) : 0;
+  const delta = deltaForSet(previousQty, input.nextQty);
+
+  if (delta === 0) return { balanceQty: previousQty, changed: false };
+
+  await tx.storeStock.upsert({
+    where: key,
+    create: {
+      storeId: input.storeId,
+      itemId: input.itemId,
+      variantSku,
+      qty: input.nextQty,
+      avgCost: 0,
+    },
+    update: { qty: input.nextQty },
+  });
+
+  await appendStockLedger(tx, {
+    location: { type: "STORE", storeId: input.storeId },
+    itemId: input.itemId,
+    variantSku,
+    type: "ADJUSTMENT",
+    qty: delta,
+    balanceQty: input.nextQty,
+    unitCost: input.unitCost,
+    refType: input.refType,
+    refId: input.refId,
+    refDocNumber: input.refDocNumber,
+    createdById: input.createdById,
+  });
+
+  return { balanceQty: input.nextQty, changed: true };
+}

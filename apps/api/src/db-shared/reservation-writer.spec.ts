@@ -97,6 +97,14 @@ describe("consumeOrder", () => {
         update: jest.fn().mockResolvedValue({ qtyOnHand: "7" }),
       },
       stockAdjustment: { create: jest.fn().mockResolvedValue({ id: "a1" }) },
+      // consumeOrder appends one ledger entry per consumed line via appendStockLedger, which
+      // calls tx.stockLedgerEntry.create unconditionally — without this the real consume path
+      // below throws on tx.stockLedgerEntry being undefined.
+      stockLedgerEntry: { create: jest.fn().mockResolvedValue({}) },
+      // The fixture row carries salesorderDetailId, so consumeOrder also back-fills that line's
+      // COGS. Pre-existing gap: this mock never declared salesOrderItem, so the call threw here
+      // long before the ledger work — the ledger entry above just moved the throw one line later.
+      salesOrderItem: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     const r = await consumeOrder(tx, { salesorderId: 100, salesorderNo: "SO-100" });
     expect(r.consumed).toBe(1);
@@ -114,6 +122,9 @@ describe("consumeOrder", () => {
           totalValue: { decrement: 6 },
         }),
       }),
+    );
+    expect(tx.stockLedgerEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ itemId: "i1", qty: -3, balanceQty: 7 }) }),
     );
   });
 

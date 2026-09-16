@@ -111,6 +111,7 @@ d("store stocktake writer (test bed only)", () => {
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId), itemId: { in: itemIds } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemMainId), seededId(itemNegativeId), seededId(itemZeroId), seededId(itemAddedId)] } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });

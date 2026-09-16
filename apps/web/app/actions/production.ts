@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
-import { prisma, recalcItemSellingPrice } from '@elorae/db';
+import { prisma, recalcItemSellingPrice, moveMainStock } from '@elorae/db';
 import { apiFetch } from "@/lib/internal-api";
 import { generateDocNumber } from '@/lib/docNumber';
 import { generateMaterialPlan } from '@/lib/production/planning';
@@ -666,6 +666,25 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       totalSellingPrice?: number;
     }> = [];
 
+    // Created ahead of the deduction loop so its id is a real ledger ref for the moveMainStock
+    // calls below — the same read-then-write ordering per row as before this row existed, so a
+    // duplicate item/variant in one payload still re-reads post-deduction stock on its second
+    // occurrence. items/totalCost are placeholders patched in below once the loop has computed
+    // them (mirrors the tx.gRN.update patch in grn.ts for the same reason).
+    const issue = await tx.materialIssue.create({
+      data: {
+        docNumber,
+        woId: data.woId,
+        issueType: data.issueType,
+        isPartial: data.isPartial,
+        parentIssueId: data.parentIssueId ?? undefined,
+        notes: data.notes ?? undefined,
+        items: JSON.stringify([]),
+        totalCost: 0,
+        issuedById: userId
+      }
+    });
+
     for (const item of validated.items) {
       const variantKey = item.variantSku != null && item.variantSku !== '' ? item.variantSku : '';
       const itemRow = await tx.item.findUnique({
@@ -712,13 +731,23 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         if (take <= 0) continue;
         const newQty = row.qtyOnHand - take;
         const newValue = newQty * row.avgCost;
-        await tx.inventoryValue.update({
-          where: { id: row.id },
-          data: { qtyOnHand: newQty, totalValue: newValue }
+        const effectiveSku = row.variantSku ?? '';
+        await moveMainStock(tx, {
+          itemId: item.itemId,
+          variantSku: effectiveSku,
+          qtyDelta: -take,
+          totalValue: newValue,
+          // Pins the write to the exact row this iteration just read — two rows in the same
+          // null/"" bucket would otherwise let moveMainStock's own re-resolution collapse both
+          // iterations onto one row, double-decrementing it.
+          inventoryValueId: row.id,
+          refType: 'MaterialIssue',
+          refId: issue.id,
+          refDocNumber: docNumber,
+          createdById: userId,
         });
         weightedCostSum += take * row.avgCost;
         remainingToDeduct -= take;
-        const effectiveSku = row.variantSku ?? '';
         movementData.push({
           itemId: item.itemId,
           variantSku: effectiveSku,
@@ -825,18 +854,15 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       }
     }
 
-    const issue = await tx.materialIssue.create({
+    // Patches in the real snapshot now that the loop above has computed it — the row itself
+    // (and every moveMainStock ledger entry's refId) was already created before that loop.
+    const patchedIssue = await tx.materialIssue.update({
+      where: { id: issue.id },
       data: {
-        docNumber,
-        woId: data.woId,
-        issueType: data.issueType,
-        isPartial: data.isPartial,
-        parentIssueId: data.parentIssueId ?? undefined,
-        notes: data.notes ?? undefined,
         items: JSON.stringify(issueItemsForJson),
         totalCost: totalCost.toNumber(),
-        issuedById: userId
-      }
+      },
+      select: { totalCost: true },
     });
 
     for (const mov of movementData) {
@@ -878,7 +904,9 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
     return {
       id: issue.id,
       docNumber: issue.docNumber,
-      totalCost: Number(issue.totalCost),
+      // Reads the value as persisted (Decimal(15,2), rounded by the DB) from the patch update's
+      // own return, not the unrounded totalCost accumulator — the two can differ past 2dp.
+      totalCost: Number(patchedIssue.totalCost),
     };
   });
 
@@ -1179,7 +1207,8 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
             new Decimal(row.qty),
             avgCostPerUnit,
             tx,
-            row.variantSku
+            row.variantSku,
+            { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: userId }
           );
           const rowCost = avgCostPerUnit.mul(row.qty).toNumber();
           await tx.stockMovement.create({
@@ -1213,7 +1242,8 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
           new Decimal(qtyAccepted),
           avgCostPerUnit,
           tx,
-          fgVariantSku
+          fgVariantSku,
+          { refType: 'FGReceipt', refId: receipt.id, refDocNumber: docNumber, createdById: userId }
         );
         await tx.stockMovement.create({
           data: {

@@ -1,4 +1,4 @@
-import { prisma, Prisma } from "@elorae/db";
+import { prisma, Prisma, moveVanStock } from "@elorae/db";
 import { computeStorePrice, roundToWholeRupiah } from "@elorae/db/pricing";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { runSerializable } from "@/lib/db/tx-retry";
@@ -87,13 +87,6 @@ export async function recordVanSale(input: {
     if (input.amountPaid < total) return { ok: false, code: "INSUFFICIENT_PAYMENT" };
     const changeAmount = input.amountPaid - total;
 
-    for (const p of priced) {
-      await tx.vanStock.update({
-        where: { userId_itemId_variantSku: { userId: input.salesmanId, itemId: p.line.itemId, variantSku: p.line.variantSku ?? "" } },
-        data: { qty: p.vanQty - p.line.qty },
-      });
-    }
-
     const docNo = await generateDocNumber("VANSALE", tx);
     const sale = await tx.vanSale.create({
       data: {
@@ -124,6 +117,18 @@ export async function recordVanSale(input: {
       },
       select: { id: true },
     });
+
+    for (const p of priced) {
+      await moveVanStock(tx, {
+        userId: input.salesmanId,
+        itemId: p.line.itemId,
+        variantSku: p.line.variantSku,
+        qtyDelta: -p.line.qty,
+        refType: "VanSale",
+        refId: sale.id,
+        refDocNumber: docNo,
+      });
+    }
 
     const now = new Date();
     const rows = buildOfflineSalesHistoryRows({

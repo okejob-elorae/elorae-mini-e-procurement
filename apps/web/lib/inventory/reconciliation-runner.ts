@@ -1,7 +1,8 @@
 import type { Prisma, ReconDirection, ReconTrigger, StockAdjustmentSource } from "@elorae/db";
-import { prisma } from "@elorae/db";
+import { moveMainStock, prisma } from "@elorae/db";
 import { Decimal } from "decimal.js";
 import { generateDocNumber } from "@/lib/docNumber";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { apiFetch } from "@/lib/internal-api";
 import {
   classifyVariance,
@@ -74,9 +75,7 @@ async function applyMatchJubelio(
   },
 ): Promise<void> {
   const variantKey = params.variantSku;
-  const inv = await tx.inventoryValue.findUnique({
-    where: { itemId_variantSku: { itemId: params.itemId, variantSku: variantKey } },
-  });
+  const inv = await findExistingInventoryValueRow(tx, params.itemId, variantKey);
   if (!inv) return;
 
   const prevQty = new Decimal(inv.qtyOnHand.toString());
@@ -86,13 +85,14 @@ async function applyMatchJubelio(
   const prevAvgCost = new Decimal(inv.avgCost.toString());
   const qtyChange = newQty.minus(prevQty).abs();
   const type = newQty.gte(prevQty) ? "POSITIVE" : "NEGATIVE";
+  const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
   const idempotencyKey = `recon:${params.runId}:${params.itemId}:${variantKey || "base"}`;
 
   const existing = await tx.stockAdjustment.findUnique({ where: { idempotencyKey } });
   if (existing) return;
 
   const adjDoc = await generateDocNumber("ADJ", tx);
-  await tx.stockAdjustment.create({
+  const adjustment = await tx.stockAdjustment.create({
     data: {
       docNumber: adjDoc,
       itemId: params.itemId,
@@ -110,16 +110,19 @@ async function applyMatchJubelio(
   });
 
   const newTotalValue = newQty.mul(prevAvgCost);
-  await tx.inventoryValue.update({
-    where: { id: inv.id },
-    data: {
-      qtyOnHand: newQty.toNumber(),
-      totalValue: newTotalValue.toNumber(),
-      lastUpdated: new Date(),
-    },
+  await moveMainStock(tx, {
+    itemId: params.itemId,
+    variantSku: variantKey,
+    qtyDelta: adjQty,
+    totalValue: newTotalValue.toNumber(),
+    unitCost: prevAvgCost.toNumber(),
+    inventoryValueId: inv.id,
+    refType: "Reconciliation",
+    refId: adjustment.id,
+    refDocNumber: adjDoc,
+    createdById: params.userId ?? null,
   });
 
-  const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
   await tx.stockMovement.create({
     data: {
       itemId: params.itemId,

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId } from "@elorae/db";
 import { detectItemDrift, applyFgAccessoriesAdjustments } from "./opname-approve";
 
 // Regression: Jubelio-ingested items store InventoryValue with variantSku = NULL.
@@ -10,13 +10,20 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 d("opname NULL-variant InventoryValue lookup (test bed only)", () => {
-  let token: string;
-  let userId: string;
-  let uomId: string;
-  let itemId: string;
-  let opnameId: string;
+  let token = "";
+  let userId = "";
+  let uomId = "";
+  let itemId = "";
+  let opnameId = "";
 
   beforeEach(async () => {
+    /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
+    token = "";
+    userId = "";
+    uomId = "";
+    itemId = "";
+    opnameId = "";
+
     token = Math.floor(Math.random() * 10_000_000).toString();
 
     const user = await prisma.user.create({
@@ -52,14 +59,15 @@ d("opname NULL-variant InventoryValue lookup (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.stockMovement.deleteMany({ where: { refType: "OPNAME", refId: opnameId } });
-    await prisma.stockAdjustment.deleteMany({ where: { externalRef: opnameId } });
-    await prisma.stockOpnameItem.deleteMany({ where: { opnameId } });
-    await prisma.stockOpname.delete({ where: { id: opnameId } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId } });
-    await prisma.item.delete({ where: { id: itemId } });
-    await prisma.uOM.delete({ where: { id: uomId } });
-    await prisma.user.delete({ where: { id: userId } });
+    await prisma.stockMovement.deleteMany({ where: { refType: "OPNAME", refId: seededId(opnameId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { externalRef: seededId(opnameId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockOpnameItem.deleteMany({ where: { opnameId: seededId(opnameId) } });
+    if (opnameId) await prisma.stockOpname.delete({ where: { id: opnameId } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    if (itemId) await prisma.item.delete({ where: { id: itemId } });
+    if (uomId) await prisma.uOM.delete({ where: { id: uomId } });
+    if (userId) await prisma.user.delete({ where: { id: userId } });
   });
 
   it("detectItemDrift finds the NULL-variant row — no false drift when count matches live qty", async () => {

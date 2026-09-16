@@ -1,7 +1,8 @@
-import { prisma, Prisma } from "@elorae/db";
+import { prisma, Prisma, moveMainStock, moveVanStock } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { weightedAvgCost } from "@/lib/inventory/weighted-avg-cost";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 
 export type LoadVanLine = { itemId: string; variantSku: string | null; qty: number };
 export type LoadVanResult =
@@ -34,11 +35,14 @@ export async function loadVan(input: {
     // read current main inventory for each line
     const invByKey = new Map<string, { id: string; qtyOnHand: Prisma.Decimal; reservedQty: Prisma.Decimal; avgCost: Prisma.Decimal } | null>();
     for (const l of merged) {
-      // Variantless inventory rows use variantSku: null (not "") in this codebase; tolerate both.
-      const sel = { id: true, qtyOnHand: true, reservedQty: true, avgCost: true } as const;
-      const inv = (l.variantSku ?? "") === ""
-        ? await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, OR: [{ variantSku: null }, { variantSku: "" }] }, select: sel })
-        : await tx.inventoryValue.findFirst({ where: { itemId: l.itemId, variantSku: l.variantSku }, select: sel });
+      /*
+       * findExistingInventoryValueRow is THE spelling of this lookup — OR-tolerant on a falsy
+       * variantSku AND carrying the orderBy id asc tie-break. The tie-break is load-bearing here,
+       * not cosmetic: the id resolved below is pinned into moveMainStock as inventoryValueId, so
+       * without it two paths reading the same null/"" bucket can pin different rows and interleave
+       * two independent balances under one ledger key.
+       */
+      const inv = await findExistingInventoryValueRow(tx, l.itemId, l.variantSku);
       invByKey.set(`${l.itemId}::${l.variantSku ?? ""}`, inv);
     }
 
@@ -54,15 +58,36 @@ export async function loadVan(input: {
     const canvasserLabel = canvasser?.name ?? canvasser?.email ?? input.canvasserId;
     const docNo = await generateDocNumber("VANLOAD", tx);
 
+    // Created ahead of the loop so its id is a real refId for the ledger entries below, not the
+    // doc number. The line rows are appended via createMany once the loop has the per-line costs.
+    const load = await tx.vanLoad.create({
+      data: {
+        docNo,
+        canvasserId: input.canvasserId,
+        loadedById: input.loadedById,
+        note: input.note,
+      },
+      select: { id: true },
+    });
+
+    const lineData: Array<{ vanLoadId: string; itemId: string; variantSku: string; qty: number; unitCost: number }> = [];
+
     for (const l of merged) {
       const inv = invByKey.get(`${l.itemId}::${l.variantSku ?? ""}`)!;
       const prevQty = inv.qtyOnHand.toNumber();
       const avgCost = inv.avgCost.toNumber();
       const newQty = prevQty - l.qty;
 
-      await tx.inventoryValue.update({
-        where: { id: inv.id },
-        data: { qtyOnHand: newQty, totalValue: newQty * avgCost },
+      await moveMainStock(tx, {
+        itemId: l.itemId,
+        variantSku: l.variantSku,
+        qtyDelta: -l.qty,
+        totalValue: newQty * avgCost,
+        inventoryValueId: inv.id,
+        refType: "VanLoad",
+        refId: load.id,
+        refDocNumber: docNo,
+        createdById: input.loadedById,
       });
 
       await tx.stockAdjustment.create({
@@ -91,30 +116,22 @@ export async function loadVan(input: {
       const prevVanQty = van ? van.qty.toNumber() : 0;
       const prevVanAvg = van ? van.avgCost.toNumber() : 0;
       const newVanAvg = weightedAvgCost(prevVanQty, prevVanAvg, l.qty, avgCost);
-      await tx.vanStock.upsert({
-        where: { userId_itemId_variantSku: { userId: input.canvasserId, itemId: l.itemId, variantSku: vanVariantSku } },
-        create: { userId: input.canvasserId, itemId: l.itemId, variantSku: vanVariantSku, qty: l.qty, avgCost: avgCost },
-        update: { qty: prevVanQty + l.qty, avgCost: newVanAvg },
+      await moveVanStock(tx, {
+        userId: input.canvasserId,
+        itemId: l.itemId,
+        variantSku: l.variantSku,
+        qtyDelta: l.qty,
+        avgCost: newVanAvg,
+        refType: "VanLoad",
+        refId: load.id,
+        refDocNumber: docNo,
+        createdById: input.loadedById,
       });
+
+      lineData.push({ vanLoadId: load.id, itemId: l.itemId, variantSku: vanVariantSku, qty: l.qty, unitCost: avgCost });
     }
 
-    const load = await tx.vanLoad.create({
-      data: {
-        docNo,
-        canvasserId: input.canvasserId,
-        loadedById: input.loadedById,
-        note: input.note,
-        lines: {
-          create: merged.map((l) => ({
-            itemId: l.itemId,
-            variantSku: l.variantSku ?? "",
-            qty: l.qty,
-            unitCost: invByKey.get(`${l.itemId}::${l.variantSku ?? ""}`)!.avgCost.toNumber(),
-          })),
-        },
-      },
-      select: { id: true },
-    });
+    await tx.vanLoadLine.createMany({ data: lineData });
 
     return { ok: true, loadId: load.id, docNo };
   });

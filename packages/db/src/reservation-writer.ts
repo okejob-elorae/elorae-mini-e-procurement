@@ -1,5 +1,7 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
+import { ledgerTypeForDelta } from "./stock-balance";
+import { appendStockLedger } from "./stock-ledger";
 import { InventoryValueMissingError } from "./stock-writer";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
@@ -61,6 +63,7 @@ export async function reserveOrder(client: AnyClient, input: ReserveOrderInput):
         where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
       });
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
+      /* No ledger entry: a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       const updated = await tx.inventoryValue.update({
         where: { itemId_variantSku: { itemId: line.itemId, variantSku: line.variantSku } },
         data: { reservedQty: { increment: line.qty }, lastUpdated: new Date() },
@@ -127,6 +130,25 @@ export async function consumeOrder(
       const newOnHand = Number(updated.qtyOnHand);
       const prevOnHand = newOnHand + qty;
 
+      /**
+       * One ledger entry for the qtyOnHand movement only. The same statement also releases the
+       * reservation, but that half moves nothing and is deliberately not a second entry.
+       * balanceQty comes from the update's own return value, never a follow-up read, so it
+       * cannot race the concurrent webhook workers.
+       */
+      await appendStockLedger(tx, {
+        location: { type: "MAIN" },
+        itemId: row.itemId,
+        variantSku: row.variantSku,
+        type: ledgerTypeForDelta(-qty),
+        qty: -qty,
+        balanceQty: newOnHand,
+        unitCost: avgCost,
+        refType: "FulfillmentConsume",
+        refId: row.id,
+        refDocNumber: input.salesorderNo,
+      });
+
       await tx.stockAdjustment.create({
         data: {
           docNumber: `CONSUME-${input.salesorderId}-${row.salesorderDetailId}`,
@@ -183,6 +205,7 @@ export async function releaseOrder(
         where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
       });
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
+      /* No ledger entry: releasing a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       await tx.inventoryValue.update({
         where: { itemId_variantSku: { itemId: row.itemId, variantSku: row.variantSku } },
         data: { reservedQty: { decrement: Number(row.qty) }, lastUpdated: new Date() },
@@ -226,6 +249,7 @@ export async function reserveFieldSalesOrder(
       });
       const inv = await findFieldSalesInventory(tx, line.itemId, line.variantSku);
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
+      /* No ledger entry: a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       const updated = await tx.inventoryValue.update({
         where: { id: inv.id },
         data: { reservedQty: { increment: line.qty }, lastUpdated: new Date() },
@@ -289,6 +313,7 @@ export async function consumeFieldSalesOrderPartial(
       // Folds the OVER_CONSUME check into the write so two concurrent partial consumes
       // on the same fieldSalesLineId can't both pass a stale read (see reserveKonsiFieldSalesOrder
       // for the same idiom against InventoryValue).
+      /* No ledger entry: StockReservation is not an inventory balance table. */
       const affected = await tx.$executeRaw`
         UPDATE StockReservation
         SET consumedQty = consumedQty + ${line.qty}
@@ -345,8 +370,30 @@ export async function consumeFieldSalesOrderPartial(
           data: { state: "CONSUMED", resolvedAt: new Date() },
         });
       }
+      /**
+       * Success path only — the affected === 0 branch above has already continued. Reading the
+       * row back is safe here in a way it is not for a Prisma update: $executeRaw returns an
+       * affected-row count rather than the row, the transaction sees its own write, and the row
+       * is already locked by the update that just succeeded.
+       */
       const updated = await tx.inventoryValue.findUniqueOrThrow({ where: { id: p.invId }, select: { qtyOnHand: true } });
       const newOnHand = Number(updated.qtyOnHand);
+      /**
+       * One ledger entry for the qtyOnHand movement only. The guarded update also released the
+       * reservation in the same statement, but that half moves nothing and is not a second entry.
+       */
+      await appendStockLedger(tx, {
+        location: { type: "MAIN" },
+        itemId: p.line.itemId,
+        variantSku: p.line.variantSku,
+        type: ledgerTypeForDelta(-qty),
+        qty: -qty,
+        balanceQty: newOnHand,
+        unitCost: p.avgCost,
+        refType: "FieldSalesConsume",
+        refId: p.line.fieldSalesLineId,
+        refDocNumber: input.orderNo,
+      });
       await tx.stockAdjustment.create({
         data: {
           docNumber: `CONSUME-${input.orderNo}-${input.deliveryId}-${p.line.fieldSalesLineId}`,
@@ -403,6 +450,24 @@ export async function consumeFieldSalesOrder(
       });
       const newOnHand = Number(updated.qtyOnHand);
       const prevOnHand = newOnHand + qty;
+      /**
+       * One ledger entry for the qtyOnHand movement only. The same statement also releases the
+       * reservation, but that half moves nothing and is deliberately not a second entry.
+       * The where clause above already restricts to non-null fieldSalesLineId; the fallback to
+       * the reservation row id only keeps refId typed as a string.
+       */
+      await appendStockLedger(tx, {
+        location: { type: "MAIN" },
+        itemId: row.itemId,
+        variantSku: row.variantSku,
+        type: ledgerTypeForDelta(-qty),
+        qty: -qty,
+        balanceQty: newOnHand,
+        unitCost: avgCost,
+        refType: "FieldSalesConsume",
+        refId: row.fieldSalesLineId ?? row.id,
+        refDocNumber: input.orderNo,
+      });
       await tx.stockAdjustment.create({
         data: {
           docNumber: `CONSUME-${input.orderNo}-${row.fieldSalesLineId}`,
@@ -445,6 +510,7 @@ export async function releaseFieldSalesOrder(
       if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
       const stillHeld = Number(row.qty) - Number(row.consumedQty);
       if (stillHeld > 0) {
+        /* No ledger entry: releasing a reservation moves no stock. Only qtyOnHand movements are ledger events. */
         await tx.inventoryValue.update({
           where: { id: inv.id },
           data: { reservedQty: { decrement: stillHeld }, lastUpdated: new Date() },
@@ -479,6 +545,7 @@ export async function reserveKonsiFieldSalesOrder(
       if (!inv) throw new InventoryValueMissingError(line.itemId, line.variantSku);
       // Atomic guard: only increment if available (qtyOnHand - reservedQty) still covers qty.
       // Prevents the check-then-write race under concurrent approvals.
+      /* No ledger entry: a reservation moves no stock. Only qtyOnHand movements are ledger events. */
       const affected = await tx.$executeRaw`
         UPDATE InventoryValue
         SET reservedQty = reservedQty + ${line.qty}, lastUpdated = NOW(3)

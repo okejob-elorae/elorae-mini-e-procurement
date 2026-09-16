@@ -1,4 +1,6 @@
+import { moveMainStock, moveStoreStock } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
 import { FieldReturnError } from "./errors";
 import { allDiscrepantLinesSettled, creditedQtyForLine } from "./variance";
@@ -74,20 +76,14 @@ export async function approveFieldReturn(input: {
 
       if (sellableQty > 0) {
         /*
-         * Variantless main rows use variantSku: null, not "" — a strict ""-keyed lookup
-         * misses the real row and forks a phantom one. Same OR-tolerant lookup as
-         * reconcile-writer.ts / loadVan.
+         * findExistingInventoryValueRow is THE spelling of this lookup in apps/web: variantless
+         * main rows key on null OR "", so a strict ""-keyed read misses the real row and forks a
+         * phantom one — and the shared helper carries the orderBy tie-break, which is the part
+         * that matters here. The resolved id is pinned into moveMainStock below as
+         * inventoryValueId, so two callers reading the same null/"" bucket must land on the same
+         * row or they interleave two independent balances under one ledger key.
          */
-        const isVariantless = (line.variantSku ?? "") === "";
-        const main = isVariantless
-          ? await tx.inventoryValue.findFirst({
-              where: { itemId: line.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-              select: { id: true, qtyOnHand: true, avgCost: true },
-            })
-          : await tx.inventoryValue.findFirst({
-              where: { itemId: line.itemId, variantSku: line.variantSku },
-              select: { id: true, qtyOnHand: true, avgCost: true },
-            });
+        const main = await findExistingInventoryValueRow(tx, line.itemId, line.variantSku);
 
         const prevQty = main ? main.qtyOnHand.toNumber() : 0;
         const avgCost = main ? main.avgCost.toNumber() : 0;
@@ -102,31 +98,25 @@ export async function approveFieldReturn(input: {
          */
         const newAvgCost = avgCost;
 
-        if (main) {
-          await tx.inventoryValue.update({
-            where: { id: main.id },
-            data: {
-              qtyOnHand: newQty,
-              avgCost: newAvgCost,
-              totalValue: newQty * newAvgCost,
-              lastUpdated: new Date(),
-            },
-          });
-        } else {
-          await tx.inventoryValue.create({
-            data: {
-              itemId: line.itemId,
-              /* Same null-for-variantless normalisation as the RejectedGoodsLedger create
-                 below — a fresh row must land in the shape the OR-tolerant lookup above (and
-                 every other writer) expects, not fork a "" row alongside a null one. */
-              variantSku: line.variantSku || null,
-              qtyOnHand: newQty,
-              reservedQty: 0,
-              avgCost: newAvgCost,
-              totalValue: newQty * newAvgCost,
-            },
-          });
-        }
+        /*
+         * createIfMissing mirrors the create-branch this replaced: no inventory row exists yet
+         * for an item that has never been stocked, so the restored stock opens one at newAvgCost
+         * (which is 0 here, same as the removed create's own fallback). inventoryValueId pins the
+         * write to the exact row `main` was just read from when one exists.
+         */
+        await moveMainStock(tx, {
+          itemId: line.itemId,
+          variantSku: line.variantSku,
+          qtyDelta: sellableQty,
+          avgCost: newAvgCost,
+          totalValue: newQty * newAvgCost,
+          createIfMissing: true,
+          inventoryValueId: main?.id,
+          refType: "FieldReturn",
+          refId: ret.id,
+          refDocNumber: ret.docNo,
+          createdById: input.approvedById,
+        });
 
         await tx.stockAdjustment.create({
           data: {
@@ -334,16 +324,15 @@ export async function approveFieldReturn(input: {
         const decrementQty = ret.origin === "ADMIN" ? creditedQty - (line.receivedQty ?? 0) : creditedQty;
         if (decrementQty === 0) continue;
 
-        const storeKey = {
-          storeId_itemId_variantSku: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku },
-        };
-        const existingStock = await tx.storeStock.findUnique({ where: storeKey, select: { qty: true } });
-        const prevStoreQty = existingStock ? existingStock.qty.toNumber() : 0;
-
-        await tx.storeStock.upsert({
-          where: storeKey,
-          create: { storeId: ret.storeId, itemId: line.itemId, variantSku: line.variantSku, qty: -decrementQty, avgCost: 0 },
-          update: { qty: prevStoreQty - decrementQty },
+        await moveStoreStock(tx, {
+          storeId: ret.storeId,
+          itemId: line.itemId,
+          variantSku: line.variantSku,
+          qtyDelta: -decrementQty,
+          refType: "FieldReturn",
+          refId: ret.id,
+          refDocNumber: ret.docNo,
+          createdById: input.approvedById,
         });
       }
     }

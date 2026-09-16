@@ -89,6 +89,7 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.inventoryValue.deleteMany({ where: { id: seededId(invId) } });
@@ -488,6 +489,7 @@ d("recordFieldSalesDelivery — two distinct items in one call (test bed only)",
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.inventoryValue.deleteMany({ where: { id: { in: [seededId(invAId), seededId(invBId)] } } });
@@ -599,6 +601,7 @@ d("recordFieldSalesDelivery — discount allocation across two deliveries (test 
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.inventoryValue.deleteMany({ where: { id: seededId(invId) } });
@@ -740,6 +743,7 @@ d("recordFieldSalesDelivery — residue on a line that finishes before the order
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.inventoryValue.deleteMany({ where: { id: seededId(invId) } });

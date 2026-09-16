@@ -41,6 +41,7 @@ d("consumeFieldSalesOrderPartial (test bed only)", () => {
 
   afterEach(async () => {
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { id: seededId(reservationId) } });
     await prisma.inventoryValue.deleteMany({ where: { id: seededId(invId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });

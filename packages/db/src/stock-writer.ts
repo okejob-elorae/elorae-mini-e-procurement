@@ -1,4 +1,5 @@
 import { AdjustmentType, Prisma, type PrismaClient } from "../generated/prisma/client";
+import { moveMainStock } from "./stock-balance";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
@@ -6,9 +7,10 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
 export type ApplyJubelioStockAdjustmentInput = {
   itemId: string;
   /**
-   * ERP variant SKU. Empty string `""` for variantless items (catalog-ingest convention).
-   * Never pass `null` — the helper's findUnique on the composite `(itemId, variantSku)` key
-   * relies on the empty-string convention to match rows for variantless items.
+   * ERP variant SKU. Empty string `""` for variantless items (catalog-ingest convention). The
+   * lookup below is OR-tolerant on a variantless row rather than a strict match on this exact
+   * spelling — InventoryValue rows created through the ERP UI key a variantless row as null, not
+   * "", so this input's own "" convention alone would miss those rows.
    */
   variantSku: string;
   newQty: number;
@@ -35,9 +37,14 @@ export async function applyJubelioStockAdjustment(
 ): Promise<ApplyJubelioStockAdjustmentResult> {
   const hasTransactionFn = typeof (client as PrismaClient).$transaction === "function";
   const run = async (tx: Prisma.TransactionClient): Promise<ApplyJubelioStockAdjustmentResult> => {
-    const inv = await tx.inventoryValue.findUnique({
-      where: { itemId_variantSku: { itemId: input.itemId, variantSku: input.variantSku } },
-    });
+    const inv = input.variantSku
+      ? await tx.inventoryValue.findFirst({
+          where: { itemId: input.itemId, variantSku: input.variantSku },
+        })
+      : await tx.inventoryValue.findFirst({
+          where: { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+          orderBy: { id: "asc" },
+        });
     if (!inv) throw new InventoryValueMissingError(input.itemId, input.variantSku);
 
     const prevQty = Number(inv.qtyOnHand);
@@ -61,16 +68,18 @@ export async function applyJubelioStockAdjustment(
           idempotencyKey: input.idempotencyKey,
           externalRef: input.externalRef,
         },
-        select: { id: true },
+        select: { id: true, docNumber: true },
       });
 
-      await tx.inventoryValue.update({
-        where: { itemId_variantSku: { itemId: input.itemId, variantSku: input.variantSku } },
-        data: {
-          qtyOnHand: input.newQty,
-          totalValue: input.newQty * avgCost,
-          lastUpdated: new Date(),
-        },
+      await moveMainStock(tx, {
+        itemId: input.itemId,
+        variantSku: input.variantSku,
+        qtyDelta: delta,
+        totalValue: input.newQty * avgCost,
+        inventoryValueId: inv.id,
+        refType: "JubelioStockAdjustment",
+        refId: created.id,
+        refDocNumber: created.docNumber,
       });
 
       return { adjustmentId: created.id, skipped: false };

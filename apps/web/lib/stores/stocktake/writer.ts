@@ -1,4 +1,4 @@
-import { Prisma } from "@elorae/db";
+import { Prisma, setStoreStock } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { buildStocktakeLines, previousApprovedCountedAt } from "./queries";
@@ -266,6 +266,7 @@ export async function approveStoreStocktake(input: {
       where: { id: input.stocktakeId },
       select: {
         id: true,
+        docNo: true,
         storeId: true,
         status: true,
         lines: {
@@ -321,11 +322,20 @@ export async function approveStoreStocktake(input: {
        * avgCost is NEVER touched — not on update, and 0 on a created row. Both existing
        * store-side decrement paths leave it alone, and a count carries no cost information to
        * invent one from. See the sibling comment in the design doc for the full rationale.
+       *
+       * setStoreStock (not the delta mover): the count is the truth, so the line's countedQty is
+       * written as an absolute figure, not a delta off whatever the live row happened to hold. A
+       * line whose count matches the live qty writes no ledger entry — nothing moved.
        */
-      await tx.storeStock.upsert({
-        where: key,
-        create: { storeId: st.storeId, itemId: l.itemId, variantSku: l.variantSku ?? "", qty: l.counted, avgCost: 0 },
-        update: { qty: l.counted },
+      await setStoreStock(tx, {
+        storeId: st.storeId,
+        itemId: l.itemId,
+        variantSku: l.variantSku,
+        nextQty: l.counted,
+        refType: "StoreStocktake",
+        refId: st.id,
+        refDocNumber: st.docNo,
+        createdById: input.approvedById,
       });
 
       await tx.storeStocktakeLine.update({

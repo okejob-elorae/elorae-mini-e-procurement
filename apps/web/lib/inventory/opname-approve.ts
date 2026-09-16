@@ -1,5 +1,5 @@
 import type { Prisma, StockAdjustmentSource } from "@elorae/db";
-import { prisma } from "@elorae/db";
+import { prisma, setMainStock } from "@elorae/db";
 import { Decimal } from "decimal.js";
 import { generateDocNumber } from "@/lib/docNumber";
 import { apiFetch } from "@/lib/internal-api";
@@ -8,6 +8,7 @@ import {
   normalizeVariantKey,
   shouldApplyAdjustment,
 } from "./opname";
+import { findExistingInventoryValueRow } from "./costing";
 import { syncFabricAggregateQty } from "./opname-snapshot";
 
 type Tx = Prisma.TransactionClient;
@@ -26,15 +27,6 @@ function toNum(v: unknown): number {
   return typeof v === "number" ? v : Number(v);
 }
 
-// Jubelio-ingested items store InventoryValue with variantSku = NULL, while
-// normalizeVariantKey maps null/empty to "". A strict lookup on "" misses those NULL
-// rows. For the pooled key, match both "" and NULL; for a real variant, match exactly.
-function inventoryLookupWhere(itemId: string, variantKey: string) {
-  return variantKey === ""
-    ? { itemId, OR: [{ variantSku: "" }, { variantSku: null }] }
-    : { itemId, variantSku: variantKey };
-}
-
 export async function detectItemDrift(
   tx: Tx,
   opnameId: string,
@@ -43,9 +35,7 @@ export async function detectItemDrift(
   const drift: DriftRow[] = [];
   for (const row of items) {
     const variantKey = normalizeVariantKey(row.variantSku);
-    const inv = await tx.inventoryValue.findFirst({
-      where: inventoryLookupWhere(row.itemId, variantKey),
-    });
+    const inv = await findExistingInventoryValueRow(tx, row.itemId, variantKey);
     const currentQty = inv ? toNum(inv.qtyOnHand) : 0;
     const snapshotQty = toNum(row.snapshotQty);
     if (hasQtyDrift(currentQty, snapshotQty)) {
@@ -114,9 +104,7 @@ export async function applyFgAccessoriesAdjustments(
   for (const row of items) {
     const countedQty = toNum(row.countedQty);
     const variantKey = normalizeVariantKey(row.variantSku);
-    const inv = await tx.inventoryValue.findFirst({
-      where: inventoryLookupWhere(row.itemId, variantKey),
-    });
+    const inv = await findExistingInventoryValueRow(tx, row.itemId, variantKey);
     const currentQty = inv ? toNum(inv.qtyOnHand) : 0;
     const snapshotQty = toNum(row.snapshotQty);
     const hadDrift = hasQtyDrift(currentQty, snapshotQty);
@@ -171,16 +159,30 @@ export async function applyFgAccessoriesAdjustments(
     });
 
     const newTotalValue = newQty.mul(prevAvgCost);
-    await tx.inventoryValue.update({
-      where: { id: inv.id },
-      data: {
-        qtyOnHand: newQty.toNumber(),
-        totalValue: newTotalValue.toNumber(),
-        lastUpdated: new Date(),
-      },
+    const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
+
+    /*
+     * setMainStock, not moveMainStock: an opname line is an absolute physical count, and the
+     * counted figure is what must land. Routed as a delta the row ends at prevActual + adjQty —
+     * which is NOT countedQty if anything moved between the read above and the write — while the
+     * StockAdjustment row created just above records newQty: countedQty, so the two disagree with
+     * nothing to reconcile them. The ledger type is wrong the same way: ledgerTypeForDelta types a
+     * count IN or OUT, where every other count in this system writes ADJUSTMENT, and the ledger is
+     * append-only so that spelling would be permanent.
+     */
+    await setMainStock(tx, {
+      itemId: row.itemId,
+      variantSku: variantKey,
+      nextQty: newQty.toNumber(),
+      totalValue: newTotalValue.toNumber(),
+      unitCost: prevAvgCost.toNumber(),
+      inventoryValueId: inv.id,
+      refType: "StockOpname",
+      refId: opnameId,
+      refDocNumber: docNumber,
+      createdById: userId,
     });
 
-    const adjQty = type === "POSITIVE" ? qtyChange.toNumber() : -qtyChange.toNumber();
     const totalCostAdj =
       type === "POSITIVE"
         ? qtyChange.mul(prevAvgCost).toNumber()
@@ -261,10 +263,17 @@ export async function applyFabricAdjustments(
   }
 
   for (const [itemId, netDelta] of itemDeltas) {
-    const newAggregate = await syncFabricAggregateQty(tx, itemId);
-    const inv = await tx.inventoryValue.findFirst({
-      where: { itemId, OR: [{ variantSku: "" }, { variantSku: null }] },
+    const newAggregate = await syncFabricAggregateQty(tx, itemId, {
+      refId: opnameId,
+      refDocNumber: docNumber,
     });
+    /*
+     * Same helper syncFabricAggregateQty just resolved and wrote through, tie-break included.
+     * This re-resolve used to hand-roll the OR without the orderBy, so on an item carrying both a
+     * null-spelled and a ""-spelled row it could read a DIFFERENT row than the one the line above
+     * had just set — and the StockMovement.balanceQty below is derived from what comes back here.
+     */
+    const inv = await findExistingInventoryValueRow(tx, itemId, "");
     const prevQty = inv ? toNum(inv.qtyOnHand) - netDelta : newAggregate - netDelta;
     const avgCost = inv ? toNum(inv.avgCost) : 0;
 
