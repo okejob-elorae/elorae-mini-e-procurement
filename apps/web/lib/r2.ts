@@ -2,6 +2,8 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
+  type GetObjectCommandOutput,
 } from "@aws-sdk/client-s3";
 
 const accountId = process.env.R2_ACCOUNT_ID;
@@ -61,6 +63,13 @@ export async function deleteFromR2(key: string): Promise<void> {
   await client().send(
     new DeleteObjectCommand({ Bucket: BUCKET, Key: key })
   );
+}
+
+/**
+ * Fetch an object from R2 by key (for authenticated download proxies).
+ */
+export async function getObjectFromR2(key: string): Promise<GetObjectCommandOutput> {
+  return client().send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
 }
 
 /**
