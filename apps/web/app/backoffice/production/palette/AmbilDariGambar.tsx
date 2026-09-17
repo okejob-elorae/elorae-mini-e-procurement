@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { ambilWarnaTitik, warnaDominan } from '@/lib/production-colors/palet/gambar';
+import { bacaProfilWarna, buangProfilWarna, type ProfilWarna } from '@/lib/production-colors/palet/profil-gambar';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { cn } from '@/lib/utils';
 
@@ -19,6 +21,9 @@ const UKURAN_LUP = 132;
 const PIKSEL_LUP = 13;
 
 type Terambil = { id: string; hex: string; bagian?: number; sumber: 'titik' | 'tebak' };
+
+/** Berkas yang dimuat dalam dua rupa: apa adanya, dan tanpa profil warna. */
+type Sumber = { asli: Blob; tanpaProfil: Blob };
 
 let nomor = 0;
 const idBaru = () => `w${Date.now().toString(36)}${(nomor++).toString(36)}`;
@@ -55,8 +60,13 @@ export function AmbilDariGambar({
   const lupRef = useRef<HTMLCanvasElement>(null);
   const berkasRef = useRef<HTMLInputElement>(null);
   const dataRef = useRef<ImageData | null>(null);
+  const sumberRef = useRef<Sumber | null>(null);
+  /** Membaca berkas itu asinkron: yang selesai belakangan tidak boleh menimpa berkas yang dipilih sesudahnya. */
+  const muatKeRef = useRef(0);
 
   const [url, setUrl] = useState<string | null>(null);
+  const [profil, setProfil] = useState<ProfilWarna | null>(null);
+  const [ikutiProfil, setIkutiProfil] = useState(false);
   const [siap, setSiap] = useState(false);
   const [seret, setSeret] = useState(false);
   const [lup, setLup] = useState<{ x: number; y: number; hex: string; lebar: number } | null>(null);
@@ -67,17 +77,58 @@ export function AmbilDariGambar({
     if (url) URL.revokeObjectURL(url);
   }, [url]);
 
+  /*
+   * Secara bawaan profil warna di berkas dilepas sebelum gambar dibaca. Browser
+   * menerjemahkan gambar ber-profil, dan screenshot sering membawa profil
+   * MONITOR pembuatnya: sebuah JPG berprofil "S24R35xFZ" menulis #CAC1B0 tetapi
+   * tampil dan terambil sebagai #D0C8B7. Tanpa profil, angka di berkas yang
+   * dipakai — sama dengan yang dibaca aplikasi desain.
+   */
   const muatBerkas = useCallback(
     (berkas: File | null | undefined) => {
       if (!berkas || !berkas.type.startsWith('image/')) return;
+      const ke = ++muatKeRef.current;
       setSiap(false);
       setTerambil([]);
       setLup(null);
       dataRef.current = null;
-      setUrl(URL.createObjectURL(berkas));
+      berkas.arrayBuffer().then(
+        (isi) => {
+          if (ke !== muatKeRef.current) return;
+          const bita = new Uint8Array(isi);
+          const tanpa = buangProfilWarna(bita);
+          sumberRef.current = {
+            asli: berkas,
+            tanpaProfil: tanpa === bita ? berkas : new Blob([tanpa as Uint8Array<ArrayBuffer>], { type: berkas.type }),
+          };
+          setProfil(bacaProfilWarna(bita));
+          setIkutiProfil(false);
+          setUrl(URL.createObjectURL(sumberRef.current.tanpaProfil));
+        },
+        () => {
+          if (ke !== muatKeRef.current) return;
+          // Tidak terbaca sebagai bita: tetap tampilkan apa adanya.
+          sumberRef.current = { asli: berkas, tanpaProfil: berkas };
+          setProfil(null);
+          setIkutiProfil(false);
+          setUrl(URL.createObjectURL(berkas));
+        },
+      );
     },
     [],
   );
+
+  function gantiIkutiProfil(nyala: boolean) {
+    const sumber = sumberRef.current;
+    if (!sumber) return;
+    setIkutiProfil(nyala);
+    // Warna yang sudah diambil berasal dari tafsiran yang lain — jangan dicampur.
+    setSiap(false);
+    setTerambil([]);
+    setLup(null);
+    dataRef.current = null;
+    setUrl(URL.createObjectURL(nyala ? sumber.asli : sumber.tanpaProfil));
+  }
 
   // Tempel screenshot langsung (⌘V). Hanya bereaksi pada berkas gambar, jadi
   // menempel teks ke kolom HEX di halaman yang sama tidak terganggu.
@@ -164,6 +215,10 @@ export function AmbilDariGambar({
   }
 
   function lepasGambar() {
+    muatKeRef.current += 1;
+    sumberRef.current = null;
+    setProfil(null);
+    setIkutiProfil(false);
     setUrl(null);
     setSiap(false);
     setTerambil([]);
@@ -265,6 +320,20 @@ export function AmbilDariGambar({
                 )}
               </div>
               <p className="text-xs text-muted-foreground">{t('imageHint')}</p>
+              {profil?.adaProfil && (
+                <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-2.5">
+                  <Switch id="ikuti-profil" checked={ikutiProfil} onCheckedChange={gantiIkutiProfil} className="mt-0.5" />
+                  <div className="min-w-0 space-y-0.5">
+                    <Label htmlFor="ikuti-profil" className="text-xs font-medium">
+                      {t('imageProfileFollow')}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {profil.nama ? t('imageProfileFound', { name: profil.nama }) : t('imageProfileUnnamed')}{' '}
+                      {ikutiProfil ? t('imageProfileFollowHelp') : t('imageProfileRawHelp')}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
