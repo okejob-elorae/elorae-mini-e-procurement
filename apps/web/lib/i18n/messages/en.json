@@ -4796,8 +4796,6 @@
       "dragHint": "Any handle turns the whole harmony. Distance from the centre is set through the base colour (the large handle).",
       "customHint": "Each handle moves on its own.",
       "brightness": "Brightness",
-      "hue": "Hue",
-      "saturation": "Saturation",
       "swatchesTitle": "Five colours",
       "swatchesHint": "Click a colour to select it, then change its code or brightness.",
       "base": "Base",
@@ -4893,7 +4891,18 @@
         "TIDAK_DITEMUKAN": "Someone else already deleted this palette.",
         "TANPA_AKSES": "You don't have permission to manage the creative module.",
         "GAGAL": "Couldn't process that. Try again in a moment."
-      }
+      },
+      "inputAs": "Enter colour as",
+      "rangeRgb": "Enter 0–255 for each channel.",
+      "rangeCmyk": "Enter 0–100 for each ink.",
+      "searchC": "Code or name, e.g. 186 C or Warm Red",
+      "searchTcx": "Code or name, e.g. 15-0343 or Greenery",
+      "searchEmpty": "No Pantone matches “{q}”.",
+      "applyPantone": "Use {code}",
+      "exact": "exact",
+      "copyValue": "Copy {label}",
+      "cmykNote": "*CMYK is calculated without a print profile, same as Pantone Studio — Illustrator or Photoshop may differ by a few percent.",
+      "pantoneNote": "Pantone here is the nearest on-screen match (ΔE CIEDE2000; below 2 is practically invisible). Check against the physical Pantone book before production."
     }
   }
 }

@@ -54,3 +54,16 @@ export async function daftarPalet(): Promise<BarisPalet[]> {
   }
   return hasil;
 }
+
+/**
+ * Seluruh Pantone TCX dari tabel yang sama dengan layar warna produksi,
+ * sebagai `[kode, hex, nama]` — bentuk sependek mungkin, karena 2.800 baris
+ * ini ikut terkirim ke peramban untuk pencarian dan padanan terdekat.
+ */
+export async function daftarPantoneTcx(): Promise<[string, string, string][]> {
+  const rows = await prisma.pantoneColor.findMany({
+    select: { tcx: true, hex: true, name: true },
+    orderBy: { tcx: 'asc' },
+  });
+  return rows.map((r) => [r.tcx, r.hex, r.name]);
+}

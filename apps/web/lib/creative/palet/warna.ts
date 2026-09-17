@@ -147,3 +147,37 @@ export function hexKeHsb(hex: string): Hsb {
     b: maks / 255,
   };
 }
+
+export function rgbKeHex(r: number, g: number, b: number): string {
+  return `#${keDuaDigit(r)}${keDuaDigit(g)}${keDuaDigit(b)}`;
+}
+
+/**
+ * CMYK dalam persen utuh, dengan rumus yang SAMA PERSIS seperti Pantone Studio:
+ * aritmetika biasa, tanpa profil cetak.
+ *
+ * Artinya ini perkiraan. Illustrator dan Photoshop memakai profil ICC (mis.
+ * FOGRA39 atau U.S. Web Coated), jadi angkanya bisa berbeda beberapa persen
+ * untuk warna yang sama — dan layar menyebutnya perkiraan.
+ */
+export function rgbKeCmyk(r: number, g: number, b: number): [number, number, number, number] {
+  const k = 1 - Math.max(r, g, b) / 255;
+  if (k >= 1) return [0, 0, 0, 100];
+  return [
+    Math.round(((1 - r / 255 - k) / (1 - k)) * 100),
+    Math.round(((1 - g / 255 - k) / (1 - k)) * 100),
+    Math.round(((1 - b / 255 - k) / (1 - k)) * 100),
+    Math.round(k * 100),
+  ];
+}
+
+/** Kebalikan `rgbKeCmyk`, masukan dalam persen 0–100. */
+export function cmykKeRgb(c: number, m: number, y: number, k: number): { r: number; g: number; b: number } {
+  const tinta = (n: number) => Math.min(100, Math.max(0, n)) / 100;
+  const sisaHitam = 1 - tinta(k);
+  return {
+    r: Math.round(255 * (1 - tinta(c)) * sisaHitam),
+    g: Math.round(255 * (1 - tinta(m)) * sisaHitam),
+    b: Math.round(255 * (1 - tinta(y)) * sisaHitam),
+  };
+}

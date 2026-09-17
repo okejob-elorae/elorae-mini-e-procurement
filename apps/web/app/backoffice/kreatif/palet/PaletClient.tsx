@@ -37,9 +37,12 @@ import {
 import { rasioKontras } from '@/lib/creative/palet/kontras';
 import type { BarisPalet } from '@/lib/creative/palet/queries';
 import { BATAS_NAMA_PALET } from '@/lib/creative/palet/validasi';
-import { hexKeHsb, hexKeRgb, hsbKeHex, normalisasiHex } from '@/lib/creative/palet/warna';
+import { siapkanKatalog, type WarnaPantone } from '@/lib/creative/palet/pantone';
+import dataPantoneC from '@/lib/creative/palet/pantone-c.json';
+import { hexKeHsb, hsbKeHex, normalisasiHex } from '@/lib/creative/palet/warna';
 import { salinTeks } from '@/lib/ui/salin-teks';
 import { cn } from '@/lib/utils';
+import { EditorWarna, type ModeMasukan } from './EditorWarna';
 import { IkonHarmoni } from './IkonHarmoni';
 import { KisiKontras } from './KisiKontras';
 import { RodaWarna } from './RodaWarna';
@@ -73,11 +76,31 @@ function keadaanAwal(warnaTema: string | null): KeadaanPalet {
   return { aturan: 'ANALOGOUS', warna: susunHarmoni('ANALOGOUS', dasar, []) };
 }
 
+/*
+ * Katalog Coated C disiapkan sekali per muatan halaman, bukan per render: Lab
+ * untuk 3.219 warna tidak berubah, dan menghitungnya ulang setiap pegangan
+ * roda bergeser adalah kerja yang dibuang.
+ */
+let katalogCSiap: WarnaPantone[] | null = null;
+function katalogC(): WarnaPantone[] {
+  katalogCSiap ??= siapkanKatalog('C', dataPantoneC as [string, string][]);
+  return katalogCSiap;
+}
+
 function tintaDi(hex: string): '#ffffff' | '#000000' {
   return rasioKontras(hex, '#ffffff') >= rasioKontras(hex, '#000000') ? '#ffffff' : '#000000';
 }
 
-export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bolehMengelola: boolean }) {
+export function PaletClient({
+  palet,
+  tcx,
+  bolehMengelola,
+}: {
+  palet: BarisPalet[];
+  /** `[kode, hex, nama]` dari tabel PantoneColor. */
+  tcx: [string, string, string][];
+  bolehMengelola: boolean;
+}) {
   const t = useTranslations('creative.palette');
   const locale = useLocale();
   const router = useRouter();
@@ -91,7 +114,9 @@ export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bo
   const [keadaanSendiri, setKeadaanSendiri] = useState<KeadaanPalet | null>(null);
   const keadaan = keadaanSendiri ?? awal;
   const [terpilih, setTerpilih] = useState(INDEKS_DASAR);
-  const [ketikHex, setKetikHex] = useState<string | null>(null);
+  // Mode isian ikut bertahan saat berpindah warna: orang yang memasukkan
+  // lima kode CMYK tidak mau memilih tab CMYK lima kali.
+  const [modeMasukan, setModeMasukan] = useState<ModeMasukan>('HEX');
   const [nama, setNama] = useState('');
   const [akanDihapus, setAkanDihapus] = useState<BarisPalet | null>(null);
 
@@ -102,9 +127,7 @@ export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bo
   const hex = keadaan.warna.map(hsbKeHex);
   const warnaTerpilih = keadaan.warna[terpilih];
   const hexTerpilih = hex[terpilih];
-  const rgbTerpilih = hexKeRgb(hexTerpilih);
-  const hexTidakSah =
-    ketikHex !== null && normalisasiHex(ketikHex) === null && ketikHex.replace(/^#/, '').length >= 6;
+  const katalogTcx = useMemo(() => siapkanKatalog('TCX', tcx), [tcx]);
 
   async function salin(teks: string, pesan: string) {
     if (await salinTeks(teks)) toast.success(pesan);
@@ -113,23 +136,6 @@ export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bo
 
   function pilihAturan(aturan: AturanHarmoni) {
     ubah((k) => ({ aturan, warna: susunHarmoni(aturan, k.warna[INDEKS_DASAR], k.warna) }));
-  }
-
-  function ketik(nilai: string) {
-    setKetikHex(nilai);
-    // Diterapkan langsung hanya saat enam digit lengkap: tiga digit bisa jadi
-    // awal dari enam yang sedang diketik, dan melompatkan warnanya di tengah
-    // ketikan terasa seperti roda yang bergerak sendiri.
-    if (/^#?[0-9a-fA-F]{6}$/.test(nilai.trim())) {
-      ubah((k) => gantiHexWarna(k, terpilih, nilai));
-    }
-  }
-
-  function selesaiKetik() {
-    if (ketikHex !== null && normalisasiHex(ketikHex)) {
-      ubah((k) => gantiHexWarna(k, terpilih, ketikHex));
-    }
-    setKetikHex(null);
   }
 
   function simpan(e: FormEvent) {
@@ -149,7 +155,6 @@ export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bo
   function muat(p: BarisPalet) {
     setKeadaanSendiri(keadaanDariHex(p.aturan, p.warna));
     setTerpilih(INDEKS_DASAR);
-    setKetikHex(null);
     toast.success(t('loaded', { name: p.nama }));
     const hemat = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     document.getElementById('roda-warna')?.scrollIntoView({ behavior: hemat ? 'auto' : 'smooth', block: 'start' });
@@ -179,7 +184,7 @@ export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bo
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">
         <Card id="roda-warna" className="scroll-mt-20">
           <CardHeader>
             <CardTitle>{t('wheelTitle')}</CardTitle>
@@ -214,8 +219,7 @@ export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bo
               terpilih={terpilih}
               onPilih={(i) => {
                 setTerpilih(i);
-                setKetikHex(null);
-              }}
+                          }}
               onGeser={(i, h, s) => ubah((k) => geserPegangan(k, i, h, s))}
               labelPegangan={(i, kode) =>
                 i === INDEKS_DASAR ? t('handleLabelBase', { hex: kode }) : t('handleLabel', { n: i + 1, hex: kode })
@@ -278,8 +282,7 @@ export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bo
                       type="button"
                       onClick={() => {
                         setTerpilih(i);
-                        setKetikHex(null);
-                      }}
+                                          }}
                       aria-pressed={aktif}
                       aria-label={`${i === INDEKS_DASAR ? t('base') : t('swatchLabel', { n: i + 1 })}, ${kode.toUpperCase()}`}
                       className={cn(
@@ -317,70 +320,18 @@ export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bo
               })}
             </div>
 
-            <div className="flex flex-col gap-4 rounded-lg border bg-muted/30 p-4 sm:flex-row sm:items-start">
-              <div
-                aria-hidden
-                className="h-16 w-full shrink-0 rounded-md ring-1 ring-inset ring-black/10 sm:w-16 dark:ring-white/10"
-                style={{ background: hexTerpilih }}
-              />
-              <div className="min-w-0 flex-1 space-y-3">
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="hex-terpilih">
-                      {terpilih === INDEKS_DASAR ? t('base') : t('swatchLabel', { n: terpilih + 1 })} · HEX
-                    </Label>
-                    <Input
-                      id="hex-terpilih"
-                      value={ketikHex ?? hexTerpilih.toUpperCase()}
-                      onChange={(e) => ketik(e.target.value)}
-                      onBlur={selesaiKetik}
-                      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                      aria-invalid={hexTidakSah || undefined}
-                      aria-describedby={hexTidakSah ? 'hex-salah' : undefined}
-                      maxLength={7}
-                      spellCheck={false}
-                      autoComplete="off"
-                      className="w-32 font-mono uppercase"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mb-0.5"
-                    onClick={() => salin(hexTerpilih.toUpperCase(), t('copied', { hex: hexTerpilih.toUpperCase() }))}
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                    {t('copyHex', { hex: hexTerpilih.toUpperCase() })}
-                  </Button>
-                </div>
-                {hexTidakSah && (
-                  <p id="hex-salah" className="text-xs text-destructive">
-                    {t('hexInvalid')}
-                  </p>
-                )}
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
-                  <div>
-                    <dt className="text-muted-foreground">RGB</dt>
-                    <dd className="font-mono tabular-nums">
-                      {rgbTerpilih.r}, {rgbTerpilih.g}, {rgbTerpilih.b}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">{t('hue')}</dt>
-                    <dd className="tabular-nums">{Math.round(warnaTerpilih.h)}°</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">{t('saturation')}</dt>
-                    <dd className="tabular-nums">{Math.round(warnaTerpilih.s * 100)}%</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">{t('brightness')}</dt>
-                    <dd className="tabular-nums">{Math.round(warnaTerpilih.b * 100)}%</dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
+            <EditorWarna
+              key={terpilih}
+              label={terpilih === INDEKS_DASAR ? t('base') : t('swatchLabel', { n: terpilih + 1 })}
+              hex={hexTerpilih}
+              hsb={warnaTerpilih}
+              mode={modeMasukan}
+              onMode={setModeMasukan}
+              onGantiHex={(baru) => ubah((k) => gantiHexWarna(k, terpilih, baru))}
+              onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
+              katalogC={katalogC()}
+              katalogTcx={katalogTcx}
+            />
 
             {bolehMengelola && (
               <form onSubmit={simpan} className="flex flex-col gap-2 border-t pt-5 sm:flex-row sm:items-end">

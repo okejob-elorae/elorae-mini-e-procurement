@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hexKeHsb, hsbKeHex, normalisasiHex, rgbKeRyb, rybKeRgb } from './warna';
+import { cmykKeRgb, hexKeHsb, hexKeRgb, hsbKeHex, normalisasiHex, rgbKeCmyk, rgbKeHex, rgbKeRyb, rybKeRgb } from './warna';
 
 describe('roda RYB', () => {
   /*
@@ -60,5 +60,45 @@ describe('hex', () => {
   it('memberi abu-abu kepekatan nol', () => {
     const abu = hexKeHsb('#808080');
     expect(abu.s).toBe(0);
+  });
+});
+
+describe('RGB dan CMYK', () => {
+  it('menyusun hex dari RGB, membatasi ke 0–255', () => {
+    expect(rgbKeHex(192, 219, 58)).toBe('#c0db3a');
+    expect(rgbKeHex(300, -5, 127.6)).toBe('#ff0080');
+  });
+
+  /*
+   * Rumusnya SAMA PERSIS dengan Pantone Studio yang dipakai tim produksi:
+   * aritmetika biasa tanpa profil cetak. Angka yang berbeda antara dua alat
+   * untuk warna yang sama membuat orang meragukan keduanya.
+   */
+  it('menghitung CMYK seperti Pantone Studio', () => {
+    expect(rgbKeCmyk(192, 219, 58)).toEqual([12, 0, 74, 14]);
+    expect(rgbKeCmyk(255, 0, 0)).toEqual([0, 100, 100, 0]);
+    expect(rgbKeCmyk(255, 255, 255)).toEqual([0, 0, 0, 0]);
+    expect(rgbKeCmyk(0, 0, 0)).toEqual([0, 0, 0, 100]);
+  });
+
+  it('mengembalikan CMYK ke RGB', () => {
+    expect(cmykKeRgb(0, 100, 100, 0)).toEqual({ r: 255, g: 0, b: 0 });
+    expect(cmykKeRgb(0, 0, 0, 100)).toEqual({ r: 0, g: 0, b: 0 });
+    expect(cmykKeRgb(0, 0, 0, 0)).toEqual({ r: 255, g: 255, b: 255 });
+  });
+
+  /*
+   * CMYK dibulatkan ke persen utuh — 101 langkah per tinta, lebih kasar dari
+   * 256 langkah RGB. Jalan pulang-pergi karena itu hanya DEKAT, dan layar
+   * memberi tahu orang bahwa CMYK tidak bisa menyebut setiap warna persis.
+   */
+  it('kembali dekat, tidak selalu persis, lewat CMYK', () => {
+    for (const hex of ['#c0db3a', '#2a78d6', '#6b2d5c', '#e8553d', '#123456']) {
+      const { r, g, b } = hexKeRgb(hex);
+      const balik = cmykKeRgb(...rgbKeCmyk(r, g, b));
+      expect(Math.abs(balik.r - r)).toBeLessThanOrEqual(3);
+      expect(Math.abs(balik.g - g)).toBeLessThanOrEqual(3);
+      expect(Math.abs(balik.b - b)).toBeLessThanOrEqual(3);
+    }
   });
 });

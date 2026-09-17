@@ -4796,8 +4796,6 @@
       "dragHint": "Pegangan mana pun memutar seluruh harmoni. Jarak dari tengah diatur lewat warna dasar (pegangan besar).",
       "customHint": "Setiap pegangan bergerak sendiri.",
       "brightness": "Kecerahan",
-      "hue": "Rona",
-      "saturation": "Kepekatan",
       "swatchesTitle": "Lima warna",
       "swatchesHint": "Klik warna untuk memilihnya, lalu ubah kodenya atau kecerahannya.",
       "base": "Dasar",
@@ -4893,7 +4891,18 @@
         "TIDAK_DITEMUKAN": "Palet ini sudah dihapus orang lain.",
         "TANPA_AKSES": "Anda tidak punya izin mengelola modul kreatif.",
         "GAGAL": "Tidak bisa diproses. Coba lagi sebentar lagi."
-      }
+      },
+      "inputAs": "Masukkan warna sebagai",
+      "rangeRgb": "Isi angka 0–255 untuk tiap kanal.",
+      "rangeCmyk": "Isi angka 0–100 untuk tiap tinta.",
+      "searchC": "Kode atau nama, mis. 186 C atau Warm Red",
+      "searchTcx": "Kode atau nama, mis. 15-0343 atau Greenery",
+      "searchEmpty": "Tidak ada Pantone yang cocok dengan “{q}”.",
+      "applyPantone": "Pakai {code}",
+      "exact": "persis",
+      "copyValue": "Salin {label}",
+      "cmykNote": "*CMYK dihitung tanpa profil cetak, sama seperti Pantone Studio — angka di Illustrator atau Photoshop bisa berbeda beberapa persen.",
+      "pantoneNote": "Pantone di sini padanan layar terdekat (ΔE CIEDE2000; di bawah 2 praktis tak terlihat mata). Cocokkan dengan buku Pantone fisik sebelum produksi."
     }
   }
 }

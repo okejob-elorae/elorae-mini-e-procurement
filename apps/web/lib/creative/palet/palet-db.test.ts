@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma, seededId } from '@elorae/db';
-import { daftarPalet } from './queries';
+import { daftarPalet, daftarPantoneTcx } from './queries';
+import { hexKeHsb, hsbKeHex } from './warna';
 import { hapusPalet, simpanPalet } from './writer';
 
 /**
@@ -110,5 +111,15 @@ describe('palet warna', () => {
     });
     dibuat.push(lama.id);
     expect((await daftarPalet()).find((p) => p.id === lama.id)?.aturan).toBe('CUSTOM');
+  });
+
+  it('mengirim TCX sebagai kode unik dengan hex yang sah dan kembali utuh lewat roda', async () => {
+    const tcx = await daftarPantoneTcx();
+    expect(new Set(tcx.map(([kode]) => kode)).size).toBe(tcx.length);
+    for (const [kode, hex, nama] of tcx) {
+      expect(hex, kode).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(nama, kode).toBeTruthy();
+      expect(hsbKeHex(hexKeHsb(hex)), kode).toBe(hex.toLowerCase());
+    }
   });
 });
