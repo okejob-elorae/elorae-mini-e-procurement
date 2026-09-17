@@ -66,7 +66,7 @@ export function AmbilDariGambar({
 
   const [url, setUrl] = useState<string | null>(null);
   const [profil, setProfil] = useState<ProfilWarna | null>(null);
-  const [ikutiProfil, setIkutiProfil] = useState(false);
+  const [abaikanProfil, setAbaikanProfil] = useState(false);
   const [siap, setSiap] = useState(false);
   const [seret, setSeret] = useState(false);
   const [lup, setLup] = useState<{ x: number; y: number; hex: string; lebar: number } | null>(null);
@@ -78,11 +78,11 @@ export function AmbilDariGambar({
   }, [url]);
 
   /*
-   * Secara bawaan profil warna di berkas dilepas sebelum gambar dibaca. Browser
-   * menerjemahkan gambar ber-profil, dan screenshot sering membawa profil
-   * MONITOR pembuatnya: sebuah JPG berprofil "S24R35xFZ" menulis #CAC1B0 tetapi
-   * tampil dan terambil sebagai #D0C8B7. Tanpa profil, angka di berkas yang
-   * dipakai — sama dengan yang dibaca aplikasi desain.
+   * Secara bawaan gambar dibaca DENGAN profil warnanya, seperti Preview dan
+   * Finder: pemilik mencocokkan warna dengan yang tampil di Mac-nya. Sebuah JPG
+   * berprofil "S24R35xFZ" menulis #CAC1B0; macOS menampilkannya #CFC8B6 dan
+   * halaman ini mengambil #D0C8B7. Versi tanpa profil (angka mentah berkas)
+   * disiapkan untuk saklar, bagi yang tahu kode HEX asli dari pembuatnya.
    */
   const muatBerkas = useCallback(
     (berkas: File | null | undefined) => {
@@ -102,15 +102,15 @@ export function AmbilDariGambar({
             tanpaProfil: tanpa === bita ? berkas : new Blob([tanpa as Uint8Array<ArrayBuffer>], { type: berkas.type }),
           };
           setProfil(bacaProfilWarna(bita));
-          setIkutiProfil(false);
-          setUrl(URL.createObjectURL(sumberRef.current.tanpaProfil));
+          setAbaikanProfil(false);
+          setUrl(URL.createObjectURL(berkas));
         },
         () => {
           if (ke !== muatKeRef.current) return;
           // Tidak terbaca sebagai bita: tetap tampilkan apa adanya.
           sumberRef.current = { asli: berkas, tanpaProfil: berkas };
           setProfil(null);
-          setIkutiProfil(false);
+          setAbaikanProfil(false);
           setUrl(URL.createObjectURL(berkas));
         },
       );
@@ -118,16 +118,16 @@ export function AmbilDariGambar({
     [],
   );
 
-  function gantiIkutiProfil(nyala: boolean) {
+  function gantiAbaikanProfil(nyala: boolean) {
     const sumber = sumberRef.current;
     if (!sumber) return;
-    setIkutiProfil(nyala);
+    setAbaikanProfil(nyala);
     // Warna yang sudah diambil berasal dari tafsiran yang lain — jangan dicampur.
     setSiap(false);
     setTerambil([]);
     setLup(null);
     dataRef.current = null;
-    setUrl(URL.createObjectURL(nyala ? sumber.asli : sumber.tanpaProfil));
+    setUrl(URL.createObjectURL(nyala ? sumber.tanpaProfil : sumber.asli));
   }
 
   // Tempel screenshot langsung (⌘V). Hanya bereaksi pada berkas gambar, jadi
@@ -218,7 +218,7 @@ export function AmbilDariGambar({
     muatKeRef.current += 1;
     sumberRef.current = null;
     setProfil(null);
-    setIkutiProfil(false);
+    setAbaikanProfil(false);
     setUrl(null);
     setSiap(false);
     setTerambil([]);
@@ -322,14 +322,14 @@ export function AmbilDariGambar({
               <p className="text-xs text-muted-foreground">{t('imageHint')}</p>
               {profil?.adaProfil && (
                 <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-2.5">
-                  <Switch id="ikuti-profil" checked={ikutiProfil} onCheckedChange={gantiIkutiProfil} className="mt-0.5" />
+                  <Switch id="abaikan-profil" checked={abaikanProfil} onCheckedChange={gantiAbaikanProfil} className="mt-0.5" />
                   <div className="min-w-0 space-y-0.5">
-                    <Label htmlFor="ikuti-profil" className="text-xs font-medium">
-                      {t('imageProfileFollow')}
+                    <Label htmlFor="abaikan-profil" className="text-xs font-medium">
+                      {t('imageProfileIgnore')}
                     </Label>
                     <p className="text-xs text-muted-foreground">
                       {profil.nama ? t('imageProfileFound', { name: profil.nama }) : t('imageProfileUnnamed')}{' '}
-                      {ikutiProfil ? t('imageProfileFollowHelp') : t('imageProfileRawHelp')}
+                      {abaikanProfil ? t('imageProfileRawHelp') : t('imageProfileManagedHelp')}
                     </p>
                   </div>
                 </div>

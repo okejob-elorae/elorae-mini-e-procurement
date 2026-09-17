@@ -1,16 +1,16 @@
 /**
  * Profil warna yang tertempel di berkas gambar.
  *
- * Browser menerjemahkan gambar ber-profil ke ruang warna layar. Untuk foto
- * itu benar; untuk screenshot dan ekspor desain sering KELIRU, karena profil
- * yang tertempel adalah profil monitor si pembuat — kejadian nyata: sebuah
- * JPG membawa profil monitor Samsung "S24R35xFZ", berkasnya menulis #CAC1B0,
- * dan browser menampilkannya sebagai #D0C8B7. Warna yang diambil pun ikut
- * bergeser.
+ * Gambar ber-profil punya dua tafsiran. Browser, Preview, dan Finder
+ * menerjemahkan angka di berkas lewat profilnya — itu yang dilihat mata di
+ * Mac. Kejadian nyata: sebuah JPG kiriman WhatsApp membawa profil monitor
+ * Samsung "S24R35xFZ" milik pembuatnya, berkasnya menulis #CAC1B0, dan macOS
+ * menampilkannya #CFC8B6 (ΔE 1,8).
  *
  * Melepas profil membuat browser memperlakukan gambar sebagai sRGB polos,
- * jadi angka di berkas sampai ke kanvas tanpa diterjemahkan. Hanya byte
- * profil yang dibuang; data gambar disalin utuh.
+ * jadi angka mentah di berkas sampai ke kanvas tanpa diterjemahkan. Itu
+ * pilihan, bukan bawaan: warnanya lalu berbeda dari yang tampil di Mac. Hanya
+ * byte profil yang dibuang; data gambar disalin utuh.
  */
 
 export type FormatGambar = 'jpeg' | 'png' | 'webp' | 'lain';
