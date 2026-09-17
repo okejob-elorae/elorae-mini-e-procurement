@@ -69,12 +69,14 @@ export function PratinjauKaos({
 
   const total = tinta.reduce((s, t) => s + Math.max(0, t.porsi), 0);
   const { cx, cy, r } = CETAK;
-  let kumulatif = 0;
-  const pita = tinta.map((t) => {
-    const y0 = cy - r + kedalamanUntuk(kumulatif / (total || 1), r);
-    kumulatif += Math.max(0, t.porsi);
-    const y1 = cy - r + kedalamanUntuk(kumulatif / (total || 1), r);
-    return { ...t, y0, y1 };
+  const pita = tinta.map((t, i) => {
+    const sebelum = tinta.slice(0, i).reduce((s, x) => s + Math.max(0, x.porsi), 0);
+    const sampai = sebelum + Math.max(0, t.porsi);
+    return {
+      ...t,
+      y0: cy - r + kedalamanUntuk(sebelum / (total || 1), r),
+      y1: cy - r + kedalamanUntuk(sampai / (total || 1), r),
+    };
   });
 
   function miring(e: PointerEvent<HTMLDivElement>) {
