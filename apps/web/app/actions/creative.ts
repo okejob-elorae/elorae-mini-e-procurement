@@ -20,6 +20,8 @@ import {
 } from '@/lib/creative/writer';
 import type { StatusBrief } from '@/lib/creative/aturan';
 import { hapusPalet, simpanPalet, type AlasanGagalPalet } from '@/lib/creative/palet/writer';
+import type { AlasanTintaTidakSah, TintaDasar } from '@/lib/creative/sablon/tinta-dasar';
+import { simpanTintaDasar } from '@/lib/creative/sablon/writer';
 
 export type HasilAksiKreatif =
   | { ok: true; id?: string; docNo?: string; stokKeluar?: number }
@@ -273,6 +275,25 @@ export async function hapusPaletAction(id: string): Promise<HasilAksiPalet> {
     return { ok: true };
   } catch (err) {
     console.error('hapusPalet gagal:', err);
+    return { ok: false, kode: 'GAGAL' };
+  }
+}
+
+export type HasilAksiTintaDasar =
+  | { ok: true; tinta: TintaDasar[] }
+  | { ok: false; kode: AlasanTintaTidakSah | 'TANPA_AKSES' | 'GAGAL' };
+
+/** Ganti daftar tinta dasar tim — bahan resep campur di layar Warna Sablon. */
+export async function simpanTintaDasarAction(tinta: TintaDasar[]): Promise<HasilAksiTintaDasar> {
+  const oleh = await penulis();
+  if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
+  try {
+    const r = await simpanTintaDasar(tinta);
+    if (!r.ok) return { ok: false, kode: r.alasan };
+    revalidatePath('/backoffice/kreatif/sablon');
+    return { ok: true, tinta: r.tinta };
+  } catch (err) {
+    console.error('simpanTintaDasar gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

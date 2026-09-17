@@ -33,17 +33,30 @@ export type WarnaPantone = {
   teks: string;
 };
 
-const linear = (c: number) => {
+/** Kanal sRGB 0–255 → cahaya linear 0–1. */
+export function keLinear(c: number): number {
   const s = c / 255;
   return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-};
+}
+
+/** Cahaya linear 0–1 → kanal sRGB 0–255 (belum dibulatkan). */
+export function dariLinear(v: number): number {
+  const x = Math.min(1, Math.max(0, v));
+  return 255 * (x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
+}
 
 /** sRGB → CIE Lab (D65), rumus yang sama dengan Pantone Studio. */
 export function hexKeLab(hex: string): Lab {
   const { r, g, b } = hexKeRgb(hex);
-  const R = linear(r);
-  const G = linear(g);
-  const B = linear(b);
+  return linearKeLab(keLinear(r), keLinear(g), keLinear(b));
+}
+
+/**
+ * Cahaya linear → Lab, tanpa melewati hex. Dipakai pencari resep campur yang
+ * menilai puluhan ribu campuran: membulatkan tiap campuran ke hex dulu
+ * membuang presisi dan waktu.
+ */
+export function linearKeLab(R: number, G: number, B: number): Lab {
   const X = (R * 0.4124564 + G * 0.3575761 + B * 0.1804375) / 0.95047;
   const Y = R * 0.2126729 + G * 0.7151522 + B * 0.072175;
   const Z = (R * 0.0193339 + G * 0.119192 + B * 0.9503041) / 1.08883;

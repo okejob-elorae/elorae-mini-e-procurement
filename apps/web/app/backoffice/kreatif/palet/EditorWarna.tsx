@@ -204,140 +204,147 @@ export function EditorWarna({
     });
   }
 
+  /*
+   * Tata letak mengikuti lebar WADAHNYA, bukan lebar layar. Editor ini dipasang
+   * di kolom lebar (Palet Warna) dan di kolom sempit (Warna Sablon); dengan
+   * breakpoint layar, di kolom sempit pada layar lebar kelima tab saling tindih.
+   */
   return (
-    <div className="flex flex-col gap-4 rounded-lg border bg-muted/30 p-3 sm:flex-row sm:items-start sm:p-4">
-      <div
-        aria-hidden
-        className="h-16 w-full shrink-0 rounded-md ring-1 ring-inset ring-black/10 sm:w-16 dark:ring-white/10"
-        style={{ background: hex }}
-      />
-      <div className="min-w-0 flex-1 space-y-4">
-        <div className="space-y-2">
-          <p className="text-sm font-medium">{label}</p>
-          <Tabs value={mode} onValueChange={(v) => onMode(v as ModeMasukan)}>
-            {/* Tinggi bawaan TabsList dikunci lewat selektor grup; menimpanya butuh selektor yang sama, bukan `h-auto` biasa. */}
-            <TabsList
-              className="grid w-full grid-cols-3 group-data-[orientation=horizontal]/tabs:h-auto sm:grid-cols-5"
-              aria-label={t('inputAs')}
-            >
-              {MODE_MASUKAN.map((m) => (
-                <TabsTrigger key={m} value={m} className="h-8 text-xs">
-                  {NAMA_MODE[m]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
-
-        {(mode === 'HEX' || mode === 'RGB' || mode === 'CMYK') && (
-          <div onBlur={tinggalkan} className="space-y-1.5">
-            <div className="flex flex-wrap items-end gap-2">
-              {KANAL[mode].map((kanal, i) => {
-                const id = `kanal-${mode}-${i}`;
-                return (
-                  <div key={id} className="space-y-1">
-                    <Label htmlFor={id} className={cn('text-xs text-muted-foreground', mode === 'HEX' && 'sr-only')}>
-                      {kanal.label}
-                      {mode === 'CMYK' && ' %'}
-                    </Label>
-                    <Input
-                      id={id}
-                      value={tampil(mode)[i]}
-                      onChange={(e) => ketik(mode, i, e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                      inputMode={mode === 'HEX' ? 'text' : 'numeric'}
-                      maxLength={mode === 'HEX' ? 7 : 3}
-                      spellCheck={false}
-                      autoComplete="off"
-                      aria-invalid={salahKanal(mode) || undefined}
-                      className={cn('font-mono tabular-nums', mode === 'HEX' ? 'w-32 uppercase' : 'w-16 text-center')}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-            {salahKanal(mode) && (
-              <p className="text-xs text-destructive">
-                {mode === 'HEX' ? t('hexInvalid') : mode === 'RGB' ? t('rangeRgb') : t('rangeCmyk')}
-              </p>
-            )}
-          </div>
-        )}
-
-        {(mode === 'PANTONE_C' || mode === 'PANTONE_TCX') && (
+    <div className="@container">
+      <div className="flex flex-col gap-4 rounded-lg border bg-muted/30 p-3 @md:flex-row @md:items-start @md:p-4">
+        <div
+          aria-hidden
+          className="h-16 w-full shrink-0 rounded-md ring-1 ring-inset ring-black/10 @md:w-16 dark:ring-white/10"
+          style={{ background: hex }}
+        />
+        <div className="@container/isi min-w-0 flex-1 space-y-4">
           <div className="space-y-2">
-            <Input
-              type="search"
-              value={kueri}
-              onChange={(e) => {
-                const isi = e.target.value;
-                setKueriPer((k) => ({ ...k, [mode]: isi }));
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && hasilCari[0]) {
-                  e.preventDefault();
-                  onGantiHex(hasilCari[0].hex);
-                }
-              }}
-              placeholder={mode === 'PANTONE_C' ? t('searchC') : t('searchTcx')}
-              aria-label={mode === 'PANTONE_C' ? t('searchC') : t('searchTcx')}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            {kueri.trim() !== '' &&
-              (hasilCari.length === 0 ? (
-                <p className="text-xs text-muted-foreground">{t('searchEmpty', { q: kueri.trim() })}</p>
-              ) : (
-                <ul className="divide-y overflow-hidden rounded-md border bg-background">
-                  {hasilCari.map((w) => {
-                    const dipakai = w.hex === hex;
-                    return (
-                      <li key={w.kode}>
-                        <button
-                          type="button"
-                          onClick={() => onGantiHex(w.hex)}
-                          aria-label={t('applyPantone', { code: namaPantone(w) })}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm outline-none hover:bg-muted focus-visible:bg-muted"
-                        >
-                          <Keping hex={w.hex} className="size-5" />
-                          <span className="min-w-0 flex-1 truncate">
-                            <span className="font-medium">{w.kode}</span>
-                            {w.nama && <span className="text-muted-foreground"> {w.nama}</span>}
-                          </span>
-                          <span className="font-mono text-[11px] uppercase text-muted-foreground">{w.hex}</span>
-                          {dipakai && <Check className="size-4 text-emerald-600 dark:text-emerald-400" />}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ))}
-          </div>
-        )}
-
-        <dl className="divide-y rounded-md border bg-background text-sm">
-          {baris.map((b) => (
-            // Di HP labelnya naik ke atas: berdampingan, kolom nilai tinggal
-            // ~85px dan kode Pantone terpotong menjadi "76…".
-            <div key={b.label} className="flex flex-wrap items-center gap-x-3 py-1.5 pr-1.5 pl-3">
-              <dt className="w-full shrink-0 text-[11px] text-muted-foreground sm:w-24 sm:text-xs">{b.label}</dt>
-              <dd className="min-w-0 flex-1 truncate">{b.nilai}</dd>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={t('copyValue', { label: b.label.replace('*', '') })}
-                onClick={() => onSalin(b.salin, b.label.replace('*', ''))}
+            <p className="text-sm font-medium">{label}</p>
+            <Tabs value={mode} onValueChange={(v) => onMode(v as ModeMasukan)}>
+              {/* Tinggi bawaan TabsList dikunci lewat selektor grup; menimpanya butuh selektor yang sama, bukan `h-auto` biasa. */}
+              <TabsList
+                className="grid w-full grid-cols-3 group-data-[orientation=horizontal]/tabs:h-auto @md/isi:grid-cols-5"
+                aria-label={t('inputAs')}
               >
-                <Copy />
-              </Button>
-            </div>
-          ))}
-        </dl>
+                {MODE_MASUKAN.map((m) => (
+                  <TabsTrigger key={m} value={m} className="h-8 text-xs">
+                    {NAMA_MODE[m]}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
 
-        <div className="space-y-1 text-xs text-muted-foreground">
-          <p>{t('cmykNote')}</p>
-          <p>{t('pantoneNote')}</p>
+          {(mode === 'HEX' || mode === 'RGB' || mode === 'CMYK') && (
+            <div onBlur={tinggalkan} className="space-y-1.5">
+              <div className="flex flex-wrap items-end gap-2">
+                {KANAL[mode].map((kanal, i) => {
+                  const id = `kanal-${mode}-${i}`;
+                  return (
+                    <div key={id} className="space-y-1">
+                      <Label htmlFor={id} className={cn('text-xs text-muted-foreground', mode === 'HEX' && 'sr-only')}>
+                        {kanal.label}
+                        {mode === 'CMYK' && ' %'}
+                      </Label>
+                      <Input
+                        id={id}
+                        value={tampil(mode)[i]}
+                        onChange={(e) => ketik(mode, i, e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                        inputMode={mode === 'HEX' ? 'text' : 'numeric'}
+                        maxLength={mode === 'HEX' ? 7 : 3}
+                        spellCheck={false}
+                        autoComplete="off"
+                        aria-invalid={salahKanal(mode) || undefined}
+                        className={cn('font-mono tabular-nums', mode === 'HEX' ? 'w-32 uppercase' : 'w-16 text-center')}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              {salahKanal(mode) && (
+                <p className="text-xs text-destructive">
+                  {mode === 'HEX' ? t('hexInvalid') : mode === 'RGB' ? t('rangeRgb') : t('rangeCmyk')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {(mode === 'PANTONE_C' || mode === 'PANTONE_TCX') && (
+            <div className="space-y-2">
+              <Input
+                type="search"
+                value={kueri}
+                onChange={(e) => {
+                  const isi = e.target.value;
+                  setKueriPer((k) => ({ ...k, [mode]: isi }));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && hasilCari[0]) {
+                    e.preventDefault();
+                    onGantiHex(hasilCari[0].hex);
+                  }
+                }}
+                placeholder={mode === 'PANTONE_C' ? t('searchC') : t('searchTcx')}
+                aria-label={mode === 'PANTONE_C' ? t('searchC') : t('searchTcx')}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              {kueri.trim() !== '' &&
+                (hasilCari.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t('searchEmpty', { q: kueri.trim() })}</p>
+                ) : (
+                  <ul className="divide-y overflow-hidden rounded-md border bg-background">
+                    {hasilCari.map((w) => {
+                      const dipakai = w.hex === hex;
+                      return (
+                        <li key={w.kode}>
+                          <button
+                            type="button"
+                            onClick={() => onGantiHex(w.hex)}
+                            aria-label={t('applyPantone', { code: namaPantone(w) })}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm outline-none hover:bg-muted focus-visible:bg-muted"
+                          >
+                            <Keping hex={w.hex} className="size-5" />
+                            <span className="min-w-0 flex-1 truncate">
+                              <span className="font-medium">{w.kode}</span>
+                              {w.nama && <span className="text-muted-foreground"> {w.nama}</span>}
+                            </span>
+                            <span className="font-mono text-[11px] uppercase text-muted-foreground">{w.hex}</span>
+                            {dipakai && <Check className="size-4 text-emerald-600 dark:text-emerald-400" />}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ))}
+            </div>
+          )}
+
+          <dl className="divide-y rounded-md border bg-background text-sm">
+            {baris.map((b) => (
+              // Di HP labelnya naik ke atas: berdampingan, kolom nilai tinggal
+              // ~85px dan kode Pantone terpotong menjadi "76…".
+              <div key={b.label} className="flex flex-wrap items-center gap-x-3 py-1.5 pr-1.5 pl-3">
+                <dt className="w-full shrink-0 text-[11px] text-muted-foreground @sm/isi:w-24 @sm/isi:text-xs">{b.label}</dt>
+                <dd className="min-w-0 flex-1 truncate">{b.nilai}</dd>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={t('copyValue', { label: b.label.replace('*', '') })}
+                  onClick={() => onSalin(b.salin, b.label.replace('*', ''))}
+                >
+                  <Copy />
+                </Button>
+              </div>
+            ))}
+          </dl>
+
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <p>{t('cmykNote')}</p>
+            <p>{t('pantoneNote')}</p>
+          </div>
         </div>
       </div>
     </div>
