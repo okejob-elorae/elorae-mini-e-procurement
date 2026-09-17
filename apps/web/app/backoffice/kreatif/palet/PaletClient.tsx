@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/ui/page-header';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +40,7 @@ import { BATAS_NAMA_PALET } from '@/lib/creative/palet/validasi';
 import { hexKeHsb, hexKeRgb, hsbKeHex, normalisasiHex } from '@/lib/creative/palet/warna';
 import { salinTeks } from '@/lib/ui/salin-teks';
 import { cn } from '@/lib/utils';
+import { IkonHarmoni } from './IkonHarmoni';
 import { KisiKontras } from './KisiKontras';
 import { RodaWarna } from './RodaWarna';
 
@@ -184,23 +186,27 @@ export function PaletClient({ palet, bolehMengelola }: { palet: BarisPalet[]; bo
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">{t('ruleLabel')}</p>
-              <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('ruleLabel')}>
-                {ATURAN_HARMONI.map((aturan) => (
-                  <Button
-                    key={aturan}
-                    type="button"
-                    size="xs"
-                    variant={keadaan.aturan === aturan ? 'default' : 'outline'}
-                    aria-pressed={keadaan.aturan === aturan}
-                    className="rounded-full px-2.5"
-                    onClick={() => pilihAturan(aturan)}
-                  >
-                    {t(`rules.${aturan}.name`)}
-                  </Button>
-                ))}
-              </div>
-              <p className="min-h-[2.5rem] text-sm text-muted-foreground">{t(`rules.${keadaan.aturan}.hint`)}</p>
+              <Label htmlFor="aturan-harmoni">{t('ruleLabel')}</Label>
+              {/*
+               * Dropdown, bukan deretan tombol: sembilan nama dengan panjang
+               * yang sangat berbeda ("Triad" vs "Split Complementary") tidak
+               * pernah bisa berbaris rapi di kartu sesempit ini.
+               */}
+              <Select value={keadaan.aturan} onValueChange={(v) => pilihAturan(v as AturanHarmoni)}>
+                <SelectTrigger id="aturan-harmoni" className="h-10 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  {ATURAN_HARMONI.map((aturan) => (
+                    <SelectItem key={aturan} value={aturan} className="py-2">
+                      <IkonHarmoni aturan={aturan} className="size-5" />
+                      {t(`rules.${aturan}.name`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* Tiga baris = penjelasan terpanjang di lebar kartu desktop maupun HP, jadi roda di bawahnya tidak melompat saat aturan diganti. */}
+              <p className="min-h-[3.75rem] text-sm text-muted-foreground">{t(`rules.${keadaan.aturan}.hint`)}</p>
             </div>
 
             <RodaWarna

@@ -53,6 +53,15 @@ const RESEP: Record<Exclude<AturanHarmoni, 'CUSTOM'>, readonly Langkah[]> = {
   SHADES: [l(0, 1, 0.4), l(0, 1, 0.7), l(), l(0, 1, 0.55), l(0, 1, 0.25)],
 };
 
+/**
+ * Langkah sebuah aturan, untuk digambar sebagai ikon. `null` untuk `CUSTOM`,
+ * yang memang tidak punya bentuk. Ikon dibaca dari resep yang sama dengan
+ * roda, supaya gambarnya tidak bisa berbeda dari perilakunya.
+ */
+export function langkahHarmoni(aturan: AturanHarmoni): readonly Langkah[] | null {
+  return aturan === 'CUSTOM' ? null : RESEP[aturan];
+}
+
 function batas01(n: number): number {
   return Math.min(1, Math.max(0, n));
 }
