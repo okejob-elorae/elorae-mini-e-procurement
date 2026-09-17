@@ -3144,6 +3144,8 @@ model ColorPalette {
   name        String
   harmony     String
   colors      Json
+  fabricHex   String?
+  portions    Json?
   createdById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

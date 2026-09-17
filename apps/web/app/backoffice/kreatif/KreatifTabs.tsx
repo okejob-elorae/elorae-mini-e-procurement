@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CalendarRange, Megaphone, Palette, Shirt, Users } from 'lucide-react';
+import { CalendarRange, Megaphone, Palette, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -19,7 +19,6 @@ const TAB = [
   { href: '/backoffice/kreatif/brief', key: 'tabBrief', ikon: Megaphone },
   { href: '/backoffice/kreatif/kol', key: 'tabKol', ikon: Users },
   { href: '/backoffice/kreatif/palet', key: 'tabPalette', ikon: Palette },
-  { href: '/backoffice/kreatif/sablon', key: 'tabSablon', ikon: Shirt },
 ] as const;
 
 export function KreatifTabs() {

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { INDEKS_DASAR } from '@/lib/creative/palet/harmoni';
-import { hsbKeHex, hsvKeRgb, rybKeRgb, type Hsb } from '@/lib/creative/palet/warna';
+import { hexKeHsb, hsbKeHex, hsvKeRgb, rybKeRgb, type Hsb } from '@/lib/creative/palet/warna';
 
 /** Resolusi kanvas di dalam, bukan ukuran tampil — cukup tajam di layar retina. */
 const UKURAN = 720;
@@ -60,12 +60,18 @@ export function RodaWarna({
   onPilih,
   onGeser,
   labelPegangan,
+  indeksDasar = INDEKS_DASAR,
+  kain = null,
 }: {
   warna: Hsb[];
   terpilih: number;
   onPilih: (indeks: number) => void;
   onGeser: (indeks: number, h: number, s: number) => void;
   labelPegangan: (indeks: number, hex: string) => string;
+  /** Pegangan yang digambar sebagai warna dasar. `null` di palet berkain: di sana tidak ada harmoni yang dipegang. */
+  indeksDasar?: number | null;
+  /** Warna kain, digambar sebagai penanda yang tidak bisa digeser — ia titik acuan, bukan tinta. */
+  kain?: { hex: string; label: string } | null;
 }) {
   const kanvasRef = useRef<HTMLCanvasElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -173,10 +179,25 @@ export function RodaWarna({
         ))}
         <circle cx={PUSAT} cy={PUSAT} r={6} fill="white" stroke="rgba(0,0,0,0.3)" strokeWidth={2} />
 
+        {kain &&
+          (() => {
+            // Kotak, bukan lingkaran, dan bergaris putus: bentuknya sendiri
+            // berkata "ini bukan pegangan" sebelum orang mencoba menggesernya.
+            const p = posisi(hexKeHsb(kain.hex));
+            const sisi = 34;
+            return (
+              <g role="img" aria-label={kain.label} className="pointer-events-none">
+                <rect x={p.x - sisi / 2} y={p.y - sisi / 2 + 3} width={sisi} height={sisi} rx={7} fill="rgba(0,0,0,0.28)" />
+                <rect x={p.x - sisi / 2} y={p.y - sisi / 2} width={sisi} height={sisi} rx={7} fill={kain.hex} stroke="white" strokeWidth={4} />
+                <rect x={p.x - sisi / 2 - 6} y={p.y - sisi / 2 - 6} width={sisi + 12} height={sisi + 12} rx={10} fill="none" stroke="rgba(0,0,0,0.6)" strokeWidth={2} strokeDasharray="5 4" />
+              </g>
+            );
+          })()}
+
         {urutan.map((i) => {
           const p = titikPegangan[i];
           const hex = hsbKeHex(warna[i]);
-          const r = i === INDEKS_DASAR ? R_DASAR : R_PEGANGAN;
+          const r = i === indeksDasar ? R_DASAR : R_PEGANGAN;
           const aktif = i === terpilih;
           return (
             <g
@@ -199,7 +220,7 @@ export function RodaWarna({
               )}
               <circle cx={p.x} cy={p.y + 3} r={r + 3} fill="rgba(0,0,0,0.3)" />
               <circle cx={p.x} cy={p.y} r={r} fill={hex} stroke="white" strokeWidth={5} />
-              {i === INDEKS_DASAR && <circle cx={p.x} cy={p.y} r={6} fill="white" stroke="rgba(0,0,0,0.35)" strokeWidth={1.5} />}
+              {i === indeksDasar && <circle cx={p.x} cy={p.y} r={6} fill="white" stroke="rgba(0,0,0,0.35)" strokeWidth={1.5} />}
             </g>
           );
         })}

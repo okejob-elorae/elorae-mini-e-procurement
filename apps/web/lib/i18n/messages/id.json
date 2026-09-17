@@ -127,8 +127,7 @@
     "sematkan": "Sematkan ke atas",
     "lepasSematan": "Lepas sematan",
     "favoritPenuh": "Sematan penuh — maksimal {batas}. Lepas salah satu dulu.",
-    "navColorPalette": "Palet Warna",
-    "navScreenPrintColors": "Warna Sablon"
+    "navColorPalette": "Palet Warna"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -4891,7 +4890,9 @@
         "WARNA_TIDAK_SAH": "Ada kode warna yang tidak sah. Periksa kelima kode HEX.",
         "TIDAK_DITEMUKAN": "Palet ini sudah dihapus orang lain.",
         "TANPA_AKSES": "Anda tidak punya izin mengelola modul kreatif.",
-        "GAGAL": "Tidak bisa diproses. Coba lagi sebentar lagi."
+        "GAGAL": "Tidak bisa diproses. Coba lagi sebentar lagi.",
+        "KAIN_TIDAK_SAH": "Warna kain tidak sah. Pilih ulang kainnya.",
+        "PORSI_TIDAK_SAH": "Total porsi warna sablon harus tepat 100%."
       },
       "inputAs": "Masukkan warna sebagai",
       "rangeRgb": "Isi angka 0–255 untuk tiap kanal.",
@@ -4903,36 +4904,38 @@
       "exact": "persis",
       "copyValue": "Salin {label}",
       "cmykNote": "*CMYK dihitung tanpa profil cetak, sama seperti Pantone Studio — angka di Illustrator atau Photoshop bisa berbeda beberapa persen.",
-      "pantoneNote": "Pantone di sini padanan layar terdekat (ΔE CIEDE2000; di bawah 2 praktis tak terlihat mata). Cocokkan dengan buku Pantone fisik sebelum produksi."
+      "pantoneNote": "Pantone di sini padanan layar terdekat (ΔE CIEDE2000; di bawah 2 praktis tak terlihat mata). Cocokkan dengan buku Pantone fisik sebelum produksi.",
+      "fabricTitle": "Warna kain",
+      "fabricToggle": "Untuk dicetak di kain",
+      "fabricOffHint": "Nyalakan kalau palet ini untuk sablon.",
+      "fabricLabel": "Kain",
+      "fabricMarker": "Warna kain {hex}",
+      "ruleLabelFabric": "Aturan harmoni terhadap kain",
+      "inkLabel": "Warna {letter}",
+      "handleLabelInk": "Warna sablon {letter}, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
+      "inkDragHint": "Setiap tinta digeser sendiri. Kotak bergaris adalah warna kain.",
+      "inksTitle": "Warna sablon",
+      "inksHint": "Klik warna untuk memilihnya. Tambah atau hapus sampai enam warna.",
+      "addInk": "Tambah warna sablon",
+      "removeInk": "Hapus warna {letter}",
+      "savedFabric": "Kain {fabric}",
+      "portionMustBe100": "Total porsi harus 100% sebelum palet disimpan — sekarang {total}%."
     },
-    "tabSablon": "Warna Sablon",
     "sablon": {
-      "title": "Warna Sablon",
-      "description": "Masukkan warna kain dan jumlah warna sablon. Sistem menyarankan warna tinta yang serasi dan terbaca di kain, porsinya di desain, dan resep campur dari tinta dasar yang ada.",
       "copySummary": "Salin ringkasan",
       "copied": "Ringkasan untuk tukang sablon disalin",
       "copyFailed": "Tidak bisa menyalin otomatis. Pilih teksnya lalu salin manual.",
-      "fabricTitle": "Warna kain",
-      "fabricLabel": "Kain",
-      "setupTitle": "Susun sablon",
-      "countLabel": "Jumlah warna sablon",
-      "fewer": "Kurangi warna sablon",
-      "more": "Tambah warna sablon",
-      "ruleLabel": "Aturan harmoni terhadap kain",
       "maxInksLabel": "Maksimal tinta per resep",
       "maxInksOption": "{n} tinta",
       "batchLabel": "Berat adonan per warna (gram)",
       "printTitle": "Warna sablon",
-      "printDescription": "Diurutkan dari tinta yang paling terbaca di kain. Porsi adalah titik mulai — ubah sesuai desain.",
+      "printDescription": "Porsi, keterbacaan di kain, dan resep campur untuk tiap warna sablon. Porsi adalah titik mulai — ubah sesuai desain.",
       "previewLabel": "Pratinjau porsi sablon di kain {fabric}",
       "previewNote": "Satu kotak kecil = 1% luas desain.",
       "portionLabel": "Porsi warna {letter} di desain, persen",
       "portionTotal": "Total porsi {total}%",
       "portionWarn": "Total porsi {total}% — seharusnya 100%.",
-      "resetPortions": "Kembalikan porsi saran",
       "replace": "Ganti",
-      "replaced": "diganti",
-      "restore": "Kembalikan saran",
       "searchC": "Cari Pantone C, mis. 186 C atau Warm Red",
       "searchEmpty": "Tidak ada Pantone C yang cocok dengan “{q}”.",
       "recipeTitle": "Resep campur · {grams} g",
@@ -4984,7 +4987,11 @@
         "NAMA_KEMBAR": "Ada dua tinta dengan nama yang sama.",
         "TANPA_AKSES": "Anda tidak punya izin mengelola modul kreatif.",
         "GAGAL": "Tidak bisa disimpan. Coba lagi sebentar lagi."
-      }
+      },
+      "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
+      "resuggest": "Sarankan ulang dari kain",
+      "followingSuggestion": "Mengikuti saran dari kain — ikut berubah saat kain, aturan, atau jumlah warna diganti.",
+      "editedHint": "Sudah disunting, jadi saran dari kain tidak lagi mengubah warna Anda."
     }
   }
 }

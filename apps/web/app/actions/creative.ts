@@ -251,6 +251,8 @@ export async function simpanPaletAction(masukan: {
   nama: string;
   aturan: string;
   warna: string[];
+  kain?: string | null;
+  porsi?: number[] | null;
 }): Promise<HasilAksiPalet> {
   const oleh = await penulis();
   if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
@@ -283,14 +285,14 @@ export type HasilAksiTintaDasar =
   | { ok: true; tinta: TintaDasar[] }
   | { ok: false; kode: AlasanTintaTidakSah | 'TANPA_AKSES' | 'GAGAL' };
 
-/** Ganti daftar tinta dasar tim — bahan resep campur di layar Warna Sablon. */
+/** Ganti daftar tinta dasar tim — bahan resep campur untuk palet berkain. */
 export async function simpanTintaDasarAction(tinta: TintaDasar[]): Promise<HasilAksiTintaDasar> {
   const oleh = await penulis();
   if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
   try {
     const r = await simpanTintaDasar(tinta);
     if (!r.ok) return { ok: false, kode: r.alasan };
-    revalidatePath('/backoffice/kreatif/sablon');
+    revalidatePath('/backoffice/kreatif/palet');
     return { ok: true, tinta: r.tinta };
   } catch (err) {
     console.error('simpanTintaDasar gagal:', err);

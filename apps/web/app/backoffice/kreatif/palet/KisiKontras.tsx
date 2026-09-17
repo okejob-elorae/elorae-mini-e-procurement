@@ -38,20 +38,31 @@ function Keping({ hex }: { hex: string }) {
 }
 
 /**
- * Kisi keterbacaan: setiap warna palet sebagai latar, setiap warna palet
- * ditambah putih dan hitam sebagai tulisan.
+ * Kisi keterbacaan: setiap warna palet sebagai latar — dan kain, kalau ada —
+ * setiap warna palet ditambah putih dan hitam sebagai tulisan.
  *
  * Putih dan hitam ikut karena di feed Instagram tulisan paling sering memang
  * salah satu dari keduanya — pertanyaan yang benar-benar diajukan art director
  * adalah "teks putih masih terbaca di warna ini atau tidak".
  */
-export function KisiKontras({ warna }: { warna: string[] }) {
+export function KisiKontras({
+  warna,
+  kain = null,
+  labelWarna,
+}: {
+  warna: string[];
+  /** Palet berkain: kain menjadi baris pertama — pertanyaan terpenting adalah tinta mana yang terbaca DI KAIN. */
+  kain?: string | null;
+  labelWarna?: (indeks: number) => string;
+}) {
   const t = useTranslations('creative.palette');
   const locale = useLocale();
   const angka = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
+  const label = labelWarna ?? ((i: number) => t('swatchLabel', { n: i + 1 }));
+  const latar = [...(kain ? [{ hex: kain, label: t('fabricLabel') }] : []), ...warna.map((hex, i) => ({ hex, label: label(i) }))];
   const tulisan = [
-    ...warna.map((hex, i) => ({ hex, label: t('swatchLabel', { n: i + 1 }) })),
+    ...warna.map((hex, i) => ({ hex, label: label(i) })),
     { hex: '#ffffff', label: t('white') },
     { hex: '#000000', label: t('black') },
   ];
@@ -74,32 +85,32 @@ export function KisiKontras({ warna }: { warna: string[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {warna.map((latar, baris) => (
+            {latar.map(({ hex: warnaLatar, label: labelLatar }, baris) => (
               <TableRow key={baris} className="hover:bg-transparent">
                 <TableCell>
                   <span className="flex items-center gap-2">
-                    <Keping hex={latar} />
+                    <Keping hex={warnaLatar} />
                     <span className="flex flex-col leading-tight">
-                      <span className="text-xs font-medium">{t('swatchLabel', { n: baris + 1 })}</span>
-                      <span className="font-mono text-[11px] uppercase text-muted-foreground">{latar}</span>
+                      <span className="text-xs font-medium">{labelLatar}</span>
+                      <span className="font-mono text-[11px] uppercase text-muted-foreground">{warnaLatar}</span>
                     </span>
                   </span>
                 </TableCell>
                 {tulisan.map((teks) => {
-                  if (teks.hex === latar) {
+                  if (teks.hex === warnaLatar) {
                     return (
                       <TableCell key={teks.label} className="text-center text-[11px] text-muted-foreground">
                         {t('sameColor')}
                       </TableCell>
                     );
                   }
-                  const rasio = rasioKontras(latar, teks.hex);
+                  const rasio = rasioKontras(warnaLatar, teks.hex);
                   const tingkat = tingkatKontras(rasio);
                   return (
                     <TableCell key={teks.label} className="p-1.5">
                       <div
                         className="flex h-11 items-center justify-center rounded-md ring-1 ring-inset ring-black/10 dark:ring-white/10"
-                        style={{ background: latar, color: teks.hex }}
+                        style={{ background: warnaLatar, color: teks.hex }}
                       >
                         <span className="text-lg font-semibold leading-none">Aa</span>
                       </div>

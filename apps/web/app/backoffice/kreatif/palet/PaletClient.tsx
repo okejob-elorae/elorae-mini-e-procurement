@@ -1,6 +1,14 @@
 'use client';
 
-import { useMemo, useState, useSyncExternalStore, useTransition, type CSSProperties, type FormEvent } from 'react';
+import {
+  useDeferredValue,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+  type CSSProperties,
+  type FormEvent,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -22,33 +30,46 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { hapusPaletAction, simpanPaletAction } from '@/app/actions/creative';
+import { hapusPaletAction, simpanPaletAction, simpanTintaDasarAction } from '@/app/actions/creative';
+import { ATURAN_HARMONI, INDEKS_DASAR, susunHarmoni, type AturanHarmoni } from '@/lib/creative/palet/harmoni';
 import {
-  ATURAN_HARMONI,
-  INDEKS_DASAR,
-  gantiHexWarna,
-  geserPegangan,
-  keadaanDariHex,
-  susunHarmoni,
-  ubahKecerahan,
-  type AturanHarmoni,
-  type KeadaanPalet,
-} from '@/lib/creative/palet/harmoni';
-import { rasioKontras } from '@/lib/creative/palet/kontras';
+  dariTersimpan,
+  gantiHexPalet,
+  geserPeganganPalet,
+  hapusWarnaSablon,
+  lepasKain,
+  paletBebas,
+  pasangKain,
+  pilihAturanPalet,
+  sarankanDariKain,
+  ubahJumlahSablon,
+  ubahKecerahanPalet,
+  ubahPorsiPalet,
+  type Palet,
+} from '@/lib/creative/palet/keadaan';
+import { pantoneTerdekat, siapkanKatalog, type WarnaPantone } from '@/lib/creative/palet/pantone';
+import dataPantoneC from '@/lib/creative/palet/pantone-c.json';
 import type { BarisPalet } from '@/lib/creative/palet/queries';
 import { BATAS_NAMA_PALET } from '@/lib/creative/palet/validasi';
-import { siapkanKatalog, type WarnaPantone } from '@/lib/creative/palet/pantone';
-import dataPantoneC from '@/lib/creative/palet/pantone-c.json';
 import { hexKeHsb, hsbKeHex, normalisasiHex } from '@/lib/creative/palet/warna';
+import { ATURAN_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/creative/sablon/saran';
+import type { TintaDasar } from '@/lib/creative/sablon/tinta-dasar';
 import { salinTeks } from '@/lib/ui/salin-teks';
 import { cn } from '@/lib/utils';
+import { DeretWarna } from './DeretWarna';
 import { EditorWarna, type ModeMasukan } from './EditorWarna';
 import { IkonHarmoni } from './IkonHarmoni';
+import { KartuKain } from './KartuKain';
+import { HURUF_SABLON, KartuSablon } from './KartuSablon';
+import { KartuTintaDasar } from './KartuTintaDasar';
 import { KisiKontras } from './KisiKontras';
 import { RodaWarna } from './RodaWarna';
 
 /** Titik mulai kalau warna tema terlalu pudar atau gelap untuk menjadi dasar. */
 const WARNA_AWAL = '#e8553d';
+/** Kain contoh saat saklar pertama kali dinyalakan — Blue Surf, dari permintaan tim sendiri. */
+const KAIN_AWAL = '16-5106';
+const KAIN_CADANGAN = '#90a8a4';
 
 /*
  * Roda mulai dari warna tema pengguna, kalau ia memilih satu. ThemeColorProvider
@@ -68,12 +89,12 @@ function pantauWarnaTema(beritahu: () => void): () => void {
   return () => pengamat.disconnect();
 }
 
-function keadaanAwal(warnaTema: string | null): KeadaanPalet {
+function paletAwal(warnaTema: string | null): Palet {
   const tema = warnaTema ? hexKeHsb(warnaTema) : null;
   // Tema yang terlalu pudar atau gelap menghasilkan lima warna kusam yang
   // nyaris sama — titik mulai yang buruk untuk memperkenalkan roda.
   const dasar = tema && tema.s >= 0.25 && tema.b >= 0.35 ? tema : hexKeHsb(WARNA_AWAL);
-  return { aturan: 'ANALOGOUS', warna: susunHarmoni('ANALOGOUS', dasar, []) };
+  return paletBebas('ANALOGOUS', susunHarmoni('ANALOGOUS', dasar, []));
 }
 
 /*
@@ -87,61 +108,92 @@ function katalogC(): WarnaPantone[] {
   return katalogCSiap;
 }
 
-function tintaDi(hex: string): '#ffffff' | '#000000' {
-  return rasioKontras(hex, '#ffffff') >= rasioKontras(hex, '#000000') ? '#ffffff' : '#000000';
-}
-
 export function PaletClient({
-  palet,
+  palet: daftar,
   tcx,
+  tintaDasar,
   bolehMengelola,
 }: {
   palet: BarisPalet[];
   /** `[kode, hex, nama]` dari tabel PantoneColor. */
   tcx: [string, string, string][];
+  tintaDasar: TintaDasar[];
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('creative.palette');
+  const tSablon = useTranslations('creative.sablon');
   const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   const warnaTema = useSyncExternalStore(pantauWarnaTema, bacaWarnaTema, () => null);
-  const awal = useMemo(() => keadaanAwal(warnaTema), [warnaTema]);
+  const awal = useMemo(() => paletAwal(warnaTema), [warnaTema]);
   // `null` = belum disentuh: roda masih mengikuti warna tema. Sentuhan pertama
   // menyalin keadaan itu menjadi milik orangnya, dan sejak itu tema tidak lagi
   // boleh menimpanya.
-  const [keadaanSendiri, setKeadaanSendiri] = useState<KeadaanPalet | null>(null);
-  const keadaan = keadaanSendiri ?? awal;
-  const [terpilih, setTerpilih] = useState(INDEKS_DASAR);
+  const [paletSendiri, setPaletSendiri] = useState<Palet | null>(null);
+  const palet = paletSendiri ?? awal;
+  const [terpilihMentah, setTerpilih] = useState(INDEKS_DASAR);
+  const terpilih = Math.min(terpilihMentah, palet.warna.length - 1);
   // Mode isian ikut bertahan saat berpindah warna: orang yang memasukkan
   // lima kode CMYK tidak mau memilih tab CMYK lima kali.
   const [modeMasukan, setModeMasukan] = useState<ModeMasukan>('HEX');
+  const [modeKain, setModeKain] = useState<ModeMasukan>('PANTONE_TCX');
   const [nama, setNama] = useState('');
   const [akanDihapus, setAkanDihapus] = useState<BarisPalet | null>(null);
 
-  function ubah(berikut: (k: KeadaanPalet) => KeadaanPalet) {
-    setKeadaanSendiri((k) => berikut(k ?? awal));
+  const katalogTcx = useMemo(() => siapkanKatalog('TCX', tcx), [tcx]);
+  // Kain terakhir diingat selama halaman terbuka: mematikan lalu menyalakan
+  // saklar lagi tidak memaksa orang mencari kodenya ulang.
+  const [kainTerakhir, setKainTerakhir] = useState(
+    () => tcx.find(([kode]) => kode === KAIN_AWAL)?.[1].toLowerCase() ?? KAIN_CADANGAN,
+  );
+  const [maksTinta, setMaksTinta] = useState(3);
+  const [beratTeks, setBeratTeks] = useState('1000');
+  const [tinta, setTinta] = useState<TintaDasar[]>(tintaDasar);
+  const [tintaTersimpan, setTintaTersimpan] = useState<TintaDasar[]>(tintaDasar);
+  const tintaTunda = useDeferredValue(tinta);
+
+  function ubah(berikut: (p: Palet) => Palet) {
+    setPaletSendiri((p) => berikut(p ?? awal));
   }
 
-  const hex = keadaan.warna.map(hsbKeHex);
-  const warnaTerpilih = keadaan.warna[terpilih];
+  const berkain = palet.kain !== null;
+  const hex = palet.warna.map(hsbKeHex);
+  const warnaTerpilih = palet.warna[terpilih];
   const hexTerpilih = hex[terpilih];
-  const katalogTcx = useMemo(() => siapkanKatalog('TCX', tcx), [tcx]);
+  const totalPorsi = palet.porsi?.reduce((s, x) => s + x, 0) ?? 100;
+
+  function namaKainDari(kain: string): string {
+    const terdekat = pantoneTerdekat(katalogTcx, kain);
+    return terdekat && terdekat.deltaE < 0.05
+      ? `PANTONE ${terdekat.warna.kode} TCX ${terdekat.warna.nama ?? ''}`.trim()
+      : kain.toUpperCase();
+  }
+  const namaKain = palet.kain ? namaKainDari(palet.kain) : '';
+
+  const labelWarna = (i: number) =>
+    berkain ? t('inkLabel', { letter: HURUF_SABLON[i] }) : i === INDEKS_DASAR ? t('base') : t('swatchLabel', { n: i + 1 });
 
   async function salin(teks: string, pesan: string) {
     if (await salinTeks(teks)) toast.success(pesan);
     else toast.error(t('copyFailed'));
   }
 
-  function pilihAturan(aturan: AturanHarmoni) {
-    ubah((k) => ({ aturan, warna: susunHarmoni(aturan, k.warna[INDEKS_DASAR], k.warna) }));
+  function nyalakanKain(nyala: boolean) {
+    if (nyala) {
+      ubah((p) => pasangKain(p, kainTerakhir, katalogC()));
+      setTerpilih(0);
+    } else {
+      ubah(lepasKain);
+      setTerpilih(INDEKS_DASAR);
+    }
   }
 
   function simpan(e: FormEvent) {
     e.preventDefault();
     startTransition(async () => {
-      const h = await simpanPaletAction({ nama, aturan: keadaan.aturan, warna: hex });
+      const h = await simpanPaletAction({ nama, aturan: palet.aturan, warna: hex, kain: palet.kain, porsi: palet.porsi });
       if (h.ok) {
         toast.success(t('saved', { name: nama.trim() }));
         setNama('');
@@ -153,11 +205,26 @@ export function PaletClient({
   }
 
   function muat(p: BarisPalet) {
-    setKeadaanSendiri(keadaanDariHex(p.aturan, p.warna));
-    setTerpilih(INDEKS_DASAR);
+    setPaletSendiri(dariTersimpan(p));
+    if (p.kain) setKainTerakhir(p.kain);
+    setTerpilih(p.kain ? 0 : INDEKS_DASAR);
     toast.success(t('loaded', { name: p.nama }));
     const hemat = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     document.getElementById('roda-warna')?.scrollIntoView({ behavior: hemat ? 'auto' : 'smooth', block: 'start' });
+  }
+
+  function simpanTinta() {
+    startTransition(async () => {
+      const h = await simpanTintaDasarAction(tinta);
+      if (h.ok) {
+        setTinta(h.tinta);
+        setTintaTersimpan(h.tinta);
+        toast.success(tSablon('inksSaved'));
+        router.refresh();
+      } else {
+        toast.error(tSablon(`errors.${h.kode}`));
+      }
+    });
   }
 
   const tanggal = new Intl.DateTimeFormat(locale, {
@@ -167,192 +234,225 @@ export function PaletClient({
     timeZone: 'Asia/Jakarta',
   });
 
+  const pilihanAturan: readonly AturanHarmoni[] = berkain ? ATURAN_SABLON : ATURAN_HARMONI;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title={t('title')}
         description={t('description')}
-        meta={t('meta', { count: palet.length })}
+        meta={t('meta', { count: daftar.length })}
         actions={
-          <Button
-            variant="outline"
-            onClick={() => salin(hex.map((h) => h.toUpperCase()).join(', '), t('copiedAll'))}
-          >
+          <Button variant="outline" onClick={() => salin(hex.map((h) => h.toUpperCase()).join(', '), t('copiedAll'))}>
             <Copy className="mr-1.5 h-4 w-4" />
             {t('copyAll')}
           </Button>
         }
       />
 
+      {/* Selebar halaman, di atas roda: kain adalah titik berangkat palet sablon, dan di kolom sempit editornya bertumpuk setinggi roda. */}
+      <KartuKain
+        kain={palet.kain}
+        namaKain={namaKain}
+        mode={modeKain}
+        onMode={setModeKain}
+        onNyala={nyalakanKain}
+        onGantiKain={(baru) => {
+          setKainTerakhir(baru);
+          ubah((p) => pasangKain(p, baru, katalogC()));
+        }}
+        onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
+        katalogC={katalogC()}
+        katalogTcx={katalogTcx}
+      />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">
-        <Card id="roda-warna" className="scroll-mt-20">
-          <CardHeader>
-            <CardTitle>{t('wheelTitle')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="aturan-harmoni">{t('ruleLabel')}</Label>
-              {/*
-               * Dropdown, bukan deretan tombol: sembilan nama dengan panjang
-               * yang sangat berbeda ("Triad" vs "Split Complementary") tidak
-               * pernah bisa berbaris rapi di kartu sesempit ini.
-               */}
-              <Select value={keadaan.aturan} onValueChange={(v) => pilihAturan(v as AturanHarmoni)}>
-                <SelectTrigger id="aturan-harmoni" className="h-10 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent position="popper">
-                  {ATURAN_HARMONI.map((aturan) => (
-                    <SelectItem key={aturan} value={aturan} className="py-2">
-                      <IkonHarmoni aturan={aturan} className="size-5" />
-                      {t(`rules.${aturan}.name`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {/* Tiga baris = penjelasan terpanjang di lebar kartu desktop maupun HP, jadi roda di bawahnya tidak melompat saat aturan diganti. */}
-              <p className="min-h-[3.75rem] text-sm text-muted-foreground">{t(`rules.${keadaan.aturan}.hint`)}</p>
-            </div>
-
-            <RodaWarna
-              warna={keadaan.warna}
-              terpilih={terpilih}
-              onPilih={(i) => {
-                setTerpilih(i);
-                          }}
-              onGeser={(i, h, s) => ubah((k) => geserPegangan(k, i, h, s))}
-              labelPegangan={(i, kode) =>
-                i === INDEKS_DASAR ? t('handleLabelBase', { hex: kode }) : t('handleLabel', { n: i + 1, hex: kode })
-              }
-            />
-
-            <p className="text-center text-xs text-muted-foreground">
-              {keadaan.aturan === 'CUSTOM' ? t('customHint') : t('dragHint')}
-            </p>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <Label htmlFor="kecerahan-warna">{t('brightness')}</Label>
-                <span className="tabular-nums text-muted-foreground">{Math.round(warnaTerpilih.b * 100)}%</span>
+        <div className="space-y-6">
+          <Card id="roda-warna" className="scroll-mt-20">
+            <CardHeader>
+              <CardTitle>{t('wheelTitle')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="aturan-harmoni">{berkain ? t('ruleLabelFabric') : t('ruleLabel')}</Label>
+                {/*
+                 * Dropdown, bukan deretan tombol: sembilan nama dengan panjang
+                 * yang sangat berbeda ("Triad" vs "Split Complementary") tidak
+                 * pernah bisa berbaris rapi di kartu sesempit ini.
+                 */}
+                <Select value={palet.aturan} onValueChange={(v) => ubah((p) => pilihAturanPalet(p, v as AturanHarmoni, katalogC()))}>
+                  <SelectTrigger id="aturan-harmoni" className="h-10 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    {pilihanAturan.map((aturan) => (
+                      <SelectItem key={aturan} value={aturan} className="py-2">
+                        <IkonHarmoni aturan={aturan} className="size-5" />
+                        {t(`rules.${aturan}.name`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {/* Tiga baris = penjelasan terpanjang di lebar kartu desktop maupun HP, jadi roda di bawahnya tidak melompat saat aturan diganti. */}
+                <p className="min-h-[3.75rem] text-sm text-muted-foreground">{t(`rules.${palet.aturan}.hint`)}</p>
               </div>
-              <input
-                id="kecerahan-warna"
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={Math.round(warnaTerpilih.b * 100)}
-                onChange={(e) => ubah((k) => ubahKecerahan(k, terpilih, Number(e.target.value) / 100))}
-                className={cn(
-                  'h-3 w-full cursor-pointer appearance-none rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/10',
-                  'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring',
-                  // `appearance-none` menghapus kenop bawaan WebKit; tanpa gaya ini
-                  // penggesernya tidak punya pegangan yang terlihat.
-                  '[&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full',
-                  '[&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-[var(--kenop)]',
-                  '[&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgba(0,0,0,0.55),0_2px_6px_rgba(0,0,0,0.35)]',
-                  '[&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px]',
-                  '[&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-[var(--kenop)]',
-                  '[&::-moz-range-thumb]:shadow-[0_0_0_1px_rgba(0,0,0,0.55),0_2px_6px_rgba(0,0,0,0.35)]',
-                )}
-                style={
-                  {
-                    background: `linear-gradient(to right, #000000, ${hsbKeHex({ ...warnaTerpilih, b: 1 })})`,
-                    '--kenop': hexTerpilih,
-                  } as CSSProperties
+
+              <RodaWarna
+                warna={palet.warna}
+                terpilih={terpilih}
+                onPilih={setTerpilih}
+                onGeser={(i, h, s) => ubah((p) => geserPeganganPalet(p, i, h, s))}
+                indeksDasar={berkain ? null : INDEKS_DASAR}
+                kain={palet.kain ? { hex: palet.kain, label: t('fabricMarker', { hex: palet.kain.toUpperCase() }) } : null}
+                labelPegangan={(i, kode) =>
+                  berkain
+                    ? t('handleLabelInk', { letter: HURUF_SABLON[i], hex: kode })
+                    : i === INDEKS_DASAR
+                      ? t('handleLabelBase', { hex: kode })
+                      : t('handleLabel', { n: i + 1, hex: kode })
                 }
               />
-            </div>
-          </CardContent>
-        </Card>
 
-        <Card>
+              <p className="text-center text-xs text-muted-foreground">
+                {berkain ? t('inkDragHint') : palet.aturan === 'CUSTOM' ? t('customHint') : t('dragHint')}
+              </p>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <Label htmlFor="kecerahan-warna">{t('brightness')}</Label>
+                  <span className="tabular-nums text-muted-foreground">{Math.round(warnaTerpilih.b * 100)}%</span>
+                </div>
+                <input
+                  id="kecerahan-warna"
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={Math.round(warnaTerpilih.b * 100)}
+                  onChange={(e) => ubah((p) => ubahKecerahanPalet(p, terpilih, Number(e.target.value) / 100))}
+                  className={cn(
+                    'h-3 w-full cursor-pointer appearance-none rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/10',
+                    'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring',
+                    // `appearance-none` menghapus kenop bawaan WebKit; tanpa gaya ini
+                    // penggesernya tidak punya pegangan yang terlihat.
+                    '[&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full',
+                    '[&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-[var(--kenop)]',
+                    '[&::-webkit-slider-thumb]:shadow-[0_0_0_1px_rgba(0,0,0,0.55),0_2px_6px_rgba(0,0,0,0.35)]',
+                    '[&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px]',
+                    '[&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-[var(--kenop)]',
+                    '[&::-moz-range-thumb]:shadow-[0_0_0_1px_rgba(0,0,0,0.55),0_2px_6px_rgba(0,0,0,0.35)]',
+                  )}
+                  style={
+                    {
+                      background: `linear-gradient(to right, #000000, ${hsbKeHex({ ...warnaTerpilih, b: 1 })})`,
+                      '--kenop': hexTerpilih,
+                    } as CSSProperties
+                  }
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="self-start">
           <CardHeader>
-            <CardTitle>{t('swatchesTitle')}</CardTitle>
-            <CardDescription>{t('swatchesHint')}</CardDescription>
+            <CardTitle>{berkain ? t('inksTitle') : t('swatchesTitle')}</CardTitle>
+            <CardDescription>{berkain ? t('inksHint') : t('swatchesHint')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-5 gap-2 sm:gap-3">
-              {hex.map((kode, i) => {
-                const aktif = i === terpilih;
-                const tinta = tintaDi(kode);
-                return (
-                  <div key={i} className="flex min-w-0 flex-col items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTerpilih(i);
-                                          }}
-                      aria-pressed={aktif}
-                      aria-label={`${i === INDEKS_DASAR ? t('base') : t('swatchLabel', { n: i + 1 })}, ${kode.toUpperCase()}`}
-                      className={cn(
-                        'flex h-24 w-full items-end justify-center rounded-lg pb-2 outline-none sm:h-36',
-                        'motion-safe:transition-[transform,box-shadow] motion-safe:duration-200',
-                        'focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                        aktif
-                          ? 'shadow-lg ring-2 ring-foreground ring-offset-2 ring-offset-card motion-safe:-translate-y-1'
-                          : 'ring-1 ring-inset ring-black/10 hover:shadow-md dark:ring-white/10 motion-safe:hover:-translate-y-0.5',
-                      )}
-                      style={{ background: kode }}
-                    >
-                      {i === INDEKS_DASAR && (
-                        <span
-                          className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                          style={{
-                            color: tinta,
-                            background: tinta === '#ffffff' ? 'rgba(0,0,0,0.22)' : 'rgba(255,255,255,0.5)',
-                          }}
-                        >
-                          {t('base')}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => salin(kode.toUpperCase(), t('copied', { hex: kode.toUpperCase() }))}
-                      title={t('copyHex', { hex: kode.toUpperCase() })}
-                      className="max-w-full truncate rounded px-1 font-mono text-[10px] uppercase text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-xs"
-                    >
-                      {kode}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+            <DeretWarna
+              hex={hex}
+              terpilih={terpilih}
+              onPilih={setTerpilih}
+              labelUbin={(i) => `${labelWarna(i)}, ${hex[i].toUpperCase()}`}
+              tandaUbin={(i) => (berkain ? HURUF_SABLON[i] : i === INDEKS_DASAR ? t('base') : null)}
+              onSalin={(kode) => salin(kode.toUpperCase(), t('copied', { hex: kode.toUpperCase() }))}
+              judulSalin={(kode) => t('copyHex', { hex: kode.toUpperCase() })}
+              onHapus={berkain ? (i) => ubah((p) => hapusWarnaSablon(p, i)) : undefined}
+              labelHapus={(i) => t('removeInk', { letter: HURUF_SABLON[i] })}
+              onTambah={
+                berkain && palet.warna.length < JUMLAH_SABLON_MAKS
+                  ? () => {
+                      ubah((p) => ubahJumlahSablon(p, p.warna.length + 1, katalogC()));
+                      setTerpilih(palet.warna.length);
+                    }
+                  : undefined
+              }
+              labelTambah={t('addInk')}
+            />
 
             <EditorWarna
-              key={terpilih}
-              label={terpilih === INDEKS_DASAR ? t('base') : t('swatchLabel', { n: terpilih + 1 })}
+              key={`${berkain}-${terpilih}`}
+              label={labelWarna(terpilih)}
               hex={hexTerpilih}
               hsb={warnaTerpilih}
               mode={modeMasukan}
               onMode={setModeMasukan}
-              onGantiHex={(baru) => ubah((k) => gantiHexWarna(k, terpilih, baru))}
+              onGantiHex={(baru) => ubah((p) => gantiHexPalet(p, terpilih, baru))}
               onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
               katalogC={katalogC()}
               katalogTcx={katalogTcx}
             />
 
             {bolehMengelola && (
-              <form onSubmit={simpan} className="flex flex-col gap-2 border-t pt-5 sm:flex-row sm:items-end">
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <Label htmlFor="nama-palet">{t('saveLabel')}</Label>
-                  <Input
-                    id="nama-palet"
-                    value={nama}
-                    onChange={(e) => setNama(e.target.value)}
-                    placeholder={t('namePlaceholder')}
-                    maxLength={BATAS_NAMA_PALET}
-                  />
+              <form onSubmit={simpan} className="space-y-2 border-t pt-5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Label htmlFor="nama-palet">{t('saveLabel')}</Label>
+                    <Input
+                      id="nama-palet"
+                      value={nama}
+                      onChange={(e) => setNama(e.target.value)}
+                      placeholder={t('namePlaceholder')}
+                      maxLength={BATAS_NAMA_PALET}
+                    />
+                  </div>
+                  <Button type="submit" disabled={pending || !nama.trim() || (berkain && totalPorsi !== 100)}>
+                    {pending ? t('saving') : t('save')}
+                  </Button>
                 </div>
-                <Button type="submit" disabled={pending || !nama.trim()}>
-                  {pending ? t('saving') : t('save')}
-                </Button>
+                {berkain && totalPorsi !== 100 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">{t('portionMustBe100', { total: totalPorsi })}</p>
+                )}
               </form>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {palet.kain && palet.porsi && (
+        <KartuSablon
+          kainHex={palet.kain}
+          namaKain={namaKain}
+          aturan={palet.aturan}
+          hex={hex}
+          porsi={palet.porsi}
+          saranUtuh={palet.saranUtuh}
+          tintaDasar={tintaTunda}
+          maksTinta={maksTinta}
+          onMaksTinta={setMaksTinta}
+          beratTeks={beratTeks}
+          onBeratTeks={setBeratTeks}
+          katalogC={katalogC()}
+          onPorsi={(i, n) => ubah((p) => ubahPorsiPalet(p, i, n))}
+          onGanti={(i, baru) => ubah((p) => gantiHexPalet(p, i, baru))}
+          onSarankanUlang={() => ubah((p) => sarankanDariKain(p, katalogC()))}
+          onSalin={(teks) => salin(teks, tSablon('copied'))}
+        />
+      )}
+
+      {berkain && (
+        <KartuTintaDasar
+          tinta={tinta}
+          berubah={JSON.stringify(tinta) !== JSON.stringify(tintaTersimpan)}
+          bolehMenyimpan={bolehMengelola}
+          menyimpan={pending}
+          katalogC={katalogC()}
+          onUbah={setTinta}
+          onSimpan={simpanTinta}
+          onGalat={(pesan) => toast.error(pesan)}
+        />
+      )}
 
       <Card>
         <CardHeader>
@@ -360,7 +460,7 @@ export function PaletClient({
           <CardDescription>{t('contrastDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <KisiKontras warna={hex} />
+          <KisiKontras warna={hex} kain={palet.kain} labelWarna={labelWarna} />
         </CardContent>
       </Card>
 
@@ -368,27 +468,38 @@ export function PaletClient({
         <CardHeader>
           <CardTitle>{t('savedTitle')}</CardTitle>
         </CardHeader>
-        <CardContent className={palet.length === 0 ? 'p-0' : undefined}>
-          {palet.length === 0 ? (
-            <EmptyState
-              icon={Palette}
-              title={t('emptyTitle')}
-              description={bolehMengelola ? t('emptyBody') : t('emptyBodyViewOnly')}
-            />
+        <CardContent className={daftar.length === 0 ? 'p-0' : undefined}>
+          {daftar.length === 0 ? (
+            <EmptyState icon={Palette} title={t('emptyTitle')} description={bolehMengelola ? t('emptyBody') : t('emptyBodyViewOnly')} />
           ) : (
             <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {palet.map((p) => (
+              {daftar.map((p) => (
                 <li key={p.id} className="min-w-0 space-y-3 rounded-lg border p-3">
-                  <div className="flex h-14 overflow-hidden rounded-md ring-1 ring-inset ring-black/10 dark:ring-white/10">
-                    {p.warna.map((w, i) => (
-                      <div key={i} className="flex-1" style={{ background: w }} title={w.toUpperCase()} />
-                    ))}
+                  <div className="flex h-14 gap-1.5">
+                    {p.kain && (
+                      <div
+                        className="w-10 shrink-0 rounded-md ring-1 ring-inset ring-black/10 dark:ring-white/10"
+                        style={{ background: p.kain }}
+                        title={t('savedFabric', { fabric: p.kain.toUpperCase() })}
+                      />
+                    )}
+                    <div className="flex min-w-0 flex-1 overflow-hidden rounded-md ring-1 ring-inset ring-black/10 dark:ring-white/10">
+                      {p.warna.map((w, i) => (
+                        // Palet berkain: lebar pita mengikuti porsinya di desain.
+                        <div key={i} style={{ background: w, flexGrow: p.porsi?.[i] ?? 1, flexBasis: 0 }} title={w.toUpperCase()} />
+                      ))}
+                    </div>
                   </div>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{p.nama}</p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {[t(`rules.${p.aturan}.name`), p.dibuatOleh, tanggal.format(new Date(p.dibuatPada))]
+                        {[
+                          p.kain ? t('savedFabric', { fabric: namaKainDari(p.kain) }) : null,
+                          t(`rules.${p.aturan}.name`),
+                          p.dibuatOleh,
+                          tanggal.format(new Date(p.dibuatPada)),
+                        ]
                           .filter(Boolean)
                           .join(' · ')}
                       </p>

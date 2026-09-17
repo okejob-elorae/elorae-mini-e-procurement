@@ -1,4 +1,5 @@
 import { prisma } from '@elorae/db';
+import { JUMLAH_SABLON_MAKS, PORSI_AWAL } from '../sablon/saran';
 import { ATURAN_HARMONI, JUMLAH_WARNA, type AturanHarmoni } from './harmoni';
 import { normalisasiHex } from './warna';
 
@@ -7,6 +8,9 @@ export type BarisPalet = {
   nama: string;
   aturan: AturanHarmoni;
   warna: string[];
+  /** Hex kain untuk palet sablon, `null` untuk palet bebas. */
+  kain: string | null;
+  porsi: number[] | null;
   dibuatOleh: string | null;
   dibuatPada: string;
 };
@@ -27,6 +31,8 @@ export async function daftarPalet(): Promise<BarisPalet[]> {
       name: true,
       harmony: true,
       colors: true,
+      fabricHex: true,
+      portions: true,
       createdAt: true,
       createdBy: { select: { name: true } },
     },
@@ -37,10 +43,20 @@ export async function daftarPalet(): Promise<BarisPalet[]> {
     const warna = Array.isArray(r.colors)
       ? r.colors.map((w) => (typeof w === 'string' ? normalisasiHex(w) : null))
       : [];
-    if (warna.length !== JUMLAH_WARNA || warna.some((w) => w === null)) {
-      console.warn(`Palet ${r.id} dilewati: kolom colors bukan lima warna.`);
+    const kain = r.fabricHex ? normalisasiHex(r.fabricHex) : null;
+    const jumlahSah = kain ? warna.length >= 1 && warna.length <= JUMLAH_SABLON_MAKS : warna.length === JUMLAH_WARNA;
+    if (!jumlahSah || warna.some((w) => w === null)) {
+      console.warn(`Palet ${r.id} dilewati: kolom colors tidak sesuai bentuk paletnya.`);
       continue;
     }
+    // Porsi yang rusak tidak menjatuhkan paletnya: warnanya tetap berguna, dan
+    // porsi awal dipakai sebagai gantinya supaya lembar sablon tetap berjumlah 100.
+    const porsiMentah = r.portions;
+    const porsiSah =
+      Array.isArray(porsiMentah) &&
+      porsiMentah.length === warna.length &&
+      porsiMentah.every((x) => Number.isInteger(x)) &&
+      (porsiMentah as number[]).reduce((s, x) => s + x, 0) === 100;
     hasil.push({
       id: r.id,
       nama: r.name,
@@ -48,6 +64,8 @@ export async function daftarPalet(): Promise<BarisPalet[]> {
       // tampil persis, hanya roda yang tidak lagi menyusunnya ulang.
       aturan: (ATURAN_HARMONI as readonly string[]).includes(r.harmony) ? (r.harmony as AturanHarmoni) : 'CUSTOM',
       warna: warna as string[],
+      kain,
+      porsi: kain ? (porsiSah ? (porsiMentah as number[]) : PORSI_AWAL[warna.length]) : null,
       dibuatOleh: r.createdBy?.name ?? null,
       dibuatPada: r.createdAt.toISOString(),
     });

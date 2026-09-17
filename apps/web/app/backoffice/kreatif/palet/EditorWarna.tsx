@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FocusEvent, type ReactNode } from 'react';
+import { useId, useState, type FocusEvent, type ReactNode } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Check, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -83,6 +83,9 @@ export function EditorWarna({
 }) {
   const t = useTranslations('creative.palette');
   const locale = useLocale();
+  // Satu halaman bisa memuat dua editor (kain dan tinta); id kolom harus unik
+  // supaya setiap label menunjuk kolomnya sendiri.
+  const awalanId = useId();
   const desimal = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   /*
@@ -239,7 +242,7 @@ export function EditorWarna({
             <div onBlur={tinggalkan} className="space-y-1.5">
               <div className="flex flex-wrap items-end gap-2">
                 {KANAL[mode].map((kanal, i) => {
-                  const id = `kanal-${mode}-${i}`;
+                  const id = `${awalanId}-${mode}-${i}`;
                   return (
                     <div key={id} className="space-y-1">
                       <Label htmlFor={id} className={cn('text-xs text-muted-foreground', mode === 'HEX' && 'sr-only')}>

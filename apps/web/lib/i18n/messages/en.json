@@ -127,8 +127,7 @@
     "sematkan": "Pin to top",
     "lepasSematan": "Unpin",
     "favoritPenuh": "Pinned list is full — {batas} maximum. Unpin one first.",
-    "navColorPalette": "Color Palette",
-    "navScreenPrintColors": "Print Colors"
+    "navColorPalette": "Color Palette"
   },
   "notifications": {
     "title": "Notifications",
@@ -4891,7 +4890,9 @@
         "WARNA_TIDAK_SAH": "One of the colour codes isn't valid. Check all five HEX codes.",
         "TIDAK_DITEMUKAN": "Someone else already deleted this palette.",
         "TANPA_AKSES": "You don't have permission to manage the creative module.",
-        "GAGAL": "Couldn't process that. Try again in a moment."
+        "GAGAL": "Couldn't process that. Try again in a moment.",
+        "KAIN_TIDAK_SAH": "The fabric colour isn't valid. Pick the fabric again.",
+        "PORSI_TIDAK_SAH": "Print colour shares must total exactly 100%."
       },
       "inputAs": "Enter colour as",
       "rangeRgb": "Enter 0–255 for each channel.",
@@ -4903,36 +4904,38 @@
       "exact": "exact",
       "copyValue": "Copy {label}",
       "cmykNote": "*CMYK is calculated without a print profile, same as Pantone Studio — Illustrator or Photoshop may differ by a few percent.",
-      "pantoneNote": "Pantone here is the nearest on-screen match (ΔE CIEDE2000; below 2 is practically invisible). Check against the physical Pantone book before production."
+      "pantoneNote": "Pantone here is the nearest on-screen match (ΔE CIEDE2000; below 2 is practically invisible). Check against the physical Pantone book before production.",
+      "fabricTitle": "Fabric colour",
+      "fabricToggle": "For printing on fabric",
+      "fabricOffHint": "Turn on if this palette is for screen printing.",
+      "fabricLabel": "Fabric",
+      "fabricMarker": "Fabric colour {hex}",
+      "ruleLabelFabric": "Harmony with the fabric",
+      "inkLabel": "Colour {letter}",
+      "handleLabelInk": "Print colour {letter}, {hex}. Left and right arrows turn the hue, up and down change saturation.",
+      "inkDragHint": "Each ink moves on its own. The dashed square is the fabric colour.",
+      "inksTitle": "Print colours",
+      "inksHint": "Click a colour to select it. Add or remove up to six colours.",
+      "addInk": "Add print colour",
+      "removeInk": "Remove colour {letter}",
+      "savedFabric": "Fabric {fabric}",
+      "portionMustBe100": "Shares must total 100% before saving — currently {total}%."
     },
-    "tabSablon": "Print Colors",
     "sablon": {
-      "title": "Print Colors",
-      "description": "Enter the fabric colour and how many print colours you need. You get ink colours that suit and read well on the fabric, their share of the design, and a mix recipe from the base inks you have.",
       "copySummary": "Copy summary",
       "copied": "Summary for the printer copied",
       "copyFailed": "Couldn't copy automatically. Select the text and copy it by hand.",
-      "fabricTitle": "Fabric colour",
-      "fabricLabel": "Fabric",
-      "setupTitle": "Build the print",
-      "countLabel": "Number of print colours",
-      "fewer": "Fewer print colours",
-      "more": "More print colours",
-      "ruleLabel": "Harmony with the fabric",
       "maxInksLabel": "Max inks per recipe",
       "maxInksOption": "{n} inks",
       "batchLabel": "Batch weight per colour (grams)",
       "printTitle": "Print colours",
-      "printDescription": "Ordered from the ink that reads best on the fabric. Shares are a starting point — adjust them to the design.",
+      "printDescription": "Share, readability on the fabric, and a mix recipe for each print colour. Shares are a starting point — adjust them to the design.",
       "previewLabel": "Preview of print shares on {fabric} fabric",
       "previewNote": "Each small square = 1% of the design.",
       "portionLabel": "Share of colour {letter} in the design, percent",
       "portionTotal": "Total share {total}%",
       "portionWarn": "Total share {total}% — it should be 100%.",
-      "resetPortions": "Restore suggested shares",
       "replace": "Replace",
-      "replaced": "replaced",
-      "restore": "Restore suggestion",
       "searchC": "Search Pantone C, e.g. 186 C or Warm Red",
       "searchEmpty": "No Pantone C matches “{q}”.",
       "recipeTitle": "Mix recipe · {grams} g",
@@ -4984,7 +4987,11 @@
         "NAMA_KEMBAR": "Two inks have the same name.",
         "TANPA_AKSES": "You don't have permission to manage the creative module.",
         "GAGAL": "Couldn't save. Try again in a moment."
-      }
+      },
+      "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
+      "resuggest": "Suggest again from fabric",
+      "followingSuggestion": "Following the fabric suggestion — it updates when the fabric, rule, or number of colours changes.",
+      "editedHint": "Edited, so fabric suggestions no longer change your colours."
     }
   }
 }

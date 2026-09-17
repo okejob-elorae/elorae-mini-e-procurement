@@ -113,6 +113,42 @@ describe('palet warna', () => {
     expect((await daftarPalet()).find((p) => p.id === lama.id)?.aturan).toBe('CUSTOM');
   });
 
+  it('membaca kembali palet berkain beserta kain dan porsinya', async () => {
+    const r = await simpanPalet({
+      masukan: { nama: `${tag} Kaos Blue Surf`, aturan: 'COMPLEMENTARY', warna: ['#613B2B', '#F1E9E7'], kain: '90A8A4', porsi: [70, 30] },
+      olehUserId: userId,
+    });
+    if (!r.ok) throw new Error('gagal menyiapkan palet');
+    dibuat.push(r.id);
+    expect((await daftarPalet()).find((p) => p.id === r.id)).toMatchObject({
+      aturan: 'COMPLEMENTARY',
+      warna: ['#613b2b', '#f1e9e7'],
+      kain: '#90a8a4',
+      porsi: [70, 30],
+    });
+  });
+
+  it('menyimpan palet bebas tanpa kain dan tanpa porsi', async () => {
+    const r = await simpanPalet({
+      masukan: { nama: `${tag} bebas`, aturan: 'TRIAD', warna: WARNA, porsi: [20, 20, 20, 20, 20] },
+      olehUserId: userId,
+    });
+    if (!r.ok) throw new Error('gagal menyiapkan palet');
+    dibuat.push(r.id);
+    const mentah = await prisma.colorPalette.findUniqueOrThrow({ where: { id: r.id }, select: { fabricHex: true, portions: true } });
+    expect(mentah).toEqual({ fabricHex: null, portions: null });
+    expect((await daftarPalet()).find((p) => p.id === r.id)).toMatchObject({ kain: null, porsi: null });
+  });
+
+  it('memakai porsi awal kalau porsi tersimpan rusak, tanpa membuang paletnya', async () => {
+    const rusak = await prisma.colorPalette.create({
+      data: { name: `${tag} porsi rusak`, harmony: 'TRIAD', colors: ['#613b2b', '#f1e9e7', '#aeecdf'], fabricHex: '#90a8a4', portions: [50, 50] },
+      select: { id: true },
+    });
+    dibuat.push(rusak.id);
+    expect((await daftarPalet()).find((p) => p.id === rusak.id)?.porsi).toEqual([60, 30, 10]);
+  });
+
   it('mengirim TCX sebagai kode unik dengan hex yang sah dan kembali utuh lewat roda', async () => {
     const tcx = await daftarPantoneTcx();
     expect(new Set(tcx.map(([kode]) => kode)).size).toBe(tcx.length);
