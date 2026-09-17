@@ -2,14 +2,15 @@
 
 import { useId, useState, type FocusEvent, type ReactNode } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Check, Copy } from 'lucide-react';
+import { Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cariPantone, pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { cmykKeRgb, hexKeRgb, normalisasiHex, rgbKeCmyk, rgbKeHex, type Hsb } from '@/lib/production-colors/palet/warna';
 import { cn } from '@/lib/utils';
+import { KatalogPantone } from './KatalogPantone';
 
 export const MODE_MASUKAN = ['HEX', 'RGB', 'CMYK', 'PANTONE_C', 'PANTONE_TCX'] as const;
 export type ModeMasukan = (typeof MODE_MASUKAN)[number];
@@ -157,7 +158,6 @@ export function EditorWarna({
   };
 
   const katalogAktif = mode === 'PANTONE_C' ? katalogC : katalogTcx;
-  const hasilCari = mode === 'PANTONE_C' || mode === 'PANTONE_TCX' ? cariPantone(katalogAktif, kueri, 6) : [];
 
   function labelDeltaE(deltaE: number): string {
     return deltaE < 0.05 ? t('exact') : `ΔE ${desimal.format(deltaE)}`;
@@ -274,54 +274,15 @@ export function EditorWarna({
           )}
 
           {(mode === 'PANTONE_C' || mode === 'PANTONE_TCX') && (
-            <div className="space-y-2">
-              <Input
-                type="search"
-                value={kueri}
-                onChange={(e) => {
-                  const isi = e.target.value;
-                  setKueriPer((k) => ({ ...k, [mode]: isi }));
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && hasilCari[0]) {
-                    e.preventDefault();
-                    onGantiHex(hasilCari[0].hex);
-                  }
-                }}
-                placeholder={mode === 'PANTONE_C' ? t('searchC') : t('searchTcx')}
-                aria-label={mode === 'PANTONE_C' ? t('searchC') : t('searchTcx')}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              {kueri.trim() !== '' &&
-                (hasilCari.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">{t('searchEmpty', { q: kueri.trim() })}</p>
-                ) : (
-                  <ul className="divide-y overflow-hidden rounded-md border bg-background">
-                    {hasilCari.map((w) => {
-                      const dipakai = w.hex === hex;
-                      return (
-                        <li key={w.kode}>
-                          <button
-                            type="button"
-                            onClick={() => onGantiHex(w.hex)}
-                            aria-label={t('applyPantone', { code: namaPantone(w) })}
-                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm outline-none hover:bg-muted focus-visible:bg-muted"
-                          >
-                            <Keping hex={w.hex} className="size-5" />
-                            <span className="min-w-0 flex-1 truncate">
-                              <span className="font-medium">{w.kode}</span>
-                              {w.nama && <span className="text-muted-foreground"> {w.nama}</span>}
-                            </span>
-                            <span className="font-mono text-[11px] uppercase text-muted-foreground">{w.hex}</span>
-                            {dipakai && <Check className="size-4 text-emerald-600 dark:text-emerald-400" />}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ))}
-            </div>
+            <KatalogPantone
+              key={mode}
+              katalog={katalogAktif}
+              hex={hex}
+              kueri={kueri}
+              onKueri={(isi) => setKueriPer((k) => ({ ...k, [mode]: isi }))}
+              onPilih={onGantiHex}
+              placeholder={mode === 'PANTONE_C' ? t('searchC') : t('searchTcx')}
+            />
           )}
 
           <dl className="divide-y rounded-md border bg-background text-sm">

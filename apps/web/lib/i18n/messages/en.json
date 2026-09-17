@@ -1652,7 +1652,23 @@
     "addInk": "Add print colour",
     "removeInk": "Remove colour {letter}",
     "savedFabric": "Fabric {fabric}",
-    "portionMustBe100": "Shares must total 100% before saving — currently {total}%."
+    "portionMustBe100": "Shares must total 100% before saving — currently {total}%.",
+    "familyLabel": "Colour family",
+    "familyAll": "All",
+    "families": {
+      "MERAH": "Red",
+      "ORANYE": "Orange",
+      "KUNING": "Yellow",
+      "HIJAU": "Green",
+      "BIRU": "Blue",
+      "UNGU": "Purple",
+      "PINK": "Pink",
+      "COKELAT": "Brown",
+      "NETRAL": "Neutral"
+    },
+    "similarTitle": "Similar to this colour",
+    "catalogCount": "{count} colours",
+    "showMore": "Show {count} more"
   },
   "productionPrint": {
     "copySummary": "Copy summary",

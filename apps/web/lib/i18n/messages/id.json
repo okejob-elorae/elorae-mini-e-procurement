@@ -1652,7 +1652,23 @@
     "addInk": "Tambah warna sablon",
     "removeInk": "Hapus warna {letter}",
     "savedFabric": "Kain {fabric}",
-    "portionMustBe100": "Total porsi harus 100% sebelum palet disimpan — sekarang {total}%."
+    "portionMustBe100": "Total porsi harus 100% sebelum palet disimpan — sekarang {total}%.",
+    "familyLabel": "Keluarga warna",
+    "familyAll": "Semua",
+    "families": {
+      "MERAH": "Merah",
+      "ORANYE": "Oranye",
+      "KUNING": "Kuning",
+      "HIJAU": "Hijau",
+      "BIRU": "Biru",
+      "UNGU": "Ungu",
+      "PINK": "Pink",
+      "COKELAT": "Cokelat",
+      "NETRAL": "Netral"
+    },
+    "similarTitle": "Mirip warna ini",
+    "catalogCount": "{count} warna",
+    "showMore": "Tampilkan {count} lagi"
   },
   "productionPrint": {
     "copySummary": "Salin ringkasan",
