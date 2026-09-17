@@ -143,7 +143,7 @@ export function KartuSablon({
           )}
         </div>
 
-        <div className="grid grid-cols-1 items-center gap-4 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 items-center gap-4 sm:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]">
           <PratinjauKaos
             kainHex={kainHex}
             tinta={hex.map((h, i) => ({ huruf: HURUF_SABLON[i], hex: h, porsi: porsi[i] ?? 0 }))}

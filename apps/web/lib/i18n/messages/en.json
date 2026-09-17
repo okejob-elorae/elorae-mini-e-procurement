@@ -1712,7 +1712,7 @@
     "printTitle": "Print colours",
     "printDescription": "Share, readability on the fabric, and a mix recipe for each print colour. Shares are a starting point — adjust them to the design.",
     "previewLabel": "Preview of print shares on {fabric} fabric",
-    "previewNote": "Each small square = 1% of the design.",
+    "previewNote": "Each colour's area in the shirt design matches its share. Point at the shirt to tilt it.",
     "portionLabel": "Share of colour {letter} in the design, percent",
     "portionTotal": "Total share {total}%",
     "portionWarn": "Total share {total}% — it should be 100%.",

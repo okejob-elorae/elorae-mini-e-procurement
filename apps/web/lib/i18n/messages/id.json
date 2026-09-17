@@ -1712,7 +1712,7 @@
     "printTitle": "Warna sablon",
     "printDescription": "Porsi, keterbacaan di kain, dan resep campur untuk tiap warna sablon. Porsi adalah titik mulai — ubah sesuai desain.",
     "previewLabel": "Pratinjau porsi sablon di kain {fabric}",
-    "previewNote": "Satu kotak kecil = 1% luas desain.",
+    "previewNote": "Luas tiap warna di desain kaos sesuai porsinya. Arahkan kursor ke kaos untuk memiringkannya.",
     "portionLabel": "Porsi warna {letter} di desain, persen",
     "portionTotal": "Total porsi {total}%",
     "portionWarn": "Total porsi {total}% — seharusnya 100%.",
