@@ -28,6 +28,9 @@ export type AturanSablon = (typeof ATURAN_SABLON)[number];
 
 export const JUMLAH_SABLON_MAKS = 6;
 
+/** Nama tinta di layar, lembar cetak, dan ringkasan untuk tukang sablon. */
+export const HURUF_SABLON = 'ABCDEF';
+
 /**
  * Porsi awal di desain, dari yang dominan ke aksen. Tiga warna mengikuti
  * aturan 60–30–10 yang lazim di desain grafis; jumlah lain diturunkan dari

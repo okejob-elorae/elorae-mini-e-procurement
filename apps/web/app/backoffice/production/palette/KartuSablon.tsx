@@ -13,12 +13,12 @@ import { rasioKontras } from '@/lib/production-colors/palet/kontras';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { bagiGram, resepCampur } from '@/lib/production-colors/sablon/campur';
 import { susunRingkasan } from '@/lib/production-colors/sablon/ringkasan';
-import { keterbacaanSablon, peranUntuk } from '@/lib/production-colors/sablon/saran';
+import { HURUF_SABLON, keterbacaanSablon, peranUntuk } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { BarisSablon } from './BarisSablon';
 import { PratinjauKaos } from './PratinjauKaos';
 
-export const HURUF_SABLON = 'ABCDEF';
+export { HURUF_SABLON };
 
 /**
  * Resep tiap warna sablon, dicari ulang hanya saat warna, tinta dasar, atau

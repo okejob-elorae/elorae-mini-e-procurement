@@ -52,7 +52,10 @@ import {
 import { pantoneTerdekat, siapkanKatalog, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import dataPantoneC from '@/lib/production-colors/palet/pantone-c.json';
 import type { BarisPalet } from '@/lib/production-colors/palet/queries';
+import { svgKaos } from '@/lib/production-colors/palet/kaos-svg';
+import { susunLembarPalet, type LembarPalet } from '@/lib/production-colors/palet/lembar';
 import { BATAS_NAMA_PALET } from '@/lib/production-colors/palet/validasi';
+import { buildPaletWarnaPrintHtml } from '@/lib/print/palet-warna-html';
 import { hexKeHsb, hsbKeHex, normalisasiHex } from '@/lib/production-colors/palet/warna';
 import { ATURAN_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
@@ -60,6 +63,7 @@ import { salinTeks } from '@/lib/ui/salin-teks';
 import { cn } from '@/lib/utils';
 import { AmbilDariGambar } from './AmbilDariGambar';
 import { DeretWarna } from './DeretWarna';
+import { buatGambarPalet, cetakHtml, namaBerkas, unduh } from './ekspor-palet';
 import { EditorWarna, type ModeMasukan } from './EditorWarna';
 import { IkonHarmoni } from './IkonHarmoni';
 import { KartuKain } from './KartuKain';
@@ -67,6 +71,7 @@ import { HURUF_SABLON, KartuSablon } from './KartuSablon';
 import { KartuTintaDasar } from './KartuTintaDasar';
 import { KisiKontras } from './KisiKontras';
 import { RodaWarna } from './RodaWarna';
+import { TombolEkspor } from './TombolEkspor';
 
 /** Titik mulai kalau warna tema terlalu pudar atau gelap untuk menjadi dasar. */
 const WARNA_AWAL = '#e8553d';
@@ -128,6 +133,7 @@ export function PaletClient({
   const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [membuatGambar, setMembuatGambar] = useState(false);
 
   const warnaTema = useSyncExternalStore(pantauWarnaTema, bacaWarnaTema, () => null);
   const awal = useMemo(() => paletAwal(warnaTema), [warnaTema]);
@@ -248,6 +254,115 @@ export function PaletClient({
     timeZone: 'Asia/Jakarta',
   });
 
+  type SumberEkspor = { nama: string; aturan: AturanHarmoni; warna: string[]; kain: string | null; porsi: number[] | null };
+  type MetaEkspor = { tanggal: string | null; dibuatOleh: string | null };
+  const satuDesimal = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  /** Resep di lembar memakai tinta dasar, batas tinta, dan berat adonan yang sedang dipakai di halaman. */
+  function lembarUntuk(sumber: SumberEkspor): LembarPalet | null {
+    const total = sumber.porsi?.reduce((a, b) => a + b, 0) ?? 100;
+    if (sumber.kain && total !== 100) {
+      toast.error(t('portionMustBe100', { total }));
+      return null;
+    }
+    return susunLembarPalet({
+      ...sumber,
+      katalogC: katalogC(),
+      katalogTcx,
+      tintaDasar: tinta,
+      maksTinta,
+      berat: Math.round(Number(beratTeks)) > 0 ? Math.round(Number(beratTeks)) : 1000,
+    });
+  }
+
+  function kaosUntuk(lembar: LembarPalet, id: string, lebar: number): string | null {
+    if (!lembar.kain) return null;
+    return svgKaos({
+      kainHex: lembar.kain.hex,
+      tinta: lembar.baris.map((b) => ({ huruf: b.label, hex: b.hex, porsi: b.porsi ?? 0 })),
+      id,
+      label: t('export.mockup'),
+      lebar,
+    });
+  }
+
+  function eksporPdf(sumber: SumberEkspor, meta: MetaEkspor) {
+    const lembar = lembarUntuk(sumber);
+    if (!lembar) return;
+    const html = buildPaletWarnaPrintHtml({
+      lembar,
+      tanggal: meta.tanggal,
+      dibuatOleh: meta.dibuatOleh,
+      kaosSvg: kaosUntuk(lembar, 'kaos-cetak', 400),
+      angka: (n) => satuDesimal.format(n),
+      labels: {
+        title: t('export.title'),
+        untitled: t('export.untitled'),
+        date: t('export.date'),
+        rule: t('export.rule'),
+        ruleName: t(`rules.${lembar.aturan}.name`),
+        createdBy: t('export.createdBy'),
+        fabric: t('export.fabric'),
+        inks: t('export.inks'),
+        swatches: t('export.swatches'),
+        base: t('base'),
+        codes: t('export.codes'),
+        colColor: t('export.colColor'),
+        colShare: t('export.colShare'),
+        colReadability: t('export.colReadability'),
+        role: (peran) => tSablon(`roles.${peran}`),
+        readability: (k) => tSablon(`readability.${k}`),
+        recipes: (grams, max) => t('export.recipes', { grams, max }),
+        noRecipe: t('export.noRecipe'),
+        estimate: t('export.estimate'),
+        notes: [t('cmykNote'), t('pantoneNote'), ...(lembar.kain ? [tSablon('recipeNote')] : [])],
+        printedFrom: t('export.printedFrom'),
+        mockup: t('export.mockup'),
+      },
+    });
+    cetakHtml(html, `${t('export.title')} — ${lembar.nama || t('export.untitled')}`);
+  }
+
+  async function eksporPng(sumber: SumberEkspor, meta: MetaEkspor) {
+    const lembar = lembarUntuk(sumber);
+    if (!lembar) return;
+    setMembuatGambar(true);
+    try {
+      const blob = await buatGambarPalet(lembar, {
+        kaosSvg: kaosUntuk(lembar, 'kaos-gambar', 560),
+        angka: (n) => satuDesimal.format(n),
+        labels: {
+          title: t('export.title'),
+          untitled: t('export.untitled'),
+          sub: [
+            lembar.kain ? t('savedFabric', { fabric: lembar.kain.nama ?? lembar.kain.hex }) : null,
+            t(`rules.${lembar.aturan}.name`),
+            tanggal.format(meta.tanggal ? new Date(meta.tanggal) : new Date()),
+            meta.dibuatOleh,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          fabric: t('export.fabric'),
+          base: t('base'),
+          role: (peran) => tSablon(`roles.${peran}`),
+          readability: (k) => tSablon(`readability.${k}`),
+          note: t('export.pngNote'),
+          footer: t('export.pngFooter'),
+        },
+      });
+      const berkas = `${namaBerkas(lembar.nama, 'tanpa-nama')}.png`;
+      unduh(blob, berkas);
+      toast.success(t('export.pngDone', { file: berkas }));
+    } catch {
+      toast.error(t('export.pngFailed'));
+    } finally {
+      setMembuatGambar(false);
+    }
+  }
+
+  const sumberLayar: SumberEkspor = { nama, aturan: palet.aturan, warna: hex, kain: palet.kain, porsi: palet.porsi };
+
+
   const pilihanAturan: readonly AturanHarmoni[] = berkain ? ATURAN_SABLON : ATURAN_HARMONI;
 
   return (
@@ -257,10 +372,18 @@ export function PaletClient({
         description={t('description')}
         meta={t('meta', { count: daftar.length })}
         actions={
-          <Button variant="outline" onClick={() => salin(hex.map((h) => h.toUpperCase()).join(', '), t('copiedAll'))}>
-            <Copy className="mr-1.5 h-4 w-4" />
-            {t('copyAll')}
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => salin(hex.map((h) => h.toUpperCase()).join(', '), t('copiedAll'))}>
+              <Copy className="mr-1.5 h-4 w-4" />
+              {t('copyAll')}
+            </Button>
+            <TombolEkspor
+              label={t('export.button')}
+              sibuk={membuatGambar}
+              onPdf={() => eksporPdf(sumberLayar, { tanggal: null, dibuatOleh: null })}
+              onPng={() => eksporPng(sumberLayar, { tanggal: null, dibuatOleh: null })}
+            />
+          </>
         }
       />
 
@@ -550,6 +673,13 @@ export function PaletClient({
                       <Button type="button" size="sm" variant="outline" onClick={() => muat(p)}>
                         {t('use')}
                       </Button>
+                      <TombolEkspor
+                        ikonSaja
+                        label={t('export.buttonFor', { name: p.nama })}
+                        sibuk={membuatGambar}
+                        onPdf={() => eksporPdf(p, { tanggal: p.dibuatPada, dibuatOleh: p.dibuatOleh })}
+                        onPng={() => eksporPng(p, { tanggal: p.dibuatPada, dibuatOleh: p.dibuatOleh })}
+                      />
                       {bolehMengelola && (
                         <Button
                           type="button"
