@@ -58,6 +58,8 @@ export function AmbilDariGambar({
 
   const kanvasRef = useRef<HTMLCanvasElement>(null);
   const lupRef = useRef<HTMLCanvasElement>(null);
+  const lupKotakRef = useRef<HTMLDivElement>(null);
+  const lupTeksRef = useRef<HTMLSpanElement>(null);
   const berkasRef = useRef<HTMLInputElement>(null);
   const dataRef = useRef<ImageData | null>(null);
   const sumberRef = useRef<Sumber | null>(null);
@@ -69,7 +71,9 @@ export function AmbilDariGambar({
   const [abaikanProfil, setAbaikanProfil] = useState(false);
   const [siap, setSiap] = useState(false);
   const [seret, setSeret] = useState(false);
-  const [lup, setLup] = useState<{ x: number; y: number; hex: string; lebar: number } | null>(null);
+  const [lupTampil, setLupTampil] = useState(false);
+  /** Ukuran kanvas analisis, untuk menampilkan gambar kecil lebih besar dengan rasio yang sama. */
+  const [ukuran, setUkuran] = useState<{ w: number; h: number } | null>(null);
   const [terambil, setTerambil] = useState<Terambil[]>([]);
   const [jumlahTebak, setJumlahTebak] = useState(berkain ? 4 : 5);
 
@@ -90,7 +94,7 @@ export function AmbilDariGambar({
       const ke = ++muatKeRef.current;
       setSiap(false);
       setTerambil([]);
-      setLup(null);
+      setLupTampil(false);
       dataRef.current = null;
       berkas.arrayBuffer().then(
         (isi) => {
@@ -125,7 +129,7 @@ export function AmbilDariGambar({
     // Warna yang sudah diambil berasal dari tafsiran yang lain — jangan dicampur.
     setSiap(false);
     setTerambil([]);
-    setLup(null);
+    setLupTampil(false);
     dataRef.current = null;
     setUrl(URL.createObjectURL(nyala ? sumber.tanpaProfil : sumber.asli));
   }
@@ -154,6 +158,7 @@ export function AmbilDariGambar({
     if (!ctx) return;
     ctx.drawImage(img, 0, 0, kanvas.width, kanvas.height);
     dataRef.current = ctx.getImageData(0, 0, kanvas.width, kanvas.height);
+    setUkuran({ w: kanvas.width, h: kanvas.height });
     setSiap(true);
   }
 
@@ -165,17 +170,33 @@ export function AmbilDariGambar({
       y: ((e.clientY - kotak.top) * kanvas.height) / kotak.height,
       cssX: e.clientX - kotak.left,
       cssY: e.clientY - kotak.top,
-      lebar: kotak.width,
     };
   }
 
+  /*
+   * Kaca pembesar berpusat tepat di kursor, seperti pipet di Figma atau macOS.
+   * Posisinya ditulis langsung ke DOM, bukan lewat state: gerakan mouse datang
+   * puluhan kali per detik, dan me-render ulang kartu setiap kali membuatnya
+   * tertinggal. Dulu ia diletakkan di kanan atas kursor dan dijepit ke tepi
+   * gambar, jadi di gambar kecil ia berhenti mengikuti di sebagian besar area.
+   */
   function gerak(e: PointerEvent<HTMLCanvasElement>) {
     const data = dataRef.current;
-    if (!data || e.pointerType === 'touch') return;
+    const kotakLup = lupKotakRef.current;
+    const teks = lupTeksRef.current;
+    if (!data || !kotakLup || !teks || e.pointerType === 'touch') return;
     const p = titikKanvas(e);
     const hex = ambilWarnaTitik(data.data, data.width, data.height, p.x, p.y, JARI_TITIK);
-    // Lebar kanvas diukur di sini, di event — bukan dibaca dari ref saat render.
-    setLup({ x: p.cssX, y: p.cssY, hex, lebar: p.lebar });
+    // Di jendela sempit kaca pembesar bisa keluar dari tepi kanan halaman dan
+    // memunculkan gulir samping. Di situ ia ditahan di dalam layar, dan kursor
+    // biasa ditampilkan lagi karena titik tengahnya tidak lagi menandai kursor.
+    const kiriLayar = e.clientX - UKURAN_LUP / 2;
+    const kiriAman = Math.min(Math.max(4, kiriLayar), document.documentElement.clientWidth - UKURAN_LUP - 4);
+    e.currentTarget.style.cursor = kiriAman === kiriLayar ? '' : 'crosshair';
+    kotakLup.style.transform = `translate(${p.cssX + (kiriAman - kiriLayar) - UKURAN_LUP / 2}px, ${p.cssY - UKURAN_LUP / 2}px)`;
+    teks.textContent = hex;
+    teks.style.background = hex;
+    if (!lupTampil) setLupTampil(true);
     const lupKanvas = lupRef.current;
     const ctx = lupKanvas?.getContext('2d');
     if (lupKanvas && ctx && kanvasRef.current) {
@@ -222,7 +243,7 @@ export function AmbilDariGambar({
     setUrl(null);
     setSiap(false);
     setTerambil([]);
-    setLup(null);
+    setLupTampil(false);
     dataRef.current = null;
   }
 
@@ -285,39 +306,41 @@ export function AmbilDariGambar({
               {/* Gambar asli dimuat tersembunyi hanya untuk dibaca ke kanvas. */}
               {/* eslint-disable-next-line @next/next/no-img-element -- URL objek lokal, bukan aset yang dioptimalkan */}
               <img src={url} alt="" className="hidden" onLoad={(e) => gambarDimuat(e.currentTarget)} onError={lepasGambar} />
-              <div className="relative w-fit max-w-full overflow-hidden rounded-md border bg-[repeating-conic-gradient(#0000000d_0_25%,transparent_0_50%)] bg-[length:16px_16px]">
+              {/*
+               * Tanpa overflow-hidden: kaca pembesar boleh keluar dari tepi gambar.
+               * Gambar kecil ditampilkan selebar kolom (paling tinggi 28rem) dengan
+               * rasio aslinya, jadi kotak kanvas = isinya dan posisi klik tetap persis.
+               */}
+              <div
+                className="relative max-w-full rounded-md border bg-[repeating-conic-gradient(#0000000d_0_25%,transparent_0_50%)] bg-[length:16px_16px]"
+                style={{ width: ukuran ? `min(100%, ${((28 * ukuran.w) / ukuran.h).toFixed(3)}rem)` : '100%' }}
+              >
                 <canvas
                   ref={kanvasRef}
                   onPointerMove={gerak}
-                  onPointerLeave={() => setLup(null)}
+                  onPointerLeave={() => setLupTampil(false)}
                   onPointerUp={klik}
-                  // Lebar dan tinggi otomatis dengan batas maksimum: rasio gambar terjaga
-                  // dan kotak elemen = isi kanvas, jadi posisi klik terpetakan persis.
-                  // (object-contain akan menambah pita kosong yang tidak ikut dihitung.)
-                  className="block h-auto max-h-[28rem] w-auto max-w-full cursor-crosshair touch-manipulation"
+                  className={cn(
+                    'block h-auto w-full touch-manipulation rounded-[calc(var(--radius-md)-1px)]',
+                    lupTampil ? 'cursor-none' : 'cursor-crosshair',
+                  )}
                   aria-label={t('imageHint')}
                 />
-                {lup && (
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute z-10 overflow-hidden rounded-full border-4 border-white shadow-xl ring-1 ring-black/30"
-                    style={{
-                      width: UKURAN_LUP,
-                      height: UKURAN_LUP,
-                      left: Math.max(4, Math.min(lup.x + 18, lup.lebar - UKURAN_LUP - 4)),
-                      top: Math.max(4, lup.y - UKURAN_LUP - 18),
-                    }}
-                  >
-                    <canvas ref={lupRef} width={UKURAN_LUP} height={UKURAN_LUP} className="block" />
-                    <span className="absolute top-1/2 left-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-white ring-1 ring-black/60" />
-                    <span
-                      className="absolute right-0 bottom-0 left-0 py-0.5 text-center font-mono text-[10px] font-semibold uppercase"
-                      style={{ background: lup.hex, color: '#fff', textShadow: '0 0 2px #000, 0 0 2px #000' }}
-                    >
-                      {lup.hex}
-                    </span>
-                  </div>
-                )}
+                <div
+                  ref={lupKotakRef}
+                  aria-hidden
+                  hidden={!lupTampil}
+                  className="pointer-events-none absolute top-0 left-0 z-20 overflow-hidden rounded-full border-4 border-white bg-background shadow-xl ring-1 ring-black/30"
+                  style={{ width: UKURAN_LUP, height: UKURAN_LUP }}
+                >
+                  <canvas ref={lupRef} width={UKURAN_LUP} height={UKURAN_LUP} className="block" />
+                  <span className="absolute top-1/2 left-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-white ring-1 ring-black/60" />
+                  <span
+                    ref={lupTeksRef}
+                    className="absolute right-0 bottom-0 left-0 py-0.5 text-center font-mono text-[10px] font-semibold uppercase"
+                    style={{ color: '#fff', textShadow: '0 0 2px #000, 0 0 2px #000' }}
+                  />
+                </div>
               </div>
               <p className="text-xs text-muted-foreground">{t('imageHint')}</p>
               {profil?.adaProfil && (
