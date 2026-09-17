@@ -37,6 +37,7 @@ import {
   gantiHexPalet,
   geserPeganganPalet,
   hapusWarnaSablon,
+  isiDariGambar,
   lepasKain,
   paletBebas,
   pasangKain,
@@ -56,6 +57,7 @@ import { ATURAN_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablo
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { salinTeks } from '@/lib/ui/salin-teks';
 import { cn } from '@/lib/utils';
+import { AmbilDariGambar } from './AmbilDariGambar';
 import { DeretWarna } from './DeretWarna';
 import { EditorWarna, type ModeMasukan } from './EditorWarna';
 import { IkonHarmoni } from './IkonHarmoni';
@@ -264,6 +266,34 @@ export function PaletClient({
         onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
         katalogC={katalogC()}
         katalogTcx={katalogTcx}
+      />
+
+      <AmbilDariGambar
+        berkain={berkain}
+        labelTerpilih={labelWarna(terpilih)}
+        katalogC={katalogC()}
+        katalogTcx={katalogTcx}
+        onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
+        onJadikanKain={(hex) => {
+          setKainTerakhir(hex);
+          if (!berkain) setTerpilih(0);
+          ubah((p) => pasangKain(p, hex, katalogC()));
+          toast.success(t('fabricSet', { hex: hex.toUpperCase() }));
+        }}
+        onPakaiUntukTerpilih={(hex) => {
+          ubah((p) => gantiHexPalet(p, terpilih, hex));
+          toast.success(t('appliedTo', { hex: hex.toUpperCase(), label: labelWarna(terpilih) }));
+        }}
+        onIsiPalet={(warna) => {
+          const baru = isiDariGambar(palet, warna);
+          if (baru === palet) {
+            toast.error(berkain ? t('allFabric') : t('needFive', { count: warna.length }));
+            return;
+          }
+          setPaletSendiri(baru);
+          setTerpilih(berkain ? 0 : INDEKS_DASAR);
+          toast.success(berkain ? t('filledInks') : t('filledPalette'));
+        }}
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">

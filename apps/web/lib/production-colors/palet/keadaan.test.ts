@@ -10,6 +10,7 @@ import {
   gantiHexPalet,
   geserPeganganPalet,
   hapusWarnaSablon,
+  isiDariGambar,
   lepasKain,
   paletBebas,
   pasangKain,
@@ -209,5 +210,60 @@ describe('memuat palet tersimpan', () => {
     const p = dariTersimpan({ aturan: 'SQUARE', warna, kain: null, porsi: null });
     expect(p.kain).toBeNull();
     expect(hexDari(p)).toEqual(warna);
+  });
+});
+
+describe('mengisi palet dari gambar', () => {
+  const WARNA_GAMBAR = [
+    { hex: '#90a8a4', bagian: 0.55 },
+    { hex: '#613b2b', bagian: 0.25 },
+    { hex: '#f1e9e7', bagian: 0.12 },
+    { hex: '#e8553d', bagian: 0.05 },
+    { hex: '#2a78d6', bagian: 0.03 },
+  ];
+
+  it('mengisi lima warna palet bebas dan melepas aturannya ke Custom', () => {
+    const p = isiDariGambar(bebas(), WARNA_GAMBAR);
+    expect(p.aturan).toBe('CUSTOM');
+    expect(hexDari(p)).toEqual(WARNA_GAMBAR.map((w) => w.hex));
+    expect(p.kain).toBeNull();
+  });
+
+  it('tidak mengubah palet bebas kalau warnanya kurang dari lima', () => {
+    const p = bebas();
+    expect(isiDariGambar(p, WARNA_GAMBAR.slice(0, 3))).toBe(p);
+  });
+
+  /*
+   * Di foto kaos, warna terbanyak hampir selalu kainnya sendiri. Menjadikannya
+   * tinta berarti mencetak kain di atas kain — jadi warna yang nyaris sama
+   * dengan kain dilewati, dan porsinya dihitung dari sisanya.
+   */
+  it('menjadikan warna gambar tinta sablon, melewati warna yang sama dengan kain, porsi dari luasnya', () => {
+    const berkain = pasangKain(bebas(), BLUE_SURF, KATALOG);
+    const p = isiDariGambar(berkain, WARNA_GAMBAR);
+    expect(hexDari(p)).toEqual(['#613b2b', '#f1e9e7', '#e8553d', '#2a78d6']);
+    // 0,25 : 0,12 : 0,05 : 0,03 = 55,6 : 26,7 : 11,1 : 6,7 → sisa terbesar → 55/27/11/7.
+    expect(p.porsi).toEqual([55, 27, 11, 7]);
+    expect(p.porsi?.reduce((s, x) => s + x, 0)).toBe(100);
+    expect(p.saranUtuh).toBe(false);
+    expect(p.kain).toBe(BLUE_SURF);
+  });
+
+  it('membatasi tinta sablon ke enam warna', () => {
+    const banyak = Array.from({ length: 9 }, (_, i) => ({ hex: `#${(0x102030 + i * 0x151515).toString(16)}`, bagian: 1 }));
+    const p = isiDariGambar(pasangKain(bebas(), '#ffffff', KATALOG), banyak);
+    expect(p.warna).toHaveLength(6);
+  });
+
+  it('memakai porsi awal kalau warna diambil satu-satu tanpa ukuran luas', () => {
+    const berkain = pasangKain(bebas(), BLUE_SURF, KATALOG);
+    const p = isiDariGambar(berkain, [{ hex: '#613b2b' }, { hex: '#f1e9e7' }, { hex: '#e8553d' }]);
+    expect(p.porsi).toEqual(PORSI_AWAL[3]);
+  });
+
+  it('tidak mengubah palet berkain kalau semua warna gambar sama dengan kain', () => {
+    const berkain = pasangKain(bebas(), BLUE_SURF, KATALOG);
+    expect(isiDariGambar(berkain, [{ hex: '#91a9a5', bagian: 1 }])).toBe(berkain);
   });
 });

@@ -9,7 +9,8 @@ import {
   type AturanHarmoni,
   type KeadaanPalet,
 } from './harmoni';
-import type { WarnaPantone } from './pantone';
+import { porsiDariBagian } from './gambar';
+import { deltaE2000, hexKeLab, type WarnaPantone } from './pantone';
 import { hexKeHsb, normalisasiHex, putarSudut, type Hsb } from './warna';
 
 /**
@@ -177,6 +178,42 @@ export function dariTersimpan(baris: {
     ...dasar,
     kain: baris.kain,
     porsi: baris.porsi && baris.porsi.length === baris.warna.length ? baris.porsi : PORSI_AWAL[baris.warna.length] ?? null,
+    saranUtuh: false,
+  };
+}
+
+/** Warna gambar yang ΔE-nya lebih kecil dari ini terhadap kain dianggap kain itu sendiri. */
+const DE_SAMA_DENGAN_KAIN = 6;
+
+/**
+ * Mengisi palet dengan warna yang diambil dari gambar.
+ *
+ * Palet bebas butuh tepat lima: lima warna pertama dipakai dan aturannya
+ * dilepas ke Custom, karena warnanya datang dari gambar, bukan dari roda.
+ * Palet berkain: warna yang nyaris sama dengan kain dilewati — di foto kaos,
+ * warna terbanyak hampir selalu kainnya sendiri, dan mencetak kain di atas
+ * kain tidak ada artinya. Sisanya (paling banyak enam) menjadi tinta, dengan
+ * porsi dari luasnya di gambar bila diketahui.
+ */
+export function isiDariGambar(p: Palet, warna: readonly { hex: string; bagian?: number }[]): Palet {
+  const sah = warna.flatMap((w) => {
+    const hex = normalisasiHex(w.hex);
+    return hex ? [{ hex, bagian: w.bagian }] : [];
+  });
+
+  if (p.kain === null) {
+    if (sah.length < 5) return p;
+    return paletBebas('CUSTOM', sah.slice(0, 5).map((w) => hexKeHsb(w.hex)));
+  }
+
+  const labKain = hexKeLab(p.kain);
+  const tinta = sah.filter((w) => deltaE2000(hexKeLab(w.hex), labKain) >= DE_SAMA_DENGAN_KAIN).slice(0, JUMLAH_SABLON_MAKS);
+  if (tinta.length === 0) return p;
+  const adaLuas = tinta.every((w) => typeof w.bagian === 'number' && w.bagian > 0);
+  return {
+    ...p,
+    warna: tinta.map((w) => hexKeHsb(w.hex)),
+    porsi: adaLuas ? porsiDariBagian(tinta.map((w) => w.bagian as number)) : PORSI_AWAL[tinta.length],
     saranUtuh: false,
   };
 }
