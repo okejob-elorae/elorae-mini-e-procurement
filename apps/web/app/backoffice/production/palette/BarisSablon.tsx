@@ -6,11 +6,11 @@ import { AlertTriangle, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { STATUS_TONE_CLASS, type StatusTone } from '@/components/ui/status-pill';
-import { rasioKontras } from '@/lib/creative/palet/kontras';
-import { cariPantone, type WarnaPantone } from '@/lib/creative/palet/pantone';
-import { bagiGram, type ResepCampur } from '@/lib/creative/sablon/campur';
-import { keterbacaanSablon, type KeterbacaanSablon, type PeranSablon } from '@/lib/creative/sablon/saran';
-import type { TintaDasar } from '@/lib/creative/sablon/tinta-dasar';
+import { rasioKontras } from '@/lib/production-colors/palet/kontras';
+import { cariPantone, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { bagiGram, type ResepCampur } from '@/lib/production-colors/sablon/campur';
+import { keterbacaanSablon, type KeterbacaanSablon, type PeranSablon } from '@/lib/production-colors/sablon/saran';
+import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { cn } from '@/lib/utils';
 
 const NADA_BACA: Record<KeterbacaanSablon, StatusTone> = {
@@ -78,7 +78,7 @@ export function BarisSablon({
   onPorsi: (porsi: number) => void;
   onGanti: (hex: string) => void;
 }) {
-  const t = useTranslations('creative.sablon');
+  const t = useTranslations('productionPrint');
   const locale = useLocale();
   const desimal = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const persen = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });

@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { cariPantone, type WarnaPantone } from '@/lib/creative/palet/pantone';
-import { normalisasiHex } from '@/lib/creative/palet/warna';
-import { BATAS_TINTA_DASAR, presetTintaPantone, type TintaDasar } from '@/lib/creative/sablon/tinta-dasar';
+import { cariPantone, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { normalisasiHex } from '@/lib/production-colors/palet/warna';
+import { BATAS_TINTA_DASAR, presetTintaPantone, type TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 
 /**
  * Daftar tinta dasar yang dipakai resep.
@@ -37,7 +37,7 @@ export function KartuTintaDasar({
   onSimpan: () => void;
   onGalat: (pesan: string) => void;
 }) {
-  const t = useTranslations('creative.sablon');
+  const t = useTranslations('productionPrint');
   const [cari, setCari] = useState('');
   const [nama, setNama] = useState('');
   const [hex, setHex] = useState('');

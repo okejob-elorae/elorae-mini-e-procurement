@@ -10,7 +10,7 @@ import { normalisasiHex } from '../palet/warna';
 
 export type TintaDasar = { nama: string; hex: string; kode: string | null };
 
-export const KUNCI_TINTA_DASAR = 'creative.sablon.baseInks';
+export const KUNCI_TINTA_DASAR = 'production.print.baseInks';
 export const BATAS_TINTA_DASAR = 16;
 const BATAS_NAMA = 40;
 

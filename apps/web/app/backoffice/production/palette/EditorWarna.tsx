@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cariPantone, pantoneTerdekat, type WarnaPantone } from '@/lib/creative/palet/pantone';
-import { cmykKeRgb, hexKeRgb, normalisasiHex, rgbKeCmyk, rgbKeHex, type Hsb } from '@/lib/creative/palet/warna';
+import { cariPantone, pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { cmykKeRgb, hexKeRgb, normalisasiHex, rgbKeCmyk, rgbKeHex, type Hsb } from '@/lib/production-colors/palet/warna';
 import { cn } from '@/lib/utils';
 
 export const MODE_MASUKAN = ['HEX', 'RGB', 'CMYK', 'PANTONE_C', 'PANTONE_TCX'] as const;
@@ -81,7 +81,7 @@ export function EditorWarna({
   katalogC: readonly WarnaPantone[];
   katalogTcx: readonly WarnaPantone[];
 }) {
-  const t = useTranslations('creative.palette');
+  const t = useTranslations('productionPalette');
   const locale = useLocale();
   // Satu halaman bisa memuat dua editor (kain dan tinta); id kolom harus unik
   // supaya setiap label menunjuk kolomnya sendiri.

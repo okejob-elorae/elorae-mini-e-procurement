@@ -1,4 +1,4 @@
-import { INDEKS_DASAR, langkahHarmoni, type AturanHarmoni } from '@/lib/creative/palet/harmoni';
+import { INDEKS_DASAR, langkahHarmoni, type AturanHarmoni } from '@/lib/production-colors/palet/harmoni';
 import { cn } from '@/lib/utils';
 
 const PUSAT = 12;

@@ -1,4 +1,4 @@
-import { rasioKontras } from '@/lib/creative/palet/kontras';
+import { rasioKontras } from '@/lib/production-colors/palet/kontras';
 
 /** Siluet kaos sederhana — cukup untuk membaca warna kain, bukan gambar produk. */
 const KAOS =

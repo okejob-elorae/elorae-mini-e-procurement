@@ -77,6 +77,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/forecast/import': 'forecast:manage',
   '/backoffice/production/planning': 'production_planning:view',
   '/backoffice/production/colors': 'production_colors:view',
+  '/backoffice/production/palette': 'production_colors:view',
   '/backoffice/vendor-returns': 'vendor_returns:view',
   '/backoffice/returns': 'sales_returns:view',
   '/backoffice/returns/[id]': 'sales_returns:view',
@@ -123,6 +124,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/forecast',
   '/backoffice/production/planning',
   '/backoffice/production/colors',
+  '/backoffice/production/palette',
   '/backoffice/vendor-returns',
   '/backoffice/reports/hpp',
   '/backoffice/audit-trail',
@@ -241,8 +243,9 @@ export const PERMISSIONS = {
   WORK_ORDERS_MANAGE: 'work_orders:manage',
   // Nota Register
   NOTA_REGISTER_VIEW: 'nota_register:view',
-  // Production Colors (Pantone TCX)
+  // Production Colors (Pantone TCX) + palet warna & warna sablon
   PRODUCTION_COLORS_VIEW: 'production_colors:view',
+  PRODUCTION_COLORS_MANAGE: 'production_colors:manage',
   // S&OP Forecast
   FORECAST_VIEW: 'forecast:view',
   FORECAST_MANAGE: 'forecast:manage',

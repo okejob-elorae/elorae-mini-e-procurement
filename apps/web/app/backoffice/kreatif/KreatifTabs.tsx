@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CalendarRange, Megaphone, Palette, Users } from 'lucide-react';
+import { CalendarRange, Megaphone, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
- * Layar-layar modul ini duduk berdampingan, bukan bersarang di menu samping.
+ * Tiga layar modul ini duduk berdampingan, bukan bersarang di menu samping.
  *
  * Konten, brief, dan KOL saling merujuk sepanjang hari — sebuah konten lahir
  * dari brief, sebuah brief menunjuk KOL. Menaruhnya sebagai tiga entri terpisah
@@ -18,7 +18,6 @@ const TAB = [
   { href: '/backoffice/kreatif/konten', key: 'tabContent', ikon: CalendarRange },
   { href: '/backoffice/kreatif/brief', key: 'tabBrief', ikon: Megaphone },
   { href: '/backoffice/kreatif/kol', key: 'tabKol', ikon: Users },
-  { href: '/backoffice/kreatif/palet', key: 'tabPalette', ikon: Palette },
 ] as const;
 
 export function KreatifTabs() {

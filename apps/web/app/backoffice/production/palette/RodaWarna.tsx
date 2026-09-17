@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react';
-import { INDEKS_DASAR } from '@/lib/creative/palet/harmoni';
-import { hexKeHsb, hsbKeHex, hsvKeRgb, rybKeRgb, type Hsb } from '@/lib/creative/palet/warna';
+import { INDEKS_DASAR } from '@/lib/production-colors/palet/harmoni';
+import { hexKeHsb, hsbKeHex, hsvKeRgb, rybKeRgb, type Hsb } from '@/lib/production-colors/palet/warna';
 
 /** Resolusi kanvas di dalam, bukan ukuran tampil — cukup tajam di layar retina. */
 const UKURAN = 720;

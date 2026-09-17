@@ -30,8 +30,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { hapusPaletAction, simpanPaletAction, simpanTintaDasarAction } from '@/app/actions/creative';
-import { ATURAN_HARMONI, INDEKS_DASAR, susunHarmoni, type AturanHarmoni } from '@/lib/creative/palet/harmoni';
+import { hapusPaletAction, simpanPaletAction, simpanTintaDasarAction } from '@/app/actions/production-palette';
+import { ATURAN_HARMONI, INDEKS_DASAR, susunHarmoni, type AturanHarmoni } from '@/lib/production-colors/palet/harmoni';
 import {
   dariTersimpan,
   gantiHexPalet,
@@ -46,14 +46,14 @@ import {
   ubahKecerahanPalet,
   ubahPorsiPalet,
   type Palet,
-} from '@/lib/creative/palet/keadaan';
-import { pantoneTerdekat, siapkanKatalog, type WarnaPantone } from '@/lib/creative/palet/pantone';
-import dataPantoneC from '@/lib/creative/palet/pantone-c.json';
-import type { BarisPalet } from '@/lib/creative/palet/queries';
-import { BATAS_NAMA_PALET } from '@/lib/creative/palet/validasi';
-import { hexKeHsb, hsbKeHex, normalisasiHex } from '@/lib/creative/palet/warna';
-import { ATURAN_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/creative/sablon/saran';
-import type { TintaDasar } from '@/lib/creative/sablon/tinta-dasar';
+} from '@/lib/production-colors/palet/keadaan';
+import { pantoneTerdekat, siapkanKatalog, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import dataPantoneC from '@/lib/production-colors/palet/pantone-c.json';
+import type { BarisPalet } from '@/lib/production-colors/palet/queries';
+import { BATAS_NAMA_PALET } from '@/lib/production-colors/palet/validasi';
+import { hexKeHsb, hsbKeHex, normalisasiHex } from '@/lib/production-colors/palet/warna';
+import { ATURAN_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
+import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { salinTeks } from '@/lib/ui/salin-teks';
 import { cn } from '@/lib/utils';
 import { DeretWarna } from './DeretWarna';
@@ -120,8 +120,8 @@ export function PaletClient({
   tintaDasar: TintaDasar[];
   bolehMengelola: boolean;
 }) {
-  const t = useTranslations('creative.palette');
-  const tSablon = useTranslations('creative.sablon');
+  const t = useTranslations('productionPalette');
+  const tSablon = useTranslations('productionPrint');
   const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();

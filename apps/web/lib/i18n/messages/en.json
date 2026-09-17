@@ -80,6 +80,7 @@
     "navProductionPlanning": "Plan Kerja",
     "navForecast": "Forecast & S&OP",
     "navProductionColors": "Colors",
+    "navProductionPalette": "Color Palette",
     "navProductionColorsAll": "All Colors",
     "navProductionColorsFavorites": "Favorites",
     "navProductionColorsPhotoAnalyzer": "Photo Analyzer",
@@ -126,8 +127,7 @@
     "favorit": "Pinned",
     "sematkan": "Pin to top",
     "lepasSematan": "Unpin",
-    "favoritPenuh": "Pinned list is full — {batas} maximum. Unpin one first.",
-    "navColorPalette": "Color Palette"
+    "favoritPenuh": "Pinned list is full — {batas} maximum. Unpin one first."
   },
   "notifications": {
     "title": "Notifications",
@@ -1515,6 +1515,216 @@
     "hideFilters": "Hide filters",
     "activeFilters": "{count} filters active",
     "removeFilter": "Remove {name} filter"
+  },
+  "productionPalette": {
+    "title": "Color Palette",
+    "description": "Turn the wheel to build five colours that work together, check that text stays readable, then save it so the team can reuse it.",
+    "meta": "{count} saved palettes",
+    "copyAll": "Copy all HEX",
+    "copied": "{hex} copied",
+    "copiedAll": "All five HEX codes copied",
+    "copyFailed": "Couldn't copy automatically. Select the code and copy it by hand.",
+    "wheelTitle": "Colour wheel",
+    "ruleLabel": "Harmony rule",
+    "dragHint": "Any handle turns the whole harmony. Distance from the centre is set through the base colour (the large handle).",
+    "customHint": "Each handle moves on its own.",
+    "brightness": "Brightness",
+    "swatchesTitle": "Five colours",
+    "swatchesHint": "Click a colour to select it, then change its code or brightness.",
+    "base": "Base",
+    "swatchLabel": "Colour {n}",
+    "handleLabel": "Colour {n}, {hex}. Left and right arrows turn the hue, up and down change saturation.",
+    "handleLabelBase": "Base colour, {hex}. Left and right arrows turn the hue, up and down change saturation.",
+    "hexInvalid": "Enter a 6-digit code, for example #2A78D6.",
+    "copyHex": "Copy {hex}",
+    "saveLabel": "Palette name",
+    "namePlaceholder": "For example: August feed",
+    "save": "Save palette",
+    "saving": "Saving…",
+    "saved": "Saved “{name}”",
+    "contrastTitle": "Text readability",
+    "contrastDescription": "Each box shows text in the column's colour on the row's background. The number is the WCAG contrast ratio: higher is easier to read.",
+    "contrastCorner": "Background ↓ · Text →",
+    "white": "White",
+    "black": "Black",
+    "sameColor": "Same colour",
+    "savedTitle": "Saved palettes",
+    "emptyTitle": "No saved palettes yet",
+    "emptyBody": "Build five colours on the wheel, name them, and save. Anyone on the team can load a saved palette again.",
+    "emptyBodyViewOnly": "Palettes saved by the creative team will appear here.",
+    "use": "Use",
+    "loaded": "Loaded “{name}” onto the wheel",
+    "delete": "Delete",
+    "deleteTitle": "Delete “{name}”?",
+    "deleteBody": "This palette disappears for the whole team and can't be restored.",
+    "cancel": "Cancel",
+    "deleting": "Deleting…",
+    "deleted": "Palette deleted",
+    "rules": {
+      "ANALOGOUS": {
+        "name": "Analogous",
+        "hint": "Neighbours on the wheel. Calm and cohesive — safe for a feed that should feel like one mood."
+      },
+      "MONOCHROMATIC": {
+        "name": "Monochromatic",
+        "hint": "One hue at several strengths and brightnesses. Clean and elegant, but text needs a clear light–dark difference."
+      },
+      "TRIAD": {
+        "name": "Triad",
+        "hint": "Three hues evenly spaced on the wheel. Lively and balanced — let one colour lead."
+      },
+      "COMPLEMENTARY": {
+        "name": "Complementary",
+        "hint": "A colour and its opposite across the wheel. The loudest pairing — good for calls to action and promo price tags."
+      },
+      "SPLIT_COMPLEMENTARY": {
+        "name": "Split Complementary",
+        "hint": "The base plus the two neighbours of its opposite. Still contrasting, softer than complementary."
+      },
+      "SQUARE": {
+        "name": "Square",
+        "hint": "Four hues a quarter-turn apart. The busiest — suits colourful campaigns."
+      },
+      "COMPOUND": {
+        "name": "Compound",
+        "hint": "Neighbours mixed with opposites. Rich, but still under control."
+      },
+      "SHADES": {
+        "name": "Shades",
+        "hint": "Exactly the same colour at different brightness. The safest for layered backgrounds."
+      },
+      "CUSTOM": {
+        "name": "Custom",
+        "hint": "Each colour moves on its own. Editing any colour other than the base switches here automatically."
+      }
+    },
+    "levels": {
+      "AAA": {
+        "name": "AAA",
+        "hint": "7 and up — comfortable for long text"
+      },
+      "AA": {
+        "name": "AA",
+        "hint": "4.5 and up — fine for normal text"
+      },
+      "AA_BESAR": {
+        "name": "AA large",
+        "hint": "3 and up — large headings only"
+      },
+      "GAGAL": {
+        "name": "Fail",
+        "hint": "below 3 — don't use for text"
+      }
+    },
+    "errors": {
+      "NAMA_KOSONG": "Give the palette a name first.",
+      "NAMA_TERLALU_PANJANG": "Palette names can be at most 60 characters.",
+      "ATURAN_TIDAK_DIKENAL": "Unknown harmony rule. Reload the page and try again.",
+      "WARNA_TIDAK_SAH": "One of the colour codes isn't valid. Check all five HEX codes.",
+      "TIDAK_DITEMUKAN": "Someone else already deleted this palette.",
+      "TANPA_AKSES": "You don't have permission to manage the creative module.",
+      "GAGAL": "Couldn't process that. Try again in a moment.",
+      "KAIN_TIDAK_SAH": "The fabric colour isn't valid. Pick the fabric again.",
+      "PORSI_TIDAK_SAH": "Print colour shares must total exactly 100%."
+    },
+    "inputAs": "Enter colour as",
+    "rangeRgb": "Enter 0–255 for each channel.",
+    "rangeCmyk": "Enter 0–100 for each ink.",
+    "searchC": "Code or name, e.g. 186 C or Warm Red",
+    "searchTcx": "Code or name, e.g. 15-0343 or Greenery",
+    "searchEmpty": "No Pantone matches “{q}”.",
+    "applyPantone": "Use {code}",
+    "exact": "exact",
+    "copyValue": "Copy {label}",
+    "cmykNote": "*CMYK is calculated without a print profile, same as Pantone Studio — Illustrator or Photoshop may differ by a few percent.",
+    "pantoneNote": "Pantone here is the nearest on-screen match (ΔE CIEDE2000; below 2 is practically invisible). Check against the physical Pantone book before production.",
+    "fabricTitle": "Fabric colour",
+    "fabricToggle": "For printing on fabric",
+    "fabricOffHint": "Turn on if this palette is for screen printing.",
+    "fabricLabel": "Fabric",
+    "fabricMarker": "Fabric colour {hex}",
+    "ruleLabelFabric": "Harmony with the fabric",
+    "inkLabel": "Colour {letter}",
+    "handleLabelInk": "Print colour {letter}, {hex}. Left and right arrows turn the hue, up and down change saturation.",
+    "inkDragHint": "Each ink moves on its own. The dashed square is the fabric colour.",
+    "inksTitle": "Print colours",
+    "inksHint": "Click a colour to select it. Add or remove up to six colours.",
+    "addInk": "Add print colour",
+    "removeInk": "Remove colour {letter}",
+    "savedFabric": "Fabric {fabric}",
+    "portionMustBe100": "Shares must total 100% before saving — currently {total}%."
+  },
+  "productionPrint": {
+    "copySummary": "Copy summary",
+    "copied": "Summary for the printer copied",
+    "copyFailed": "Couldn't copy automatically. Select the text and copy it by hand.",
+    "maxInksLabel": "Max inks per recipe",
+    "maxInksOption": "{n} inks",
+    "batchLabel": "Batch weight per colour (grams)",
+    "printTitle": "Print colours",
+    "printDescription": "Share, readability on the fabric, and a mix recipe for each print colour. Shares are a starting point — adjust them to the design.",
+    "previewLabel": "Preview of print shares on {fabric} fabric",
+    "previewNote": "Each small square = 1% of the design.",
+    "portionLabel": "Share of colour {letter} in the design, percent",
+    "portionTotal": "Total share {total}%",
+    "portionWarn": "Total share {total}% — it should be 100%.",
+    "replace": "Replace",
+    "searchC": "Search Pantone C, e.g. 186 C or Warm Red",
+    "searchEmpty": "No Pantone C matches “{q}”.",
+    "recipeTitle": "Mix recipe · {grams} g",
+    "recipeNoInks": "Add base inks below to see a mix recipe for this colour.",
+    "target": "Target",
+    "estimate": "Estimated mix",
+    "recipeFar": "Your base inks can't get close to this colour. Add a base ink with a closer hue.",
+    "recipeNear": "Fairly close — adjust a little when making the sample.",
+    "recipeNote": "Recipes are a first estimate from on-screen colour (Kubelka-Munk model), not an exact formula. Real mixes with white usually come out lighter than estimated, and ink type and fabric matter too. Make a small sample first and check it against the Pantone book.",
+    "roles": {
+      "DOMINAN": "Dominant",
+      "PENDUKUNG": "Supporting",
+      "AKSEN": "Accent"
+    },
+    "readability": {
+      "KUAT": "Reads strongly",
+      "CUKUP": "Reads fairly",
+      "LEMBUT": "Soft",
+      "SAMAR": "Faint"
+    },
+    "inksTitle": "Base inks",
+    "inksDescription": "Inks available at the print shop. Recipes only use inks from this list — one list for the whole team.",
+    "inksEmpty": "No base inks yet. Fill in the 14 Pantone base inks, or add them one by one.",
+    "inksPreset": "Fill 14 Pantone base inks + White",
+    "inksAddPantone": "Add from Pantone C",
+    "inksSearch": "Search a code, e.g. Reflex Blue",
+    "inksAddHex": "Or add by HEX",
+    "inksName": "Ink name",
+    "inksAdd": "Add",
+    "inksRemove": "Remove {name}",
+    "inksSave": "Save base inks",
+    "inksSaving": "Saving…",
+    "inksSaved": "Base inks saved for the whole team",
+    "inksUnsaved": "You have unsaved changes.",
+    "inksViewOnly": "You can try other inks on this screen, but only creative module managers can save them.",
+    "inksFull": "At most {max} base inks.",
+    "inksDuplicate": "“{name}” is already in the list.",
+    "summaryFabric": "Fabric: {fabric}",
+    "summaryRule": "Rule: {rule} · {count} print colours",
+    "summaryDetail": "{role} · {portion}% of design · contrast {ratio} ({readability})",
+    "summaryRecipe": "Recipe {grams} g: {parts} · ΔE {de}",
+    "summaryNoRecipe": "Recipe: no base inks yet",
+    "summaryNote": "Recipes are estimates from on-screen colour — make a small sample first and check it against the Pantone book.",
+    "errors": {
+      "BUKAN_DAFTAR": "The base ink list couldn't be read. Reload the page and try again.",
+      "TERLALU_BANYAK": "At most 16 base inks.",
+      "NAMA_KOSONG": "Every base ink needs a name.",
+      "HEX_TIDAK_SAH": "One of the ink HEX codes isn't valid.",
+      "NAMA_KEMBAR": "Two inks have the same name.",
+      "TANPA_AKSES": "You don't have permission to manage the creative module.",
+      "GAGAL": "Couldn't save. Try again in a moment."
+    },
+    "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
+    "resuggest": "Suggest again from fabric",
+    "followingSuggestion": "Following the fabric suggestion — it updates when the fabric, rule, or number of colours changes.",
+    "editedHint": "Edited, so fabric suggestions no longer change your colours."
   },
   "planning": {
     "title": "Production Plan",
@@ -4781,217 +4991,6 @@
     "selected": "{count} selected",
     "deleteManyTitle": "Delete {count} posts?",
     "deleteManyBody": "All of them go at once. Their images are swept a few hours later unless another post uses them.",
-    "okDeletedMany": "{count} posts deleted.",
-    "tabPalette": "Color Palette",
-    "palette": {
-      "title": "Color Palette",
-      "description": "Turn the wheel to build five colours that work together, check that text stays readable, then save it so the team can reuse it.",
-      "meta": "{count} saved palettes",
-      "copyAll": "Copy all HEX",
-      "copied": "{hex} copied",
-      "copiedAll": "All five HEX codes copied",
-      "copyFailed": "Couldn't copy automatically. Select the code and copy it by hand.",
-      "wheelTitle": "Colour wheel",
-      "ruleLabel": "Harmony rule",
-      "dragHint": "Any handle turns the whole harmony. Distance from the centre is set through the base colour (the large handle).",
-      "customHint": "Each handle moves on its own.",
-      "brightness": "Brightness",
-      "swatchesTitle": "Five colours",
-      "swatchesHint": "Click a colour to select it, then change its code or brightness.",
-      "base": "Base",
-      "swatchLabel": "Colour {n}",
-      "handleLabel": "Colour {n}, {hex}. Left and right arrows turn the hue, up and down change saturation.",
-      "handleLabelBase": "Base colour, {hex}. Left and right arrows turn the hue, up and down change saturation.",
-      "hexInvalid": "Enter a 6-digit code, for example #2A78D6.",
-      "copyHex": "Copy {hex}",
-      "saveLabel": "Palette name",
-      "namePlaceholder": "For example: August feed",
-      "save": "Save palette",
-      "saving": "Saving…",
-      "saved": "Saved “{name}”",
-      "contrastTitle": "Text readability",
-      "contrastDescription": "Each box shows text in the column's colour on the row's background. The number is the WCAG contrast ratio: higher is easier to read.",
-      "contrastCorner": "Background ↓ · Text →",
-      "white": "White",
-      "black": "Black",
-      "sameColor": "Same colour",
-      "savedTitle": "Saved palettes",
-      "emptyTitle": "No saved palettes yet",
-      "emptyBody": "Build five colours on the wheel, name them, and save. Anyone on the team can load a saved palette again.",
-      "emptyBodyViewOnly": "Palettes saved by the creative team will appear here.",
-      "use": "Use",
-      "loaded": "Loaded “{name}” onto the wheel",
-      "delete": "Delete",
-      "deleteTitle": "Delete “{name}”?",
-      "deleteBody": "This palette disappears for the whole team and can't be restored.",
-      "cancel": "Cancel",
-      "deleting": "Deleting…",
-      "deleted": "Palette deleted",
-      "rules": {
-        "ANALOGOUS": {
-          "name": "Analogous",
-          "hint": "Neighbours on the wheel. Calm and cohesive — safe for a feed that should feel like one mood."
-        },
-        "MONOCHROMATIC": {
-          "name": "Monochromatic",
-          "hint": "One hue at several strengths and brightnesses. Clean and elegant, but text needs a clear light–dark difference."
-        },
-        "TRIAD": {
-          "name": "Triad",
-          "hint": "Three hues evenly spaced on the wheel. Lively and balanced — let one colour lead."
-        },
-        "COMPLEMENTARY": {
-          "name": "Complementary",
-          "hint": "A colour and its opposite across the wheel. The loudest pairing — good for calls to action and promo price tags."
-        },
-        "SPLIT_COMPLEMENTARY": {
-          "name": "Split Complementary",
-          "hint": "The base plus the two neighbours of its opposite. Still contrasting, softer than complementary."
-        },
-        "SQUARE": {
-          "name": "Square",
-          "hint": "Four hues a quarter-turn apart. The busiest — suits colourful campaigns."
-        },
-        "COMPOUND": {
-          "name": "Compound",
-          "hint": "Neighbours mixed with opposites. Rich, but still under control."
-        },
-        "SHADES": {
-          "name": "Shades",
-          "hint": "Exactly the same colour at different brightness. The safest for layered backgrounds."
-        },
-        "CUSTOM": {
-          "name": "Custom",
-          "hint": "Each colour moves on its own. Editing any colour other than the base switches here automatically."
-        }
-      },
-      "levels": {
-        "AAA": {
-          "name": "AAA",
-          "hint": "7 and up — comfortable for long text"
-        },
-        "AA": {
-          "name": "AA",
-          "hint": "4.5 and up — fine for normal text"
-        },
-        "AA_BESAR": {
-          "name": "AA large",
-          "hint": "3 and up — large headings only"
-        },
-        "GAGAL": {
-          "name": "Fail",
-          "hint": "below 3 — don't use for text"
-        }
-      },
-      "errors": {
-        "NAMA_KOSONG": "Give the palette a name first.",
-        "NAMA_TERLALU_PANJANG": "Palette names can be at most 60 characters.",
-        "ATURAN_TIDAK_DIKENAL": "Unknown harmony rule. Reload the page and try again.",
-        "WARNA_TIDAK_SAH": "One of the colour codes isn't valid. Check all five HEX codes.",
-        "TIDAK_DITEMUKAN": "Someone else already deleted this palette.",
-        "TANPA_AKSES": "You don't have permission to manage the creative module.",
-        "GAGAL": "Couldn't process that. Try again in a moment.",
-        "KAIN_TIDAK_SAH": "The fabric colour isn't valid. Pick the fabric again.",
-        "PORSI_TIDAK_SAH": "Print colour shares must total exactly 100%."
-      },
-      "inputAs": "Enter colour as",
-      "rangeRgb": "Enter 0–255 for each channel.",
-      "rangeCmyk": "Enter 0–100 for each ink.",
-      "searchC": "Code or name, e.g. 186 C or Warm Red",
-      "searchTcx": "Code or name, e.g. 15-0343 or Greenery",
-      "searchEmpty": "No Pantone matches “{q}”.",
-      "applyPantone": "Use {code}",
-      "exact": "exact",
-      "copyValue": "Copy {label}",
-      "cmykNote": "*CMYK is calculated without a print profile, same as Pantone Studio — Illustrator or Photoshop may differ by a few percent.",
-      "pantoneNote": "Pantone here is the nearest on-screen match (ΔE CIEDE2000; below 2 is practically invisible). Check against the physical Pantone book before production.",
-      "fabricTitle": "Fabric colour",
-      "fabricToggle": "For printing on fabric",
-      "fabricOffHint": "Turn on if this palette is for screen printing.",
-      "fabricLabel": "Fabric",
-      "fabricMarker": "Fabric colour {hex}",
-      "ruleLabelFabric": "Harmony with the fabric",
-      "inkLabel": "Colour {letter}",
-      "handleLabelInk": "Print colour {letter}, {hex}. Left and right arrows turn the hue, up and down change saturation.",
-      "inkDragHint": "Each ink moves on its own. The dashed square is the fabric colour.",
-      "inksTitle": "Print colours",
-      "inksHint": "Click a colour to select it. Add or remove up to six colours.",
-      "addInk": "Add print colour",
-      "removeInk": "Remove colour {letter}",
-      "savedFabric": "Fabric {fabric}",
-      "portionMustBe100": "Shares must total 100% before saving — currently {total}%."
-    },
-    "sablon": {
-      "copySummary": "Copy summary",
-      "copied": "Summary for the printer copied",
-      "copyFailed": "Couldn't copy automatically. Select the text and copy it by hand.",
-      "maxInksLabel": "Max inks per recipe",
-      "maxInksOption": "{n} inks",
-      "batchLabel": "Batch weight per colour (grams)",
-      "printTitle": "Print colours",
-      "printDescription": "Share, readability on the fabric, and a mix recipe for each print colour. Shares are a starting point — adjust them to the design.",
-      "previewLabel": "Preview of print shares on {fabric} fabric",
-      "previewNote": "Each small square = 1% of the design.",
-      "portionLabel": "Share of colour {letter} in the design, percent",
-      "portionTotal": "Total share {total}%",
-      "portionWarn": "Total share {total}% — it should be 100%.",
-      "replace": "Replace",
-      "searchC": "Search Pantone C, e.g. 186 C or Warm Red",
-      "searchEmpty": "No Pantone C matches “{q}”.",
-      "recipeTitle": "Mix recipe · {grams} g",
-      "recipeNoInks": "Add base inks below to see a mix recipe for this colour.",
-      "target": "Target",
-      "estimate": "Estimated mix",
-      "recipeFar": "Your base inks can't get close to this colour. Add a base ink with a closer hue.",
-      "recipeNear": "Fairly close — adjust a little when making the sample.",
-      "recipeNote": "Recipes are a first estimate from on-screen colour (Kubelka-Munk model), not an exact formula. Real mixes with white usually come out lighter than estimated, and ink type and fabric matter too. Make a small sample first and check it against the Pantone book.",
-      "roles": {
-        "DOMINAN": "Dominant",
-        "PENDUKUNG": "Supporting",
-        "AKSEN": "Accent"
-      },
-      "readability": {
-        "KUAT": "Reads strongly",
-        "CUKUP": "Reads fairly",
-        "LEMBUT": "Soft",
-        "SAMAR": "Faint"
-      },
-      "inksTitle": "Base inks",
-      "inksDescription": "Inks available at the print shop. Recipes only use inks from this list — one list for the whole team.",
-      "inksEmpty": "No base inks yet. Fill in the 14 Pantone base inks, or add them one by one.",
-      "inksPreset": "Fill 14 Pantone base inks + White",
-      "inksAddPantone": "Add from Pantone C",
-      "inksSearch": "Search a code, e.g. Reflex Blue",
-      "inksAddHex": "Or add by HEX",
-      "inksName": "Ink name",
-      "inksAdd": "Add",
-      "inksRemove": "Remove {name}",
-      "inksSave": "Save base inks",
-      "inksSaving": "Saving…",
-      "inksSaved": "Base inks saved for the whole team",
-      "inksUnsaved": "You have unsaved changes.",
-      "inksViewOnly": "You can try other inks on this screen, but only creative module managers can save them.",
-      "inksFull": "At most {max} base inks.",
-      "inksDuplicate": "“{name}” is already in the list.",
-      "summaryFabric": "Fabric: {fabric}",
-      "summaryRule": "Rule: {rule} · {count} print colours",
-      "summaryDetail": "{role} · {portion}% of design · contrast {ratio} ({readability})",
-      "summaryRecipe": "Recipe {grams} g: {parts} · ΔE {de}",
-      "summaryNoRecipe": "Recipe: no base inks yet",
-      "summaryNote": "Recipes are estimates from on-screen colour — make a small sample first and check it against the Pantone book.",
-      "errors": {
-        "BUKAN_DAFTAR": "The base ink list couldn't be read. Reload the page and try again.",
-        "TERLALU_BANYAK": "At most 16 base inks.",
-        "NAMA_KOSONG": "Every base ink needs a name.",
-        "HEX_TIDAK_SAH": "One of the ink HEX codes isn't valid.",
-        "NAMA_KEMBAR": "Two inks have the same name.",
-        "TANPA_AKSES": "You don't have permission to manage the creative module.",
-        "GAGAL": "Couldn't save. Try again in a moment."
-      },
-      "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
-      "resuggest": "Suggest again from fabric",
-      "followingSuggestion": "Following the fabric suggestion — it updates when the fabric, rule, or number of colours changes.",
-      "editedHint": "Edited, so fabric suggestions no longer change your colours."
-    }
+    "okDeletedMany": "{count} posts deleted."
   }
 }

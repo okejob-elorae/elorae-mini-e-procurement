@@ -4,7 +4,7 @@ export type { Hsb };
 
 /**
  * Aturan harmoni, dengan nama dan urutan yang sama seperti di Adobe Color —
- * tim kreatif sudah mengenal nama-nama ini dari sana, dan menerjemahkannya
+ * tim desain dan produksi sudah mengenal nama-nama ini dari sana, dan menerjemahkannya
  * hanya membuat mereka mencocokkan dua kosakata.
  */
 export const ATURAN_HARMONI = [

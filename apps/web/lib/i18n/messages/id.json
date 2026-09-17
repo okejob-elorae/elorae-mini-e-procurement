@@ -80,6 +80,7 @@
     "navProductionPlanning": "Plan Kerja",
     "navForecast": "Forecast & S&OP",
     "navProductionColors": "Warna",
+    "navProductionPalette": "Palet Warna",
     "navProductionColorsAll": "Semua Warna",
     "navProductionColorsFavorites": "Favorit",
     "navProductionColorsPhotoAnalyzer": "Photo Analyzer",
@@ -126,8 +127,7 @@
     "favorit": "Sematan",
     "sematkan": "Sematkan ke atas",
     "lepasSematan": "Lepas sematan",
-    "favoritPenuh": "Sematan penuh — maksimal {batas}. Lepas salah satu dulu.",
-    "navColorPalette": "Palet Warna"
+    "favoritPenuh": "Sematan penuh — maksimal {batas}. Lepas salah satu dulu."
   },
   "notifications": {
     "title": "Notifikasi",
@@ -1515,6 +1515,216 @@
     "hideFilters": "Sembunyikan filter",
     "activeFilters": "{count} filter aktif",
     "removeFilter": "Hapus filter {name}"
+  },
+  "productionPalette": {
+    "title": "Palet Warna",
+    "description": "Putar roda untuk menyusun lima warna yang serasi, periksa apakah tulisannya terbaca, lalu simpan supaya tim bisa memakainya lagi.",
+    "meta": "{count} palet tersimpan",
+    "copyAll": "Salin semua HEX",
+    "copied": "{hex} disalin",
+    "copiedAll": "Lima kode HEX disalin",
+    "copyFailed": "Tidak bisa menyalin otomatis. Pilih kodenya lalu salin manual.",
+    "wheelTitle": "Roda warna",
+    "ruleLabel": "Aturan harmoni",
+    "dragHint": "Pegangan mana pun memutar seluruh harmoni. Jarak dari tengah diatur lewat warna dasar (pegangan besar).",
+    "customHint": "Setiap pegangan bergerak sendiri.",
+    "brightness": "Kecerahan",
+    "swatchesTitle": "Lima warna",
+    "swatchesHint": "Klik warna untuk memilihnya, lalu ubah kodenya atau kecerahannya.",
+    "base": "Dasar",
+    "swatchLabel": "Warna {n}",
+    "handleLabel": "Warna {n}, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
+    "handleLabelBase": "Warna dasar, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
+    "hexInvalid": "Tulis kode 6 digit, misalnya #2A78D6.",
+    "copyHex": "Salin {hex}",
+    "saveLabel": "Nama palet",
+    "namePlaceholder": "Misalnya: Feed Agustus",
+    "save": "Simpan palet",
+    "saving": "Menyimpan…",
+    "saved": "Palet “{name}” disimpan",
+    "contrastTitle": "Keterbacaan tulisan",
+    "contrastDescription": "Tiap kotak memperlihatkan tulisan berwarna kolom di atas latar berwarna baris. Angkanya rasio kontras WCAG: makin besar makin mudah dibaca.",
+    "contrastCorner": "Latar ↓ · Teks →",
+    "white": "Putih",
+    "black": "Hitam",
+    "sameColor": "Warna sama",
+    "savedTitle": "Palet tersimpan",
+    "emptyTitle": "Belum ada palet tersimpan",
+    "emptyBody": "Susun lima warna di roda, beri nama, lalu simpan. Palet yang tersimpan bisa dimuat lagi oleh siapa pun di tim.",
+    "emptyBodyViewOnly": "Palet yang disimpan tim kreatif akan muncul di sini.",
+    "use": "Pakai",
+    "loaded": "“{name}” dimuat ke roda",
+    "delete": "Hapus",
+    "deleteTitle": "Hapus palet “{name}”?",
+    "deleteBody": "Palet ini hilang untuk seluruh tim dan tidak bisa dikembalikan.",
+    "cancel": "Batal",
+    "deleting": "Menghapus…",
+    "deleted": "Palet dihapus",
+    "rules": {
+      "ANALOGOUS": {
+        "name": "Analogous",
+        "hint": "Warna bertetangga di roda. Tenang dan menyatu — aman untuk feed yang ingin terasa satu suasana."
+      },
+      "MONOCHROMATIC": {
+        "name": "Monochromatic",
+        "hint": "Satu rona dalam beberapa kepekatan dan kecerahan. Rapi dan elegan, tapi tulisan butuh beda terang-gelap yang jelas."
+      },
+      "TRIAD": {
+        "name": "Triad",
+        "hint": "Tiga rona berjarak sama di roda. Ceria dan seimbang — biarkan satu warna yang memimpin."
+      },
+      "COMPLEMENTARY": {
+        "name": "Complementary",
+        "hint": "Satu warna dan lawannya di seberang roda. Paling mencolok — cocok untuk tombol ajakan dan label harga promo."
+      },
+      "SPLIT_COMPLEMENTARY": {
+        "name": "Split Complementary",
+        "hint": "Warna dasar dengan dua tetangga lawannya. Tetap kontras, tapi lebih lembut dari complementary."
+      },
+      "SQUARE": {
+        "name": "Square",
+        "hint": "Empat rona berjarak seperempat roda. Paling ramai — cocok untuk kampanye yang penuh warna."
+      },
+      "COMPOUND": {
+        "name": "Compound",
+        "hint": "Gabungan tetangga dan lawan. Kaya, tapi masih terkendali."
+      },
+      "SHADES": {
+        "name": "Shades",
+        "hint": "Warna yang sama persis, hanya kecerahannya berbeda. Paling aman untuk latar bertingkat."
+      },
+      "CUSTOM": {
+        "name": "Custom",
+        "hint": "Setiap warna digeser sendiri-sendiri. Mengubah warna selain warna dasar otomatis pindah ke sini."
+      }
+    },
+    "levels": {
+      "AAA": {
+        "name": "AAA",
+        "hint": "7 ke atas — nyaman untuk teks panjang"
+      },
+      "AA": {
+        "name": "AA",
+        "hint": "4,5 ke atas — cukup untuk teks biasa"
+      },
+      "AA_BESAR": {
+        "name": "AA besar",
+        "hint": "3 ke atas — hanya untuk judul besar"
+      },
+      "GAGAL": {
+        "name": "Gagal",
+        "hint": "di bawah 3 — jangan dipakai untuk tulisan"
+      }
+    },
+    "errors": {
+      "NAMA_KOSONG": "Beri nama paletnya dulu.",
+      "NAMA_TERLALU_PANJANG": "Nama palet paling panjang 60 huruf.",
+      "ATURAN_TIDAK_DIKENAL": "Aturan harmoninya tidak dikenal. Muat ulang halaman lalu coba lagi.",
+      "WARNA_TIDAK_SAH": "Ada kode warna yang tidak sah. Periksa kelima kode HEX.",
+      "TIDAK_DITEMUKAN": "Palet ini sudah dihapus orang lain.",
+      "TANPA_AKSES": "Anda tidak punya izin mengelola modul kreatif.",
+      "GAGAL": "Tidak bisa diproses. Coba lagi sebentar lagi.",
+      "KAIN_TIDAK_SAH": "Warna kain tidak sah. Pilih ulang kainnya.",
+      "PORSI_TIDAK_SAH": "Total porsi warna sablon harus tepat 100%."
+    },
+    "inputAs": "Masukkan warna sebagai",
+    "rangeRgb": "Isi angka 0–255 untuk tiap kanal.",
+    "rangeCmyk": "Isi angka 0–100 untuk tiap tinta.",
+    "searchC": "Kode atau nama, mis. 186 C atau Warm Red",
+    "searchTcx": "Kode atau nama, mis. 15-0343 atau Greenery",
+    "searchEmpty": "Tidak ada Pantone yang cocok dengan “{q}”.",
+    "applyPantone": "Pakai {code}",
+    "exact": "persis",
+    "copyValue": "Salin {label}",
+    "cmykNote": "*CMYK dihitung tanpa profil cetak, sama seperti Pantone Studio — angka di Illustrator atau Photoshop bisa berbeda beberapa persen.",
+    "pantoneNote": "Pantone di sini padanan layar terdekat (ΔE CIEDE2000; di bawah 2 praktis tak terlihat mata). Cocokkan dengan buku Pantone fisik sebelum produksi.",
+    "fabricTitle": "Warna kain",
+    "fabricToggle": "Untuk dicetak di kain",
+    "fabricOffHint": "Nyalakan kalau palet ini untuk sablon.",
+    "fabricLabel": "Kain",
+    "fabricMarker": "Warna kain {hex}",
+    "ruleLabelFabric": "Aturan harmoni terhadap kain",
+    "inkLabel": "Warna {letter}",
+    "handleLabelInk": "Warna sablon {letter}, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
+    "inkDragHint": "Setiap tinta digeser sendiri. Kotak bergaris adalah warna kain.",
+    "inksTitle": "Warna sablon",
+    "inksHint": "Klik warna untuk memilihnya. Tambah atau hapus sampai enam warna.",
+    "addInk": "Tambah warna sablon",
+    "removeInk": "Hapus warna {letter}",
+    "savedFabric": "Kain {fabric}",
+    "portionMustBe100": "Total porsi harus 100% sebelum palet disimpan — sekarang {total}%."
+  },
+  "productionPrint": {
+    "copySummary": "Salin ringkasan",
+    "copied": "Ringkasan untuk tukang sablon disalin",
+    "copyFailed": "Tidak bisa menyalin otomatis. Pilih teksnya lalu salin manual.",
+    "maxInksLabel": "Maksimal tinta per resep",
+    "maxInksOption": "{n} tinta",
+    "batchLabel": "Berat adonan per warna (gram)",
+    "printTitle": "Warna sablon",
+    "printDescription": "Porsi, keterbacaan di kain, dan resep campur untuk tiap warna sablon. Porsi adalah titik mulai — ubah sesuai desain.",
+    "previewLabel": "Pratinjau porsi sablon di kain {fabric}",
+    "previewNote": "Satu kotak kecil = 1% luas desain.",
+    "portionLabel": "Porsi warna {letter} di desain, persen",
+    "portionTotal": "Total porsi {total}%",
+    "portionWarn": "Total porsi {total}% — seharusnya 100%.",
+    "replace": "Ganti",
+    "searchC": "Cari Pantone C, mis. 186 C atau Warm Red",
+    "searchEmpty": "Tidak ada Pantone C yang cocok dengan “{q}”.",
+    "recipeTitle": "Resep campur · {grams} g",
+    "recipeNoInks": "Tambahkan tinta dasar di bawah untuk melihat resep campur warna ini.",
+    "target": "Target",
+    "estimate": "Perkiraan campuran",
+    "recipeFar": "Tinta dasar yang ada belum bisa mendekati warna ini. Tambahkan tinta dasar yang ronanya lebih dekat.",
+    "recipeNear": "Cukup dekat — sesuaikan sedikit saat membuat sampel.",
+    "recipeNote": "Resep adalah perkiraan awal dari warna layar (model Kubelka-Munk), bukan resep pasti. Di dunia nyata campuran dengan putih biasanya lebih terang dari perkiraan, dan jenis tinta serta kain ikut berpengaruh. Buat sampel kecil dulu dan cocokkan dengan buku Pantone.",
+    "roles": {
+      "DOMINAN": "Dominan",
+      "PENDUKUNG": "Pendukung",
+      "AKSEN": "Aksen"
+    },
+    "readability": {
+      "KUAT": "Terbaca kuat",
+      "CUKUP": "Terbaca cukup",
+      "LEMBUT": "Lembut",
+      "SAMAR": "Samar"
+    },
+    "inksTitle": "Tinta dasar",
+    "inksDescription": "Tinta yang tersedia di tempat sablon. Resep hanya memakai tinta dari daftar ini — satu daftar untuk seluruh tim.",
+    "inksEmpty": "Belum ada tinta dasar. Isi dengan 14 tinta dasar Pantone, atau tambahkan satu per satu.",
+    "inksPreset": "Isi 14 tinta dasar Pantone + Putih",
+    "inksAddPantone": "Tambah dari Pantone C",
+    "inksSearch": "Cari kode, mis. Reflex Blue",
+    "inksAddHex": "Atau tambah dengan HEX",
+    "inksName": "Nama tinta",
+    "inksAdd": "Tambah",
+    "inksRemove": "Hapus {name}",
+    "inksSave": "Simpan tinta dasar",
+    "inksSaving": "Menyimpan…",
+    "inksSaved": "Tinta dasar disimpan untuk seluruh tim",
+    "inksUnsaved": "Ada perubahan yang belum disimpan.",
+    "inksViewOnly": "Anda bisa mencoba tinta lain di layar ini, tetapi hanya pengelola modul kreatif yang bisa menyimpannya.",
+    "inksFull": "Maksimal {max} tinta dasar.",
+    "inksDuplicate": "Tinta “{name}” sudah ada di daftar.",
+    "summaryFabric": "Kain: {fabric}",
+    "summaryRule": "Aturan: {rule} · {count} warna sablon",
+    "summaryDetail": "{role} · {portion}% desain · kontras {ratio} ({readability})",
+    "summaryRecipe": "Resep {grams} g: {parts} · ΔE {de}",
+    "summaryNoRecipe": "Resep: belum ada tinta dasar",
+    "summaryNote": "Resep adalah perkiraan dari warna layar — buat sampel kecil dulu dan cocokkan dengan buku Pantone.",
+    "errors": {
+      "BUKAN_DAFTAR": "Daftar tinta dasar tidak terbaca. Muat ulang halaman lalu coba lagi.",
+      "TERLALU_BANYAK": "Maksimal 16 tinta dasar.",
+      "NAMA_KOSONG": "Setiap tinta dasar perlu nama.",
+      "HEX_TIDAK_SAH": "Ada kode HEX tinta yang tidak sah.",
+      "NAMA_KEMBAR": "Ada dua tinta dengan nama yang sama.",
+      "TANPA_AKSES": "Anda tidak punya izin mengelola modul kreatif.",
+      "GAGAL": "Tidak bisa disimpan. Coba lagi sebentar lagi."
+    },
+    "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
+    "resuggest": "Sarankan ulang dari kain",
+    "followingSuggestion": "Mengikuti saran dari kain — ikut berubah saat kain, aturan, atau jumlah warna diganti.",
+    "editedHint": "Sudah disunting, jadi saran dari kain tidak lagi mengubah warna Anda."
   },
   "planning": {
     "title": "Plan Kerja",
@@ -4781,217 +4991,6 @@
     "selected": "{count} dipilih",
     "deleteManyTitle": "Hapus {count} konten?",
     "deleteManyBody": "Semuanya akan dihapus sekaligus. Gambarnya ikut terhapus otomatis beberapa jam kemudian kalau tidak dipakai konten lain.",
-    "okDeletedMany": "{count} konten dihapus.",
-    "tabPalette": "Palet Warna",
-    "palette": {
-      "title": "Palet Warna",
-      "description": "Putar roda untuk menyusun lima warna yang serasi, periksa apakah tulisannya terbaca, lalu simpan supaya tim bisa memakainya lagi.",
-      "meta": "{count} palet tersimpan",
-      "copyAll": "Salin semua HEX",
-      "copied": "{hex} disalin",
-      "copiedAll": "Lima kode HEX disalin",
-      "copyFailed": "Tidak bisa menyalin otomatis. Pilih kodenya lalu salin manual.",
-      "wheelTitle": "Roda warna",
-      "ruleLabel": "Aturan harmoni",
-      "dragHint": "Pegangan mana pun memutar seluruh harmoni. Jarak dari tengah diatur lewat warna dasar (pegangan besar).",
-      "customHint": "Setiap pegangan bergerak sendiri.",
-      "brightness": "Kecerahan",
-      "swatchesTitle": "Lima warna",
-      "swatchesHint": "Klik warna untuk memilihnya, lalu ubah kodenya atau kecerahannya.",
-      "base": "Dasar",
-      "swatchLabel": "Warna {n}",
-      "handleLabel": "Warna {n}, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
-      "handleLabelBase": "Warna dasar, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
-      "hexInvalid": "Tulis kode 6 digit, misalnya #2A78D6.",
-      "copyHex": "Salin {hex}",
-      "saveLabel": "Nama palet",
-      "namePlaceholder": "Misalnya: Feed Agustus",
-      "save": "Simpan palet",
-      "saving": "Menyimpan…",
-      "saved": "Palet “{name}” disimpan",
-      "contrastTitle": "Keterbacaan tulisan",
-      "contrastDescription": "Tiap kotak memperlihatkan tulisan berwarna kolom di atas latar berwarna baris. Angkanya rasio kontras WCAG: makin besar makin mudah dibaca.",
-      "contrastCorner": "Latar ↓ · Teks →",
-      "white": "Putih",
-      "black": "Hitam",
-      "sameColor": "Warna sama",
-      "savedTitle": "Palet tersimpan",
-      "emptyTitle": "Belum ada palet tersimpan",
-      "emptyBody": "Susun lima warna di roda, beri nama, lalu simpan. Palet yang tersimpan bisa dimuat lagi oleh siapa pun di tim.",
-      "emptyBodyViewOnly": "Palet yang disimpan tim kreatif akan muncul di sini.",
-      "use": "Pakai",
-      "loaded": "“{name}” dimuat ke roda",
-      "delete": "Hapus",
-      "deleteTitle": "Hapus palet “{name}”?",
-      "deleteBody": "Palet ini hilang untuk seluruh tim dan tidak bisa dikembalikan.",
-      "cancel": "Batal",
-      "deleting": "Menghapus…",
-      "deleted": "Palet dihapus",
-      "rules": {
-        "ANALOGOUS": {
-          "name": "Analogous",
-          "hint": "Warna bertetangga di roda. Tenang dan menyatu — aman untuk feed yang ingin terasa satu suasana."
-        },
-        "MONOCHROMATIC": {
-          "name": "Monochromatic",
-          "hint": "Satu rona dalam beberapa kepekatan dan kecerahan. Rapi dan elegan, tapi tulisan butuh beda terang-gelap yang jelas."
-        },
-        "TRIAD": {
-          "name": "Triad",
-          "hint": "Tiga rona berjarak sama di roda. Ceria dan seimbang — biarkan satu warna yang memimpin."
-        },
-        "COMPLEMENTARY": {
-          "name": "Complementary",
-          "hint": "Satu warna dan lawannya di seberang roda. Paling mencolok — cocok untuk tombol ajakan dan label harga promo."
-        },
-        "SPLIT_COMPLEMENTARY": {
-          "name": "Split Complementary",
-          "hint": "Warna dasar dengan dua tetangga lawannya. Tetap kontras, tapi lebih lembut dari complementary."
-        },
-        "SQUARE": {
-          "name": "Square",
-          "hint": "Empat rona berjarak seperempat roda. Paling ramai — cocok untuk kampanye yang penuh warna."
-        },
-        "COMPOUND": {
-          "name": "Compound",
-          "hint": "Gabungan tetangga dan lawan. Kaya, tapi masih terkendali."
-        },
-        "SHADES": {
-          "name": "Shades",
-          "hint": "Warna yang sama persis, hanya kecerahannya berbeda. Paling aman untuk latar bertingkat."
-        },
-        "CUSTOM": {
-          "name": "Custom",
-          "hint": "Setiap warna digeser sendiri-sendiri. Mengubah warna selain warna dasar otomatis pindah ke sini."
-        }
-      },
-      "levels": {
-        "AAA": {
-          "name": "AAA",
-          "hint": "7 ke atas — nyaman untuk teks panjang"
-        },
-        "AA": {
-          "name": "AA",
-          "hint": "4,5 ke atas — cukup untuk teks biasa"
-        },
-        "AA_BESAR": {
-          "name": "AA besar",
-          "hint": "3 ke atas — hanya untuk judul besar"
-        },
-        "GAGAL": {
-          "name": "Gagal",
-          "hint": "di bawah 3 — jangan dipakai untuk tulisan"
-        }
-      },
-      "errors": {
-        "NAMA_KOSONG": "Beri nama paletnya dulu.",
-        "NAMA_TERLALU_PANJANG": "Nama palet paling panjang 60 huruf.",
-        "ATURAN_TIDAK_DIKENAL": "Aturan harmoninya tidak dikenal. Muat ulang halaman lalu coba lagi.",
-        "WARNA_TIDAK_SAH": "Ada kode warna yang tidak sah. Periksa kelima kode HEX.",
-        "TIDAK_DITEMUKAN": "Palet ini sudah dihapus orang lain.",
-        "TANPA_AKSES": "Anda tidak punya izin mengelola modul kreatif.",
-        "GAGAL": "Tidak bisa diproses. Coba lagi sebentar lagi.",
-        "KAIN_TIDAK_SAH": "Warna kain tidak sah. Pilih ulang kainnya.",
-        "PORSI_TIDAK_SAH": "Total porsi warna sablon harus tepat 100%."
-      },
-      "inputAs": "Masukkan warna sebagai",
-      "rangeRgb": "Isi angka 0–255 untuk tiap kanal.",
-      "rangeCmyk": "Isi angka 0–100 untuk tiap tinta.",
-      "searchC": "Kode atau nama, mis. 186 C atau Warm Red",
-      "searchTcx": "Kode atau nama, mis. 15-0343 atau Greenery",
-      "searchEmpty": "Tidak ada Pantone yang cocok dengan “{q}”.",
-      "applyPantone": "Pakai {code}",
-      "exact": "persis",
-      "copyValue": "Salin {label}",
-      "cmykNote": "*CMYK dihitung tanpa profil cetak, sama seperti Pantone Studio — angka di Illustrator atau Photoshop bisa berbeda beberapa persen.",
-      "pantoneNote": "Pantone di sini padanan layar terdekat (ΔE CIEDE2000; di bawah 2 praktis tak terlihat mata). Cocokkan dengan buku Pantone fisik sebelum produksi.",
-      "fabricTitle": "Warna kain",
-      "fabricToggle": "Untuk dicetak di kain",
-      "fabricOffHint": "Nyalakan kalau palet ini untuk sablon.",
-      "fabricLabel": "Kain",
-      "fabricMarker": "Warna kain {hex}",
-      "ruleLabelFabric": "Aturan harmoni terhadap kain",
-      "inkLabel": "Warna {letter}",
-      "handleLabelInk": "Warna sablon {letter}, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
-      "inkDragHint": "Setiap tinta digeser sendiri. Kotak bergaris adalah warna kain.",
-      "inksTitle": "Warna sablon",
-      "inksHint": "Klik warna untuk memilihnya. Tambah atau hapus sampai enam warna.",
-      "addInk": "Tambah warna sablon",
-      "removeInk": "Hapus warna {letter}",
-      "savedFabric": "Kain {fabric}",
-      "portionMustBe100": "Total porsi harus 100% sebelum palet disimpan — sekarang {total}%."
-    },
-    "sablon": {
-      "copySummary": "Salin ringkasan",
-      "copied": "Ringkasan untuk tukang sablon disalin",
-      "copyFailed": "Tidak bisa menyalin otomatis. Pilih teksnya lalu salin manual.",
-      "maxInksLabel": "Maksimal tinta per resep",
-      "maxInksOption": "{n} tinta",
-      "batchLabel": "Berat adonan per warna (gram)",
-      "printTitle": "Warna sablon",
-      "printDescription": "Porsi, keterbacaan di kain, dan resep campur untuk tiap warna sablon. Porsi adalah titik mulai — ubah sesuai desain.",
-      "previewLabel": "Pratinjau porsi sablon di kain {fabric}",
-      "previewNote": "Satu kotak kecil = 1% luas desain.",
-      "portionLabel": "Porsi warna {letter} di desain, persen",
-      "portionTotal": "Total porsi {total}%",
-      "portionWarn": "Total porsi {total}% — seharusnya 100%.",
-      "replace": "Ganti",
-      "searchC": "Cari Pantone C, mis. 186 C atau Warm Red",
-      "searchEmpty": "Tidak ada Pantone C yang cocok dengan “{q}”.",
-      "recipeTitle": "Resep campur · {grams} g",
-      "recipeNoInks": "Tambahkan tinta dasar di bawah untuk melihat resep campur warna ini.",
-      "target": "Target",
-      "estimate": "Perkiraan campuran",
-      "recipeFar": "Tinta dasar yang ada belum bisa mendekati warna ini. Tambahkan tinta dasar yang ronanya lebih dekat.",
-      "recipeNear": "Cukup dekat — sesuaikan sedikit saat membuat sampel.",
-      "recipeNote": "Resep adalah perkiraan awal dari warna layar (model Kubelka-Munk), bukan resep pasti. Di dunia nyata campuran dengan putih biasanya lebih terang dari perkiraan, dan jenis tinta serta kain ikut berpengaruh. Buat sampel kecil dulu dan cocokkan dengan buku Pantone.",
-      "roles": {
-        "DOMINAN": "Dominan",
-        "PENDUKUNG": "Pendukung",
-        "AKSEN": "Aksen"
-      },
-      "readability": {
-        "KUAT": "Terbaca kuat",
-        "CUKUP": "Terbaca cukup",
-        "LEMBUT": "Lembut",
-        "SAMAR": "Samar"
-      },
-      "inksTitle": "Tinta dasar",
-      "inksDescription": "Tinta yang tersedia di tempat sablon. Resep hanya memakai tinta dari daftar ini — satu daftar untuk seluruh tim.",
-      "inksEmpty": "Belum ada tinta dasar. Isi dengan 14 tinta dasar Pantone, atau tambahkan satu per satu.",
-      "inksPreset": "Isi 14 tinta dasar Pantone + Putih",
-      "inksAddPantone": "Tambah dari Pantone C",
-      "inksSearch": "Cari kode, mis. Reflex Blue",
-      "inksAddHex": "Atau tambah dengan HEX",
-      "inksName": "Nama tinta",
-      "inksAdd": "Tambah",
-      "inksRemove": "Hapus {name}",
-      "inksSave": "Simpan tinta dasar",
-      "inksSaving": "Menyimpan…",
-      "inksSaved": "Tinta dasar disimpan untuk seluruh tim",
-      "inksUnsaved": "Ada perubahan yang belum disimpan.",
-      "inksViewOnly": "Anda bisa mencoba tinta lain di layar ini, tetapi hanya pengelola modul kreatif yang bisa menyimpannya.",
-      "inksFull": "Maksimal {max} tinta dasar.",
-      "inksDuplicate": "Tinta “{name}” sudah ada di daftar.",
-      "summaryFabric": "Kain: {fabric}",
-      "summaryRule": "Aturan: {rule} · {count} warna sablon",
-      "summaryDetail": "{role} · {portion}% desain · kontras {ratio} ({readability})",
-      "summaryRecipe": "Resep {grams} g: {parts} · ΔE {de}",
-      "summaryNoRecipe": "Resep: belum ada tinta dasar",
-      "summaryNote": "Resep adalah perkiraan dari warna layar — buat sampel kecil dulu dan cocokkan dengan buku Pantone.",
-      "errors": {
-        "BUKAN_DAFTAR": "Daftar tinta dasar tidak terbaca. Muat ulang halaman lalu coba lagi.",
-        "TERLALU_BANYAK": "Maksimal 16 tinta dasar.",
-        "NAMA_KOSONG": "Setiap tinta dasar perlu nama.",
-        "HEX_TIDAK_SAH": "Ada kode HEX tinta yang tidak sah.",
-        "NAMA_KEMBAR": "Ada dua tinta dengan nama yang sama.",
-        "TANPA_AKSES": "Anda tidak punya izin mengelola modul kreatif.",
-        "GAGAL": "Tidak bisa disimpan. Coba lagi sebentar lagi."
-      },
-      "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
-      "resuggest": "Sarankan ulang dari kain",
-      "followingSuggestion": "Mengikuti saran dari kain — ikut berubah saat kain, aturan, atau jumlah warna diganti.",
-      "editedHint": "Sudah disunting, jadi saran dari kain tidak lagi mengubah warna Anda."
-    }
+    "okDeletedMany": "{count} konten dihapus."
   }
 }

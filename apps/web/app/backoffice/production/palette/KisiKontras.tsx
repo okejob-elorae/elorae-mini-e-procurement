@@ -15,7 +15,7 @@ import {
   tampilRasio,
   tingkatKontras,
   type TingkatKontras,
-} from '@/lib/creative/palet/kontras';
+} from '@/lib/production-colors/palet/kontras';
 import { cn } from '@/lib/utils';
 
 const NADA: Record<TingkatKontras, StatusTone> = {
@@ -55,7 +55,7 @@ export function KisiKontras({
   kain?: string | null;
   labelWarna?: (indeks: number) => string;
 }) {
-  const t = useTranslations('creative.palette');
+  const t = useTranslations('productionPalette');
   const locale = useLocale();
   const angka = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 

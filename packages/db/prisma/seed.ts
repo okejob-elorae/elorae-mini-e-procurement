@@ -148,6 +148,7 @@ async function main() {
     { code: 'nota_register:view', module: 'nota_register', action: 'view', description: 'View nota register' },
     // Production Colors (Pantone TCX)
     { code: 'production_colors:view', module: 'production_colors', action: 'view', description: 'View production Pantone colors' },
+    { code: 'production_colors:manage', module: 'production_colors', action: 'manage', description: 'Save colour palettes and the team base inks used for print mix recipes' },
     // Production Planning (Plan Kerja)
     { code: 'production_planning:view', module: 'production_planning', action: 'view', description: 'View Plan Kerja' },
     { code: 'production_planning:manage', module: 'production_planning', action: 'manage', description: 'Manage Plan Kerja' },
@@ -369,7 +370,7 @@ async function main() {
     'items:view', 'sales_orders:view', 'sales_orders:fulfill',
     'work_orders:view', 'work_orders:create', 'work_orders:manage',
     'nota_register:view',
-    'production_colors:view',
+    'production_colors:view', 'production_colors:manage',
     'production_planning:view',
     'forecast:view',
     'inventory_opname:view',

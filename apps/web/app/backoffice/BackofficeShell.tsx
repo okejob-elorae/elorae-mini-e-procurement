@@ -211,6 +211,7 @@ const navItems: NavItem[] = [
       { labelKey: 'navForecast', href: '/backoffice/forecast', permission: PERMISSIONS.FORECAST_VIEW },
       { labelKey: 'navProductionPlanning', href: '/backoffice/production/planning', permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW },
       { labelKey: 'navProductionColors', href: '/backoffice/production/colors', permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
+      { labelKey: 'navProductionPalette', href: '/backoffice/production/palette', permission: PERMISSIONS.PRODUCTION_COLORS_VIEW },
       { labelKey: 'purchaseOrders', href: '/backoffice/purchase-orders', permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
       { labelKey: 'supplierPayment', href: '/backoffice/supplier-payments', permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
       { labelKey: 'navWorkOrdersList', href: '/backoffice/work-orders', permission: PERMISSIONS.WORK_ORDERS_VIEW },
@@ -265,7 +266,6 @@ const navItems: NavItem[] = [
       { labelKey: 'navContentCalendar', href: '/backoffice/kreatif/konten', permission: PERMISSIONS.CREATIVE_VIEW },
       { labelKey: 'navKolBrief', href: '/backoffice/kreatif/brief', permission: PERMISSIONS.CREATIVE_VIEW },
       { labelKey: 'navKolDirectory', href: '/backoffice/kreatif/kol', permission: PERMISSIONS.CREATIVE_VIEW },
-      { labelKey: 'navColorPalette', href: '/backoffice/kreatif/palet', permission: PERMISSIONS.CREATIVE_VIEW },
     ],
   },
 

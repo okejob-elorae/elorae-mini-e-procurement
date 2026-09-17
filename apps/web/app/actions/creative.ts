@@ -19,9 +19,6 @@ import {
   type IsiKonten,
 } from '@/lib/creative/writer';
 import type { StatusBrief } from '@/lib/creative/aturan';
-import { hapusPalet, simpanPalet, type AlasanGagalPalet } from '@/lib/creative/palet/writer';
-import type { AlasanTintaTidakSah, TintaDasar } from '@/lib/creative/sablon/tinta-dasar';
-import { simpanTintaDasar } from '@/lib/creative/sablon/writer';
 
 export type HasilAksiKreatif =
   | { ok: true; id?: string; docNo?: string; stokKeluar?: number }
@@ -233,69 +230,6 @@ export async function hapusBanyakKontenAction(
     return { ok: true, id: r.id, dihapus: r.dihapus };
   } catch (err) {
     console.error('hapusBanyakKonten gagal:', err);
-    return { ok: false, kode: 'GAGAL' };
-  }
-}
-
-export type HasilAksiPalet =
-  | { ok: true; id?: string }
-  | { ok: false; kode: AlasanGagalPalet | 'TANPA_AKSES' | 'GAGAL' };
-
-/**
- * Simpan palet dari roda warna.
- *
- * Isinya diperiksa ulang di penulis, bukan dipercayakan pada roda: aksi ini
- * bisa dipanggil langsung tanpa melewati layar.
- */
-export async function simpanPaletAction(masukan: {
-  nama: string;
-  aturan: string;
-  warna: string[];
-  kain?: string | null;
-  porsi?: number[] | null;
-}): Promise<HasilAksiPalet> {
-  const oleh = await penulis();
-  if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
-  try {
-    const r = await simpanPalet({ masukan, olehUserId: oleh });
-    if (!r.ok) return { ok: false, kode: r.alasan };
-    revalidatePath('/backoffice/kreatif/palet');
-    return { ok: true, id: r.id };
-  } catch (err) {
-    console.error('simpanPalet gagal:', err);
-    return { ok: false, kode: 'GAGAL' };
-  }
-}
-
-export async function hapusPaletAction(id: string): Promise<HasilAksiPalet> {
-  const oleh = await penulis();
-  if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
-  try {
-    const r = await hapusPalet(id);
-    if (!r.ok) return { ok: false, kode: r.alasan };
-    revalidatePath('/backoffice/kreatif/palet');
-    return { ok: true };
-  } catch (err) {
-    console.error('hapusPalet gagal:', err);
-    return { ok: false, kode: 'GAGAL' };
-  }
-}
-
-export type HasilAksiTintaDasar =
-  | { ok: true; tinta: TintaDasar[] }
-  | { ok: false; kode: AlasanTintaTidakSah | 'TANPA_AKSES' | 'GAGAL' };
-
-/** Ganti daftar tinta dasar tim — bahan resep campur untuk palet berkain. */
-export async function simpanTintaDasarAction(tinta: TintaDasar[]): Promise<HasilAksiTintaDasar> {
-  const oleh = await penulis();
-  if (!oleh) return { ok: false, kode: 'TANPA_AKSES' };
-  try {
-    const r = await simpanTintaDasar(tinta);
-    if (!r.ok) return { ok: false, kode: r.alasan };
-    revalidatePath('/backoffice/kreatif/palet');
-    return { ok: true, tinta: r.tinta };
-  } catch (err) {
-    console.error('simpanTintaDasar gagal:', err);
     return { ok: false, kode: 'GAGAL' };
   }
 }

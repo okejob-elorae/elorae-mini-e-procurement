@@ -4,8 +4,8 @@ import { useTranslations } from 'next-intl';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import type { WarnaPantone } from '@/lib/creative/palet/pantone';
-import { hexKeHsb } from '@/lib/creative/palet/warna';
+import type { WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { hexKeHsb } from '@/lib/production-colors/palet/warna';
 import { EditorWarna, type ModeMasukan } from './EditorWarna';
 
 /**
@@ -35,7 +35,7 @@ export function KartuKain({
   katalogC: readonly WarnaPantone[];
   katalogTcx: readonly WarnaPantone[];
 }) {
-  const t = useTranslations('creative.palette');
+  const t = useTranslations('productionPalette');
   return (
     <Card>
       <CardHeader>

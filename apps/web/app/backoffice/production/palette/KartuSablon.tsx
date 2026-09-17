@@ -8,13 +8,13 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { AturanHarmoni } from '@/lib/creative/palet/harmoni';
-import { rasioKontras } from '@/lib/creative/palet/kontras';
-import { pantoneTerdekat, type WarnaPantone } from '@/lib/creative/palet/pantone';
-import { bagiGram, resepCampur } from '@/lib/creative/sablon/campur';
-import { susunRingkasan } from '@/lib/creative/sablon/ringkasan';
-import { keterbacaanSablon, peranUntuk } from '@/lib/creative/sablon/saran';
-import type { TintaDasar } from '@/lib/creative/sablon/tinta-dasar';
+import type { AturanHarmoni } from '@/lib/production-colors/palet/harmoni';
+import { rasioKontras } from '@/lib/production-colors/palet/kontras';
+import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { bagiGram, resepCampur } from '@/lib/production-colors/sablon/campur';
+import { susunRingkasan } from '@/lib/production-colors/sablon/ringkasan';
+import { keterbacaanSablon, peranUntuk } from '@/lib/production-colors/sablon/saran';
+import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { BarisSablon } from './BarisSablon';
 import { PratinjauKaos } from './PratinjauKaos';
 
@@ -73,8 +73,8 @@ export function KartuSablon({
   onSarankanUlang: () => void;
   onSalin: (teks: string) => void;
 }) {
-  const t = useTranslations('creative.sablon');
-  const tPalet = useTranslations('creative.palette');
+  const t = useTranslations('productionPrint');
+  const tPalet = useTranslations('productionPalette');
   const locale = useLocale();
   const desimal = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const persen = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
