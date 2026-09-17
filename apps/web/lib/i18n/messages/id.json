@@ -1644,6 +1644,8 @@
     "fabricLabel": "Kain",
     "fabricMarker": "Warna kain {hex}",
     "ruleLabelFabric": "Aturan harmoni terhadap kain",
+    "ruleReplacedInks": "Warna sablon disusun ulang dengan aturan {rule}.",
+    "undo": "Urungkan",
     "inkLabel": "Warna {letter}",
     "handleLabelInk": "Warna sablon {letter}, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
     "inkDragHint": "Setiap tinta digeser sendiri. Kotak bergaris adalah warna kain.",
@@ -1770,7 +1772,7 @@
     "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
     "resuggest": "Sarankan ulang dari kain",
     "followingSuggestion": "Mengikuti saran dari kain — ikut berubah saat kain, aturan, atau jumlah warna diganti.",
-    "editedHint": "Sudah disunting, jadi saran dari kain tidak lagi mengubah warna Anda."
+    "editedHint": "Sudah disunting, jadi mengganti kain atau jumlah warna tidak mengubah warna Anda. Memilih aturan harmoni menyusun ulang semuanya."
   },
   "planning": {
     "title": "Plan Kerja",

@@ -41,6 +41,7 @@ import {
   lepasKain,
   paletBebas,
   pasangKain,
+  aturanSablonDari,
   pilihAturanPalet,
   sarankanDariKain,
   ubahJumlahSablon,
@@ -158,6 +159,17 @@ export function PaletClient({
 
   function ubah(berikut: (p: Palet) => Palet) {
     setPaletSendiri((p) => berikut(p ?? awal));
+  }
+
+  /** Memilih aturan menimpa warna sablon yang sudah disunting — jadi selalu bisa diurungkan. */
+  function pilihAturan(aturan: AturanHarmoni) {
+    const sebelum = palet;
+    setPaletSendiri(pilihAturanPalet(sebelum, aturan, katalogC()));
+    if (sebelum.kain !== null && !sebelum.saranUtuh) {
+      toast.success(t('ruleReplacedInks', { rule: t(`rules.${aturanSablonDari(aturan)}.name`) }), {
+        action: { label: t('undo'), onClick: () => setPaletSendiri(sebelum) },
+      });
+    }
   }
 
   const berkain = palet.kain !== null;
@@ -310,7 +322,7 @@ export function PaletClient({
                  * yang sangat berbeda ("Triad" vs "Split Complementary") tidak
                  * pernah bisa berbaris rapi di kartu sesempit ini.
                  */}
-                <Select value={palet.aturan} onValueChange={(v) => ubah((p) => pilihAturanPalet(p, v as AturanHarmoni, katalogC()))}>
+                <Select value={palet.aturan} onValueChange={(v) => pilihAturan(v as AturanHarmoni)}>
                   <SelectTrigger id="aturan-harmoni" className="h-10 w-full">
                     <SelectValue />
                   </SelectTrigger>

@@ -1644,6 +1644,8 @@
     "fabricLabel": "Fabric",
     "fabricMarker": "Fabric colour {hex}",
     "ruleLabelFabric": "Harmony with the fabric",
+    "ruleReplacedInks": "Print colours rearranged with the {rule} rule.",
+    "undo": "Undo",
     "inkLabel": "Colour {letter}",
     "handleLabelInk": "Print colour {letter}, {hex}. Left and right arrows turn the hue, up and down change saturation.",
     "inkDragHint": "Each ink moves on its own. The dashed square is the fabric colour.",
@@ -1770,7 +1772,7 @@
     "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
     "resuggest": "Suggest again from fabric",
     "followingSuggestion": "Following the fabric suggestion — it updates when the fabric, rule, or number of colours changes.",
-    "editedHint": "Edited, so fabric suggestions no longer change your colours."
+    "editedHint": "Edited, so changing the fabric or number of colours leaves your colours alone. Choosing a harmony rule rearranges them all."
   },
   "planning": {
     "title": "Production Plan",

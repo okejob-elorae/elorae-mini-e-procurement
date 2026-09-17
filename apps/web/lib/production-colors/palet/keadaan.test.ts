@@ -102,11 +102,21 @@ describe('aturan', () => {
     expect(hexDari(p)).toEqual(saranHex(BLUE_SURF, JUMLAH_SABLON_AWAL, 'TRIAD'));
   });
 
-  it('hanya mengganti aturannya di palet berkain yang sudah disunting', () => {
-    const disunting = gantiHexPalet(pasangKain(bebas(), BLUE_SURF, KATALOG), 1, '#654321');
+  /*
+   * Memilih aturan adalah permintaan eksplisit. Dulu palet yang sudah disunting
+   * hanya berganti label aturannya dan warnanya diam — pemilik mengira fitur
+   * itu rusak. Mengganti kain atau jumlah tetap tidak menimpa suntingan; untuk
+   * aturan, layar menawarkan Urungkan.
+   */
+  it('menyusun saran baru di palet berkain yang sudah disunting, dengan jumlah warna yang sama', () => {
+    const empat = ubahJumlahSablon(pasangKain(bebas(), BLUE_SURF, KATALOG), 4, KATALOG);
+    const disunting = ubahKecerahanPalet(gantiHexPalet(empat, 1, '#654321'), 0, 0.35);
+    expect(disunting.saranUtuh).toBe(false);
     const p = pilihAturanPalet(disunting, 'TRIAD', KATALOG);
     expect(p.aturan).toBe('TRIAD');
-    expect(hexDari(p)).toEqual(hexDari(disunting));
+    expect(hexDari(p)).toEqual(saranHex(BLUE_SURF, 4, 'TRIAD'));
+    expect(p.porsi).toEqual(PORSI_AWAL[4]);
+    expect(p.saranUtuh).toBe(true);
   });
 });
 

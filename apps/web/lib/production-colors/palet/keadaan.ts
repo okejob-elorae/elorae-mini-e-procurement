@@ -23,7 +23,9 @@ import { hexKeHsb, normalisasiHex, putarSudut, type Hsb } from './warna';
  * Dulu keduanya dua halaman. Disatukan karena di pekerjaan tim keduanya satu
  * hal: menyusun warna untuk desain yang dicetak di kain. Semua perpindahan
  * keadaan ada di sini, murni, supaya aturan terpentingnya bisa diuji: saran
- * dari kain TIDAK PERNAH menimpa warna yang sudah disunting tangan.
+ * dari kain tidak pernah menimpa suntingan tangan DIAM-DIAM — mengganti kain
+ * atau jumlah warna membiarkannya. Hanya permintaan eksplisit yang menimpa:
+ * memilih aturan harmoni, atau "Sarankan ulang dari kain".
  */
 export type Palet = KeadaanPalet & {
   /** Hex kain, atau `null` untuk palet bebas. */
@@ -32,8 +34,8 @@ export type Palet = KeadaanPalet & {
   porsi: number[] | null;
   /**
    * `true` selama warna dan porsi masih persis saran dari kain. Selama itu,
-   * mengganti kain, aturan, atau jumlah memperbarui sarannya; begitu satu hal
-   * disunting, saran berhenti diperbarui sendiri.
+   * mengganti kain atau jumlah memperbarui sarannya; begitu satu hal disunting,
+   * keduanya berhenti menyentuh warna. Memilih aturan selalu menyusun saran baru.
    */
   saranUtuh: boolean;
 };
@@ -62,7 +64,7 @@ function sarankan(p: Palet, katalog: readonly WarnaPantone[], jumlah: number): P
   };
 }
 
-/** Saran baru dari kain, atas permintaan — satu-satunya jalan menimpa suntingan. */
+/** Saran baru dari kain, atas permintaan — bersama memilih aturan, jalan untuk menimpa suntingan. */
 export function sarankanDariKain(p: Palet, katalog: readonly WarnaPantone[]): Palet {
   return sarankan(p, katalog, p.warna.length);
 }
@@ -89,8 +91,9 @@ export function pilihAturanPalet(p: Palet, aturan: AturanHarmoni, katalog: reado
   if (p.kain === null) {
     return { ...p, aturan, warna: susunHarmoni(aturan, p.warna[INDEKS_DASAR], p.warna) };
   }
-  const baru = { ...p, aturan: aturanSablonDari(aturan) };
-  return p.saranUtuh ? sarankan(baru, katalog, p.warna.length) : baru;
+  // Selalu, juga sesudah disunting: orang yang memilih "Triad" meminta warna
+  // triad. Dulu suntingan membuat pilihan ini diam, dan terlihat rusak.
+  return sarankan({ ...p, aturan: aturanSablonDari(aturan) }, katalog, p.warna.length);
 }
 
 export function ubahJumlahSablon(p: Palet, jumlah: number, katalog: readonly WarnaPantone[]): Palet {
