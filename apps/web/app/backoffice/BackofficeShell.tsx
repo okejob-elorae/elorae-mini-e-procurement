@@ -265,6 +265,7 @@ const navItems: NavItem[] = [
       { labelKey: 'navContentCalendar', href: '/backoffice/kreatif/konten', permission: PERMISSIONS.CREATIVE_VIEW },
       { labelKey: 'navKolBrief', href: '/backoffice/kreatif/brief', permission: PERMISSIONS.CREATIVE_VIEW },
       { labelKey: 'navKolDirectory', href: '/backoffice/kreatif/kol', permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: 'navColorPalette', href: '/backoffice/kreatif/palet', permission: PERMISSIONS.CREATIVE_VIEW },
     ],
   },
 

@@ -116,6 +116,7 @@ model User {
   kolBriefsCreated  KolBrief[]    @relation("KolBriefCreator")
   contentsAssigned  ContentPlan[] @relation("ContentAssignee")
   contentsCreated   ContentPlan[] @relation("ContentCreator")
+  colorPalettesCreated ColorPalette[] @relation("ColorPaletteCreator")
 }
 
 model VerificationToken {
@@ -3135,5 +3136,20 @@ model ContentPlan {
   @@index([briefId])
   @@index([itemId])
   @@index([assigneeId])
+  @@index([createdById])
+}
+
+model ColorPalette {
+  id          String   @id @default(cuid())
+  name        String
+  harmony     String
+  colors      Json
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   User?    @relation("ColorPaletteCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([createdAt])
   @@index([createdById])
 }

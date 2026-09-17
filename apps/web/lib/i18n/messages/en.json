@@ -126,7 +126,8 @@
     "favorit": "Pinned",
     "sematkan": "Pin to top",
     "lepasSematan": "Unpin",
-    "favoritPenuh": "Pinned list is full — {batas} maximum. Unpin one first."
+    "favoritPenuh": "Pinned list is full — {batas} maximum. Unpin one first.",
+    "navColorPalette": "Color Palette"
   },
   "notifications": {
     "title": "Notifications",
@@ -4780,6 +4781,119 @@
     "selected": "{count} selected",
     "deleteManyTitle": "Delete {count} posts?",
     "deleteManyBody": "All of them go at once. Their images are swept a few hours later unless another post uses them.",
-    "okDeletedMany": "{count} posts deleted."
+    "okDeletedMany": "{count} posts deleted.",
+    "tabPalette": "Color Palette",
+    "palette": {
+      "title": "Color Palette",
+      "description": "Turn the wheel to build five colours that work together, check that text stays readable, then save it so the team can reuse it.",
+      "meta": "{count} saved palettes",
+      "copyAll": "Copy all HEX",
+      "copied": "{hex} copied",
+      "copiedAll": "All five HEX codes copied",
+      "copyFailed": "Couldn't copy automatically. Select the code and copy it by hand.",
+      "wheelTitle": "Colour wheel",
+      "ruleLabel": "Harmony rule",
+      "dragHint": "Any handle turns the whole harmony. Distance from the centre is set through the base colour (the large handle).",
+      "customHint": "Each handle moves on its own.",
+      "brightness": "Brightness",
+      "hue": "Hue",
+      "saturation": "Saturation",
+      "swatchesTitle": "Five colours",
+      "swatchesHint": "Click a colour to select it, then change its code or brightness.",
+      "base": "Base",
+      "swatchLabel": "Colour {n}",
+      "handleLabel": "Colour {n}, {hex}. Left and right arrows turn the hue, up and down change saturation.",
+      "handleLabelBase": "Base colour, {hex}. Left and right arrows turn the hue, up and down change saturation.",
+      "hexInvalid": "Enter a 6-digit code, for example #2A78D6.",
+      "copyHex": "Copy {hex}",
+      "saveLabel": "Palette name",
+      "namePlaceholder": "For example: August feed",
+      "save": "Save palette",
+      "saving": "Saving…",
+      "saved": "Saved “{name}”",
+      "contrastTitle": "Text readability",
+      "contrastDescription": "Each box shows text in the column's colour on the row's background. The number is the WCAG contrast ratio: higher is easier to read.",
+      "contrastCorner": "Background ↓ · Text →",
+      "white": "White",
+      "black": "Black",
+      "sameColor": "Same colour",
+      "savedTitle": "Saved palettes",
+      "emptyTitle": "No saved palettes yet",
+      "emptyBody": "Build five colours on the wheel, name them, and save. Anyone on the team can load a saved palette again.",
+      "emptyBodyViewOnly": "Palettes saved by the creative team will appear here.",
+      "use": "Use",
+      "loaded": "Loaded “{name}” onto the wheel",
+      "delete": "Delete",
+      "deleteTitle": "Delete “{name}”?",
+      "deleteBody": "This palette disappears for the whole team and can't be restored.",
+      "cancel": "Cancel",
+      "deleting": "Deleting…",
+      "deleted": "Palette deleted",
+      "rules": {
+        "ANALOGOUS": {
+          "name": "Analogous",
+          "hint": "Neighbours on the wheel. Calm and cohesive — safe for a feed that should feel like one mood."
+        },
+        "MONOCHROMATIC": {
+          "name": "Monochromatic",
+          "hint": "One hue at several strengths and brightnesses. Clean and elegant, but text needs a clear light–dark difference."
+        },
+        "TRIAD": {
+          "name": "Triad",
+          "hint": "Three hues evenly spaced on the wheel. Lively and balanced — let one colour lead."
+        },
+        "COMPLEMENTARY": {
+          "name": "Complementary",
+          "hint": "A colour and its opposite across the wheel. The loudest pairing — good for calls to action and promo price tags."
+        },
+        "SPLIT_COMPLEMENTARY": {
+          "name": "Split Complementary",
+          "hint": "The base plus the two neighbours of its opposite. Still contrasting, softer than complementary."
+        },
+        "SQUARE": {
+          "name": "Square",
+          "hint": "Four hues a quarter-turn apart. The busiest — suits colourful campaigns."
+        },
+        "COMPOUND": {
+          "name": "Compound",
+          "hint": "Neighbours mixed with opposites. Rich, but still under control."
+        },
+        "SHADES": {
+          "name": "Shades",
+          "hint": "Exactly the same colour at different brightness. The safest for layered backgrounds."
+        },
+        "CUSTOM": {
+          "name": "Custom",
+          "hint": "Each colour moves on its own. Editing any colour other than the base switches here automatically."
+        }
+      },
+      "levels": {
+        "AAA": {
+          "name": "AAA",
+          "hint": "7 and up — comfortable for long text"
+        },
+        "AA": {
+          "name": "AA",
+          "hint": "4.5 and up — fine for normal text"
+        },
+        "AA_BESAR": {
+          "name": "AA large",
+          "hint": "3 and up — large headings only"
+        },
+        "GAGAL": {
+          "name": "Fail",
+          "hint": "below 3 — don't use for text"
+        }
+      },
+      "errors": {
+        "NAMA_KOSONG": "Give the palette a name first.",
+        "NAMA_TERLALU_PANJANG": "Palette names can be at most 60 characters.",
+        "ATURAN_TIDAK_DIKENAL": "Unknown harmony rule. Reload the page and try again.",
+        "WARNA_TIDAK_SAH": "One of the colour codes isn't valid. Check all five HEX codes.",
+        "TIDAK_DITEMUKAN": "Someone else already deleted this palette.",
+        "TANPA_AKSES": "You don't have permission to manage the creative module.",
+        "GAGAL": "Couldn't process that. Try again in a moment."
+      }
+    }
   }
 }

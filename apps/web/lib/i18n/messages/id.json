@@ -126,7 +126,8 @@
     "favorit": "Sematan",
     "sematkan": "Sematkan ke atas",
     "lepasSematan": "Lepas sematan",
-    "favoritPenuh": "Sematan penuh — maksimal {batas}. Lepas salah satu dulu."
+    "favoritPenuh": "Sematan penuh — maksimal {batas}. Lepas salah satu dulu.",
+    "navColorPalette": "Palet Warna"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -4780,6 +4781,119 @@
     "selected": "{count} dipilih",
     "deleteManyTitle": "Hapus {count} konten?",
     "deleteManyBody": "Semuanya akan dihapus sekaligus. Gambarnya ikut terhapus otomatis beberapa jam kemudian kalau tidak dipakai konten lain.",
-    "okDeletedMany": "{count} konten dihapus."
+    "okDeletedMany": "{count} konten dihapus.",
+    "tabPalette": "Palet Warna",
+    "palette": {
+      "title": "Palet Warna",
+      "description": "Putar roda untuk menyusun lima warna yang serasi, periksa apakah tulisannya terbaca, lalu simpan supaya tim bisa memakainya lagi.",
+      "meta": "{count} palet tersimpan",
+      "copyAll": "Salin semua HEX",
+      "copied": "{hex} disalin",
+      "copiedAll": "Lima kode HEX disalin",
+      "copyFailed": "Tidak bisa menyalin otomatis. Pilih kodenya lalu salin manual.",
+      "wheelTitle": "Roda warna",
+      "ruleLabel": "Aturan harmoni",
+      "dragHint": "Pegangan mana pun memutar seluruh harmoni. Jarak dari tengah diatur lewat warna dasar (pegangan besar).",
+      "customHint": "Setiap pegangan bergerak sendiri.",
+      "brightness": "Kecerahan",
+      "hue": "Rona",
+      "saturation": "Kepekatan",
+      "swatchesTitle": "Lima warna",
+      "swatchesHint": "Klik warna untuk memilihnya, lalu ubah kodenya atau kecerahannya.",
+      "base": "Dasar",
+      "swatchLabel": "Warna {n}",
+      "handleLabel": "Warna {n}, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
+      "handleLabelBase": "Warna dasar, {hex}. Panah kiri dan kanan memutar rona, atas dan bawah mengubah kepekatan.",
+      "hexInvalid": "Tulis kode 6 digit, misalnya #2A78D6.",
+      "copyHex": "Salin {hex}",
+      "saveLabel": "Nama palet",
+      "namePlaceholder": "Misalnya: Feed Agustus",
+      "save": "Simpan palet",
+      "saving": "Menyimpan…",
+      "saved": "Palet “{name}” disimpan",
+      "contrastTitle": "Keterbacaan tulisan",
+      "contrastDescription": "Tiap kotak memperlihatkan tulisan berwarna kolom di atas latar berwarna baris. Angkanya rasio kontras WCAG: makin besar makin mudah dibaca.",
+      "contrastCorner": "Latar ↓ · Teks →",
+      "white": "Putih",
+      "black": "Hitam",
+      "sameColor": "Warna sama",
+      "savedTitle": "Palet tersimpan",
+      "emptyTitle": "Belum ada palet tersimpan",
+      "emptyBody": "Susun lima warna di roda, beri nama, lalu simpan. Palet yang tersimpan bisa dimuat lagi oleh siapa pun di tim.",
+      "emptyBodyViewOnly": "Palet yang disimpan tim kreatif akan muncul di sini.",
+      "use": "Pakai",
+      "loaded": "“{name}” dimuat ke roda",
+      "delete": "Hapus",
+      "deleteTitle": "Hapus palet “{name}”?",
+      "deleteBody": "Palet ini hilang untuk seluruh tim dan tidak bisa dikembalikan.",
+      "cancel": "Batal",
+      "deleting": "Menghapus…",
+      "deleted": "Palet dihapus",
+      "rules": {
+        "ANALOGOUS": {
+          "name": "Analogous",
+          "hint": "Warna bertetangga di roda. Tenang dan menyatu — aman untuk feed yang ingin terasa satu suasana."
+        },
+        "MONOCHROMATIC": {
+          "name": "Monochromatic",
+          "hint": "Satu rona dalam beberapa kepekatan dan kecerahan. Rapi dan elegan, tapi tulisan butuh beda terang-gelap yang jelas."
+        },
+        "TRIAD": {
+          "name": "Triad",
+          "hint": "Tiga rona berjarak sama di roda. Ceria dan seimbang — biarkan satu warna yang memimpin."
+        },
+        "COMPLEMENTARY": {
+          "name": "Complementary",
+          "hint": "Satu warna dan lawannya di seberang roda. Paling mencolok — cocok untuk tombol ajakan dan label harga promo."
+        },
+        "SPLIT_COMPLEMENTARY": {
+          "name": "Split Complementary",
+          "hint": "Warna dasar dengan dua tetangga lawannya. Tetap kontras, tapi lebih lembut dari complementary."
+        },
+        "SQUARE": {
+          "name": "Square",
+          "hint": "Empat rona berjarak seperempat roda. Paling ramai — cocok untuk kampanye yang penuh warna."
+        },
+        "COMPOUND": {
+          "name": "Compound",
+          "hint": "Gabungan tetangga dan lawan. Kaya, tapi masih terkendali."
+        },
+        "SHADES": {
+          "name": "Shades",
+          "hint": "Warna yang sama persis, hanya kecerahannya berbeda. Paling aman untuk latar bertingkat."
+        },
+        "CUSTOM": {
+          "name": "Custom",
+          "hint": "Setiap warna digeser sendiri-sendiri. Mengubah warna selain warna dasar otomatis pindah ke sini."
+        }
+      },
+      "levels": {
+        "AAA": {
+          "name": "AAA",
+          "hint": "7 ke atas — nyaman untuk teks panjang"
+        },
+        "AA": {
+          "name": "AA",
+          "hint": "4,5 ke atas — cukup untuk teks biasa"
+        },
+        "AA_BESAR": {
+          "name": "AA besar",
+          "hint": "3 ke atas — hanya untuk judul besar"
+        },
+        "GAGAL": {
+          "name": "Gagal",
+          "hint": "di bawah 3 — jangan dipakai untuk tulisan"
+        }
+      },
+      "errors": {
+        "NAMA_KOSONG": "Beri nama paletnya dulu.",
+        "NAMA_TERLALU_PANJANG": "Nama palet paling panjang 60 huruf.",
+        "ATURAN_TIDAK_DIKENAL": "Aturan harmoninya tidak dikenal. Muat ulang halaman lalu coba lagi.",
+        "WARNA_TIDAK_SAH": "Ada kode warna yang tidak sah. Periksa kelima kode HEX.",
+        "TIDAK_DITEMUKAN": "Palet ini sudah dihapus orang lain.",
+        "TANPA_AKSES": "Anda tidak punya izin mengelola modul kreatif.",
+        "GAGAL": "Tidak bisa diproses. Coba lagi sebentar lagi."
+      }
+    }
   }
 }
