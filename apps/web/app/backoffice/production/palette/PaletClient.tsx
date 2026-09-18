@@ -398,7 +398,6 @@ export function PaletClient({
 
   const sumberLayar: SumberEkspor = { nama, aturan: palet.aturan, warna: hex, kain: palet.kain, porsi: palet.porsi };
 
-
   const pilihanAturan: readonly AturanHarmoni[] = berkain ? ATURAN_SABLON : ATURAN_HARMONI;
 
   return (
@@ -439,24 +438,6 @@ export function PaletClient({
         katalogTcx={katalogTcx}
       />
 
-      {palet.kain && (
-        <KartuRekomendasi
-          kainHex={palet.kain}
-          namaKain={namaKain}
-          katalogC={katalogC()}
-          hexTinta={hex}
-          kunci={kunci}
-          onKunci={setKunci}
-          dariGambar={komposisiGambar}
-          onBuangDariGambar={() => setWarnaReferensi(null)}
-          onJumlah={(n) => {
-            ubah((p) => ubahJumlahSablon(p, n, katalogC()));
-            setTerpilih((i) => Math.min(i, n - 1));
-          }}
-          onPakai={pakaiKomposisi}
-        />
-      )}
-
       <AmbilDariGambar
         berkain={berkain}
         onTiruKomposisi={berkain ? tiruDariGambar : undefined}
@@ -485,6 +466,24 @@ export function PaletClient({
           toast.success(berkain ? t('filledInks') : t('filledPalette'));
         }}
       />
+
+      {palet.kain && (
+        <KartuRekomendasi
+          kainHex={palet.kain}
+          namaKain={namaKain}
+          katalogC={katalogC()}
+          hexTinta={hex}
+          kunci={kunci}
+          onKunci={setKunci}
+          dariGambar={komposisiGambar}
+          onBuangDariGambar={() => setWarnaReferensi(null)}
+          onJumlah={(n) => {
+            ubah((p) => ubahJumlahSablon(p, n, katalogC()));
+            setTerpilih((i) => Math.min(i, n - 1));
+          }}
+          onPakai={pakaiKomposisi}
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">
         <div className="space-y-6">
