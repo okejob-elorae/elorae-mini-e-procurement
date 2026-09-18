@@ -1718,6 +1718,25 @@
         "GAGAL": "Pemetaan gagal disimpan. Coba lagi."
       }
     },
+    "design": {
+      "title": "Komposisi & variasi warna desain",
+      "description": "Dibaca otomatis dari gambar: warna terluas dianggap kain, sisanya tinta sablon beserta peran dan porsinya.",
+      "fabric": "Kain",
+      "share": "{percent}% gambar",
+      "inks": "Tinta ({count})",
+      "useOriginal": "Pakai warna asli",
+      "otherFabrics": "Desain ini di kain lain",
+      "otherFabricsLaris": "Kain yang laris di toko Anda.",
+      "otherFabricsUmum": "Kain yang umum dipakai — impor penjualan untuk memakai kain terlaris Anda.",
+      "otherAccents": "Aksen lain di kain ini",
+      "otherAccentsHint": "Hanya aksennya yang diganti; tinta netral dan tone-on-tone tetap.",
+      "accentTitle": "Aksen {name}",
+      "original": "Warna asli",
+      "use": "Pakai",
+      "applied": "Desain di kain {name} dipasang.",
+      "unreadable": "Gambar ini hanya berisi satu warna, jadi komposisinya belum bisa dibaca.",
+      "previewLabel": "Desain di kain {fabric}"
+    },
     "recommend": {
       "title": "Rekomendasi komposisi",
       "description": "Susunan tinta siap pakai untuk kain {fabric}. Klik Pakai untuk memasangnya — bisa diurungkan.",
@@ -1735,21 +1754,13 @@
       "sourceHints": {"LARIS": "Dari warna produk yang terjual 90 hari terakhir di toko Anda.", "TREN": "Tren umum pasar lokal — bukan data toko Anda.", "BAWAAN": "Tujuh warna sablon yang umum dipakai."},
       "shuffle": "Acak lagi",
       "styles": {"CERAH": "Cerah", "REDAM": "Redam"},
-      "fewerInImage": "Gambar ini hanya punya {count} tinta selain kainnya.",
       "use": "Pakai",
       "applied": "Komposisi “{name}” dipasang.",
-      "fromImage": "Dari gambar",
-      "fromImageAdded": "Komposisi gambar ditambahkan di Rekomendasi komposisi.",
-      "fromImageFailed": "Komposisinya belum terbaca. Tekan Tebak warna dominan dulu — warna terluas dianggap kain gambar.",
-      "dismiss": "Buang komposisi dari gambar",
       "empty": "Tidak ada komposisi yang terbaca jelas di kain ini.",
       "previewLabel": "{name} di kain {fabric}",
-      "mimic": "Tiru komposisinya ke kain ini",
-      "mimicHint": "Warna terluas dibaca sebagai kain gambar; peran dan porsi warna lainnya dipindah ke kain Anda.",
       "patterns": {
         "SATU": "Satu tinta — {role}",
-        "TONAL": "Tonal, {count} tingkat",
-        "DARI_GAMBAR": "Seperti gambar referensi"
+        "TONAL": "Tonal, {count} tingkat"
       },
       "roles": {
         "AKSEN": "Aksen",

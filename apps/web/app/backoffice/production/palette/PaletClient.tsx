@@ -52,7 +52,7 @@ import {
   ubahPorsiPalet,
   type Palet,
 } from '@/lib/production-colors/palet/keadaan';
-import { pantoneTerdekat, siapkanKatalog, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { hexKeLab, pantoneTerdekat, siapkanKatalog, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import dataPantoneC from '@/lib/production-colors/palet/pantone-c.json';
 import type { BarisPalet } from '@/lib/production-colors/palet/queries';
 import { svgKaos } from '@/lib/production-colors/palet/kaos-svg';
@@ -60,7 +60,8 @@ import { susunLembarPalet, type LembarPalet } from '@/lib/production-colors/pale
 import { BATAS_NAMA_PALET } from '@/lib/production-colors/palet/validasi';
 import { buildPaletWarnaPrintHtml } from '@/lib/print/palet-warna-html';
 import { hexKeHsb, hsbKeHex, normalisasiHex } from '@/lib/production-colors/palet/warna';
-import { tiruKomposisi, type Komposisi } from '@/lib/production-colors/sablon/komposisi';
+import type { Komposisi } from '@/lib/production-colors/sablon/komposisi';
+import { KAMUS_WARNA } from '@/lib/production-colors/sablon/nama-warna';
 import type { PemetaanWarna } from '@/lib/production-colors/sablon/pemetaan-warna';
 import { daftarKategori, hitungWarnaLaris, type BarisPenjualanWarna } from '@/lib/production-colors/sablon/warna-laris';
 import { ATURAN_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
@@ -73,6 +74,7 @@ import { buatGambarPalet, cetakHtml, namaBerkas, unduh } from './ekspor-palet';
 import { EditorWarna, type ModeMasukan } from './EditorWarna';
 import { IkonHarmoni } from './IkonHarmoni';
 import { KartuKain } from './KartuKain';
+import { KartuKomposisiDesain } from './KartuKomposisiDesain';
 import { KartuRekomendasi } from './KartuRekomendasi';
 import { HURUF_SABLON, KartuSablon } from './KartuSablon';
 import { KartuTintaDasar } from './KartuTintaDasar';
@@ -80,6 +82,10 @@ import { KartuWarnaLaris } from './KartuWarnaLaris';
 import { KisiKontras } from './KisiKontras';
 import { RodaWarna } from './RodaWarna';
 import { TombolEkspor } from './TombolEkspor';
+
+/** Kain dan aksen pengganti untuk desain yang diunggah, selama belum ada data penjualan. */
+const KAIN_UMUM = ['hitam', 'putih', 'broken-white', 'navy', 'army', 'mocca', 'abu-misty', 'maroon'];
+const AKSEN_UMUM = ['terracotta', 'mustard', 'sage', 'dusty-pink', 'tosca', 'biru'];
 
 /** Titik mulai kalau warna tema terlalu pudar atau gelap untuk menjadi dasar. */
 const WARNA_AWAL = '#e8553d';
@@ -182,7 +188,7 @@ export function PaletClient({
     [penjualanWarna, pemetaan, kategoriLaris],
   );
   const kategoriTersedia = useMemo(() => daftarKategori(penjualanWarna), [penjualanWarna]);
-  /** Warna dominan gambar referensi; komposisinya dihitung ulang tiap kali kain berganti. */
+  /** Warna dominan gambar yang diunggah, dibaca otomatis — dasar kartu komposisi desain. */
   const [warnaReferensi, setWarnaReferensi] = useState<{ hex: string; bagian: number }[] | null>(null);
   const [beratTeks, setBeratTeks] = useState('1000');
   const [tinta, setTinta] = useState<TintaDasar[]>(tintaDasar);
@@ -193,13 +199,39 @@ export function PaletClient({
     setPaletSendiri((p) => berikut(p ?? awal));
   }
 
-  const komposisiGambar = useMemo(
+  /*
+   * Kandidat pengganti untuk desain yang diunggah: kain dan aksen dari warna
+   * yang laku di toko; tanpa data penjualan, dari kamus warna pasar lokal.
+   */
+  const larisCukup = hasilLaris.laris.length >= 3;
+  const kainKandidat = useMemo(
     () =>
-      warnaReferensi && palet.kain
-        ? tiruKomposisi({ gambar: warnaReferensi, kainHex: palet.kain, katalog: katalogC(), jumlah: palet.warna.length })
-        : null,
-    [warnaReferensi, palet.kain, palet.warna.length],
+      larisCukup
+        ? hasilLaris.laris.slice(0, 8).map((w) => ({ hex: w.hex, label: w.label }))
+        : KAIN_UMUM.flatMap((k) => KAMUS_WARNA.filter((w) => w.kunci === k).map((w) => ({ hex: w.hex, label: w.label }))),
+    [larisCukup, hasilLaris],
   );
+  const aksenKandidat = useMemo(() => {
+    const berpigmen = (hex: string) => {
+      const [, a, b] = hexKeLab(hex);
+      return Math.hypot(a, b) >= 15;
+    };
+    const dariLaris = hasilLaris.laris.filter((w) => berpigmen(w.hex)).map((w) => ({ hex: w.hex, label: w.label }));
+    return dariLaris.length >= 3
+      ? dariLaris.slice(0, 6)
+      : AKSEN_UMUM.flatMap((k) => KAMUS_WARNA.filter((w) => w.kunci === k).map((w) => ({ hex: w.hex, label: w.label })));
+  }, [hasilLaris]);
+
+  /** Desain di kain lain: kain dan tintanya dipasang sekaligus — bisa diurungkan. */
+  function pakaiVariasiDesain(kainHex: string, k: Komposisi, kainLabel: string) {
+    const sebelum = palet;
+    setPaletSendiri(terapkanKomposisi(pasangKain(sebelum, kainHex, katalogC()), k));
+    setKainTerakhir(kainHex);
+    setTerpilih(0);
+    toast.success(t('design.applied', { name: kainLabel }), {
+      action: { label: t('undo'), onClick: () => setPaletSendiri(sebelum) },
+    });
+  }
 
   /** Memasang komposisi menimpa tinta yang ada — jadi selalu bisa diurungkan. */
   function pakaiKomposisi(k: Komposisi, judul: string) {
@@ -209,17 +241,6 @@ export function PaletClient({
     toast.success(t('recommend.applied', { name: judul }), {
       action: { label: t('undo'), onClick: () => setPaletSendiri(sebelum) },
     });
-  }
-
-  function tiruDariGambar(warna: { hex: string; bagian: number }[]) {
-    if (!palet.kain || !tiruKomposisi({ gambar: warna, kainHex: palet.kain, katalog: katalogC() })) {
-      toast.error(t('recommend.fromImageFailed'));
-      return;
-    }
-    setWarnaReferensi(warna);
-    toast.success(t('recommend.fromImageAdded'));
-    const hemat = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    document.getElementById('rekomendasi')?.scrollIntoView({ behavior: hemat ? 'auto' : 'smooth', block: 'start' });
   }
 
   /** Memilih aturan menimpa warna sablon yang sudah disunting — jadi selalu bisa diurungkan. */
@@ -488,7 +509,7 @@ export function PaletClient({
 
       <AmbilDariGambar
         berkain={berkain}
-        onTiruKomposisi={berkain ? tiruDariGambar : undefined}
+        onAnalisis={setWarnaReferensi}
         labelTerpilih={labelWarna(terpilih)}
         katalogC={katalogC()}
         katalogTcx={katalogTcx}
@@ -515,6 +536,18 @@ export function PaletClient({
         }}
       />
 
+      {warnaReferensi && (
+        <KartuKomposisiDesain
+          warnaGambar={warnaReferensi}
+          katalogC={katalogC()}
+          katalogTcx={katalogTcx}
+          kainKandidat={kainKandidat}
+          kainDariPenjualan={larisCukup}
+          aksenKandidat={aksenKandidat}
+          onPakai={pakaiVariasiDesain}
+        />
+      )}
+
       {palet.kain && (
         <KartuRekomendasi
           warnaLaris={hasilLaris.laris}
@@ -524,8 +557,6 @@ export function PaletClient({
           hexTinta={hex}
           kunci={kunci}
           onKunci={setKunci}
-          dariGambar={komposisiGambar}
-          onBuangDariGambar={() => setWarnaReferensi(null)}
           onJumlah={(n) => {
             ubah((p) => ubahJumlahSablon(p, n, katalogC()));
             setTerpilih((i) => Math.min(i, n - 1));

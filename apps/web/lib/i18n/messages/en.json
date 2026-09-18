@@ -1718,6 +1718,25 @@
         "GAGAL": "The mapping could not be saved. Try again."
       }
     },
+    "design": {
+      "title": "Design composition & colourways",
+      "description": "Read automatically from the image: the largest colour is taken as the fabric, the rest as print inks with their roles and shares.",
+      "fabric": "Fabric",
+      "share": "{percent}% of image",
+      "inks": "Inks ({count})",
+      "useOriginal": "Use the original colours",
+      "otherFabrics": "This design on other fabrics",
+      "otherFabricsLaris": "Fabrics that sell well in your store.",
+      "otherFabricsUmum": "Commonly used fabrics — import sales to use your best-selling fabrics.",
+      "otherAccents": "Other accents on this fabric",
+      "otherAccentsHint": "Only the accent changes; neutral and tone-on-tone inks stay.",
+      "accentTitle": "{name} accent",
+      "original": "Original colours",
+      "use": "Use",
+      "applied": "Design on {name} fabric applied.",
+      "unreadable": "This image has only one colour, so its composition can't be read yet.",
+      "previewLabel": "Design on {fabric} fabric"
+    },
     "recommend": {
       "title": "Recommended compositions",
       "description": "Ready-to-use ink sets for {fabric} fabric. Click Use to apply one — you can undo it.",
@@ -1735,21 +1754,13 @@
       "sourceHints": {"LARIS": "From the product colours sold in your store over the last 90 days.", "TREN": "General local market trend — not your store's data.", "BAWAAN": "Seven commonly used print colours."},
       "shuffle": "Shuffle",
       "styles": {"CERAH": "Bright", "REDAM": "Muted"},
-      "fewerInImage": "This image only has {count, plural, one {# ink} other {# inks}} besides its fabric.",
       "use": "Use",
       "applied": "Composition “{name}” applied.",
-      "fromImage": "From image",
-      "fromImageAdded": "The image's composition was added to Recommended compositions.",
-      "fromImageFailed": "The composition could not be read yet. Press Guess dominant colours first — the largest colour is taken as the image's fabric.",
-      "dismiss": "Remove the composition from the image",
       "empty": "No composition reads clearly enough on this fabric.",
       "previewLabel": "{name} on {fabric} fabric",
-      "mimic": "Copy its composition to this fabric",
-      "mimicHint": "The largest colour is read as the image's fabric; the roles and shares of the others move to your fabric.",
       "patterns": {
         "SATU": "One ink — {role}",
-        "TONAL": "Tonal, {count} steps",
-        "DARI_GAMBAR": "Like the reference image"
+        "TONAL": "Tonal, {count} steps"
       },
       "roles": {
         "AKSEN": "Accent",

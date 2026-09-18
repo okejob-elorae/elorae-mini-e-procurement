@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import dataC from '../palet/pantone-c.json';
 import { deltaE2000, hexKeLab, siapkanKatalog } from '../palet/pantone';
-import { galeriKomposisi, tiruKomposisi, type Komposisi, type PeranKomposisi } from './komposisi';
+import { bacaKomposisiDesain, galeriKomposisi, tiruKomposisi, variasiDesain, type Komposisi, type PeranKomposisi } from './komposisi';
 import { PORSI_AWAL } from './saran';
 
 const KATALOG = siapkanKatalog('C', dataC as [string, string][]);
@@ -280,9 +280,106 @@ describe('tiruKomposisi', () => {
     expect(k.tinta.map((t) => t.porsi)).toEqual([51, 49]);
   });
 
-  it('mengabaikan remah warna di bawah 2% dan menolak gambar tanpa tinta', () => {
-    const k = tiruKomposisi({ gambar: [...referensi, { hex: '#ff00ff', bagian: 0.01 }], kainHex: HITAM, katalog: KATALOG })!;
+  it('mengabaikan remah warna di bawah 1% dan menolak gambar tanpa tinta', () => {
+    const k = tiruKomposisi({ gambar: [...referensi, { hex: '#ff00ff', bagian: 0.005 }], kainHex: HITAM, katalog: KATALOG })!;
     expect(k.tinta).toHaveLength(3);
     expect(tiruKomposisi({ gambar: [{ hex: HITAM, bagian: 1 }], kainHex: HITAM, katalog: KATALOG })).toBeNull();
+  });
+});
+
+describe('bacaKomposisiDesain dan variasiDesain', () => {
+  // Desain di kaos krem: teks hitam, garis putih, bayangan taupe tone-on-tone, sedikit aksen zaitun.
+  const KREM = '#cfc8b6';
+  const desain = [
+    { hex: KREM, bagian: 0.55 },
+    { hex: '#1a1a1a', bagian: 0.18 },
+    { hex: '#f3f1ea', bagian: 0.12 },
+    { hex: '#a39e8e', bagian: 0.1 },
+    { hex: '#7d8a2e', bagian: 0.05 },
+  ];
+  const analisis = bacaKomposisiDesain(desain)!;
+
+  it('membaca kain, peran, dan porsi tiap tinta — hitam dan putih tetap netral walau dekat dengan kain', () => {
+    expect(analisis.kain).toEqual({ hex: KREM, bagian: 0.55 });
+    expect(analisis.tinta.map((t) => t.peran)).toEqual(['NETRAL', 'NETRAL', 'NADA', 'AKSEN']);
+    expect(analisis.tinta.map((t) => t.porsi)).toEqual([40, 27, 22, 11]);
+  });
+
+  it('di kain aslinya, warna desain kembali (dibulatkan ke Pantone C)', () => {
+    const k = variasiDesain({ analisis, kainHex: KREM, katalog: KATALOG })!;
+    expect(k.tinta.map((t) => t.peran)).toEqual(['NETRAL', 'NETRAL', 'NADA', 'AKSEN']);
+    desain.slice(1).forEach((d, i) => expect(deltaE2000(hexKeLab(k.tinta[i].hex), hexKeLab(d.hex)), d.hex).toBeLessThan(8));
+  });
+
+  it('di kaos hitam, teks hitam berbalik terang dan semua tinta tetap terlihat', () => {
+    const k = variasiDesain({ analisis, kainHex: HITAM, katalog: KATALOG })!;
+    expect(k.tinta.map((t) => t.peran)).toEqual(['NETRAL', 'NETRAL', 'NADA', 'AKSEN']);
+    expect(L(k.tinta[0].hex)).toBeGreaterThan(75);
+    for (const t of k.tinta) expect(Math.abs(L(t.hex) - L(HITAM)), t.hex).toBeGreaterThanOrEqual(5);
+    periksaBentuk(k);
+  });
+
+  it('aksen bisa diganti tanpa menyentuh tinta lain', () => {
+    const asli = variasiDesain({ analisis, kainHex: KREM, katalog: KATALOG })!;
+    const k = variasiDesain({ analisis, kainHex: KREM, katalog: KATALOG, aksenBaru: '#b0573a' })!;
+    expect(k.tinta.slice(0, 3).map((t) => t.hex)).toEqual(asli.tinta.slice(0, 3).map((t) => t.hex));
+    expect(jarakRona(rona(k.tinta[3].hex), rona('#b0573a'))).toBeLessThan(25);
+    expect(k.id).not.toBe(asli.id);
+  });
+
+  /*
+   * Desain kecil dengan huruf tipis: teks hitam hanya 1% gambar, sisanya
+   * tersebar sebagai warna tepian — abu di antara hitam dan kain, krem muda di
+   * antara putih dan kain. Tepian itu bukan tinta; ia digabung ke tintanya,
+   * supaya teks hitam tetap terbaca sebagai hitam.
+   */
+  it('menggabungkan warna tepian ke tintanya, jadi huruf hitam yang tipis tetap terbaca hitam', () => {
+    const a = bacaKomposisiDesain([
+      { hex: '#c9c0b0', bagian: 0.83 },
+      { hex: '#ab9e8e', bagian: 0.081 },
+      { hex: '#fdfbf6', bagian: 0.035 },
+      { hex: '#6a6358', bagian: 0.019 },
+      { hex: '#ded8ce', bagian: 0.017 },
+      { hex: '#3a342c', bagian: 0.011 },
+      { hex: '#0c0705', bagian: 0.007 },
+    ])!;
+    expect(a.tinta.map((t) => t.hex)).toEqual(['#ab9e8e', '#fdfbf6', '#0c0705']);
+    expect(a.tinta.map((t) => t.peran)).toEqual(['NADA', 'NETRAL', 'NETRAL']);
+    expect(a.tinta[2].bagian).toBeCloseTo(0.037, 6);
+    expect(a.tinta[1].bagian).toBeCloseTo(0.052, 6);
+  });
+
+  it('membaca desain krem yang sama setelah profil warnanya diterapkan peramban', () => {
+    const a = bacaKomposisiDesain([
+      { hex: '#d4c8b7', bagian: 0.8345 },
+      { hex: '#bca999', bagian: 0.0766 },
+      { hex: '#fbf8f3', bagian: 0.0416 },
+      { hex: '#72675b', bagian: 0.018 },
+      { hex: '#9f9589', bagian: 0.0125 },
+      { hex: '#3f362b', bagian: 0.0094 },
+      { hex: '#0b0603', bagian: 0.0074 },
+    ])!;
+    expect(a.tinta.map((t) => [t.hex, t.peran])).toEqual([
+      ['#bca999', 'NADA'],
+      ['#0b0603', 'NETRAL'],
+      ['#fbf8f3', 'NETRAL'],
+    ]);
+    expect(a.tinta[1].bagian).toBeCloseTo(0.0473, 6);
+  });
+
+  it('tone-on-tone kecil yang dekat kain tidak ikut digabung ke hitam', () => {
+    const a = bacaKomposisiDesain([
+      { hex: '#c9c0b0', bagian: 0.9 },
+      { hex: '#0c0705', bagian: 0.08 },
+      { hex: '#ab9e8e', bagian: 0.02 },
+    ])!;
+    expect(a.tinta.map((t) => [t.hex, t.peran])).toEqual([
+      ['#0c0705', 'NETRAL'],
+      ['#ab9e8e', 'NADA'],
+    ]);
+  });
+
+  it('gambar tanpa tinta tidak bisa dibaca', () => {
+    expect(bacaKomposisiDesain([{ hex: KREM, bagian: 1 }])).toBeNull();
   });
 });

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Lock, Shuffle, X } from 'lucide-react';
+import { Lock, Shuffle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,6 @@ import { galeriKomposisi, type GayaKomposisi, type Komposisi } from '@/lib/produ
 import { KAMUS_WARNA } from '@/lib/production-colors/sablon/nama-warna';
 import type { WarnaLaris } from '@/lib/production-colors/sablon/warna-laris';
 import { HURUF_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
-import { cn } from '@/lib/utils';
 
 const TANPA_KUNCI = '-';
 
@@ -35,8 +34,6 @@ export function KartuRekomendasi({
   hexTinta,
   kunci,
   onKunci,
-  dariGambar,
-  onBuangDariGambar,
   onJumlah,
   onPakai,
   warnaLaris,
@@ -48,8 +45,6 @@ export function KartuRekomendasi({
   hexTinta: string[];
   kunci: string | null;
   onKunci: (hex: string | null) => void;
-  dariGambar: Komposisi | null;
-  onBuangDariGambar: () => void;
   /** Mengubah jumlah tinta palet — rekomendasi mengikuti. */
   onJumlah: (n: number) => void;
   onPakai: (k: Komposisi, judul: string) => void;
@@ -76,11 +71,10 @@ export function KartuRekomendasi({
     () => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunci, jumlah, gaya, aksen, acak }),
     [kainHex, katalogC, kunci, jumlah, gaya, aksen, acak],
   );
-  const daftar = dariGambar ? [dariGambar, ...galeri] : galeri;
+  const daftar = galeri;
 
   /** Judul dari peran tintanya: empat tinta klasik berbunyi "Netral + Aksen + Tone-on-tone + Aksen 2". */
   const judul = (k: Komposisi) => {
-    if (k.pola === 'DARI_GAMBAR') return t('patterns.DARI_GAMBAR');
     if (k.pola === 'TONAL') return t('patterns.TONAL', { count: k.tinta.length });
     if (k.pola === 'SATU') return t('patterns.SATU', { role: t(`roles.${k.tinta[0].peran}`) });
     return [...new Set(k.tinta.map((x) => x.peran))].map((p) => t(`roles.${p}`)).join(' + ');
@@ -185,23 +179,14 @@ export function KartuRekomendasi({
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             {daftar.map((k, i) => {
               const nama = judul(k);
-              const gambar = k.pola === 'DARI_GAMBAR';
               return (
-                <li key={k.id} className={cn('flex min-w-0 flex-col gap-3 rounded-lg border p-3', gambar && 'border-primary ring-1 ring-primary')}>
+                <li key={k.id} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm leading-tight font-medium">{nama}</p>
                     {k.gaya && (
                       <Badge variant="outline" className="shrink-0">
                         {t(`styles.${k.gaya}`)}
                       </Badge>
-                    )}
-                    {gambar && (
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Badge variant="secondary">{t('fromImage')}</Badge>
-                        <Button type="button" variant="ghost" size="icon-xs" aria-label={t('dismiss')} onClick={onBuangDariGambar}>
-                          <X />
-                        </Button>
-                      </div>
                     )}
                   </div>
                   <div
@@ -217,9 +202,6 @@ export function KartuRekomendasi({
                       }),
                     }}
                   />
-                  {gambar && k.tinta.length < jumlah && (
-                    <p className="text-xs text-muted-foreground">{t('fewerInImage', { count: k.tinta.length })}</p>
-                  )}
                   <ul className="space-y-1 text-xs">
                     {k.tinta.map((x, j) => (
                       <li key={`${x.hex}-${j}`} className="flex items-center gap-2">
@@ -234,7 +216,7 @@ export function KartuRekomendasi({
                       </li>
                     ))}
                   </ul>
-                  <Button type="button" size="sm" variant={gambar ? 'default' : 'outline'} className="mt-auto" onClick={() => onPakai(k, nama)}>
+                  <Button type="button" size="sm" variant="outline" className="mt-auto" onClick={() => onPakai(k, nama)}>
                     {t('use')}
                   </Button>
                 </li>

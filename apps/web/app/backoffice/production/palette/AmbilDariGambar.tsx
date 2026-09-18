@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type DragEvent, type PointerEvent } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { ImageUp, Shuffle, Sparkles, X } from 'lucide-react';
+import { ImageUp, Sparkles, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -41,7 +41,7 @@ export function AmbilDariGambar({
   onJadikanKain,
   onPakaiUntukTerpilih,
   onIsiPalet,
-  onTiruKomposisi,
+  onAnalisis,
   onSalin,
 }: {
   berkain: boolean;
@@ -51,8 +51,8 @@ export function AmbilDariGambar({
   onJadikanKain: (hex: string) => void;
   onPakaiUntukTerpilih: (hex: string) => void;
   onIsiPalet: (warna: { hex: string; bagian?: number }[]) => void;
-  /** Hanya untuk palet berkain: pindahkan komposisi gambar (peran dan porsi) ke kain yang dipilih. */
-  onTiruKomposisi?: (warna: { hex: string; bagian: number }[]) => void;
+  /** Warna dominan gambar, dibaca otomatis tiap gambar dimuat (`null` saat gambar dilepas) — untuk membaca komposisi desainnya. */
+  onAnalisis?: (warna: { hex: string; bagian: number }[] | null) => void;
   onSalin: (teks: string) => void;
 }) {
   const t = useTranslations('productionPalette');
@@ -163,6 +163,8 @@ export function AmbilDariGambar({
     dataRef.current = ctx.getImageData(0, 0, kanvas.width, kanvas.height);
     setUkuran({ w: kanvas.width, h: kanvas.height });
     setSiap(true);
+    // Komposisi desain dibaca langsung, tanpa menunggu orang menekan Tebak.
+    onAnalisis?.(warnaDominan(dataRef.current.data, { jumlah: 8 }).map((w) => ({ hex: w.hex, bagian: w.bagian })));
   }
 
   function titikKanvas(e: PointerEvent<HTMLCanvasElement>) {
@@ -239,6 +241,7 @@ export function AmbilDariGambar({
   }
 
   function lepasGambar() {
+    onAnalisis?.(null);
     muatKeRef.current += 1;
     sumberRef.current = null;
     setProfil(null);
@@ -251,8 +254,6 @@ export function AmbilDariGambar({
   }
 
   const kurangLima = !berkain && terambil.length < 5;
-  // Hanya hasil tebakan yang membawa luas — komposisi dibaca dari luas itu.
-  const denganLuas = terambil.flatMap((w) => (w.bagian !== undefined ? [{ hex: w.hex, bagian: w.bagian }] : []));
 
   return (
     <Card>
@@ -451,15 +452,6 @@ export function AmbilDariGambar({
                     {berkain ? t('fillInks') : t('fillPalette')}
                   </Button>
                   {kurangLima && <p className="text-xs text-muted-foreground">{t('needFive', { count: terambil.length })}</p>}
-                  {onTiruKomposisi && denganLuas.length >= 2 && (
-                    <div className="space-y-1 pt-1">
-                      <Button type="button" variant="outline" className="w-full" onClick={() => onTiruKomposisi(denganLuas)}>
-                        <Shuffle className="h-4 w-4" />
-                        {t('recommend.mimic')}
-                      </Button>
-                      <p className="text-xs text-muted-foreground">{t('recommend.mimicHint')}</p>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
