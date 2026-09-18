@@ -18,6 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/ui/page-header';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -36,6 +37,7 @@ import {
   dariTersimpan,
   gantiHexPalet,
   geserPeganganPalet,
+  geserSemuaTinta,
   hapusWarnaSablon,
   isiDariGambar,
   lepasKain,
@@ -161,6 +163,8 @@ export function PaletClient({
     () => tcx.find(([kode]) => kode === KAIN_AWAL)?.[1].toLowerCase() ?? KAIN_CADANGAN,
   );
   const [maksTinta, setMaksTinta] = useState(3);
+  /** Di palet berkain, menggeser satu tinta memutar semuanya — seperti harmoni di roda Adobe. */
+  const [tintaTerhubung, setTintaTerhubung] = useState(true);
   /** Warna yang wajib ada di setiap rekomendasi komposisi. */
   const [kunci, setKunci] = useState<string | null>(null);
   /** Warna dominan gambar referensi; komposisinya dihitung ulang tiap kali kain berganti. */
@@ -516,11 +520,22 @@ export function PaletClient({
                 <p className="min-h-[3.75rem] text-sm text-muted-foreground">{t(`rules.${palet.aturan}.hint`)}</p>
               </div>
 
+              {berkain && (
+                <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                  <div className="min-w-0">
+                    <Label htmlFor="tinta-terhubung">{t('linkInks')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('linkInksHint')}</p>
+                  </div>
+                  <Switch id="tinta-terhubung" checked={tintaTerhubung} onCheckedChange={setTintaTerhubung} />
+                </div>
+              )}
+
               <RodaWarna
                 warna={palet.warna}
                 terpilih={terpilih}
                 onPilih={setTerpilih}
-                onGeser={(i, h, s) => ubah((p) => geserPeganganPalet(p, i, h, s))}
+                onGeser={(i, h, s) => ubah((p) => (berkain && tintaTerhubung ? geserSemuaTinta(p, i, h, s) : geserPeganganPalet(p, i, h, s)))}
+                terhubung={berkain && tintaTerhubung}
                 indeksDasar={berkain ? null : INDEKS_DASAR}
                 kain={palet.kain ? { hex: palet.kain, label: t('fabricMarker', { hex: palet.kain.toUpperCase() }) } : null}
                 labelPegangan={(i, kode) =>
@@ -533,7 +548,13 @@ export function PaletClient({
               />
 
               <p className="text-center text-xs text-muted-foreground">
-                {berkain ? t('inkDragHint') : palet.aturan === 'CUSTOM' ? t('customHint') : t('dragHint')}
+                {berkain
+                  ? tintaTerhubung
+                    ? t('inkDragHintLinked')
+                    : t('inkDragHint')
+                  : palet.aturan === 'CUSTOM'
+                    ? t('customHint')
+                    : t('dragHint')}
               </p>
 
               <div className="space-y-2">

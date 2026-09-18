@@ -8,6 +8,7 @@ import {
   JUMLAH_SABLON_AWAL,
   dariTersimpan,
   gantiHexPalet,
+  geserSemuaTinta,
   geserPeganganPalet,
   hapusWarnaSablon,
   isiDariGambar,
@@ -303,5 +304,37 @@ describe('terapkanKomposisi', () => {
     expect(terapkanKomposisi(b, komposisi)).toBe(b);
     const k = pasangKain(b, NAVY, KATALOG);
     expect(terapkanKomposisi(k, { tinta: [] })).toBe(k);
+  });
+});
+
+describe('geserSemuaTinta', () => {
+  const selisih = (a: number, b: number) => (((a - b) % 360) + 360) % 360;
+
+  it('memutar semua tinta bersama dan menskalakan kepekatannya, jarak antartinta tetap', () => {
+    const awal = pasangKain(bebas(), NAVY, KATALOG);
+    const [a, b, c] = awal.warna;
+    const p = geserSemuaTinta(awal, 1, b.h + 40, b.s * 0.5);
+    expect(p.warna[1].h).toBeCloseTo((b.h + 40) % 360, 6);
+    expect(selisih(p.warna[0].h, p.warna[1].h)).toBeCloseTo(selisih(a.h, b.h), 6);
+    expect(selisih(p.warna[2].h, p.warna[1].h)).toBeCloseTo(selisih(c.h, b.h), 6);
+    expect(p.warna[0].s).toBeCloseTo(a.s * 0.5, 6);
+    expect(p.warna[2].s).toBeCloseTo(c.s * 0.5, 6);
+    expect(p.warna.map((w) => w.b)).toEqual(awal.warna.map((w) => w.b));
+    expect(p.kain).toBe(NAVY);
+    expect(p.porsi).toEqual(awal.porsi);
+    expect(p.saranUtuh).toBe(false);
+  });
+
+  it('tinta abu-abu (tanpa kepekatan) tidak membuat skala tak terhingga', () => {
+    const awal = gantiHexPalet(pasangKain(bebas(), NAVY, KATALOG), 0, '#808080');
+    const p = geserSemuaTinta(awal, 0, 90, 0.6);
+    expect(p.warna[0].s).toBeCloseTo(0.6, 6);
+    expect(p.warna[1].s).toBeCloseTo(awal.warna[1].s, 6);
+    expect(p.warna.every((w) => Number.isFinite(w.s) && w.s >= 0 && w.s <= 1)).toBe(true);
+  });
+
+  it('di palet bebas sama dengan menggeser pegangan biasa', () => {
+    const b = bebas();
+    expect(geserSemuaTinta(b, 0, 123, 0.7)).toEqual(geserPeganganPalet(b, 0, 123, 0.7));
   });
 });

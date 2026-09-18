@@ -162,6 +162,31 @@ export function geserPeganganPalet(p: Palet, indeks: number, h: number, s: numbe
   return sunting(p, indeks, { ...p.warna[indeks], h: putarSudut(h), s: Math.min(1, Math.max(0, s)) });
 }
 
+/**
+ * Tinta berkain yang terhubung: menggeser satu pegangan memutar SEMUA tinta
+ * dengan sudut yang sama, dan jaraknya ke tengah menskalakan kepekatan semua
+ * tinta sebanding — jarak antartinta di roda tetap, seperti harmoni di Adobe.
+ * Kain tidak ikut berputar: ia kainnya, bukan tinta.
+ */
+export function geserSemuaTinta(p: Palet, indeks: number, h: number, s: number): Palet {
+  if (p.kain === null) return geserPeganganPalet(p, indeks, h, s);
+  const acuan = p.warna[indeks];
+  if (!acuan) return p;
+  const dh = h - acuan.h;
+  const pekat = Math.min(1, Math.max(0, s));
+  // Tinta abu-abu tidak punya kepekatan untuk dijadikan pembanding.
+  const faktor = acuan.s > 0.02 ? pekat / acuan.s : null;
+  return {
+    ...p,
+    warna: p.warna.map((w, i) =>
+      i === indeks
+        ? { ...w, h: putarSudut(h), s: pekat }
+        : { ...w, h: putarSudut(w.h + dh), s: faktor === null ? w.s : Math.min(1, Math.max(0, w.s * faktor)) },
+    ),
+    saranUtuh: false,
+  };
+}
+
 export function ubahKecerahanPalet(p: Palet, indeks: number, b: number): Palet {
   if (p.kain === null) return lewatHarmoni(p, (k) => ubahKecerahan(k, indeks, b));
   return sunting(p, indeks, { ...p.warna[indeks], b: Math.min(1, Math.max(0, b)) });

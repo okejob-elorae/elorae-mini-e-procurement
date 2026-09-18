@@ -62,6 +62,7 @@ export function RodaWarna({
   labelPegangan,
   indeksDasar = INDEKS_DASAR,
   kain = null,
+  terhubung = false,
 }: {
   warna: Hsb[];
   terpilih: number;
@@ -72,6 +73,8 @@ export function RodaWarna({
   indeksDasar?: number | null;
   /** Warna kain, digambar sebagai penanda yang tidak bisa digeser — ia titik acuan, bukan tinta. */
   kain?: { hex: string; label: string } | null;
+  /** Tinta bergerak bersama: pegangan dihubungkan garis, supaya terlihat sebagai satu bentuk. */
+  terhubung?: boolean;
 }) {
   const kanvasRef = useRef<HTMLCanvasElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -178,6 +181,24 @@ export function RodaWarna({
           <line key={`garis-${i}`} x1={PUSAT} y1={PUSAT} x2={p.x} y2={p.y} stroke="white" strokeWidth={2.5} strokeLinecap="round" />
         ))}
         <circle cx={PUSAT} cy={PUSAT} r={6} fill="white" stroke="rgba(0,0,0,0.3)" strokeWidth={2} />
+
+        {terhubung &&
+          warna.length > 1 &&
+          (() => {
+            // Urut menurut sudut, supaya garisnya membentuk bangun (segitiga triad, dll.), bukan zig-zag.
+            const titik = warna
+              .map((w, i) => ({ h: w.h, p: titikPegangan[i] }))
+              .sort((a, b) => a.h - b.h)
+              .map(({ p }) => `${p.x},${p.y}`)
+              .join(' ');
+            const Bentuk = warna.length > 2 ? 'polygon' : 'polyline';
+            return (
+              <g className="pointer-events-none" fill="none" strokeLinejoin="round">
+                <Bentuk points={titik} stroke="rgba(0,0,0,0.3)" strokeWidth={5} />
+                <Bentuk points={titik} stroke="white" strokeWidth={2} strokeDasharray="10 7" />
+              </g>
+            );
+          })()}
 
         {kain &&
           (() => {
