@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Lock, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { svgKaos } from '@/lib/production-colors/palet/kaos-svg';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
-import { galeriKomposisi, type Komposisi } from '@/lib/production-colors/sablon/komposisi';
+import { galeriKomposisi, type GayaKomposisi, type Komposisi } from '@/lib/production-colors/sablon/komposisi';
 import { HURUF_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
 import { cn } from '@/lib/utils';
 
@@ -49,9 +49,10 @@ export function KartuRekomendasi({
 }) {
   const t = useTranslations('productionPalette.recommend');
   const jumlah = hexTinta.length;
+  const [gaya, setGaya] = useState<GayaKomposisi | 'SEMUA'>('SEMUA');
   const galeri = useMemo(
-    () => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunci, jumlah }),
-    [kainHex, katalogC, kunci, jumlah],
+    () => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunci, jumlah, gaya }),
+    [kainHex, katalogC, kunci, jumlah, gaya],
   );
   const daftar = dariGambar ? [dariGambar, ...galeri] : galeri;
 
@@ -96,6 +97,21 @@ export function KartuRekomendasi({
               </SelectContent>
             </Select>
           </div>
+          <div className="w-36 space-y-1">
+            <Label htmlFor="gaya-rekomendasi" className="text-xs">
+              {t('style')}
+            </Label>
+            <Select value={gaya} onValueChange={(v) => setGaya(v as GayaKomposisi | 'SEMUA')}>
+              <SelectTrigger id="gaya-rekomendasi" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="SEMUA">{t('styleAll')}</SelectItem>
+                <SelectItem value="CERAH">{t('styles.CERAH')}</SelectItem>
+                <SelectItem value="REDAM">{t('styles.REDAM')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="max-w-64 min-w-52 flex-1 space-y-1">
             <Label htmlFor="kunci-warna" className="text-xs">
               <Lock className="h-3 w-3" />
@@ -128,6 +144,11 @@ export function KartuRekomendasi({
                 <li key={k.id} className={cn('flex min-w-0 flex-col gap-3 rounded-lg border p-3', gambar && 'border-primary ring-1 ring-primary')}>
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm leading-tight font-medium">{nama}</p>
+                    {k.gaya && (
+                      <Badge variant="outline" className="shrink-0">
+                        {t(`styles.${k.gaya}`)}
+                      </Badge>
+                    )}
                     {gambar && (
                       <div className="flex shrink-0 items-center gap-1">
                         <Badge variant="secondary">{t('fromImage')}</Badge>

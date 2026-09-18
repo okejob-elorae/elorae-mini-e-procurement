@@ -1695,6 +1695,9 @@
       "lockHint": "Warna yang dikunci muncul di setiap rekomendasi.",
       "count": "Jumlah tinta",
       "countOption": "{count} tinta",
+      "style": "Gaya",
+      "styleAll": "Semua gaya",
+      "styles": {"CERAH": "Cerah", "REDAM": "Redam"},
       "fewerInImage": "Gambar ini hanya punya {count} tinta selain kainnya.",
       "use": "Pakai",
       "applied": "Komposisi “{name}” dipasang.",
@@ -1713,7 +1716,7 @@
       },
       "roles": {
         "AKSEN": "Aksen",
-        "AKSEN_2": "Aksen 2", "AKSEN_3": "Aksen 3",
+        "AKSEN_2": "Aksen 2", "AKSEN_3": "Aksen 3", "AKSEN_TUA": "Aksen tua",
         "NETRAL": "Netral",
         "NADA": "Tone-on-tone",
         "TONAL": "Tonal"

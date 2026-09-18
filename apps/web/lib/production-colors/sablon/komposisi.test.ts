@@ -28,6 +28,7 @@ function periksaKeterbacaan(k: Komposisi, kain: string) {
       AKSEN: [20, 100],
       AKSEN_2: [20, 100],
       AKSEN_3: [20, 100],
+      AKSEN_TUA: [20, 100],
       NETRAL: [20, 100],
       NADA: [5, 28],
       TONAL: [12, 100],
@@ -82,7 +83,7 @@ describe('galeriKomposisi — kain netral (hitam)', () => {
 
   it('memberi beberapa pilihan siap pakai, masing-masing bisa dicetak', () => {
     expect(galeri.length).toBeGreaterThanOrEqual(6);
-    expect(galeri.length).toBeLessThanOrEqual(9);
+    expect(galeri.length).toBeLessThanOrEqual(12);
     expect(new Set(galeri.map((k) => k.id)).size).toBe(galeri.length);
     for (const k of galeri) {
       periksaBentuk(k);
@@ -110,6 +111,58 @@ describe('galeriKomposisi — kain netral (hitam)', () => {
       periksaKeterbacaan(k, PUTIH);
       for (const t of k.tinta) if (t.peran !== 'NADA') expect(L(t.hex)).toBeLessThan(L(PUTIH));
     }
+  });
+});
+
+describe('galeriKomposisi — gaya cerah dan redam', () => {
+  /*
+   * Desain streetwear yang dibawa pemilik: kaos hitam dengan slate gelap yang
+   * mendominasi, putih tulang keabuan, zaitun (versi tua dari aksennya), dan
+   * sedikit lime yang kalem. Gaya "cerah" tidak akan pernah sampai ke sana —
+   * aksennya selalu Pantone paling pekat — jadi gaya "redam" harus bisa.
+   */
+  const referensi = ['#353e45', '#d9d4c6', '#626b4a', '#8eb03b'];
+
+  it('gaya redam, empat tinta di kain hitam, memuat komposisi setara desain referensi', () => {
+    const galeri = galeriKomposisi({ kainHex: HITAM, katalog: KATALOG, jumlah: 4, gaya: 'REDAM' });
+    expect(galeri.length).toBeGreaterThanOrEqual(4);
+    for (const k of galeri) {
+      expect(k.gaya).toBe('REDAM');
+      periksaBentuk(k);
+      periksaKeterbacaan(k, HITAM);
+    }
+    const mirip = galeri.find((k) => k.tinta.every((t, i) => deltaE2000(hexKeLab(t.hex), hexKeLab(referensi[i])) < 10));
+    expect(mirip, JSON.stringify(galeri.map((k) => k.tinta.map((t) => t.hex)))).toBeDefined();
+    expect(mirip!.tinta.map((t) => t.peran)).toEqual(['NADA', 'NETRAL', 'AKSEN_TUA', 'AKSEN']);
+  });
+
+  it('warna redam memang lebih kalem dari yang cerah', () => {
+    const cerah = galeriKomposisi({ kainHex: HITAM, katalog: KATALOG, gaya: 'CERAH' });
+    const redam = galeriKomposisi({ kainHex: HITAM, katalog: KATALOG, gaya: 'REDAM' });
+    const rata = (g: Komposisi[]) => {
+      const aksen = g.flatMap((k) => k.tinta.filter((t) => t.peran === 'AKSEN').map((t) => kroma(t.hex)));
+      return aksen.reduce((a, b) => a + b, 0) / aksen.length;
+    };
+    expect(cerah.every((k) => k.gaya === 'CERAH')).toBe(true);
+    expect(rata(redam)).toBeLessThan(rata(cerah) * 0.8);
+  });
+
+  it('tanpa pilihan gaya, galeri memuat keduanya', () => {
+    const galeri = galeriKomposisi({ kainHex: HITAM, katalog: KATALOG });
+    expect(new Set(galeri.map((k) => k.gaya))).toEqual(new Set(['CERAH', 'REDAM']));
+  });
+
+  it('gaya redam tetap mengikuti jumlah tinta dan kain terang', () => {
+    for (const n of [1, 2, 3, 5, 6])
+      for (const kain of [HITAM, PUTIH, BLUE_SURF]) {
+        const galeri = galeriKomposisi({ kainHex: kain, katalog: KATALOG, jumlah: n, gaya: 'REDAM' });
+        expect(galeri.length, `${n} tinta di ${kain}`).toBeGreaterThanOrEqual(3);
+        for (const k of galeri) {
+          expect(k.tinta).toHaveLength(n);
+          periksaBentuk(k);
+          periksaKeterbacaan(k, kain);
+        }
+      }
   });
 });
 

@@ -23,7 +23,15 @@ import { PORSI_AWAL } from './saran';
  */
 export type PolaKomposisi = 'SATU' | 'KLASIK' | 'DUA_AKSEN' | 'KONTRAS' | 'AKSEN_NADA' | 'TONAL' | 'DARI_GAMBAR';
 
-export type PeranKomposisi = 'AKSEN' | 'AKSEN_2' | 'AKSEN_3' | 'NETRAL' | 'NADA' | 'TONAL';
+/** `AKSEN_TUA` adalah aksen yang sama, lebih gelap dan kalem — zaitun di samping lime. */
+export type PeranKomposisi = 'AKSEN' | 'AKSEN_2' | 'AKSEN_3' | 'AKSEN_TUA' | 'NETRAL' | 'NADA' | 'TONAL';
+
+/**
+ * Cerah: aksen sepekat Pantone-nya, netral krem terang. Redam: semuanya
+ * diturunkan kepekatannya — gaya vintage/streetwear, seperti lime kalem di
+ * atas slate gelap dengan putih tulang keabuan.
+ */
+export type GayaKomposisi = 'CERAH' | 'REDAM';
 
 export type TintaKomposisi = {
   hex: string;
@@ -35,7 +43,8 @@ export type TintaKomposisi = {
   dikunci?: boolean;
 };
 
-export type Komposisi = { id: string; pola: PolaKomposisi; tinta: TintaKomposisi[] };
+/** `gaya` kosong untuk komposisi dari gambar referensi — gayanya milik gambar itu. */
+export type Komposisi = { id: string; pola: PolaKomposisi; gaya: GayaKomposisi | null; tinta: TintaKomposisi[] };
 
 export { AKSEN_POPULER, KROMA_NETRAL };
 const TERANG_BAWAH = 12;
@@ -63,6 +72,7 @@ const SYARAT: Record<PeranKomposisi, [number, number]> = {
   AKSEN: [BEDA_TERBACA, 100],
   AKSEN_2: [BEDA_TERBACA, 100],
   AKSEN_3: [BEDA_TERBACA, 100],
+  AKSEN_TUA: [BEDA_TERBACA, 100],
   NETRAL: [BEDA_TERBACA, 100],
   // Tone-on-tone sengaja nyaris menyatu dengan kain, tetapi tetap harus ada.
   NADA: [5, 28],
@@ -98,7 +108,7 @@ function kodePersis(katalog: readonly WarnaPantone[], hex: string): string | nul
 /** Rencana satu tinta: warna sasaran dan perannya, atau warna terkunci yang dipakai apa adanya. */
 type Rencana = { peran: PeranKomposisi; porsi: number; sasaran: Lab } | { peran: PeranKomposisi; porsi: number; kunci: string };
 
-function wujudkan(ktx: Konteks, pola: PolaKomposisi, rencana: readonly Rencana[], arah: number): Komposisi | null {
+function wujudkan(ktx: Konteks, pola: PolaKomposisi, gaya: GayaKomposisi | null, rencana: readonly Rencana[], arah: number): Komposisi | null {
   const urut = [...rencana].sort((a, b) => b.porsi - a.porsi);
   const dipakai: Lab[] = urut.flatMap((r) => ('kunci' in r ? [hexKeLab(r.kunci)] : []));
   const tinta: TintaKomposisi[] = [];
@@ -113,7 +123,7 @@ function wujudkan(ktx: Konteks, pola: PolaKomposisi, rencana: readonly Rencana[]
     dipakai.push(w.lab);
     tinta.push({ hex: w.hex, kode: w.kode, peran: r.peran, porsi: r.porsi });
   }
-  return { id: `${pola}:${tinta.map((t) => t.hex).join('-')}`, pola, tinta };
+  return { id: `${pola}:${gaya ?? '-'}:${tinta.map((t) => t.hex).join('-')}`, pola, gaya, tinta };
 }
 
 /** Arah tinta yang terbaca: kain gelap → tinta terang, kain terang → tinta gelap. */
@@ -128,18 +138,34 @@ function sasaranAksen(aksen: Lch, Lk: number, arah: number): Lab {
   return dariLch([cukup ? L : batasTerang(Lk + arah * 40), C, h]);
 }
 
-/** Netral: krem hangat untuk aksen hangat, putih/arang dingin untuk aksen dingin. */
-function sasaranNetral(aksen: Lch | null, arah: number): Lab {
+/**
+ * Netral: krem hangat untuk aksen hangat, putih/arang dingin untuk aksen
+ * dingin. Versi redam lebih keabuan dan tidak seterang itu — putih tulang,
+ * bukan putih kertas.
+ */
+function sasaranNetral(aksen: Lch | null, arah: number, gaya: GayaKomposisi): Lab {
   const h = aksen ? aksen[2] : 60;
   const hangat = aksen === null || h < 120 || h >= 330;
+  if (gaya === 'REDAM') {
+    if (arah > 0) return hangat ? [85, 0, 6] : [86, -1, -3];
+    return hangat ? [30, 1, 5] : [28, 0, -3];
+  }
   if (arah > 0) return hangat ? [91, 1, 9] : [95, -1, -2];
   return hangat ? [24, 2, 6] : [22, 0, -3];
 }
 
 /** Tone-on-tone: sedikit lebih terang/gelap dari kain. Kain netral mendapat slate dingin, seperti angka di desain streetwear. */
-function sasaranNada(kain: Lch, arah: number): Lab {
+function sasaranNada(kain: Lch, arah: number, gaya: GayaKomposisi): Lab {
   const [Lk, Ck, hk] = kain;
+  if (gaya === 'REDAM') {
+    return Ck < KROMA_NETRAL ? dariLch([batasTerang(Lk + arah * 20), 6, 250]) : dariLch([batasTerang(Lk + arah * 16), Math.max(5, Ck * 0.6), hk]);
+  }
   return Ck < KROMA_NETRAL ? dariLch([batasTerang(Lk + arah * 16), 10, 250]) : dariLch([batasTerang(Lk + arah * 14), Math.max(6, Ck * 0.9), hk]);
+}
+
+/** Aksen redam: kepekatan dipangkas dan sedikit lebih gelap — lime menyala menjadi lime kalem. */
+function redamkan([L, C, h]: Lch): Lch {
+  return [L * 0.86, C * 0.7, h];
 }
 
 function geserRona(aksen: Lch, derajat: number): Lch {
@@ -160,8 +186,11 @@ export function galeriKomposisi(input: {
   katalog: readonly WarnaPantone[];
   kunciHex?: string | null;
   jumlah?: number;
+  /** Tanpa gaya (atau `SEMUA`), galeri memuat keduanya berselang-seling. */
+  gaya?: GayaKomposisi | 'SEMUA';
 }): Komposisi[] {
   const n = Math.min(6, Math.max(1, Math.round(input.jumlah ?? 3)));
+  const gayaDiminta = input.gaya ?? 'SEMUA';
   const porsi = PORSI_AWAL[n];
   const kainHex = normalisasiHex(input.kainHex) ?? '#000000';
   const labKain = hexKeLab(kainHex);
@@ -190,71 +219,118 @@ export function galeriKomposisi(input: {
    * searah, seluruh galeri jadi gelap semua dan tidak ada pilihan nyata.
    */
   const kainSedang = ruang(Lk, 1) >= 25 && ruang(Lk, -1) >= 25;
-  const netral = (a: Lch | null, balikSuhu = false): Bagian =>
-    kunciNetral
-      ? { peran: 'NETRAL', kunci: kunciNetral }
-      : { peran: 'NETRAL', sasaran: sasaranNetral(a && balikSuhu ? geserRona(a, 180) : a, kainSedang ? -arah : arah) };
-  const aksen = (a: Lch, peran: PeranKomposisi = 'AKSEN', geser = 0): Bagian =>
-    peran === 'AKSEN' && kunciAksen ? { peran, kunci: kunciAksen } : { peran, sasaran: sasaranAksen(geserRona(a, geser), Lk, arah) };
-  const nada = (): Bagian => ({ peran: 'NADA', sasaran: sasaranNada(kain, arah) });
-  // Tonal: tingkat terang dari kain, dibagi rata sejauh ruang yang tersedia.
   const tonal = (d: number): Bagian => ({
     peran: 'TONAL',
     sasaran: Ck < KROMA_NETRAL ? [batasTerang(Lk + arah * d), 0, 0] : dariLch([batasTerang(Lk + arah * d), Math.max(8, Ck), hk]),
   });
 
-  /** Tinta keluarga komposisi berurutan dari yang dominan; diambil sebanyak `n`. */
-  const keluarga: Record<Exclude<PolaKomposisi, 'SATU' | 'TONAL' | 'DARI_GAMBAR'>, (a: Lch) => Bagian[] | null> = {
-    KLASIK: (a) => [netral(a), aksen(a), nada(), aksen(a, 'AKSEN_2', 45), aksen(a, 'AKSEN_3', -45), tonal(38)],
-    DUA_AKSEN: (a) =>
-      n === 2 ? [aksen(a), aksen(a, 'AKSEN_2', 45)] : [netral(a), aksen(a), aksen(a, 'AKSEN_2', 45), nada(), aksen(a, 'AKSEN_3', -45), tonal(38)],
-    KONTRAS: (a) => [aksen(a), aksen(a, 'AKSEN_2', 180), netral(a), nada(), aksen(a, 'AKSEN_3', 150), tonal(38)],
-    AKSEN_NADA: (a) => (n === 2 ? [aksen(a), nada()] : null),
-  };
+  type Resep = { pola: PolaKomposisi; gaya: GayaKomposisi; bagian: Bagian[] };
 
-  type Resep = { pola: PolaKomposisi; bagian: Bagian[] };
-  const resep: Resep[] = [];
-  const dari = (pola: keyof typeof keluarga, a: Lch | undefined) => {
-    if (!a) return;
-    const b = keluarga[pola](a);
-    if (b && b.length >= n) resep.push({ pola, bagian: b.slice(0, n) });
-  };
+  /** Semua resep satu gaya, berurutan dari yang paling mewakili. */
+  function resepGaya(gaya: GayaKomposisi): Resep[] {
+    const netral = (a: Lch | null, balikSuhu = false): Bagian =>
+      kunciNetral
+        ? { peran: 'NETRAL', kunci: kunciNetral }
+        : { peran: 'NETRAL', sasaran: sasaranNetral(a && balikSuhu ? geserRona(a, 180) : a, kainSedang ? -arah : arah, gaya) };
+    const warnaAksen = (a: Lch, geser = 0): Lch => {
+      const x = geserRona(a, geser);
+      return gaya === 'REDAM' ? redamkan(x) : x;
+    };
+    const aksen = (a: Lch, peran: PeranKomposisi = 'AKSEN', geser = 0): Bagian =>
+      peran === 'AKSEN' && kunciAksen ? { peran, kunci: kunciAksen } : { peran, sasaran: sasaranAksen(warnaAksen(a, geser), Lk, arah) };
+    // Aksen tua: aksen yang sama, didekatkan ke kain dan dipudarkan — zaitun di samping lime.
+    const aksenTua = (a: Lch): Bagian => {
+      const [L, C, h] = keLch(sasaranAksen(warnaAksen(a), Lk, arah));
+      return { peran: 'AKSEN_TUA', sasaran: dariLch([batasTerang(L - arah * 24), C * 0.3, h]) };
+    };
+    const nada = (): Bagian => ({ peran: 'NADA', sasaran: sasaranNada(kain, arah, gaya) });
 
-  if (n === 1) {
-    if (kunci) resep.push({ pola: 'SATU', bagian: [{ peran: kunciAksen ? 'AKSEN' : 'NETRAL', kunci }] });
-    else {
-      for (const a of daftarAksen) resep.push({ pola: 'SATU', bagian: [aksen(a)] });
-      resep.push({ pola: 'SATU', bagian: [netral(null)] });
+    /** Tinta keluarga komposisi berurutan dari yang dominan; diambil sebanyak `n`. */
+    const keluarga: Partial<Record<PolaKomposisi, (a: Lch) => Bagian[] | null>> =
+      gaya === 'REDAM'
+        ? {
+            // Seperti desain referensi: slate mendominasi, putih tulang, zaitun, lalu sedikit aksen.
+            KLASIK: (a) =>
+              n <= 2
+                ? [netral(a), aksen(a)]
+                : [nada(), netral(a), ...(n >= 4 ? [aksenTua(a)] : []), aksen(a), aksen(a, 'AKSEN_2', 45), tonal(38)],
+          }
+        : {
+            KLASIK: (a) => [netral(a), aksen(a), nada(), aksen(a, 'AKSEN_2', 45), aksen(a, 'AKSEN_3', -45), tonal(38)],
+            DUA_AKSEN: (a) =>
+              n === 2 ? [aksen(a), aksen(a, 'AKSEN_2', 45)] : [netral(a), aksen(a), aksen(a, 'AKSEN_2', 45), nada(), aksen(a, 'AKSEN_3', -45), tonal(38)],
+            KONTRAS: (a) => [aksen(a), aksen(a, 'AKSEN_2', 180), netral(a), nada(), aksen(a, 'AKSEN_3', 150), tonal(38)],
+            AKSEN_NADA: (a) => (n === 2 ? [aksen(a), nada()] : null),
+          };
+
+    const resep: Resep[] = [];
+    const dari = (pola: PolaKomposisi, a: Lch | undefined) => {
+      const f = keluarga[pola];
+      if (!a || !f) return;
+      const b = f(a);
+      if (b && b.length >= n) resep.push({ pola, gaya, bagian: b.slice(0, n) });
+    };
+
+    if (n === 1) {
+      if (kunci) resep.push({ pola: 'SATU', gaya, bagian: [{ peran: kunciAksen ? 'AKSEN' : 'NETRAL', kunci }] });
+      else {
+        for (const a of daftarAksen) resep.push({ pola: 'SATU', gaya, bagian: [aksen(a)] });
+        resep.push({ pola: 'SATU', gaya, bagian: [netral(null)] });
+      }
+    } else if (kunciAksen && kunciLch) {
+      const k = kunciLch;
+      dari('KLASIK', k);
+      dari('DUA_AKSEN', k);
+      dari('KONTRAS', k);
+      dari('AKSEN_NADA', k);
+      // Netral bersuhu berlawanan, sebagai pilihan kedua.
+      const klasik = keluarga.KLASIK?.(k);
+      if (klasik) {
+        const i = klasik.findIndex((b) => b.peran === 'NETRAL');
+        const lain = klasik.map((b, j) => (j === i ? netral(k, true) : b));
+        resep.push({ pola: 'KLASIK', gaya, bagian: lain.slice(0, n) });
+      }
+    } else {
+      const [a1, a2, a3, a4, a5, a6] = daftarAksen;
+      if (gaya === 'REDAM') {
+        for (const a of [a1, a2, a3, a4, a5, a6]) dari('KLASIK', a);
+      } else {
+        for (const a of [a1, a2, a3, a4]) dari('KLASIK', a);
+        dari('DUA_AKSEN', a1);
+        dari('KONTRAS', a2);
+        if (n === 2) dari('AKSEN_NADA', a6 ?? a3);
+        else dari('KLASIK', a5);
+      }
+      // Tonal sudah kalem dengan sendirinya: tempatnya di gaya redam.
+      if (gaya === 'REDAM' && !kunciNetral) {
+        const jauh = Math.max(24, Math.min(70, ruang(Lk, arah) - 2));
+        const langkah = n === 1 ? 0 : (jauh - 14) / (n - 1);
+        resep.push({ pola: 'TONAL', gaya, bagian: Array.from({ length: n }, (_, i) => tonal(jauh - i * langkah)) });
+      }
     }
-  } else if (kunciAksen && kunciLch) {
-    const k = kunciLch;
-    dari('KLASIK', k);
-    dari('DUA_AKSEN', k);
-    dari('KONTRAS', k);
-    dari('AKSEN_NADA', k);
-    // Netral bersuhu berlawanan, sebagai pilihan kedua.
-    resep.push({ pola: 'KLASIK', bagian: [netral(k, true), ...keluarga.KLASIK(k)!.slice(1)].slice(0, n) });
-  } else {
-    const [a1, a2, a3, a4, a5, a6] = daftarAksen;
-    for (const a of [a1, a2, a3, a4]) dari('KLASIK', a);
-    dari('DUA_AKSEN', a1);
-    dari('KONTRAS', a2);
-    if (n === 2) dari('AKSEN_NADA', a6 ?? a3);
-    else dari('KLASIK', a5);
-    if (!kunciNetral) {
-      const jauh = Math.max(24, Math.min(70, ruang(Lk, arah) - 2));
-      const langkah = n === 1 ? 0 : (jauh - 14) / (n - 1);
-      resep.push({ pola: 'TONAL', bagian: Array.from({ length: n }, (_, i) => tonal(jauh - i * langkah)) });
-    }
+    return resep;
   }
+
+  let resep: Resep[];
+  if (gayaDiminta === 'SEMUA') {
+    // Berselang-seling, supaya kedua gaya terlihat tanpa menggulir.
+    const cerah = resepGaya('CERAH');
+    const redam = resepGaya('REDAM');
+    resep = [];
+    for (let i = 0; i < Math.max(cerah.length, redam.length); i++) {
+      if (cerah[i]) resep.push(cerah[i]);
+      if (redam[i]) resep.push(redam[i]);
+    }
+  } else resep = resepGaya(gayaDiminta);
+  const batas = gayaDiminta === 'SEMUA' ? 12 : 9;
 
   const hasil: Komposisi[] = [];
   for (const r of resep) {
     // Kunci netral hanya berarti kalau komposisinya memang memuat netral.
     if (kunciNetral && !r.bagian.some((x) => 'kunci' in x)) continue;
-    const k = wujudkan(ktx, r.pola, r.bagian.map((x, i) => ({ ...x, porsi: porsi[i] })), arah);
+    const k = wujudkan(ktx, r.pola, r.gaya, r.bagian.map((x, i) => ({ ...x, porsi: porsi[i] })), arah);
     if (k && k.tinta.length === n && !hasil.some((x) => x.id === k.id)) hasil.push(k);
-    if (hasil.length === 9) break;
+    if (hasil.length === batas) break;
   }
   return hasil;
 }
@@ -311,6 +387,6 @@ export function tiruKomposisi(input: {
   });
 
   // Urutan referensi (terluas dulu) sudah urutan porsi; `wujudkan` mengurutkan ulang dengan stabil.
-  const k = wujudkan(ktx, 'DARI_GAMBAR', rencana, arahUtama(Lk));
+  const k = wujudkan(ktx, 'DARI_GAMBAR', null, rencana, arahUtama(Lk));
   return k ? { ...k, id: 'DARI_GAMBAR' } : null;
 }

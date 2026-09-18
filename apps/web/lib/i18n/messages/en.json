@@ -1695,6 +1695,9 @@
       "lockHint": "The locked colour appears in every recommendation.",
       "count": "Number of inks",
       "countOption": "{count, plural, one {# ink} other {# inks}}",
+      "style": "Style",
+      "styleAll": "All styles",
+      "styles": {"CERAH": "Bright", "REDAM": "Muted"},
       "fewerInImage": "This image only has {count, plural, one {# ink} other {# inks}} besides its fabric.",
       "use": "Use",
       "applied": "Composition “{name}” applied.",
@@ -1713,7 +1716,7 @@
       },
       "roles": {
         "AKSEN": "Accent",
-        "AKSEN_2": "Accent 2", "AKSEN_3": "Accent 3",
+        "AKSEN_2": "Accent 2", "AKSEN_3": "Accent 3", "AKSEN_TUA": "Deep accent",
         "NETRAL": "Neutral",
         "NADA": "Tone-on-tone",
         "TONAL": "Tonal"
