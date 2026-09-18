@@ -11,6 +11,8 @@ import { Switch } from '@/components/ui/switch';
 import { ambilWarnaTitik, warnaDominan } from '@/lib/production-colors/palet/gambar';
 import { bacaProfilWarna, buangProfilWarna, type ProfilWarna } from '@/lib/production-colors/palet/profil-gambar';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { bacaKomposisiDesain, type PeranKomposisi } from '@/lib/production-colors/sablon/komposisi';
+import { HURUF_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
 import { cn } from '@/lib/utils';
 
 /** Sisi terpanjang kanvas analisis. Screenshot 5K diperkecil dulu; warnanya tidak berubah, hitungannya jauh lebih ringan. */
@@ -20,7 +22,18 @@ const JARI_TITIK = 2;
 const UKURAN_LUP = 132;
 const PIKSEL_LUP = 13;
 
-type Terambil = { id: string; hex: string; bagian?: number; sumber: 'titik' | 'tebak' };
+/**
+ * Warna yang diambil. Dari "Tebak komposisi" (palet berkain) setiap warna
+ * membawa perannya: kain gambar, atau tinta dengan porsinya di area cetak.
+ */
+type Terambil = {
+  id: string;
+  hex: string;
+  bagian?: number;
+  sumber: 'titik' | 'tebak';
+  peran?: 'KAIN' | PeranKomposisi;
+  porsi?: number;
+};
 
 /** Berkas yang dimuat dalam dua rupa: apa adanya, dan tanpa profil warna. */
 type Sumber = { asli: Blob; tanpaProfil: Blob };
@@ -79,6 +92,9 @@ export function AmbilDariGambar({
   const [ukuran, setUkuran] = useState<{ w: number; h: number } | null>(null);
   const [terambil, setTerambil] = useState<Terambil[]>([]);
   const [jumlahTebak, setJumlahTebak] = useState(berkain ? 4 : 5);
+  /** Berkain: jumlah tinta (1–6). Palet bebas: jumlah warna (2–8). */
+  const pilihanJumlah = berkain ? Array.from({ length: JUMLAH_SABLON_MAKS }, (_, i) => i + 1) : [2, 3, 4, 5, 6, 7, 8];
+  const jumlahDipakai = Math.min(pilihanJumlah[pilihanJumlah.length - 1], Math.max(pilihanJumlah[0], jumlahTebak));
 
   useEffect(() => () => {
     if (url) URL.revokeObjectURL(url);
@@ -233,7 +249,26 @@ export function AmbilDariGambar({
   function tebak() {
     const data = dataRef.current;
     if (!data) return;
-    const hasil = warnaDominan(data.data, { jumlah: jumlahTebak });
+    /*
+     * Palet berkain: bukan sekadar warna terbanyak, tetapi komposisi desain —
+     * kain dipisahkan, tepian huruf digabung ke tintanya, dan tiap tinta diberi
+     * porsinya di area cetak. Jumlahnya berarti jumlah TINTA, bukan warna.
+     */
+    const analisis = berkain
+      ? bacaKomposisiDesain(
+          warnaDominan(data.data, { jumlah: 8 }).map((w) => ({ hex: w.hex, bagian: w.bagian })),
+          jumlahDipakai,
+        )
+      : null;
+    if (analisis) {
+      const hasil: Terambil[] = [
+        { id: idBaru(), hex: analisis.kain.hex, bagian: analisis.kain.bagian, sumber: 'tebak', peran: 'KAIN' },
+        ...analisis.tinta.map((x) => ({ id: idBaru(), hex: x.hex, bagian: x.bagian, sumber: 'tebak' as const, peran: x.peran, porsi: x.porsi })),
+      ];
+      setTerambil((daftar) => [...hasil, ...daftar.filter((w) => w.sumber === 'titik' && !hasil.some((h) => h.hex === w.hex))]);
+      return;
+    }
+    const hasil = warnaDominan(data.data, { jumlah: jumlahDipakai });
     setTerambil((daftar) => [
       ...hasil.map((w) => ({ id: idBaru(), hex: w.hex, bagian: w.bagian, sumber: 'tebak' as const })),
       ...daftar.filter((w) => w.sumber === 'titik' && !hasil.some((h) => h.hex === w.hex)),
@@ -254,6 +289,9 @@ export function AmbilDariGambar({
   }
 
   const kurangLima = !berkain && terambil.length < 5;
+  // Di palet berkain kain gambar bukan tinta: yang dikirim ke tinta sablon hanya sisanya.
+  const untukTinta = berkain ? terambil.filter((w) => w.peran !== 'KAIN') : terambil;
+  const hurufTinta = new Map(terambil.filter((w) => w.porsi !== undefined).map((w, i) => [w.id, HURUF_SABLON[i]]));
 
   return (
     <Card>
@@ -369,14 +407,14 @@ export function AmbilDariGambar({
               <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-1">
                   <Label htmlFor="jumlah-tebak" className="text-xs">
-                    {t('guessCount')}
+                    {berkain ? t('guessInkCount') : t('guessCount')}
                   </Label>
-                  <Select value={String(jumlahTebak)} onValueChange={(v) => setJumlahTebak(Number(v))}>
+                  <Select value={String(jumlahDipakai)} onValueChange={(v) => setJumlahTebak(Number(v))}>
                     <SelectTrigger id="jumlah-tebak" className="w-20">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent position="popper">
-                      {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+                      {pilihanJumlah.map((n) => (
                         <SelectItem key={n} value={String(n)}>
                           {n}
                         </SelectItem>
@@ -386,12 +424,13 @@ export function AmbilDariGambar({
                 </div>
                 <Button type="button" onClick={tebak} disabled={!siap}>
                   <Sparkles className="h-4 w-4" />
-                  {t('guess')}
+                  {berkain ? t('guessComposition') : t('guess')}
                 </Button>
               </div>
 
               <div className="space-y-1.5">
                 <p className="text-xs font-medium">{t('pickedTitle')}</p>
+                {hurufTinta.size > 0 && <p className="text-xs text-muted-foreground">{t('compositionHint')}</p>}
                 {terambil.length === 0 ? (
                   <p className="text-xs text-muted-foreground">{t('pickedEmpty')}</p>
                 ) : (
@@ -411,10 +450,26 @@ export function AmbilDariGambar({
                               >
                                 {w.hex}
                               </button>
-                              {w.bagian !== undefined && (
-                                <span className="ml-2 text-xs tabular-nums text-muted-foreground">
-                                  {t('share', { percent: Math.round(w.bagian * 100) })}
+                              {w.peran === 'KAIN' ? (
+                                <span className="ml-2 text-xs font-medium">
+                                  {t('fabricLabel')}{' '}
+                                  <span className="font-normal tabular-nums text-muted-foreground">
+                                    · {t('share', { percent: Math.round((w.bagian ?? 0) * 100) })}
+                                  </span>
                                 </span>
+                              ) : w.porsi !== undefined && w.peran ? (
+                                <span className="ml-2 text-xs font-medium">
+                                  {t('inkShare', { letter: hurufTinta.get(w.id) ?? '?', role: t(`recommend.roles.${w.peran}`), percent: w.porsi })}{' '}
+                                  <span className="font-normal tabular-nums text-muted-foreground">
+                                    · {t('share', { percent: Math.round((w.bagian ?? 0) * 100) })}
+                                  </span>
+                                </span>
+                              ) : (
+                                w.bagian !== undefined && (
+                                  <span className="ml-2 text-xs tabular-nums text-muted-foreground">
+                                    {t('share', { percent: Math.round(w.bagian * 100) })}
+                                  </span>
+                                )
                               )}
                               <p className="truncate text-[11px] text-muted-foreground">
                                 {c && `C ${c.warna.kode} · ΔE ${desimal.format(c.deltaE)}`}
@@ -435,9 +490,11 @@ export function AmbilDariGambar({
                             <Button type="button" variant="outline" size="xs" onClick={() => onJadikanKain(w.hex)}>
                               {t('useAsFabric')}
                             </Button>
-                            <Button type="button" variant="outline" size="xs" onClick={() => onPakaiUntukTerpilih(w.hex)}>
-                              {t('useForSelected', { label: labelTerpilih })}
-                            </Button>
+                            {w.peran !== 'KAIN' && (
+                              <Button type="button" variant="outline" size="xs" onClick={() => onPakaiUntukTerpilih(w.hex)}>
+                                {t('useForSelected', { label: labelTerpilih })}
+                              </Button>
+                            )}
                           </div>
                         </li>
                       );
@@ -448,7 +505,7 @@ export function AmbilDariGambar({
 
               {terambil.length > 0 && (
                 <div className="space-y-1">
-                  <Button type="button" className="w-full" disabled={kurangLima} onClick={() => onIsiPalet(terambil)}>
+                  <Button type="button" className="w-full" disabled={kurangLima || untukTinta.length === 0} onClick={() => onIsiPalet(untukTinta)}>
                     {berkain ? t('fillInks') : t('fillPalette')}
                   </Button>
                   {kurangLima && <p className="text-xs text-muted-foreground">{t('needFive', { count: terambil.length })}</p>}

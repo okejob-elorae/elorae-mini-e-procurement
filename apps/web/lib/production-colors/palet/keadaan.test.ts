@@ -3,6 +3,7 @@ import dataC from './pantone-c.json';
 import { INDEKS_DASAR, susunHarmoni } from './harmoni';
 import { deltaE2000, hexKeLab, siapkanKatalog } from './pantone';
 import { hexKeHsb, hsbKeHex } from './warna';
+import { bacaKomposisiDesain } from '../sablon/komposisi';
 import { PORSI_AWAL, sarankanSablon } from '../sablon/saran';
 import {
   JUMLAH_SABLON_AWAL,
@@ -272,6 +273,25 @@ describe('mengisi palet dari gambar', () => {
     const berkain = pasangKain(bebas(), BLUE_SURF, KATALOG);
     const p = isiDariGambar(berkain, [{ hex: '#613b2b' }, { hex: '#f1e9e7' }, { hex: '#e8553d' }]);
     expect(p.porsi).toEqual(PORSI_AWAL[3]);
+  });
+
+  /*
+   * "Tebak komposisi" menampilkan porsi tiap tinta dari bacaan desain; mengisi
+   * palet dengan tinta itu harus menghasilkan angka yang sama persis.
+   */
+  it('porsi yang terpasang sama dengan komposisi yang dibaca dari desain', () => {
+    const analisis = bacaKomposisiDesain([
+      { hex: '#d4c8b7', bagian: 0.8345 },
+      { hex: '#bca999', bagian: 0.0766 },
+      { hex: '#fbf8f3', bagian: 0.0416 },
+      { hex: '#72675b', bagian: 0.018 },
+      { hex: '#9f9589', bagian: 0.0125 },
+      { hex: '#3f362b', bagian: 0.0094 },
+      { hex: '#0b0603', bagian: 0.0074 },
+    ])!;
+    const p = isiDariGambar(pasangKain(bebas(), BLUE_SURF, KATALOG), analisis.tinta);
+    expect(hexDari(p)).toEqual(analisis.tinta.map((x) => x.hex));
+    expect(p.porsi).toEqual(analisis.tinta.map((x) => x.porsi));
   });
 
   it('tidak mengubah palet berkain kalau semua warna gambar sama dengan kain', () => {

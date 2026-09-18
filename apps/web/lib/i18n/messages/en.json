@@ -1851,7 +1851,11 @@
       "CUKUP": "3 and up — readable",
       "LEMBUT": "1.8 and up — soft, normal for tone-on-tone",
       "SAMAR": "below 1.8 — nearly blends into the fabric"
-    }
+    },
+    "guessInkCount": "Number of inks",
+    "guessComposition": "Guess composition",
+    "inkShare": "Ink {letter} · {role} · {percent}% of print",
+    "compositionHint": "Print share = each ink’s part of the whole printed area (the fabric is not counted). Use as print inks applies these shares."
   },
   "productionPrint": {
     "copySummary": "Copy summary",

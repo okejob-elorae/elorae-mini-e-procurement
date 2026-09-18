@@ -1851,7 +1851,11 @@
       "CUKUP": "3 ke atas — terbaca",
       "LEMBUT": "1,8 ke atas — lembut, wajar untuk tone-on-tone",
       "SAMAR": "di bawah 1,8 — nyaris menyatu dengan kain"
-    }
+    },
+    "guessInkCount": "Jumlah tinta",
+    "guessComposition": "Tebak komposisi",
+    "inkShare": "Tinta {letter} · {role} · {percent}% sablon",
+    "compositionHint": "Persen sablon = bagian tiap tinta dari seluruh area cetak (kain tidak dihitung). Jadikan tinta sablon memakai persen ini."
   },
   "productionPrint": {
     "copySummary": "Salin ringkasan",
