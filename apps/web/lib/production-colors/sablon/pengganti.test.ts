@@ -4,7 +4,17 @@ import { langkahHarmoni } from '../palet/harmoni';
 import { rasioKontras } from '../palet/kontras';
 import { deltaE2000, hexKeLab, pantoneKhusus, siapkanKatalog } from '../palet/pantone';
 import { hexKeHsb } from '../palet/warna';
-import { KELUARGA_WARNA, OPSI_GANTI, calonUntukKain, saranBerikutnya, saranPengganti, type OpsiGanti, type SaranPengganti } from './pengganti';
+import {
+  KELUARGA_WARNA,
+  OPSI_GANTI,
+  batasKromaTinta,
+  calonUntukKain,
+  saranBerikutnya,
+  saranPengganti,
+  saranSemuaPilihan,
+  type OpsiGanti,
+  type SaranPengganti,
+} from './pengganti';
 
 const KATALOG = siapkanKatalog('C', dataC as [string, string][]);
 const SAND = '#d6cbba';
@@ -140,6 +150,37 @@ describe('saranPengganti — memilih jenis pengganti', () => {
     for (const opsi of OPSI_GANTI) {
       expect(saranDi(SAND, [TINTA[0], TINTA[1], '#ff0000'], 'ANALOGOUS', opsi), opsi).toEqual(saranDi(SAND, TINTA, 'ANALOGOUS', opsi));
     }
+  });
+});
+
+/*
+ * Aturan harmoni hanya mengatur RONA. Di kain kalem berwarna (krem, khaki,
+ * army, mocca) warna sepekat biru royal bertabrakan, apalagi sebagai warna
+ * dominan — pola 60-30-10: yang besar paling kalem, yang mencolok untuk aksen.
+ */
+describe('kepekatan menurut porsi tinta', () => {
+  it('kain kalem berwarna membatasi tinta besar; kain netral, gelap, atau pekat tidak', () => {
+    const kromaSand = kroma(SAND);
+    expect(batasKromaTinta(SAND, 48)).toBeCloseTo(kromaSand + 25, 6);
+    expect(batasKromaTinta(SAND, 25)).toBeCloseTo(kromaSand + 45, 6);
+    expect(batasKromaTinta(SAND, 10)).toBeNull();
+    expect(batasKromaTinta('#4b5320', 60)).not.toBeNull();
+    for (const kain of [HITAM, '#f7f7f5', '#9a9a98', '#1f2a44', '#c8102e']) expect(batasKromaTinta(kain, 60), kain).toBeNull();
+  });
+
+  it('tinta 48% di kain pasir: biru royal 2728 C tidak ditawarkan, tetapi Complementary versi kalem ada', () => {
+    const semua = saranSemuaPilihan({ calon: calonUntukKain(SAND, KATALOG), hex: ['#004bba', '#efeae5', '#32281f'], indeks: 0, aturanUtama: 'COMPLEMENTARY', porsi: 48 });
+    const batas = batasKromaTinta(SAND, 48)!;
+    for (const [opsi, daftar] of Object.entries(semua)) for (const x of daftar) expect(kroma(x.hex), `${opsi} ${x.kode}`).toBeLessThanOrEqual(batas);
+    expect(semua.SEMUA.map((x) => x.kode)).not.toContain('2728 C');
+    expect(semua.SOLID).toEqual([]);
+    expect(semua.SEMUA.filter((x) => x.aturan === 'COMPLEMENTARY' && kroma(x.hex) >= 12).length).toBeGreaterThan(0);
+  });
+
+  it('tinta aksen di bawah 20% tetap boleh mencolok: solid dan neon tersedia', () => {
+    const semua = saranSemuaPilihan({ calon: calonUntukKain(SAND, KATALOG), hex: TINTA, indeks: 2, aturanUtama: 'ANALOGOUS', porsi: 10 });
+    expect(semua.SOLID.length).toBeGreaterThan(0);
+    expect(semua.NEON.length).toBeGreaterThan(0);
   });
 });
 

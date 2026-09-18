@@ -1960,7 +1960,10 @@
       "REDAM": "Kalem, gaya vintage, tetap terbaca.",
       "GELAP": "Tua dan pekat.",
       "METALIK": "Berkilau — tinta khusus, pastikan tersedia di tempat sablon."
-    }
+    },
+    "tooLoud": "Terlalu mencolok untuk {percent}%",
+    "tooLoudHint": "Kain ini kalem, jadi tinta sebesar ini sebaiknya ikut kalem. Warna sepekat ini cocok untuk tinta kecil (aksen di bawah 20%).",
+    "loudCapNote": "Tinta ini {percent}% dari desain dan kainnya kalem, jadi warna yang terlalu mencolok tidak ditawarkan — pola 60-30-10: yang besar paling tenang, yang mencolok untuk aksen di bawah 20%."
   },
   "planning": {
     "title": "Plan Kerja",

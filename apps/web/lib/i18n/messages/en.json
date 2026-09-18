@@ -1960,7 +1960,10 @@
       "REDAM": "Calm, vintage feel, still readable.",
       "GELAP": "Dark and rich.",
       "METALIK": "Shimmering — special ink, check your printer stocks it."
-    }
+    },
+    "tooLoud": "Too loud for {percent}%",
+    "tooLoudHint": "This fabric is muted, so an ink this large should be calm too. A colour this strong suits a small ink (an accent under 20%).",
+    "loudCapNote": "This ink is {percent}% of the design on a muted fabric, so colours that are too loud are left out — the 60-30-10 pattern: the largest colour is the calmest, the loud one is an accent under 20%."
   },
   "planning": {
     "title": "Production Plan",

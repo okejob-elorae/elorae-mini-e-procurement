@@ -15,7 +15,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { STATUS_TONE_CLASS, type StatusTone } from '@/components/ui/status-pill';
 import { rasioKontras } from '@/lib/production-colors/palet/kontras';
-import { cariPantone, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { cariPantone, hexKeLab, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { bagiGram, type ResepCampur } from '@/lib/production-colors/sablon/campur';
 import {
   ATURAN_SABLON,
@@ -26,6 +26,7 @@ import {
 import {
   KELUARGA_WARNA,
   OPSI_GANTI,
+  batasKromaTinta,
   saranBerikutnya,
   saranYangDipakai,
   type OpsiGanti,
@@ -127,6 +128,10 @@ export function BarisSablon({
   const gram = resep ? bagiGram(berat, resep.bagian.map((b) => b.persen)) : [];
   const persis = pantone !== null && pantone.deltaE < DE_PERSIS;
   const daftar = saran[opsi];
+  // Tinta besar di kain kalem yang terlalu pekat — aturan harmoni saja tidak menangkapnya.
+  const batasKroma = batasKromaTinta(kainHex, porsi);
+  const [, la, lb] = hexKeLab(hex);
+  const terlaluMencolok = batasKroma !== null && Math.hypot(la, lb) > batasKroma;
   // Label warna sekarang: dari pilihan yang aktif dulu, lalu dari pilihan lain.
   const dipakai = saranYangDipakai(daftar, hex) ?? OPSI_GANTI.map((o) => saranYangDipakai(saran[o], hex)).find(Boolean) ?? null;
   const namaOpsi = (o: OpsiGanti) => t(`options.${o}`);
@@ -178,7 +183,13 @@ export function BarisSablon({
             <Pil nada={NADA_BACA[baca]}>
               {t(`readability.${baca}`)} · {desimal.format(rasio)}
             </Pil>
-            {dipakai && <Pil nada="inactive">{t('suggestionTag', { kind: namaOpsi(dipakai.jenis), rule: tPalet(`rules.${dipakai.aturan}.name`) })}</Pil>}
+            {terlaluMencolok ? (
+              <span title={t('tooLoudHint')}>
+                <Pil nada="attention">{t('tooLoud', { percent: porsi })}</Pil>
+              </span>
+            ) : (
+              dipakai && <Pil nada="inactive">{t('suggestionTag', { kind: namaOpsi(dipakai.jenis), rule: tPalet(`rules.${dipakai.aturan}.name`) })}</Pil>
+            )}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -296,6 +307,7 @@ export function BarisSablon({
               <p className="mt-1.5 text-xs text-muted-foreground">
                 {t(`optionHints.${opsi}`)} {t('ruleSuggestionsHint')}
               </p>
+              {batasKroma !== null && <p className="mt-1 text-xs text-muted-foreground">{t('loudCapNote', { percent: porsi })}</p>}
             </div>
             {kelompokIsi.length === 0 ? (
               <p className="text-xs text-muted-foreground">{t('optionEmpty', { option: namaOpsi(opsi) })}</p>

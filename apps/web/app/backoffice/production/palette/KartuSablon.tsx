@@ -42,12 +42,14 @@ function useResep(hexWarna: string, hexTinta: string, maksTinta: number) {
  * yang terbaca hanya bergantung pada kain, jadi dihitung sekali per kain;
  * daftar per tinta murah. Masukannya teks untuk alasan yang sama dengan `useResep`.
  */
-function useSaranPengganti(kainHex: string, hexWarna: string, aturan: AturanHarmoni, katalogC: readonly WarnaPantone[]) {
+function useSaranPengganti(kainHex: string, hexWarna: string, porsiTeks: string, aturan: AturanHarmoni, katalogC: readonly WarnaPantone[]) {
   const calon = useMemo(() => calonUntukKain(kainHex, katalogC), [kainHex, katalogC]);
   return useMemo(() => {
     const hex = hexWarna ? hexWarna.split(',') : [];
-    return hex.map((_, i) => saranSemuaPilihan({ calon, hex, indeks: i, aturanUtama: aturan }));
-  }, [calon, hexWarna, aturan]);
+    const porsi = porsiTeks.split(',').map(Number);
+    // Porsi ikut menentukan: tinta besar di kain kalem tidak diberi warna mencolok.
+    return hex.map((_, i) => saranSemuaPilihan({ calon, hex, indeks: i, aturanUtama: aturan, porsi: porsi[i] }));
+  }, [calon, hexWarna, porsiTeks, aturan]);
 }
 
 /**
@@ -103,7 +105,7 @@ export function KartuSablon({
   const berat = Math.max(0, Math.round(Number(beratTeks) || 0));
   const resep = useResep(hex.join(','), tintaDasar.map((x) => x.hex).join(','), maksTinta);
   const pantone = hex.map((h) => pantoneTerdekat(katalogC, h));
-  const saran = useSaranPengganti(kainHex, hex.join(','), aturan, katalogC);
+  const saran = useSaranPengganti(kainHex, hex.join(','), porsi.join(','), aturan, katalogC);
   const totalPorsi = porsi.reduce((s, x) => s + x, 0);
 
   function ringkasan(): string {

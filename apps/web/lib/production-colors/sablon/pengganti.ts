@@ -45,7 +45,7 @@ export type SaranPengganti = {
 };
 
 type Calon = { warna: WarnaPantone; rona: number; L: number; C: number; rasio: number; bedaKain: number; keluarga: KeluargaWarna | null; khusus: boolean };
-export type CalonKain = { ronaDasar: number; semua: readonly Calon[] };
+export type CalonKain = { kainHex: string; ronaDasar: number; semua: readonly Calon[] };
 
 /** Rona harus sedekat ini (derajat, roda pelukis) ke rona aturan supaya dianggap mengikuti aturan itu. */
 const TOLERANSI_RONA = 20;
@@ -65,6 +65,28 @@ const PER_ATURAN = 2;
 const DE_SAMA = 1;
 /** Di bawah kepekatan ini warna dianggap netral — bukan variasi warna. */
 const KROMA_WARNA = 12;
+/** Kain "kalem berwarna": berona tetapi pudar, dan tidak gelap — krem, khaki, army, mocca, sage. */
+const KAIN_KALEM_KROMA_MAKS = 35;
+const KAIN_KALEM_TERANG_MIN = 30;
+
+/**
+ * Batas kepekatan (kroma Lab) sebuah tinta menurut porsinya di desain, atau
+ * `null` kalau bebas.
+ *
+ * Aturan harmoni hanya mengatur rona; ia tidak tahu bahwa biru royal sepekat
+ * 2728 C bertabrakan dengan kaos pasir yang pudar. Di kain kalem berwarna, tinta
+ * besar ikut kalem — pola 60-30-10: yang dominan paling tenang, yang mencolok
+ * untuk aksen. Kain netral (hitam, putih, abu), kain gelap, dan kain yang sudah
+ * pekat tidak dibatasi: warna berani memang lazim di sana.
+ */
+export function batasKromaTinta(kainHex: string, porsi: number): number | null {
+  const [L, a, b] = hexKeLab(kainHex);
+  const C = Math.hypot(a, b);
+  if (C < KROMA_NETRAL || C >= KAIN_KALEM_KROMA_MAKS || L < KAIN_KALEM_TERANG_MIN) return null;
+  if (porsi >= 40) return C + 25;
+  if (porsi >= 20) return C + 45;
+  return null;
+}
 
 /**
  * Jenis sebuah Pantone. Neon dan metalik menurut nomornya; tinta biasa menurut
@@ -107,7 +129,7 @@ export function calonUntukKain(kainHex: string, katalog: readonly WarnaPantone[]
   const aksenNetral = katalog.find((w) => w.kode === AKSEN_POPULER[0]);
   const ronaDasar = Math.hypot(labKain[1], labKain[2]) < KROMA_NETRAL ? (aksenNetral ? hexKeHsb(aksenNetral.hex).h : 80) : hexKeHsb(kainHex).h;
   const semua = siapkan(katalog).map((c) => ({ ...c, rasio: rasioKontras(c.warna.hex, kainHex), bedaKain: deltaE2000(c.warna.lab, labKain) }));
-  return { ronaDasar, semua };
+  return { kainHex, ronaDasar, semua };
 }
 
 function jarakRona(a: number, b: number): number {
@@ -171,7 +193,10 @@ export function saranSemuaPilihan(input: {
   indeks: number;
   /** Aturan palet saat ini didahulukan di setiap pilihan. */
   aturanUtama: AturanHarmoni;
+  /** Porsi tinta ini di desain (%) — tinta besar di kain kalem tidak diberi warna mencolok. */
+  porsi?: number;
 }): Record<OpsiGanti, SaranPengganti[]> {
+  const batasKroma = input.porsi === undefined ? null : batasKromaTinta(input.calon.kainHex, input.porsi);
   const lain = input.hex.flatMap((h, i) => {
     const bersih = i === input.indeks ? null : normalisasiHex(h);
     return bersih ? [hexKeLab(bersih)] : [];
@@ -182,7 +207,9 @@ export function saranSemuaPilihan(input: {
 
   const untuk = (opsi: Exclude<OpsiGanti, 'SEMUA'>): SaranPengganti[] => {
     // Syarat murah dulu, baru jarak ke tinta lain (ΔE2000 itu mahal).
-    const calon = input.calon.semua.filter((c) => lolos(opsi, c) && lain.every((l) => deltaE2000(l, c.warna.lab) >= BEDA_ANTARTINTA));
+    const calon = input.calon.semua.filter(
+      (c) => lolos(opsi, c) && (batasKroma === null || c.C <= batasKroma) && lain.every((l) => deltaE2000(l, c.warna.lab) >= BEDA_ANTARTINTA),
+    );
     const perAturan = urutanAturan.map((aturan) => {
       const netralBoleh = aturan === 'MONOCHROMATIC' || aturan === 'SHADES';
       const terpilih: { c: Calon; skor: number }[] = [];
