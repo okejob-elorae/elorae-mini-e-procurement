@@ -31,7 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { hapusPaletAction, simpanPaletAction, simpanTintaDasarAction } from '@/app/actions/production-palette';
+import { hapusPaletAction, simpanPaletAction, simpanPemetaanWarnaAction, simpanTintaDasarAction } from '@/app/actions/production-palette';
 import { ATURAN_HARMONI, INDEKS_DASAR, susunHarmoni, type AturanHarmoni } from '@/lib/production-colors/palet/harmoni';
 import {
   dariTersimpan,
@@ -61,6 +61,8 @@ import { BATAS_NAMA_PALET } from '@/lib/production-colors/palet/validasi';
 import { buildPaletWarnaPrintHtml } from '@/lib/print/palet-warna-html';
 import { hexKeHsb, hsbKeHex, normalisasiHex } from '@/lib/production-colors/palet/warna';
 import { tiruKomposisi, type Komposisi } from '@/lib/production-colors/sablon/komposisi';
+import type { PemetaanWarna } from '@/lib/production-colors/sablon/pemetaan-warna';
+import { daftarKategori, hitungWarnaLaris, type BarisPenjualanWarna } from '@/lib/production-colors/sablon/warna-laris';
 import { ATURAN_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { salinTeks } from '@/lib/ui/salin-teks';
@@ -74,6 +76,7 @@ import { KartuKain } from './KartuKain';
 import { KartuRekomendasi } from './KartuRekomendasi';
 import { HURUF_SABLON, KartuSablon } from './KartuSablon';
 import { KartuTintaDasar } from './KartuTintaDasar';
+import { KartuWarnaLaris } from './KartuWarnaLaris';
 import { KisiKontras } from './KisiKontras';
 import { RodaWarna } from './RodaWarna';
 import { TombolEkspor } from './TombolEkspor';
@@ -125,12 +128,17 @@ export function PaletClient({
   palet: daftar,
   tcx,
   tintaDasar,
+  penjualanWarna,
+  pemetaanWarna,
   bolehMengelola,
 }: {
   palet: BarisPalet[];
   /** `[kode, hex, nama]` dari tabel PantoneColor. */
   tcx: [string, string, string][];
   tintaDasar: TintaDasar[];
+  /** Terjual per nama warna varian (Shopee/TikTok), 90 hari terakhir dan sebelumnya. */
+  penjualanWarna: BarisPenjualanWarna[];
+  pemetaanWarna: PemetaanWarna;
   bolehMengelola: boolean;
 }) {
   const t = useTranslations('productionPalette');
@@ -167,6 +175,13 @@ export function PaletClient({
   const [tintaTerhubung, setTintaTerhubung] = useState(true);
   /** Warna yang wajib ada di setiap rekomendasi komposisi. */
   const [kunci, setKunci] = useState<string | null>(null);
+  const [kategoriLaris, setKategoriLaris] = useState<string | null>(null);
+  const [pemetaan, setPemetaan] = useState<PemetaanWarna>(pemetaanWarna);
+  const hasilLaris = useMemo(
+    () => hitungWarnaLaris(penjualanWarna, { manual: pemetaan, kategori: kategoriLaris }),
+    [penjualanWarna, pemetaan, kategoriLaris],
+  );
+  const kategoriTersedia = useMemo(() => daftarKategori(penjualanWarna), [penjualanWarna]);
   /** Warna dominan gambar referensi; komposisinya dihitung ulang tiap kali kain berganti. */
   const [warnaReferensi, setWarnaReferensi] = useState<{ hex: string; bagian: number }[] | null>(null);
   const [beratTeks, setBeratTeks] = useState('1000');
@@ -442,6 +457,35 @@ export function PaletClient({
         katalogTcx={katalogTcx}
       />
 
+      <KartuWarnaLaris
+        hasil={hasilLaris}
+        adaData={penjualanWarna.length > 0}
+        kategori={kategoriLaris}
+        daftarKategori={kategoriTersedia}
+        onKategori={setKategoriLaris}
+        bolehMengelola={bolehMengelola}
+        onJadikanKain={(hexKain, namaWarna) => {
+          setKainTerakhir(hexKain);
+          if (!berkain) setTerpilih(0);
+          ubah((p) => pasangKain(p, hexKain, katalogC()));
+          toast.success(t('bestSellers.fabricSet', { name: namaWarna }));
+        }}
+        onKunci={(hexKunci, namaWarna) => {
+          setKunci(hexKunci);
+          toast.success(t('bestSellers.locked', { name: namaWarna }));
+        }}
+        onPetakan={async (namaWarna, hexWarna) => {
+          const h = await simpanPemetaanWarnaAction(namaWarna, hexWarna);
+          if (h.ok) {
+            setPemetaan(h.peta);
+            toast.success(t('bestSellers.mapped', { name: namaWarna }));
+            return true;
+          }
+          toast.error(t(`bestSellers.errors.${h.kode}`));
+          return false;
+        }}
+      />
+
       <AmbilDariGambar
         berkain={berkain}
         onTiruKomposisi={berkain ? tiruDariGambar : undefined}
@@ -473,6 +517,7 @@ export function PaletClient({
 
       {palet.kain && (
         <KartuRekomendasi
+          warnaLaris={hasilLaris.laris}
           kainHex={palet.kain}
           namaKain={namaKain}
           katalogC={katalogC()}

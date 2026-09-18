@@ -166,6 +166,46 @@ describe('galeriKomposisi — gaya cerah dan redam', () => {
   });
 });
 
+describe('galeriKomposisi — sumber aksen dan acak', () => {
+  // Warna yang laku di toko (earth tone): mocca, army, terracotta, mustard.
+  const LARIS = ['#9b7b62', '#535a3c', '#b0573a', '#d0a13a'];
+  const labSumber = LARIS.map(hexKeLab);
+
+  it('aksen diambil dari sumber yang diberikan, bukan dari daftar bawaan', () => {
+    const galeri = galeriKomposisi({ kainHex: HITAM, katalog: KATALOG, aksen: LARIS, gaya: 'CERAH' });
+    expect(galeri.length).toBeGreaterThanOrEqual(4);
+    for (const k of galeri) {
+      periksaBentuk(k);
+      periksaKeterbacaan(k, HITAM);
+      for (const t of k.tinta.filter((x) => x.peran === 'AKSEN')) {
+        const dekat = Math.min(...labSumber.map((l) => deltaE2000(l, hexKeLab(t.hex))));
+        expect(dekat, `${k.pola} ${t.hex}`).toBeLessThan(15);
+      }
+    }
+    expect(galeri.some((k) => k.tinta.some((t) => t.kode === '375 C'))).toBe(false);
+  });
+
+  it('aksen yang sewarna dengan kain dilewati — kaos army tidak diberi tinta army', () => {
+    const galeri = galeriKomposisi({ kainHex: '#535a3c', katalog: KATALOG, aksen: LARIS });
+    for (const k of galeri)
+      for (const t of k.tinta.filter((x) => x.peran === 'AKSEN')) expect(deltaE2000(hexKeLab(t.hex), hexKeLab('#535a3c'))).toBeGreaterThan(10);
+  });
+
+  it('acak memberi susunan lain, tetap bisa dicetak; tanpa acak hasilnya tetap', () => {
+    const tanpa = galeriKomposisi({ kainHex: HITAM, katalog: KATALOG });
+    expect(galeriKomposisi({ kainHex: HITAM, katalog: KATALOG, acak: 0 })).toEqual(tanpa);
+    const id = (g: Komposisi[]) => g.map((k) => k.id).join('|');
+    const set = new Set([tanpa, ...[1, 2, 3].map((acak) => galeriKomposisi({ kainHex: HITAM, katalog: KATALOG, acak }))].map(id));
+    expect(set.size).toBe(4);
+    for (const acak of [1, 2, 3])
+      for (const k of galeriKomposisi({ kainHex: HITAM, katalog: KATALOG, acak, jumlah: 4 })) {
+        expect(k.tinta).toHaveLength(4);
+        periksaBentuk(k);
+        periksaKeterbacaan(k, HITAM);
+      }
+  });
+});
+
 describe('galeriKomposisi — kain berwarna', () => {
   it('mengambil aksen dari rona kain, termasuk seberangnya', () => {
     const galeri = galeriKomposisi({ kainHex: BLUE_SURF, katalog: KATALOG });

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Lock, X } from 'lucide-react';
+import { Lock, Shuffle, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,10 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { svgKaos } from '@/lib/production-colors/palet/kaos-svg';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { galeriKomposisi, type GayaKomposisi, type Komposisi } from '@/lib/production-colors/sablon/komposisi';
+import { KAMUS_WARNA } from '@/lib/production-colors/sablon/nama-warna';
+import type { WarnaLaris } from '@/lib/production-colors/sablon/warna-laris';
 import { HURUF_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
 import { cn } from '@/lib/utils';
 
 const TANPA_KUNCI = '-';
+
+/** Dari mana warna aksen diambil: warna laris toko, preset tren lokal, atau daftar sablon bawaan. */
+type SumberWarna = 'LARIS' | 'EARTH' | 'PASTEL' | 'CERAH' | 'BAWAAN';
+const SUMBER: readonly SumberWarna[] = ['LARIS', 'EARTH', 'PASTEL', 'CERAH', 'BAWAAN'];
 
 /**
  * Galeri komposisi siap pakai untuk kain yang dipilih — jawaban untuk "warna
@@ -33,6 +39,7 @@ export function KartuRekomendasi({
   onBuangDariGambar,
   onJumlah,
   onPakai,
+  warnaLaris,
 }: {
   kainHex: string;
   namaKain: string;
@@ -46,13 +53,28 @@ export function KartuRekomendasi({
   /** Mengubah jumlah tinta palet — rekomendasi mengikuti. */
   onJumlah: (n: number) => void;
   onPakai: (k: Komposisi, judul: string) => void;
+  /** Warna produk yang laku di toko, terlaris dulu. */
+  warnaLaris: readonly WarnaLaris[];
 }) {
   const t = useTranslations('productionPalette.recommend');
   const jumlah = hexTinta.length;
   const [gaya, setGaya] = useState<GayaKomposisi | 'SEMUA'>('SEMUA');
+  const adaLaris = warnaLaris.length >= 3;
+  // Tanpa data penjualan, titik mulainya tren lokal — bukan tujuh warna sablon generik.
+  const [sumber, setSumber] = useState<SumberWarna>(adaLaris ? 'LARIS' : 'EARTH');
+  const [acak, setAcak] = useState(0);
+  const aksen = useMemo(
+    () =>
+      sumber === 'LARIS'
+        ? warnaLaris.slice(0, 12).map((w) => w.hex)
+        : sumber === 'BAWAAN'
+          ? undefined
+          : KAMUS_WARNA.filter((w) => w.keluarga === sumber).map((w) => w.hex),
+    [sumber, warnaLaris],
+  );
   const galeri = useMemo(
-    () => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunci, jumlah, gaya }),
-    [kainHex, katalogC, kunci, jumlah, gaya],
+    () => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunci, jumlah, gaya, aksen, acak }),
+    [kainHex, katalogC, kunci, jumlah, gaya, aksen, acak],
   );
   const daftar = dariGambar ? [dariGambar, ...galeri] : galeri;
 
@@ -79,7 +101,24 @@ export function KartuRekomendasi({
       </CardHeader>
       <CardContent>
         {/* Di badan kartu, bukan di kepala: di HP kontrol ini menjepit judul dan deskripsi. */}
-        <div className="mb-4 flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-60 space-y-1">
+            <Label htmlFor="sumber-rekomendasi" className="text-xs">
+              {t('source')}
+            </Label>
+            <Select value={sumber} onValueChange={(v) => setSumber(v as SumberWarna)}>
+              <SelectTrigger id="sumber-rekomendasi" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {SUMBER.map((s) => (
+                  <SelectItem key={s} value={s} disabled={s === 'LARIS' && !adaLaris}>
+                    {t(`sources.${s}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="w-32 space-y-1">
             <Label htmlFor="jumlah-tinta-rekomendasi" className="text-xs">
               {t('count')}
@@ -132,7 +171,14 @@ export function KartuRekomendasi({
               </SelectContent>
             </Select>
           </div>
+          <Button type="button" variant="outline" onClick={() => setAcak((a) => a + 1)}>
+            <Shuffle className="h-4 w-4" />
+            {t('shuffle')}
+          </Button>
         </div>
+        <p className="mt-2 mb-4 text-xs text-muted-foreground">
+          {t(`sourceHints.${sumber === 'LARIS' ? 'LARIS' : sumber === 'BAWAAN' ? 'BAWAAN' : 'TREN'}`)}
+        </p>
         {daftar.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('empty')}</p>
         ) : (

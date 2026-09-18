@@ -168,6 +168,15 @@ function redamkan([L, C, h]: Lch): Lch {
   return [L * 0.86, C * 0.7, h];
 }
 
+/** PRNG kecil berbenih (LCG) — acak lagi harus bisa diulang untuk benih yang sama. */
+function acakBerbenih(benih: number) {
+  let s = (benih * 2654435761) >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
 function geserRona(aksen: Lch, derajat: number): Lch {
   return [aksen[0], aksen[1], (aksen[2] + derajat + 360) % 360];
 }
@@ -188,6 +197,13 @@ export function galeriKomposisi(input: {
   jumlah?: number;
   /** Tanpa gaya (atau `SEMUA`), galeri memuat keduanya berselang-seling. */
   gaya?: GayaKomposisi | 'SEMUA';
+  /**
+   * Sumber warna aksen (hex), misalnya warna yang laris di toko atau preset tren
+   * lokal. Tanpa ini: aksen populer untuk kain netral, rona turunan untuk kain berwarna.
+   */
+  aksen?: readonly string[];
+  /** Benih "acak lagi": 0 atau kosong = susunan tetap; angka lain = urutan dan nuansa aksen lain. */
+  acak?: number;
 }): Komposisi[] {
   const n = Math.min(6, Math.max(1, Math.round(input.jumlah ?? 3)));
   const gayaDiminta = input.gaya ?? 'SEMUA';
@@ -205,13 +221,34 @@ export function galeriKomposisi(input: {
   const kunciNetral = kunci && !kunciAksen ? kunci : null;
 
   // Daftar aksen: dari katalog populer untuk kain netral, dari rona kain untuk kain berwarna.
-  const daftarAksen: Lch[] =
+  const bawaan: Lch[] =
     Ck < KROMA_NETRAL
       ? AKSEN_POPULER.flatMap((kode) => {
           const w = input.katalog.find((x) => x.kode === kode);
           return w ? [keLch(w.lab)] : [];
         })
       : [180, 150, 210, 120, 240, 30].map((d): Lch => [batasTerang(Lk + arah * 40), 55, (hk + d) % 360]);
+  /*
+   * Sumber luar (warna laris, tren lokal) didahulukan. Yang terlalu kelabu untuk
+   * jadi aksen, atau sewarna dengan kainnya sendiri — kaos army dengan tinta
+   * army — dilewati; kalau sisanya kurang dari tiga, bawaan menambal.
+   */
+  const dariSumber: Lch[] = (input.aksen ?? []).flatMap((hex) => {
+    const bersih = normalisasiHex(hex);
+    if (!bersih) return [];
+    const lab = hexKeLab(bersih);
+    const lch = keLch(lab);
+    return lch[1] >= 8 && deltaE2000(lab, labKain) >= 15 ? [lch] : [];
+  });
+  let daftarAksen: Lch[] = dariSumber.length >= 3 ? dariSumber : [...dariSumber, ...bawaan];
+  if (input.acak) {
+    // Acak berbenih: urutan diaduk, rona digeser sampai ±12° dan kepekatan 85–115%.
+    const acak = acakBerbenih(input.acak);
+    daftarAksen = daftarAksen
+      .map((a) => ({ a, k: acak() }))
+      .sort((x, y) => x.k - y.k)
+      .map(({ a }): Lch => [a[0], a[1] * (0.85 + acak() * 0.3), (a[2] + (acak() - 0.5) * 24 + 360) % 360]);
+  }
 
   /*
    * Kain bernada sedang (cukup ruang ke terang maupun ke gelap): netral dibuat

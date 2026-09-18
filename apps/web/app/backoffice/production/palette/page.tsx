@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { daftarPalet, daftarPantoneTcx } from "@/lib/production-colors/palet/queries";
-import { ambilTintaDasar } from "@/lib/production-colors/sablon/queries";
+import { ambilPemetaanWarna, ambilPenjualanWarna, ambilTintaDasar } from "@/lib/production-colors/sablon/queries";
 import { PaletClient } from "./PaletClient";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,21 @@ export const dynamic = "force-dynamic";
 export default async function PaletPage() {
   const session = await auth();
   const kelola = hasPermission(session?.user.permissions ?? [], PERMISSIONS.PRODUCTION_COLORS_MANAGE);
-  const [palet, tcx, tintaDasar] = await Promise.all([daftarPalet(), daftarPantoneTcx(), ambilTintaDasar()]);
-  return <PaletClient palet={palet} tcx={tcx} tintaDasar={tintaDasar} bolehMengelola={kelola} />;
+  const [palet, tcx, tintaDasar, penjualanWarna, pemetaanWarna] = await Promise.all([
+    daftarPalet(),
+    daftarPantoneTcx(),
+    ambilTintaDasar(),
+    ambilPenjualanWarna(),
+    ambilPemetaanWarna(),
+  ]);
+  return (
+    <PaletClient
+      palet={palet}
+      tcx={tcx}
+      tintaDasar={tintaDasar}
+      penjualanWarna={penjualanWarna}
+      pemetaanWarna={pemetaanWarna}
+      bolehMengelola={kelola}
+    />
+  );
 }
