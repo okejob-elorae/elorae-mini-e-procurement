@@ -1693,6 +1693,9 @@
       "lockInk": "Ink {letter} · {code}",
       "lockKept": "Locked · {code}",
       "lockHint": "The locked colour appears in every recommendation.",
+      "count": "Number of inks",
+      "countOption": "{count, plural, one {# ink} other {# inks}}",
+      "fewerInImage": "This image only has {count, plural, one {# ink} other {# inks}} besides its fabric.",
       "use": "Use",
       "applied": "Composition “{name}” applied.",
       "fromImage": "From image",
@@ -1704,17 +1707,13 @@
       "mimic": "Copy its composition to this fabric",
       "mimicHint": "The largest colour is read as the image's fabric; the roles and shares of the others move to your fabric.",
       "patterns": {
-        "AKSEN_NETRAL_NADA": "Accent + neutral + tone-on-tone",
-        "AKSEN_NETRAL": "Accent + neutral",
-        "DUA_AKSEN_NETRAL": "Two accents + neutral",
-        "KONTRAS_PENUH": "Full contrast",
-        "AKSEN_NADA": "Accent + tone-on-tone",
-        "TONAL": "Tonal",
+        "SATU": "One ink — {role}",
+        "TONAL": "Tonal, {count} steps",
         "DARI_GAMBAR": "Like the reference image"
       },
       "roles": {
         "AKSEN": "Accent",
-        "AKSEN_2": "Accent 2",
+        "AKSEN_2": "Accent 2", "AKSEN_3": "Accent 3",
         "NETRAL": "Neutral",
         "NADA": "Tone-on-tone",
         "TONAL": "Tonal"

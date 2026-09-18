@@ -1693,6 +1693,9 @@
       "lockInk": "Tinta {letter} · {code}",
       "lockKept": "Terkunci · {code}",
       "lockHint": "Warna yang dikunci muncul di setiap rekomendasi.",
+      "count": "Jumlah tinta",
+      "countOption": "{count} tinta",
+      "fewerInImage": "Gambar ini hanya punya {count} tinta selain kainnya.",
       "use": "Pakai",
       "applied": "Komposisi “{name}” dipasang.",
       "fromImage": "Dari gambar",
@@ -1704,17 +1707,13 @@
       "mimic": "Tiru komposisinya ke kain ini",
       "mimicHint": "Warna terluas dibaca sebagai kain gambar; peran dan porsi warna lainnya dipindah ke kain Anda.",
       "patterns": {
-        "AKSEN_NETRAL_NADA": "Aksen + netral + tone-on-tone",
-        "AKSEN_NETRAL": "Aksen + netral",
-        "DUA_AKSEN_NETRAL": "Dua aksen + netral",
-        "KONTRAS_PENUH": "Kontras penuh",
-        "AKSEN_NADA": "Aksen + tone-on-tone",
-        "TONAL": "Tonal",
+        "SATU": "Satu tinta — {role}",
+        "TONAL": "Tonal, {count} tingkat",
         "DARI_GAMBAR": "Seperti gambar referensi"
       },
       "roles": {
         "AKSEN": "Aksen",
-        "AKSEN_2": "Aksen 2",
+        "AKSEN_2": "Aksen 2", "AKSEN_3": "Aksen 3",
         "NETRAL": "Netral",
         "NADA": "Tone-on-tone",
         "TONAL": "Tonal"

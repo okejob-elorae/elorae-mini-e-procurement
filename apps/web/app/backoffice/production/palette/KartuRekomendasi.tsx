@@ -11,15 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { svgKaos } from '@/lib/production-colors/palet/kaos-svg';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { galeriKomposisi, type Komposisi } from '@/lib/production-colors/sablon/komposisi';
-import { HURUF_SABLON } from '@/lib/production-colors/sablon/saran';
+import { HURUF_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
 import { cn } from '@/lib/utils';
 
 const TANPA_KUNCI = '-';
 
 /**
  * Galeri komposisi siap pakai untuk kain yang dipilih — jawaban untuk "warna
- * apa yang cocok", tanpa harus menyetel tinta satu per satu. Galeri dihitung
- * ulang hanya saat kain atau warna yang dikunci berubah.
+ * apa yang cocok", tanpa harus menyetel tinta satu per satu. Setiap komposisi
+ * memakai jumlah tinta yang sama dengan palet; galeri dihitung ulang hanya saat
+ * kain, jumlah tinta, atau warna yang dikunci berubah.
  */
 export function KartuRekomendasi({
   kainHex,
@@ -30,6 +31,7 @@ export function KartuRekomendasi({
   onKunci,
   dariGambar,
   onBuangDariGambar,
+  onJumlah,
   onPakai,
 }: {
   kainHex: string;
@@ -41,11 +43,25 @@ export function KartuRekomendasi({
   onKunci: (hex: string | null) => void;
   dariGambar: Komposisi | null;
   onBuangDariGambar: () => void;
-  onPakai: (k: Komposisi) => void;
+  /** Mengubah jumlah tinta palet — rekomendasi mengikuti. */
+  onJumlah: (n: number) => void;
+  onPakai: (k: Komposisi, judul: string) => void;
 }) {
   const t = useTranslations('productionPalette.recommend');
-  const galeri = useMemo(() => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunci }), [kainHex, katalogC, kunci]);
+  const jumlah = hexTinta.length;
+  const galeri = useMemo(
+    () => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunci, jumlah }),
+    [kainHex, katalogC, kunci, jumlah],
+  );
   const daftar = dariGambar ? [dariGambar, ...galeri] : galeri;
+
+  /** Judul dari peran tintanya: empat tinta klasik berbunyi "Netral + Aksen + Tone-on-tone + Aksen 2". */
+  const judul = (k: Komposisi) => {
+    if (k.pola === 'DARI_GAMBAR') return t('patterns.DARI_GAMBAR');
+    if (k.pola === 'TONAL') return t('patterns.TONAL', { count: k.tinta.length });
+    if (k.pola === 'SATU') return t('patterns.SATU', { role: t(`roles.${k.tinta[0].peran}`) });
+    return [...new Set(k.tinta.map((x) => x.peran))].map((p) => t(`roles.${p}`)).join(' + ');
+  };
 
   const kodeUntuk = (hex: string) => {
     const p = pantoneTerdekat(katalogC, hex);
@@ -62,32 +78,51 @@ export function KartuRekomendasi({
       </CardHeader>
       <CardContent>
         {/* Di badan kartu, bukan di kepala: di HP kontrol ini menjepit judul dan deskripsi. */}
-        <div className="mb-4 w-full max-w-64 space-y-1">
-          <Label htmlFor="kunci-warna" className="text-xs">
-            <Lock className="h-3 w-3" />
-            {t('lockLabel')}
-          </Label>
-          <Select value={kunci ?? TANPA_KUNCI} onValueChange={(v) => onKunci(v === TANPA_KUNCI ? null : v)}>
-            <SelectTrigger id="kunci-warna" className="w-full" title={t('lockHint')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper">
-              <SelectItem value={TANPA_KUNCI}>{t('lockNone')}</SelectItem>
-              {pilihanKunci.map((p) => (
-                <SelectItem key={p.hex} value={p.hex}>
-                  <span aria-hidden className="size-3 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: p.hex }} />
-                  {p.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="w-32 space-y-1">
+            <Label htmlFor="jumlah-tinta-rekomendasi" className="text-xs">
+              {t('count')}
+            </Label>
+            <Select value={String(jumlah)} onValueChange={(v) => onJumlah(Number(v))}>
+              <SelectTrigger id="jumlah-tinta-rekomendasi" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {Array.from({ length: JUMLAH_SABLON_MAKS }, (_, i) => i + 1).map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {t('countOption', { count: n })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="max-w-64 min-w-52 flex-1 space-y-1">
+            <Label htmlFor="kunci-warna" className="text-xs">
+              <Lock className="h-3 w-3" />
+              {t('lockLabel')}
+            </Label>
+            <Select value={kunci ?? TANPA_KUNCI} onValueChange={(v) => onKunci(v === TANPA_KUNCI ? null : v)}>
+              <SelectTrigger id="kunci-warna" className="w-full" title={t('lockHint')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value={TANPA_KUNCI}>{t('lockNone')}</SelectItem>
+                {pilihanKunci.map((p) => (
+                  <SelectItem key={p.hex} value={p.hex}>
+                    <span aria-hidden className="size-3 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: p.hex }} />
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         {daftar.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('empty')}</p>
         ) : (
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             {daftar.map((k, i) => {
-              const nama = t(`patterns.${k.pola}`);
+              const nama = judul(k);
               const gambar = k.pola === 'DARI_GAMBAR';
               return (
                 <li key={k.id} className={cn('flex min-w-0 flex-col gap-3 rounded-lg border p-3', gambar && 'border-primary ring-1 ring-primary')}>
@@ -115,6 +150,9 @@ export function KartuRekomendasi({
                       }),
                     }}
                   />
+                  {gambar && k.tinta.length < jumlah && (
+                    <p className="text-xs text-muted-foreground">{t('fewerInImage', { count: k.tinta.length })}</p>
+                  )}
                   <ul className="space-y-1 text-xs">
                     {k.tinta.map((x, j) => (
                       <li key={`${x.hex}-${j}`} className="flex items-center gap-2">
@@ -129,7 +167,7 @@ export function KartuRekomendasi({
                       </li>
                     ))}
                   </ul>
-                  <Button type="button" size="sm" variant={gambar ? 'default' : 'outline'} className="mt-auto" onClick={() => onPakai(k)}>
+                  <Button type="button" size="sm" variant={gambar ? 'default' : 'outline'} className="mt-auto" onClick={() => onPakai(k, nama)}>
                     {t('use')}
                   </Button>
                 </li>

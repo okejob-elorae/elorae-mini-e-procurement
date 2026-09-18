@@ -175,16 +175,19 @@ export function PaletClient({
   }
 
   const komposisiGambar = useMemo(
-    () => (warnaReferensi && palet.kain ? tiruKomposisi({ gambar: warnaReferensi, kainHex: palet.kain, katalog: katalogC() }) : null),
-    [warnaReferensi, palet.kain],
+    () =>
+      warnaReferensi && palet.kain
+        ? tiruKomposisi({ gambar: warnaReferensi, kainHex: palet.kain, katalog: katalogC(), jumlah: palet.warna.length })
+        : null,
+    [warnaReferensi, palet.kain, palet.warna.length],
   );
 
   /** Memasang komposisi menimpa tinta yang ada — jadi selalu bisa diurungkan. */
-  function pakaiKomposisi(k: Komposisi) {
+  function pakaiKomposisi(k: Komposisi, judul: string) {
     const sebelum = palet;
     setPaletSendiri(terapkanKomposisi(sebelum, k));
     setTerpilih(0);
-    toast.success(t('recommend.applied', { name: t(`recommend.patterns.${k.pola}`) }), {
+    toast.success(t('recommend.applied', { name: judul }), {
       action: { label: t('undo'), onClick: () => setPaletSendiri(sebelum) },
     });
   }
@@ -446,6 +449,10 @@ export function PaletClient({
           onKunci={setKunci}
           dariGambar={komposisiGambar}
           onBuangDariGambar={() => setWarnaReferensi(null)}
+          onJumlah={(n) => {
+            ubah((p) => ubahJumlahSablon(p, n, katalogC()));
+            setTerpilih((i) => Math.min(i, n - 1));
+          }}
           onPakai={pakaiKomposisi}
         />
       )}

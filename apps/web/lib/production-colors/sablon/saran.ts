@@ -2,7 +2,7 @@ import { INDEKS_DASAR, langkahHarmoni, type AturanHarmoni } from '../palet/harmo
 import { rasioKontras } from '../palet/kontras';
 import { deltaE2000, hexKeLab, type Lab, type WarnaPantone } from '../palet/pantone';
 import { hexKeHsb, hsbKeHex, putarSudut } from '../palet/warna';
-import { AKSEN_POPULER, KROMA_NETRAL } from './komposisi';
+import { AKSEN_POPULER, KROMA_NETRAL } from './aksen';
 
 /**
  * Saran warna sablon untuk sebuah kain.

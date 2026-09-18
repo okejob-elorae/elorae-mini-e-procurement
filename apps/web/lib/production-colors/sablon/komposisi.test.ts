@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import dataC from '../palet/pantone-c.json';
 import { deltaE2000, hexKeLab, siapkanKatalog } from '../palet/pantone';
 import { galeriKomposisi, tiruKomposisi, type Komposisi, type PeranKomposisi } from './komposisi';
+import { PORSI_AWAL } from './saran';
 
 const KATALOG = siapkanKatalog('C', dataC as [string, string][]);
 const HITAM = '#101010';
@@ -26,6 +27,7 @@ function periksaKeterbacaan(k: Komposisi, kain: string) {
     const syarat: Record<PeranKomposisi, [number, number]> = {
       AKSEN: [20, 100],
       AKSEN_2: [20, 100],
+      AKSEN_3: [20, 100],
       NETRAL: [20, 100],
       NADA: [5, 28],
       TONAL: [12, 100],
@@ -45,6 +47,36 @@ function periksaBentuk(k: Komposisi) {
       expect(deltaE2000(hexKeLab(k.tinta[i].hex), hexKeLab(k.tinta[j].hex))).toBeGreaterThanOrEqual(8);
 }
 
+describe('galeriKomposisi — mengikuti jumlah tinta', () => {
+  /*
+   * Rekomendasi harus bisa langsung dipakai: kalau desainnya empat tinta, semua
+   * kartu empat tinta, dengan porsi awal yang sama seperti kartu Warna sablon.
+   */
+  it.each([1, 2, 3, 4, 5, 6])('%i tinta: setiap komposisi tepat sejumlah itu', (n) => {
+    for (const kain of [HITAM, BLUE_SURF, PUTIH]) {
+      const galeri = galeriKomposisi({ kainHex: kain, katalog: KATALOG, jumlah: n });
+      expect(galeri.length, `${n} tinta di ${kain}`).toBeGreaterThanOrEqual(4);
+      for (const k of galeri) {
+        expect(k.tinta, `${k.pola} di ${kain}`).toHaveLength(n);
+        expect(k.tinta.map((t) => t.porsi)).toEqual(PORSI_AWAL[n]);
+        periksaBentuk(k);
+        periksaKeterbacaan(k, kain);
+      }
+    }
+  });
+
+  it('warna yang dikunci tetap ada di setiap jumlah', () => {
+    for (const n of [1, 2, 4, 6]) {
+      const galeri = galeriKomposisi({ kainHex: HITAM, katalog: KATALOG, jumlah: n, kunciHex: '#a0d513' });
+      expect(galeri.length).toBeGreaterThanOrEqual(1);
+      for (const k of galeri) {
+        expect(k.tinta).toHaveLength(n);
+        expect(k.tinta.some((t) => t.hex === '#a0d513')).toBe(true);
+      }
+    }
+  });
+});
+
 describe('galeriKomposisi — kain netral (hitam)', () => {
   const galeri = galeriKomposisi({ kainHex: HITAM, katalog: KATALOG });
 
@@ -58,8 +90,8 @@ describe('galeriKomposisi — kain netral (hitam)', () => {
     }
   });
 
-  it('memuat pola streetwear: aksen + netral + tone-on-tone', () => {
-    const k = galeri.find((x) => x.pola === 'AKSEN_NETRAL_NADA');
+  it('memuat pola streetwear: netral + aksen + tone-on-tone', () => {
+    const k = galeri.find((x) => x.pola === 'KLASIK');
     expect(k).toBeDefined();
     const peran = new Map(k!.tinta.map((t) => [t.peran, t.hex]));
     expect(kroma(peran.get('AKSEN')!)).toBeGreaterThanOrEqual(30);
@@ -127,7 +159,7 @@ describe('tiruKomposisi', () => {
   ];
 
   it('membaca peran tiap warna dan porsinya dari luas di gambar; kain referensi = warna terluas', () => {
-    const k = tiruKomposisi({ gambar: referensi, kainHex: HITAM, katalog: KATALOG })!;
+    const k = tiruKomposisi({ gambar: referensi, kainHex: HITAM, katalog: KATALOG, jumlah: 3 })!;
     expect(k.pola).toBe('DARI_GAMBAR');
     expect(k.tinta.map((t) => t.peran)).toEqual(['AKSEN', 'NETRAL', 'NADA']);
     expect(k.tinta.map((t) => t.porsi)).toEqual([40, 38, 22]);
@@ -147,6 +179,12 @@ describe('tiruKomposisi', () => {
     expect(k.tinta.map((t) => t.porsi)).toEqual([40, 38, 22]);
     periksaBentuk(k);
     periksaKeterbacaan(k, BLUE_SURF);
+  });
+
+  it('dibatasi ke jumlah tinta yang dipakai: warna terluas didahulukan, porsinya dihitung ulang', () => {
+    const k = tiruKomposisi({ gambar: referensi, kainHex: HITAM, katalog: KATALOG, jumlah: 2 })!;
+    expect(k.tinta.map((t) => t.peran)).toEqual(['AKSEN', 'NETRAL']);
+    expect(k.tinta.map((t) => t.porsi)).toEqual([51, 49]);
   });
 
   it('mengabaikan remah warna di bawah 2% dan menolak gambar tanpa tinta', () => {
