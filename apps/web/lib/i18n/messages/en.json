@@ -1928,10 +1928,26 @@
     "unlockInk": "Unlock ink {letter}",
     "lockedHint": "Locked — stays put when the rule, fabric, or other inks change. Click to unlock.",
     "nextColour": "Another colour",
-    "nextColourHint": "Switch to the next suggestion by colour rule. Keep clicking until it fits, then lock it.",
-    "ruleSuggestions": "Suggestions by colour rule",
-    "ruleSuggestionsHint": "Worked out against the fabric, leaving out colours that duplicate another ink. The palette’s current rule comes first.",
-    "followsRule": "{rule} rule"
+    "nextColourHint": "Switch to the next suggestion — each click is another kind of colour (solid, neon, muted, …), all of which suit the fabric. Keep clicking until it fits, then lock it.",
+    "ruleSuggestions": "Colours that suit the fabric",
+    "ruleSuggestionsHint": "Grouped by kind. Each hue follows a harmony rule against the fabric (the icon on each colour; hover for its name), reads on the fabric, and does not duplicate another ink. The palette’s current rule comes first.",
+    "suggestionTag": "{kind} · {rule}",
+    "kinds": {
+      "SOLID": "Solid",
+      "NEON": "Neon",
+      "PASTEL": "Pastel",
+      "REDAM": "Muted",
+      "GELAP": "Deep",
+      "METALIK": "Metallic"
+    },
+    "kindHints": {
+      "SOLID": "Strong and clear, regular ink.",
+      "NEON": "Fluorescent — special ink, check your printer stocks it.",
+      "PASTEL": "Light and soft.",
+      "REDAM": "Calm, vintage feel.",
+      "GELAP": "Dark and rich.",
+      "METALIK": "Shimmering — special ink, check your printer stocks it."
+    }
   },
   "planning": {
     "title": "Production Plan",

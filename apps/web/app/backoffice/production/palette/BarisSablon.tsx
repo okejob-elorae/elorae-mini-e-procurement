@@ -9,7 +9,7 @@ import { STATUS_TONE_CLASS, type StatusTone } from '@/components/ui/status-pill'
 import { rasioKontras } from '@/lib/production-colors/palet/kontras';
 import { cariPantone, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { bagiGram, type ResepCampur } from '@/lib/production-colors/sablon/campur';
-import { saranBerikutnya, saranYangDipakai, type SaranPengganti } from '@/lib/production-colors/sablon/pengganti';
+import { KELUARGA_WARNA, saranBerikutnya, saranYangDipakai, type SaranPengganti } from '@/lib/production-colors/sablon/pengganti';
 import { keterbacaanSablon, type KeterbacaanSablon, type PeranSablon } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { cn } from '@/lib/utils';
@@ -53,8 +53,9 @@ function Pil({ nada, children }: { nada: StatusTone; children: ReactNode }) {
  * persis; selain itu hex-nya yang menjadi judul, dengan kode terdekat dan
  * jaraknya di sampingnya.
  *
- * Tinta yang belum cocok diganti dari saran menurut aturan warna — satu per
- * satu lewat "Warna lain", atau dipilih dari daftarnya — lalu dikunci. Tinta
+ * Tinta yang belum cocok diganti dari saran yang masuk dengan kain — berbagai
+ * jenis warna (solid, neon, pastel, …), ronanya menurut aturan harmoni — satu
+ * per satu lewat "Warna lain", atau dipilih dari daftarnya, lalu dikunci. Tinta
  * terkunci tidak bisa diganti dari sini sampai gemboknya dibuka.
  */
 export function BarisSablon({
@@ -84,7 +85,7 @@ export function BarisSablon({
   tintaDasar: readonly TintaDasar[];
   berat: number;
   katalogC: readonly WarnaPantone[];
-  /** Pengganti menurut aturan warna, bergiliran antaraturan. */
+  /** Pengganti yang masuk dengan kain, bergiliran antarjenis warna. */
   saran: readonly SaranPengganti[];
   terkunci: boolean;
   onKunci: () => void;
@@ -104,13 +105,10 @@ export function BarisSablon({
   const gram = resep ? bagiGram(berat, resep.bagian.map((b) => b.persen)) : [];
   const persis = pantone !== null && pantone.deltaE < DE_PERSIS;
   const dipakai = saranYangDipakai(saran, hex);
-  // Dikelompokkan per aturan, dengan urutan kemunculan: aturan palet di depan.
-  const kelompok = saran.reduce<{ aturan: SaranPengganti['aturan']; daftar: SaranPengganti[] }[]>((acc, x) => {
-    const k = acc.find((g) => g.aturan === x.aturan);
-    if (k) k.daftar.push(x);
-    else acc.push({ aturan: x.aturan, daftar: [x] });
-    return acc;
-  }, []);
+  // Dikelompokkan per jenis warna; di dalamnya urutan saran (aturan palet di depan).
+  const kelompok = KELUARGA_WARNA.map((keluarga) => ({ keluarga, daftar: saran.filter((x) => x.keluarga === keluarga) })).filter(
+    (g) => g.daftar.length > 0,
+  );
 
   return (
     <li className="space-y-3 rounded-lg border p-3 sm:p-4">
@@ -146,7 +144,9 @@ export function BarisSablon({
             <Pil nada={NADA_BACA[baca]}>
               {t(`readability.${baca}`)} · {desimal.format(rasio)}
             </Pil>
-            {dipakai && <Pil nada="inactive">{t('followsRule', { rule: tPalet(`rules.${dipakai.aturan}.name`) })}</Pil>}
+            {dipakai && (
+              <Pil nada="inactive">{t('suggestionTag', { kind: t(`kinds.${dipakai.keluarga}`), rule: tPalet(`rules.${dipakai.aturan}.name`) })}</Pil>
+            )}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -213,16 +213,18 @@ export function BarisSablon({
                 <p className="text-xs font-medium">{t('ruleSuggestions')}</p>
                 <p className="text-xs text-muted-foreground">{t('ruleSuggestionsHint')}</p>
               </div>
-              <ul className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-4">
+              <ul className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
                 {kelompok.map((g) => (
-                  <li key={g.aturan} className="space-y-1.5 rounded-md border p-2">
-                    <p className="flex items-center gap-1.5 text-xs font-medium">
-                      <IkonHarmoni aturan={g.aturan} className="size-4 shrink-0" />
-                      {tPalet(`rules.${g.aturan}.name`)}
-                    </p>
+                  <li key={g.keluarga} className="space-y-1.5 rounded-md border p-2">
+                    <div>
+                      <p className="text-xs font-medium">{t(`kinds.${g.keluarga}`)}</p>
+                      <p className="text-[11px] text-muted-foreground">{t(`kindHints.${g.keluarga}`)}</p>
+                    </div>
                     <div className="flex flex-wrap gap-1.5">
                       {g.daftar.map((x) => {
                         const aktif = dipakai?.kode === x.kode;
+                        const aturan = tPalet(`rules.${x.aturan}.name`);
+                        const bacaan = t(`readability.${keterbacaanSablon(rasioKontras(x.hex, kainHex))}`);
                         return (
                           <Button
                             key={x.kode}
@@ -230,11 +232,13 @@ export function BarisSablon({
                             variant={aktif ? 'secondary' : 'outline'}
                             size="xs"
                             aria-pressed={aktif}
-                            title={`${x.kode} · ${t(`readability.${keterbacaanSablon(rasioKontras(x.hex, kainHex))}`)}`}
+                            aria-label={`${x.kode}, ${aturan}, ${bacaan}`}
+                            title={`${aturan} · ${bacaan}`}
                             onClick={() => onGanti(x.hex)}
                           >
                             <span aria-hidden className="size-3 shrink-0 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: x.hex }} />
                             {x.kode}
+                            <IkonHarmoni aturan={x.aturan} className="size-3 shrink-0 opacity-70" />
                             {aktif && <Check aria-hidden />}
                           </Button>
                         );

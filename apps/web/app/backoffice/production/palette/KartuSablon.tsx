@@ -12,7 +12,7 @@ import type { AturanHarmoni } from '@/lib/production-colors/palet/harmoni';
 import { rasioKontras } from '@/lib/production-colors/palet/kontras';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { bagiGram, resepCampur } from '@/lib/production-colors/sablon/campur';
-import { calonPerAturan, saranPengganti } from '@/lib/production-colors/sablon/pengganti';
+import { calonUntukKain, saranPengganti } from '@/lib/production-colors/sablon/pengganti';
 import { susunRingkasan } from '@/lib/production-colors/sablon/ringkasan';
 import { HURUF_SABLON, keterbacaanSablon, peranUntuk } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
@@ -36,16 +36,16 @@ function useResep(hexWarna: string, hexTinta: string, maksTinta: number) {
 }
 
 /**
- * Pengganti tiap tinta menurut aturan warna. Calon per aturan hanya bergantung
- * pada kain (puluhan milidetik), jadi dihitung sekali per kain; daftar per
- * tinta murah. Masukannya teks untuk alasan yang sama dengan `useResep`.
+ * Pengganti tiap tinta: berbagai jenis warna yang masuk dengan kain. Calon
+ * yang terbaca hanya bergantung pada kain, jadi dihitung sekali per kain;
+ * daftar per tinta murah. Masukannya teks untuk alasan yang sama dengan `useResep`.
  */
 function useSaranPengganti(kainHex: string, hexWarna: string, aturan: AturanHarmoni, katalogC: readonly WarnaPantone[]) {
-  const calon = useMemo(() => calonPerAturan(kainHex, katalogC), [kainHex, katalogC]);
+  const calon = useMemo(() => calonUntukKain(kainHex, katalogC), [kainHex, katalogC]);
   return useMemo(() => {
     const hex = hexWarna ? hexWarna.split(',') : [];
-    return hex.map((_, i) => saranPengganti({ calon, kainHex, hex, indeks: i, aturanUtama: aturan }));
-  }, [calon, kainHex, hexWarna, aturan]);
+    return hex.map((_, i) => saranPengganti({ calon, hex, indeks: i, aturanUtama: aturan }));
+  }, [calon, hexWarna, aturan]);
 }
 
 /**
