@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import dataC from './pantone-c.json';
-import { cariPantone, deltaE2000, hexKeLab, pantoneTerdekat, siapkanKatalog } from './pantone';
+import { cariPantone, deltaE2000, hexKeLab, pantoneTerdekat, siapkanKatalog, pantoneKhusus } from './pantone';
 import { hexKeHsb, hsbKeHex } from './warna';
 
 describe('deltaE2000', () => {
@@ -149,5 +149,17 @@ describe('data Pantone C', () => {
     for (const kode of ['186 C', 'Warm Red C', 'Black C', 'Cool Gray 11 C', '2685 C']) {
       expect(cariPantone(katalog, kode)[0]?.kode, kode).toBe(kode);
     }
+  });
+});
+
+describe('pantoneKhusus', () => {
+  it('mengenali tinta metalik dan neon dari kodenya', () => {
+    for (const k of ['871 C', '877 C', '8003 C', '8925 C', '10103 C', '10352 C']) expect(pantoneKhusus(k), k).toBe('METALIK');
+    for (const k of ['801 C', '814 C', '901 C', '942 C']) expect(pantoneKhusus(k), k).toBe('NEON');
+  });
+
+  it('tinta biasa, pastel empat digit, dan nama tidak dianggap khusus', () => {
+    for (const k of ['186 C', '800 C', '815 C', '870 C', '878 C', '943 C', '9285 C', '7581 C', '4231 C', '2388 C', 'Black 4 C', 'Orange 021 C'])
+      expect(pantoneKhusus(k), k).toBeNull();
   });
 });

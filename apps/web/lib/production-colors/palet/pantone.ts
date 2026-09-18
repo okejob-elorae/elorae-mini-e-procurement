@@ -178,6 +178,22 @@ export function cariPantone(katalog: readonly WarnaPantone[], kueri: string, bat
  * ΔE sampai 3,2 — terlihat mata. Hitungan penuhnya hanya ~0,55 ms per katalog,
  * jadi tidak ada yang perlu dihemat.
  */
+/**
+ * Tinta khusus menurut nomor Pantone C: metalik (871–877, 8001–8965, Premium
+ * Metallics 10101 ke atas) dan neon (801–814, 901–942). Di layar ia tampak
+ * seperti warna biasa, tetapi dicetak dengan tinta lain — berkilau atau
+ * berpendar — jadi tidak pernah dipilihkan otomatis. Pastel empat digit
+ * (9020–9285) tinta biasa.
+ */
+export function pantoneKhusus(kode: string): 'METALIK' | 'NEON' | null {
+  const m = /^(\d+) C$/.exec(kode);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if ((n >= 871 && n <= 877) || (n >= 8001 && n <= 8999) || (n >= 10101 && n <= 10999)) return 'METALIK';
+  if ((n >= 801 && n <= 814) || (n >= 901 && n <= 942)) return 'NEON';
+  return null;
+}
+
 export function pantoneTerdekat(
   katalog: readonly WarnaPantone[],
   hex: string,

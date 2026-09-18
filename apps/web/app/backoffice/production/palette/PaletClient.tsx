@@ -179,8 +179,8 @@ export function PaletClient({
   const [maksTinta, setMaksTinta] = useState(3);
   /** Di palet berkain, menggeser satu tinta memutar semuanya — seperti harmoni di roda Adobe. */
   const [tintaTerhubung, setTintaTerhubung] = useState(true);
-  /** Warna yang wajib ada di setiap rekomendasi komposisi. */
-  const [kunci, setKunci] = useState<string | null>(null);
+  /** Warna yang wajib ada di setiap rekomendasi komposisi, berurutan seperti tintanya. */
+  const [kunci, setKunci] = useState<string[]>([]);
   const [kategoriLaris, setKategoriLaris] = useState<string | null>(null);
   const [pemetaan, setPemetaan] = useState<PemetaanWarna>(pemetaanWarna);
   const hasilLaris = useMemo(
@@ -492,7 +492,9 @@ export function PaletClient({
           toast.success(t('bestSellers.fabricSet', { name: namaWarna }));
         }}
         onKunci={(hexKunci, namaWarna) => {
-          setKunci(hexKunci);
+          // Ditambahkan ke kunci yang ada; kalau sudah penuh, kunci terakhir yang diganti.
+          const maks = Math.max(1, hex.length - 1);
+          setKunci((k) => (k.includes(hexKunci) ? k : [...k.slice(0, maks - 1), hexKunci]));
           toast.success(t('bestSellers.locked', { name: namaWarna }));
         }}
         onPetakan={async (namaWarna, hexWarna) => {

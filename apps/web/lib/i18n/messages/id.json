@@ -1744,16 +1744,29 @@
       "lockNone": "Tanpa kunci",
       "lockInk": "Tinta {letter} · {code}",
       "lockKept": "Terkunci · {code}",
-      "lockHint": "Warna yang dikunci muncul di setiap rekomendasi.",
+      "lockHint": "Warna yang dikunci muncul di setiap rekomendasi. Kunci beberapa tinta untuk mencari sisanya saja.",
       "count": "Jumlah tinta",
       "countOption": "{count} tinta",
       "style": "Gaya",
       "styleAll": "Semua gaya",
       "source": "Sumber warna",
-      "sources": {"LARIS": "Laris di toko Anda", "EARTH": "Tren lokal · earth tone", "PASTEL": "Tren lokal · pastel & dusty", "CERAH": "Tren lokal · cerah", "BAWAAN": "Sablon populer"},
-      "sourceHints": {"LARIS": "Dari warna produk yang terjual 90 hari terakhir di toko Anda.", "TREN": "Tren umum pasar lokal — bukan data toko Anda.", "BAWAAN": "Tujuh warna sablon yang umum dipakai."},
+      "sources": {
+        "LARIS": "Laris di toko Anda",
+        "EARTH": "Tren lokal · earth tone",
+        "PASTEL": "Tren lokal · pastel & dusty",
+        "CERAH": "Tren lokal · cerah",
+        "BAWAAN": "Sablon populer"
+      },
+      "sourceHints": {
+        "LARIS": "Dari warna produk yang terjual 90 hari terakhir di toko Anda.",
+        "TREN": "Tren umum pasar lokal — bukan data toko Anda.",
+        "BAWAAN": "Tujuh warna sablon yang umum dipakai."
+      },
       "shuffle": "Acak lagi",
-      "styles": {"CERAH": "Cerah", "REDAM": "Redam"},
+      "styles": {
+        "CERAH": "Cerah",
+        "REDAM": "Redam"
+      },
       "use": "Pakai",
       "applied": "Komposisi “{name}” dipasang.",
       "empty": "Tidak ada komposisi yang terbaca jelas di kain ini.",
@@ -1764,11 +1777,21 @@
       },
       "roles": {
         "AKSEN": "Aksen",
-        "AKSEN_2": "Aksen 2", "AKSEN_3": "Aksen 3", "AKSEN_TUA": "Aksen tua",
+        "AKSEN_2": "Aksen 2",
+        "AKSEN_3": "Aksen 3",
+        "AKSEN_TUA": "Aksen tua",
         "NETRAL": "Netral",
         "NADA": "Tone-on-tone",
         "TONAL": "Tonal"
-      }
+      },
+      "lockedCount": "{count} tinta dikunci",
+      "lockMax": "Paling banyak {count} tinta — satu tinta selalu disisakan untuk direkomendasikan.",
+      "lockClear": "Lepas semua kunci",
+      "lockThis": "Kunci {code}",
+      "unlockThis": "Lepas kunci {code}",
+      "lockSelected": "Kunci {count} tinta, cari sisanya",
+      "lockCardHint": "Suka sebagian tinta di sebuah kartu? Klik gembok di tinta itu, lalu Kunci — sisanya direkomendasikan ulang.",
+      "fillHint": "Tinta terkunci tetap di tempat dan porsinya. Sisa tinta diisi dari sumber warna di atas, diurutkan dari yang paling menonjol di kain ini."
     },
     "export": {
       "button": "Ekspor",

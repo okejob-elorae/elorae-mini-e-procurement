@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import dataC from '../palet/pantone-c.json';
-import { hexKeLab, siapkanKatalog } from '../palet/pantone';
+import { hexKeLab, pantoneKhusus, siapkanKatalog } from '../palet/pantone';
 import { rasioKontras } from '../palet/kontras';
 import { hexKeHsb } from '../palet/warna';
 import { ATURAN_SABLON, PORSI_AWAL, keterbacaanSablon, sarankanSablon } from './saran';
@@ -130,6 +130,16 @@ describe('sarankanSablon', () => {
   it('membatasi jumlah ke 1–6', () => {
     expect(sarankanSablon({ kainHex: KAIN.navy, jumlah: 0, aturan: 'TRIAD', katalog: KATALOG })).toHaveLength(1);
     expect(sarankanSablon({ kainHex: KAIN.navy, jumlah: 9, aturan: 'TRIAD', katalog: KATALOG })).toHaveLength(6);
+  });
+});
+
+describe('sarankanSablon — tinta khusus', () => {
+  it('saran aturan harmoni tidak pernah memakai tinta metalik atau neon', () => {
+    for (const kainHex of ['#d6cbba', '#101010', '#f7f7f5', '#90a8a4', '#5b3a29']) {
+      for (const aturan of ATURAN_SABLON) {
+        for (const s of sarankanSablon({ kainHex, jumlah: 6, aturan, katalog: KATALOG })) expect(pantoneKhusus(s.warna.kode), `${kainHex} ${aturan} ${s.warna.kode}`).toBeNull();
+      }
+    }
   });
 });
 

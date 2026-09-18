@@ -1,6 +1,6 @@
 import { INDEKS_DASAR, langkahHarmoni, type AturanHarmoni } from '../palet/harmoni';
 import { rasioKontras } from '../palet/kontras';
-import { deltaE2000, hexKeLab, type Lab, type WarnaPantone } from '../palet/pantone';
+import { deltaE2000, hexKeLab, pantoneKhusus, type Lab, type WarnaPantone } from '../palet/pantone';
 import { hexKeHsb, hsbKeHex, putarSudut } from '../palet/warna';
 import { AKSEN_POPULER, KROMA_NETRAL } from './aksen';
 
@@ -136,6 +136,7 @@ export function sarankanSablon(input: {
 
     let terbaik: { warna: WarnaPantone; skor: number } | null = null;
     for (const warna of input.katalog) {
+      if (pantoneKhusus(warna.kode)) continue;
       if (dipilih.some((p) => deltaE2000(p.lab, warna.lab) < 10)) continue;
       const beda = warna.lab[0] - terangKain;
       // Tinta harus berada di sisi yang dituju: di kain putih, tinta "sedikit

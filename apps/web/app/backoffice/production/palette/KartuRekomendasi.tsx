@@ -2,10 +2,19 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Lock, Shuffle } from 'lucide-react';
+import { ChevronDown, Lock, LockOpen, Shuffle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { svgKaos } from '@/lib/production-colors/palet/kaos-svg';
@@ -14,8 +23,6 @@ import { galeriKomposisi, type GayaKomposisi, type Komposisi } from '@/lib/produ
 import { KAMUS_WARNA } from '@/lib/production-colors/sablon/nama-warna';
 import type { WarnaLaris } from '@/lib/production-colors/sablon/warna-laris';
 import { HURUF_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
-
-const TANPA_KUNCI = '-';
 
 /** Dari mana warna aksen diambil: warna laris toko, preset tren lokal, atau daftar sablon bawaan. */
 type SumberWarna = 'LARIS' | 'EARTH' | 'PASTEL' | 'CERAH' | 'BAWAAN';
@@ -26,6 +33,11 @@ const SUMBER: readonly SumberWarna[] = ['LARIS', 'EARTH', 'PASTEL', 'CERAH', 'BA
  * apa yang cocok", tanpa harus menyetel tinta satu per satu. Setiap komposisi
  * memakai jumlah tinta yang sama dengan palet; galeri dihitung ulang hanya saat
  * kain, jumlah tinta, atau warna yang dikunci berubah.
+ *
+ * Tinta bisa dikunci dari daftar tinta palet atau langsung dari sebuah kartu.
+ * Di kartu, gembok dipilih dulu lalu dikonfirmasi sekali: kalau setiap klik
+ * langsung mengunci, galeri berganti setelah klik pertama dan kartu yang memuat
+ * tinta kedua bisa hilang.
  */
 export function KartuRekomendasi({
   kainHex,
@@ -43,8 +55,9 @@ export function KartuRekomendasi({
   katalogC: readonly WarnaPantone[];
   /** Tinta yang sedang dipakai — calon warna yang bisa dikunci. */
   hexTinta: string[];
-  kunci: string | null;
-  onKunci: (hex: string | null) => void;
+  /** Warna yang dikunci, berurutan: urutan ini juga urutan tinta dan porsinya. */
+  kunci: readonly string[];
+  onKunci: (daftar: string[]) => void;
   /** Mengubah jumlah tinta palet — rekomendasi mengikuti. */
   onJumlah: (n: number) => void;
   onPakai: (k: Komposisi, judul: string) => void;
@@ -52,7 +65,13 @@ export function KartuRekomendasi({
   warnaLaris: readonly WarnaLaris[];
 }) {
   const t = useTranslations('productionPalette.recommend');
+  const tUmum = useTranslations('productionPalette');
   const jumlah = hexTinta.length;
+  // Satu tinta selalu disisakan untuk direkomendasikan.
+  const maksKunci = Math.max(1, jumlah - 1);
+  const kunciAktif = useMemo(() => kunci.slice(0, maksKunci), [kunci, maksKunci]);
+  /** Gembok yang sedang dipilih di satu kartu, belum dikonfirmasi. */
+  const [pilihan, setPilihan] = useState<{ id: string; hex: string[] } | null>(null);
   const [gaya, setGaya] = useState<GayaKomposisi | 'SEMUA'>('SEMUA');
   const adaLaris = warnaLaris.length >= 3;
   // Tanpa data penjualan, titik mulainya tren lokal — bukan tujuh warna sablon generik.
@@ -68,8 +87,8 @@ export function KartuRekomendasi({
     [sumber, warnaLaris],
   );
   const galeri = useMemo(
-    () => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunci, jumlah, gaya, aksen, acak }),
-    [kainHex, katalogC, kunci, jumlah, gaya, aksen, acak],
+    () => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunciAktif, jumlah, gaya, aksen, acak }),
+    [kainHex, katalogC, kunciAktif, jumlah, gaya, aksen, acak],
   );
   const daftar = galeri;
 
@@ -84,8 +103,25 @@ export function KartuRekomendasi({
     const p = pantoneTerdekat(katalogC, hex);
     return p && p.deltaE < 0.05 ? p.warna.kode : hex.toUpperCase();
   };
-  const pilihanKunci = hexTinta.map((hex, i) => ({ hex, label: t('lockInk', { letter: HURUF_SABLON[i], code: kodeUntuk(hex) }) }));
-  if (kunci && !hexTinta.includes(kunci)) pilihanKunci.push({ hex: kunci, label: t('lockKept', { code: kodeUntuk(kunci) }) });
+  const pilihanKunci = [
+    ...hexTinta.map((hex, i) => ({ hex, label: t('lockInk', { letter: HURUF_SABLON[i], code: kodeUntuk(hex) }) })),
+    ...kunciAktif.filter((hex) => !hexTinta.includes(hex)).map((hex) => ({ hex, label: t('lockKept', { code: kodeUntuk(hex) }) })),
+  ];
+  const kunciPenuh = kunciAktif.length >= maksKunci;
+
+  /** Gembok di kartu: yang terpilih mula-mula adalah tinta kartu yang sudah terkunci. */
+  const terpilihDi = (k: Komposisi) => (pilihan?.id === k.id ? pilihan.hex : k.tinta.filter((x) => x.dikunci).map((x) => x.hex));
+  const alihGembok = (k: Komposisi, hex: string) => {
+    const kini = terpilihDi(k);
+    const berikut = kini.includes(hex) ? kini.filter((h) => h !== hex) : kini.length < maksKunci ? [...kini, hex] : kini;
+    setPilihan({ id: k.id, hex: berikut });
+  };
+  const konfirmasiGembok = (k: Komposisi) => {
+    const dipilih = terpilihDi(k);
+    // Urutan kartu, bukan urutan klik: tinta A tetap A dengan porsinya.
+    onKunci(k.tinta.map((x) => x.hex).filter((h) => dipilih.includes(h)));
+    setPilihan(null);
+  };
 
   return (
     <Card id="rekomendasi" className="scroll-mt-20">
@@ -150,35 +186,69 @@ export function KartuRekomendasi({
               <Lock className="h-3 w-3" />
               {t('lockLabel')}
             </Label>
-            <Select value={kunci ?? TANPA_KUNCI} onValueChange={(v) => onKunci(v === TANPA_KUNCI ? null : v)}>
-              <SelectTrigger id="kunci-warna" className="w-full" title={t('lockHint')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper">
-                <SelectItem value={TANPA_KUNCI}>{t('lockNone')}</SelectItem>
-                {pilihanKunci.map((p) => (
-                  <SelectItem key={p.hex} value={p.hex}>
-                    <span aria-hidden className="size-3 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: p.hex }} />
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button id="kunci-warna" type="button" variant="outline" className="w-full justify-between font-normal" title={t('lockHint')}>
+                  <span className="flex min-w-0 items-center gap-2">
+                    {kunciAktif.map((hex) => (
+                      <span key={hex} aria-hidden className="size-3 shrink-0 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: hex }} />
+                    ))}
+                    <span className="truncate">
+                      {kunciAktif.length === 0
+                        ? t('lockNone')
+                        : kunciAktif.length === 1
+                          ? kodeUntuk(kunciAktif[0])
+                          : t('lockedCount', { count: kunciAktif.length })}
+                    </span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64">
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{t('lockMax', { count: maksKunci })}</DropdownMenuLabel>
+                {pilihanKunci.map((p) => {
+                  const aktif = kunciAktif.includes(p.hex);
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={p.hex}
+                      checked={aktif}
+                      disabled={!aktif && kunciPenuh}
+                      // Menu tetap terbuka: mengunci dua tinta tidak perlu membuka menu dua kali.
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={(v) => onKunci(v ? [...kunciAktif, p.hex] : kunciAktif.filter((h) => h !== p.hex))}
+                    >
+                      <span aria-hidden className="size-3 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: p.hex }} />
+                      {p.label}
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+                {kunciAktif.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => onKunci([])}>{t('lockClear')}</DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <Button type="button" variant="outline" onClick={() => setAcak((a) => a + 1)}>
             <Shuffle className="h-4 w-4" />
             {t('shuffle')}
           </Button>
         </div>
-        <p className="mt-2 mb-4 text-xs text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           {t(`sourceHints.${sumber === 'LARIS' ? 'LARIS' : sumber === 'BAWAAN' ? 'BAWAAN' : 'TREN'}`)}
         </p>
+        <p className="mt-1 mb-4 text-xs text-muted-foreground">{kunciAktif.length >= 2 ? t('fillHint') : t('lockCardHint')}</p>
         {daftar.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t('empty')}</p>
         ) : (
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             {daftar.map((k, i) => {
               const nama = judul(k);
+              const terpilih = terpilihDi(k);
+              const awal = k.tinta.filter((x) => x.dikunci).map((x) => x.hex);
+              const berubah = pilihan?.id === k.id && (terpilih.length !== awal.length || terpilih.some((h) => !awal.includes(h)));
               return (
                 <li key={k.id} className="flex min-w-0 flex-col gap-3 rounded-lg border p-3">
                   <div className="flex items-start justify-between gap-2">
@@ -203,19 +273,45 @@ export function KartuRekomendasi({
                     }}
                   />
                   <ul className="space-y-1 text-xs">
-                    {k.tinta.map((x, j) => (
-                      <li key={`${x.hex}-${j}`} className="flex items-center gap-2">
-                        <span aria-hidden className="size-4 shrink-0 rounded ring-1 ring-inset ring-black/15" style={{ background: x.hex }} />
-                        <span className="w-3 font-medium">{HURUF_SABLON[j]}</span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {x.kode ?? x.hex.toUpperCase()}
-                          <span className="text-muted-foreground"> · {t(`roles.${x.peran}`)}</span>
-                          {x.dikunci && <Lock aria-label={t('lockLabel')} className="ml-1 inline h-3 w-3 text-muted-foreground" />}
-                        </span>
-                        <span className="tabular-nums text-muted-foreground">{x.porsi}%</span>
-                      </li>
-                    ))}
+                    {k.tinta.map((x, j) => {
+                      const kode = x.kode ?? x.hex.toUpperCase();
+                      const dipilih = terpilih.includes(x.hex);
+                      return (
+                        <li key={`${x.hex}-${j}`} className="flex items-center gap-2">
+                          <span aria-hidden className="size-4 shrink-0 rounded ring-1 ring-inset ring-black/15" style={{ background: x.hex }} />
+                          <span className="w-3 font-medium">{HURUF_SABLON[j]}</span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {kode}
+                            <span className="text-muted-foreground"> · {t(`roles.${x.peran}`)}</span>
+                          </span>
+                          <span className="tabular-nums text-muted-foreground">{x.porsi}%</span>
+                          <Button
+                            type="button"
+                            variant={dipilih ? 'secondary' : 'ghost'}
+                            size="icon-xs"
+                            aria-pressed={dipilih}
+                            aria-label={dipilih ? t('unlockThis', { code: kode }) : t('lockThis', { code: kode })}
+                            title={dipilih ? t('unlockThis', { code: kode }) : t('lockThis', { code: kode })}
+                            disabled={!dipilih && terpilih.length >= maksKunci}
+                            onClick={() => alihGembok(k, x.hex)}
+                          >
+                            {dipilih ? <Lock /> : <LockOpen className="text-muted-foreground" />}
+                          </Button>
+                        </li>
+                      );
+                    })}
                   </ul>
+                  {berubah && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" size="sm" onClick={() => konfirmasiGembok(k)}>
+                        <Lock className="h-3.5 w-3.5" />
+                        {terpilih.length ? t('lockSelected', { count: terpilih.length }) : t('lockClear')}
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => setPilihan(null)}>
+                        {tUmum('cancel')}
+                      </Button>
+                    </div>
+                  )}
                   <Button type="button" size="sm" variant="outline" className="mt-auto" onClick={() => onPakai(k, nama)}>
                     {t('use')}
                   </Button>

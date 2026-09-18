@@ -1744,16 +1744,29 @@
       "lockNone": "No lock",
       "lockInk": "Ink {letter} · {code}",
       "lockKept": "Locked · {code}",
-      "lockHint": "The locked colour appears in every recommendation.",
+      "lockHint": "Locked colours appear in every recommendation. Lock several inks to look for the rest only.",
       "count": "Number of inks",
       "countOption": "{count, plural, one {# ink} other {# inks}}",
       "style": "Style",
       "styleAll": "All styles",
       "source": "Colour source",
-      "sources": {"LARIS": "Your best sellers", "EARTH": "Local trend · earth tones", "PASTEL": "Local trend · pastel & dusty", "CERAH": "Local trend · bright", "BAWAAN": "Popular print inks"},
-      "sourceHints": {"LARIS": "From the product colours sold in your store over the last 90 days.", "TREN": "General local market trend — not your store's data.", "BAWAAN": "Seven commonly used print colours."},
+      "sources": {
+        "LARIS": "Your best sellers",
+        "EARTH": "Local trend · earth tones",
+        "PASTEL": "Local trend · pastel & dusty",
+        "CERAH": "Local trend · bright",
+        "BAWAAN": "Popular print inks"
+      },
+      "sourceHints": {
+        "LARIS": "From the product colours sold in your store over the last 90 days.",
+        "TREN": "General local market trend — not your store's data.",
+        "BAWAAN": "Seven commonly used print colours."
+      },
       "shuffle": "Shuffle",
-      "styles": {"CERAH": "Bright", "REDAM": "Muted"},
+      "styles": {
+        "CERAH": "Bright",
+        "REDAM": "Muted"
+      },
       "use": "Use",
       "applied": "Composition “{name}” applied.",
       "empty": "No composition reads clearly enough on this fabric.",
@@ -1764,11 +1777,21 @@
       },
       "roles": {
         "AKSEN": "Accent",
-        "AKSEN_2": "Accent 2", "AKSEN_3": "Accent 3", "AKSEN_TUA": "Deep accent",
+        "AKSEN_2": "Accent 2",
+        "AKSEN_3": "Accent 3",
+        "AKSEN_TUA": "Deep accent",
         "NETRAL": "Neutral",
         "NADA": "Tone-on-tone",
         "TONAL": "Tonal"
-      }
+      },
+      "lockedCount": "{count} inks locked",
+      "lockMax": "Up to {count, plural, one {# ink} other {# inks}} — one ink is always left for a recommendation.",
+      "lockClear": "Unlock all",
+      "lockThis": "Lock {code}",
+      "unlockThis": "Unlock {code}",
+      "lockSelected": "Lock {count, plural, one {# ink} other {# inks}}, find the rest",
+      "lockCardHint": "Like some inks on a card? Click the padlock on those inks, then Lock — the rest is recommended again.",
+      "fillHint": "Locked inks keep their place and share. The remaining inks come from the colour source above, ordered from the one that stands out most on this fabric."
     },
     "export": {
       "button": "Export",

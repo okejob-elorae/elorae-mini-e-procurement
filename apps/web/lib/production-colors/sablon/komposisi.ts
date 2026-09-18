@@ -1,5 +1,5 @@
 import { porsiDariBagian } from '../palet/gambar';
-import { deltaE2000, hexKeLab, type Lab, type WarnaPantone } from '../palet/pantone';
+import { deltaE2000, hexKeLab, pantoneKhusus, type Lab, type WarnaPantone } from '../palet/pantone';
 import { normalisasiHex } from '../palet/warna';
 import { AKSEN_POPULER, KROMA_NETRAL } from './aksen';
 import { PORSI_AWAL } from './saran';
@@ -21,7 +21,7 @@ import { PORSI_AWAL } from './saran';
  * adalah netral + aksen + tone-on-tone, empat tinta menambah aksen kedua — jadi
  * judul kartu disusun dari peran tintanya, bukan dari nama keluarga.
  */
-export type PolaKomposisi = 'SATU' | 'KLASIK' | 'DUA_AKSEN' | 'KONTRAS' | 'AKSEN_NADA' | 'TONAL' | 'DARI_GAMBAR';
+export type PolaKomposisi = 'SATU' | 'KLASIK' | 'DUA_AKSEN' | 'KONTRAS' | 'AKSEN_NADA' | 'TONAL' | 'DARI_GAMBAR' | 'LENGKAPI';
 
 /** `AKSEN_TUA` adalah aksen yang sama, lebih gelap dan kalem — zaitun di samping lime. */
 export type PeranKomposisi = 'AKSEN' | 'AKSEN_2' | 'AKSEN_3' | 'AKSEN_TUA' | 'NETRAL' | 'NADA' | 'TONAL';
@@ -81,13 +81,14 @@ const SYARAT: Record<PeranKomposisi, [number, number]> = {
 
 type Konteks = { katalog: readonly WarnaPantone[]; Lk: number; labKain: Lab };
 
-/** Pantone C terdekat ke `target` yang memenuhi syarat perannya dan tidak kembar dengan tinta lain. */
+/** Pantone C biasa (bukan metalik/neon) terdekat ke `target` yang memenuhi syarat perannya dan tidak kembar dengan tinta lain. */
 function bulatkan(ktx: Konteks, target: Lab, peran: PeranKomposisi, arah: number, hindari: readonly Lab[], minKhusus?: number): WarnaPantone | null {
   const [minPeran, maks] = SYARAT[peran];
   const min = minKhusus ?? minPeran;
   let terbaik: WarnaPantone | null = null;
   let skorTerbaik = Infinity;
   for (const w of ktx.katalog) {
+    if (pantoneKhusus(w.kode)) continue;
     const beda = w.lab[0] - ktx.Lk;
     if (Math.sign(beda) !== arah || Math.abs(beda) < min || Math.abs(beda) > maks) continue;
     if (hindari.some((h) => deltaE2000(h, w.lab) < JARAK_ANTARTINTA)) continue;
@@ -184,19 +185,35 @@ function geserRona(aksen: Lch, derajat: number): Lch {
   return [aksen[0], aksen[1], (aksen[2] + derajat + 360) % 360];
 }
 
+/** Dua daftar berselang-seling — supaya kedua gaya terlihat tanpa menggulir. */
+function selangSeling<T>(a: readonly T[], b: readonly T[]): T[] {
+  const hasil: T[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (a[i]) hasil.push(a[i]);
+    if (b[i]) hasil.push(b[i]);
+  }
+  return hasil;
+}
+
 /** Satu tinta dalam resep keluarga komposisi, sebelum porsinya diberikan. */
 type Bagian = { peran: PeranKomposisi; sasaran: Lab } | { peran: PeranKomposisi; kunci: string };
 
 /**
  * Galeri komposisi siap pakai untuk satu kain, masing-masing tepat `jumlah`
- * tinta dengan porsi awal yang sama seperti kartu Warna sablon. Dengan
+ * tinta dengan porsi awal yang sama seperti kartu Warna sablon. Dengan satu
  * `kunciHex`, warna itu ada di setiap komposisi: sebagai aksen kalau
  * berpigmen, sebagai netral kalau tidak — dan sisanya disusun mengelilinginya.
+ *
+ * Dengan dua kunci atau lebih, tinta terkunci tetap di tempatnya dengan porsi
+ * terbesar (urutan kunci = urutan tinta), dan hanya tinta sisanya yang
+ * direkomendasikan: aksen dulu, diurutkan dari yang paling menonjol di kain
+ * itu. Paling banyak `jumlah - 1` kunci dipakai — minimal satu tinta selalu
+ * direkomendasikan.
  */
 export function galeriKomposisi(input: {
   kainHex: string;
   katalog: readonly WarnaPantone[];
-  kunciHex?: string | null;
+  kunciHex?: string | readonly string[] | null;
   jumlah?: number;
   /** Tanpa gaya (atau `SEMUA`), galeri memuat keduanya berselang-seling. */
   gaya?: GayaKomposisi | 'SEMUA';
@@ -218,7 +235,10 @@ export function galeriKomposisi(input: {
   const ktx: Konteks = { katalog: input.katalog, Lk, labKain };
   const arah = arahUtama(Lk);
 
-  const kunci = input.kunciHex ? normalisasiHex(input.kunciHex) : null;
+  const daftarKunci = [
+    ...new Set((typeof input.kunciHex === 'string' ? [input.kunciHex] : (input.kunciHex ?? [])).flatMap((h) => normalisasiHex(h) ?? [])),
+  ].slice(0, Math.max(1, n - 1));
+  const kunci = daftarKunci.length === 1 ? daftarKunci[0] : null;
   const kunciLch = kunci ? keLch(hexKeLab(kunci)) : null;
   const kunciAksen = kunci && kunciLch && kunciLch[1] >= 15 ? kunci : null;
   const kunciNetral = kunci && !kunciAksen ? kunci : null;
@@ -263,6 +283,10 @@ export function galeriKomposisi(input: {
     peran: 'TONAL',
     sasaran: Ck < KROMA_NETRAL ? [batasTerang(Lk + arah * d), 0, 0] : dariLch([batasTerang(Lk + arah * d), Math.max(8, Ck), hk]),
   });
+
+  if (daftarKunci.length >= 2) {
+    return lengkapiKunci({ ktx, kain, arah, kainSedang, porsi, n, daftarKunci, daftarAksen, tonal, gaya: gayaDiminta });
+  }
 
   type Resep = { pola: PolaKomposisi; gaya: GayaKomposisi; bagian: Bagian[] };
 
@@ -351,17 +375,7 @@ export function galeriKomposisi(input: {
     return resep;
   }
 
-  let resep: Resep[];
-  if (gayaDiminta === 'SEMUA') {
-    // Berselang-seling, supaya kedua gaya terlihat tanpa menggulir.
-    const cerah = resepGaya('CERAH');
-    const redam = resepGaya('REDAM');
-    resep = [];
-    for (let i = 0; i < Math.max(cerah.length, redam.length); i++) {
-      if (cerah[i]) resep.push(cerah[i]);
-      if (redam[i]) resep.push(redam[i]);
-    }
-  } else resep = resepGaya(gayaDiminta);
+  const resep = gayaDiminta === 'SEMUA' ? selangSeling(resepGaya('CERAH'), resepGaya('REDAM')) : resepGaya(gayaDiminta);
   const batas = gayaDiminta === 'SEMUA' ? 12 : 9;
 
   const hasil: Komposisi[] = [];
@@ -373,6 +387,70 @@ export function galeriKomposisi(input: {
     if (hasil.length === batas) break;
   }
   return hasil;
+}
+
+/**
+ * Beberapa tinta dikunci: yang terkunci dipakai apa adanya di porsi teratas,
+ * sisanya diisi mengikuti peran yang belum ada — aksen dulu, netral dan
+ * tone-on-tone hanya kalau belum dikunci. Aksen diambil dari sumber aksen yang
+ * sama dengan galeri biasa, lalu diurutkan dari yang paling menonjol: jarak
+ * terkecil tinta bebas ke kain dan ke setiap tinta lain, dalam ΔE2000.
+ */
+function lengkapiKunci(x: {
+  ktx: Konteks;
+  kain: Lch;
+  arah: number;
+  kainSedang: boolean;
+  porsi: readonly number[];
+  n: number;
+  daftarKunci: readonly string[];
+  daftarAksen: readonly Lch[];
+  tonal: (d: number) => Bagian;
+  gaya: GayaKomposisi | 'SEMUA';
+}): Komposisi[] {
+  const { ktx, kain, arah, porsi, n } = x;
+  const namaAksen = ['AKSEN', 'AKSEN_2', 'AKSEN_3'] as const;
+  let jumlahAksen = 0;
+  const aksenBerikut = (): PeranKomposisi => namaAksen[Math.min(2, jumlahAksen++)];
+
+  const tetap: Rencana[] = x.daftarKunci.map((hex, i) => {
+    const peran = peranTerhadap(kain, keLch(hexKeLab(hex)));
+    return { peran: peran === 'AKSEN' ? aksenBerikut() : peran, porsi: porsi[i], kunci: hex };
+  });
+  const ada = (p: PeranKomposisi) => tetap.some((r) => r.peran === p);
+  const urutan: PeranKomposisi[] = ['AKSEN', ...(ada('NETRAL') ? [] : ['NETRAL' as const]), 'AKSEN', ...(ada('NADA') ? [] : ['NADA' as const]), 'AKSEN', 'TONAL'];
+  const peranBebas = urutan.slice(0, n - tetap.length).map((p) => (p === 'AKSEN' ? aksenBerikut() : p));
+  const geserAksen = [0, 45, -45];
+
+  const untukGaya = (gaya: GayaKomposisi): Komposisi[] => {
+    const dinilai: { k: Komposisi; skor: number }[] = [];
+    for (const a of x.daftarAksen) {
+      let ke = 0;
+      const bebas = peranBebas.map((peran, i): Rencana => {
+        const p = porsi[tetap.length + i];
+        if (peran === 'NETRAL') return { peran, porsi: p, sasaran: sasaranNetral(a, x.kainSedang ? -arah : arah, gaya) };
+        if (peran === 'NADA') return { peran, porsi: p, sasaran: sasaranNada(kain, arah, gaya) };
+        if (peran === 'TONAL') {
+          const t = x.tonal(38);
+          return { peran, porsi: p, sasaran: 'sasaran' in t ? t.sasaran : hexKeLab(t.kunci) };
+        }
+        const rona = geserRona(a, geserAksen[Math.min(2, ke++)]);
+        return { peran, porsi: p, sasaran: sasaranAksen(gaya === 'REDAM' ? redamkan(rona) : rona, ktx.Lk, arah) };
+      });
+      const k = wujudkan(ktx, 'LENGKAPI', gaya, [...tetap, ...bebas], arah);
+      if (!k || k.tinta.length !== n || dinilai.some((d) => d.k.id === k.id)) continue;
+      const lab = k.tinta.map((t) => hexKeLab(t.hex));
+      const skor = Math.min(
+        ...k.tinta.flatMap((t, i) =>
+          t.dikunci ? [] : [Math.min(deltaE2000(lab[i], ktx.labKain), ...lab.filter((_, j) => j !== i).map((l) => deltaE2000(lab[i], l)))],
+        ),
+      );
+      dinilai.push({ k, skor });
+    }
+    return dinilai.sort((a, b) => b.skor - a.skor).map((d) => d.k);
+  };
+
+  return x.gaya === 'SEMUA' ? selangSeling(untukGaya('CERAH'), untukGaya('REDAM')).slice(0, 12) : untukGaya(x.gaya).slice(0, 9);
 }
 
 export type TintaDesain = { hex: string; peran: PeranKomposisi; bagian: number; porsi: number };

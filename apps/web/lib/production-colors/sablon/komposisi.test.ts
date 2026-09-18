@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import dataC from '../palet/pantone-c.json';
-import { deltaE2000, hexKeLab, siapkanKatalog } from '../palet/pantone';
+import { deltaE2000, hexKeLab, pantoneKhusus, siapkanKatalog } from '../palet/pantone';
 import { bacaKomposisiDesain, galeriKomposisi, tiruKomposisi, variasiDesain, type Komposisi, type PeranKomposisi } from './komposisi';
 import { PORSI_AWAL } from './saran';
 
@@ -239,6 +239,95 @@ describe('galeriKomposisi — kunci satu warna', () => {
     for (const k of galeri) expect(k.tinta.find((t) => t.hex === '#f3eade')?.peran).toBe('NETRAL');
     const aksen = new Set(galeri.flatMap((k) => k.tinta.filter((t) => t.peran === 'AKSEN').map((t) => t.kode)));
     expect(aksen.size).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('galeriKomposisi — kunci beberapa tinta', () => {
+  const SUMMER_SAND = '#d6cbba';
+  const BLACK_4 = '#32281f';
+  const C4231 = '#645e50';
+  const MERAH = '#c8102e';
+  /** Seberapa menonjol tinta bebas: jarak terkecilnya ke kain dan ke tinta lain. */
+  const tonjol = (k: Komposisi) =>
+    Math.min(
+      ...k.tinta.flatMap((x, i) =>
+        x.dikunci ? [] : [Math.min(...[SUMMER_SAND, ...k.tinta.filter((_, j) => j !== i).map((y) => y.hex)].map((h) => deltaE2000(hexKeLab(h), hexKeLab(x.hex))))],
+      ),
+    );
+
+  it('tinta terkunci tetap di posisi dan porsinya; tinta 10% diisi aksen yang paling menonjol dulu', () => {
+    for (const gaya of ['CERAH', 'REDAM'] as const) {
+      const galeri = galeriKomposisi({ kainHex: SUMMER_SAND, katalog: KATALOG, jumlah: 3, kunciHex: [BLACK_4, C4231], gaya });
+      expect(galeri.length, gaya).toBeGreaterThanOrEqual(3);
+      for (const k of galeri) {
+        expect(k.tinta.map((x) => [x.hex, x.porsi, x.dikunci ?? false])).toEqual([
+          [BLACK_4, 60, true],
+          [C4231, 30, true],
+          [k.tinta[2].hex, 10, false],
+        ]);
+        expect(k.tinta.map((x) => x.peran)).toEqual(['NETRAL', 'NETRAL', 'AKSEN']);
+        periksaKeterbacaan(k, SUMMER_SAND);
+      }
+      const skor = galeri.map(tonjol);
+      expect(skor, gaya).toEqual([...skor].sort((a, b) => b - a));
+    }
+  });
+
+  it('sumber aksen tetap dihormati: tinta bebas berasal dari warna sumbernya', () => {
+    const galeri = galeriKomposisi({ kainHex: SUMMER_SAND, katalog: KATALOG, jumlah: 3, kunciHex: [BLACK_4, C4231], gaya: 'CERAH', aksen: [MERAH, '#2956a8', '#f36f21'] });
+    expect(galeri.length).toBe(3);
+    for (const k of galeri) {
+      const dekat = Math.min(...[MERAH, '#2956a8', '#f36f21'].map((h) => jarakRona(rona(h), rona(k.tinta[2].hex))));
+      expect(dekat).toBeLessThan(20);
+    }
+  });
+
+  it('kunci yang melebihi jumlah tinta dikurangi satu diabaikan — selalu ada satu tinta yang direkomendasikan', () => {
+    const galeri = galeriKomposisi({ kainHex: SUMMER_SAND, katalog: KATALOG, jumlah: 3, kunciHex: [BLACK_4, C4231, MERAH] });
+    expect(galeri.length).toBeGreaterThan(0);
+    for (const k of galeri) expect(k.tinta.map((x) => x.dikunci ?? false)).toEqual([true, true, false]);
+  });
+
+  it('lima tinta: dua terkunci di atas, lalu aksen, aksen kedua, dan tone-on-tone', () => {
+    const galeri = galeriKomposisi({ kainHex: SUMMER_SAND, katalog: KATALOG, jumlah: 5, kunciHex: [BLACK_4, C4231], gaya: 'CERAH' });
+    expect(galeri.length).toBeGreaterThan(0);
+    for (const k of galeri) {
+      expect(k.tinta.map((x) => x.peran)).toEqual(['NETRAL', 'NETRAL', 'AKSEN', 'AKSEN_2', 'NADA']);
+      expect(k.tinta.map((x) => x.porsi)).toEqual(PORSI_AWAL[5]);
+      periksaKeterbacaan(k, SUMMER_SAND);
+    }
+  });
+
+  it('aksen yang dikunci ikut dihitung: tinta bebasnya menjadi aksen kedua', () => {
+    const galeri = galeriKomposisi({ kainHex: SUMMER_SAND, katalog: KATALOG, jumlah: 3, kunciHex: [BLACK_4, MERAH], gaya: 'CERAH' });
+    expect(galeri.length).toBeGreaterThan(0);
+    for (const k of galeri) expect(k.tinta.map((x) => x.peran)).toEqual(['NETRAL', 'AKSEN', 'AKSEN_2']);
+  });
+
+  it('dua tinta dengan dua kunci sama dengan mengunci yang pertama saja', () => {
+    expect(galeriKomposisi({ kainHex: SUMMER_SAND, katalog: KATALOG, jumlah: 2, kunciHex: [MERAH, BLACK_4] })).toEqual(
+      galeriKomposisi({ kainHex: SUMMER_SAND, katalog: KATALOG, jumlah: 2, kunciHex: MERAH }),
+    );
+  });
+});
+
+describe('galeriKomposisi — tinta khusus', () => {
+  it('rekomendasi tidak pernah membulatkan ke tinta metalik atau neon', () => {
+    for (const kainHex of ['#d6cbba', HITAM, PUTIH, BLUE_SURF, '#5b3a29']) {
+      for (const kunciHex of [null, '#a0d513', ['#32281f', '#645e50']]) {
+        for (const jumlah of [1, 3, 6]) {
+          for (const k of galeriKomposisi({ kainHex, katalog: KATALOG, jumlah, kunciHex })) {
+            for (const t of k.tinta) if (!t.dikunci) expect(t.kode && pantoneKhusus(t.kode), `${kainHex} ${k.id}`).toBeFalsy();
+          }
+        }
+      }
+    }
+  });
+
+  it('tinta metalik yang dikunci sendiri tetap dipakai dan tetap bernama kodenya', () => {
+    const galeri = galeriKomposisi({ kainHex: '#d6cbba', katalog: KATALOG, jumlah: 3, kunciHex: ['#32281f', '#ab9f90'] });
+    expect(galeri.length).toBeGreaterThan(0);
+    for (const k of galeri) expect(k.tinta[1]).toMatchObject({ hex: '#ab9f90', kode: '10352 C', dikunci: true });
   });
 });
 
