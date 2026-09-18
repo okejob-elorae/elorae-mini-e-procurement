@@ -4,7 +4,7 @@ import { langkahHarmoni } from '../palet/harmoni';
 import { rasioKontras } from '../palet/kontras';
 import { deltaE2000, hexKeLab, pantoneKhusus, siapkanKatalog } from '../palet/pantone';
 import { hexKeHsb } from '../palet/warna';
-import { KELUARGA_WARNA, calonUntukKain, saranBerikutnya, saranPengganti, type SaranPengganti } from './pengganti';
+import { KELUARGA_WARNA, OPSI_GANTI, calonUntukKain, saranBerikutnya, saranPengganti, type OpsiGanti, type SaranPengganti } from './pengganti';
 
 const KATALOG = siapkanKatalog('C', dataC as [string, string][]);
 const SAND = '#d6cbba';
@@ -20,8 +20,13 @@ const jarakRona = (a: number, b: number) => {
   return Math.min(d, 360 - d);
 };
 
-function saranDi(kainHex: string, hex = TINTA, aturanUtama: Parameters<typeof saranPengganti>[0]['aturanUtama'] = 'ANALOGOUS') {
-  return saranPengganti({ calon: calonUntukKain(kainHex, KATALOG), hex, indeks: 2, aturanUtama });
+function saranDi(
+  kainHex: string,
+  hex = TINTA,
+  aturanUtama: Parameters<typeof saranPengganti>[0]['aturanUtama'] = 'ANALOGOUS',
+  opsi: OpsiGanti = 'SEMUA',
+) {
+  return saranPengganti({ calon: calonUntukKain(kainHex, KATALOG), hex, indeks: 2, aturanUtama, opsi });
 }
 
 describe('saranPengganti — variasi jenis warna', () => {
@@ -42,6 +47,7 @@ describe('saranPengganti — variasi jenis warna', () => {
     for (const x of [...saranDi(SAND), ...saranDi(HITAM)]) {
       const [L] = hexKeLab(x.hex);
       const C = kroma(x.hex);
+      expect(x.jenis).toBe(x.keluarga);
       if (x.keluarga === 'NEON') expect(pantoneKhusus(x.kode), x.kode).toBe('NEON');
       else if (x.keluarga === 'METALIK') expect(pantoneKhusus(x.kode), x.kode).toBe('METALIK');
       else {
@@ -85,6 +91,55 @@ describe('saranPengganti — variasi jenis warna', () => {
 
   it('aturan Custom tidak didahulukan — urutannya urutan aturan biasa', () => {
     expect(saranDi(SAND, TINTA, 'CUSTOM')[0].aturan).toBe('ANALOGOUS');
+  });
+});
+
+describe('saranPengganti — memilih jenis pengganti', () => {
+  const ronaKain = hexKeHsb(SAND).h;
+  const ikutAturan = (x: SaranPengganti) => {
+    if (kroma(x.hex) < 12) return x.aturan === 'MONOCHROMATIC' || x.aturan === 'SHADES';
+    const geser = [...new Set(langkahHarmoni(x.aturan)!.map((l) => l.dh))].filter((dh) => dh !== 0 || x.aturan === 'MONOCHROMATIC' || x.aturan === 'SHADES');
+    return Math.min(...geser.map((dh) => jarakRona(hexKeHsb(x.hex).h, ronaKain + dh))) <= 20;
+  };
+
+  it('Kalem: kontras di bawah 2 terhadap kain — samar — tetapi masih terlihat berbeda dari kain', () => {
+    const s = saranDi(SAND, TINTA, 'ANALOGOUS', 'KALEM');
+    expect(s.length).toBeGreaterThanOrEqual(5);
+    for (const x of s) {
+      expect(rasioKontras(x.hex, SAND), x.kode).toBeLessThan(2);
+      expect(deltaE2000(hexKeLab(x.hex), hexKeLab(SAND)), x.kode).toBeGreaterThanOrEqual(5);
+      expect(pantoneKhusus(x.kode), x.kode).toBeNull();
+      expect(x.jenis).toBe('KALEM');
+      expect(ikutAturan(x), `${x.aturan} ${x.kode}`).toBe(true);
+    }
+  });
+
+  it('Kontras kuat: 4,5 ke atas terhadap kain', () => {
+    const s = saranDi(SAND, TINTA, 'ANALOGOUS', 'KONTRAS');
+    expect(s.length).toBeGreaterThanOrEqual(5);
+    for (const x of s) {
+      expect(rasioKontras(x.hex, SAND), x.kode).toBeGreaterThanOrEqual(4.5);
+      expect(x.jenis).toBe('KONTRAS');
+      expect(ikutAturan(x), `${x.aturan} ${x.kode}`).toBe(true);
+    }
+  });
+
+  it('satu jenis warna: hanya jenis itu, dan tetap terbaca', () => {
+    for (const opsi of ['SOLID', 'NEON', 'REDAM', 'GELAP', 'METALIK'] as const) {
+      const s = saranDi(SAND, TINTA, 'ANALOGOUS', opsi);
+      expect(s.length, opsi).toBeGreaterThan(0);
+      for (const x of s) {
+        expect(x.jenis).toBe(opsi);
+        expect(rasioKontras(x.hex, SAND), x.kode).toBeGreaterThanOrEqual(1.8);
+      }
+    }
+    expect(saranDi(SAND, TINTA, 'ANALOGOUS', 'PASTEL')).toEqual([]);
+  });
+
+  it('setiap pilihan tidak bergantung pada warna tinta yang sedang diganti', () => {
+    for (const opsi of OPSI_GANTI) {
+      expect(saranDi(SAND, [TINTA[0], TINTA[1], '#ff0000'], 'ANALOGOUS', opsi), opsi).toEqual(saranDi(SAND, TINTA, 'ANALOGOUS', opsi));
+    }
   });
 });
 

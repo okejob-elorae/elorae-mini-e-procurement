@@ -8,6 +8,10 @@ import { ATURAN_SABLON, ronaKhasAturan, type AturanSablon } from './saran';
 /**
  * Pengganti satu tinta: berbagai JENIS warna, semuanya masuk dengan kain.
  *
+ * Orang memilih dulu mau diganti menjadi apa (`OpsiGanti`): kalem (kontras di
+ * bawah 2 — samar, menyatu lembut dengan kain), kontras kuat (4,5 ke atas),
+ * satu jenis warna tertentu, atau semua jenis bergiliran.
+ *
  * Jenis — solid, neon, pastel, redam, gelap, metalik — memberi variasi yang
  * benar-benar berbeda; aturan harmoni memastikan tiap pilihan tetap cocok
  * dengan kain: ronanya harus jatuh di salah satu rona aturan itu terhadap kain
@@ -26,15 +30,33 @@ import { ATURAN_SABLON, ronaKhasAturan, type AturanSablon } from './saran';
 export const KELUARGA_WARNA = ['SOLID', 'NEON', 'PASTEL', 'REDAM', 'GELAP', 'METALIK'] as const;
 export type KeluargaWarna = (typeof KELUARGA_WARNA)[number];
 
-export type SaranPengganti = { hex: string; kode: string; aturan: AturanSablon; keluarga: KeluargaWarna };
+/** Pilihan "diganti menjadi apa". */
+export const OPSI_GANTI = ['SEMUA', 'KALEM', 'KONTRAS', ...KELUARGA_WARNA] as const;
+export type OpsiGanti = (typeof OPSI_GANTI)[number];
 
-type Calon = { warna: WarnaPantone; rona: number; L: number; C: number; rasio: number };
-export type CalonKain = { ronaDasar: number; perKeluarga: Record<KeluargaWarna, readonly Calon[]> };
+export type SaranPengganti = {
+  hex: string;
+  kode: string;
+  aturan: AturanSablon;
+  /** Jenis warnanya; `null` untuk netral (abu, hitam, putih) yang muncul di Kalem atau Kontras kuat. */
+  keluarga: KeluargaWarna | null;
+  /** Pilihan yang menghasilkannya — jenis warnanya sendiri untuk "Semua jenis". */
+  jenis: Exclude<OpsiGanti, 'SEMUA'>;
+};
+
+type Calon = { warna: WarnaPantone; rona: number; L: number; C: number; rasio: number; bedaKain: number; keluarga: KeluargaWarna | null; khusus: boolean };
+export type CalonKain = { ronaDasar: number; semua: readonly Calon[] };
 
 /** Rona harus sedekat ini (derajat, roda pelukis) ke rona aturan supaya dianggap mengikuti aturan itu. */
 const TOLERANSI_RONA = 20;
 /** Di bawah rasio ini tinta nyaris menyatu dengan kain ("samar"). */
 const RASIO_MIN = 1.8;
+/** Kalem: kontras di bawah ini — permintaan pemilik, "harus di bawah 2 sehingga samar". */
+const RASIO_KALEM = 2;
+/** Kalem tetap harus tampak berbeda dari kain, bukan kain itu sendiri. */
+const BEDA_KAIN_KALEM = 5;
+/** Kontras kuat: sama dengan "Terbaca kuat". */
+const RASIO_KUAT = 4.5;
 /** Pengganti yang lebih dekat dari ini ke tinta lain praktis tinta yang sama. */
 const BEDA_ANTARTINTA = 10;
 /** Pilihan per aturan di dalam satu jenis — satu per rona aturan, paling banyak dua. */
@@ -60,37 +82,32 @@ export function keluargaPantone(w: WarnaPantone): KeluargaWarna | null {
   return C >= 35 ? 'SOLID' : 'REDAM';
 }
 
-const ronaKatalog = new WeakMap<readonly WarnaPantone[], { warna: WarnaPantone; rona: number; keluarga: KeluargaWarna }[]>();
+type Siap = { warna: WarnaPantone; rona: number; L: number; C: number; keluarga: KeluargaWarna | null; khusus: boolean };
+const katalogSiap = new WeakMap<readonly WarnaPantone[], Siap[]>();
 
-function siapkan(katalog: readonly WarnaPantone[]) {
-  let hasil = ronaKatalog.get(katalog);
+function siapkan(katalog: readonly WarnaPantone[]): Siap[] {
+  let hasil = katalogSiap.get(katalog);
   if (!hasil) {
-    hasil = katalog.flatMap((warna) => {
-      const keluarga = keluargaPantone(warna);
-      return keluarga ? [{ warna, rona: hexKeHsb(warna.hex).h, keluarga }] : [];
+    hasil = katalog.map((warna) => {
+      const [L, a, b] = warna.lab;
+      return { warna, rona: hexKeHsb(warna.hex).h, L, C: Math.hypot(a, b), keluarga: keluargaPantone(warna), khusus: pantoneKhusus(warna.kode) !== null };
     });
-    ronaKatalog.set(katalog, hasil);
+    katalogSiap.set(katalog, hasil);
   }
   return hasil;
 }
 
 /**
- * Calon yang terbaca di satu kain, per jenis. Rona dasar = rona kain; kain
- * netral tidak punya rona, jadi memakai rona aksen pertama galeri — sama dengan
- * saran aturan harmoni, supaya keduanya sepakat.
+ * Semua calon untuk satu kain, dengan kontras dan jaraknya ke kain. Rona dasar
+ * = rona kain; kain netral tidak punya rona, jadi memakai rona aksen pertama
+ * galeri — sama dengan saran aturan harmoni, supaya keduanya sepakat.
  */
 export function calonUntukKain(kainHex: string, katalog: readonly WarnaPantone[]): CalonKain {
-  const [, a, b] = hexKeLab(kainHex);
+  const labKain = hexKeLab(kainHex);
   const aksenNetral = katalog.find((w) => w.kode === AKSEN_POPULER[0]);
-  const ronaDasar = Math.hypot(a, b) < KROMA_NETRAL ? (aksenNetral ? hexKeHsb(aksenNetral.hex).h : 80) : hexKeHsb(kainHex).h;
-  const perKeluarga = Object.fromEntries(KELUARGA_WARNA.map((k) => [k, [] as Calon[]])) as Record<KeluargaWarna, Calon[]>;
-  for (const { warna, rona, keluarga } of siapkan(katalog)) {
-    const rasio = rasioKontras(warna.hex, kainHex);
-    if (rasio < RASIO_MIN) continue;
-    const [L, la, lb] = warna.lab;
-    perKeluarga[keluarga].push({ warna, rona, L, C: Math.hypot(la, lb), rasio });
-  }
-  return { ronaDasar, perKeluarga };
+  const ronaDasar = Math.hypot(labKain[1], labKain[2]) < KROMA_NETRAL ? (aksenNetral ? hexKeHsb(aksenNetral.hex).h : 80) : hexKeHsb(kainHex).h;
+  const semua = siapkan(katalog).map((c) => ({ ...c, rasio: rasioKontras(c.warna.hex, kainHex), bedaKain: deltaE2000(c.warna.lab, labKain) }));
+  return { ronaDasar, semua };
 }
 
 function jarakRona(a: number, b: number): number {
@@ -98,20 +115,32 @@ function jarakRona(a: number, b: number): number {
   return Math.min(d, 360 - d);
 }
 
-/** Seberapa khas sebuah calon untuk jenisnya — makin kecil makin khas. */
-function watakJenis(keluarga: KeluargaWarna, c: Calon): number {
-  switch (keluarga) {
+/** Seberapa khas sebuah calon untuk pilihannya — makin kecil makin khas. */
+function watak(opsi: Exclude<OpsiGanti, 'SEMUA'>, c: Calon): number {
+  switch (opsi) {
+    case 'KALEM':
+      // Kalem: kepekatan rendah, tetapi tetap tampak berbeda dari kain.
+      return c.C / 15 - Math.min(c.bedaKain, 15) / 5;
+    case 'KONTRAS':
+      return -Math.min(c.rasio, 12) / 3 - c.C / 30;
     case 'SOLID':
-      return -Math.min(c.C, 80) / 6;
+      return -Math.min(c.C, 80) / 6 - Math.min(c.rasio, 4.5);
     case 'PASTEL':
-      return Math.abs(c.L - 85) / 3;
+      return Math.abs(c.L - 85) / 3 - Math.min(c.rasio, 4.5);
     case 'REDAM':
-      return Math.abs(c.C - 22) / 3;
+      return Math.abs(c.C - 22) / 3 - Math.min(c.rasio, 4.5);
     case 'GELAP':
-      return Math.abs(c.L - 25) / 3;
+      return Math.abs(c.L - 25) / 3 - Math.min(c.rasio, 4.5);
     default:
-      return 0;
+      return -Math.min(c.rasio, 4.5);
   }
+}
+
+/** Calon yang memenuhi syarat sebuah pilihan, sebelum dicocokkan dengan aturan. */
+function lolos(opsi: Exclude<OpsiGanti, 'SEMUA'>, c: Calon): boolean {
+  if (opsi === 'KALEM') return !c.khusus && c.rasio < RASIO_KALEM && c.bedaKain >= BEDA_KAIN_KALEM;
+  if (opsi === 'KONTRAS') return !c.khusus && c.rasio >= RASIO_KUAT;
+  return c.keluarga === opsi && c.rasio >= RASIO_MIN;
 }
 
 /** Rona khas sebuah aturan: geseran dari rona dasar, tanpa 0° kecuali Monochromatic dan Shades. */
@@ -126,14 +155,23 @@ function bergiliran<T>(daftar: readonly (readonly T[])[]): T[] {
   return hasil;
 }
 
-export function saranPengganti(input: {
+/**
+ * Pengganti untuk setiap pilihan sekaligus — daftar tiap jenis dihitung sekali
+ * dan "Semua jenis" disusun darinya. Tiap daftar bergiliran antaraturan (aturan
+ * palet di depan); "Semua jenis" bergiliran antarjenis.
+ *
+ * Warna berpigmen harus jatuh di rona aturannya; netral (abu, hitam, putih) —
+ * yang hanya muncul di Kalem dan Kontras kuat — tidak punya rona, jadi
+ * dihitung sebagai Monochromatic dan Shades saja.
+ */
+export function saranSemuaPilihan(input: {
   calon: CalonKain;
   /** Semua tinta palet; yang di `indeks` adalah yang diganti. */
   hex: readonly string[];
   indeks: number;
-  /** Aturan palet saat ini didahulukan di setiap jenis. */
+  /** Aturan palet saat ini didahulukan di setiap pilihan. */
   aturanUtama: AturanHarmoni;
-}): SaranPengganti[] {
+}): Record<OpsiGanti, SaranPengganti[]> {
   const lain = input.hex.flatMap((h, i) => {
     const bersih = i === input.indeks ? null : normalisasiHex(h);
     return bersih ? [hexKeLab(bersih)] : [];
@@ -142,17 +180,21 @@ export function saranPengganti(input: {
     ? [input.aturanUtama as AturanSablon, ...ATURAN_SABLON.filter((a) => a !== input.aturanUtama)]
     : [...ATURAN_SABLON];
 
-  const perJenis = KELUARGA_WARNA.map((keluarga) => {
-    const calon = input.calon.perKeluarga[keluarga].filter((c) => lain.every((l) => deltaE2000(l, c.warna.lab) >= BEDA_ANTARTINTA));
+  const untuk = (opsi: Exclude<OpsiGanti, 'SEMUA'>): SaranPengganti[] => {
+    // Syarat murah dulu, baru jarak ke tinta lain (ΔE2000 itu mahal).
+    const calon = input.calon.semua.filter((c) => lolos(opsi, c) && lain.every((l) => deltaE2000(l, c.warna.lab) >= BEDA_ANTARTINTA));
     const perAturan = urutanAturan.map((aturan) => {
+      const netralBoleh = aturan === 'MONOCHROMATIC' || aturan === 'SHADES';
       const terpilih: { c: Calon; skor: number }[] = [];
       for (const dh of geseranAturan(aturan)) {
         const sasaran = input.calon.ronaDasar + dh;
         let terbaik: { c: Calon; skor: number } | null = null;
         for (const c of calon) {
-          const jarak = jarakRona(c.rona, sasaran);
+          const berpigmen = c.C >= KROMA_WARNA;
+          if (!berpigmen && !netralBoleh) continue;
+          const jarak = berpigmen ? jarakRona(c.rona, sasaran) : 0;
           if (jarak > TOLERANSI_RONA) continue;
-          const skor = jarak / 4 + watakJenis(keluarga, c) - Math.min(c.rasio, 4.5);
+          const skor = jarak / 4 + watak(opsi, c);
           if (!terbaik || skor < terbaik.skor) terbaik = { c, skor };
         }
         if (terbaik && !terpilih.some((t) => t.c === terbaik.c)) terpilih.push(terbaik);
@@ -160,19 +202,25 @@ export function saranPengganti(input: {
       return terpilih
         .sort((a, b) => a.skor - b.skor)
         .slice(0, PER_ATURAN)
-        .map(({ c }): SaranPengganti => ({ hex: c.warna.hex, kode: c.warna.kode, aturan, keluarga }));
+        .map(({ c }): SaranPengganti => ({ hex: c.warna.hex, kode: c.warna.kode, aturan, keluarga: c.keluarga, jenis: opsi }));
     });
-    return bergiliran(perAturan);
-  });
+    return unik(bergiliran(perAturan));
+  };
 
-  const hasil: SaranPengganti[] = [];
-  const ada = new Set<string>();
-  for (const x of bergiliran(perJenis)) {
-    if (ada.has(x.kode)) continue;
-    ada.add(x.kode);
-    hasil.push(x);
-  }
+  const hasil = {} as Record<OpsiGanti, SaranPengganti[]>;
+  for (const opsi of OPSI_GANTI) if (opsi !== 'SEMUA') hasil[opsi] = untuk(opsi);
+  hasil.SEMUA = unik(bergiliran(KELUARGA_WARNA.map((k) => hasil[k])));
   return hasil;
+}
+
+/** Satu pilihan saja — lihat `saranSemuaPilihan`. */
+export function saranPengganti(input: Parameters<typeof saranSemuaPilihan>[0] & { opsi?: OpsiGanti }): SaranPengganti[] {
+  return saranSemuaPilihan(input)[input.opsi ?? 'SEMUA'];
+}
+
+function unik(daftar: readonly SaranPengganti[]): SaranPengganti[] {
+  const ada = new Set<string>();
+  return daftar.filter((x) => !ada.has(x.kode) && Boolean(ada.add(x.kode)));
 }
 
 /** Saran yang warnanya sama dengan `hex`, bila ada. */

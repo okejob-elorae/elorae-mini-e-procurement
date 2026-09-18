@@ -1932,11 +1932,17 @@
     "unlockInk": "Unlock ink {letter}",
     "lockedHint": "Locked — stays put when the rule, fabric, or other inks change. Click to unlock.",
     "nextColour": "Another colour",
-    "nextColourHint": "Switch to the next suggestion — each click is another kind of colour (solid, neon, muted, …), all of which suit the fabric. Keep clicking until it fits, then lock it.",
-    "ruleSuggestions": "Colours that suit the fabric",
-    "ruleSuggestionsHint": "Grouped by kind. Each hue follows a harmony rule against the fabric (the icon on each colour; hover for its name), reads on the fabric, and does not duplicate another ink. The palette’s current rule comes first.",
+    "nextColourHint": "Switch to the next {option} suggestion — all of them suit the fabric. Keep clicking until it fits, then lock it. Choose the kind with the arrow beside it.",
+    "ruleSuggestionsHint": "Each hue follows a harmony rule against the fabric and does not duplicate another ink. The number on each colour is its contrast on the fabric.",
     "suggestionTag": "{kind} · {rule}",
-    "kinds": {
+    "nextColourAs": "Another colour: {option}",
+    "chooseOption": "Choose what to change ink {letter} to",
+    "replaceAs": "Change to",
+    "optionEmpty": "No {option} colour suits this fabric.",
+    "options": {
+      "SEMUA": "All kinds",
+      "KALEM": "Calm",
+      "KONTRAS": "High contrast",
       "SOLID": "Solid",
       "NEON": "Neon",
       "PASTEL": "Pastel",
@@ -1944,11 +1950,14 @@
       "GELAP": "Deep",
       "METALIK": "Metallic"
     },
-    "kindHints": {
+    "optionHints": {
+      "SEMUA": "Rotates solid, neon, pastel, muted, deep, metallic.",
+      "KALEM": "Contrast below 2 — faint, blending softly into the fabric.",
+      "KONTRAS": "Contrast 4.5 and up — clear from a distance.",
       "SOLID": "Strong and clear, regular ink.",
       "NEON": "Fluorescent — special ink, check your printer stocks it.",
       "PASTEL": "Light and soft.",
-      "REDAM": "Calm, vintage feel.",
+      "REDAM": "Calm, vintage feel, still readable.",
       "GELAP": "Dark and rich.",
       "METALIK": "Shimmering — special ink, check your printer stocks it."
     }

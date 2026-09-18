@@ -12,7 +12,7 @@ import type { AturanHarmoni } from '@/lib/production-colors/palet/harmoni';
 import { rasioKontras } from '@/lib/production-colors/palet/kontras';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { bagiGram, resepCampur } from '@/lib/production-colors/sablon/campur';
-import { calonUntukKain, saranPengganti } from '@/lib/production-colors/sablon/pengganti';
+import { OPSI_GANTI, calonUntukKain, saranSemuaPilihan, type OpsiGanti, type SaranPengganti } from '@/lib/production-colors/sablon/pengganti';
 import { susunRingkasan } from '@/lib/production-colors/sablon/ringkasan';
 import { HURUF_SABLON, keterbacaanSablon, peranUntuk } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
@@ -20,6 +20,8 @@ import { BarisSablon } from './BarisSablon';
 import { PratinjauKaos } from './PratinjauKaos';
 
 export { HURUF_SABLON };
+
+const KOSONG = Object.fromEntries(OPSI_GANTI.map((o) => [o, []])) as unknown as Record<OpsiGanti, SaranPengganti[]>;
 
 /**
  * Resep tiap warna sablon, dicari ulang hanya saat warna, tinta dasar, atau
@@ -44,7 +46,7 @@ function useSaranPengganti(kainHex: string, hexWarna: string, aturan: AturanHarm
   const calon = useMemo(() => calonUntukKain(kainHex, katalogC), [kainHex, katalogC]);
   return useMemo(() => {
     const hex = hexWarna ? hexWarna.split(',') : [];
-    return hex.map((_, i) => saranPengganti({ calon, hex, indeks: i, aturanUtama: aturan }));
+    return hex.map((_, i) => saranSemuaPilihan({ calon, hex, indeks: i, aturanUtama: aturan }));
   }, [calon, hexWarna, aturan]);
 }
 
@@ -237,7 +239,7 @@ export function KartuSablon({
               tintaDasar={tintaDasar}
               berat={berat}
               katalogC={katalogC}
-              saran={saran[i] ?? []}
+              saran={saran[i] ?? KOSONG}
               terkunci={terkunci.includes(i)}
               onKunci={() => onKunci(i)}
               onPorsi={(n) => onPorsi(i, n)}

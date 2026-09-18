@@ -2,15 +2,35 @@
 
 import { useState, type ReactNode } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { AlertTriangle, Check, Lock, LockOpen, Search, Shuffle } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Lock, LockOpen, Search, Shuffle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { STATUS_TONE_CLASS, type StatusTone } from '@/components/ui/status-pill';
 import { rasioKontras } from '@/lib/production-colors/palet/kontras';
 import { cariPantone, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { bagiGram, type ResepCampur } from '@/lib/production-colors/sablon/campur';
-import { KELUARGA_WARNA, saranBerikutnya, saranYangDipakai, type SaranPengganti } from '@/lib/production-colors/sablon/pengganti';
-import { keterbacaanSablon, type KeterbacaanSablon, type PeranSablon } from '@/lib/production-colors/sablon/saran';
+import {
+  ATURAN_SABLON,
+  keterbacaanSablon,
+  type KeterbacaanSablon,
+  type PeranSablon,
+} from '@/lib/production-colors/sablon/saran';
+import {
+  KELUARGA_WARNA,
+  OPSI_GANTI,
+  saranBerikutnya,
+  saranYangDipakai,
+  type OpsiGanti,
+  type SaranPengganti,
+} from '@/lib/production-colors/sablon/pengganti';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { cn } from '@/lib/utils';
 import { IkonHarmoni } from './IkonHarmoni';
@@ -53,10 +73,11 @@ function Pil({ nada, children }: { nada: StatusTone; children: ReactNode }) {
  * persis; selain itu hex-nya yang menjadi judul, dengan kode terdekat dan
  * jaraknya di sampingnya.
  *
- * Tinta yang belum cocok diganti dari saran yang masuk dengan kain — berbagai
- * jenis warna (solid, neon, pastel, …), ronanya menurut aturan harmoni — satu
- * per satu lewat "Warna lain", atau dipilih dari daftarnya, lalu dikunci. Tinta
- * terkunci tidak bisa diganti dari sini sampai gemboknya dibuka.
+ * Tinta yang belum cocok diganti dari saran yang masuk dengan kain. Orang
+ * memilih dulu mau diganti menjadi apa — kalem (kontras di bawah 2), kontras
+ * kuat, satu jenis warna, atau semua jenis — lalu "Warna lain" berputar di
+ * dalam pilihan itu, atau warnanya dipilih dari daftar. Setelah cocok, dikunci.
+ * Tinta terkunci tidak bisa diganti dari sini sampai gemboknya dibuka.
  */
 export function BarisSablon({
   huruf,
@@ -85,8 +106,8 @@ export function BarisSablon({
   tintaDasar: readonly TintaDasar[];
   berat: number;
   katalogC: readonly WarnaPantone[];
-  /** Pengganti yang masuk dengan kain, bergiliran antarjenis warna. */
-  saran: readonly SaranPengganti[];
+  /** Pengganti yang masuk dengan kain, per pilihan "diganti menjadi apa". */
+  saran: Readonly<Record<OpsiGanti, readonly SaranPengganti[]>>;
   terkunci: boolean;
   onKunci: () => void;
   onPorsi: (porsi: number) => void;
@@ -98,17 +119,30 @@ export function BarisSablon({
   const desimal = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const persen = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
   const [cari, setCari] = useState<string | null>(null);
+  const [opsi, setOpsi] = useState<OpsiGanti>('SEMUA');
 
   const rasio = rasioKontras(hex, kainHex);
   const baca = keterbacaanSablon(rasio);
   const hasilCari = cari ? cariPantone(katalogC, cari, 5) : [];
   const gram = resep ? bagiGram(berat, resep.bagian.map((b) => b.persen)) : [];
   const persis = pantone !== null && pantone.deltaE < DE_PERSIS;
-  const dipakai = saranYangDipakai(saran, hex);
-  // Dikelompokkan per jenis warna; di dalamnya urutan saran (aturan palet di depan).
-  const kelompok = KELUARGA_WARNA.map((keluarga) => ({ keluarga, daftar: saran.filter((x) => x.keluarga === keluarga) })).filter(
-    (g) => g.daftar.length > 0,
-  );
+  const daftar = saran[opsi];
+  // Label warna sekarang: dari pilihan yang aktif dulu, lalu dari pilihan lain.
+  const dipakai = saranYangDipakai(daftar, hex) ?? OPSI_GANTI.map((o) => saranYangDipakai(saran[o], hex)).find(Boolean) ?? null;
+  const namaOpsi = (o: OpsiGanti) => t(`options.${o}`);
+  // "Semua jenis" dikelompokkan per jenis warna; satu pilihan dikelompokkan per aturan.
+  const kelompok =
+    opsi === 'SEMUA'
+      ? KELUARGA_WARNA.map((k) => ({ kunci: k as string, judul: t(`options.${k}`), petunjuk: t(`optionHints.${k}`), aturan: null, daftar: daftar.filter((x) => x.jenis === k) }))
+      : ATURAN_SABLON.map((a) => ({ kunci: a as string, judul: tPalet(`rules.${a}.name`), petunjuk: null, aturan: a, daftar: daftar.filter((x) => x.aturan === a) }));
+  const kelompokIsi = kelompok.filter((g) => g.daftar.length > 0);
+
+  /** Memilih "diganti menjadi apa" langsung memasang warna pertamanya — hasilnya terlihat, lalu "Warna lain" berputar di dalamnya. */
+  function pilihOpsi(o: OpsiGanti) {
+    setOpsi(o);
+    const pertama = saran[o][0];
+    if (pertama && !saranYangDipakai(saran[o], hex)) onGanti(pertama.hex);
+  }
 
   return (
     <li className="space-y-3 rounded-lg border p-3 sm:p-4">
@@ -144,9 +178,7 @@ export function BarisSablon({
             <Pil nada={NADA_BACA[baca]}>
               {t(`readability.${baca}`)} · {desimal.format(rasio)}
             </Pil>
-            {dipakai && (
-              <Pil nada="inactive">{t('suggestionTag', { kind: t(`kinds.${dipakai.keluarga}`), rule: tPalet(`rules.${dipakai.aturan}.name`) })}</Pil>
-            )}
+            {dipakai && <Pil nada="inactive">{t('suggestionTag', { kind: namaOpsi(dipakai.jenis), rule: tPalet(`rules.${dipakai.aturan}.name`) })}</Pil>}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -163,20 +195,54 @@ export function BarisSablon({
             />
             <span className="text-sm text-muted-foreground">%</span>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={terkunci || saran.length === 0}
-            title={t('nextColourHint')}
-            onClick={() => {
-              const berikut = saranBerikutnya(saran, hex);
-              if (berikut) onGanti(berikut.hex);
-            }}
-          >
-            <Shuffle className="h-3.5 w-3.5" />
-            {t('nextColour')}
-          </Button>
+          <div className="flex">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-r-none"
+              disabled={terkunci || daftar.length === 0}
+              title={t('nextColourHint', { option: namaOpsi(opsi) })}
+              onClick={() => {
+                const berikut = saranBerikutnya(daftar, hex);
+                if (berikut) onGanti(berikut.hex);
+              }}
+            >
+              <Shuffle className="h-3.5 w-3.5" />
+              {opsi === 'SEMUA' ? t('nextColour') : t('nextColourAs', { option: namaOpsi(opsi) })}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  className="rounded-l-none border-l-0"
+                  disabled={terkunci}
+                  aria-label={t('chooseOption', { letter: huruf })}
+                  title={t('chooseOption', { letter: huruf })}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel className="text-xs">{t('replaceAs')}</DropdownMenuLabel>
+                <DropdownMenuRadioGroup value={opsi} onValueChange={(v) => pilihOpsi(v as OpsiGanti)}>
+                  {OPSI_GANTI.map((o) => (
+                    <DropdownMenuRadioItem key={o} value={o} disabled={saran[o].length === 0} className="items-start">
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{namaOpsi(o)}</span>
+                          <span className="text-xs tabular-nums text-muted-foreground">{saran[o].length}</span>
+                        </span>
+                        <span className="text-xs text-muted-foreground">{t(`optionHints.${o}`)}</span>
+                      </span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <Button
             type="button"
             variant="outline"
@@ -207,24 +273,49 @@ export function BarisSablon({
 
       {cari !== null && !terkunci && (
         <div className="space-y-3">
-          {kelompok.length > 0 && (
-            <div className="space-y-2">
-              <div>
-                <p className="text-xs font-medium">{t('ruleSuggestions')}</p>
-                <p className="text-xs text-muted-foreground">{t('ruleSuggestionsHint')}</p>
+          <div className="space-y-2">
+            <div>
+              <p className="text-xs font-medium">{t('replaceAs')}</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-label={t('replaceAs')}>
+                {OPSI_GANTI.map((o) => (
+                  <Button
+                    key={o}
+                    type="button"
+                    size="xs"
+                    variant={opsi === o ? 'secondary' : 'outline'}
+                    aria-pressed={opsi === o}
+                    disabled={saran[o].length === 0}
+                    title={t(`optionHints.${o}`)}
+                    onClick={() => pilihOpsi(o)}
+                  >
+                    {namaOpsi(o)}
+                    <span className="tabular-nums text-muted-foreground">{saran[o].length}</span>
+                  </Button>
+                ))}
               </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {t(`optionHints.${opsi}`)} {t('ruleSuggestionsHint')}
+              </p>
+            </div>
+            {kelompokIsi.length === 0 ? (
+              <p className="text-xs text-muted-foreground">{t('optionEmpty', { option: namaOpsi(opsi) })}</p>
+            ) : (
               <ul className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
-                {kelompok.map((g) => (
-                  <li key={g.keluarga} className="space-y-1.5 rounded-md border p-2">
+                {kelompokIsi.map((g) => (
+                  <li key={g.kunci} className="space-y-1.5 rounded-md border p-2">
                     <div>
-                      <p className="text-xs font-medium">{t(`kinds.${g.keluarga}`)}</p>
-                      <p className="text-[11px] text-muted-foreground">{t(`kindHints.${g.keluarga}`)}</p>
+                      <p className="flex items-center gap-1.5 text-xs font-medium">
+                        {g.aturan && <IkonHarmoni aturan={g.aturan} className="size-4 shrink-0" />}
+                        {g.judul}
+                      </p>
+                      {g.petunjuk && <p className="text-[11px] text-muted-foreground">{g.petunjuk}</p>}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {g.daftar.map((x) => {
                         const aktif = dipakai?.kode === x.kode;
                         const aturan = tPalet(`rules.${x.aturan}.name`);
-                        const bacaan = t(`readability.${keterbacaanSablon(rasioKontras(x.hex, kainHex))}`);
+                        const r = rasioKontras(x.hex, kainHex);
+                        const bacaan = `${t(`readability.${keterbacaanSablon(r)}`)} · ${desimal.format(r)}`;
                         return (
                           <Button
                             key={x.kode}
@@ -238,7 +329,8 @@ export function BarisSablon({
                           >
                             <span aria-hidden className="size-3 shrink-0 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: x.hex }} />
                             {x.kode}
-                            <IkonHarmoni aturan={x.aturan} className="size-3 shrink-0 opacity-70" />
+                            <span className="tabular-nums text-muted-foreground">{desimal.format(r)}</span>
+                            {opsi === 'SEMUA' && <IkonHarmoni aturan={x.aturan} className="size-3 shrink-0 opacity-70" />}
                             {aktif && <Check aria-hidden />}
                           </Button>
                         );
@@ -247,8 +339,8 @@ export function BarisSablon({
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
+            )}
+          </div>
           <Input
             type="search"
             autoFocus

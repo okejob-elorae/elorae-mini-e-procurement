@@ -1932,11 +1932,17 @@
     "unlockInk": "Lepas kunci tinta {letter}",
     "lockedHint": "Terkunci — tidak ikut berubah saat aturan, kain, atau tinta lain diganti. Klik untuk membuka.",
     "nextColour": "Warna lain",
-    "nextColourHint": "Ganti ke saran berikutnya — tiap klik jenis warna lain (solid, neon, redam, …), semuanya masuk dengan kain. Klik terus sampai cocok, lalu kunci.",
-    "ruleSuggestions": "Warna yang masuk dengan kain",
-    "ruleSuggestionsHint": "Dikelompokkan per jenis. Ronanya mengikuti aturan harmoni terhadap kain (ikon di tiap warna, arahkan kursor untuk namanya), terbaca di kain, dan tidak kembar dengan tinta lain. Aturan palet saat ini didahulukan.",
+    "nextColourHint": "Ganti ke saran {option} berikutnya — semuanya masuk dengan kain. Klik terus sampai cocok, lalu kunci. Pilih jenisnya di panah sebelahnya.",
+    "ruleSuggestionsHint": "Ronanya mengikuti aturan harmoni terhadap kain, dan tidak kembar dengan tinta lain. Angka di tiap warna adalah kontrasnya di kain.",
     "suggestionTag": "{kind} · {rule}",
-    "kinds": {
+    "nextColourAs": "Warna lain: {option}",
+    "chooseOption": "Pilih mau diganti menjadi apa (tinta {letter})",
+    "replaceAs": "Ganti menjadi",
+    "optionEmpty": "Tidak ada warna {option} yang masuk dengan kain ini.",
+    "options": {
+      "SEMUA": "Semua jenis",
+      "KALEM": "Kalem",
+      "KONTRAS": "Kontras kuat",
       "SOLID": "Solid",
       "NEON": "Neon",
       "PASTEL": "Pastel",
@@ -1944,11 +1950,14 @@
       "GELAP": "Gelap",
       "METALIK": "Metalik"
     },
-    "kindHints": {
+    "optionHints": {
+      "SEMUA": "Bergiliran solid, neon, pastel, redam, gelap, metalik.",
+      "KALEM": "Kontras di bawah 2 — samar, menyatu lembut dengan kain.",
+      "KONTRAS": "Kontras 4,5 ke atas — jelas dari jauh.",
       "SOLID": "Pekat dan jelas, tinta biasa.",
       "NEON": "Berpendar — tinta khusus, pastikan tersedia di tempat sablon.",
       "PASTEL": "Terang dan lembut.",
-      "REDAM": "Kalem, gaya vintage.",
+      "REDAM": "Kalem, gaya vintage, tetap terbaca.",
       "GELAP": "Tua dan pekat.",
       "METALIK": "Berkilau — tinta khusus, pastikan tersedia di tempat sablon."
     }
