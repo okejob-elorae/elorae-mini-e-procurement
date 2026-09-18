@@ -1,0 +1,143 @@
+'use client';
+
+import { useMemo } from 'react';
+import { useTranslations } from 'next-intl';
+import { Lock, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { svgKaos } from '@/lib/production-colors/palet/kaos-svg';
+import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
+import { galeriKomposisi, type Komposisi } from '@/lib/production-colors/sablon/komposisi';
+import { HURUF_SABLON } from '@/lib/production-colors/sablon/saran';
+import { cn } from '@/lib/utils';
+
+const TANPA_KUNCI = '-';
+
+/**
+ * Galeri komposisi siap pakai untuk kain yang dipilih — jawaban untuk "warna
+ * apa yang cocok", tanpa harus menyetel tinta satu per satu. Galeri dihitung
+ * ulang hanya saat kain atau warna yang dikunci berubah.
+ */
+export function KartuRekomendasi({
+  kainHex,
+  namaKain,
+  katalogC,
+  hexTinta,
+  kunci,
+  onKunci,
+  dariGambar,
+  onBuangDariGambar,
+  onPakai,
+}: {
+  kainHex: string;
+  namaKain: string;
+  katalogC: readonly WarnaPantone[];
+  /** Tinta yang sedang dipakai — calon warna yang bisa dikunci. */
+  hexTinta: string[];
+  kunci: string | null;
+  onKunci: (hex: string | null) => void;
+  dariGambar: Komposisi | null;
+  onBuangDariGambar: () => void;
+  onPakai: (k: Komposisi) => void;
+}) {
+  const t = useTranslations('productionPalette.recommend');
+  const galeri = useMemo(() => galeriKomposisi({ kainHex, katalog: katalogC, kunciHex: kunci }), [kainHex, katalogC, kunci]);
+  const daftar = dariGambar ? [dariGambar, ...galeri] : galeri;
+
+  const kodeUntuk = (hex: string) => {
+    const p = pantoneTerdekat(katalogC, hex);
+    return p && p.deltaE < 0.05 ? p.warna.kode : hex.toUpperCase();
+  };
+  const pilihanKunci = hexTinta.map((hex, i) => ({ hex, label: t('lockInk', { letter: HURUF_SABLON[i], code: kodeUntuk(hex) }) }));
+  if (kunci && !hexTinta.includes(kunci)) pilihanKunci.push({ hex: kunci, label: t('lockKept', { code: kodeUntuk(kunci) }) });
+
+  return (
+    <Card id="rekomendasi" className="scroll-mt-20">
+      <CardHeader>
+        <CardTitle>{t('title')}</CardTitle>
+        <CardDescription>{t('description', { fabric: namaKain })}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* Di badan kartu, bukan di kepala: di HP kontrol ini menjepit judul dan deskripsi. */}
+        <div className="mb-4 w-full max-w-64 space-y-1">
+          <Label htmlFor="kunci-warna" className="text-xs">
+            <Lock className="h-3 w-3" />
+            {t('lockLabel')}
+          </Label>
+          <Select value={kunci ?? TANPA_KUNCI} onValueChange={(v) => onKunci(v === TANPA_KUNCI ? null : v)}>
+            <SelectTrigger id="kunci-warna" className="w-full" title={t('lockHint')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper">
+              <SelectItem value={TANPA_KUNCI}>{t('lockNone')}</SelectItem>
+              {pilihanKunci.map((p) => (
+                <SelectItem key={p.hex} value={p.hex}>
+                  <span aria-hidden className="size-3 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: p.hex }} />
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {daftar.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t('empty')}</p>
+        ) : (
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+            {daftar.map((k, i) => {
+              const nama = t(`patterns.${k.pola}`);
+              const gambar = k.pola === 'DARI_GAMBAR';
+              return (
+                <li key={k.id} className={cn('flex min-w-0 flex-col gap-3 rounded-lg border p-3', gambar && 'border-primary ring-1 ring-primary')}>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm leading-tight font-medium">{nama}</p>
+                    {gambar && (
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Badge variant="secondary">{t('fromImage')}</Badge>
+                        <Button type="button" variant="ghost" size="icon-xs" aria-label={t('dismiss')} onClick={onBuangDariGambar}>
+                          <X />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    className="mx-auto w-full max-w-36"
+                    // Teks SVG dari fungsi murni yang meloloskan label dan hanya menerima hex sah.
+                    dangerouslySetInnerHTML={{
+                      __html: svgKaos({
+                        kainHex,
+                        tinta: k.tinta.map((x, j) => ({ huruf: HURUF_SABLON[j], hex: x.hex, porsi: x.porsi })),
+                        id: `rekomendasi-${i}`,
+                        label: t('previewLabel', { name: nama, fabric: namaKain }),
+                        kelas: 'block h-auto w-full',
+                      }),
+                    }}
+                  />
+                  <ul className="space-y-1 text-xs">
+                    {k.tinta.map((x, j) => (
+                      <li key={`${x.hex}-${j}`} className="flex items-center gap-2">
+                        <span aria-hidden className="size-4 shrink-0 rounded ring-1 ring-inset ring-black/15" style={{ background: x.hex }} />
+                        <span className="w-3 font-medium">{HURUF_SABLON[j]}</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {x.kode ?? x.hex.toUpperCase()}
+                          <span className="text-muted-foreground"> · {t(`roles.${x.peran}`)}</span>
+                          {x.dikunci && <Lock aria-label={t('lockLabel')} className="ml-1 inline h-3 w-3 text-muted-foreground" />}
+                        </span>
+                        <span className="tabular-nums text-muted-foreground">{x.porsi}%</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button type="button" size="sm" variant={gambar ? 'default' : 'outline'} className="mt-auto" onClick={() => onPakai(k)}>
+                    {t('use')}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

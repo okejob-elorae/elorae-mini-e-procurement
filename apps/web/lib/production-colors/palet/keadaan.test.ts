@@ -16,6 +16,7 @@ import {
   pasangKain,
   pilihAturanPalet,
   sarankanDariKain,
+  terapkanKomposisi,
   ubahJumlahSablon,
   ubahKecerahanPalet,
   ubahPorsiPalet,
@@ -275,5 +276,32 @@ describe('mengisi palet dari gambar', () => {
   it('tidak mengubah palet berkain kalau semua warna gambar sama dengan kain', () => {
     const berkain = pasangKain(bebas(), BLUE_SURF, KATALOG);
     expect(isiDariGambar(berkain, [{ hex: '#91a9a5', bagian: 1 }])).toBe(berkain);
+  });
+});
+
+describe('terapkanKomposisi', () => {
+  const komposisi = {
+    tinta: [
+      { hex: '#f1e7d9', porsi: 45 },
+      { hex: '#a0d513', porsi: 35 },
+      { hex: '#1e3846', porsi: 20 },
+    ],
+  };
+
+  it('memasang tinta dan porsinya ke palet berkain, sebagai pilihan tangan', () => {
+    const p = terapkanKomposisi(pasangKain(bebas(), NAVY, KATALOG), komposisi);
+    expect(hexDari(p)).toEqual(['#f1e7d9', '#a0d513', '#1e3846']);
+    expect(p.porsi).toEqual([45, 35, 20]);
+    expect(p.kain).toBe(NAVY);
+    // Mengganti kain sesudahnya tidak boleh menimpa pilihan ini.
+    expect(p.saranUtuh).toBe(false);
+    expect(hexDari(pasangKain(p, BLUE_SURF, KATALOG))).toEqual(hexDari(p));
+  });
+
+  it('tidak menyentuh palet bebas atau komposisi kosong', () => {
+    const b = bebas();
+    expect(terapkanKomposisi(b, komposisi)).toBe(b);
+    const k = pasangKain(b, NAVY, KATALOG);
+    expect(terapkanKomposisi(k, { tinta: [] })).toBe(k);
   });
 });

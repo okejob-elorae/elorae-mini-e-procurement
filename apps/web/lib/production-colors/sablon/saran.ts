@@ -2,6 +2,7 @@ import { INDEKS_DASAR, langkahHarmoni, type AturanHarmoni } from '../palet/harmo
 import { rasioKontras } from '../palet/kontras';
 import { deltaE2000, hexKeLab, type Lab, type WarnaPantone } from '../palet/pantone';
 import { hexKeHsb, hsbKeHex, putarSudut } from '../palet/warna';
+import { AKSEN_POPULER, KROMA_NETRAL } from './komposisi';
 
 /**
  * Saran warna sablon untuk sebuah kain.
@@ -98,7 +99,11 @@ export function sarankanSablon(input: {
 }): SaranSablon[] {
   const jumlah = Math.min(JUMLAH_SABLON_MAKS, Math.max(1, Math.round(input.jumlah)));
   const kain = hexKeHsb(input.kainHex);
-  const terangKain = hexKeLab(input.kainHex)[0];
+  const [terangKain, aKain, bKain] = hexKeLab(input.kainHex);
+  // Kain netral tidak punya rona — HSB menyebutnya 0°, yaitu merah. Rona dasarnya
+  // diambil dari aksen pertama galeri komposisi supaya kedua saran sepakat.
+  const aksenNetral = input.katalog.find((w) => w.kode === AKSEN_POPULER[0]);
+  const ronaKain = Math.hypot(aKain, bKain) < KROMA_NETRAL ? (aksenNetral ? hexKeHsb(aksenNetral.hex).h : 80) : kain.h;
 
   // Geseran rona dari resep aturan, tanpa warna dasar (itu kainnya sendiri).
   // Rona yang berbeda dari kain didahulukan: "complementary" yang warna
@@ -127,7 +132,7 @@ export function sarankanSablon(input: {
     const arah = duaArah ? ((j + putaran) % 2 === 0 ? arahUtama : -arahUtama) : arahUtama;
     const jarak = duaArah ? (putaran >= 2 ? 55 : 40) : JARAK_SEARAH[k % JARAK_SEARAH.length];
     const terangTarget = Math.min(TERANG_ATAS, Math.max(TERANG_BAWAH, terangKain + arah * jarak));
-    const ideal = capaiTerang(putarSudut(kain.h + geseran[j]), pekatTarget, terangTarget);
+    const ideal = capaiTerang(putarSudut(ronaKain + geseran[j]), pekatTarget, terangTarget);
 
     let terbaik: { warna: WarnaPantone; skor: number } | null = null;
     for (const warna of input.katalog) {

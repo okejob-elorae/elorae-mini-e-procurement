@@ -96,6 +96,13 @@ export function pilihAturanPalet(p: Palet, aturan: AturanHarmoni, katalog: reado
   return sarankan({ ...p, aturan: aturanSablonDari(aturan) }, katalog, p.warna.length);
 }
 
+/** Komposisi dari galeri rekomendasi dipasang apa adanya — pilihan orang, jadi tidak ditimpa saran berikutnya. */
+export function terapkanKomposisi(p: Palet, komposisi: { tinta: readonly { hex: string; porsi: number }[] }): Palet {
+  if (p.kain === null || komposisi.tinta.length === 0) return p;
+  const tinta = komposisi.tinta.slice(0, JUMLAH_SABLON_MAKS);
+  return { ...p, warna: tinta.map((t) => hexKeHsb(t.hex)), porsi: tinta.map((t) => t.porsi), saranUtuh: false };
+}
+
 export function ubahJumlahSablon(p: Palet, jumlah: number, katalog: readonly WarnaPantone[]): Palet {
   if (p.kain === null) return p;
   const n = Math.min(JUMLAH_SABLON_MAKS, Math.max(1, Math.round(jumlah)));

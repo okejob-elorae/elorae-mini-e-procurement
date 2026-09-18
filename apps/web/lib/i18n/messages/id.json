@@ -1685,6 +1685,41 @@
     "imageProfileManagedHelp": "Mati: warna tampil dan terambil sama seperti di Preview atau Finder di Mac.",
     "imageProfileRawHelp": "Nyala: angka di berkas dipakai apa adanya, sehingga warnanya bisa berbeda dari yang tampil di Mac. Pakai hanya kalau Anda tahu kode HEX asli dari pembuat gambar. Warna yang sudah diambil dikosongkan saat saklar diganti.",
     "imageAccuracy": "Screenshot desain memberi warna paling akurat. Warna dari foto kain dipengaruhi cahaya dan kamera — cocokkan dengan buku Pantone.",
+    "recommend": {
+      "title": "Rekomendasi komposisi",
+      "description": "Susunan tinta siap pakai untuk kain {fabric}. Klik Pakai untuk memasangnya — bisa diurungkan.",
+      "lockLabel": "Warna wajib",
+      "lockNone": "Tanpa kunci",
+      "lockInk": "Tinta {letter} · {code}",
+      "lockKept": "Terkunci · {code}",
+      "lockHint": "Warna yang dikunci muncul di setiap rekomendasi.",
+      "use": "Pakai",
+      "applied": "Komposisi “{name}” dipasang.",
+      "fromImage": "Dari gambar",
+      "fromImageAdded": "Komposisi gambar ditambahkan di Rekomendasi komposisi.",
+      "fromImageFailed": "Komposisinya belum terbaca. Tekan Tebak warna dominan dulu — warna terluas dianggap kain gambar.",
+      "dismiss": "Buang komposisi dari gambar",
+      "empty": "Tidak ada komposisi yang terbaca jelas di kain ini.",
+      "previewLabel": "{name} di kain {fabric}",
+      "mimic": "Tiru komposisinya ke kain ini",
+      "mimicHint": "Warna terluas dibaca sebagai kain gambar; peran dan porsi warna lainnya dipindah ke kain Anda.",
+      "patterns": {
+        "AKSEN_NETRAL_NADA": "Aksen + netral + tone-on-tone",
+        "AKSEN_NETRAL": "Aksen + netral",
+        "DUA_AKSEN_NETRAL": "Dua aksen + netral",
+        "KONTRAS_PENUH": "Kontras penuh",
+        "AKSEN_NADA": "Aksen + tone-on-tone",
+        "TONAL": "Tonal",
+        "DARI_GAMBAR": "Seperti gambar referensi"
+      },
+      "roles": {
+        "AKSEN": "Aksen",
+        "AKSEN_2": "Aksen 2",
+        "NETRAL": "Netral",
+        "NADA": "Tone-on-tone",
+        "TONAL": "Tonal"
+      }
+    },
     "export": {
       "button": "Ekspor",
       "buttonFor": "Ekspor {name}",

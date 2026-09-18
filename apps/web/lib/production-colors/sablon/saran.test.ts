@@ -106,6 +106,21 @@ describe('sarankanSablon', () => {
     }
   });
 
+  /*
+   * Kain hitam, putih, dan abu tidak punya rona — HSB melaporkannya sebagai 0°,
+   * yaitu MERAH. Dulu "monochromatic" di kain hitam jadi pink kusam (2446 C,
+   * 8442 C, 7616 C) karena rona palsu itu. Kain netral kini memakai rona aksen
+   * pertama galeri (lime 375 C).
+   */
+  it('kain netral tidak dianggap merah: rona dasarnya aksen lime', () => {
+    const lime = hexKeHsb('#a0d513').h;
+    const hasil = sarankanSablon({ kainHex: KAIN.hitam, jumlah: 3, aturan: 'MONOCHROMATIC', katalog: KATALOG });
+    for (const s of hasil) {
+      const w = hexKeHsb(s.warna.hex);
+      if (w.s > 0.15) expect(selisihSudut(w.h, lime), s.warna.kode).toBeLessThan(40);
+    }
+  });
+
   it('memberi hasil yang sama untuk masukan yang sama', () => {
     const a = sarankanSablon({ kainHex: KAIN.blueSurf, jumlah: 5, aturan: 'ANALOGOUS', katalog: KATALOG });
     const b = sarankanSablon({ kainHex: KAIN.blueSurf, jumlah: 5, aturan: 'ANALOGOUS', katalog: KATALOG });

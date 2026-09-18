@@ -41,6 +41,7 @@ import {
   lepasKain,
   paletBebas,
   pasangKain,
+  terapkanKomposisi,
   aturanSablonDari,
   pilihAturanPalet,
   sarankanDariKain,
@@ -57,6 +58,7 @@ import { susunLembarPalet, type LembarPalet } from '@/lib/production-colors/pale
 import { BATAS_NAMA_PALET } from '@/lib/production-colors/palet/validasi';
 import { buildPaletWarnaPrintHtml } from '@/lib/print/palet-warna-html';
 import { hexKeHsb, hsbKeHex, normalisasiHex } from '@/lib/production-colors/palet/warna';
+import { tiruKomposisi, type Komposisi } from '@/lib/production-colors/sablon/komposisi';
 import { ATURAN_SABLON, JUMLAH_SABLON_MAKS } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { salinTeks } from '@/lib/ui/salin-teks';
@@ -67,6 +69,7 @@ import { buatGambarPalet, cetakHtml, namaBerkas, unduh } from './ekspor-palet';
 import { EditorWarna, type ModeMasukan } from './EditorWarna';
 import { IkonHarmoni } from './IkonHarmoni';
 import { KartuKain } from './KartuKain';
+import { KartuRekomendasi } from './KartuRekomendasi';
 import { HURUF_SABLON, KartuSablon } from './KartuSablon';
 import { KartuTintaDasar } from './KartuTintaDasar';
 import { KisiKontras } from './KisiKontras';
@@ -158,6 +161,10 @@ export function PaletClient({
     () => tcx.find(([kode]) => kode === KAIN_AWAL)?.[1].toLowerCase() ?? KAIN_CADANGAN,
   );
   const [maksTinta, setMaksTinta] = useState(3);
+  /** Warna yang wajib ada di setiap rekomendasi komposisi. */
+  const [kunci, setKunci] = useState<string | null>(null);
+  /** Warna dominan gambar referensi; komposisinya dihitung ulang tiap kali kain berganti. */
+  const [warnaReferensi, setWarnaReferensi] = useState<{ hex: string; bagian: number }[] | null>(null);
   const [beratTeks, setBeratTeks] = useState('1000');
   const [tinta, setTinta] = useState<TintaDasar[]>(tintaDasar);
   const [tintaTersimpan, setTintaTersimpan] = useState<TintaDasar[]>(tintaDasar);
@@ -165,6 +172,32 @@ export function PaletClient({
 
   function ubah(berikut: (p: Palet) => Palet) {
     setPaletSendiri((p) => berikut(p ?? awal));
+  }
+
+  const komposisiGambar = useMemo(
+    () => (warnaReferensi && palet.kain ? tiruKomposisi({ gambar: warnaReferensi, kainHex: palet.kain, katalog: katalogC() }) : null),
+    [warnaReferensi, palet.kain],
+  );
+
+  /** Memasang komposisi menimpa tinta yang ada — jadi selalu bisa diurungkan. */
+  function pakaiKomposisi(k: Komposisi) {
+    const sebelum = palet;
+    setPaletSendiri(terapkanKomposisi(sebelum, k));
+    setTerpilih(0);
+    toast.success(t('recommend.applied', { name: t(`recommend.patterns.${k.pola}`) }), {
+      action: { label: t('undo'), onClick: () => setPaletSendiri(sebelum) },
+    });
+  }
+
+  function tiruDariGambar(warna: { hex: string; bagian: number }[]) {
+    if (!palet.kain || !tiruKomposisi({ gambar: warna, kainHex: palet.kain, katalog: katalogC() })) {
+      toast.error(t('recommend.fromImageFailed'));
+      return;
+    }
+    setWarnaReferensi(warna);
+    toast.success(t('recommend.fromImageAdded'));
+    const hemat = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.getElementById('rekomendasi')?.scrollIntoView({ behavior: hemat ? 'auto' : 'smooth', block: 'start' });
   }
 
   /** Memilih aturan menimpa warna sablon yang sudah disunting — jadi selalu bisa diurungkan. */
@@ -403,8 +436,23 @@ export function PaletClient({
         katalogTcx={katalogTcx}
       />
 
+      {palet.kain && (
+        <KartuRekomendasi
+          kainHex={palet.kain}
+          namaKain={namaKain}
+          katalogC={katalogC()}
+          hexTinta={hex}
+          kunci={kunci}
+          onKunci={setKunci}
+          dariGambar={komposisiGambar}
+          onBuangDariGambar={() => setWarnaReferensi(null)}
+          onPakai={pakaiKomposisi}
+        />
+      )}
+
       <AmbilDariGambar
         berkain={berkain}
+        onTiruKomposisi={berkain ? tiruDariGambar : undefined}
         labelTerpilih={labelWarna(terpilih)}
         katalogC={katalogC()}
         katalogTcx={katalogTcx}
