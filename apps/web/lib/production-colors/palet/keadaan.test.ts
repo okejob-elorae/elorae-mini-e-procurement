@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import dataC from './pantone-c.json';
 import { INDEKS_DASAR, susunHarmoni } from './harmoni';
-import { siapkanKatalog } from './pantone';
+import { deltaE2000, hexKeLab, siapkanKatalog } from './pantone';
 import { hexKeHsb, hsbKeHex } from './warna';
 import { PORSI_AWAL, sarankanSablon } from '../sablon/saran';
 import {
@@ -336,5 +336,91 @@ describe('geserSemuaTinta', () => {
   it('di palet bebas sama dengan menggeser pegangan biasa', () => {
     const b = bebas();
     expect(geserSemuaTinta(b, 0, 123, 0.7)).toEqual(geserPeganganPalet(b, 0, 123, 0.7));
+  });
+});
+
+/*
+ * Tinta yang dikunci tidak ikut berubah oleh apa pun yang menyusun ulang tinta
+ * secara otomatis: aturan harmoni, saran ulang, kain baru, jumlah tinta, atau
+ * memutar tinta yang terhubung di roda.
+ */
+describe('tinta terkunci', () => {
+  const SAND = '#d6cbba';
+  const A = '#32281f';
+  const B = '#645e50';
+  const disusun = () =>
+    terapkanKomposisi(pasangKain(bebas(), SAND, KATALOG), {
+      tinta: [
+        { hex: A, porsi: 60 },
+        { hex: B, porsi: 30 },
+        { hex: '#a8a393', porsi: 10 },
+      ],
+    });
+
+  it('memilih aturan dan meminta saran ulang: A dan B tetap, C diisi saran aturan itu yang tidak kembar dengan keduanya', () => {
+    for (const [p, aturan] of [
+      [pilihAturanPalet(disusun(), 'TRIAD', KATALOG, [0, 1]), 'TRIAD'],
+      [sarankanDariKain({ ...disusun(), aturan: 'COMPLEMENTARY' }, KATALOG, [0, 1]), 'COMPLEMENTARY'],
+    ] as const) {
+      const hex = hexDari(p);
+      expect(hex.slice(0, 2)).toEqual([A, B]);
+      expect(hex).toHaveLength(3);
+      expect(p.porsi).toEqual([60, 30, 10]);
+      expect(p.aturan).toBe(aturan);
+      expect(saranHex(SAND, 6, aturan)).toContain(hex[2]);
+      for (const h of [A, B]) expect(deltaE2000(hexKeLab(h), hexKeLab(hex[2]))).toBeGreaterThanOrEqual(10);
+      // Yang dipilih adalah calon rona khas aturan itu yang paling berbeda dari kain dan tinta terkunci.
+      const beda = (h: string) => Math.min(...[SAND, A, B].map((x) => deltaE2000(hexKeLab(x), hexKeLab(h))));
+      const khas = sarankanSablon({ kainHex: SAND, jumlah: 6, aturan, katalog: KATALOG }).filter((x) => x.geser !== 0).map((x) => x.warna.hex);
+      expect(khas).toContain(hex[2]);
+      for (const h of khas) expect(beda(hex[2])).toBeGreaterThanOrEqual(beda(h));
+    }
+  });
+
+  it('Complementary mengisi tinta bebas dengan warna seberang kain, bukan rona kain sendiri', () => {
+    // Palet nyata dari desain krem: A abu hangat terang, B hampir hitam.
+    const KAIN = '#d4c8b7';
+    const awal = terapkanKomposisi(pasangKain(bebas(), KAIN, KATALOG), {
+      tinta: [
+        { hex: '#b5a99d', porsi: 60 },
+        { hex: '#1f2221', porsi: 30 },
+        { hex: '#efeae5', porsi: 10 },
+      ],
+    });
+    const p = pilihAturanPalet(awal, 'COMPLEMENTARY', KATALOG, [0, 1]);
+    expect(hexDari(p).slice(0, 2)).toEqual(['#b5a99d', '#1f2221']);
+    const d = Math.abs(p.warna[2].h - hexKeHsb(KAIN).h) % 360;
+    expect(Math.min(d, 360 - d)).toBeGreaterThanOrEqual(90);
+  });
+
+  it('kain baru pada palet yang masih saran utuh: tinta terkunci tetap, sisanya saran kain baru', () => {
+    const awal = pasangKain(bebas(), SAND, KATALOG);
+    const dikunci = hexDari(awal)[0];
+    const p = pasangKain(awal, NAVY, KATALOG, [0]);
+    expect(hexDari(p)[0]).toBe(dikunci);
+    expect(p.kain).toBe(NAVY);
+    for (const h of hexDari(p).slice(1)) expect(saranHex(NAVY, 6, p.aturan as 'ANALOGOUS')).toContain(h);
+  });
+
+  it('menambah jumlah tinta pada saran utuh tidak mengubah tinta terkunci', () => {
+    const awal = pasangKain(bebas(), SAND, KATALOG);
+    const p = ubahJumlahSablon(awal, 4, KATALOG, [1]);
+    expect(p.warna).toHaveLength(4);
+    expect(hexDari(p)[1]).toBe(hexDari(awal)[1]);
+  });
+
+  it('memutar tinta terhubung melewati tinta terkunci; memegang tinta terkunci tidak menggeser apa pun', () => {
+    const awal = pasangKain(bebas(), NAVY, KATALOG);
+    const b = awal.warna[1];
+    const p = geserSemuaTinta(awal, 1, b.h + 40, b.s * 0.5, [0]);
+    expect(p.warna[0]).toEqual(awal.warna[0]);
+    expect(p.warna[2]).not.toEqual(awal.warna[2]);
+    expect(geserSemuaTinta(awal, 0, 200, 0.4, [0])).toBe(awal);
+  });
+
+  it('tanpa kunci perilakunya sama persis seperti sebelumnya', () => {
+    const d = disusun();
+    expect(pilihAturanPalet(d, 'TRIAD', KATALOG, [])).toEqual(pilihAturanPalet(d, 'TRIAD', KATALOG));
+    expect(sarankanDariKain(d, KATALOG, [])).toEqual(sarankanDariKain(d, KATALOG));
   });
 });

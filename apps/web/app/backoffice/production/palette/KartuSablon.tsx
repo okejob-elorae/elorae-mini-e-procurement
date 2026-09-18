@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Copy, Sparkles } from 'lucide-react';
+import { Copy, Lock, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import type { AturanHarmoni } from '@/lib/production-colors/palet/harmoni';
 import { rasioKontras } from '@/lib/production-colors/palet/kontras';
 import { pantoneTerdekat, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { bagiGram, resepCampur } from '@/lib/production-colors/sablon/campur';
+import { calonPerAturan, saranPengganti } from '@/lib/production-colors/sablon/pengganti';
 import { susunRingkasan } from '@/lib/production-colors/sablon/ringkasan';
 import { HURUF_SABLON, keterbacaanSablon, peranUntuk } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
@@ -35,6 +36,19 @@ function useResep(hexWarna: string, hexTinta: string, maksTinta: number) {
 }
 
 /**
+ * Pengganti tiap tinta menurut aturan warna. Calon per aturan hanya bergantung
+ * pada kain (puluhan milidetik), jadi dihitung sekali per kain; daftar per
+ * tinta murah. Masukannya teks untuk alasan yang sama dengan `useResep`.
+ */
+function useSaranPengganti(kainHex: string, hexWarna: string, aturan: AturanHarmoni, katalogC: readonly WarnaPantone[]) {
+  const calon = useMemo(() => calonPerAturan(kainHex, katalogC), [kainHex, katalogC]);
+  return useMemo(() => {
+    const hex = hexWarna ? hexWarna.split(',') : [];
+    return hex.map((_, i) => saranPengganti({ calon, kainHex, hex, indeks: i, aturanUtama: aturan }));
+  }, [calon, kainHex, hexWarna, aturan]);
+}
+
+/**
  * Bagian sablon dari palet berkain: pratinjau di kaos, porsi, resep campur,
  * dan ringkasan untuk tukang sablon.
  */
@@ -51,6 +65,8 @@ export function KartuSablon({
   beratTeks,
   onBeratTeks,
   katalogC,
+  terkunci,
+  onKunci,
   onPorsi,
   onGanti,
   onSarankanUlang,
@@ -68,6 +84,9 @@ export function KartuSablon({
   beratTeks: string;
   onBeratTeks: (teks: string) => void;
   katalogC: readonly WarnaPantone[];
+  /** Indeks tinta yang dikunci. */
+  terkunci: readonly number[];
+  onKunci: (indeks: number) => void;
   onPorsi: (indeks: number, nilai: number) => void;
   onGanti: (indeks: number, hex: string) => void;
   onSarankanUlang: () => void;
@@ -82,6 +101,7 @@ export function KartuSablon({
   const berat = Math.max(0, Math.round(Number(beratTeks) || 0));
   const resep = useResep(hex.join(','), tintaDasar.map((x) => x.hex).join(','), maksTinta);
   const pantone = hex.map((h) => pantoneTerdekat(katalogC, h));
+  const saran = useSaranPengganti(kainHex, hex.join(','), aturan, katalogC);
   const totalPorsi = porsi.reduce((s, x) => s + x, 0);
 
   function ringkasan(): string {
@@ -156,7 +176,10 @@ export function KartuSablon({
                 <li key={i} className="flex items-center gap-2">
                   <span aria-hidden className="size-3.5 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: h }} />
                   <span className="font-medium">{HURUF_SABLON[i]}</span>
-                  <span className="min-w-0 flex-1 truncate text-muted-foreground">{pantone[i]?.warna.kode ?? h.toUpperCase()}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                    {pantone[i]?.warna.kode ?? h.toUpperCase()}
+                    {terkunci.includes(i) && <Lock aria-label={t('lockedHint')} className="ml-1.5 inline h-3 w-3" />}
+                  </span>
                   <span className="tabular-nums">{porsi[i]}%</span>
                 </li>
               ))}
@@ -214,6 +237,9 @@ export function KartuSablon({
               tintaDasar={tintaDasar}
               berat={berat}
               katalogC={katalogC}
+              saran={saran[i] ?? []}
+              terkunci={terkunci.includes(i)}
+              onKunci={() => onKunci(i)}
               onPorsi={(n) => onPorsi(i, n)}
               onGanti={(baru) => onGanti(i, baru)}
             />

@@ -1837,7 +1837,8 @@
     "filledInks": "Print inks filled from the image",
     "allFabric": "Every picked colour matches the fabric, so none can be used as an ink.",
     "fabricSet": "Fabric changed to {hex}",
-    "appliedTo": "{hex} used for {label}"
+    "appliedTo": "{hex} used for {label}",
+    "inkLocked": "Ink {letter} is locked — unlock it first to change it."
   },
   "productionPrint": {
     "copySummary": "Copy summary",
@@ -1909,7 +1910,15 @@
     "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
     "resuggest": "Suggest again from fabric",
     "followingSuggestion": "Following the fabric suggestion — it updates when the fabric, rule, or number of colours changes.",
-    "editedHint": "Edited, so changing the fabric or number of colours leaves your colours alone. Choosing a harmony rule rearranges them all."
+    "editedHint": "Edited, so changing the fabric or number of colours leaves your colours alone. Choosing a harmony rule rearranges them all.",
+    "lockInk": "Lock ink {letter}",
+    "unlockInk": "Unlock ink {letter}",
+    "lockedHint": "Locked — stays put when the rule, fabric, or other inks change. Click to unlock.",
+    "nextColour": "Another colour",
+    "nextColourHint": "Switch to the next suggestion by colour rule. Keep clicking until it fits, then lock it.",
+    "ruleSuggestions": "Suggestions by colour rule",
+    "ruleSuggestionsHint": "Worked out against the fabric, leaving out colours that duplicate another ink. The palette’s current rule comes first.",
+    "followsRule": "{rule} rule"
   },
   "planning": {
     "title": "Production Plan",

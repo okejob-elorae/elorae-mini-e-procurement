@@ -1837,7 +1837,8 @@
     "filledInks": "Tinta sablon diisi dari gambar",
     "allFabric": "Semua warna terambil sama dengan kain, jadi tidak ada yang bisa dijadikan tinta.",
     "fabricSet": "Kain diganti ke {hex}",
-    "appliedTo": "{hex} dipakai untuk {label}"
+    "appliedTo": "{hex} dipakai untuk {label}",
+    "inkLocked": "Tinta {letter} terkunci — buka gemboknya dulu untuk mengubahnya."
   },
   "productionPrint": {
     "copySummary": "Salin ringkasan",
@@ -1909,7 +1910,15 @@
     "nearestPantone": "≈ PANTONE {code} · ΔE {de}",
     "resuggest": "Sarankan ulang dari kain",
     "followingSuggestion": "Mengikuti saran dari kain — ikut berubah saat kain, aturan, atau jumlah warna diganti.",
-    "editedHint": "Sudah disunting, jadi mengganti kain atau jumlah warna tidak mengubah warna Anda. Memilih aturan harmoni menyusun ulang semuanya."
+    "editedHint": "Sudah disunting, jadi mengganti kain atau jumlah warna tidak mengubah warna Anda. Memilih aturan harmoni menyusun ulang semuanya.",
+    "lockInk": "Kunci tinta {letter}",
+    "unlockInk": "Lepas kunci tinta {letter}",
+    "lockedHint": "Terkunci — tidak ikut berubah saat aturan, kain, atau tinta lain diganti. Klik untuk membuka.",
+    "nextColour": "Warna lain",
+    "nextColourHint": "Ganti ke saran berikutnya menurut aturan warna. Klik terus sampai cocok, lalu kunci.",
+    "ruleSuggestions": "Saran menurut aturan warna",
+    "ruleSuggestionsHint": "Dihitung terhadap kain, tanpa warna yang kembar dengan tinta lain. Aturan yang sedang dipakai palet ada di depan.",
+    "followsRule": "Aturan {rule}"
   },
   "planning": {
     "title": "Plan Kerja",

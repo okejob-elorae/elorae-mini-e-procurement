@@ -59,7 +59,18 @@ export type SaranSablon = {
   warna: WarnaPantone;
   porsi: number;
   peran: PeranSablon;
+  /** Geseran rona dari kain menurut aturan (derajat); 0 = rona kain sendiri. */
+  geser: number;
 };
+
+/**
+ * Apakah calon dengan `geser` ini mewakili aturannya. Rona kain sendiri (0°)
+ * ada di hampir setiap aturan, jadi hanya Monochromatic dan Shades yang
+ * diwakilinya — "Complementary" yang warnanya sewarna kain bukan complementary.
+ */
+export function ronaKhasAturan(aturan: AturanSablon, geser: number): boolean {
+  return aturan === 'MONOCHROMATIC' || aturan === 'SHADES' || geser !== 0;
+}
 
 /** Terang Lab minimum yang dianggap terbaca sebagai sablon di atas kain. */
 const BEDA_TERANG_MIN = 20;
@@ -124,6 +135,7 @@ export function sarankanSablon(input: {
   const arahUtama = ruangGelap >= ruangTerang ? -1 : 1;
 
   const dipilih: WarnaPantone[] = [];
+  const geserDipilih: number[] = [];
   for (let k = 0; k < jumlah; k++) {
     const j = k % geseran.length;
     const putaran = Math.floor(k / geseran.length);
@@ -145,14 +157,17 @@ export function sarankanSablon(input: {
       const skor = deltaE2000(ideal, warna.lab);
       if (!terbaik || skor < terbaik.skor) terbaik = { warna, skor };
     }
-    if (terbaik) dipilih.push(terbaik.warna);
+    if (terbaik) {
+      dipilih.push(terbaik.warna);
+      geserDipilih.push(geseran[j]);
+    }
   }
 
   const urut = dipilih
-    .map((warna) => ({ warna, kontras: rasioKontras(warna.hex, input.kainHex) }))
+    .map((warna, i) => ({ warna, geser: geserDipilih[i], kontras: rasioKontras(warna.hex, input.kainHex) }))
     .sort((a, b) => b.kontras - a.kontras);
   const porsi = PORSI_AWAL[urut.length] ?? [];
-  return urut.map((x, i) => ({ warna: x.warna, porsi: porsi[i], peran: peranUntuk(i, urut.length) }));
+  return urut.map((x, i) => ({ warna: x.warna, porsi: porsi[i], peran: peranUntuk(i, urut.length), geser: x.geser }));
 }
 
 export type KeterbacaanSablon = 'KUAT' | 'CUKUP' | 'LEMBUT' | 'SAMAR';

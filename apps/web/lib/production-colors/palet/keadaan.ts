@@ -1,4 +1,4 @@
-import { JUMLAH_SABLON_MAKS, PORSI_AWAL, sarankanSablon, type AturanSablon } from '../sablon/saran';
+import { JUMLAH_SABLON_MAKS, PORSI_AWAL, ronaKhasAturan, sarankanSablon, type AturanSablon } from '../sablon/saran';
 import {
   INDEKS_DASAR,
   gantiHexWarna,
@@ -11,7 +11,7 @@ import {
 } from './harmoni';
 import { porsiDariBagian } from './gambar';
 import { deltaE2000, hexKeLab, type WarnaPantone } from './pantone';
-import { hexKeHsb, normalisasiHex, putarSudut, type Hsb } from './warna';
+import { hexKeHsb, hsbKeHex, normalisasiHex, putarSudut, type Hsb } from './warna';
 
 /**
  * Satu palet, dua kegunaan.
@@ -51,29 +51,69 @@ export function aturanSablonDari(aturan: AturanHarmoni): AturanSablon {
   return aturan === 'CUSTOM' ? 'COMPLEMENTARY' : aturan;
 }
 
-function sarankan(p: Palet, katalog: readonly WarnaPantone[], jumlah: number): Palet {
+/** Tinta yang terlalu dekat dengan tinta terkunci dilewati saat mengisi sisanya. */
+const BEDA_DARI_KUNCI = 10;
+
+/**
+ * Saran dari kain. Indeks `terkunci` dipertahankan apa adanya — begitu juga
+ * porsinya — dan hanya tinta lain yang diisi, dari saran aturan yang sama
+ * yang tidak kembar dengan tinta terkunci.
+ */
+function sarankan(p: Palet, katalog: readonly WarnaPantone[], jumlah: number, terkunci: readonly number[] = []): Palet {
   if (!p.kain) return p;
   const aturan = aturanSablonDari(p.aturan);
-  const saran = sarankanSablon({ kainHex: p.kain, jumlah, aturan, katalog });
-  return {
-    aturan,
-    warna: saran.map((s) => hexKeHsb(s.warna.hex)),
-    kain: p.kain,
-    porsi: saran.map((s) => s.porsi),
-    saranUtuh: true,
-  };
+  const tetap = terkunci.filter((i) => i >= 0 && i < Math.min(jumlah, p.warna.length));
+  if (tetap.length === 0) {
+    const saran = sarankanSablon({ kainHex: p.kain, jumlah, aturan, katalog });
+    return {
+      aturan,
+      warna: saran.map((s) => hexKeHsb(s.warna.hex)),
+      kain: p.kain,
+      porsi: saran.map((s) => s.porsi),
+      saranUtuh: true,
+    };
+  }
+  // Tiap tinta bebas diisi calon yang paling berbeda dari kain dan tinta yang
+  // sudah ada — bukan yang paling kontras dengan kain saja, yang di kain terang
+  // selalu yang tergelap dan menempel pada hitam yang dikunci. Rona khas aturan
+  // didahulukan: Complementary yang mengisi warna sewarna kain bukan complementary.
+  const labKain = hexKeLab(p.kain);
+  const dipakai = tetap.map((i) => hexKeLab(hsbKeHex(p.warna[i])));
+  const semua = sarankanSablon({ kainHex: p.kain, jumlah: JUMLAH_SABLON_MAKS, aturan, katalog });
+  const calon = semua.map((s) => s.warna);
+  const khas = new Set(semua.filter((s) => ronaKhasAturan(aturan, s.geser)).map((s) => s.warna.kode));
+  const warna: Hsb[] = [];
+  for (let i = 0; i < jumlah; i++) {
+    if (tetap.includes(i)) {
+      warna.push(p.warna[i]);
+      continue;
+    }
+    let terbaik: { w: WarnaPantone; khas: boolean; skor: number } | null = null;
+    for (const w of calon) {
+      const jarak = dipakai.map((l) => deltaE2000(l, w.lab));
+      if (jarak.some((d) => d < BEDA_DARI_KUNCI)) continue;
+      const kandidat = { w, khas: khas.has(w.kode), skor: Math.min(deltaE2000(labKain, w.lab), ...jarak) };
+      if (!terbaik || (kandidat.khas && !terbaik.khas) || (kandidat.khas === terbaik.khas && kandidat.skor > terbaik.skor)) terbaik = kandidat;
+    }
+    if (!terbaik) continue;
+    calon.splice(calon.indexOf(terbaik.w), 1);
+    dipakai.push(terbaik.w.lab);
+    warna.push(hexKeHsb(terbaik.w.hex));
+  }
+  const porsi = p.porsi && p.porsi.length === warna.length ? p.porsi : PORSI_AWAL[warna.length];
+  return { aturan, warna, kain: p.kain, porsi, saranUtuh: true };
 }
 
 /** Saran baru dari kain, atas permintaan — bersama memilih aturan, jalan untuk menimpa suntingan. */
-export function sarankanDariKain(p: Palet, katalog: readonly WarnaPantone[]): Palet {
-  return sarankan(p, katalog, p.warna.length);
+export function sarankanDariKain(p: Palet, katalog: readonly WarnaPantone[], terkunci: readonly number[] = []): Palet {
+  return sarankan(p, katalog, p.warna.length, terkunci);
 }
 
-export function pasangKain(p: Palet, kainHex: string, katalog: readonly WarnaPantone[]): Palet {
+export function pasangKain(p: Palet, kainHex: string, katalog: readonly WarnaPantone[], terkunci: readonly number[] = []): Palet {
   const kain = normalisasiHex(kainHex);
   if (!kain) return p;
   if (p.kain === null) return sarankan({ ...p, kain }, katalog, JUMLAH_SABLON_AWAL);
-  if (p.saranUtuh) return sarankan({ ...p, kain }, katalog, p.warna.length);
+  if (p.saranUtuh) return sarankan({ ...p, kain }, katalog, p.warna.length, terkunci);
   return { ...p, kain };
 }
 
@@ -87,13 +127,13 @@ export function lepasKain(p: Palet): Palet {
   return paletBebas(aturan, susunHarmoni(aturan, p.warna[0] ?? hexKeHsb('#e8553d'), []));
 }
 
-export function pilihAturanPalet(p: Palet, aturan: AturanHarmoni, katalog: readonly WarnaPantone[]): Palet {
+export function pilihAturanPalet(p: Palet, aturan: AturanHarmoni, katalog: readonly WarnaPantone[], terkunci: readonly number[] = []): Palet {
   if (p.kain === null) {
     return { ...p, aturan, warna: susunHarmoni(aturan, p.warna[INDEKS_DASAR], p.warna) };
   }
   // Selalu, juga sesudah disunting: orang yang memilih "Triad" meminta warna
   // triad. Dulu suntingan membuat pilihan ini diam, dan terlihat rusak.
-  return sarankan({ ...p, aturan: aturanSablonDari(aturan) }, katalog, p.warna.length);
+  return sarankan({ ...p, aturan: aturanSablonDari(aturan) }, katalog, p.warna.length, terkunci);
 }
 
 /** Komposisi dari galeri rekomendasi dipasang apa adanya — pilihan orang, jadi tidak ditimpa saran berikutnya. */
@@ -103,11 +143,12 @@ export function terapkanKomposisi(p: Palet, komposisi: { tinta: readonly { hex: 
   return { ...p, warna: tinta.map((t) => hexKeHsb(t.hex)), porsi: tinta.map((t) => t.porsi), saranUtuh: false };
 }
 
-export function ubahJumlahSablon(p: Palet, jumlah: number, katalog: readonly WarnaPantone[]): Palet {
+export function ubahJumlahSablon(p: Palet, jumlah: number, katalog: readonly WarnaPantone[], terkunci: readonly number[] = []): Palet {
   if (p.kain === null) return p;
   const n = Math.min(JUMLAH_SABLON_MAKS, Math.max(1, Math.round(jumlah)));
   if (n === p.warna.length) return p;
-  if (p.saranUtuh) return sarankan(p, katalog, n);
+  // Porsi lama tidak berlaku untuk jumlah tinta baru.
+  if (p.saranUtuh) return sarankan({ ...p, porsi: null }, katalog, n, terkunci);
 
   let warna = p.warna.slice(0, n);
   if (n > p.warna.length) {
@@ -166,12 +207,13 @@ export function geserPeganganPalet(p: Palet, indeks: number, h: number, s: numbe
  * Tinta berkain yang terhubung: menggeser satu pegangan memutar SEMUA tinta
  * dengan sudut yang sama, dan jaraknya ke tengah menskalakan kepekatan semua
  * tinta sebanding — jarak antartinta di roda tetap, seperti harmoni di Adobe.
- * Kain tidak ikut berputar: ia kainnya, bukan tinta.
+ * Kain tidak ikut berputar: ia kainnya, bukan tinta. Tinta terkunci juga
+ * tidak, dan memegang tinta terkunci tidak menggeser apa pun.
  */
-export function geserSemuaTinta(p: Palet, indeks: number, h: number, s: number): Palet {
+export function geserSemuaTinta(p: Palet, indeks: number, h: number, s: number, terkunci: readonly number[] = []): Palet {
   if (p.kain === null) return geserPeganganPalet(p, indeks, h, s);
   const acuan = p.warna[indeks];
-  if (!acuan) return p;
+  if (!acuan || terkunci.includes(indeks)) return p;
   const dh = h - acuan.h;
   const pekat = Math.min(1, Math.max(0, s));
   // Tinta abu-abu tidak punya kepekatan untuk dijadikan pembanding.
@@ -181,7 +223,9 @@ export function geserSemuaTinta(p: Palet, indeks: number, h: number, s: number):
     warna: p.warna.map((w, i) =>
       i === indeks
         ? { ...w, h: putarSudut(h), s: pekat }
-        : { ...w, h: putarSudut(w.h + dh), s: faktor === null ? w.s : Math.min(1, Math.max(0, w.s * faktor)) },
+        : terkunci.includes(i)
+          ? w
+          : { ...w, h: putarSudut(w.h + dh), s: faktor === null ? w.s : Math.min(1, Math.max(0, w.s * faktor)) },
     ),
     saranUtuh: false,
   };

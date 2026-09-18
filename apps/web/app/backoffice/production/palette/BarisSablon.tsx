@@ -2,16 +2,18 @@
 
 import { useState, type ReactNode } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { AlertTriangle, Search } from 'lucide-react';
+import { AlertTriangle, Check, Lock, LockOpen, Search, Shuffle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { STATUS_TONE_CLASS, type StatusTone } from '@/components/ui/status-pill';
 import { rasioKontras } from '@/lib/production-colors/palet/kontras';
 import { cariPantone, type WarnaPantone } from '@/lib/production-colors/palet/pantone';
 import { bagiGram, type ResepCampur } from '@/lib/production-colors/sablon/campur';
+import { saranBerikutnya, saranYangDipakai, type SaranPengganti } from '@/lib/production-colors/sablon/pengganti';
 import { keterbacaanSablon, type KeterbacaanSablon, type PeranSablon } from '@/lib/production-colors/sablon/saran';
 import type { TintaDasar } from '@/lib/production-colors/sablon/tinta-dasar';
 import { cn } from '@/lib/utils';
+import { IkonHarmoni } from './IkonHarmoni';
 
 const NADA_BACA: Record<KeterbacaanSablon, StatusTone> = {
   KUAT: 'settled',
@@ -50,6 +52,10 @@ function Pil({ nada, children }: { nada: StatusTone; children: ReactNode }) {
  * Pantone. Judulnya jujur soal itu: kode ditulis sebagai PANTONE hanya kalau
  * persis; selain itu hex-nya yang menjadi judul, dengan kode terdekat dan
  * jaraknya di sampingnya.
+ *
+ * Tinta yang belum cocok diganti dari saran menurut aturan warna — satu per
+ * satu lewat "Warna lain", atau dipilih dari daftarnya — lalu dikunci. Tinta
+ * terkunci tidak bisa diganti dari sini sampai gemboknya dibuka.
  */
 export function BarisSablon({
   huruf,
@@ -62,6 +68,9 @@ export function BarisSablon({
   tintaDasar,
   berat,
   katalogC,
+  saran,
+  terkunci,
+  onKunci,
   onPorsi,
   onGanti,
 }: {
@@ -75,10 +84,15 @@ export function BarisSablon({
   tintaDasar: readonly TintaDasar[];
   berat: number;
   katalogC: readonly WarnaPantone[];
+  /** Pengganti menurut aturan warna, bergiliran antaraturan. */
+  saran: readonly SaranPengganti[];
+  terkunci: boolean;
+  onKunci: () => void;
   onPorsi: (porsi: number) => void;
   onGanti: (hex: string) => void;
 }) {
   const t = useTranslations('productionPrint');
+  const tPalet = useTranslations('productionPalette');
   const locale = useLocale();
   const desimal = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const persen = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
@@ -89,6 +103,14 @@ export function BarisSablon({
   const hasilCari = cari ? cariPantone(katalogC, cari, 5) : [];
   const gram = resep ? bagiGram(berat, resep.bagian.map((b) => b.persen)) : [];
   const persis = pantone !== null && pantone.deltaE < DE_PERSIS;
+  const dipakai = saranYangDipakai(saran, hex);
+  // Dikelompokkan per aturan, dengan urutan kemunculan: aturan palet di depan.
+  const kelompok = saran.reduce<{ aturan: SaranPengganti['aturan']; daftar: SaranPengganti[] }[]>((acc, x) => {
+    const k = acc.find((g) => g.aturan === x.aturan);
+    if (k) k.daftar.push(x);
+    else acc.push({ aturan: x.aturan, daftar: [x] });
+    return acc;
+  }, []);
 
   return (
     <li className="space-y-3 rounded-lg border p-3 sm:p-4">
@@ -124,6 +146,7 @@ export function BarisSablon({
             <Pil nada={NADA_BACA[baca]}>
               {t(`readability.${baca}`)} · {desimal.format(rasio)}
             </Pil>
+            {dipakai && <Pil nada="inactive">{t('followsRule', { rule: tPalet(`rules.${dipakai.aturan}.name`) })}</Pil>}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -140,15 +163,88 @@ export function BarisSablon({
             />
             <span className="text-sm text-muted-foreground">%</span>
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={() => setCari(cari === null ? '' : null)} aria-expanded={cari !== null}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={terkunci || saran.length === 0}
+            title={t('nextColourHint')}
+            onClick={() => {
+              const berikut = saranBerikutnya(saran, hex);
+              if (berikut) onGanti(berikut.hex);
+            }}
+          >
+            <Shuffle className="h-3.5 w-3.5" />
+            {t('nextColour')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={terkunci}
+            onClick={() => setCari(cari === null ? '' : null)}
+            aria-expanded={cari !== null && !terkunci}
+          >
             <Search className="h-3.5 w-3.5" />
             {t('replace')}
+          </Button>
+          <Button
+            type="button"
+            variant={terkunci ? 'secondary' : 'outline'}
+            size="icon-sm"
+            aria-pressed={terkunci}
+            aria-label={terkunci ? t('unlockInk', { letter: huruf }) : t('lockInk', { letter: huruf })}
+            title={terkunci ? t('lockedHint') : t('lockInk', { letter: huruf })}
+            onClick={() => {
+              if (!terkunci) setCari(null);
+              onKunci();
+            }}
+          >
+            {terkunci ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
           </Button>
         </div>
       </div>
 
-      {cari !== null && (
-        <div className="space-y-2">
+      {cari !== null && !terkunci && (
+        <div className="space-y-3">
+          {kelompok.length > 0 && (
+            <div className="space-y-2">
+              <div>
+                <p className="text-xs font-medium">{t('ruleSuggestions')}</p>
+                <p className="text-xs text-muted-foreground">{t('ruleSuggestionsHint')}</p>
+              </div>
+              <ul className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-4">
+                {kelompok.map((g) => (
+                  <li key={g.aturan} className="space-y-1.5 rounded-md border p-2">
+                    <p className="flex items-center gap-1.5 text-xs font-medium">
+                      <IkonHarmoni aturan={g.aturan} className="size-4 shrink-0" />
+                      {tPalet(`rules.${g.aturan}.name`)}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {g.daftar.map((x) => {
+                        const aktif = dipakai?.kode === x.kode;
+                        return (
+                          <Button
+                            key={x.kode}
+                            type="button"
+                            variant={aktif ? 'secondary' : 'outline'}
+                            size="xs"
+                            aria-pressed={aktif}
+                            title={`${x.kode} · ${t(`readability.${keterbacaanSablon(rasioKontras(x.hex, kainHex))}`)}`}
+                            onClick={() => onGanti(x.hex)}
+                          >
+                            <span aria-hidden className="size-3 shrink-0 rounded-sm ring-1 ring-inset ring-black/15" style={{ background: x.hex }} />
+                            {x.kode}
+                            {aktif && <Check aria-hidden />}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <Input
             type="search"
             autoFocus
