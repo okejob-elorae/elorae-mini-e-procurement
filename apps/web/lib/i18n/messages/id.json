@@ -1725,17 +1725,16 @@
       "share": "{percent}% gambar",
       "inks": "Tinta ({count})",
       "useOriginal": "Pakai warna asli",
-      "otherFabrics": "Desain ini di kain lain",
-      "otherFabricsLaris": "Kain yang laris di toko Anda.",
-      "otherFabricsUmum": "Kain yang umum dipakai — impor penjualan untuk memakai kain terlaris Anda.",
       "otherAccents": "Aksen lain di kain ini",
-      "otherAccentsHint": "Hanya aksennya yang diganti; tinta netral dan tone-on-tone tetap.",
+      "otherAccentsHint": "Di kain {fabric}. Hanya aksennya yang diganti; tinta netral dan tone-on-tone tetap.",
       "accentTitle": "Aksen {name}",
       "original": "Warna asli",
       "use": "Pakai",
       "applied": "Desain di kain {name} dipasang.",
       "unreadable": "Gambar ini hanya berisi satu warna, jadi komposisinya belum bisa dibaca.",
-      "previewLabel": "Desain di kain {fabric}"
+      "previewLabel": "Desain di kain {fabric}",
+      "useOnFabric": "Pakai di kain {fabric}",
+      "adapted": "Tinta disesuaikan ke kain {fabric} supaya tetap terbaca:"
     },
     "recommend": {
       "title": "Rekomendasi komposisi",
@@ -1838,7 +1837,21 @@
     "allFabric": "Semua warna terambil sama dengan kain, jadi tidak ada yang bisa dijadikan tinta.",
     "fabricSet": "Kain diganti ke {hex}",
     "appliedTo": "{hex} dipakai untuk {label}",
-    "inkLocked": "Tinta {letter} terkunci — buka gemboknya dulu untuk mengubahnya."
+    "inkLocked": "Tinta {letter} terkunci — buka gemboknya dulu untuk mengubahnya.",
+    "fabricLock": "Kunci kain",
+    "fabricLockedLabel": "Kain dikunci",
+    "fabricUnlock": "Buka kunci kain",
+    "fabricLockHint": "Jadikan kain ini patokan — tidak ada yang bisa menggantinya sampai dibuka.",
+    "fabricLocked": "Kain terkunci — buka gemboknya dulu untuk menggantinya.",
+    "fabricLockedHint": "Kain ini patokan semua saran, keterbacaan, dan desain yang diunggah. Buka kuncinya untuk mengganti kain.",
+    "contrastTitleFabric": "Keterbacaan tinta di kain",
+    "contrastDescriptionFabric": "Tiap tinta sebagai tulisan di atas kain {fabric}. Angkanya rasio kontras; labelnya skala sablon yang sama dengan di baris tinta, bukan WCAG.",
+    "readabilityHints": {
+      "KUAT": "4,5 ke atas — jelas dari jauh",
+      "CUKUP": "3 ke atas — terbaca",
+      "LEMBUT": "1,8 ke atas — lembut, wajar untuk tone-on-tone",
+      "SAMAR": "di bawah 1,8 — nyaris menyatu dengan kain"
+    }
   },
   "productionPrint": {
     "copySummary": "Salin ringkasan",

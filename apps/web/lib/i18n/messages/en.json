@@ -1725,17 +1725,16 @@
       "share": "{percent}% of image",
       "inks": "Inks ({count})",
       "useOriginal": "Use the original colours",
-      "otherFabrics": "This design on other fabrics",
-      "otherFabricsLaris": "Fabrics that sell well in your store.",
-      "otherFabricsUmum": "Commonly used fabrics — import sales to use your best-selling fabrics.",
       "otherAccents": "Other accents on this fabric",
-      "otherAccentsHint": "Only the accent changes; neutral and tone-on-tone inks stay.",
+      "otherAccentsHint": "On {fabric}. Only the accent changes; neutral and tone-on-tone inks stay.",
       "accentTitle": "{name} accent",
       "original": "Original colours",
       "use": "Use",
       "applied": "Design on {name} fabric applied.",
       "unreadable": "This image has only one colour, so its composition can't be read yet.",
-      "previewLabel": "Design on {fabric} fabric"
+      "previewLabel": "Design on {fabric} fabric",
+      "useOnFabric": "Use on {fabric}",
+      "adapted": "Inks adjusted to {fabric} so they stay readable:"
     },
     "recommend": {
       "title": "Recommended compositions",
@@ -1838,7 +1837,21 @@
     "allFabric": "Every picked colour matches the fabric, so none can be used as an ink.",
     "fabricSet": "Fabric changed to {hex}",
     "appliedTo": "{hex} used for {label}",
-    "inkLocked": "Ink {letter} is locked — unlock it first to change it."
+    "inkLocked": "Ink {letter} is locked — unlock it first to change it.",
+    "fabricLock": "Lock fabric",
+    "fabricLockedLabel": "Fabric locked",
+    "fabricUnlock": "Unlock fabric",
+    "fabricLockHint": "Make this fabric the reference — nothing can change it until it is unlocked.",
+    "fabricLocked": "The fabric is locked — unlock it first to change it.",
+    "fabricLockedHint": "This fabric is the reference for every suggestion, readability check, and uploaded design. Unlock it to change the fabric.",
+    "contrastTitleFabric": "How each ink reads on the fabric",
+    "contrastDescriptionFabric": "Each ink as lettering on {fabric} fabric. The number is the contrast ratio; the label uses the same print scale as the ink rows, not WCAG.",
+    "readabilityHints": {
+      "KUAT": "4.5 and up — clear from a distance",
+      "CUKUP": "3 and up — readable",
+      "LEMBUT": "1.8 and up — soft, normal for tone-on-tone",
+      "SAMAR": "below 1.8 — nearly blends into the fabric"
+    }
   },
   "productionPrint": {
     "copySummary": "Copy summary",

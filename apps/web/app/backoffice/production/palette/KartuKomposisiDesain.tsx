@@ -12,7 +12,6 @@ import { HURUF_SABLON } from '@/lib/production-colors/sablon/saran';
 type Pilihan = { hex: string; label: string };
 type Variasi = { id: string; judul: string; kainHex: string; kainLabel: string; komposisi: Komposisi };
 
-const MAKS_KAIN = 8;
 const MAKS_AKSEN = 6;
 
 /** Nama TCX kain kalau warnanya dekat satu warna katalog, selain itu hex-nya. */
@@ -23,25 +22,26 @@ function namaKainDari(katalogTcx: readonly WarnaPantone[], hex: string): string 
 
 /**
  * Desain yang diunggah, dibaca komposisinya — kain dan tinta beserta peran dan
- * porsinya — lalu diberi pengganti warna: desain yang sama di kain lain, dan
- * aksen lain di kain aslinya. Semua dihitung di peramban dari warna dominan
- * gambar; tidak ada yang dikirim ke server.
+ * porsinya — lalu diberi aksen pengganti. Semua dihitung di peramban dari warna
+ * dominan gambar; tidak ada yang dikirim ke server.
+ *
+ * Kainnya patokan: selama kain palet dikunci, desain disesuaikan ke kain itu —
+ * tintanya dijaga tetap terbaca — alih-alih memasang kain dari gambar. Tanpa
+ * kunci, kain gambar yang dipakai.
  */
 export function KartuKomposisiDesain({
   warnaGambar,
   katalogC,
   katalogTcx,
-  kainKandidat,
-  kainDariPenjualan,
+  kainTerkunci,
   aksenKandidat,
   onPakai,
 }: {
   warnaGambar: readonly { hex: string; bagian: number }[];
   katalogC: readonly WarnaPantone[];
   katalogTcx: readonly WarnaPantone[];
-  kainKandidat: readonly Pilihan[];
-  /** Kandidat kain berasal dari penjualan toko (bukan daftar umum). */
-  kainDariPenjualan: boolean;
+  /** Kain palet yang dikunci — desain disesuaikan ke kain ini. */
+  kainTerkunci: Pilihan | null;
   aksenKandidat: readonly Pilihan[];
   onPakai: (kainHex: string, k: Komposisi, kainLabel: string) => void;
 }) {
@@ -49,28 +49,26 @@ export function KartuKomposisiDesain({
   const tPeran = useTranslations('productionPalette.recommend.roles');
   const analisis = useMemo(() => bacaKomposisiDesain(warnaGambar), [warnaGambar]);
 
-  const { asli, diKainLain, aksenLain } = useMemo(() => {
-    if (!analisis) return { asli: null, diKainLain: [] as Variasi[], aksenLain: [] as Variasi[] };
-    const kainAsli = analisis.kain.hex;
-    const labAsli = hexKeLab(kainAsli);
-    const buat = (kainHex: string, kainLabel: string, judul: string, aksenBaru?: string): Variasi | null => {
-      const k = variasiDesain({ analisis, kainHex, katalog: katalogC, aksenBaru });
-      return k ? { id: k.id, judul, kainHex, kainLabel, komposisi: k } : null;
+  const { acuan, asli, aksenLain } = useMemo(() => {
+    if (!analisis) return { acuan: null, asli: null, aksenLain: [] as Variasi[] };
+    const acuan = kainTerkunci ?? { hex: analisis.kain.hex, label: namaKainDari(katalogTcx, analisis.kain.hex) };
+    const buat = (judul: string, aksenBaru?: string): Variasi | null => {
+      const k = variasiDesain({ analisis, kainHex: acuan.hex, katalog: katalogC, aksenBaru });
+      return k ? { id: k.id, judul, kainHex: acuan.hex, kainLabel: acuan.label, komposisi: k } : null;
     };
-    const asli = buat(kainAsli, namaKainDari(katalogTcx, kainAsli), t('original'));
-    const diKainLain = kainKandidat
-      .filter((k) => deltaE2000(hexKeLab(k.hex), labAsli) >= 10)
-      .slice(0, MAKS_KAIN)
-      .flatMap((k) => buat(k.hex, k.label, k.label) ?? []);
+    const asli = buat(t('original'));
     const aksenAsli = analisis.tinta.find((x) => x.peran === 'AKSEN');
     const aksenLain = aksenAsli
       ? aksenKandidat
           .filter((a) => deltaE2000(hexKeLab(a.hex), hexKeLab(aksenAsli.hex)) >= 15)
           .slice(0, MAKS_AKSEN)
-          .flatMap((a) => buat(kainAsli, namaKainDari(katalogTcx, kainAsli), t('accentTitle', { name: a.label }), a.hex) ?? [])
+          .flatMap((a) => buat(t('accentTitle', { name: a.label }), a.hex) ?? [])
       : [];
-    return { asli, diKainLain, aksenLain };
-  }, [analisis, katalogC, katalogTcx, kainKandidat, aksenKandidat, t]);
+    return { acuan, asli, aksenLain };
+  }, [analisis, katalogC, katalogTcx, kainTerkunci, aksenKandidat, t]);
+  // Kain gambar dan kain terkunci yang praktis sama tidak perlu disebut "disesuaikan".
+  const disesuaikan =
+    analisis !== null && kainTerkunci !== null && deltaE2000(hexKeLab(kainTerkunci.hex), hexKeLab(analisis.kain.hex)) >= 3;
 
   if (!analisis) {
     return (
@@ -121,26 +119,32 @@ export function KartuKomposisiDesain({
           </div>
           {asli && (
             <Button type="button" className="md:self-center" onClick={() => onPakai(asli.kainHex, asli.komposisi, asli.kainLabel)}>
-              {t('useOriginal')}
+              {kainTerkunci ? t('useOnFabric', { fabric: kainTerkunci.label }) : t('useOriginal')}
             </Button>
           )}
         </div>
 
-        {diKainLain.length > 0 && (
-          <section className="space-y-2">
-            <div>
-              <h3 className="text-sm font-medium">{t('otherFabrics')}</h3>
-              <p className="text-xs text-muted-foreground">{kainDariPenjualan ? t('otherFabricsLaris') : t('otherFabricsUmum')}</p>
-            </div>
-            <DeretVariasi daftar={diKainLain} awalanId="desain-kain" onPakai={onPakai} />
-          </section>
+        {disesuaikan && asli && acuan && (
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <p className="text-xs text-muted-foreground">{t('adapted', { fabric: acuan.label })}</p>
+            <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+              {asli.komposisi.tinta.map((x, i) => (
+                <li key={x.hex} className="flex items-center gap-1.5 text-sm">
+                  <span aria-hidden className="size-4 shrink-0 rounded ring-1 ring-inset ring-black/15" style={{ background: x.hex }} />
+                  <span className="font-medium">{HURUF_SABLON[i]}</span>
+                  {x.kode ?? x.hex.toUpperCase()}
+                  <span className="tabular-nums text-muted-foreground">{x.porsi}%</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {aksenLain.length > 0 && (
           <section className="space-y-2">
             <div>
               <h3 className="text-sm font-medium">{t('otherAccents')}</h3>
-              <p className="text-xs text-muted-foreground">{t('otherAccentsHint')}</p>
+              <p className="text-xs text-muted-foreground">{t('otherAccentsHint', { fabric: acuan?.label ?? '' })}</p>
             </div>
             <DeretVariasi daftar={aksenLain} awalanId="desain-aksen" onPakai={onPakai} />
           </section>

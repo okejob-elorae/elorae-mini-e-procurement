@@ -83,8 +83,7 @@ import { KisiKontras } from './KisiKontras';
 import { RodaWarna } from './RodaWarna';
 import { TombolEkspor } from './TombolEkspor';
 
-/** Kain dan aksen pengganti untuk desain yang diunggah, selama belum ada data penjualan. */
-const KAIN_UMUM = ['hitam', 'putih', 'broken-white', 'navy', 'army', 'mocca', 'abu-misty', 'maroon'];
+/** Aksen pengganti untuk desain yang diunggah, selama belum ada data penjualan. */
 const AKSEN_UMUM = ['terracotta', 'mustard', 'sage', 'dusty-pink', 'tosca', 'biru'];
 
 /** Titik mulai kalau warna tema terlalu pudar atau gelap untuk menjadi dasar. */
@@ -181,6 +180,8 @@ export function PaletClient({
   const [tintaTerhubung, setTintaTerhubung] = useState(true);
   /** Warna yang wajib ada di setiap rekomendasi komposisi, berurutan seperti tintanya. */
   const [kunci, setKunci] = useState<string[]>([]);
+  /** Kain terkunci: patokan semua saran, dan tidak ada yang boleh menggantinya sampai dibuka. */
+  const [kainTerkunci, setKainTerkunci] = useState(false);
   const [kategoriLaris, setKategoriLaris] = useState<string | null>(null);
   const [pemetaan, setPemetaan] = useState<PemetaanWarna>(pemetaanWarna);
   const hasilLaris = useMemo(
@@ -199,18 +200,7 @@ export function PaletClient({
     setPaletSendiri((p) => berikut(p ?? awal));
   }
 
-  /*
-   * Kandidat pengganti untuk desain yang diunggah: kain dan aksen dari warna
-   * yang laku di toko; tanpa data penjualan, dari kamus warna pasar lokal.
-   */
-  const larisCukup = hasilLaris.laris.length >= 3;
-  const kainKandidat = useMemo(
-    () =>
-      larisCukup
-        ? hasilLaris.laris.slice(0, 8).map((w) => ({ hex: w.hex, label: w.label }))
-        : KAIN_UMUM.flatMap((k) => KAMUS_WARNA.filter((w) => w.kunci === k).map((w) => ({ hex: w.hex, label: w.label }))),
-    [larisCukup, hasilLaris],
-  );
+  /* Aksen pengganti untuk desain yang diunggah: dari warna yang laku di toko; tanpa data penjualan, dari kamus warna pasar lokal. */
   const aksenKandidat = useMemo(() => {
     const berpigmen = (hex: string) => {
       const [, a, b] = hexKeLab(hex);
@@ -222,8 +212,20 @@ export function PaletClient({
       : AKSEN_UMUM.flatMap((k) => KAMUS_WARNA.filter((w) => w.kunci === k).map((w) => ({ hex: w.hex, label: w.label })));
   }, [hasilLaris]);
 
-  /** Desain di kain lain: kain dan tintanya dipasang sekaligus — bisa diurungkan. */
+  /**
+   * Kain terkunci menolak semua penggantian kain dengan satu pesan. `hexBaru`
+   * yang sama dengan kain sekarang bukan penggantian.
+   */
+  function kainDikunci(hexBaru?: string): boolean {
+    if (!kainTerkunci || !palet.kain) return false;
+    if (hexBaru && hexBaru.toLowerCase() === palet.kain.toLowerCase()) return false;
+    toast.info(t('fabricLocked'), { id: 'kain-terkunci' });
+    return true;
+  }
+
+  /** Desain yang diunggah dipasang — kain dan tintanya sekaligus, bisa diurungkan. */
   function pakaiVariasiDesain(kainHex: string, k: Komposisi, kainLabel: string) {
+    if (kainDikunci(kainHex)) return;
     const sebelum = palet;
     setPaletSendiri(terapkanKomposisi(pasangKain(sebelum, kainHex, katalogC()), k));
     setKainTerakhir(kainHex);
@@ -296,6 +298,7 @@ export function PaletClient({
   }
 
   function nyalakanKain(nyala: boolean) {
+    if (!nyala && kainDikunci()) return;
     if (nyala) {
       ubah((p) => pasangKain(p, kainTerakhir, katalogC(), indeksKunci));
       setTerpilih(0);
@@ -320,6 +323,7 @@ export function PaletClient({
   }
 
   function muat(p: BarisPalet) {
+    if (kainDikunci(p.kain ?? undefined)) return;
     setPaletSendiri(dariTersimpan(p));
     if (p.kain) setKainTerakhir(p.kain);
     setTerpilih(p.kain ? 0 : INDEKS_DASAR);
@@ -488,7 +492,10 @@ export function PaletClient({
         mode={modeKain}
         onMode={setModeKain}
         onNyala={nyalakanKain}
+        terkunci={kainTerkunci && berkain}
+        onKunci={() => setKainTerkunci((x) => !x)}
         onGantiKain={(baru) => {
+          if (kainDikunci(baru)) return;
           setKainTerakhir(baru);
           ubah((p) => pasangKain(p, baru, katalogC(), indeksKunci));
         }}
@@ -505,6 +512,7 @@ export function PaletClient({
         onKategori={setKategoriLaris}
         bolehMengelola={bolehMengelola}
         onJadikanKain={(hexKain, namaWarna) => {
+          if (kainDikunci(hexKain)) return;
           setKainTerakhir(hexKain);
           if (!berkain) setTerpilih(0);
           ubah((p) => pasangKain(p, hexKain, katalogC(), indeksKunci));
@@ -536,6 +544,7 @@ export function PaletClient({
         katalogTcx={katalogTcx}
         onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
         onJadikanKain={(hex) => {
+          if (kainDikunci(hex)) return;
           setKainTerakhir(hex);
           if (!berkain) setTerpilih(0);
           ubah((p) => pasangKain(p, hex, katalogC(), indeksKunci));
@@ -563,8 +572,7 @@ export function PaletClient({
           warnaGambar={warnaReferensi}
           katalogC={katalogC()}
           katalogTcx={katalogTcx}
-          kainKandidat={kainKandidat}
-          kainDariPenjualan={larisCukup}
+          kainTerkunci={kainTerkunci && palet.kain ? { hex: palet.kain, label: namaKain } : null}
           aksenKandidat={aksenKandidat}
           onPakai={pakaiVariasiDesain}
         />
@@ -812,8 +820,8 @@ export function PaletClient({
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('contrastTitle')}</CardTitle>
-          <CardDescription>{t('contrastDescription')}</CardDescription>
+          <CardTitle>{berkain ? t('contrastTitleFabric') : t('contrastTitle')}</CardTitle>
+          <CardDescription>{berkain ? t('contrastDescriptionFabric', { fabric: namaKain }) : t('contrastDescription')}</CardDescription>
         </CardHeader>
         <CardContent>
           <KisiKontras warna={hex} kain={palet.kain} labelWarna={labelWarna} />
