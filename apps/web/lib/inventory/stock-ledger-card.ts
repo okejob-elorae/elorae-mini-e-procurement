@@ -212,7 +212,7 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
      */
     prisma.stockLedgerEntry.findMany({
       where,
-      orderBy: LEDGER_ORDER_BY,
+      orderBy: [...LEDGER_ORDER_BY],
       take: QUERY_ENTRY_LIMIT,
       select: {
         ...LEDGER_ROW_SELECT,

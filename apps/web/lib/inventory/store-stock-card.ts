@@ -143,7 +143,7 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
      * that drops the OLDEST rows first, the end an operator can afford to lose, since this
      * card's whole purpose is "what happened here recently", not a full archive.
      */
-    orderBy: LEDGER_ORDER_BY,
+    orderBy: [...LEDGER_ORDER_BY],
     take: STORE_MOVEMENT_LIMIT,
     select: {
       ...LEDGER_ROW_SELECT,

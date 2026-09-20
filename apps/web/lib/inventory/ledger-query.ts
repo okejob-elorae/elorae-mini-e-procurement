@@ -26,7 +26,14 @@ export const LEDGER_ROW_SELECT = {
  * balance read off the last row — survives truncation. An ascending fetch under the same
  * ceiling would keep the oldest rows and silently make the visible balance wrong.
  */
-export const LEDGER_ORDER_BY: Prisma.StockLedgerEntryOrderByWithRelationInput[] = [
+/*
+ * `readonly`, and every caller spreads it into a fresh array. One exported array handed
+ * directly to two `orderBy` clauses is shared mutable state: a later `.sort()` or `.reverse()`
+ * in one reader would silently reorder the other surface, and nothing would point at the
+ * caller that did it. The readonly type makes that a compile error; the spread is what keeps
+ * Prisma happy, since it expects a mutable array.
+ */
+export const LEDGER_ORDER_BY: readonly Prisma.StockLedgerEntryOrderByWithRelationInput[] = [
   { createdAt: "desc" },
   { id: "desc" },
 ];
