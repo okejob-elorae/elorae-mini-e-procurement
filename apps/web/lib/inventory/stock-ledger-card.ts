@@ -204,7 +204,18 @@ export function buildRefTypeCondition(
   const registered = refTypes ?? [];
   const includeUnregistered = includeUnregisteredRefTypes === true;
 
-  if (registered.length === STOCK_LEDGER_REF_TYPES.length && includeUnregistered) {
+  /*
+   * SET equality, not a length count: the action validates membership
+   * (`every(isStockLedgerRefType)`) but never uniqueness, so twenty copies of one
+   * registered member is a legal input that has `registered.length ===
+   * STOCK_LEDGER_REF_TYPES.length` while covering only one real member. A length-only
+   * check collapsed that to "no filter" — every row for the item, not the one member
+   * actually asked for. Unreachable from today's control (which never produces a
+   * duplicate), but this function is exported and separately unit-tested specifically
+   * so a future caller can reach it directly; the set check is what makes it safe to.
+   */
+  const registeredSet = new Set(registered);
+  if (registeredSet.size === STOCK_LEDGER_REF_TYPES.length && includeUnregistered) {
     return undefined;
   }
   if (registered.length > 0 && includeUnregistered) {

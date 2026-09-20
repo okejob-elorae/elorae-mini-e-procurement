@@ -167,33 +167,53 @@ function MultiSelectFilter({
           {searchable && <CommandInput placeholder="Search..." value={query} onValueChange={setQuery} />}
           <CommandList>
             <CommandEmpty>No results found.</CommandEmpty>
-            <CommandGroup>
-              <CommandItem
-                value={allLabel}
-                onSelect={() => onChange(options.map((opt) => opt.value))}
-                className="min-h-[40px] font-medium"
-              >
-                <Checkbox checked={allSelected} tabIndex={-1} className="pointer-events-none mr-2" />
-                <span className="truncate">{allLabel}</span>
-              </CommandItem>
-            </CommandGroup>
-            <CommandSeparator />
-            <CommandGroup>
-              {filtered.map((opt) => {
-                const checked = selected.includes(opt.value);
-                return (
+            {/*
+             * With `shouldFilter={false}`, cmdk's own "is there anything to show" count is
+             * the number of mounted Item components, not our hand-filtered array — so
+             * CommandEmpty only renders when NOTHING below is mounted either. The "All" row
+             * used to be unconditional, which kept that count above zero even when a search
+             * matched no option, leaving a lone "All" as the only clickable thing on screen
+             * with no explanation for why it was alone. Gating both groups on the same
+             * `filtered.length > 0` is what lets CommandEmpty actually fire.
+             */}
+            {filtered.length > 0 && (
+              <>
+                <CommandGroup>
                   <CommandItem
-                    key={opt.value}
-                    value={opt.label}
-                    onSelect={() => toggle(opt.value)}
-                    className="min-h-[40px]"
+                    value={allLabel}
+                    /* disabled, not just a no-op handler: this is the same prop
+                       SearchableCombobox already uses for an inert row, so it gets that
+                       row's "data-[disabled=true]:opacity-50" treatment for free — the
+                       row reads as deliberately inert rather than stuck, and cmdk itself
+                       refuses the click, so selecting an already-complete set never fires
+                       onChange (no pointless refetch of up to 2000 rows for a no-op). */
+                    disabled={allSelected}
+                    onSelect={() => onChange(options.map((opt) => opt.value))}
+                    className="min-h-[40px] font-medium"
                   >
-                    <Checkbox checked={checked} tabIndex={-1} className="pointer-events-none mr-2" />
-                    <span className="truncate">{opt.label}</span>
+                    <Checkbox checked={allSelected} tabIndex={-1} className="pointer-events-none mr-2" />
+                    <span className="truncate">{allLabel}</span>
                   </CommandItem>
-                );
-              })}
-            </CommandGroup>
+                </CommandGroup>
+                <CommandSeparator />
+                <CommandGroup>
+                  {filtered.map((opt) => {
+                    const checked = selected.includes(opt.value);
+                    return (
+                      <CommandItem
+                        key={opt.value}
+                        value={opt.label}
+                        onSelect={() => toggle(opt.value)}
+                        className="min-h-[40px]"
+                      >
+                        <Checkbox checked={checked} tabIndex={-1} className="pointer-events-none mr-2" />
+                        <span className="truncate">{opt.label}</span>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              </>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

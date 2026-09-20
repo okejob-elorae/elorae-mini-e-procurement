@@ -59,10 +59,19 @@ export async function getItemMovementsAction(input: GetItemMovementsInput): Prom
    * a silently-narrowed filter would hand the operator a result set that looks like it
    * matches their filter selection when it does not.
    */
-  if (input.locationTypes !== undefined && !input.locationTypes.every(isLedgerLocationType)) {
+  /* Array.isArray first: `.every` on a non-array (e.g. a bare string passed where the
+     type says string[]) throws TypeError instead of the intended error code — a caller
+     bypassing the type system still gets a clean rejection, not an unhandled throw. */
+  if (
+    input.locationTypes !== undefined &&
+    (!Array.isArray(input.locationTypes) || !input.locationTypes.every(isLedgerLocationType))
+  ) {
     throw new Error("INVALID_LOCATION_TYPE");
   }
-  if (input.refTypes !== undefined && !input.refTypes.every(isStockLedgerRefType)) {
+  if (
+    input.refTypes !== undefined &&
+    (!Array.isArray(input.refTypes) || !input.refTypes.every(isStockLedgerRefType))
+  ) {
     throw new Error("INVALID_REF_TYPE");
   }
   if (

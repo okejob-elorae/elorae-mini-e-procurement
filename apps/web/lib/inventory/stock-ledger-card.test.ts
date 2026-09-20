@@ -220,6 +220,17 @@ describe("buildRefTypeCondition", () => {
   it("nothing selected at all (unreachable via the control's own guard) => matches nothing, not everything", () => {
     expect(buildRefTypeCondition([], false)).toEqual({ refType: { in: [] } });
   });
+
+  it("a duplicate-bearing array of registry length does NOT collapse to no filter", () => {
+    /* Twenty copies of one member: `.length` equals the registry's length but the SET of
+       real members has size 1. The action validates membership, never uniqueness, so this
+       is a legal input to this function even though today's control never produces one —
+       the fix this test pins is comparing SET size, not array length, against the registry. */
+    const duplicates = Array(STOCK_LEDGER_REF_TYPES.length).fill(subset[0]) as StockLedgerRefType[];
+    expect(buildRefTypeCondition(duplicates, true)).toEqual({
+      OR: [{ refType: { in: duplicates } }, { refType: { notIn: fullRegistry } }],
+    });
+  });
 });
 
 /*
