@@ -90,11 +90,16 @@ type MultiSelectOption = { value: string; label: string };
  * differences are that a selection toggles membership instead of replacing it, and the
  * popover stays open across clicks so several boxes can be ticked in one pass.
  *
- * `selected` is guarded to NEVER become an empty array. `getItemMovementCard` treats an
- * empty `locationTypes`/`refTypes` array identically to `undefined` — "no filter, match
- * everything" — which is the exact opposite of what an operator unticking every box
- * means. Rather than invent a sentinel for "match nothing", this control simply refuses
- * the toggle that would produce it: unchecking the last remaining box is a no-op. The
+ * `selected` is guarded to NEVER become an empty array, and that guard is now a UX choice
+ * rather than a correctness one — keep both halves, they defend different things. The query
+ * layer used to read an empty `locationTypes`/`refTypes` array as "no filter, match
+ * everything", so an operator who unticked every box was handed the entire unfiltered set;
+ * it now fails closed, sending `in: []`, which matches nothing. So a slipped empty array is
+ * no longer a silent inversion. This control still refuses the toggle that would produce
+ * one, because an empty result screen with every box unticked is a worse thing to hand an
+ * operator than simply declining the last uncheck: unchecking the last remaining box is a
+ * no-op. Do NOT drop this refusal on the grounds that the query layer is safe now, and do
+ * NOT relax the query layer on the grounds that this control cannot produce an empty. The
  * "everything ticked" state is reported upward as `options.length === selected.length`
  * and it is the CALLER's job (see the two call sites below) to collapse that back to
  * "send nothing" on the wire.
