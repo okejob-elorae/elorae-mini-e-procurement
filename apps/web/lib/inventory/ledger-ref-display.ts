@@ -1,5 +1,8 @@
-import type { StockLedgerRefType } from "@elorae/db";
-import { isStockLedgerRefType } from "@elorae/db";
+/* Subpath import, not the main barrel: a client component imports this file, and
+   @elorae/db's barrel eagerly pulls in Prisma and the mariadb driver, which would
+   follow it into the browser bundle. */
+import type { StockLedgerRefType } from "@elorae/db/stock-ledger-ref";
+import { isStockLedgerRefType } from "@elorae/db/stock-ledger-ref";
 
 /**
  * Maps every StockLedgerRefType registry member to its message key under the

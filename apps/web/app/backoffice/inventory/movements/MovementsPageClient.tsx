@@ -52,6 +52,7 @@ export function MovementsPageClient() {
   const [loadError, setLoadError] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const requestIdRef = useRef(0);
+  const variantRequestIdRef = useRef(0);
 
   useEffect(() => {
     getCurrentStockSummary()
@@ -65,9 +66,19 @@ export function MovementsPageClient() {
       setVariantOptions([]);
       return;
     }
+    /* Same out-of-order guard as the movements fetch below: switching items fast enough
+       that an earlier item's response resolves last would otherwise leave this dropdown
+       showing the wrong item's SKUs against the item actually selected. */
+    const requestId = ++variantRequestIdRef.current;
     getItemVariantOptions(itemId)
-      .then(setVariantOptions)
-      .catch(() => setVariantOptions([]));
+      .then((options) => {
+        if (variantRequestIdRef.current !== requestId) return;
+        setVariantOptions(options);
+      })
+      .catch(() => {
+        if (variantRequestIdRef.current !== requestId) return;
+        setVariantOptions([]);
+      });
   }, [itemId]);
 
   useEffect(() => {
@@ -102,7 +113,6 @@ export function MovementsPageClient() {
         setLoadError(true);
         setIsLoading(false);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reloadToken is the manual retry trigger
   }, [itemId, variantSku, dateFrom, dateTo, reloadToken]);
 
   return (
