@@ -1,4 +1,5 @@
 import { prisma, Prisma, type StockLedgerRefType } from "@elorae/db";
+import { isCeilingReached, LEDGER_ORDER_BY, LEDGER_ROW_SELECT } from "./ledger-query";
 
 export type LedgerLocationType = "MAIN" | "STORE" | "VAN";
 
@@ -138,15 +139,13 @@ export const QUERY_ENTRY_LIMIT = 2000;
 export const SECTION_ENTRY_LIMIT = 500;
 
 /**
- * True when the fetch returned exactly QUERY_ENTRY_LIMIT rows — the `take` ceiling was hit,
- * so rows beyond it exist and were dropped. Equality, not `>=`: the fetch itself is capped
- * by `take`, so `rowCount` can never exceed the limit; testing for it is just being explicit
- * about which comparison is meaningful. This can false-positive when the item's true total
- * is exactly QUERY_ENTRY_LIMIT (nothing was actually dropped) — the harmless direction: it
- * over-warns rather than under-warns, which is the trade this view wants on an audit surface.
+ * Thin wrapper over the shared `isCeilingReached` (see `ledger-query.ts` for the equality-
+ * vs-`isSectionTruncated` reasoning) pinned to this card's own ceiling. Kept as its own named
+ * export — rather than repointing call sites to the shared helper directly — because existing
+ * tests import it by this name.
  */
 export function isQueryTruncated(rowCount: number): boolean {
-  return rowCount === QUERY_ENTRY_LIMIT;
+  return isCeilingReached(rowCount, QUERY_ENTRY_LIMIT);
 }
 
 /**
@@ -202,35 +201,26 @@ export async function getItemMovementCard(input: ItemMovementCardInput): Promise
 
   const [rows, historyCount] = await Promise.all([
     /*
-     * DESCENDING, not ascending, before the take ceiling applies. An ascending fetch capped
-     * at QUERY_ENTRY_LIMIT keeps the OLDEST rows and silently drops the newest, which would
-     * make closingBalance the balance as of row 2000 rather than the item's balance right
-     * now — wrong on a screen whose whole job is saying where stock is TODAY. Descending
-     * keeps the newest rows; groupLedgerEntries re-sorts each section back to ascending for
-     * display regardless of the order rows arrive in, so feeding it descending is safe.
-     *
-     * This ordering is also what makes a query-level truncation (queryTruncated below)
-     * SURVIVABLE rather than silently wrong: when the cap actually bites, the rows it drops
-     * are always the oldest ones, so the closing balance stays correct and only the far end
-     * of history — the end you can afford to lose — goes missing.
+     * LEDGER_ORDER_BY is descending (see ledger-query.ts for why that's load-bearing under a
+     * `take` ceiling in general). Here specifically: closingBalance is read off the LAST entry
+     * of a section, so keeping the newest rows is what makes that balance the item's balance
+     * TODAY rather than as of row QUERY_ENTRY_LIMIT — groupLedgerEntries re-sorts each section
+     * back to ascending for display regardless of fetch order, so feeding it descending is
+     * safe. It's also what makes queryTruncated (below) SURVIVABLE rather than silently
+     * wrong: when the cap bites, the dropped rows are always the oldest, so the closing
+     * balance stays correct and only the far end of history goes missing.
      */
     prisma.stockLedgerEntry.findMany({
       where,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      orderBy: LEDGER_ORDER_BY,
       take: QUERY_ENTRY_LIMIT,
       select: {
-        id: true,
+        ...LEDGER_ROW_SELECT,
         locationType: true,
         locationId: true,
-        variantSku: true,
-        refType: true,
-        refId: true,
-        refDocNumber: true,
-        qty: true,
         balanceQty: true,
         unitCost: true,
         createdById: true,
-        createdAt: true,
       },
     }),
     /* Answers "does this item (under these variant/refType/locationType filters, if any)
