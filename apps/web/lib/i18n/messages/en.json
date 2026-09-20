@@ -1029,6 +1029,9 @@
     "tabGrn": "Goods Receipts",
     "tabRolls": "By Roll",
     "tabAdjustments": "Adjustments",
+    "stockCard": {
+      "valueHistoryNote": "Unit cost and inventory value are only recorded for movements from this migration onward - earlier ledger rows show quantity only. Quantity history goes back further, to the stock ledger's own cutover date."
+    },
     "wallboard": {
       "kpiTotalStock": "Total Stock",
       "kpiTotalStockHint": "{count} items",
@@ -1178,7 +1181,7 @@
     "noMovementsInRange": "No movements found in this date range. Try widening it.",
     "noMovementsForFilters": "No movements match the current filters. Try widening them.",
     "noLedgerHistory": "This item has no ledger history at all — not just in this range.",
-    "cutoverBanner": "Ledger history starts at the cutover date; nothing earlier was recorded here. For main-warehouse movements before that, check the Stock Card.",
+    "cutoverBanner": "Ledger history starts at the cutover date; nothing earlier was recorded here.",
     "sectionTruncated": "Showing the {limit} most recent movements for this location. Older ones are hidden.",
     "queryTruncated": "This item has more than {limit} movements. The oldest ones are hidden — a location whose movements are all older than that may not appear below at all, but every location that does appear has an accurate closing balance.",
     "unresolvedLocation": "Unresolved location",

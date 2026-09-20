@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback, useEffect, Fragment } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -24,14 +25,20 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Download, Loader2, ChevronDown, ChevronRight, Printer } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, ChevronDown, ChevronRight, Printer, Info } from 'lucide-react';
 import { getStockCard, getStockCardByType, getStockCardByCategory, getCurrentStockSummary, getItemVariantOptions } from '@/app/actions/stock-card';
 import { getItemCategories } from '@/app/actions/item-categories';
 import { logPrint } from '@/app/actions/audit';
 import { buildStockCardPrintHtml } from '@/lib/print/stock-card-html';
 import type { StockCardPrintLabels } from '@/lib/print/stock-card-html';
 import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
+/* Subpath import, not the main barrel: this is a client component, and @elorae/db's barrel
+   eagerly pulls in Prisma and the mariadb driver, which would follow it into the browser
+   bundle. Same idiom StoreStockCard.tsx and MovementsPageClient.tsx already use for this
+   exact refType -> label lookup. */
+import { ledgerRefMessageKey } from '@/lib/inventory/ledger-ref-display';
 import { toast } from 'sonner';
 
 const stockCardPrintLabelsId: Partial<StockCardPrintLabels> = {
@@ -61,6 +68,19 @@ const defaultTo = endOfDay(new Date());
 type ViewMode = 'by-item' | 'by-type' | 'by-category';
 
 export default function StockCardPage() {
+  /* RefType labels reuse the same locale keys the ledger movement card and the store
+     detail card already resolve refType through - never a second hardcoded mapping of
+     the same StockLedgerRefType union. */
+  const tMovements = useTranslations('stockMovements');
+  const tStockCard = useTranslations('inventory.stockCard');
+  const describeRefType = useCallback(
+    (refType: string) => {
+      const key = ledgerRefMessageKey(refType);
+      return key ? tMovements(key) : refType;
+    },
+    [tMovements]
+  );
+
   const [viewMode, setViewMode] = useState<ViewMode>('by-item');
   const [itemId, setItemId] = useState<string>('');
   const [dateFrom, setDateFrom] = useState(format(defaultFrom, 'yyyy-MM-dd'));
@@ -187,12 +207,13 @@ export default function StockCardPage() {
     const rows = data.movements.map((m) => [
       format(new Date(m.date), 'yyyy-MM-dd HH:mm'),
       m.docNumber,
-      m.description,
+      describeRefType(m.refType),
       m.in ?? '',
       m.out ?? '',
       m.balance,
       m.unitCost ?? '',
-      m.balanceValue,
+      /* null (not recorded) exports as an empty cell, never a bare 0. */
+      m.balanceValue ?? '',
     ]);
     const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
@@ -230,8 +251,10 @@ export default function StockCardPage() {
         movements: data.movements.map((m) => ({
           date: m.date,
           docNumber: m.docNumber,
-          description: m.description,
-          notes: m.notes ?? null,
+          description: describeRefType(m.refType),
+          /* StockLedgerEntry has no notes column - render the column empty rather than
+             drop it, so the print layout stays identical for every stock card kind. */
+          notes: null,
           variantSku: m.variantSku ?? null,
           in: m.in,
           out: m.out,
@@ -270,8 +293,9 @@ export default function StockCardPage() {
           movements: row.movements.map((m) => ({
             date: m.date,
             docNumber: m.docNumber,
-            description: m.description,
-            notes: m.notes ?? null,
+            description: describeRefType(m.refType),
+            /* StockLedgerEntry has no notes column - see the by-item print handler above. */
+            notes: null,
             in: m.in,
             out: m.out,
             balance: m.balance,
@@ -307,8 +331,9 @@ export default function StockCardPage() {
           movements: row.movements.map((m) => ({
             date: m.date,
             docNumber: m.docNumber,
-            description: m.description,
-            notes: m.notes ?? null,
+            description: describeRefType(m.refType),
+            /* StockLedgerEntry has no notes column - see the by-item print handler above. */
+            notes: null,
             in: m.in,
             out: m.out,
             balance: m.balance,
@@ -449,7 +474,7 @@ export default function StockCardPage() {
                   {data.openingBalance.toLocaleString()} {data.item?.uom?.code ?? ''}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Rp {data.openingValue.toLocaleString()}
+                  {data.openingValue != null ? `Rp ${data.openingValue.toLocaleString()}` : '—'}
                 </p>
               </div>
               <div>
@@ -459,6 +484,17 @@ export default function StockCardPage() {
                 </p>
               </div>
             </div>
+
+            {/*
+             * Always visible, regardless of movements.length - the same idiom the store
+             * detail card uses for its own ledger-cutover note. Value history (unit cost,
+             * inventory value) only starts once the value columns were added; quantity
+             * history on the ledger starts earlier, at the ledger's own cutover.
+             */}
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>{tStockCard('valueHistoryNote')}</AlertDescription>
+            </Alert>
 
             <div className="overflow-x-auto rounded-md border">
               <Table>
@@ -481,8 +517,9 @@ export default function StockCardPage() {
                     <TableRow key={m.id}>
                       <TableCell>{format(new Date(m.date), 'dd/MM/yyyy HH:mm')}</TableCell>
                       <TableCell className="font-medium">{m.docNumber}</TableCell>
-                      <TableCell>{m.description}</TableCell>
-                      <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
+                      <TableCell>{describeRefType(m.refType)}</TableCell>
+                      {/* StockLedgerEntry has no notes column - always empty for a ledger row. */}
+                      <TableCell>-</TableCell>
                       <TableCell>{m.variantSku ?? '-'}</TableCell>
                       <TableCell className="text-right text-green-600 dark:text-green-400">
                         {m.in != null ? m.in.toLocaleString() : '-'}
@@ -496,10 +533,10 @@ export default function StockCardPage() {
                       <TableCell className="text-right">
                         {m.unitCost != null
                           ? `Rp ${m.unitCost.toLocaleString()}`
-                          : '-'}
+                          : '—'}
                       </TableCell>
                       <TableCell className="text-right">
-                        Rp {m.balanceValue.toLocaleString()}
+                        {m.balanceValue != null ? `Rp ${m.balanceValue.toLocaleString()}` : '—'}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -570,7 +607,12 @@ export default function StockCardPage() {
                   Print
                 </Button>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                {/* Always visible - see the by-item tab's Alert above for why. */}
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>{tStockCard('valueHistoryNote')}</AlertDescription>
+                </Alert>
                 <div className="overflow-x-auto rounded-md border">
                   <Table>
                     <TableHeader>
@@ -648,8 +690,9 @@ export default function StockCardPage() {
                                           <TableRow key={m.id}>
                                             <TableCell className="whitespace-nowrap">{format(new Date(m.date), 'dd/MM/yyyy HH:mm')}</TableCell>
                                             <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
-                                            <TableCell>{m.description}</TableCell>
-                                            <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
+                                            <TableCell>{describeRefType(m.refType)}</TableCell>
+                                            {/* StockLedgerEntry has no notes column - always empty for a ledger row. */}
+                                            <TableCell>-</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString() : '-'}
                                             </TableCell>
@@ -744,7 +787,12 @@ export default function StockCardPage() {
                   Print
                 </Button>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                {/* Always visible - see the by-item tab's Alert above for why. */}
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>{tStockCard('valueHistoryNote')}</AlertDescription>
+                </Alert>
                 <div className="overflow-x-auto rounded-md border">
                   <Table>
                     <TableHeader>
@@ -822,8 +870,9 @@ export default function StockCardPage() {
                                           <TableRow key={m.id}>
                                             <TableCell className="whitespace-nowrap">{format(new Date(m.date), 'dd/MM/yyyy HH:mm')}</TableCell>
                                             <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
-                                            <TableCell>{m.description}</TableCell>
-                                            <TableCell>{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
+                                            <TableCell>{describeRefType(m.refType)}</TableCell>
+                                            {/* StockLedgerEntry has no notes column - always empty for a ledger row. */}
+                                            <TableCell>-</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString() : '-'}
                                             </TableCell>

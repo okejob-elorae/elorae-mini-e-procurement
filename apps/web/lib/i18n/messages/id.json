@@ -1029,6 +1029,9 @@
     "tabGrn": "Penerimaan Barang",
     "tabRolls": "Per Roll",
     "tabAdjustments": "Penyesuaian",
+    "stockCard": {
+      "valueHistoryNote": "Harga satuan dan nilai persediaan baru tercatat untuk mutasi sejak migrasi ini - baris ledger sebelumnya hanya punya data kuantitas. Riwayat kuantitas sudah tercatat lebih awal, sejak tanggal cutover buku besar stok."
+    },
     "wallboard": {
       "kpiTotalStock": "Total Stok",
       "kpiTotalStockHint": "{count} artikel",
@@ -1178,7 +1181,7 @@
     "noMovementsInRange": "Tidak ada pergerakan pada rentang tanggal ini. Coba perluas rentangnya.",
     "noMovementsForFilters": "Tidak ada pergerakan yang cocok dengan filter saat ini. Coba perluas filternya.",
     "noLedgerHistory": "Item ini belum punya riwayat di ledger sama sekali — bukan hanya di rentang ini.",
-    "cutoverBanner": "Riwayat di ledger ini dimulai dari tanggal cutover; sebelum itu tidak ada yang tercatat di sini. Untuk pergerakan gudang utama sebelum itu, cek Stock Card.",
+    "cutoverBanner": "Riwayat di ledger ini dimulai dari tanggal cutover; sebelum itu tidak ada yang tercatat di sini.",
     "sectionTruncated": "Menampilkan {limit} pergerakan terbaru untuk lokasi ini. Yang lebih lama disembunyikan.",
     "queryTruncated": "Item ini punya lebih dari {limit} pergerakan. Yang paling lama disembunyikan — lokasi yang pergerakannya semua lebih lama dari itu bisa saja tidak muncul sama sekali di bawah, tapi saldo akhir tiap lokasi yang muncul tetap akurat.",
     "unresolvedLocation": "Lokasi tidak dikenali",
